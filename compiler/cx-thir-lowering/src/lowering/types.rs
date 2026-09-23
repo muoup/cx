@@ -1,13 +1,21 @@
+use std::collections::HashSet;
+
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBitfieldAccess, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType,
-    MIRType, MIRTypeID, MIRTypeKind, ty::interface::MTRegistry,
+    MIRBitfieldAccess, MIRComptimeContext, MIRComptimeFnParam, MIRComptimeFnPrototype,
+    MIRComptimeFnSignature, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType,
+    MIRType, MIRTypeID, MIRTypeKind,
+    ty::{comptime::MIRComptimeType, interface::MTRegistry},
 };
 use cx_thir::{
     thir::{
-        data::{THIRFnPrototype, THIRFnSignature}, r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
-    }, type_context::THIRTypeContext,
+        comptime::THIRComptimeFn,
+        data::{THIRComptimeValueType, THIRFnPrototype, THIRFnSignature},
+        r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+    },
+    type_context::THIRTypeContext,
 };
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
@@ -16,6 +24,12 @@ use crate::{
 };
 
 pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> CXResult<MIRTypeID> {
+    if builder
+        .try_fun()
+        .is_some_and(|function| function.body().is_comptime())
+    {
+        reject_comptime_array(builder, ty)?;
+    }
     if let Some(id) = builder.registry().type_id(ty) {
         return lower_type_id(builder, id);
     }
@@ -32,6 +46,13 @@ pub fn lower_type(builder: &mut MIRBuilder, ty: &THIRType) -> CXResult<MIRTypeID
 }
 
 pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTypeID> {
+    if builder
+        .try_fun()
+        .is_some_and(|function| function.body().is_comptime())
+        && let Some(ty) = builder.registry().try_resolve_type_id(id)
+    {
+        reject_comptime_array(builder, ty)?;
+    }
     let mir_id = MIRTypeID::new(id.index());
 
     if builder.types().definition(mir_id).is_some() || builder.types().is_lowering_type(&id) {
@@ -46,16 +67,12 @@ pub fn lower_type_id(builder: &mut MIRBuilder, id: THIRTypeID) -> CXResult<MIRTy
                 id.0 < builder.registry().type_id_bound(),
                 "THIR type {id} is outside its registry"
             );
-            builder
-                .types_mut()
-                .define(mir_id, MIRType::undefined())?;
+            builder.types_mut().define(mir_id, MIRType::undefined())?;
             return Ok(mir_id);
         };
         let debug_name = builder.registry().type_debug_name(&ty);
         let definition = MIRType::new(lower_type_kind(builder, &ty.kind)?, None);
-        builder
-            .types_mut()
-            .define(mir_id, definition)?;
+        builder.types_mut().define(mir_id, definition)?;
         if let Some(debug_name) = debug_name {
             builder.types_mut().set_debug_name(mir_id, debug_name);
         }
@@ -187,5 +204,109 @@ pub(crate) fn lower_prototype(
         prototype.linkage(),
         CXIdent::from(prototype.symbol_name()),
         prototype.debug_name().cloned(),
+    ))
+}
+
+fn lower_comptime_value_type(
+    builder: &mut MIRBuilder<'_>,
+    value_type: &THIRComptimeValueType,
+) -> CXResult<MIRComptimeType> {
+    if !value_type.expr {
+        reject_comptime_array(builder, &value_type._type)?;
+    }
+    let result = lower_type(builder, &value_type._type)?;
+    if value_type.expr {
+        let params = value_type
+            .params
+            .iter()
+            .map(|ty| lower_type(builder, ty))
+            .collect::<CXResult<Vec<_>>>()?;
+        Ok(MIRComptimeType::StagedExpression { result, params })
+    } else {
+        Ok(MIRComptimeType::Standard(result))
+    }
+}
+
+fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()> {
+    fn find_array(
+        registry: &impl THIRTypeContext,
+        kind: &THIRTypeKind,
+        seen: &mut HashSet<THIRTypeID>,
+    ) -> Option<TokenRange> {
+        let mut check_id = |id: THIRTypeID| {
+            if !seen.insert(id) {
+                return None;
+            }
+            registry
+                .try_resolve_type_id(id)
+                .and_then(|ty| find_array(registry, &ty.kind, seen))
+        };
+        match kind {
+            THIRTypeKind::Array { length, .. } => Some(length.token_range.clone()),
+            THIRTypeKind::PointerTo { inner_type }
+            | THIRTypeKind::MemoryReference { inner_type, .. } => check_id(*inner_type),
+            THIRTypeKind::Structured { fields }
+            | THIRTypeKind::Union { variants: fields }
+            | THIRTypeKind::TaggedUnion { variants: fields } => {
+                fields.iter().find_map(|field| check_id(field.ty()))
+            }
+            THIRTypeKind::Function { signature } => {
+                find_array(registry, &signature.return_type.kind, seen).or_else(|| {
+                    signature
+                        .params
+                        .iter()
+                        .find_map(|param| find_array(registry, &param._type.kind, seen))
+                })
+            }
+            _ => None,
+        }
+    }
+
+    if let Some(range) = find_array(builder.registry(), &ty.kind, &mut HashSet::new()) {
+        return crate::log::log_mir_error(
+            &range,
+            (
+                &cx_log::catalogue::mir::COMPTIME_INVALID_OPERATION,
+                "array types in comptime functions".into(),
+            ),
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn lower_comptime_prototype(
+    builder: &mut MIRBuilder<'_>,
+    function: &THIRComptimeFn,
+) -> CXResult<MIRComptimeFnPrototype> {
+    let prototype = &function.prototype;
+    let return_type = lower_comptime_value_type(builder, prototype.return_type())?;
+    let params = prototype
+        .params()
+        .iter()
+        .map(|param| {
+            Ok(MIRComptimeFnParam {
+                name: param.name.clone(),
+                ty: lower_comptime_value_type(builder, &param.value_type)?,
+            })
+        })
+        .collect::<CXResult<Vec<_>>>()?;
+    let context = MIRComptimeContext {
+        expected_return_type: function
+            .context
+            .return_type
+            .as_ref()
+            .map(|ty| lower_type(builder, ty))
+            .transpose()?,
+        expected_yield_type: function
+            .context
+            .yield_type
+            .as_ref()
+            .map(|ty| lower_type(builder, ty))
+            .transpose()?,
+    };
+    Ok(MIRComptimeFnPrototype::new(
+        CXIdent::new(prototype.symbol_name()),
+        MIRComptimeFnSignature::new(return_type, params),
+        context,
     ))
 }

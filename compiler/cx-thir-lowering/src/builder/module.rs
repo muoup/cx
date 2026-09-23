@@ -123,14 +123,19 @@ impl<'thir> MIRUnitBuilder<'thir> {
         id
     }
 
-    pub(crate) fn declare_global(&mut self, var: MIRGlobalVariable) -> CXResult<MIRGlobalID> {
-        let name = var.name().as_string();
+    pub(crate) fn reserve_global(&mut self, name: &str) -> MIRGlobalID {
+        if let Some(symbol) = self.global_symbols.get(name) {
+            return symbol.id();
+        }
         let id = self.allocate_global_id();
-        self.globals.insert(id, var);
-        self.global_symbols.insert(name, ModuleSymbol::new(id));
+        self.global_symbols
+            .insert(name.to_owned(), ModuleSymbol::new(id));
         self.global_order.push(id);
+        id
+    }
 
-        Ok(id)
+    pub(crate) fn define_global(&mut self, id: MIRGlobalID, var: MIRGlobalVariable) {
+        self.globals.insert(id, var);
     }
 
     pub(crate) fn define_function(&mut self, id: MIRFunctionID, def: MIRBody) {

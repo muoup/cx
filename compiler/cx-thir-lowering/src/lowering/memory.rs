@@ -1,6 +1,8 @@
 use cx_log::CXResult;
 use cx_mir::expr::instruction::MIRInvalidationKind;
-use cx_mir::{MIRBindable, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRTypeID, MIRValue};
+use cx_mir::{
+    MIRBindable, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRTypeID, MIRValue,
+};
 use cx_thir::thir::data::THIRType;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -19,15 +21,21 @@ pub(crate) fn allocate_variable(
     let place = builder.new_place(type_id, name, ty.is_nodrop());
 
     if let Some(value) = value {
-        builder.emit(MIRInstructionKind::Store {
-            target: place,
-            ty: type_id,
-            value,
-        }, range.clone());
-        
-        builder.emit(MIRInstructionKind::Initialize {
-            place: MIRBindable::Place(place),
-        }, range.clone());
+        builder.emit(MIRInstruction::new(
+            MIRInstructionKind::Store {
+                target: place,
+                ty: type_id,
+                value,
+            },
+            range.clone(),
+        ));
+
+        builder.emit(MIRInstruction::new(
+            MIRInstructionKind::Initialize {
+                place: MIRBindable::Place(place),
+            },
+            range.clone(),
+        ));
     }
 
     Ok(place)
@@ -65,7 +73,10 @@ pub(crate) fn copy(
     range: &TokenRange,
 ) -> MIRValue {
     let out = target_register(builder, ty);
-    builder.emit(MIRInstructionKind::LiftPlace { out, place }, range.clone());
+    builder.emit(MIRInstruction::new(
+        MIRInstructionKind::LiftPlace { out, place },
+        range.clone(),
+    ));
 
     MIRValue::Register(out)
 }
@@ -79,27 +90,33 @@ pub(crate) fn move_value(
     match value {
         MIRValue::PlaceRef(place) => {
             let out = target_register(builder, ty);
-            builder.emit(MIRInstructionKind::LiftPlace { out, place }, range.clone());
-            builder.emit(
+            builder.emit(MIRInstruction::new(
+                MIRInstructionKind::LiftPlace { out, place },
+                range.clone(),
+            ));
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Invalidate {
                     place: MIRBindable::Place(place),
                     kind: MIRInvalidationKind::Move,
                 },
                 range.clone(),
-            );
+            ));
             Ok(MIRValue::Register(out))
         }
-        
+
         MIRValue::Register(source) => {
             let out = target_register(builder, ty);
-            builder.emit(MIRInstructionKind::Forward { out, source }, range.clone());
-            builder.emit(
+            builder.emit(MIRInstruction::new(
+                MIRInstructionKind::Forward { out, source },
+                range.clone(),
+            ));
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Invalidate {
                     place: MIRBindable::Register(source),
                     kind: MIRInvalidationKind::Move,
                 },
                 range.clone(),
-            );
+            ));
             Ok(MIRValue::Register(out))
         }
         value => Ok(value),

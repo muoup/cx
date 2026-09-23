@@ -1,8 +1,9 @@
 use std::{collections::HashMap, rc::Rc};
 
 use cx_mir::{
-    MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRInstruction,
-    MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
+    MIRBasicBlockID, MIRBody, MIRComptimeFnPrototype, MIRFnPrototype, MIRFunction, MIRFunctionID,
+    MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID,
+    MIRTypeID, MIRValue,
 };
 use cx_thir::thir::expression::{THIRExpression, THIRLocalID};
 use cx_tokens::TokenRange;
@@ -13,7 +14,6 @@ use crate::builder::body::{MIRBodyBuilder, MIRBodyKind};
 #[derive(Debug)]
 pub(crate) struct MIRFunctionBuilder<'thir> {
     id: MIRFunctionID,
-    prototype: MIRFnPrototype,
 
     body: MIRBodyBuilder<'thir>,
     current_block: MIRBasicBlockID,
@@ -109,19 +109,26 @@ impl ControlContext {
 
 impl<'thir> MIRFunctionBuilder<'thir> {
     pub(crate) fn new_runtime(id: MIRFunctionID, func: MIRFunction) -> Self {
-        let mut body = MIRBody::new();
-        let entry = body.add_block();
-        let root_scope = body.add_scope(TokenRange::internal());
+        Self::new(id, MIRBodyBuilder::new_runtime(func.prototype().clone(), MIRBody::new()))
+    }
 
+    pub(crate) fn new_comptime(id: MIRFunctionID, prototype: MIRComptimeFnPrototype) -> Self {
+        Self::new(id, MIRBodyBuilder::new_comptime(prototype, cx_mir::MIRComptimeBody::new()))
+    }
+
+    pub(crate) fn new_comptime_scratch(id: MIRFunctionID) -> Self {
+        Self::new(id, MIRBodyBuilder::new_comptime_scratch(cx_mir::MIRComptimeBody::new()))
+    }
+
+    fn new(id: MIRFunctionID, mut body: MIRBodyBuilder<'thir>) -> Self {
+        let entry = body.add_block(None);
+        let root_scope = body.add_scope(TokenRange::internal());
         Self {
             id,
-            prototype: func.prototype().clone(),
-            body: MIRBodyBuilder::new_runtime(body),
+            body,
             current_block: entry,
-
             local_values: HashMap::new(),
             labels: HashMap::new(),
-
             scope_stack: vec![ScopeContext::new(root_scope)],
             control_stack: Vec::new(),
         }
@@ -137,7 +144,9 @@ impl<'thir> MIRFunctionBuilder<'thir> {
     }
 
     pub fn prototype(&self) -> &MIRFnPrototype {
-        &self.prototype
+        self.body
+            .runtime_prototype()
+            .expect("runtime prototype required")
     }
 
     pub fn body(&self) -> &MIRBodyBuilder<'thir> {

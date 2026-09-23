@@ -1,67 +1,27 @@
-use cx_log::CXResult;
-use cx_mir::{MIRConstant, MIRFunction, MIRTarget, MIRValue};
-
-// TODO: The previous comptime interpreter still targets the removed MIR instruction hierarchy.
-/*
+mod arithmetic;
 mod engine;
-mod interpretable;
-pub mod log;
-mod value;
-pub mod context;
-*/
+mod log;
 
-#[derive(Debug, Clone)]
-pub enum MIRComptimeValue {
-    Reference { frame: usize, target: MIRTarget },
-    Constant(MIRConstant),
-    Staged(MIRStagedValue),
+use cx_log::CXResult;
+use cx_mir::{
+    MIRComptimeBody, MIRComptimeFunction, MIRConstant, MIRFunctionID, MIRGlobalID,
+    MIRGlobalVariable, ty::interface::MTRegistry,
+};
+
+pub trait ComptimeContext {
+    type Registry: MTRegistry;
+
+    fn function(&self, id: MIRFunctionID) -> Option<&MIRComptimeFunction<'_>>;
+    fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable>;
+    fn types(&self) -> &Self::Registry;
 }
 
-impl MIRComptimeValue {
-    pub fn constant(self) -> Option<MIRConstant> {
-        match self {
-            Self::Constant(value) => Some(value),
-            Self::Reference { .. } | Self::Staged(_) => None,
-        }
-    }
-}
+pub use engine::EngineLimits;
 
-impl From<MIRConstant> for MIRComptimeValue {
-    fn from(value: MIRConstant) -> Self {
-        Self::Constant(value)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum MIRStagedBinding {
-    Value(MIRValue),
-    Comptime(MIRComptimeValue),
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct MIRStagedValue;
-
-#[derive(Debug, Clone, Copy)]
-pub struct EngineLimits {
-    pub max_steps: u64,
-    pub max_call_depth: usize,
-}
-
-impl Default for EngineLimits {
-    fn default() -> Self {
-        Self {
-            max_steps: 1_000_000,
-            max_call_depth: 128,
-        }
-    }
-}
-
-pub struct MIRComptimeEngine;
-
-pub fn evaluate_comptime_function<C>(
-    _context: &C,
-    _func: &MIRFunction,
-    _args: &[MIRComptimeValue],
-) -> CXResult<MIRComptimeValue> {
-    todo!("comptime evaluation was removed with the MIR representation migration")
+pub fn evaluate_body<C: ComptimeContext>(
+    context: &C,
+    body: &MIRComptimeBody<'_>,
+    args: &[MIRConstant],
+) -> CXResult<MIRConstant> {
+    engine::Engine::new(context).run(body, args)
 }

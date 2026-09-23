@@ -1,7 +1,7 @@
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstructionKind, MIRIntIntrinsic,
-    MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRValue,
+    MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstruction, MIRInstructionKind,
+    MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRValue,
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::thir::{
@@ -327,7 +327,7 @@ pub(crate) fn lower_short_circuit(
 
     let rhs_target = MIRBlockTarget::new(rhs_block);
     let merge_target = MIRBlockTarget::with_args(merge_block, vec![lhs_value.clone()]);
-    builder.emit(
+    builder.emit(MIRInstruction::new(
         MIRInstructionKind::Branch {
             cond: lhs_value,
             true_target: if is_and {
@@ -338,17 +338,17 @@ pub(crate) fn lower_short_circuit(
             false_target: if is_and { merge_target } else { rhs_target },
         },
         expr.token_range.clone(),
-    );
+    ));
 
     builder.fun_mut().set_current_block(rhs_block);
     let rhs_value = lower_expression(builder, rhs)?;
     if !builder.fun().current_block_terminated() {
-        builder.emit(
+        builder.emit(MIRInstruction::new(
             MIRInstructionKind::Jump {
                 target: MIRBlockTarget::with_args(merge_block, vec![rhs_value]),
             },
             expr.token_range.clone(),
-        );
+        ));
     }
 
     builder.fun_mut().set_current_block(merge_block);
@@ -419,13 +419,13 @@ fn lower_increment(
     let inner = builder.registry().resolve_type_id(*inner_type).clone();
     let ty = lower_type(builder, &inner)?;
     let previous = builder.fun_mut().new_register(ty, None);
-    builder.emit(
+    builder.emit(MIRInstruction::new(
         MIRInstructionKind::LiftPlace {
             out: previous,
             place,
         },
         expr.token_range.clone(),
-    );
+    ));
 
     let updated = builder.fun_mut().new_register(ty, None);
     let target = MIRTarget::Register(updated);
@@ -477,14 +477,14 @@ fn lower_increment(
         _ => unreachable!("increment requires an integer or pointer place"),
     }
 
-    builder.emit(
+    builder.emit(MIRInstruction::new(
         MIRInstructionKind::Store {
             target: place,
             value: MIRValue::Register(updated),
             ty,
         },
         expr.token_range.clone(),
-    );
+    ));
     Ok(if prefix {
         MIRValue::PlaceRef(place)
     } else {
@@ -533,16 +533,14 @@ pub(super) fn lower_coercion(
             );
             Ok(MIRValue::Register(out))
         }
-        THIRCoercion::IntToFloat {
-            to_type,
-            sextend: _,
-        } => {
+        THIRCoercion::IntToFloat { to_type, sextend } => {
             let out = builder.fun_mut().new_register(mir_to_type, None);
             builder.fun_mut().emit_intrinsic(
                 MIRIntIntrinsic::ToFloat {
                     out: MIRTarget::Register(out),
                     value: operand,
                     target: lower_float_type(*to_type),
+                    signed: *sextend,
                 },
                 expr.token_range.clone(),
             );

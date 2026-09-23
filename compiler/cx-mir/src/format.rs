@@ -599,17 +599,6 @@ fn write_comptime_instruction<T: MTRegistry>(
                     }
                     f.write_str(")")
                 }
-                MIRComptimeOp::Materialize { out, staged, args } => {
-                    if let Some(out) = out {
-                        write_register_name(f, function, *out)?;
-                        f.write_str(" = ")?;
-                    }
-                    f.write_str("apply ")?;
-                    write_value(f, unit, function, staged)?;
-                    f.write_str("(")?;
-                    write_values(f, unit, function, args)?;
-                    f.write_str(")")
-                }
             }
         }
     }
@@ -763,13 +752,22 @@ fn write_int_intrinsic<T: MTRegistry>(
         MIRIntIntrinsic::BNot { out, value } => {
             write_intrinsic_unary(f, unit, function, types, "int.b_not", *out, value)
         }
-        MIRIntIntrinsic::ToFloat { out, value, target } => write_intrinsic_call(
+        MIRIntIntrinsic::ToFloat {
+            out,
+            value,
+            target,
+            signed,
+        } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
             Some(IntrinsicOutput::Target(*out)),
-            "int.to_float",
+            if *signed {
+                "int.to_float.signed"
+            } else {
+                "int.to_float.unsigned"
+            },
             |f, unit, function, _| {
                 write_value(f, unit, function, value)?;
                 write!(f, ", f{}", float_width(*target))

@@ -18,7 +18,7 @@ pub enum MIRIntIntrinsic {
     LNot        { out: MIRTarget, value: MIRValue },
     BNot        { out: MIRTarget, value: MIRValue },
 
-    ToFloat     { out: MIRTarget, value: MIRValue, target: MIRFloatType },
+    ToFloat     { out: MIRTarget, value: MIRValue, target: MIRFloatType, signed: bool },
     IntCast     { out: MIRTarget, value: MIRValue, target: MIRIntType, sign_extend: bool },
     ToPtr       { out: MIRTarget, value: MIRValue },
     

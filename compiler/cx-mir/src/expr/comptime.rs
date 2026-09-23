@@ -48,9 +48,4 @@ pub enum MIRComptimeOp<'thir> {
         parameters: &'thir [THIRStagedParameter],
         captures: BTreeMap<THIRLocalID, MIRValue>,
     },
-    Materialize {
-        out: Option<MIRRegisterID>,
-        staged: MIRValue,
-        args: Vec<MIRValue>,
-    },
 }

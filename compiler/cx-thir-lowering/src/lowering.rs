@@ -61,12 +61,12 @@ pub(crate) fn lower_function(
             .body_mut()
             .add_parameter(&declaration, scope);
 
-        builder.emit(
+        builder.emit(MIRInstruction::new(
             MIRInstructionKind::Initialize {
                 place: MIRBindable::Place(place),
             },
             TokenRange::internal(),
-        );
+        ));
 
         builder
             .fun_mut()
@@ -112,7 +112,10 @@ pub(crate) fn lower_function_block(
             if prototype.signature().return_type.is_void() {
                 emit_implicit_return(builder, None, token_range.clone())?;
             } else if prototype.signature().return_type.is_unreachable() {
-                builder.emit_if_open(MIRInstructionKind::Unreachable, TokenRange::internal());
+                builder.emit_if_open(MIRInstruction::new(
+                    MIRInstructionKind::Unreachable,
+                    TokenRange::internal(),
+                ));
             } else if prototype.symbol_name() == "main" {
                 emit_implicit_return(
                     builder,
@@ -129,7 +132,7 @@ pub(crate) fn lower_function_block(
     Ok(())
 }
 
-fn emit_implicit_return(
+pub(super) fn emit_implicit_return(
     builder: &mut MIRBuilder<'_>,
     value: Option<MIRValue>,
     range: TokenRange,
@@ -145,7 +148,10 @@ fn emit_implicit_return(
         .expect("active function has no root scope")
         .id();
     auto_cleanup(builder, root_scope, range.clone())?;
-    builder.emit_if_open(MIRInstructionKind::Return { value }, range);
+    builder.emit_if_open(MIRInstruction::new(
+        MIRInstructionKind::Return { value },
+        range,
+    ));
     Ok(())
 }
 
@@ -353,29 +359,29 @@ pub(crate) fn lower_expression(
 
             let ptarget = memory::ensure_place(builder, mtarget, &target._type)?;
 
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Invalidate {
                     place: MIRBindable::Place(ptarget),
                     kind: MIRInvalidationKind::Drop,
                 },
                 target.token_range.clone(),
-            );
+            ));
 
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Initialize {
                     place: MIRBindable::Place(ptarget),
                 },
                 target.token_range.clone(),
-            );
+            ));
 
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Store {
                     target: ptarget,
                     value: mvalue,
                     ty: assignment_type,
                 },
                 target.token_range.clone(),
-            );
+            ));
 
             MIRValue::PlaceRef(ptarget)
         }
@@ -533,14 +539,14 @@ pub(crate) fn lower_expression(
                 },
                 expr.token_range.clone(),
             );
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Store {
                     target,
                     value: MIRValue::Register(constructed),
                     ty: sum_type_id,
                 },
                 expr.token_range.clone(),
-            );
+            ));
             MIRValue::PlaceRef(target)
         }
 
@@ -634,12 +640,12 @@ pub(crate) fn lower_expression(
             };
 
             auto_cleanup_before(builder, scope, expr.token_range.clone())?;
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
                 },
                 expr.token_range.clone(),
-            );
+            ));
 
             MIRValue::Constant(MIRConstant::Unit)
         }
@@ -661,12 +667,12 @@ pub(crate) fn lower_expression(
             };
 
             auto_cleanup_before(builder, scope, expr.token_range.clone())?;
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
                 },
                 expr.token_range.clone(),
-            );
+            ));
 
             MIRValue::Constant(MIRConstant::Unit)
         }
@@ -679,12 +685,12 @@ pub(crate) fn lower_expression(
                 builder.fun_mut().declare_label(name, target);
                 target
             };
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
                 },
                 expr.token_range.clone(),
-            );
+            ));
             let dead_block = builder.fun_mut().new_block("after.goto");
             builder.fun_mut().set_current_block(dead_block);
             MIRValue::Constant(MIRConstant::Unit)
@@ -697,12 +703,12 @@ pub(crate) fn lower_expression(
                 builder.fun_mut().declare_label(name, target);
                 target
             };
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
                 },
                 expr.token_range.clone(),
-            );
+            ));
             builder.fun_mut().set_current_block(target);
             lower_expression(builder, statement)?
         }
@@ -784,15 +790,18 @@ pub(crate) fn lower_expression(
                 .expect("active function has no root scope")
                 .id();
             auto_cleanup(builder, root_scope, expr.token_range.clone())?;
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Return { value },
                 expr.token_range.clone(),
-            );
+            ));
             MIRValue::Constant(MIRConstant::Unit)
         }
 
         THIRExpressionKind::Unreachable => {
-            builder.emit(MIRInstructionKind::Unreachable, expr.token_range.clone());
+            builder.emit(MIRInstruction::new(
+                MIRInstructionKind::Unreachable,
+                expr.token_range.clone(),
+            ));
             MIRValue::Constant(MIRConstant::Unit)
         }
 
@@ -828,12 +837,12 @@ pub(crate) fn lower_expression(
 
             let args = value.into_iter().collect();
             auto_cleanup_before(builder, scope_id, expr.token_range.clone())?;
-            builder.emit(
+            builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::with_args(block_id, args),
                 },
                 expr.token_range.clone(),
-            );
+            ));
             MIRValue::Constant(MIRConstant::Unit)
         }
 
@@ -897,7 +906,10 @@ pub(crate) fn lower_expression(
 
             if let Some(merge) = merge {
                 if !builder.fun().current_block_terminated() {
-                    builder.emit(MIRInstructionKind::Unreachable, expr.token_range.clone());
+                    builder.emit(MIRInstruction::new(
+                        MIRInstructionKind::Unreachable,
+                        expr.token_range.clone(),
+                    ));
                 }
                 builder.fun_mut().set_current_block(merge);
                 yield_register
@@ -976,13 +988,13 @@ pub(crate) fn lower_expression(
         THIRExpressionKind::Leak { expression: inner } => {
             let value = lower_expression(builder, inner)?;
             if let MIRValue::PlaceRef(place) = value {
-                builder.emit(
+                builder.emit(MIRInstruction::new(
                     MIRInstructionKind::Invalidate {
                         place: cx_mir::MIRBindable::Place(place),
                         kind: MIRInvalidationKind::Leak,
                     },
                     expr.token_range.clone(),
-                );
+                ));
                 MIRValue::PlaceRef(place)
             } else {
                 value

@@ -2,8 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use cx_log::CXResult;
 use cx_mir::{
-    MIRComptimeOp, MIRFunctionID, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRType,
-    MIRTypeID, MIRTypeKind, MIRUnit, MIRValue,
+    MIRComptimeOp, MIRFunctionID, MIRInstruction, MIRPlaceID, MIRType, MIRTypeID, MIRTypeKind,
+    MIRUnit, MIRValue,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_target::ArchitectureConfig;
@@ -102,13 +102,13 @@ impl<'thir> MIRBuilder<'thir> {
             .expect("no MIR function is currently active")
     }
 
-    pub(crate) fn emit(&mut self, kind: MIRInstructionKind, range: TokenRange) {
-        self.fun_mut().emit(MIRInstruction::new(kind, range));
+    pub(crate) fn emit(&mut self, instruction: MIRInstruction) {
+        self.fun_mut().emit(instruction);
     }
 
-    pub(crate) fn emit_if_open(&mut self, kind: MIRInstructionKind, range: TokenRange) {
+    pub(crate) fn emit_if_open(&mut self, instruction: MIRInstruction) {
         if !self.fun().current_block_terminated() {
-            self.emit(kind, range);
+            self.emit(instruction);
         }
     }
 
@@ -193,6 +193,28 @@ impl<'thir> MIRBuilder<'thir> {
         self.function = Some(MIRFunctionBuilder::new_runtime(id, function));
     }
 
+    pub(crate) fn start_comptime_function(
+        &mut self,
+        id: MIRFunctionID,
+        prototype: cx_mir::MIRComptimeFnPrototype,
+    ) {
+        self.function = Some(MIRFunctionBuilder::new_comptime(id, prototype));
+    }
+
+    pub(crate) fn start_comptime_scratch(&mut self, id: MIRFunctionID) {
+        self.function = Some(MIRFunctionBuilder::new_comptime_scratch(id));
+    }
+
+    pub(crate) fn finish_comptime_scratch(&mut self) -> cx_mir::MIRComptimeBody<'thir> {
+        let function = self.function.take().expect("missing comptime scratch body");
+        match function.thin_finish().1 {
+            MIRBodyKind::ComptimeScratch { body } => body,
+            MIRBodyKind::Runtime { .. } | MIRBodyKind::Comptime { .. } => {
+                unreachable!("scratch body must not be a function body")
+            }
+        }
+    }
+
     pub(crate) fn finish_function(&mut self) -> CXResult<()> {
         let Some(fn_builder) = self.function.take() else {
             unreachable!("No function context available at finish_function");
@@ -201,11 +223,16 @@ impl<'thir> MIRBuilder<'thir> {
         let (id, body) = fn_builder.thin_finish();
 
         match body {
-            MIRBodyKind::Runtime(body) => {
+            MIRBodyKind::Runtime { body, .. } => {
                 self.module_mut().define_function(id, body);
                 Ok(())
             }
-            MIRBodyKind::Comptime(body) => self.module_mut().define_comptime_function(id, body),
+            MIRBodyKind::Comptime { body, .. } => {
+                self.module_mut().define_comptime_function(id, body)
+            }
+            MIRBodyKind::ComptimeScratch { .. } => {
+                unreachable!("scratch body cannot define a function")
+            }
         }
     }
 }

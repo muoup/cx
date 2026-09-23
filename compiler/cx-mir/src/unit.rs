@@ -58,8 +58,6 @@ impl<'thir> MIRUnit<'thir> {
 
     pub fn into_static_runtime_only(self) -> MIRUnit<'static> {
         assert!(self.staged_expr_pool.staged_expressions().is_empty());
-        assert!(self.comptime_functions.is_empty());
-
         MIRUnit {
             staged_expr_pool: MIRStagedExprPool::new(),
             types: self.types,
