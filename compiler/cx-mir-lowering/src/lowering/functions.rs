@@ -1,7 +1,7 @@
 use crate::lowering::memory;
 use cx_lmir::{
     LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRInstructionKind, LMIRParameterABI,
-    LMIRValue,
+    LMIRRegister, LMIRValue,
 };
 use cx_log::CXResult;
 use cx_mir::ty::layout::calculate_type_layout;
@@ -43,7 +43,14 @@ pub(super) fn lower_function<'mir>(
     }
     context.current_block = context.block_indices[&body.entry()];
     for (index, place) in body.places().iter().enumerate() {
-        let address = memory::allocate(&mut context, place.ty);
+        let address = if place.adopted {
+            LMIRValue::Register {
+                register: LMIRRegister::new(format!("mir.place.{}", place.id.index())),
+                _type: context.pointer(),
+            }
+        } else {
+            memory::allocate(&mut context, place.ty)
+        };
         context
             .places
             .insert(cx_mir::MIRPlaceID::new(index), address);

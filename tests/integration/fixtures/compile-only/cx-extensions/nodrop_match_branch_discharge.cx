@@ -10,16 +10,14 @@ enum union Outer : @nodrop {
 void discard(int value) {}
 
 void consume(Outer value) {
-    match (value) {
+    match (move value) {
         Outer::leaf(leaf) => {
             @unpack(move leaf) {
                 value: field_value
             };
             discard(move field_value);
         }
-        Outer::none() => {
-            @leak(value);
-        }
+        Outer::none() => {}
     }
 }
 

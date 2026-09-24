@@ -135,8 +135,8 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
             },
             MIRIntrinsic::Aggregate(op) => match op {
                 MIRAggregateIntrinsic::SumIndex { value: input, .. } => value(input, visit),
-                MIRAggregateIntrinsic::SumVariant { base, .. } => visit(MIRBindable::Place(*base)),
-                MIRAggregateIntrinsic::SumVariantL { base, .. }
+                MIRAggregateIntrinsic::SumVariant { base, .. }
+                | MIRAggregateIntrinsic::SumVariantL { source: base, .. }
                 | MIRAggregateIntrinsic::StructField { base, .. } => value(base, visit),
                 MIRAggregateIntrinsic::AggregateInit { fields, .. } => {
                     for (_, field) in fields {
@@ -149,6 +149,7 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 }
             },
             MIRIntrinsic::Internal(op) => match op {
+                MIRInternalIntrinsic::AdoptPlace { address, .. } => value(address, visit),
                 MIRInternalIntrinsic::PlaceAddress { place, .. } => {
                     visit(MIRBindable::Place(*place))
                 }

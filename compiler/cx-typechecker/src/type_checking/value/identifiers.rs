@@ -63,6 +63,7 @@ pub(crate) fn typecheck_identifier(
             .unwrap();
     }
 
+    let borrowed = matches!(symbol, MIRSymbol::BorrowedExpression(_));
     let result = TypecheckResult::from_symbol(symbol, name.clone(), template_input.cloned())
         .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
@@ -85,7 +86,11 @@ pub(crate) fn typecheck_identifier(
 
     let binding = match result.ready_expression().map(|expr| &expr.kind) {
         Some(THIRExpressionKind::Variable { name, local_id }) => {
-            Some(TypecheckedBinding::local(name.clone(), *local_id))
+            Some(if borrowed {
+                TypecheckedBinding::projection(name.clone(), *local_id)
+            } else {
+                TypecheckedBinding::local(name.clone(), *local_id)
+            })
         }
         _ => None,
     };

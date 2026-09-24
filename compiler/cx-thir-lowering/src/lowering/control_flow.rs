@@ -457,6 +457,18 @@ pub(super) fn lower_match<'thir>(
     result_type: &'thir THIRType,
 ) -> CXResult<MIRValue> {
     let subject_value = lower_expression(builder, condition)?;
+    let subject_value = if condition._type.is_memory_reference() {
+        subject_value
+    } else {
+        let place = memory::move_operand_to_place(
+            builder,
+            subject_value,
+            &condition._type,
+            None,
+            &condition.token_range,
+        )?;
+        MIRValue::PlaceRef(place)
+    };
     builder.fun_mut().bind_local(subject, subject_value.clone());
     let subject_type = match &condition._type.kind {
         THIRTypeKind::MemoryReference { inner_type, .. } => {

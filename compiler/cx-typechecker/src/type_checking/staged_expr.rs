@@ -188,7 +188,6 @@ fn collect_expression_locals(
         | THIRExpressionKind::Typechange(operand)
         | THIRExpressionKind::MemberAccess { base: operand, .. }
         | THIRExpressionKind::TaggedUnionTag { value: operand, .. }
-        | THIRExpressionKind::TaggedUnionGet { value: operand, .. }
         | THIRExpressionKind::TaggedUnionInitializer { value: operand, .. }
         | THIRExpressionKind::Leak {
             expression: operand,

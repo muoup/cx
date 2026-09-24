@@ -93,8 +93,7 @@ pub(crate) fn validate_safe_expression(
             validate_safe_expression(env, index)
         }
         THIRExpressionKind::PatternIs { lhs, .. } => validate_safe_expression(env, lhs),
-        THIRExpressionKind::TaggedUnionTag { value, .. }
-        | THIRExpressionKind::TaggedUnionGet { value, .. } => validate_safe_expression(env, value),
+        THIRExpressionKind::TaggedUnionTag { value, .. } => validate_safe_expression(env, value),
         THIRExpressionKind::TaggedUnionSet {
             target,
             inner_value,

@@ -1,0 +1,26 @@
+/* CX-STDOUT: 41 */
+/* CX-STDOUT-NEXT: 41 */
+
+#include <stdio.h>
+#include <stdlib.h>
+
+struct Resource : @nodrop {
+    int data;
+};
+
+void consume(Resource value) {
+    printf("%d\n", value.data);
+    @leak(value);
+}
+
+int main() {
+    Resource* ptr = malloc(sizeof(Resource));
+    *ptr = (Resource) { .data = 7 };
+
+    Resource value = @unsafe(@adopt(*ptr));
+    value.data = 41;
+    printf("%d\n", (*ptr).data);
+    consume(move value);
+    free(ptr);
+    return 0;
+}

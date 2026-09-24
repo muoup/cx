@@ -255,6 +255,15 @@ impl<'thir> MIRBodyBuilder<'thir> {
         }
     }
 
+    pub fn mark_adopted(&mut self, place: MIRPlaceID) {
+        match &mut self.kind {
+            MIRBodyKind::Runtime { body, .. } => body.mark_adopted(place),
+            MIRBodyKind::Comptime { body, .. } | MIRBodyKind::ComptimeScratch { body } => {
+                body.mark_adopted(place)
+            }
+        }
+    }
+
     pub fn places_in_scope(&self, scope: MIRScopeID) -> Vec<MIRPlaceID> {
         let places = match &self.kind {
             MIRBodyKind::Runtime { body, .. } => body.places(),

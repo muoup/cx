@@ -17,7 +17,6 @@ use cx_tokens::TokenRange;
 pub(crate) struct IndirectBase {
     pub source: THIRExpression,
     pub source_type: THIRType,
-    pub owned: bool,
 }
 
 pub(crate) fn resolve_indirect_base(
@@ -44,7 +43,6 @@ pub(crate) fn resolve_indirect_base(
                         _type: env.symbols.mem_ref_to(ptr_inner.clone()),
                     },
                     source_type: ptr_inner,
-                    owned: false,
                 };
             }
 
@@ -64,7 +62,6 @@ pub(crate) fn resolve_indirect_base(
                         _type: env.symbols.mem_ref_to(array_inner.clone()),
                     },
                     source_type: array_inner,
-                    owned: false,
                 };
             }
 
@@ -82,7 +79,6 @@ pub(crate) fn resolve_indirect_base(
             return IndirectBase {
                 source,
                 source_type: inner_type,
-                owned: false,
             };
         }
 
@@ -94,14 +90,12 @@ pub(crate) fn resolve_indirect_base(
                     _type: env.symbols.mem_ref_to(inner_type.clone()),
                 },
                 source_type: inner_type,
-                owned: false,
             };
         }
 
         return IndirectBase {
             source,
             source_type,
-            owned: true,
         };
     }
 }

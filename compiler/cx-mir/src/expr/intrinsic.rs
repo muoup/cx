@@ -319,13 +319,13 @@ pub enum MIRAggregateIntrinsic {
     },
     SumVariant {
         out: MIRTarget,
-        base: MIRPlaceID,
+        base: MIRValue,
         variant: usize,
         sum_ty: MIRTypeID,
     },
     SumVariantL {
-        out: MIRTarget,
-        base: MIRValue,
+        out: MIRPlaceID,
+        source: MIRValue,
         variant: usize,
         sum_ty: MIRTypeID,
     },
@@ -352,6 +352,10 @@ pub enum MIRAggregateIntrinsic {
 
 #[derive(Debug, Clone)]
 pub enum MIRInternalIntrinsic {
+    AdoptPlace {
+        place: MIRPlaceID,
+        address: MIRValue,
+    },
     PlaceAddress {
         out: MIRTarget,
         place: MIRPlaceID,
@@ -507,15 +511,16 @@ impl MIRIntrinsic {
                 | MIRPtrIntrinsic::Gt { out, .. }
                 | MIRPtrIntrinsic::Geq { out, .. } => *out,
             }),
-            Self::Aggregate(op) => Some(match op {
+            Self::Aggregate(op) => match op {
+                MIRAggregateIntrinsic::SumVariantL { .. } => None,
                 MIRAggregateIntrinsic::SumIndex { out, .. }
                 | MIRAggregateIntrinsic::SumVariant { out, .. }
-                | MIRAggregateIntrinsic::SumVariantL { out, .. }
                 | MIRAggregateIntrinsic::AggregateInit { out, .. }
                 | MIRAggregateIntrinsic::StructField { out, .. }
-                | MIRAggregateIntrinsic::ArrayIndex { out, .. } => *out,
-            }),
+                | MIRAggregateIntrinsic::ArrayIndex { out, .. } => Some(*out),
+            },
             Self::Internal(op) => match op {
+                MIRInternalIntrinsic::AdoptPlace { .. } => None,
                 MIRInternalIntrinsic::PlaceAddress { out, .. }
                 | MIRInternalIntrinsic::GlobalAddress { out, .. }
                 | MIRInternalIntrinsic::ReferenceAddress { out, .. }

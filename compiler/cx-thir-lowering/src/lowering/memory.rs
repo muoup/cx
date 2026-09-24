@@ -85,14 +85,29 @@ pub(crate) fn target_register(builder: &mut MIRBuilder<'_>, ty: MIRTypeID) -> MI
     builder.fun_mut().new_register(ty, None)
 }
 
-pub(crate) fn assign_operand_to_place<'thir>(
+pub(crate) fn move_operand_to_place<'thir>(
     builder: &mut MIRBuilder<'thir>,
     value: MIRValue,
     ty: &'thir THIRType,
     name: Option<CXIdent>,
     range: &TokenRange,
 ) -> CXResult<MIRPlaceID> {
-    allocate_variable(builder, name, ty, Some(value), range)
+    let type_id = lower_type(builder, ty)?;
+    let value = match value {
+        value @ MIRValue::PlaceRef(_) => move_value(builder, value, type_id, range)?,
+        value => value,
+    };
+    let place = allocate_variable(builder, name, ty, Some(value.clone()), range)?;
+    if let MIRValue::Register(register) = value {
+        builder.emit(MIRInstruction::new(
+            MIRInstructionKind::Invalidate {
+                place: MIRBindable::Register(register),
+                kind: MIRInvalidationKind::Move,
+            },
+            range.clone(),
+        ));
+    }
+    Ok(place)
 }
 
 pub(crate) fn copy(
@@ -136,7 +151,6 @@ pub(crate) fn move_value(
         }
 
         MIRValue::Register(source) => {
-            let owner = builder.fun().projection_owner(source);
             let out = target_register(builder, ty);
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Store {
@@ -153,15 +167,6 @@ pub(crate) fn move_value(
                 },
                 range.clone(),
             ));
-            if let Some(owner) = owner {
-                builder.emit(MIRInstruction::new(
-                    MIRInstructionKind::Invalidate {
-                        place: MIRBindable::Place(owner),
-                        kind: MIRInvalidationKind::Move,
-                    },
-                    range.clone(),
-                ));
-            }
             Ok(MIRValue::Register(out))
         }
         value => Ok(value),

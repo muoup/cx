@@ -707,6 +707,7 @@ fn write_comptime_operand(
 #[derive(Clone, Copy)]
 enum IntrinsicOutput {
     Target(MIRTarget),
+    Place(MIRPlaceID),
 }
 
 impl From<MIRTarget> for IntrinsicOutput {
@@ -732,6 +733,7 @@ fn write_intrinsic_call<T: MTRegistry>(
     if let Some(output) = output {
         match output {
             IntrinsicOutput::Target(target) => write_target(f, unit, function, target)?,
+            IntrinsicOutput::Place(place) => write_place_name(f, unit, function, place)?,
         }
         f.write_str(" = ")?;
     }
@@ -1110,6 +1112,15 @@ fn write_internal_intrinsic<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match intrinsic {
+        MIRInternalIntrinsic::AdoptPlace { place, address } => write_intrinsic_call(
+            f,
+            unit,
+            function,
+            types,
+            Some(IntrinsicOutput::Place(*place)),
+            "internal.adopt_place",
+            |f, unit, function, _| write_value(f, unit, function, address),
+        ),
         MIRInternalIntrinsic::PlaceAddress { out, place } => write_intrinsic_call(
             f,
             unit,
@@ -1285,14 +1296,14 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             Some(IntrinsicOutput::Target(*out)),
             "aggregate.sum_variant",
             |f, unit, function, types| {
-                write_place_name(f, unit, function, *base)?;
+                write_value(f, unit, function, base)?;
                 write!(f, ", {variant}, ")?;
                 types.write(f, *sum_ty)
             },
         ),
         MIRAggregateIntrinsic::SumVariantL {
             out,
-            base,
+            source,
             variant,
             sum_ty,
         } => write_intrinsic_call(
@@ -1300,10 +1311,10 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
+            Some(IntrinsicOutput::Place(*out)),
             "aggregate.sum_variant_l",
             |f, unit, function, types| {
-                write_value(f, unit, function, base)?;
+                write_value(f, unit, function, source)?;
                 write!(f, ", {variant}, ")?;
                 types.write(f, *sum_ty)
             },

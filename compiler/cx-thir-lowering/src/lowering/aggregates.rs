@@ -1,14 +1,3 @@
-use cx_log::{CXResult, catalogue::mir};
-use cx_mir::{
-    MIRAggregateIntrinsic, MIRConstant, MIRFloatIntrinsic, MIRIntIntrinsic, MIRIntType,
-    MIRIntrinsic, MIRTarget, MIRType, MIRTypeKind, MIRValue,
-};
-use cx_thir::thir::{
-    data::{THIRType, THIRTypeKind},
-    expression::THIRExpression,
-    pattern::THIRPattern,
-};
-use cx_thir::type_context::THIRTypeContext;
 use crate::{
     builder::MIRBuilder,
     log::log_mir_error,
@@ -17,6 +6,18 @@ use crate::{
         types::{lower_float_type, lower_int_type, lower_type, lower_type_id},
     },
 };
+use cx_log::{CXResult, catalogue::mir};
+use cx_mir::{
+    MIRAggregateIntrinsic, MIRBindable, MIRConstant, MIRFloatIntrinsic, MIRInstruction,
+    MIRInstructionKind, MIRIntIntrinsic, MIRIntType, MIRIntrinsic, MIRTarget, MIRType, MIRTypeKind,
+    MIRValue, expr::instruction::MIRInvalidationKind,
+};
+use cx_thir::thir::{
+    data::{THIRType, THIRTypeKind},
+    expression::THIRExpression,
+    pattern::THIRPattern,
+};
+use cx_thir::type_context::THIRTypeContext;
 
 pub(super) fn lower_pattern_test<'thir>(
     builder: &mut MIRBuilder<'thir>,
@@ -157,7 +158,7 @@ pub(super) fn bind_pattern_payload<'thir>(
             let value = if sum_type.is_memory_reference() {
                 subject
             } else {
-                let place = memory::assign_operand_to_place(
+                let place = memory::move_operand_to_place(
                     builder,
                     subject,
                     sum_type,
@@ -171,10 +172,13 @@ pub(super) fn bind_pattern_payload<'thir>(
         }
         THIRPattern::TaggedUnionVariant {
             variant_index,
-            inner_local_id: Some(local_id),
+            inner_local_id,
             inner_name,
             ..
         } => {
+            if sum_type.is_memory_reference() && inner_local_id.is_none() {
+                return Ok(());
+            }
             let union_type = match &sum_type.kind {
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
                     builder.registry().resolve_type_id(*inner_type)
@@ -192,41 +196,66 @@ pub(super) fn bind_pattern_payload<'thir>(
                 None => lower_type(builder, union_type)?,
             };
             let sum_type_id = lower_type(builder, union_type)?;
-            let result_type_id = if sum_type.is_memory_reference() {
-                builder.types_mut().intern(MIRType::new(
+            let borrowed = sum_type.is_memory_reference();
+            let range = builder.fun().current_scope_range();
+            let value = if borrowed {
+                let result_type_id = builder.types_mut().intern(MIRType::new(
                     MIRTypeKind::MemoryReference {
                         inner: payload_type_id,
                         bitfield: None,
                     },
                     None,
-                ))
+                ));
+                let out = builder
+                    .fun_mut()
+                    .new_register(result_type_id, inner_name.clone());
+                builder.fun_mut().emit_intrinsic(
+                    MIRAggregateIntrinsic::SumVariant {
+                        out: MIRTarget::Register(out),
+                        base: subject,
+                        variant: *variant_index,
+                        sum_ty: sum_type_id,
+                    },
+                    range,
+                );
+                MIRValue::Register(out)
             } else {
-                payload_type_id
+                let source = memory::move_value(builder, subject, sum_type_id, &range)?;
+                let nodrop = payload_type
+                    .map(|id| builder.registry().resolve_type_id(id).is_nodrop())
+                    .unwrap_or_else(|| union_type.is_nodrop());
+                let out = builder.new_place(payload_type_id, inner_name.clone(), nodrop);
+                builder.fun_mut().emit_intrinsic(
+                    MIRAggregateIntrinsic::SumVariantL {
+                        out,
+                        source: source.clone(),
+                        variant: *variant_index,
+                        sum_ty: sum_type_id,
+                    },
+                    range.clone(),
+                );
+                if let MIRValue::Register(register) = source {
+                    builder.emit(MIRInstruction::new(
+                        MIRInstructionKind::Invalidate {
+                            place: MIRBindable::Register(register),
+                            kind: MIRInvalidationKind::Move,
+                        },
+                        range.clone(),
+                    ));
+                }
+                builder.emit(MIRInstruction::new(
+                    MIRInstructionKind::Initialize {
+                        place: MIRBindable::Place(out),
+                    },
+                    range,
+                ));
+                MIRValue::PlaceRef(out)
             };
-            let out = builder
-                .fun_mut()
-                .new_register(result_type_id, inner_name.clone());
-            let range = builder.fun().current_scope_range();
-            let owner = match &subject {
-                MIRValue::PlaceRef(place) => Some(*place),
-                _ => None,
-            };
-            builder.fun_mut().emit_intrinsic(
-                MIRAggregateIntrinsic::SumVariantL {
-                    out: MIRTarget::Register(out),
-                    base: subject,
-                    variant: *variant_index,
-                    sum_ty: sum_type_id,
-                },
-                range,
-            );
-            if let Some(owner) = owner {
-                builder.fun_mut().bind_projection_owner(out, owner);
-            }
-            let value = MIRValue::Register(out);
-            builder.fun_mut().bind_local(*local_id, value.clone());
-            if let Some(name) = inner_name {
-                builder.fun_mut().bind_named_value(name, value);
+            if let Some(local_id) = inner_local_id {
+                builder.fun_mut().bind_local(*local_id, value.clone());
+                if let Some(name) = inner_name {
+                    builder.fun_mut().bind_named_value(name, value);
+                }
             }
         }
         _ => {}

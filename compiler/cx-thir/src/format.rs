@@ -1015,23 +1015,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::TaggedUnionGet {
-                value,
-                variant_type,
-                ..
-            } => {
-                write!(f, "TaggedUnionGet [")?;
-                self.write_type(f, variant_type)?;
-                write!(f, "] <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: value,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
             THIRExpressionKind::TaggedUnionSet {
                 target,
                 variant_index,

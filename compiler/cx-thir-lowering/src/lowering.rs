@@ -356,14 +356,20 @@ pub(crate) fn lower_expression<'thir>(
             _type,
             initial_value,
         } => {
-            let initial_value = lower_expression(builder, initial_value)?;
-            let place = memory::assign_operand_to_place(
-                builder,
-                initial_value,
-                _type,
-                Some(binding_name.clone()),
-                &expr.token_range,
-            )?;
+            let address = lower_expression(builder, initial_value)?;
+            let type_id = lower_type(builder, _type)?;
+            let place = builder.new_place(type_id, Some(binding_name.clone()), _type.is_nodrop());
+            builder.fun_mut().body_mut().mark_adopted(place);
+            builder.fun_mut().emit_intrinsic(
+                MIRInternalIntrinsic::AdoptPlace { place, address },
+                expr.token_range.clone(),
+            );
+            builder.emit(MIRInstruction::new(
+                MIRInstructionKind::Initialize {
+                    place: MIRBindable::Place(place),
+                },
+                expr.token_range.clone(),
+            ));
             let value = MIRValue::PlaceRef(place);
             builder.fun_mut().bind_local(*local_id, value.clone());
             builder
@@ -517,33 +523,6 @@ pub(crate) fn lower_expression<'thir>(
                 MIRAggregateIntrinsic::SumIndex {
                     out: MIRTarget::Register(out),
                     value: base,
-                    sum_ty: sum_type_id,
-                },
-                expr.token_range.clone(),
-            );
-            MIRValue::Register(out)
-        }
-
-        THIRExpressionKind::TaggedUnionGet {
-            value,
-            variant_index,
-            variant_type,
-        } => {
-            let base_value = lower_expression(builder, value)?;
-            let sum_type = match &value._type.kind {
-                THIRTypeKind::MemoryReference { inner_type, .. } => {
-                    builder.registry().resolve_type_id(*inner_type)
-                }
-                _ => &value._type,
-            };
-            let sum_type_id = lower_type(builder, sum_type)?;
-            let variant_type_id = lower_type(builder, variant_type)?;
-            let out = builder.fun_mut().new_register(variant_type_id, None);
-            builder.fun_mut().emit_intrinsic(
-                MIRAggregateIntrinsic::SumVariantL {
-                    out: MIRTarget::Register(out),
-                    base: base_value,
-                    variant: *variant_index,
                     sum_ty: sum_type_id,
                 },
                 expr.token_range.clone(),

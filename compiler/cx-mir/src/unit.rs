@@ -111,6 +111,7 @@ pub struct MIRPlaceDecl {
     pub debug_name: Option<CXIdent>,
     pub nodrop: bool,
     pub scope: MIRScopeID,
+    pub adopted: bool,
 }
 
 #[derive(Debug, Clone)]

@@ -19,10 +19,13 @@ pub struct MIRBody<I = MIRInstruction> {
 
     blocks: Vec<MIRBasicBlock<I>>,
     places: Vec<MIRPlaceDecl>,
+
     parameters: Vec<MIRPlaceID>,
-    registers: Vec<MIRRegisterDecl>,
     comptime_parameters: Vec<MIRComptimeParameter>,
+
+    registers: Vec<MIRRegisterDecl>,
     comptime_registers: Vec<MIRComptimeRegisterDecl>,
+
     scopes: Vec<MIRScopeDecl>,
 }
 
@@ -102,6 +105,12 @@ impl<I> MIRBody<I> {
         self.places.get_mut(id.index())
     }
 
+    pub fn mark_adopted(&mut self, place: MIRPlaceID) {
+        self.place_mut(place)
+            .expect("adopted unknown MIR place")
+            .adopted = true;
+    }
+
     pub fn scopes(&self) -> &[MIRScopeDecl] {
         &self.scopes
     }
@@ -140,6 +149,7 @@ impl<I> MIRBody<I> {
             debug_name,
             nodrop,
             scope,
+            adopted: false,
         });
         id
     }

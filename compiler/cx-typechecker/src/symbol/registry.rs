@@ -175,6 +175,11 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.local_symbols.insert(name, MIRSymbol::Expression(expr));
     }
 
+    pub fn insert_borrowed_local_value(&mut self, name: QualifiedName, expr: THIRExpression) {
+        self.local_symbols
+            .insert(name, MIRSymbol::BorrowedExpression(expr));
+    }
+
     pub fn insert_local_staged_expression_function(
         &mut self,
         name: QualifiedName,

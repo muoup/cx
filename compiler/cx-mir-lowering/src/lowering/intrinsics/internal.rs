@@ -14,6 +14,14 @@ use super::output;
 pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntrinsic) {
     use MIRInternalIntrinsic as I;
     match op {
+        I::AdoptPlace { place, address } => {
+            let result = context.places[place].clone();
+            let address = lower_value(context, address);
+            let LMIRValue::Register { register, _type } = result else {
+                unreachable!("adopted place must have a reserved pointer register")
+            };
+            context.emit(LMIRInstructionKind::Alias { value: address }, _type, Some(register));
+        }
         I::PlaceAddress { out, place } => {
             write_target(context, *out, context.places[place].clone());
         }
