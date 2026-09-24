@@ -30,14 +30,14 @@ pub(crate) fn allocate_variable<'thir>(
             },
             range.clone(),
         ));
-
-        builder.emit(MIRInstruction::new(
-            MIRInstructionKind::Initialize {
-                place: MIRBindable::Place(place),
-            },
-            range.clone(),
-        ));
     }
+
+    builder.emit(MIRInstruction::new(
+        MIRInstructionKind::Initialize {
+            place: MIRBindable::Place(place),
+        },
+        range.clone(),
+    ));
 
     Ok(place)
 }

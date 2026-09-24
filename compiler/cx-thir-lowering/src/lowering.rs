@@ -340,6 +340,7 @@ pub(crate) fn lower_expression<'thir>(
                 initial_value,
                 &expr.token_range,
             )?;
+            
             builder
                 .fun_mut()
                 .bind_local(*local_id, MIRValue::PlaceRef(place));
