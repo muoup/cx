@@ -227,7 +227,7 @@ fn field_offset<R: MTRegistry>(
     None
 }
 
-fn aggregate_field(value: &MIRConstant, index: usize) -> Option<MIRConstant> {
+pub(super) fn aggregate_field(value: &MIRConstant, index: usize) -> Option<MIRConstant> {
     let MIRConstant::Aggregate { fields, .. } = value else {
         return None;
     };

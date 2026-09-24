@@ -1,160 +1,19 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRComptimeBody, MIRConstant, MIRFloatType, MIRIntType, MIRTarget, MIRTypeKind,
-    expr::intrinsic::MIRIntIntrinsic, ty::interface::MTRegistry,
+    MIRComptimeBody, MIRConstant, MIRTypeKind, expr::intrinsic::MIRIntIntrinsic,
+    ty::interface::MTRegistry,
 };
 use cx_tokens::TokenRange;
 
 use crate::{
     ComptimeContext,
-    execution::engine::{Engine, ExecutionFrame},
+    execution::{
+        engine::{Engine, ExecutionFrame},
+        scalar::{bits, bool_const, float_const, int_const, integer, signed},
+        typing::{integer_type, target_type},
+    },
     log::comptime_error,
 };
-
-pub fn truthy(value: &MIRConstant) -> bool {
-    match value {
-        MIRConstant::Integer { value, .. } => *value != 0,
-        MIRConstant::Float { value, .. } => f64::from(value) != 0.0,
-        MIRConstant::Nullptr { .. } | MIRConstant::Undefined => false,
-        _ => true,
-    }
-}
-
-fn bits(ty: MIRIntType) -> u32 {
-    match ty {
-        MIRIntType::I1 => 1,
-        _ => (ty.bytes() * 8) as u32,
-    }
-}
-
-fn mask(value: u128, width: u32) -> u128 {
-    if width == 128 {
-        value
-    } else {
-        value & ((1u128 << width) - 1)
-    }
-}
-
-fn signed(value: u128, width: u32) -> i128 {
-    if width == 128 {
-        value as i128
-    } else {
-        let shift = 128 - width;
-        ((value << shift) as i128) >> shift
-    }
-}
-
-fn integer(value: &MIRConstant, range: &TokenRange) -> CXResult<(u128, MIRIntType)> {
-    match value {
-        MIRConstant::Integer { value, ty } => Ok((mask(*value as u128, bits(*ty)), *ty)),
-        _ => comptime_error(
-            range.clone(),
-            (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "non-integer arithmetic operand".into(),
-            ),
-        ),
-    }
-}
-
-#[allow(dead_code)]
-fn float(value: &MIRConstant, range: &TokenRange) -> CXResult<f64> {
-    match value {
-        MIRConstant::Float { value, .. } => Ok(f64::from(value)),
-        _ => comptime_error(
-            range.clone(),
-            (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "non-float arithmetic operand".into(),
-            ),
-        ),
-    }
-}
-
-fn target_kind<'a, R: MTRegistry>(
-    body: &MIRComptimeBody<'_>,
-    registry: &'a R,
-    target: MIRTarget,
-    _range: &TokenRange,
-) -> CXResult<&'a MIRTypeKind> {
-    let ty = match target {
-        MIRTarget::Place(id) => body.place(id).map(|place| place.ty),
-        MIRTarget::Register(id) => body.register(id).map(|register| register.ty),
-        MIRTarget::Global(_) | MIRTarget::Indirect(_) => None,
-    };
-    ty.and_then(|ty| registry.definition(ty))
-        .map(|ty| ty.kind())
-        .ok_or_else(|| {
-            crate::log::internal_error(
-                &mir::COMPTIME_INVALID_OPERATION,
-                "unknown arithmetic output type".into(),
-                "comptime arithmetic",
-            )
-        })
-}
-
-fn result_int<R: MTRegistry>(
-    body: &MIRComptimeBody<'_>,
-    registry: &R,
-    target: MIRTarget,
-    range: &TokenRange,
-) -> CXResult<MIRIntType> {
-    match target_kind(body, registry, target, range)? {
-        MIRTypeKind::Integer { ty, .. } => Ok(*ty),
-        _ => comptime_error(
-            range.clone(),
-            (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "non-integer arithmetic result".into(),
-            ),
-        ),
-    }
-}
-
-#[allow(dead_code)]
-fn result_float<R: MTRegistry>(
-    body: &MIRComptimeBody<'_>,
-    registry: &R,
-    target: MIRTarget,
-    range: &TokenRange,
-) -> CXResult<MIRFloatType> {
-    match target_kind(body, registry, target, range)? {
-        MIRTypeKind::Float { ty } => Ok(*ty),
-        _ => comptime_error(
-            range.clone(),
-            (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "non-float arithmetic result".into(),
-            ),
-        ),
-    }
-}
-
-fn int_const(value: u128, ty: MIRIntType) -> MIRConstant {
-    MIRConstant::Integer {
-        value: mask(value, bits(ty)) as i128,
-        ty,
-    }
-}
-
-fn bool_const(value: bool) -> MIRConstant {
-    MIRConstant::Integer {
-        value: value as i128,
-        ty: MIRIntType::I1,
-    }
-}
-
-fn float_const(value: f64, ty: MIRFloatType) -> MIRConstant {
-    let value = if ty == MIRFloatType::F32 {
-        (value as f32) as f64
-    } else {
-        value
-    };
-    MIRConstant::Float {
-        value: value.into(),
-        ty,
-    }
-}
 
 pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
     engine: &mut Engine<'c, 'thir, C>,
@@ -170,7 +29,7 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
             let (value, _) = engine
                 .read(frame, value, range)
                 .and_then(|v| integer(&v, range))?;
-            let ty = result_int(body, engine.context().types(), *out, range)?;
+            let ty = integer_type(engine.context().types(), body, *out, range)?;
 
             let result = match op {
                 I::Neg { .. } => int_const(value.wrapping_neg(), ty),
@@ -228,21 +87,7 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
                     ),
                 );
             }
-            let ty = match out {
-                MIRTarget::Place(id) => body.place(*id).map(|place| place.ty),
-                MIRTarget::Register(id) => body.register(*id).map(|register| register.ty),
-                MIRTarget::Global(reference) => Some(reference.ty),
-                MIRTarget::Indirect(_) => None,
-            };
-            let Some(ty) = ty else {
-                return comptime_error(
-                    range.clone(),
-                    (
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "unknown pointer conversion type".into(),
-                    ),
-                );
-            };
+            let ty = target_type(body, *out, range)?;
             if !matches!(
                 engine
                     .context()
@@ -298,7 +143,7 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
                 .read(frame, rhs, range)
                 .and_then(|v| integer(&v, range))?;
             let width = bits(source_ty);
-            let result_ty = result_int(body, engine.context().types(), out, range)?;
+            let result_ty = integer_type(engine.context().types(), body, out, range)?;
             let result = match op {
                 I::Add { .. } => int_const(lhs.wrapping_add(rhs), result_ty),
                 I::Sub { .. } => int_const(lhs.wrapping_sub(rhs), result_ty),

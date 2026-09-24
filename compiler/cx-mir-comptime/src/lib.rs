@@ -1,4 +1,3 @@
-mod arithmetic;
 mod execution;
 mod log;
 

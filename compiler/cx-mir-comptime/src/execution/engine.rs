@@ -11,7 +11,7 @@ use cx_tokens::TokenRange;
 use crate::{
     ComptimeContext,
     execution::{execute_comptime_instruction, execute_runtime_instruction},
-    log::comptime_error,
+    log::{comptime_error, internal_error},
 };
 
 const DEFAULT_STEP_BUDGET: u64 = 1_000_000;
@@ -102,7 +102,7 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
                 .block(frame.block)
                 .and_then(|block| block.instruction(frame.instruction))
                 .ok_or_else(|| {
-                    crate::log::internal_error(
+                    internal_error(
                         &mir::COMPTIME_INVALID_OPERATION,
                         "unterminated comptime block".into(),
                         "comptime execution",
@@ -147,7 +147,7 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
                 .get(register)
                 .cloned()
                 .ok_or_else(|| {
-                    crate::log::internal_error(
+                    internal_error(
                         &mir::COMPTIME_INVALID_OPERATION,
                         "read of uninitialized staged register".into(),
                         "comptime execution",
@@ -302,27 +302,12 @@ impl ExecutionFrame {
         frame
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn places(&self) -> &HashMap<MIRPlaceID, MIRConstant> {
-        &self.places
-    }
-
     pub(crate) fn places_mut(&mut self) -> &mut HashMap<MIRPlaceID, MIRConstant> {
         &mut self.places
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn registers(&self) -> &HashMap<MIRRegisterID, MIRConstant> {
-        &self.registers
-    }
-
     pub(crate) fn registers_mut(&mut self) -> &mut HashMap<MIRRegisterID, MIRConstant> {
         &mut self.registers
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn comptime_registers(&self) -> &HashMap<MIRComptimeRegisterID, MIRComptimeValue> {
-        &self.comptime_registers
     }
 
     pub(crate) fn comptime_registers_mut(

@@ -1,18 +1,25 @@
+mod arithmetic;
 pub(crate) mod engine;
 mod intrinsics;
 pub(crate) mod memory;
+mod scalar;
+mod typing;
 
 pub use engine::{Engine, EngineLimits};
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRBindable, MIRComptimeBody, MIRComptimeOp, MIRComptimeOutput, MIRComptimeValue, MIRConstant,
-    MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRStagedExpression,
+    MIRInstruction, MIRInstructionKind, MIRStagedExpression,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 
-use crate::{ComptimeContext, arithmetic, execution::engine::ExecutionFrame, log::comptime_error};
+use crate::{
+    ComptimeContext,
+    execution::engine::ExecutionFrame,
+    log::{comptime_error, internal_error},
+};
 
 pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'thir>>(
     engine: &mut Engine<'c, 'thir, Context>,
@@ -51,7 +58,7 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             );
         }
         MIRInstructionKind::IntrinsicOp(intrinsic) => {
-            execute_intrinsic(engine, frame, body, intrinsic, range)?;
+            intrinsics::execute(engine, frame, body, intrinsic, range)?;
         }
         MIRInstructionKind::Return { value } => {
             return Ok(Some(match value {
@@ -66,7 +73,7 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             false_target,
         } => {
             let cond = engine.read(frame, cond, range)?;
-            let target = if arithmetic::truthy(&cond) {
+            let target = if scalar::truthy(&cond) {
                 true_target
             } else {
                 false_target
@@ -116,7 +123,7 @@ pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'
     match op {
         MIRComptimeOp::Call { out, callee, args } => {
             let function = engine.context().function(*callee).ok_or_else(|| {
-                crate::log::internal_error(
+                internal_error(
                     &mir::COMPTIME_INVALID_OPERATION,
                     "unknown comptime function".into(),
                     "comptime execution",
@@ -124,7 +131,7 @@ pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'
             })?;
 
             let body = function.body().ok_or_else(|| {
-                crate::log::internal_error(
+                internal_error(
                     &mir::COMPTIME_INVALID_OPERATION,
                     "undefined comptime function".into(),
                     "comptime execution",
@@ -187,17 +194,5 @@ pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'
             Some(value) => engine.read_comptime(frame, value, range)?,
             None => MIRComptimeValue::Constant(MIRConstant::Unit),
         })),
-    }
-}
-
-pub(crate) fn execute_intrinsic<'c, 'thir, Context: ComptimeContext<'thir>>(
-    engine: &mut Engine<'c, 'thir, Context>,
-    frame: &mut ExecutionFrame,
-    body: &MIRComptimeBody<'_>,
-    intrinsic: &MIRIntrinsic,
-    range: &TokenRange,
-) -> CXResult<()> {
-    match intrinsic {
-        intrinsic => intrinsics::execute(engine, frame, body, intrinsic, range),
     }
 }
