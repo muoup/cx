@@ -1,13 +1,13 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRComptimeBody, MIRConstant, MIRFloatType, MIRIntType, MIRTarget, MIRTypeKind, expr::intrinsic::MIRIntIntrinsic,
-    ty::interface::MTRegistry,
+    MIRComptimeBody, MIRConstant, MIRFloatType, MIRIntType, MIRTarget, MIRTypeKind,
+    expr::intrinsic::MIRIntIntrinsic, ty::interface::MTRegistry,
 };
 use cx_tokens::TokenRange;
 
 use crate::{
     ComptimeContext,
-    engine::{Engine, ExecutionFrame},
+    execution::engine::{Engine, ExecutionFrame},
     log::comptime_error,
 };
 
@@ -167,10 +167,11 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
 
     match op {
         I::Neg { out, value } | I::BNot { out, value } | I::LNot { out, value } => {
-            let (value, _) = engine.read(frame, value, range)
+            let (value, _) = engine
+                .read(frame, value, range)
                 .and_then(|v| integer(&v, range))?;
             let ty = result_int(body, engine.context().types(), *out, range)?;
-            
+
             let result = match op {
                 I::Neg { .. } => int_const(value.wrapping_neg(), ty),
                 I::BNot { .. } => int_const(!value, ty),
@@ -179,21 +180,22 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
 
             engine.write(frame, out, result)?;
         }
-        
+
         I::IntCast {
             out,
             value,
             target,
             sign_extend,
         } => {
-            let (value, source) = engine.read(frame, value, range)
+            let (value, source) = engine
+                .read(frame, value, range)
                 .and_then(|v| integer(&v, range))?;
             let result = if *sign_extend {
                 signed(value, bits(source)) as u128
             } else {
                 value
             };
-            
+
             engine.write(frame, out, int_const(result, *target))?;
         }
         I::ToFloat {
@@ -202,23 +204,63 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
             target,
             signed: is_signed,
         } => {
-            let (value, source) = engine.read(frame, value, range)
+            let (value, source) = engine
+                .read(frame, value, range)
                 .and_then(|v| integer(&v, range))?;
             let float_value = if *is_signed {
                 signed(value, bits(source)) as f64
             } else {
                 value as f64
             };
-            
+
             engine.write(frame, out, float_const(float_value, *target))?;
         }
-        I::ToPtr { .. } => return comptime_error(
-            range.clone(),
-            (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "pointer arithmetic is not supported".into(),
-            ),
-        ),
+        I::ToPtr { out, value } => {
+            let (value, _) = engine
+                .read(frame, value, range)
+                .and_then(|v| integer(&v, range))?;
+            if value != 0 {
+                return comptime_error(
+                    range.clone(),
+                    (
+                        &mir::COMPTIME_INVALID_OPERATION,
+                        "convert a nonzero integer to a pointer".into(),
+                    ),
+                );
+            }
+            let ty = match out {
+                MIRTarget::Place(id) => body.place(*id).map(|place| place.ty),
+                MIRTarget::Register(id) => body.register(*id).map(|register| register.ty),
+                MIRTarget::Global(reference) => Some(reference.ty),
+                MIRTarget::Indirect(_) => None,
+            };
+            let Some(ty) = ty else {
+                return comptime_error(
+                    range.clone(),
+                    (
+                        &mir::COMPTIME_INVALID_OPERATION,
+                        "unknown pointer conversion type".into(),
+                    ),
+                );
+            };
+            if !matches!(
+                engine
+                    .context()
+                    .types()
+                    .definition(ty)
+                    .map(|definition| definition.kind()),
+                Some(MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. })
+            ) {
+                return comptime_error(
+                    range.clone(),
+                    (
+                        &mir::COMPTIME_INVALID_OPERATION,
+                        "integer conversion to a non-pointer type".into(),
+                    ),
+                );
+            }
+            engine.write(frame, out, MIRConstant::Nullptr { ty })?;
+        }
         _ => {
             let (out, lhs, rhs) = match op {
                 I::Add { out, lhs, rhs }
@@ -249,9 +291,11 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
                 | I::LRShift { out, lhs, rhs } => (*out, lhs, rhs),
                 _ => unreachable!(),
             };
-            let (lhs, source_ty) = engine.read(frame, lhs, range)
+            let (lhs, source_ty) = engine
+                .read(frame, lhs, range)
                 .and_then(|v| integer(&v, range))?;
-            let (rhs, _) = engine.read(frame, rhs, range)
+            let (rhs, _) = engine
+                .read(frame, rhs, range)
                 .and_then(|v| integer(&v, range))?;
             let width = bits(source_ty);
             let result_ty = result_int(body, engine.context().types(), out, range)?;

@@ -2,7 +2,9 @@ use std::{collections::HashMap, marker::PhantomData};
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRComptimeBody, MIRComptimeInstruction, MIRComptimeOperand, MIRComptimeParameter, MIRComptimeRegisterID, MIRComptimeValue, MIRConstant, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
+    MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRComptimeBody, MIRComptimeInstruction,
+    MIRComptimeOperand, MIRComptimeParameter, MIRComptimeRegisterID, MIRComptimeValue, MIRConstant,
+    MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
 };
 use cx_tokens::TokenRange;
 
@@ -210,7 +212,7 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
                 frame.places_mut().insert(*id, value);
                 Ok(())
             }
-            
+
             MIRTarget::Register(id) => {
                 frame.registers_mut().insert(*id, value);
                 Ok(())

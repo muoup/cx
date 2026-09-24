@@ -1,12 +1,18 @@
+pub(crate) mod engine;
+mod intrinsics;
+pub(crate) mod memory;
+
+pub use engine::{Engine, EngineLimits};
+
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRBindable, MIRComptimeBody, MIRComptimeOp, MIRComptimeOutput, MIRComptimeValue, MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRStagedExpression, MIRValue, expr::instruction::MIRInvalidationKind
+    MIRBindable, MIRComptimeBody, MIRComptimeOp, MIRComptimeOutput, MIRComptimeValue, MIRConstant,
+    MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRStagedExpression,
+    expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 
-use crate::{
-    ComptimeContext, arithmetic::{self, execute_integer_op}, engine::{Engine, ExecutionFrame}, log::comptime_error,
-};
+use crate::{ComptimeContext, arithmetic, execution::engine::ExecutionFrame, log::comptime_error};
 
 pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'thir>>(
     engine: &mut Engine<'c, 'thir, Context>,
@@ -31,17 +37,7 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             }
         }
         MIRInstructionKind::Lift { out, source } => {
-            let value = match source {
-                cx_mir::MIRTarget::Place(place) => {
-                    engine.read(frame, &MIRValue::PlaceRef(*place), range)?
-                }
-                _ => {
-                    return comptime_error(
-                        range.clone(),
-                        (&mir::COMPTIME_INVALID_OPERATION, "indirect lift".into()),
-                    );
-                }
-            };
+            let value = memory::read_target(engine, frame, *source, range)?;
             frame.registers_mut().insert(*out, value);
         }
         MIRInstructionKind::Store { target, value, .. } => {
@@ -202,8 +198,6 @@ pub(crate) fn execute_intrinsic<'c, 'thir, Context: ComptimeContext<'thir>>(
     range: &TokenRange,
 ) -> CXResult<()> {
     match intrinsic {
-        MIRIntrinsic::Int(op) => execute_integer_op(engine, frame, body, op, range),
-
-        _ => todo!(),
+        intrinsic => intrinsics::execute(engine, frame, body, intrinsic, range),
     }
 }

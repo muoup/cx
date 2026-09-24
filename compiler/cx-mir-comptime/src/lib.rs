@@ -1,5 +1,4 @@
 mod arithmetic;
-mod engine;
 mod execution;
 mod log;
 
@@ -18,12 +17,12 @@ pub trait ComptimeContext<'thir> {
     fn add_staged_expression(&self, expression: MIRStagedExpression<'thir>) -> MIRStagedID;
 }
 
-pub use engine::EngineLimits;
+pub use execution::EngineLimits;
 
 pub fn evaluate_body<'c, 'thir, C: ComptimeContext<'thir>>(
     context: &'c C,
     body: &MIRComptimeBody<'thir>,
     args: &[MIRComptimeValue],
 ) -> CXResult<MIRComptimeValue> {
-    engine::Engine::new(context).run(body, args)
+    execution::Engine::new(context).run(body, args)
 }
