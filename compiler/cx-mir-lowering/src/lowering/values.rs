@@ -25,6 +25,9 @@ pub(crate) fn lower_rvalue(
     value: &MIRValue,
     expected: MIRTypeID,
 ) -> LMIRValue {
+    if context.ty(expected).is_void() {
+        return LMIRValue::NULL;
+    }
     if let MIRValue::Register(register) = value {
         let source_ty = context.body.register(*register).unwrap().ty;
         if !matches!(
@@ -54,7 +57,14 @@ pub(crate) fn lower_rvalue(
             context.types().definition(expected).unwrap().kind(),
             MIRTypeKind::MemoryReference { .. }
         ) {
-            return address;
+            return if matches!(
+                context.types().definition(source_ty).unwrap().kind(),
+                MIRTypeKind::MemoryReference { .. }
+            ) {
+                memory::load(context, address, source_ty)
+            } else {
+                address
+            };
         }
         if context.ty(source_ty).is_memory_resident() {
             return address;

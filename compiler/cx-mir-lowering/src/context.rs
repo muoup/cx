@@ -140,15 +140,18 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
             .args
             .iter()
             .zip(params)
-            .map(|(arg, parameter)| {
+            .filter_map(|(arg, parameter)| {
                 let ty = self.body.register(*parameter).unwrap().ty;
+                if self.ty(ty).is_void() {
+                    return None;
+                }
                 let value = crate::lowering::values::lower_rvalue(self, arg, ty);
                 if self.ty(ty).is_memory_resident() {
                     let copy = memory::allocate(self, ty);
                     memory::store(self, copy.clone(), value, ty);
-                    copy
+                    Some(copy)
                 } else {
-                    value
+                    Some(value)
                 }
             })
             .collect();

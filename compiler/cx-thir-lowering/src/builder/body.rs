@@ -151,6 +151,16 @@ impl<'thir> MIRBodyBuilder<'thir> {
         }
     }
 
+    pub fn block_parameter_type(&self, block: MIRBasicBlockID, index: usize) -> Option<MIRTypeID> {
+        let parameter = match &self.kind {
+            MIRBodyKind::Runtime { body, .. } => body.block(block)?.params().get(index).copied(),
+            MIRBodyKind::Comptime { body, .. } | MIRBodyKind::ComptimeScratch { body } => {
+                body.block(block)?.params().get(index).copied()
+            }
+        }?;
+        self.register(parameter).map(|register| register.ty)
+    }
+
     pub fn add_block(&mut self, name: Option<CXIdent>) -> MIRBasicBlockID {
         match &mut self.kind {
             MIRBodyKind::Runtime { body, .. } => match name {

@@ -532,10 +532,10 @@ fn write_instruction<T: MTRegistry>(
             }
             write_bindable(f, unit, function, place)
         }
-        MIRInstructionKind::LiftPlace { out, place } => {
+        MIRInstructionKind::Lift { out, source } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = lift ")?;
-            write_place_name(f, unit, function, *place)
+            write_target(f, unit, function, *source)
         }
         MIRInstructionKind::BindLifetime { bind, bind_to: to } => {
             f.write_str("bind ")?;

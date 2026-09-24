@@ -413,6 +413,7 @@ fn lower_increment<'thir>(
 ) -> CXResult<MIRValue> {
     let operand_value = lower_expression(builder, operand)?;
     let operand_target = memory::expect_target(&operand_value);
+    
     let THIRTypeKind::MemoryReference { inner_type, .. } = &operand._type.kind
     else {
         unreachable!("increment operand must have reference type");
@@ -426,16 +427,9 @@ fn lower_increment<'thir>(
     let ty = lower_type_id(builder, *inner_type)?;
     let previous = builder.fun_mut().new_register(ty, None);
 
-    let read = match operand_target {
-        MIRTarget::Place(place) => MIRInstructionKind::LiftPlace {
-            out: previous,
-            place,
-        },
-        _ => MIRInstructionKind::Store {
-            target: MIRTarget::Register(previous),
-            value: operand_value.clone(),
-            ty,
-        },
+    let read = MIRInstructionKind::Lift {
+        out: previous,
+        source: operand_target,
     };
     builder.emit(MIRInstruction::new(read, expr.token_range.clone()));
 

@@ -24,6 +24,7 @@ pub(super) fn lower_function<'mir>(
         let params = block
             .params()
             .iter()
+            .filter(|id| !context.ty(body.register(**id).unwrap().ty).is_void())
             .map(|id| {
                 let LMIRValue::Register { register, _type } = context.reg(*id) else {
                     unreachable!()

@@ -459,7 +459,7 @@ pub(crate) fn lower_expression<'thir>(
         }
 
         THIRExpressionKind::PatternIs { lhs, pattern } => {
-            aggregates::lower_pattern_test(builder, lhs, pattern, &expr._type)?
+            aggregates::lower_pattern_test(builder, lhs, pattern, &expr._type, None)?
         }
 
         THIRExpressionKind::Unpack {
@@ -894,6 +894,12 @@ pub(crate) fn lower_expression<'thir>(
                     ),
                 );
             };
+
+            if let Some(value) = &value
+                && let Some(expected) = builder.fun().body().block_parameter_type(block_id, 0)
+            {
+                memory::check_block_argument(builder, value, expected, &expr.token_range)?;
+            }
 
             let args = value.into_iter().collect();
             auto_cleanup_before(builder, scope_id, expr.token_range.clone())?;

@@ -30,8 +30,18 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
                 }
             }
         }
-        MIRInstructionKind::LiftPlace { out, place } => {
-            let value = engine.read(frame, &MIRValue::PlaceRef(*place), range)?;
+        MIRInstructionKind::Lift { out, source } => {
+            let value = match source {
+                cx_mir::MIRTarget::Place(place) => {
+                    engine.read(frame, &MIRValue::PlaceRef(*place), range)?
+                }
+                _ => {
+                    return comptime_error(
+                        range.clone(),
+                        (&mir::COMPTIME_INVALID_OPERATION, "indirect lift".into()),
+                    );
+                }
+            };
             frame.registers_mut().insert(*out, value);
         }
         MIRInstructionKind::Store { target, value, .. } => {

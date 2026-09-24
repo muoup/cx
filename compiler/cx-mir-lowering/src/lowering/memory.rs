@@ -106,6 +106,9 @@ pub(crate) fn load(
     ty: MIRTypeID,
 ) -> LMIRValue {
     let lowered = context.ty(ty);
+    if lowered.is_void() {
+        return LMIRValue::NULL;
+    }
     if lowered.is_memory_resident() {
         address
     } else {

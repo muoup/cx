@@ -23,6 +23,7 @@ pub(super) fn lower_pattern_test<'thir>(
     lhs: &'thir THIRExpression,
     pattern: &THIRPattern,
     result_type: &'thir THIRType,
+    subject: Option<MIRValue>,
 ) -> CXResult<MIRValue> {
     let token_range = lhs.token_range.clone();
     let tested = match pattern {
@@ -51,7 +52,10 @@ pub(super) fn lower_pattern_test<'thir>(
                 None,
             ));
             let out = builder.fun_mut().new_register(tag_type, None);
-            let value = lower_expression(builder, lhs)?;
+            let value = match subject {
+                Some(value) => value,
+                None => lower_expression(builder, lhs)?,
+            };
             builder.fun_mut().emit_intrinsic(
                 MIRAggregateIntrinsic::SumIndex {
                     out: MIRTarget::Register(out),
@@ -70,7 +74,10 @@ pub(super) fn lower_pattern_test<'thir>(
             )
         }
         THIRPattern::Integer(value) => {
-            let input = lower_expression(builder, lhs)?;
+            let input = match subject {
+                Some(value) => value,
+                None => lower_expression(builder, lhs)?,
+            };
             let ty = match lhs._type.kind {
                 THIRTypeKind::Integer { _type, .. } => lower_int_type(_type),
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
@@ -104,7 +111,10 @@ pub(super) fn lower_pattern_test<'thir>(
             )
         }
         THIRPattern::Float(value, ty) => (
-            lower_expression(builder, lhs)?,
+            match subject {
+                Some(value) => value,
+                None => lower_expression(builder, lhs)?,
+            },
             MIRValue::Constant(MIRConstant::Float {
                 value: *value,
                 ty: lower_float_type(*ty),
@@ -165,32 +175,37 @@ pub(super) fn bind_pattern_payload<'thir>(
             inner_name,
             ..
         } => {
-            let payload_type = match &sum_type.kind {
+            let union_type = match &sum_type.kind {
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
-                    match &builder.registry().resolve_type_id(*inner_type).kind {
-                        THIRTypeKind::Structured { fields, .. }
-                        | THIRTypeKind::Union { variants: fields, .. }
-                        | THIRTypeKind::TaggedUnion { variants: fields, .. } => {
-                            fields.get(*variant_index).map(|field| field.ty())
-                        }
-                        _ => None,
-                    }
+                    builder.registry().resolve_type_id(*inner_type)
                 }
-                THIRTypeKind::Structured { fields, .. }
-                | THIRTypeKind::Union { variants: fields, .. }
-                | THIRTypeKind::TaggedUnion { variants: fields, .. } => {
-                    fields.get(*variant_index).map(|field| field.ty())
+                _ => sum_type,
+            };
+            let payload_type = match &union_type.kind {
+                THIRTypeKind::TaggedUnion { variants } => {
+                    variants.get(*variant_index).map(|field| field.ty())
                 }
-                _ => None,
+                _ => unreachable!("tagged union pattern has a non-union subject"),
             };
             let payload_type_id = match payload_type {
                 Some(type_id) => lower_type_id(builder, type_id)?,
-                None => lower_type(builder, sum_type)?,
+                None => lower_type(builder, union_type)?,
             };
-            let sum_type_id = lower_type(builder, sum_type)?;
+            let sum_type_id = lower_type(builder, union_type)?;
+            let result_type_id = if sum_type.is_memory_reference() {
+                builder.types_mut().intern(MIRType::new(
+                    MIRTypeKind::MemoryReference {
+                        inner: payload_type_id,
+                        bitfield: None,
+                    },
+                    None,
+                ))
+            } else {
+                payload_type_id
+            };
             let out = builder
                 .fun_mut()
-                .new_register(payload_type_id, inner_name.clone());
+                .new_register(result_type_id, inner_name.clone());
             let range = builder.fun().current_scope_range();
             builder.fun_mut().emit_intrinsic(
                 MIRAggregateIntrinsic::SumVariantL {

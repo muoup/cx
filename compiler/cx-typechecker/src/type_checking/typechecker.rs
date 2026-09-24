@@ -235,6 +235,7 @@ fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
+            env.push_scope(false, false, condition.token_range().clone());
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
@@ -243,6 +244,8 @@ fn typecheck_expr_inner(
             env.push_scope(false, false, then_branch.token_range().clone());
             let then_result = typecheck_expr(env, namespace, then_branch, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
             env.pop_scope()
                 .map_err(|err| env.complete_err(err, expr.token_range()))?;
 

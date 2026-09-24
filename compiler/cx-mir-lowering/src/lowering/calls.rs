@@ -46,6 +46,7 @@ pub(super) fn lower_call(
                         ));
                     }
                 }
+                LMIRParameterABI::Direct { slots } if slots.is_empty() => {}
                 LMIRParameterABI::Direct { .. } => {
                     lowered.push(values::lower_rvalue(context, argument, param_ty));
                 }

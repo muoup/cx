@@ -6,7 +6,7 @@ use cx_mir::{
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{THIRExpression, THIRLocalID},
+    expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
@@ -15,7 +15,7 @@ use cx_tokens::TokenRange;
 use crate::{
     builder::{DeferredExpression, MIRBuilder},
     log::log_mir_error,
-    lowering::{aggregates, comptime, lower_expression, memory, types::lower_type},
+    lowering::{aggregates, comptime, lower_expression, memory, operators, types::lower_type},
 };
 
 pub fn lower_scoped<'thir>(
@@ -139,7 +139,13 @@ pub(super) fn lower_if<'thir>(
     let yield_register =
         yielding.then(|| builder.fun_mut().set_yield_recipient(merge, result_type_id));
 
-    let condition_value = lower_scoped(builder, condition)?;
+    let (condition_value, pattern_subject) = match lower_pattern_if_condition(builder, condition) {
+        Some(result) => {
+            let (value, subject, pattern, ty) = result?;
+            (value, Some((subject, pattern, ty)))
+        }
+        None => (lower_scoped(builder, condition)?, None),
+    };
     builder.emit(MIRInstruction::new(
         MIRInstructionKind::Branch {
             cond: condition_value,
@@ -150,6 +156,10 @@ pub(super) fn lower_if<'thir>(
     ));
 
     builder.fun_mut().set_current_block(then_block);
+
+    if let Some((subject, pattern, ty)) = pattern_subject {
+        aggregates::bind_pattern_payload(builder, pattern, subject, ty)?;
+    }
 
     builder.fun_mut().push_control_scope();
     if yielding {
@@ -201,6 +211,41 @@ pub(super) fn lower_if<'thir>(
         Some(reg) => MIRValue::Register(reg),
         None => MIRValue::Constant(MIRConstant::Unit),
     })
+}
+
+fn lower_pattern_if_condition<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    condition: &'thir THIRExpression,
+) -> Option<CXResult<(MIRValue, MIRValue, &'thir THIRPattern, &'thir THIRType)>> {
+    match &condition.kind {
+        THIRExpressionKind::PatternIs { lhs, pattern } => Some((|| {
+            let subject = lower_expression(builder, lhs)?;
+            let result = aggregates::lower_pattern_test(
+                builder,
+                lhs,
+                pattern,
+                &condition._type,
+                Some(subject.clone()),
+            )?;
+            Ok((result, subject, pattern, &lhs._type))
+        })()),
+        THIRExpressionKind::TypeConversion { operand, conversion } => {
+            lower_pattern_if_condition(builder, operand).map(|result| {
+                let (value, subject, pattern, ty) = result?;
+                let value = operators::lower_coercion(
+                    builder,
+                    condition,
+                    value,
+                    conversion,
+                    &operand._type,
+                    &condition._type,
+                )?;
+                Ok((value, subject, pattern, ty))
+            })
+        }
+        THIRExpressionKind::Typechange(operand) => lower_pattern_if_condition(builder, operand),
+        _ => None,
+    }
 }
 
 pub(super) fn lower_while<'thir>(
@@ -512,6 +557,9 @@ pub(super) fn lower_match<'thir>(
             &condition._type,
         )?;
         let body_value = lower_expression(builder, body)?;
+        if output.is_some() {
+            memory::check_block_argument(builder, &body_value, result_type_id, &body.token_range)?;
+        }
         auto_pop_scope(builder)?;
         builder.fun_mut().pop_control_scope();
         let args = output.map(|_| vec![body_value]).unwrap_or_default();

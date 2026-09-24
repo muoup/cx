@@ -1,6 +1,6 @@
 use crate::lowering::memory;
 use cx_lmir::{LMIRBasicBlock, LMIRBlockTarget, LMIRInstruction, LMIRInstructionKind};
-use cx_mir::{MIRInstruction, MIRInstructionKind};
+use cx_mir::{MIRInstruction, MIRInstructionKind, MIRTarget};
 use cx_util::identifier::CXIdent;
 
 use crate::context::FunctionContext;
@@ -15,10 +15,23 @@ pub(super) fn lower_instruction(
         MIRInstructionKind::Initialize { .. }
         | MIRInstructionKind::Invalidate { .. }
         | MIRInstructionKind::BindLifetime { .. } => {}
-        MIRInstructionKind::LiftPlace { out, place } => {
-            let source = context.places[place].clone();
-            let ty = context.body.place(*place).expect("unknown lifted place").ty;
-            if context.ty(ty).is_memory_resident() {
+        MIRInstructionKind::Lift { out, source } => {
+            let ty = values::target_type(context, *source);
+            let source = match source {
+                MIRTarget::Place(place) => context.places[place].clone(),
+                MIRTarget::Global(reference) => values::global_address(context, *reference),
+                MIRTarget::Indirect(register) => context.reg(*register),
+                MIRTarget::Register(_) => unreachable!("lift source must be addressable"),
+            };
+            if context.ty(ty).is_void() {
+                memory::assign(
+                    context,
+                    *out,
+                    LMIRInstructionKind::Alias {
+                        value: cx_lmir::LMIRValue::NULL,
+                    },
+                );
+            } else if context.ty(ty).is_memory_resident() {
                 let copy = memory::allocate(context, ty);
                 memory::store(context, copy.clone(), source, ty);
                 memory::assign(context, *out, LMIRInstructionKind::Alias { value: copy });

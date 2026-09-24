@@ -1,14 +1,16 @@
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_mir::{
     MIRBindable, MIRConstant, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRRegister,
     MIRTarget, MIRTypeID, MIRValue,
 };
+use cx_mir::ty::interface::MTRegistry;
 use cx_thir::thir::data::THIRType;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::builder::MIRBuilder;
+use crate::log::log_mir_error;
 use crate::lowering::types::lower_type;
 
 pub(crate) fn allocate_variable<'thir>(
@@ -51,6 +53,34 @@ pub(crate) fn expect_target(value: &MIRValue) -> MIRTarget {
     }
 }
 
+pub(crate) fn check_block_argument(
+    builder: &MIRBuilder<'_>,
+    value: &MIRValue,
+    expected: MIRTypeID,
+    range: &TokenRange,
+) -> CXResult<()> {
+    let MIRValue::Register(register) = value else {
+        return Ok(());
+    };
+    let actual = builder.fun().register_type(*register).expect("unknown block argument");
+    let expected_kind = builder.types().definition(expected).unwrap().kind();
+    let actual_kind = builder.types().definition(actual).unwrap().kind();
+    if expected_kind != actual_kind {
+        return log_mir_error(
+            range,
+            (
+                &typecheck::TYPE_MISMATCH,
+                (
+                    "block argument".into(),
+                    format!("{expected_kind:?}"),
+                    format!("{actual_kind:?}"),
+                ),
+            ),
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn target_register(builder: &mut MIRBuilder<'_>, ty: MIRTypeID) -> MIRRegister {
     builder.fun_mut().new_register(ty, None)
 }
@@ -73,14 +103,7 @@ pub(crate) fn copy(
 ) -> MIRValue {
     let target = expect_target(&value);
     let out = target_register(builder, ty);
-    let kind = match target {
-        MIRTarget::Place(place) => MIRInstructionKind::LiftPlace { out, place },
-        _ => MIRInstructionKind::Store {
-            target: MIRTarget::Register(out),
-            value,
-            ty,
-        },
-    };
+    let kind = MIRInstructionKind::Lift { out, source: target };
     builder.emit(MIRInstruction::new(kind, range.clone()));
 
     MIRValue::Register(out)
@@ -96,7 +119,10 @@ pub(crate) fn move_value(
         MIRValue::PlaceRef(place) => {
             let out = target_register(builder, ty);
             builder.emit(MIRInstruction::new(
-                MIRInstructionKind::LiftPlace { out, place },
+                MIRInstructionKind::Lift {
+                    out,
+                    source: MIRTarget::Place(place),
+                },
                 range.clone(),
             ));
             builder.emit(MIRInstruction::new(

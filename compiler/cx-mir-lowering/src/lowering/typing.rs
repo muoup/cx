@@ -94,7 +94,9 @@ fn classify_param(
         types.definition(ty).unwrap().kind(),
         MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. }
     );
-    let abi = if !lowered.is_memory_resident() {
+    let abi = if lowered.is_void() {
+        LMIRParameterABI::Direct { slots: Vec::new() }
+    } else if !lowered.is_memory_resident() {
         LMIRParameterABI::Direct {
             slots: vec![LMIRABISlot {
                 offset: 0,

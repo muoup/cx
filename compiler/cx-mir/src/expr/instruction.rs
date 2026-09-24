@@ -106,11 +106,9 @@ pub enum MIRInstructionKind {
         kind: MIRInvalidationKind,
     },
 
-    // Lifts a value out of a place into a register, if the register is untouched before use, it can avoid the need for a true
-    // intermediate copy.
-    LiftPlace {
+    Lift {
         out: MIRRegisterID,
-        place: MIRPlaceID,
+        source: MIRTarget,
     },
     // Declares (for analysis) that a register or place must live at least as long as 'bind_to' for ownership analysis
     // registe

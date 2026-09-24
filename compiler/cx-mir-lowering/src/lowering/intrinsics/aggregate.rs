@@ -59,7 +59,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
             let (offset, field_ty, _) = field_location(context, *struct_ty, *field);
             let base = lower_read(context, base);
             let address = memory::offset(context, base, offset as i64);
-            write_projection(context, *out, address, field_ty);
+            write_projection(context, *out, address, field_ty, false);
         }
         A::ArrayIndex {
             out,
@@ -81,7 +81,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                 },
                 context.pointer(),
             );
-            write_projection(context, *out, address, *element_ty);
+            write_projection(context, *out, address, *element_ty, false);
         }
         A::SumIndex { out, value, sum_ty } => {
             let base = lower_read(context, value);
@@ -112,7 +112,8 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
         } => {
             let address = context.places[base].clone();
             let payload = variant_type(context, *sum_ty, *variant);
-            write_projection(context, *out, address, payload);
+            let as_value = target_type(context, *out) == payload;
+            write_projection(context, *out, address, payload, as_value);
         }
         A::SumVariantL {
             out,
@@ -122,7 +123,8 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
         } => {
             let address = lower_read(context, base);
             let payload = variant_type(context, *sum_ty, *variant);
-            write_projection(context, *out, address, payload);
+            let as_value = target_type(context, *out) == payload;
+            write_projection(context, *out, address, payload, as_value);
         }
     }
 }
@@ -132,9 +134,10 @@ fn write_projection(
     target: MIRTarget,
     address: LMIRValue,
     value_ty: MIRTypeID,
+    as_value: bool,
 ) {
     let result_ty = target_type(context, target);
-    let value = if matches!(
+    let value = if !as_value && matches!(
         context.types().definition(result_ty).unwrap().kind(),
         MIRTypeKind::MemoryReference { .. }
     ) {

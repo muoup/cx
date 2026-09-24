@@ -251,7 +251,7 @@ fn internal(
                 return implicit::coercion_expr(
                     expr,
                     target_type.clone(),
-                    THIRCoercion::ReinterpretBits,
+                    THIRCoercion::Typechange,
                 );
             }
 
@@ -264,7 +264,7 @@ fn internal(
                 return implicit::coercion_expr(
                     expr,
                     target_type.clone(),
-                    THIRCoercion::ReinterpretBits,
+                    THIRCoercion::Typechange,
                 );
             }
 

@@ -179,13 +179,24 @@ impl AnalysisPass for Ownership {
                         .set(place.clone(), LatticeState::Known(OwnershipState::Moved));
                 }
             }
-            MIRInstructionKind::LiftPlace { out, place } => {
-                self.require_available(
-                    env,
-                    &MIRBindable::Place(*place),
-                    "was read",
-                    &instruction.token_range,
-                )?;
+            MIRInstructionKind::Lift { out, source } => {
+                match source {
+                    MIRTarget::Place(place) => self.require_available(
+                        env,
+                        &MIRBindable::Place(*place),
+                        "was read",
+                        &instruction.token_range,
+                    )?,
+                    MIRTarget::Indirect(register) | MIRTarget::Register(register) => {
+                        self.require_available(
+                            env,
+                            &MIRBindable::Register(*register),
+                            "was read",
+                            &instruction.token_range,
+                        )?
+                    }
+                    MIRTarget::Global(_) => {}
+                }
                 self.table.set(
                     MIRBindable::Register(*out),
                     LatticeState::Known(OwnershipState::Available),
