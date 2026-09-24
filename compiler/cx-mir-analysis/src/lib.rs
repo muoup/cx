@@ -18,7 +18,7 @@ impl Default for MIRAnalysisOptions {
     fn default() -> Self {
         Self {
             ownership: true,
-            values: false,
+            values: true,
         }
     }
 }

@@ -6,13 +6,10 @@ use cx_mir::{
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::thir::{
-    contextual_eq::TypeContextEqual,
-    data::THIRType,
-    expression::{
+    contextual_eq::TypeContextEqual, data::THIRType, expression::{
         THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
         THIRPtrBinOp, THIRPtrDiffBinOp, THIRUnOp,
-    },
-    r#type::THIRTypeKind,
+    }, r#type::{THIRIntType, THIRTypeKind},
 };
 use cx_thir::type_context::THIRTypeContext;
 
@@ -528,19 +525,28 @@ pub(super) fn lower_coercion<'thir>(
     match coercion {
         THIRCoercion::Integral {
             sextend,
-            from_type: _,
+            from_type,
             to_type,
         } => {
             let out = builder.fun_mut().new_register(mir_to_type, None);
-            builder.fun_mut().emit_intrinsic(
+            let intrinsic = if *to_type == THIRIntType::I1 {
+                MIRIntIntrinsic::Neq {
+                    out: MIRTarget::Register(out),
+                    lhs: operand,
+                    rhs: MIRValue::Constant(MIRConstant::Integer {
+                        value: 0,
+                        ty: lower_int_type(*from_type),
+                    }),
+                }
+            } else {
                 MIRIntIntrinsic::IntCast {
                     out: MIRTarget::Register(out),
                     value: operand,
                     target: lower_int_type(*to_type),
                     sign_extend: *sextend,
-                },
-                expr.token_range.clone(),
-            );
+                }
+            };
+            builder.fun_mut().emit_intrinsic(intrinsic, expr.token_range.clone());
 
             Ok(MIRValue::Register(out))
         }

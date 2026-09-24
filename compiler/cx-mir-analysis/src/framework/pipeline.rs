@@ -85,10 +85,21 @@ impl Pipeline {
     pub fn is_empty(&self) -> bool {
         self.analyses.is_empty()
     }
+
+    pub fn finish(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
+        for analysis in &mut self.analyses {
+            analysis.finish(env)?;
+        }
+        Ok(())
+    }
 }
 
 pub trait AnalysisPass {
     fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()>;
+
+    fn finish(&mut self, _: &AnalysisEnvironment) -> CXResult<()> {
+        Ok(())
+    }
 
     fn block_entry(&mut self, _env: &AnalysisEnvironment, _block: MIRBasicBlockID) -> CXResult<()> {
         Ok(())

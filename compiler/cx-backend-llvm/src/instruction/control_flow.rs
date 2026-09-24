@@ -63,7 +63,7 @@ pub(super) fn generate_branch<'a, 'b>(
     true_target: &LMIRBlockTarget,
     false_target: &LMIRBlockTarget,
 ) -> LLVMResult<CodegenValue<'a>> {
-    let mut condition = match function_state.get_value(condition)?.get_value()? {
+    let condition = match function_state.get_value(condition)?.get_value()? {
         AnyValueEnum::IntValue(value) => value,
         AnyValueEnum::PointerValue(value) => function_state
             .builder
@@ -80,16 +80,6 @@ pub(super) fn generate_branch<'a, 'b>(
             ));
         }
     };
-    if condition.get_type().get_bit_width() > 1 {
-        condition = function_state
-            .builder
-            .build_int_truncate(
-                condition,
-                global_state.context.bool_type(),
-                inst_num().as_str(),
-            )
-            .map_err(LLVMError::from_error)?;
-    }
 
     let (true_edge, finish_true) = edge_destination(
         global_state,

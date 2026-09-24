@@ -101,5 +101,5 @@ fn run(env: &AnalysisEnvironment<'_>, pipeline: &mut Pipeline) -> CXResult<()> {
         }
     }
 
-    Ok(())
+    pipeline.finish(env)
 }

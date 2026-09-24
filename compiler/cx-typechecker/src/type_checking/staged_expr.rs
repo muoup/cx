@@ -1,4 +1,4 @@
-use cx_hir::ast::expression::HIRExpression;
+use cx_hir::ast::expression::{HIRBlockKind, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::{NamespacePath, QualifiedName};
@@ -28,6 +28,8 @@ pub fn typecheck_staged_expr(
     inner: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
+    let body = external_yield_block(inner, expected_type.is_some_and(THIRType::is_void));
+    let inner = body.as_ref().unwrap_or(inner);
     let body = env.in_runtime_emit(|env| {
         env.in_staged(|env| {
             let result = typecheck_expr(env, namespace, inner, expected_type)?;
@@ -92,11 +94,23 @@ pub fn complete_staged_expr(
         });
     }
 
+    let rewritten = external_yield_block(&deferred.body, value_type._type.is_void());
+    let body_expression = rewritten.as_ref().unwrap_or(&deferred.body);
     let body = env.in_staged(|env| {
-        let body = typecheck_expr(env, namespace, &deferred.body, Some(&value_type._type))?
-            .apply_expected_type(env, namespace, &value_type._type)?
-            .standard_ready_coerce(env, deferred.body.token_range())?;
-        implicit_cast(env, body, &value_type._type)
+        let expected = (!value_type._type.is_void() && !value_type._type.is_unreachable())
+            .then_some(&value_type._type);
+        let result = typecheck_expr(env, namespace, body_expression, expected)?;
+        let result = if let Some(expected) = expected {
+            result.apply_expected_type(env, namespace, expected)?
+        } else {
+            result
+        };
+        let body = result.standard_ready_coerce(env, deferred.body.token_range())?;
+        if let Some(expected) = expected {
+            implicit_cast(env, body, expected)
+        } else {
+            Ok(body)
+        }
     });
     env.symbols.pop_local_scope();
 
@@ -106,6 +120,23 @@ pub fn complete_staged_expr(
     let captures = collect_captures(&staged);
     staged.set_captures(captures);
     Ok(staged)
+}
+
+fn external_yield_block(expression: &HIRExpression, external_yield: bool) -> Option<HIRExpression> {
+    if !external_yield {
+        return None;
+    }
+    let HIRExprKind::Block {
+        kind: HIRBlockKind::Expression,
+        ..
+    } = &expression.kind else {
+        return None;
+    };
+    let mut block = expression.clone();
+    if let HIRExprKind::Block { kind, .. } = &mut block.kind {
+        *kind = HIRBlockKind::Statement;
+    }
+    Some(block)
 }
 
 fn collect_captures(staged: &THIRStagedExpr) -> Vec<THIRLocalID> {

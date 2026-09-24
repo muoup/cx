@@ -20,6 +20,7 @@ pub(crate) struct MIRFunctionBuilder<'thir> {
 
     local_values: HashMap<THIRLocalID, MIRValue>,
     comptime_values: HashMap<THIRLocalID, MIRComptimeOperand>,
+    projection_owners: HashMap<MIRRegister, MIRPlaceID>,
     labels: HashMap<String, MIRBasicBlockID>,
 
     scope_stack: Vec<ScopeContext<'thir>>,
@@ -140,6 +141,7 @@ impl<'thir> MIRFunctionBuilder<'thir> {
             current_block: entry,
             local_values: HashMap::new(),
             comptime_values: HashMap::new(),
+            projection_owners: HashMap::new(),
             labels: HashMap::new(),
             scope_stack: vec![ScopeContext::new(root_scope)],
             control_stack: Vec::new(),
@@ -214,6 +216,14 @@ impl<'thir> MIRFunctionBuilder<'thir> {
     #[allow(dead_code)]
     pub fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
         self.body.register(register).map(|decl| decl.ty)
+    }
+
+    pub fn bind_projection_owner(&mut self, register: MIRRegister, owner: MIRPlaceID) {
+        self.projection_owners.insert(register, owner);
+    }
+
+    pub fn projection_owner(&self, register: MIRRegister) -> Option<MIRPlaceID> {
+        self.projection_owners.get(&register).copied()
     }
 
     pub fn emit(&mut self, instr: MIRInstruction) {

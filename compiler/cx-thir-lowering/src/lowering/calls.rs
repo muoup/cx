@@ -1,19 +1,20 @@
 use cx_log::CXResult;
 use cx_mir::{
     MIRComptimeOp, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeType, MIRComptimeValue,
-    MIRConstant, MIRField, MIRInstruction, MIRInstructionKind, MIRValue,
+    MIRConstant, MIRField, MIRInstruction, MIRInstructionKind, MIRInternalIntrinsic, MIRValue,
 };
 use cx_thir::thir::{
     data::THIRType,
     expression::{THIRExpression, THIRExpressionKind, THIRFnContract},
-    r#type::THIRField,
+    r#type::{THIRField, THIRTypeKind},
 };
+use cx_thir::type_context::THIRTypeContext;
 use cx_tokens::TokenRange;
 
 use crate::{
     builder::MIRBuilder,
     lowering::{
-        comptime, lower_expression, staged,
+        comptime, control_flow::auto_pop_scope, lower_expression, staged,
         types::{lower_type, lower_type_id},
     },
 };
@@ -108,6 +109,37 @@ pub(super) fn lower_call<'thir>(
         args.push(lower_expression(builder, argument)?);
     }
 
+    let mut function_type = &function._type;
+    let signature = loop {
+        match &function_type.kind {
+            THIRTypeKind::PointerTo { inner_type }
+            | THIRTypeKind::MemoryReference { inner_type, .. } => {
+                function_type = builder.registry().resolve_type_id(*inner_type);
+            }
+            _ => break function_type.function_signature(),
+        }
+    };
+    let parameter_names = signature
+        .map(|signature| {
+            signature
+                .params
+                .iter()
+                .map(|parameter| parameter.name.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if let Some(precondition) = &contract.precondition {
+        builder.fun_mut().push_scope(precondition.token_range.clone());
+        for (name, value) in parameter_names.iter().zip(&args) {
+            if let Some(name) = name {
+                builder.fun_mut().bind_named_value(name, value.clone());
+            }
+        }
+        lower_expression(builder, precondition)?;
+        auto_pop_scope(builder)?;
+    }
+
     let out = if result_type.is_void() || result_type.is_unreachable() {
         None
     } else {
@@ -116,9 +148,33 @@ pub(super) fn lower_call<'thir>(
     };
 
     builder.emit(MIRInstruction::new(
-        MIRInstructionKind::Call { out, callee, args },
+        MIRInstructionKind::Call {
+            out,
+            callee,
+            args: args.clone(),
+        },
         range.clone(),
     ));
+
+    if let Some(postcondition) = &contract.postcondition {
+        builder
+            .fun_mut()
+            .push_scope(postcondition.condition.token_range.clone());
+        for (name, value) in parameter_names.iter().zip(&args) {
+            if let Some(name) = name {
+                builder.fun_mut().bind_named_value(name, value.clone());
+            }
+        }
+        if let (Some(name), Some(out)) = (&postcondition.binding, out) {
+            builder.fun_mut().bind_named_value(name, MIRValue::Register(out));
+        }
+        let condition = lower_expression(builder, &postcondition.condition)?;
+        builder.fun_mut().emit_intrinsic(
+            MIRInternalIntrinsic::Assume { condition },
+            postcondition.condition.token_range.clone(),
+        );
+        auto_pop_scope(builder)?;
+    }
 
     if contract.noreturn
         || matches!(&function.kind, THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit")

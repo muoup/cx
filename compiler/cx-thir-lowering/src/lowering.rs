@@ -497,6 +497,14 @@ pub(crate) fn lower_expression<'thir>(
                     .bind_local(binding.binding_local_id, MIRValue::Register(field_register));
             }
 
+            builder.emit(MIRInstruction::new(
+                MIRInstructionKind::Invalidate {
+                    place: MIRBindable::Place(base),
+                    kind: MIRInvalidationKind::Move,
+                },
+                expr.token_range.clone(),
+            ));
+
             MIRValue::Constant(MIRConstant::Unit)
         }
 
@@ -658,7 +666,10 @@ pub(crate) fn lower_expression<'thir>(
                 });
 
             let Some((scope, target)) = target else {
-                unreachable!("break statement outside of loop or switch")
+                return log_mir_error(
+                    &expr.token_range,
+                    (&mir::REQUIRED_CONTEXT, ("break".into(), "a loop or switch".into())),
+                );
             };
 
             auto_cleanup_before(builder, scope, expr.token_range.clone())?;
@@ -685,7 +696,10 @@ pub(crate) fn lower_expression<'thir>(
                 });
 
             let Some((scope, target)) = target else {
-                unreachable!("continue statement outside of loop")
+                return log_mir_error(
+                    &expr.token_range,
+                    (&mir::REQUIRED_CONTEXT, ("continue".into(), "a loop".into())),
+                );
             };
 
             auto_cleanup_before(builder, scope, expr.token_range.clone())?;

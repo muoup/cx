@@ -207,6 +207,10 @@ pub(super) fn bind_pattern_payload<'thir>(
                 .fun_mut()
                 .new_register(result_type_id, inner_name.clone());
             let range = builder.fun().current_scope_range();
+            let owner = match &subject {
+                MIRValue::PlaceRef(place) => Some(*place),
+                _ => None,
+            };
             builder.fun_mut().emit_intrinsic(
                 MIRAggregateIntrinsic::SumVariantL {
                     out: MIRTarget::Register(out),
@@ -216,6 +220,9 @@ pub(super) fn bind_pattern_payload<'thir>(
                 },
                 range,
             );
+            if let Some(owner) = owner {
+                builder.fun_mut().bind_projection_owner(out, owner);
+            }
             let value = MIRValue::Register(out);
             builder.fun_mut().bind_local(*local_id, value.clone());
             if let Some(name) = inner_name {

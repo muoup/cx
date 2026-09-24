@@ -136,6 +136,7 @@ pub(crate) fn move_value(
         }
 
         MIRValue::Register(source) => {
+            let owner = builder.fun().projection_owner(source);
             let out = target_register(builder, ty);
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Store {
@@ -152,6 +153,15 @@ pub(crate) fn move_value(
                 },
                 range.clone(),
             ));
+            if let Some(owner) = owner {
+                builder.emit(MIRInstruction::new(
+                    MIRInstructionKind::Invalidate {
+                        place: MIRBindable::Place(owner),
+                        kind: MIRInvalidationKind::Move,
+                    },
+                    range.clone(),
+                ));
+            }
             Ok(MIRValue::Register(out))
         }
         value => Ok(value),
