@@ -1,7 +1,8 @@
 use cx_log::CXResult;
 use cx_mir::{
     MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstruction, MIRInstructionKind,
-    MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRValue,
+    MIRIntIntrinsic, MIRIntType, MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget,
+    MIRTypeKind, MIRValue,
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::thir::{
@@ -413,87 +414,105 @@ fn lower_increment<'thir>(
 ) -> CXResult<MIRValue> {
     let operand_value = lower_expression(builder, operand)?;
     let operand_target = memory::expect_target(&operand_value);
-    
-    let THIRTypeKind::MemoryReference { inner_type, .. } = &operand._type.kind
-    else {
-        unreachable!("increment operand must have reference type");
+
+    let Some(inner_type) = builder.registry().mem_ref_inner(&operand._type) else {
+        unreachable!(
+            "increment requires a memory reference type, got {:?}",
+            operand._type
+        )
     };
 
-    let (integer_type, pointee_type) = match &builder.registry().resolve_type_id(*inner_type).kind {
-        THIRTypeKind::Integer { _type, .. } => (Some(*_type), None),
-        THIRTypeKind::PointerTo { inner_type } => (None, Some(*inner_type)),
-        _ => (None, None),
-    };
-    let ty = lower_type_id(builder, *inner_type)?;
-    let previous = builder.fun_mut().new_register(ty, None);
+    let lowered_inner_id = lower_type(builder, inner_type)?;
+    let lowered_inner = builder
+        .types()
+        .definition(lowered_inner_id)
+        .unwrap()
+        .clone();
 
-    let read = MIRInstructionKind::Lift {
-        out: previous,
-        source: operand_target,
-    };
-    builder.emit(MIRInstruction::new(read, expr.token_range.clone()));
+    let current_value = builder.fun_mut().new_register(lowered_inner_id, None);
+    let out = builder.fun_mut().new_register(lowered_inner_id, None);
 
-    let updated = builder.fun_mut().new_register(ty, None);
-    let target = MIRTarget::Register(updated);
-    match (integer_type, pointee_type) {
-        (Some(integer_type), _) => {
+    builder.emit(MIRInstruction {
+        kind: MIRInstructionKind::Store {
+            target: MIRTarget::Register(current_value),
+            value: operand_value.clone(),
+            ty: lowered_inner_id,
+        },
+        token_range: expr.token_range.clone(),
+    });
+
+    match lowered_inner.kind() {
+        MIRTypeKind::Integer { ty, .. } => {
+            if amount >= 0 {
+                builder.fun_mut().emit_intrinsic(
+                    MIRIntIntrinsic::Add {
+                        out: MIRTarget::Register(out),
+                        lhs: MIRValue::Register(current_value),
+                        rhs: MIRValue::Constant(MIRConstant::Integer {
+                            ty: *ty,
+                            value: amount as i128,
+                        }),
+                    },
+                    expr.token_range.clone(),
+                );
+            } else {
+                builder.fun_mut().emit_intrinsic(
+                    MIRIntIntrinsic::Sub {
+                        out: MIRTarget::Register(out),
+                        lhs: MIRValue::Register(current_value),
+                        rhs: MIRValue::Constant(MIRConstant::Integer {
+                            ty: *ty,
+                            value: (-amount) as i128,
+                        }),
+                    },
+                    expr.token_range.clone(),
+                );
+            }
+        }
+
+        MIRTypeKind::PointerTo { inner } => {
+            let type_size = calculate_type_layout(builder.types(), *inner).size();
+            let total_offset = (amount as isize) * (type_size as isize);
+
+            let pointer_int =
+                MIRIntType::from_bytes(builder.types().architecture().pointer_size() as u8)
+                    .expect("pointer size must be a valid integer type");
+
             builder.fun_mut().emit_intrinsic(
-                MIRIntIntrinsic::Add {
-                    out: target,
-                    lhs: MIRValue::Register(previous),
-                    rhs: MIRValue::Constant(MIRConstant::Integer {
-                        value: amount as i128,
-                        ty: lower_int_type(integer_type),
+                MIRPtrIntrinsic::Add {
+                    out: MIRTarget::Register(out),
+                    ptr: MIRValue::Register(current_value),
+                    offset: MIRValue::Constant(MIRConstant::Integer {
+                        ty: pointer_int,
+                        value: total_offset as i128,
                     }),
                 },
                 expr.token_range.clone(),
             );
         }
-        (_, Some(pointee)) => {
-            let pointee = lower_type_id(builder, pointee)?;
-            let stride = calculate_type_layout(builder.types(), pointee).size() as i128;
-            let offset_ty =
-                cx_mir::MIRIntType::from_bytes(builder.types().architecture().pointer_size() as u8)
-                    .expect("target pointer size has no integer type");
-            let intrinsic = if amount >= 0 {
-                MIRPtrIntrinsic::Add {
-                    out: target,
-                    ptr: MIRValue::Register(previous),
-                    offset: MIRValue::Constant(MIRConstant::Integer {
-                        value: stride * amount as i128,
-                        ty: offset_ty,
-                    }),
-                }
-            } else {
-                MIRPtrIntrinsic::Sub {
-                    out: target,
-                    ptr: MIRValue::Register(previous),
-                    offset: MIRValue::Constant(MIRConstant::Integer {
-                        value: stride * -(amount as i128),
-                        ty: offset_ty,
-                    }),
-                }
-            };
-            builder
-                .fun_mut()
-                .emit_intrinsic(intrinsic, expr.token_range.clone());
-        }
-        _ => unreachable!("increment requires an integer or pointer place"),
-    }
 
-    builder.emit(MIRInstruction::new(
-        MIRInstructionKind::Store {
+        _ => {
+            unreachable!(
+                "increment requires an integer or pointer type, got {:?}",
+                inner_type
+            )
+        }
+    };
+
+    builder.emit(MIRInstruction {
+        kind: MIRInstructionKind::Store {
             target: operand_target,
-            value: MIRValue::Register(updated),
-            ty,
+            value: MIRValue::Register(out),
+            ty: lowered_inner_id,
         },
-        expr.token_range.clone(),
-    ));
-    Ok(if prefix {
-        operand_value
+        token_range: expr.token_range.clone(),
+    });
+
+    if prefix {
+        Ok(MIRValue::Register(out))
     } else {
-        MIRValue::Register(previous)
-    })
+        Ok(MIRValue::Register(current_value))
+    }
 }
 
 pub(super) fn lower_coercion<'thir>(
@@ -645,10 +664,9 @@ pub(super) fn lower_address_of<'thir>(
                     }
                 }
                 reference => match memory::expect_target(&reference) {
-                    MIRTarget::Place(place) => MIRInternalIntrinsic::PlaceAddress {
-                        out: target,
-                        place,
-                    },
+                    MIRTarget::Place(place) => {
+                        MIRInternalIntrinsic::PlaceAddress { out: target, place }
+                    }
                     MIRTarget::Global(global) => MIRInternalIntrinsic::GlobalAddress {
                         out: target,
                         global,
