@@ -1,3 +1,4 @@
+use crate::lowering::memory;
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
 use cx_lmir::{LMIRInstructionKind, LMIRPtrBinOp, LMIRValue};
 use cx_mir::ty::interface::MTRegistry;
@@ -14,31 +15,38 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
     use MIRAggregateIntrinsic as A;
     match op {
         A::AggregateInit { out, ty, fields } => {
-            let address = context.allocate(*ty);
-            context.void(LMIRInstructionKind::ZeroMemory {
-                memory: address.clone(),
-                _type: context.ty(*ty),
-            });
+            let address = memory::allocate(context, *ty);
+            memory::void(
+                context,
+                LMIRInstructionKind::ZeroMemory {
+                    memory: address.clone(),
+                    _type: context.ty(*ty),
+                },
+            );
             let kind = context.types().definition(*ty).unwrap().kind().clone();
             for (index, field) in fields {
                 if matches!(kind, MIRTypeKind::TaggedUnion { .. }) {
-                    let tag = context.offset(
+                    let tag = memory::offset(
+                        context,
                         address.clone(),
                         tagged_union_tag_offset(context, *ty) as i64,
                     );
-                    context.void(LMIRInstructionKind::Store {
-                        memory: tag,
-                        value: context.integer(*index as i128, LMIRIntegerType::I8),
-                        _type: LMIRType::with_implicit_abi(
-                            context.types().architecture(),
-                            LMIRTypeKind::Integer(LMIRIntegerType::I8),
-                        ),
-                    });
+                    memory::void(
+                        context,
+                        LMIRInstructionKind::Store {
+                            memory: tag,
+                            value: context.integer(*index as i128, LMIRIntegerType::I8),
+                            _type: LMIRType::with_implicit_abi(
+                                context.types().architecture(),
+                                LMIRTypeKind::Integer(LMIRIntegerType::I8),
+                            ),
+                        },
+                    );
                 }
                 let (offset, field_ty) = aggregate_member(context, *ty, *index);
-                let destination = context.offset(address.clone(), offset as i64);
+                let destination = memory::offset(context, address.clone(), offset as i64);
                 let value = lower_rvalue(context, field, field_ty);
-                context.store(destination, value, field_ty);
+                memory::store(context, destination, value, field_ty);
             }
             write_target(context, *out, address);
         }
@@ -50,7 +58,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
         } => {
             let (offset, field_ty, _) = field_location(context, *struct_ty, *field);
             let base = lower_read(context, base);
-            let address = context.offset(base, offset as i64);
+            let address = memory::offset(context, base, offset as i64);
             write_projection(context, *out, address, field_ty);
         }
         A::ArrayIndex {
@@ -62,7 +70,8 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
             let base = lower_read(context, base);
             let index = lower_read(context, index);
             let stride = calculate_type_layout(context.types(), *element_ty).size();
-            let address = context.temp(
+            let address = memory::temp(
+                context,
                 LMIRInstructionKind::PointerBinOp {
                     op: LMIRPtrBinOp::ADD,
                     ptr_type: context.ty(*element_ty),
@@ -76,12 +85,17 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
         }
         A::SumIndex { out, value, sum_ty } => {
             let base = lower_read(context, value);
-            let address = context.offset(base, tagged_union_tag_offset(context, *sum_ty) as i64);
+            let address = memory::offset(
+                context,
+                base,
+                tagged_union_tag_offset(context, *sum_ty) as i64,
+            );
             let tag_type = LMIRType::with_implicit_abi(
                 context.types().architecture(),
                 LMIRTypeKind::Integer(LMIRIntegerType::I8),
             );
-            let value = context.temp(
+            let value = memory::temp(
+                context,
                 LMIRInstructionKind::Load {
                     memory: address,
                     _type: tag_type.clone(),
@@ -126,7 +140,7 @@ fn write_projection(
     ) {
         address
     } else {
-        context.load(address, value_ty)
+        memory::load(context, address, value_ty)
     };
     write_target(context, target, value);
 }

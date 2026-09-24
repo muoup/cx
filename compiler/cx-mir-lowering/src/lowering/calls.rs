@@ -1,3 +1,4 @@
+use crate::lowering::memory;
 use cx_lmir::types::LMIRIntegerType;
 use cx_lmir::{
     LMIRFunctionSignature, LMIRInstructionKind, LMIRParameterABI, LMIRReturnABI, LMIRValue,
@@ -21,7 +22,7 @@ pub(super) fn lower_call(
     let sret = if matches!(signature.return_abi, LMIRReturnABI::IndirectSret { .. }) {
         let result = out.expect("indirect return has no MIR result");
         let ty = context.body.register(result).unwrap().ty;
-        let address = context.allocate(ty);
+        let address = memory::allocate(context, ty);
         lowered.push(address.clone());
         Some(address)
     } else {
@@ -34,8 +35,9 @@ pub(super) fn lower_call(
                 LMIRParameterABI::Direct { slots } if parameter._type.is_memory_resident() => {
                     let address = values::lower_rvalue(context, argument, param_ty);
                     for slot in slots {
-                        let source = context.offset(address.clone(), slot.offset as i64);
-                        lowered.push(context.temp(
+                        let source = memory::offset(context, address.clone(), slot.offset as i64);
+                        lowered.push(memory::temp(
+                            context,
                             LMIRInstructionKind::Load {
                                 memory: source,
                                 _type: slot._type.clone(),
@@ -49,8 +51,8 @@ pub(super) fn lower_call(
                 }
                 LMIRParameterABI::Indirect { .. } | LMIRParameterABI::ByValue { .. } => {
                     let source = values::lower_rvalue(context, argument, param_ty);
-                    let copy = context.allocate(param_ty);
-                    context.store(copy.clone(), source, param_ty);
+                    let copy = memory::allocate(context, param_ty);
+                    memory::store(context, copy.clone(), source, param_ty);
                     lowered.push(copy);
                 }
             }
@@ -85,26 +87,37 @@ pub(super) fn lower_call(
     };
     if let Some(result) = out {
         if let Some(address) = sret {
-            context.void(kind);
-            context.assign(result, LMIRInstructionKind::Alias { value: address });
+            memory::void(context, kind);
+            memory::assign(
+                context,
+                result,
+                LMIRInstructionKind::Alias { value: address },
+            );
         } else if context
             .ty(context.body.register(result).unwrap().ty)
             .is_memory_resident()
         {
             let ty = context.body.register(result).unwrap().ty;
-            let returned = context.temp(kind, context.ty(ty));
-            let address = context.allocate(ty);
-            context.void(LMIRInstructionKind::Store {
-                memory: address.clone(),
-                value: returned,
-                _type: context.ty(ty),
-            });
-            context.assign(result, LMIRInstructionKind::Alias { value: address });
+            let returned = memory::temp(context, kind, context.ty(ty));
+            let address = memory::allocate(context, ty);
+            memory::void(
+                context,
+                LMIRInstructionKind::Store {
+                    memory: address.clone(),
+                    value: returned,
+                    _type: context.ty(ty),
+                },
+            );
+            memory::assign(
+                context,
+                result,
+                LMIRInstructionKind::Alias { value: address },
+            );
         } else {
-            context.assign(result, kind);
+            memory::assign(context, result, kind);
         }
     } else {
-        context.void(kind);
+        memory::void(context, kind);
     }
 }
 
@@ -115,15 +128,18 @@ pub(super) fn lower_return(context: &mut FunctionContext<'_, '_>, value: Option<
         (&context.prototype.signature.return_abi, lowered.as_ref())
     {
         let size = calculate_type_layout(context.types(), return_ty).size();
-        context.void(LMIRInstructionKind::Memcpy {
-            dest: LMIRValue::ParameterRef(0),
-            src: source.clone(),
-            size: context.integer(size as i128, LMIRIntegerType::I64),
-            alignment: *alignment,
-        });
-        context.void(LMIRInstructionKind::Return { value: None });
+        memory::void(
+            context,
+            LMIRInstructionKind::Memcpy {
+                dest: LMIRValue::ParameterRef(0),
+                src: source.clone(),
+                size: context.integer(size as i128, LMIRIntegerType::I64),
+                alignment: *alignment,
+            },
+        );
+        memory::void(context, LMIRInstructionKind::Return { value: None });
     } else {
-        context.void(LMIRInstructionKind::Return { value: lowered });
+        memory::void(context, LMIRInstructionKind::Return { value: lowered });
     }
 }
 

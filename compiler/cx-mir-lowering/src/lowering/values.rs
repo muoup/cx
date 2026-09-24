@@ -1,3 +1,4 @@
+use crate::lowering::memory;
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRValue};
 use cx_mir::ty::interface::MTRegistry;
@@ -34,7 +35,7 @@ pub(crate) fn lower_rvalue(
                 context.types().definition(source_ty).unwrap().kind()
             {
                 let inner = *inner;
-                return context.load(context.reg(*register), inner);
+                return memory::load(context, context.reg(*register), inner);
             }
         }
     }
@@ -58,7 +59,7 @@ pub(crate) fn lower_rvalue(
         if context.ty(source_ty).is_memory_resident() {
             return address;
         }
-        return context.load(address, source_ty);
+        return memory::load(context, address, source_ty);
     }
     lower_value(context, value)
 }
@@ -66,11 +67,11 @@ pub(crate) fn lower_rvalue(
 pub(super) fn lower_read(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> LMIRValue {
     if let MIRValue::Constant(MIRConstant::GlobalRef(reference)) = value {
         let address = global_address(context, *reference);
-        return context.load(address, reference.ty);
+        return memory::load(context, address, reference.ty);
     }
     if let MIRValue::PlaceRef(place) = value {
         let ty = context.body.place(*place).unwrap().ty;
-        return context.load(context.places[place].clone(), ty);
+        return memory::load(context, context.places[place].clone(), ty);
     }
     if let MIRValue::Register(register) = value {
         let ty = context.body.register(*register).unwrap().ty;
@@ -78,7 +79,7 @@ pub(super) fn lower_read(context: &mut FunctionContext<'_, '_>, value: &MIRValue
             context.types().definition(ty).unwrap().kind()
         {
             let inner = *inner;
-            return context.load(context.reg(*register), inner);
+            return memory::load(context, context.reg(*register), inner);
         }
     }
     lower_value(context, value)
@@ -89,7 +90,7 @@ pub(super) fn global_address(
     reference: MIRGlobalRef,
 ) -> LMIRValue {
     let base = LMIRValue::Global(context.global.global_indices[&reference.global]);
-    context.offset(base, reference.offset)
+    memory::offset(context, base, reference.offset)
 }
 
 pub(super) fn lower_constant(
@@ -108,7 +109,8 @@ pub(super) fn lower_constant(
         },
         MIRConstant::Nullptr { ty } => {
             let from = LMIRIntegerType::I64;
-            context.temp(
+            memory::temp(
+                context,
                 LMIRInstructionKind::Coercion {
                     value: context.integer(0, from),
                     coercion_type: LMIRCoercionType::IntToPtr {
@@ -132,31 +134,38 @@ pub(super) fn lower_constant(
                 .clone(),
         ),
         MIRConstant::Aggregate { ty, fields } => {
-            let address = context.allocate(*ty);
-            context.void(LMIRInstructionKind::ZeroMemory {
-                memory: address.clone(),
-                _type: context.ty(*ty),
-            });
+            let address = memory::allocate(context, *ty);
+            memory::void(
+                context,
+                LMIRInstructionKind::ZeroMemory {
+                    memory: address.clone(),
+                    _type: context.ty(*ty),
+                },
+            );
             let kind = context.types().definition(*ty).unwrap().kind().clone();
             for (index, field) in fields {
                 if matches!(kind, MIRTypeKind::TaggedUnion { .. }) {
-                    let tag = context.offset(
+                    let tag = memory::offset(
+                        context,
                         address.clone(),
                         tagged_union_tag_offset(context, *ty) as i64,
                     );
-                    context.void(LMIRInstructionKind::Store {
-                        memory: tag,
-                        value: context.integer(*index as i128, LMIRIntegerType::I8),
-                        _type: LMIRType::with_implicit_abi(
-                            context.types().architecture(),
-                            LMIRTypeKind::Integer(LMIRIntegerType::I8),
-                        ),
-                    });
+                    memory::void(
+                        context,
+                        LMIRInstructionKind::Store {
+                            memory: tag,
+                            value: context.integer(*index as i128, LMIRIntegerType::I8),
+                            _type: LMIRType::with_implicit_abi(
+                                context.types().architecture(),
+                                LMIRTypeKind::Integer(LMIRIntegerType::I8),
+                            ),
+                        },
+                    );
                 }
                 let (offset, field_ty) = aggregate_member(context, *ty, *index);
-                let destination = context.offset(address.clone(), offset as i64);
+                let destination = memory::offset(context, address.clone(), offset as i64);
                 let source = lower_constant(context, field);
-                context.store(destination, source, field_ty);
+                memory::store(context, destination, source, field_ty);
             }
             address
         }
@@ -233,13 +242,15 @@ pub(super) fn write_target(
 ) {
     let ty = target_type(context, target);
     match target {
-        MIRTarget::Register(id) => context.assign(id, LMIRInstructionKind::Alias { value }),
-        MIRTarget::Place(id) => context.store(context.places[&id].clone(), value, ty),
+        MIRTarget::Register(id) => {
+            memory::assign(context, id, LMIRInstructionKind::Alias { value })
+        }
+        MIRTarget::Place(id) => memory::store(context, context.places[&id].clone(), value, ty),
         MIRTarget::Global(reference) => {
             let address = global_address(context, reference);
-            context.store(address, value, ty);
+            memory::store(context, address, value, ty);
         }
-        MIRTarget::Indirect(id) => context.store(context.reg(id), value, ty),
+        MIRTarget::Indirect(id) => memory::store(context, context.reg(id), value, ty),
     }
 }
 

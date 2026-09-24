@@ -1,7 +1,8 @@
 use cx_log::CXResult;
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_mir::{
-    MIRBindable, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRTypeID, MIRValue,
+    MIRBindable, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRTarget, MIRTypeID,
+    MIRValue,
 };
 use cx_thir::thir::data::THIRType;
 use cx_tokens::TokenRange;
@@ -23,7 +24,7 @@ pub(crate) fn allocate_variable<'thir>(
     if let Some(value) = value {
         builder.emit(MIRInstruction::new(
             MIRInstructionKind::Store {
-                target: place,
+                target: MIRTarget::Place(place),
                 ty: type_id,
                 value,
             },
@@ -107,7 +108,11 @@ pub(crate) fn move_value(
         MIRValue::Register(source) => {
             let out = target_register(builder, ty);
             builder.emit(MIRInstruction::new(
-                MIRInstructionKind::Forward { out, source },
+                MIRInstructionKind::Store {
+                    target: MIRTarget::Register(out),
+                    value: MIRValue::Register(source),
+                    ty,
+                },
                 range.clone(),
             ));
             builder.emit(MIRInstruction::new(

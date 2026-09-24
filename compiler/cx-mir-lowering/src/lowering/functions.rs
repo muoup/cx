@@ -1,3 +1,4 @@
+use crate::lowering::memory;
 use cx_lmir::{
     LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRInstructionKind, LMIRParameterABI,
     LMIRValue,
@@ -41,7 +42,7 @@ pub(super) fn lower_function<'mir>(
     }
     context.current_block = context.block_indices[&body.entry()];
     for (index, place) in body.places().iter().enumerate() {
-        let address = context.allocate(place.ty);
+        let address = memory::allocate(&mut context, place.ty);
         context
             .places
             .insert(cx_mir::MIRPlaceID::new(index), address);
@@ -68,12 +69,15 @@ fn lower_parameters(context: &mut FunctionContext<'_, '_>) {
         match param.abi {
             LMIRParameterABI::Direct { slots } => {
                 for slot in slots {
-                    let destination = context.offset(address.clone(), slot.offset as i64);
-                    context.void(LMIRInstructionKind::Store {
-                        memory: destination,
-                        value: LMIRValue::ParameterRef(abi_index),
-                        _type: slot._type,
-                    });
+                    let destination = memory::offset(context, address.clone(), slot.offset as i64);
+                    memory::void(
+                        context,
+                        LMIRInstructionKind::Store {
+                            memory: destination,
+                            value: LMIRValue::ParameterRef(abi_index),
+                            _type: slot._type,
+                        },
+                    );
                     abi_index += 1;
                 }
             }
@@ -84,12 +88,15 @@ fn lower_parameters(context: &mut FunctionContext<'_, '_>) {
                     .expect("invalid MIR parameter")
                     .ty;
                 let size = calculate_type_layout(context.types(), ty).size();
-                context.void(LMIRInstructionKind::Memcpy {
-                    dest: address,
-                    src: LMIRValue::ParameterRef(abi_index),
-                    size: context.integer(size as i128, cx_lmir::types::LMIRIntegerType::I64),
-                    alignment,
-                });
+                memory::void(
+                    context,
+                    LMIRInstructionKind::Memcpy {
+                        dest: address,
+                        src: LMIRValue::ParameterRef(abi_index),
+                        size: context.integer(size as i128, cx_lmir::types::LMIRIntegerType::I64),
+                        alignment,
+                    },
+                );
                 abi_index += 1;
             }
         }

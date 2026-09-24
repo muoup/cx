@@ -191,7 +191,10 @@ impl AnalysisPass for Ownership {
                     LatticeState::Known(OwnershipState::Available),
                 );
             }
-            MIRInstructionKind::Forward { out, .. } => {
+            MIRInstructionKind::Store {
+                target: MIRTarget::Register(out),
+                ..
+            } => {
                 self.table.set(
                     MIRBindable::Register(*out),
                     LatticeState::Known(OwnershipState::Available),

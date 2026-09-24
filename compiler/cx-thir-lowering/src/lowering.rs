@@ -389,36 +389,48 @@ pub(crate) fn lower_expression<'thir>(
         THIRExpressionKind::Assign { target, value } => {
             let assignment_type = lower_type(builder, &value._type)?;
 
-            let mtarget = lower_expression(builder, target)?;
+            let mlhs = lower_expression(builder, target)?;
             let mvalue = lower_expression(builder, value)?;
 
-            let ptarget = memory::ensure_place(builder, mtarget, &target._type)?;
+            let mtarget = match &mlhs {
+                MIRValue::PlaceRef(place) => {
+                    builder.emit(MIRInstruction::new(
+                        MIRInstructionKind::Invalidate {
+                            place: MIRBindable::Place(*place),
+                            kind: MIRInvalidationKind::Drop,
+                        },
+                        target.token_range.clone(),
+                    ));
 
-            builder.emit(MIRInstruction::new(
-                MIRInstructionKind::Invalidate {
-                    place: MIRBindable::Place(ptarget),
-                    kind: MIRInvalidationKind::Drop,
-                },
-                target.token_range.clone(),
-            ));
+                    builder.emit(MIRInstruction::new(
+                        MIRInstructionKind::Initialize {
+                            place: MIRBindable::Place(*place),
+                        },
+                        target.token_range.clone(),
+                    ));
 
-            builder.emit(MIRInstruction::new(
-                MIRInstructionKind::Initialize {
-                    place: MIRBindable::Place(ptarget),
-                },
-                target.token_range.clone(),
-            ));
+                    MIRTarget::Place(*place)
+                }
+
+                MIRValue::Register(register) => {
+                    MIRTarget::Indirect(*register)
+                }
+
+                MIRValue::Constant(MIRConstant::GlobalRef(reference)) => MIRTarget::Global(*reference),
+
+                _ => unreachable!("assignment target must be an addressable value"),
+            };
 
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Store {
-                    target: ptarget,
+                    target: mtarget,
                     value: mvalue,
                     ty: assignment_type,
                 },
                 target.token_range.clone(),
             ));
 
-            MIRValue::PlaceRef(ptarget)
+            mlhs
         }
 
         THIRExpressionKind::AddressOf { operand } => lower_address_of(builder, expr, operand)?,
@@ -577,7 +589,7 @@ pub(crate) fn lower_expression<'thir>(
             );
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Store {
-                    target,
+                    target: MIRTarget::Place(target),
                     value: MIRValue::Register(constructed),
                     ty: sum_type_id,
                 },

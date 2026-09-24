@@ -1,18 +1,18 @@
 use std::collections::HashMap;
 
-use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
+use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
     LMIRBasicBlock, LMIRBlockTarget, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype,
-    LMIRGlobalType, LMIRGlobalValue, LMIRInstruction, LMIRInstructionKind, LMIRPtrBinOp,
-    LMIRRegister, LMIRUnit, LMIRValue, LinkageType,
+    LMIRGlobalType, LMIRGlobalValue, LMIRInstruction, LMIRInstructionKind, LMIRRegister, LMIRUnit,
+    LMIRValue, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::ty::layout::calculate_type_layout;
 use cx_mir::{
     MIRBasicBlockID, MIRBody, MIRFunction, MIRGlobalID, MIRPlaceID, MIRRegister, MIRTypeID, MIRUnit,
 };
 use cx_util::identifier::CXIdent;
 
+use crate::lowering::memory;
 use crate::lowering::typing::convert_type;
 
 pub(crate) struct GlobalContext<'mir> {
@@ -119,27 +119,6 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
         });
     }
 
-    pub fn void(&mut self, kind: LMIRInstructionKind) {
-        self.emit(kind, LMIRType::unit(), None);
-    }
-
-    pub fn temp(&mut self, kind: LMIRInstructionKind, ty: LMIRType) -> LMIRValue {
-        let register = LMIRRegister::new(format!("tmp.{}", self.next_register));
-        self.next_register += 1;
-        self.emit(kind, ty.clone(), Some(register.clone()));
-        LMIRValue::Register {
-            register,
-            _type: ty,
-        }
-    }
-
-    pub fn assign(&mut self, out: MIRRegister, kind: LMIRInstructionKind) {
-        let LMIRValue::Register { register, _type } = self.reg(out) else {
-            unreachable!()
-        };
-        self.emit(kind, _type, Some(register));
-    }
-
     pub fn integer(&self, value: i128, ty: LMIRIntegerType) -> LMIRValue {
         LMIRValue::IntImmediate {
             _type: LMIRType::with_implicit_abi(
@@ -147,70 +126,6 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
                 LMIRTypeKind::Integer(ty),
             ),
             val: value as i64,
-        }
-    }
-
-    pub fn offset(&mut self, base: LMIRValue, offset: i64) -> LMIRValue {
-        if offset == 0 {
-            return base;
-        }
-        self.temp(
-            LMIRInstructionKind::PointerBinOp {
-                op: LMIRPtrBinOp::ADD,
-                ptr_type: self.pointer(),
-                type_size: TypeSize::from(1),
-                left: base,
-                right: self.integer(offset.into(), LMIRIntegerType::I64),
-            },
-            self.pointer(),
-        )
-    }
-
-    pub fn allocate(&mut self, ty: MIRTypeID) -> LMIRValue {
-        let layout = calculate_type_layout(self.types(), ty);
-        self.temp(
-            LMIRInstructionKind::Allocate {
-                _type: self.ty(ty),
-                alignment: layout.alignment() as u8,
-            },
-            self.pointer(),
-        )
-    }
-
-    pub fn store(&mut self, address: LMIRValue, value: LMIRValue, ty: MIRTypeID) {
-        let lowered = self.ty(ty);
-        if lowered.is_void() {
-            return;
-        }
-        if lowered.is_memory_resident() {
-            let layout = calculate_type_layout(self.types(), ty);
-            self.void(LMIRInstructionKind::Memcpy {
-                dest: address,
-                src: value,
-                size: self.integer(layout.size() as i128, LMIRIntegerType::I64),
-                alignment: layout.alignment() as u8,
-            });
-        } else {
-            self.void(LMIRInstructionKind::Store {
-                memory: address,
-                value,
-                _type: lowered,
-            });
-        }
-    }
-
-    pub fn load(&mut self, address: LMIRValue, ty: MIRTypeID) -> LMIRValue {
-        let lowered = self.ty(ty);
-        if lowered.is_memory_resident() {
-            address
-        } else {
-            self.temp(
-                LMIRInstructionKind::Load {
-                    memory: address,
-                    _type: lowered.clone(),
-                },
-                lowered,
-            )
         }
     }
 
@@ -229,8 +144,8 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
                 let ty = self.body.register(*parameter).unwrap().ty;
                 let value = crate::lowering::values::lower_rvalue(self, arg, ty);
                 if self.ty(ty).is_memory_resident() {
-                    let copy = self.allocate(ty);
-                    self.store(copy.clone(), value, ty);
+                    let copy = memory::allocate(self, ty);
+                    memory::store(self, copy.clone(), value, ty);
                     copy
                 } else {
                     value

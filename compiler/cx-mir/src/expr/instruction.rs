@@ -2,10 +2,7 @@ use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
 use crate::{
-    expr::intrinsic::MIRIntrinsic,
-    ty::MIRTypeID,
-    unit::MIRBasicBlockID,
-    value::{MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRValue},
+    MIRTarget, expr::intrinsic::MIRIntrinsic, ty::MIRTypeID, unit::MIRBasicBlockID, value::{MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRValue},
 };
 
 dense_id!(MIRScopeID, "scope.");
@@ -115,11 +112,6 @@ pub enum MIRInstructionKind {
         out: MIRRegisterID,
         place: MIRPlaceID,
     },
-    Forward {
-        out: MIRRegisterID,
-        source: MIRRegisterID,
-    },
-
     // Declares (for analysis) that a register or place must live at least as long as 'bind_to' for ownership analysis
     // registe
     BindLifetime {
@@ -128,7 +120,7 @@ pub enum MIRInstructionKind {
     },
 
     Store {
-        target: MIRPlaceID,
+        target: MIRTarget,
         value: MIRValue,
         ty: MIRTypeID,
     },

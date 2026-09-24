@@ -182,8 +182,10 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
             ..
         } => visit(MIRBindable::Register(*register)),
         MIRInstructionKind::Invalidate { .. } | MIRInstructionKind::BindLifetime { .. } => {}
-        MIRInstructionKind::Forward { source, .. } => visit(MIRBindable::Register(*source)),
-        MIRInstructionKind::Store { value: input, .. } => value(input, &mut visit),
+        MIRInstructionKind::Store { target: destination, value: input, .. } => {
+            target(*destination, &mut visit);
+            value(input, &mut visit);
+        }
         MIRInstructionKind::Call { callee, args, .. } => {
             value(callee, &mut visit);
             for arg in args {

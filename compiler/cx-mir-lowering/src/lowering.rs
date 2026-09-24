@@ -11,6 +11,7 @@ mod functions;
 mod globals;
 mod instructions;
 mod intrinsics;
+pub(crate) mod memory;
 pub(crate) mod typing;
 pub(crate) mod values;
 

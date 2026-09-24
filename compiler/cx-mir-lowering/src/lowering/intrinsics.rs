@@ -1,3 +1,4 @@
+use crate::lowering::memory;
 use cx_lmir::LMIRInstructionKind;
 use cx_mir::{MIRIntrinsic, MIRTarget};
 
@@ -26,6 +27,6 @@ pub(super) fn output(
     kind: LMIRInstructionKind,
 ) {
     let ty = context.ty(target_type(context, target));
-    let value = context.temp(kind, ty);
+    let value = memory::temp(context, kind, ty);
     write_target(context, target, value);
 }

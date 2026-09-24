@@ -1,8 +1,6 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRBindable, MIRComptimeBody, MIRComptimeOp, MIRComptimeOutput, MIRComptimeValue, MIRConstant,
-    MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRStagedExpression, MIRValue,
-    expr::instruction::MIRInvalidationKind,
+    MIRBindable, MIRComptimeBody, MIRComptimeOp, MIRComptimeOutput, MIRComptimeValue, MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntrinsic, MIRStagedExpression, MIRValue, expr::instruction::MIRInvalidationKind
 };
 use cx_tokens::TokenRange;
 
@@ -36,13 +34,9 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             let value = engine.read(frame, &MIRValue::PlaceRef(*place), range)?;
             frame.registers_mut().insert(*out, value);
         }
-        MIRInstructionKind::Forward { out, source } => {
-            let value = engine.read(frame, &MIRValue::Register(*source), range)?;
-            frame.registers_mut().insert(*out, value);
-        }
         MIRInstructionKind::Store { target, value, .. } => {
             let value = engine.read(frame, value, range)?;
-            frame.places_mut().insert(*target, value);
+            engine.write(frame, target, value)?;
         }
         MIRInstructionKind::Call { .. } => {
             return comptime_error(

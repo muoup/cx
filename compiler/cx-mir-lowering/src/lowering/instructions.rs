@@ -1,3 +1,4 @@
+use crate::lowering::memory;
 use cx_lmir::{LMIRBasicBlock, LMIRBlockTarget, LMIRInstruction, LMIRInstructionKind};
 use cx_mir::{MIRInstruction, MIRInstructionKind};
 use cx_util::identifier::CXIdent;
@@ -18,11 +19,12 @@ pub(super) fn lower_instruction(
             let source = context.places[place].clone();
             let ty = context.body.place(*place).expect("unknown lifted place").ty;
             if context.ty(ty).is_memory_resident() {
-                let copy = context.allocate(ty);
-                context.store(copy.clone(), source, ty);
-                context.assign(*out, LMIRInstructionKind::Alias { value: copy });
+                let copy = memory::allocate(context, ty);
+                memory::store(context, copy.clone(), source, ty);
+                memory::assign(context, *out, LMIRInstructionKind::Alias { value: copy });
             } else {
-                context.assign(
+                memory::assign(
+                    context,
                     *out,
                     LMIRInstructionKind::Load {
                         memory: source,
@@ -31,17 +33,9 @@ pub(super) fn lower_instruction(
                 );
             }
         }
-        MIRInstructionKind::Forward { out, source } => {
-            context.assign(
-                *out,
-                LMIRInstructionKind::Alias {
-                    value: context.reg(*source),
-                },
-            );
-        }
         MIRInstructionKind::Store { target, value, ty } => {
             let source = values::lower_rvalue(context, value, *ty);
-            context.store(context.places[target].clone(), source, *ty);
+            values::write_target(context, *target, source);
         }
         MIRInstructionKind::Call { out, callee, args } => {
             calls::lower_call(context, *out, callee, args)
@@ -50,7 +44,7 @@ pub(super) fn lower_instruction(
         MIRInstructionKind::Return { value } => calls::lower_return(context, value.as_ref()),
         MIRInstructionKind::Jump { target } => {
             let target = context.target(target);
-            context.void(LMIRInstructionKind::Jump { target });
+            memory::void(context, LMIRInstructionKind::Jump { target });
         }
         MIRInstructionKind::Branch {
             cond,
@@ -60,11 +54,14 @@ pub(super) fn lower_instruction(
             let condition = values::lower_read(context, cond);
             let true_target = context.target(true_target);
             let false_target = context.target(false_target);
-            context.void(LMIRInstructionKind::Branch {
-                condition,
-                true_target,
-                false_target,
-            });
+            memory::void(
+                context,
+                LMIRInstructionKind::Branch {
+                    condition,
+                    true_target,
+                    false_target,
+                },
+            );
         }
         MIRInstructionKind::CaseBranch {
             value,
@@ -80,13 +77,16 @@ pub(super) fn lower_instruction(
                 .as_ref()
                 .map(|target| context.target(target))
                 .unwrap_or_else(|| unreachable_target(context));
-            context.void(LMIRInstructionKind::JumpTable {
-                value,
-                targets,
-                default,
-            });
+            memory::void(
+                context,
+                LMIRInstructionKind::JumpTable {
+                    value,
+                    targets,
+                    default,
+                },
+            );
         }
-        MIRInstructionKind::Unreachable => context.void(LMIRInstructionKind::Unreachable),
+        MIRInstructionKind::Unreachable => memory::void(context, LMIRInstructionKind::Unreachable),
     }
 }
 

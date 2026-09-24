@@ -1,3 +1,4 @@
+use crate::lowering::memory;
 use cx_lmir::compiler_functions::ASSERTION;
 use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRValue};
 use cx_mir::ty::interface::MTRegistry;
@@ -39,7 +40,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             });
             let address = lower_value(context, reference);
             let value = if let Some(inner) = inner {
-                context.load(address, inner)
+                memory::load(context, address, inner)
             } else {
                 address
             };
@@ -92,7 +93,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             };
             let value = if let Some(ty) = source {
                 let address = lower_value(context, value);
-                context.load(address, ty)
+                memory::load(context, address, ty)
             } else {
                 lower_read(context, value)
             };
@@ -107,7 +108,10 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
         }
         I::Assume { condition } => {
             let condition = lower_read(context, condition);
-            context.void(LMIRInstructionKind::CompilerAssumption { condition });
+            memory::void(
+                context,
+                LMIRInstructionKind::CompilerAssumption { condition },
+            );
         }
         I::Assert { condition, message } => {
             let condition = lower_read(context, condition);
@@ -118,11 +122,14 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             );
             let symbol = ASSERTION.symbol_name();
             let signature = context.global.prototypes[&symbol].signature.clone();
-            context.void(LMIRInstructionKind::DirectCall {
-                func: CXIdent::new(symbol),
-                args: vec![condition, message],
-                method_sig: signature,
-            });
+            memory::void(
+                context,
+                LMIRInstructionKind::DirectCall {
+                    func: CXIdent::new(symbol),
+                    args: vec![condition, message],
+                    method_sig: signature,
+                },
+            );
         }
     }
 }
@@ -132,11 +139,11 @@ pub(super) fn variadic(context: &mut FunctionContext<'_, '_>, op: &MIRVAIntrinsi
         MIRVAIntrinsic::VaStart { list, last } => {
             let list = lower_value(context, list);
             let last = lower_value(context, last);
-            context.void(LMIRInstructionKind::VaStart { list, last });
+            memory::void(context, LMIRInstructionKind::VaStart { list, last });
         }
         MIRVAIntrinsic::VaEnd { list } => {
             let list = lower_value(context, list);
-            context.void(LMIRInstructionKind::VaEnd { list });
+            memory::void(context, LMIRInstructionKind::VaEnd { list });
         }
         MIRVAIntrinsic::VaArg { out, list, ty } => {
             let list = lower_value(context, list);

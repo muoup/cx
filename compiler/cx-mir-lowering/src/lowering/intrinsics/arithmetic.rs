@@ -1,3 +1,4 @@
+use crate::lowering::memory;
 use cx_lmir::types::TypeSize;
 use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstructionKind, LMIRIntBinOp,
@@ -260,7 +261,8 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
             let stride = operand_type(context, lhs)
                 .map(|ty| pointer_stride(context, ty))
                 .unwrap_or(1);
-            let difference = context.temp(
+            let difference = memory::temp(
+                context,
                 LMIRInstructionKind::IntegerBinOp {
                     op: LMIRIntBinOp::SUB,
                     left,
@@ -269,7 +271,8 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
                 context.ty(target_type(context, *out)),
             );
             let result = if stride > 1 {
-                context.temp(
+                memory::temp(
+                    context,
                     LMIRInstructionKind::IntegerBinOp {
                         op: LMIRIntBinOp::IDIV,
                         left: difference,
@@ -350,16 +353,16 @@ fn numeric_value(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> cx_
                 context.types().definition(ty).unwrap().kind()
             {
                 let inner = *inner;
-                return context.load(context.reg(*id), inner);
+                return memory::load(context, context.reg(*id), inner);
             }
         }
         MIRValue::PlaceRef(id) => {
             let ty = context.body.place(*id).unwrap().ty;
-            return context.load(context.places[id].clone(), ty);
+            return memory::load(context, context.places[id].clone(), ty);
         }
         MIRValue::Constant(MIRConstant::GlobalRef(reference)) => {
             let address = crate::lowering::values::global_address(context, *reference);
-            return context.load(address, reference.ty);
+            return memory::load(context, address, reference.ty);
         }
         _ => {}
     }

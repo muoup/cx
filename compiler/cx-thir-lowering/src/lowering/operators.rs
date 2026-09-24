@@ -414,13 +414,13 @@ fn lower_increment<'thir>(
     let MIRValue::PlaceRef(place) = lower_expression(builder, operand)? else {
         unreachable!("increment operand must lower to a place");
     };
-    let cx_thir::thir::data::THIRTypeKind::MemoryReference { inner_type, .. } = &operand._type.kind
+    let THIRTypeKind::MemoryReference { inner_type, .. } = &operand._type.kind
     else {
         unreachable!("increment operand must have reference type");
     };
     let (integer_type, pointee_type) = match &builder.registry().resolve_type_id(*inner_type).kind {
-        cx_thir::thir::data::THIRTypeKind::Integer { _type, .. } => (Some(*_type), None),
-        cx_thir::thir::data::THIRTypeKind::PointerTo { inner_type } => (None, Some(*inner_type)),
+        THIRTypeKind::Integer { _type, .. } => (Some(*_type), None),
+        THIRTypeKind::PointerTo { inner_type } => (None, Some(*inner_type)),
         _ => (None, None),
     };
     let ty = lower_type_id(builder, *inner_type)?;
@@ -483,7 +483,7 @@ fn lower_increment<'thir>(
 
     builder.emit(MIRInstruction::new(
         MIRInstructionKind::Store {
-            target: place,
+            target: MIRTarget::Place(place),
             value: MIRValue::Register(updated),
             ty,
         },

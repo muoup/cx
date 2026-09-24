@@ -3,8 +3,7 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    MIRInstructionLike,
-    expr::{
+    MIRInstructionLike, expr::{
         body::MIRBody,
         comptime::{MIRComptimeInstruction, MIRComptimeOp},
         instruction::{MIRBasicBlock, MIRInstructionKind, MIRInvalidationKind},
@@ -12,18 +11,14 @@ use crate::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
-    },
-    ty::{
+    }, ty::{
         MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, comptime::MIRComptimeType,
         interface::MTRegistry,
-    },
-    unit::{
+    }, unit::{
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
         function::{MIRFnSignature, MIRFunction},
-    },
-    value::{
-        MIRBindable, MIRBlockTarget, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeValue,
-        MIRConstant, MIRGlobalRef, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
+    }, value::{
+        MIRBindable, MIRBlockTarget, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeValue, MIRConstant, MIRGlobalRef, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
     },
 };
 
@@ -542,11 +537,6 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" = lift ")?;
             write_place_name(f, unit, function, *place)
         }
-        MIRInstructionKind::Forward { out, source } => {
-            write_register_name(f, function, *out)?;
-            f.write_str(" = forward ")?;
-            write_register_name(f, function, *source)
-        }
         MIRInstructionKind::BindLifetime { bind, bind_to: to } => {
             f.write_str("bind ")?;
             write_bindable(f, unit, function, bind)?;
@@ -554,7 +544,7 @@ fn write_instruction<T: MTRegistry>(
             write_place_name(f, unit, function, *to)
         }
         MIRInstructionKind::Store { target, value, .. } => {
-            write_place_name(f, unit, function, *target)?;
+            write_target(f, unit, function, *target)?;
             f.write_str(" = ")?;
             write_value(f, unit, function, value)
         }
