@@ -1,8 +1,8 @@
 use cx_log::CXResult;
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_mir::{
-    MIRBindable, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRRegister, MIRTarget, MIRTypeID,
-    MIRValue,
+    MIRBindable, MIRConstant, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRRegister,
+    MIRTarget, MIRTypeID, MIRValue,
 };
 use cx_thir::thir::data::THIRType;
 use cx_tokens::TokenRange;
@@ -42,14 +42,12 @@ pub(crate) fn allocate_variable<'thir>(
     Ok(place)
 }
 
-pub(crate) fn ensure_place(
-    _builder: &mut MIRBuilder<'_>,
-    value: MIRValue,
-    _ty: &THIRType,
-) -> CXResult<MIRPlaceID> {
+pub(crate) fn expect_target(value: &MIRValue) -> MIRTarget {
     match value {
-        MIRValue::PlaceRef(place) => Ok(place),
-        _ => unreachable!("an lvalue expression must lower to a place"),
+        MIRValue::PlaceRef(place) => MIRTarget::Place(*place),
+        MIRValue::Register(register) => MIRTarget::Indirect(*register),
+        MIRValue::Constant(MIRConstant::GlobalRef(reference)) => MIRTarget::Global(*reference),
+        _ => unreachable!("an lvalue expression must lower to an addressable value"),
     }
 }
 
@@ -69,15 +67,21 @@ pub(crate) fn assign_operand_to_place<'thir>(
 
 pub(crate) fn copy(
     builder: &mut MIRBuilder<'_>,
-    place: MIRPlaceID,
+    value: MIRValue,
     ty: MIRTypeID,
     range: &TokenRange,
 ) -> MIRValue {
+    let target = expect_target(&value);
     let out = target_register(builder, ty);
-    builder.emit(MIRInstruction::new(
-        MIRInstructionKind::LiftPlace { out, place },
-        range.clone(),
-    ));
+    let kind = match target {
+        MIRTarget::Place(place) => MIRInstructionKind::LiftPlace { out, place },
+        _ => MIRInstructionKind::Store {
+            target: MIRTarget::Register(out),
+            value,
+            ty,
+        },
+    };
+    builder.emit(MIRInstruction::new(kind, range.clone()));
 
     MIRValue::Register(out)
 }

@@ -88,12 +88,11 @@ pub(super) fn lower_pattern_test<'thir>(
                 }
                 _ => &lhs._type,
             };
-            let input = match input {
-                MIRValue::PlaceRef(place) => {
-                    let type_id = lower_type(builder, value_type)?;
-                    memory::copy(builder, place, type_id, &lhs.token_range)
-                }
-                value => value,
+            let input = if lhs._type.is_memory_reference() {
+                let type_id = lower_type(builder, value_type)?;
+                memory::copy(builder, input, type_id, &lhs.token_range)
+            } else {
+                input
             };
             (
                 input,
@@ -145,18 +144,17 @@ pub(super) fn bind_pattern_payload<'thir>(
 ) -> CXResult<()> {
     match pattern {
         THIRPattern::Binding { name, local_id } => {
-            let value = match subject {
-                MIRValue::PlaceRef(_) => subject,
-                value => {
-                    let place = memory::assign_operand_to_place(
-                        builder,
-                        value,
-                        sum_type,
-                        Some(name.clone()),
-                        &builder.fun().current_scope_range(),
-                    )?;
-                    MIRValue::PlaceRef(place)
-                }
+            let value = if sum_type.is_memory_reference() {
+                subject
+            } else {
+                let place = memory::assign_operand_to_place(
+                    builder,
+                    subject,
+                    sum_type,
+                    Some(name.clone()),
+                    &builder.fun().current_scope_range(),
+                )?;
+                MIRValue::PlaceRef(place)
             };
             builder.fun_mut().bind_local(*local_id, value.clone());
             builder.fun_mut().bind_named_value(name, value);

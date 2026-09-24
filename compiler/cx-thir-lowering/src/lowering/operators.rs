@@ -18,7 +18,7 @@ use cx_thir::type_context::THIRTypeContext;
 use super::types::{lower_float_type, lower_int_type, lower_type_id};
 use crate::{
     builder::MIRBuilder,
-    lowering::{lower_expression, types::lower_type},
+    lowering::{lower_expression, memory, types::lower_type},
 };
 
 pub(super) fn lower_binary_op<'thir>(
@@ -411,13 +411,13 @@ fn lower_increment<'thir>(
     amount: i8,
     prefix: bool,
 ) -> CXResult<MIRValue> {
-    let MIRValue::PlaceRef(place) = lower_expression(builder, operand)? else {
-        unreachable!("increment operand must lower to a place");
-    };
+    let operand_value = lower_expression(builder, operand)?;
+    let operand_target = memory::expect_target(&operand_value);
     let THIRTypeKind::MemoryReference { inner_type, .. } = &operand._type.kind
     else {
         unreachable!("increment operand must have reference type");
     };
+
     let (integer_type, pointee_type) = match &builder.registry().resolve_type_id(*inner_type).kind {
         THIRTypeKind::Integer { _type, .. } => (Some(*_type), None),
         THIRTypeKind::PointerTo { inner_type } => (None, Some(*inner_type)),
@@ -425,13 +425,19 @@ fn lower_increment<'thir>(
     };
     let ty = lower_type_id(builder, *inner_type)?;
     let previous = builder.fun_mut().new_register(ty, None);
-    builder.emit(MIRInstruction::new(
-        MIRInstructionKind::LiftPlace {
+
+    let read = match operand_target {
+        MIRTarget::Place(place) => MIRInstructionKind::LiftPlace {
             out: previous,
             place,
         },
-        expr.token_range.clone(),
-    ));
+        _ => MIRInstructionKind::Store {
+            target: MIRTarget::Register(previous),
+            value: operand_value.clone(),
+            ty,
+        },
+    };
+    builder.emit(MIRInstruction::new(read, expr.token_range.clone()));
 
     let updated = builder.fun_mut().new_register(ty, None);
     let target = MIRTarget::Register(updated);
@@ -483,14 +489,14 @@ fn lower_increment<'thir>(
 
     builder.emit(MIRInstruction::new(
         MIRInstructionKind::Store {
-            target: MIRTarget::Place(place),
+            target: operand_target,
             value: MIRValue::Register(updated),
             ty,
         },
         expr.token_range.clone(),
     ));
     Ok(if prefix {
-        MIRValue::PlaceRef(place)
+        operand_value
     } else {
         MIRValue::Register(previous)
     })
@@ -617,6 +623,7 @@ pub(super) fn lower_address_of<'thir>(
     let out = builder.fun_mut().new_register(result_type, None);
     let target = MIRTarget::Register(out);
 
+    // FIXME: The logic here can be simplified, a string literal THIR expression should lower to an MIRConstant::String.
     let intrinsic = if let THIRExpressionKind::StringLiteral { value } = &operand.kind {
         MIRInternalIntrinsic::StringAddress {
             out: target,
@@ -631,9 +638,6 @@ pub(super) fn lower_address_of<'thir>(
             }
         } else {
             match value {
-                MIRValue::PlaceRef(place) => {
-                    MIRInternalIntrinsic::PlaceAddress { out: target, place }
-                }
                 MIRValue::Constant(MIRConstant::String(string)) => {
                     MIRInternalIntrinsic::StringAddress {
                         out: target,
@@ -646,15 +650,20 @@ pub(super) fn lower_address_of<'thir>(
                         fn_id: function,
                     }
                 }
-                MIRValue::Constant(MIRConstant::GlobalRef(global)) => {
-                    MIRInternalIntrinsic::GlobalAddress {
+                reference => match memory::expect_target(&reference) {
+                    MIRTarget::Place(place) => MIRInternalIntrinsic::PlaceAddress {
+                        out: target,
+                        place,
+                    },
+                    MIRTarget::Global(global) => MIRInternalIntrinsic::GlobalAddress {
                         out: target,
                         global,
-                    }
-                }
-                reference => MIRInternalIntrinsic::ReferenceAddress {
-                    out: target,
-                    reference,
+                    },
+                    MIRTarget::Indirect(_) => MIRInternalIntrinsic::ReferenceAddress {
+                        out: target,
+                        reference,
+                    },
+                    MIRTarget::Register(_) => unreachable!(),
                 },
             }
         }

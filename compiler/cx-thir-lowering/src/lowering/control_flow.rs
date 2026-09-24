@@ -440,12 +440,11 @@ pub(super) fn lower_match<'thir>(
         );
         MIRValue::Register(out)
     } else {
-        match subject_value.clone() {
-            MIRValue::PlaceRef(place) => {
-                let ty = lower_type(builder, subject_type)?;
-                memory::copy(builder, place, ty, &condition.token_range)
-            }
-            value => value,
+        if condition._type.is_memory_reference() {
+            let ty = lower_type(builder, subject_type)?;
+            memory::copy(builder, subject_value.clone(), ty, &condition.token_range)
+        } else {
+            subject_value.clone()
         }
     };
 

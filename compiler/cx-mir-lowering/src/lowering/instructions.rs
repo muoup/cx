@@ -35,7 +35,15 @@ pub(super) fn lower_instruction(
         }
         MIRInstructionKind::Store { target, value, ty } => {
             let source = values::lower_rvalue(context, value, *ty);
-            values::write_target(context, *target, source);
+            if matches!(target, cx_mir::MIRTarget::Register(_))
+                && context.ty(*ty).is_memory_resident()
+            {
+                let copy = memory::allocate(context, *ty);
+                memory::store(context, copy.clone(), source, *ty);
+                values::write_target(context, *target, copy);
+            } else {
+                values::write_target(context, *target, source);
+            }
         }
         MIRInstructionKind::Call { out, callee, args } => {
             calls::lower_call(context, *out, callee, args)

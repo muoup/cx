@@ -98,7 +98,7 @@ pub(crate) fn lower_function_block<'thir>(
                 Some(match result {
                     MIRValue::PlaceRef(place) if !expr._type.is_memory_reference() => {
                         let ty = lower_type(builder, &expr._type)?;
-                        memory::copy(builder, place, ty, &expr.token_range)
+                        memory::copy(builder, MIRValue::PlaceRef(place), ty, &expr.token_range)
                     }
                     value => value,
                 })
@@ -307,26 +307,11 @@ pub(crate) fn lower_expression<'thir>(
 
         THIRExpressionKind::Copy { source } => {
             let lowered = lower_expression(builder, source)?;
-
-            match lowered {
-                MIRValue::PlaceRef(target) => {
-                    let value_type = match &source._type.kind {
-                        THIRTypeKind::MemoryReference { inner_type, .. } => {
-                            types::lower_type_id(builder, *inner_type)?
-                        }
-                        _ => lower_type(builder, &source._type)?,
-                    };
-                    let out = builder.fun_mut().new_register(value_type, None);
-
-                    builder.fun_mut().emit(MIRInstruction {
-                        kind: MIRInstructionKind::LiftPlace { out, place: target },
-                        token_range: expr.token_range.clone(),
-                    });
-
-                    MIRValue::Register(out)
-                }
-
-                _ => lowered,
+            if expr._type.is_memory_reference() && !matches!(lowered, MIRValue::PlaceRef(_)) {
+                lowered
+            } else {
+                let value_type = lower_type(builder, &expr._type)?;
+                memory::copy(builder, lowered, value_type, &expr.token_range)
             }
         }
 
@@ -392,34 +377,23 @@ pub(crate) fn lower_expression<'thir>(
             let mlhs = lower_expression(builder, target)?;
             let mvalue = lower_expression(builder, value)?;
 
-            let mtarget = match &mlhs {
-                MIRValue::PlaceRef(place) => {
-                    builder.emit(MIRInstruction::new(
-                        MIRInstructionKind::Invalidate {
-                            place: MIRBindable::Place(*place),
-                            kind: MIRInvalidationKind::Drop,
-                        },
-                        target.token_range.clone(),
-                    ));
+            let mtarget = memory::expect_target(&mlhs);
+            if let MIRTarget::Place(place) = mtarget {
+                builder.emit(MIRInstruction::new(
+                    MIRInstructionKind::Invalidate {
+                        place: MIRBindable::Place(place),
+                        kind: MIRInvalidationKind::Drop,
+                    },
+                    target.token_range.clone(),
+                ));
 
-                    builder.emit(MIRInstruction::new(
-                        MIRInstructionKind::Initialize {
-                            place: MIRBindable::Place(*place),
-                        },
-                        target.token_range.clone(),
-                    ));
-
-                    MIRTarget::Place(*place)
-                }
-
-                MIRValue::Register(register) => {
-                    MIRTarget::Indirect(*register)
-                }
-
-                MIRValue::Constant(MIRConstant::GlobalRef(reference)) => MIRTarget::Global(*reference),
-
-                _ => unreachable!("assignment target must be an addressable value"),
-            };
+                builder.emit(MIRInstruction::new(
+                    MIRInstructionKind::Initialize {
+                        place: MIRBindable::Place(place),
+                    },
+                    target.token_range.clone(),
+                ));
+            }
 
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Store {
@@ -575,7 +549,7 @@ pub(crate) fn lower_expression<'thir>(
             sum_type,
         } => {
             let target_value = lower_expression(builder, target)?;
-            let target = memory::ensure_place(builder, target_value, &target._type)?;
+            let mtarget = memory::expect_target(&target_value);
             let value = lower_expression(builder, inner_value)?;
             let sum_type_id = lower_type(builder, sum_type)?;
             let constructed = builder.fun_mut().new_register(sum_type_id, None);
@@ -589,13 +563,13 @@ pub(crate) fn lower_expression<'thir>(
             );
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Store {
-                    target: MIRTarget::Place(target),
+                    target: mtarget,
                     value: MIRValue::Register(constructed),
                     ty: sum_type_id,
                 },
                 expr.token_range.clone(),
             ));
-            MIRValue::PlaceRef(target)
+            target_value
         }
 
         THIRExpressionKind::TaggedUnionInitializer {
@@ -852,7 +826,7 @@ pub(crate) fn lower_expression<'thir>(
                     if !expression._type.is_memory_reference() =>
                 {
                     let ty = lower_type(builder, &expression._type)?;
-                    memory::copy(builder, target, ty, &expression.token_range)
+                    memory::copy(builder, MIRValue::PlaceRef(target), ty, &expression.token_range)
                 }
                 (value, _) => value,
             };
