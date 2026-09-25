@@ -6,6 +6,7 @@ use cx_thir::{
     thir::{
         data::{THIRType, THIRTypeKind},
         expression::{StructInitialization, THIRExpressionKind},
+        r#type::THIRArrayLength,
     },
     type_context::THIRTypeContext,
 };
@@ -65,16 +66,12 @@ pub fn typecheck_initializer_list(
                 namespace,
                 indices,
                 &inner_type,
-                Some(length.as_ref()),
+                match length {
+                    THIRArrayLength::Implicit => None,
+                    THIRArrayLength::Known(length) => Some(length.as_ref()),
+                },
                 &to_type,
             )
-        }
-
-        THIRTypeKind::PointerTo {
-            inner_type: inner, ..
-        } => {
-            let inner_type = env.symbols.resolve_type_id(*inner).clone();
-            typecheck_array_initializer(env, namespace, indices, &inner_type, None, &to_type)
         }
 
         THIRTypeKind::Structured { .. } => {
@@ -85,10 +82,21 @@ pub fn typecheck_initializer_list(
             typecheck_union_initializer(env, namespace, expr, indices, &to_type)
         }
 
+        _ if indices.len() == 1 && indices[0].name.is_none() => {
+            let value = &indices[0].value;
+            let value = typecheck_expr(env, namespace, value, Some(&to_type))?
+                .apply_expected_type(env, namespace, &to_type)?
+                .standard_ready_coerce(env, expr.token_range())?;
+            implicit_cast(env, value, &to_type).map(TypecheckResult::from)
+        }
         _ => env.log_error(
             expr.token_range(),
             &catalogue::TYPE_REQUIREMENT,
-            ("initializer".into(), "the target type".into(), Some(format!("{}", to_type.display_with(&env.symbols)))),
+            (
+                "initializer".into(),
+                "the target type".into(),
+                Some(format!("{}", to_type.display_with(&env.symbols))),
+            ),
         ),
     }
 }
@@ -104,7 +112,11 @@ fn typecheck_union_initializer(
         return env.log_error(
             expr.token_range(),
             &catalogue::TYPE_REQUIREMENT,
-            ("initializer".into(), "a union type".into(), Some(format!("{}", to_type.display_with(&env.symbols)))),
+            (
+                "initializer".into(),
+                "a union type".into(),
+                Some(format!("{}", to_type.display_with(&env.symbols))),
+            ),
         );
     };
 
@@ -129,7 +141,10 @@ fn typecheck_union_initializer(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::UNKNOWN_MEMBER,
-                    (format!("union {}", to_type.display_with(&env.symbols)), "initializer field".into()),
+                    (
+                        format!("union {}", to_type.display_with(&env.symbols)),
+                        "initializer field".into(),
+                    ),
                 );
             };
             let value = typecheck_expr(env, namespace, &initialization.value, Some(field_type))
@@ -179,7 +194,7 @@ fn typecheck_array_initializer(
     });
     let array_type = THIRType::from(THIRTypeKind::Array {
         inner_type: env.symbols.generate_type_id(inner_type.clone()),
-        length: Box::new(array_size),
+        length: THIRArrayLength::Known(Box::new(array_size)),
     });
 
     let elements = indices
@@ -211,7 +226,11 @@ fn typecheck_structured_initializer(
         return env.log_error(
             expr.token_range(),
             &catalogue::TYPE_REQUIREMENT,
-            ("initializer".into(), "a structured type".into(), Some(format!("{}", to_type.display_with(&env.symbols)))),
+            (
+                "initializer".into(),
+                "a structured type".into(),
+                Some(format!("{}", to_type.display_with(&env.symbols))),
+            ),
         );
     };
     let fields = fields.clone();
@@ -230,7 +249,10 @@ fn typecheck_structured_initializer(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::UNKNOWN_MEMBER,
-                    (format!("{}", to_type.display_with(&env.symbols)), format!("{name}")),
+                    (
+                        format!("{}", to_type.display_with(&env.symbols)),
+                        format!("{name}"),
+                    ),
                 );
             };
             counter = found_index;
@@ -248,7 +270,10 @@ fn typecheck_structured_initializer(
             return env.log_error(
                 expr.token_range(),
                 &catalogue::DUPLICATE_ITEM,
-                (format!("field '{}'", fields[counter].0), "struct initializer".into()),
+                (
+                    format!("field '{}'", fields[counter].0),
+                    "struct initializer".into(),
+                ),
             );
         }
 
@@ -262,7 +287,10 @@ fn typecheck_structured_initializer(
             return env.log_error(
                 value.token_range,
                 &catalogue::UNKNOWN_MEMBER,
-                (format!("{}", to_type.display_with(&env.symbols)), format!("{field_name}")),
+                (
+                    format!("{}", to_type.display_with(&env.symbols)),
+                    format!("{field_name}"),
+                ),
             );
         };
 

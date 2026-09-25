@@ -57,26 +57,6 @@ impl Default for THIRExpression {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum THIRPureExpression {
-    IntegerLiteral(i64, THIRIntType, bool),
-}
-
-impl THIRPureExpression {
-    pub fn as_value(&self) -> THIRExpression {
-        match self {
-            Self::IntegerLiteral(value, integer_type, signed) => THIRExpression {
-                token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::IntLiteral(*value),
-                _type: THIRType::from(THIRTypeKind::Integer {
-                    _type: *integer_type,
-                    signed: *signed,
-                }),
-            },
-        }
-    }
-}
-
 #[derive(Clone, Debug, Default, Readable, Writable)]
 pub struct THIRSourceRange {
     pub start_token: usize,
@@ -408,7 +388,7 @@ pub enum THIRBinOp {
      */
     PtrDiff {
         op: THIRPtrDiffBinOp,
-        ptr_inner: THIRTypeID
+        ptr_inner: THIRTypeID,
     },
 
     Pointer {
@@ -475,6 +455,8 @@ pub enum THIRCoercion {
     //
     // Converting from a bounded / ephemeral reference to a free reference (non-safe operation) also falls under this category
     ReinterpretBits,
+
+    StringToArray,
 
     Unreachable,
 }

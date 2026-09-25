@@ -173,6 +173,9 @@ pub enum MIRTypeKind {
         length: usize,
         inner: MIRTypeID,
     },
+    IncompleteArray {
+        inner: MIRTypeID,
+    },
     Function {
         signature: MIRFnSignature,
     },

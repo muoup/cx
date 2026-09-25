@@ -36,7 +36,12 @@ pub fn apply_template(
         return env
             .log_error_base(
                 &catalogue::ARGUMENT_COUNT,
-                (format!("template '{name}'"), template_input.args.len(), input.types.len(), false),
+                (
+                    format!("template '{name}'"),
+                    template_input.args.len(),
+                    input.types.len(),
+                    false,
+                ),
             )
             .map_err(CXErrorMaybeRaw::from);
     }
@@ -84,8 +89,7 @@ pub fn apply_template(
                 }
             }
         }
-        resolve_symbol_inner(env, namespace, namespace, name, source, *tag, true)
-            .map_err(Into::into)
+        resolve_symbol_inner(env, namespace, namespace, name, source, *tag).map_err(Into::into)
     })?;
 
     if matches!(symbol, MIRSymbol::Type(_)) {

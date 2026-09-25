@@ -5,7 +5,7 @@ use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 use crate::{
     thir::{
         data::{THIRTemplateInput, THIRType, THIRTypeKind},
-        r#type::THIRField,
+        r#type::{THIRArrayLength, THIRField},
     },
     type_context::THIRTypeContext,
 };
@@ -82,7 +82,7 @@ fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String
         THIRTypeKind::Undefined => "u".to_owned(),
         THIRTypeKind::Void => "v".to_owned(),
         THIRTypeKind::Unreachable => "n".to_owned(),
-        THIRTypeKind::PointerTo { inner_type } => {
+        THIRTypeKind::PointerTo { inner_type, .. } => {
             let inner_type = definitions.resolve_type_id(*inner_type);
             let mut mangled = String::from("p");
             let inner_type = mangle_type_name(definitions, inner_type);
@@ -123,7 +123,10 @@ fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String
             inner_type,
         } => {
             let mut mangled = String::from("a");
-            let size = size.display_with(definitions).to_string();
+            let size = match size {
+                THIRArrayLength::Implicit => String::from("?"),
+                THIRArrayLength::Known(size) => size.display_with(definitions).to_string(),
+            };
             push_component(&mut mangled, size.as_str());
             let inner_type =
                 mangle_type_name(definitions, definitions.resolve_type_id(*inner_type));

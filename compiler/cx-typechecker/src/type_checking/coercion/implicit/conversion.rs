@@ -1,10 +1,12 @@
 use cx_log::CXResult;
 use cx_thir::{
     thir::{
-        contextual_eq::TypeContextEqual, expression::{
+        contextual_eq::TypeContextEqual,
+        expression::{
             THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp,
             THIRPtrBinOp,
-        }, r#type::{THIRIntType, THIRType, THIRTypeKind}
+        },
+        r#type::{THIRIntType, THIRType, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
@@ -68,7 +70,7 @@ fn internal(
     target_type: &THIRType,
 ) -> CXResult<CoercionResult> {
     if env.symbols.is_cx_str(&from_type) && is_char_array(env, target_type) {
-        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::StringToArray);
     }
 
     if env.symbols.is_cx_str(&from_type)
@@ -222,7 +224,7 @@ fn internal(
                 target_type.clone(),
                 THIRCoercion::PtrToInt { to_type: *itype },
             )
-        },
+        }
 
         (THIRTypeKind::Function { .. }, THIRTypeKind::PointerTo { inner_type, .. })
             if from_type.contextual_eq(env.symbols.resolve_type_id(*inner_type), &env.symbols) =>
@@ -315,13 +317,15 @@ fn internal(
     }
 }
 
-fn is_char_array(env: &TypeEnvironment, ty: &THIRType) -> bool {
+pub(crate) fn is_char_array(env: &TypeEnvironment, ty: &THIRType) -> bool {
     let ty = env.symbols.mem_ref_inner(ty).unwrap_or(ty);
-    let THIRTypeKind::Array { inner_type, .. } = ty.kind else {
+
+    let Some(inner_type) = env.symbols.array_inner(ty) else {
         return false;
     };
+
     matches!(
-        env.symbols.resolve_type_id(inner_type).kind,
+        inner_type.kind,
         THIRTypeKind::Integer {
             _type: THIRIntType::I8,
             signed: false,

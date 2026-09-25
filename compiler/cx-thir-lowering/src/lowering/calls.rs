@@ -116,7 +116,7 @@ pub(super) fn lower_call<'thir>(
     let mut function_type = &function._type;
     let signature = loop {
         match &function_type.kind {
-            THIRTypeKind::PointerTo { inner_type }
+            THIRTypeKind::PointerTo { inner_type, .. }
             | THIRTypeKind::MemoryReference { inner_type, .. } => {
                 function_type = builder.registry().resolve_type_id(*inner_type);
             }

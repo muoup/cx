@@ -3,7 +3,8 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    MIRInstructionLike, expr::{
+    MIRInstructionLike,
+    expr::{
         body::MIRBody,
         comptime::{MIRComptimeInstruction, MIRComptimeOp},
         instruction::{MIRBasicBlock, MIRInstructionKind, MIRInvalidationKind},
@@ -11,14 +12,18 @@ use crate::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
-    }, ty::{
+    },
+    ty::{
         MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, comptime::MIRComptimeType,
         interface::MTRegistry,
-    }, unit::{
+    },
+    unit::{
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
         function::{MIRFnSignature, MIRFunction},
-    }, value::{
-        MIRBindable, MIRBlockTarget, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeValue, MIRConstant, MIRGlobalRef, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
+    },
+    value::{
+        MIRBindable, MIRBlockTarget, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeValue,
+        MIRConstant, MIRGlobalRef, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
     },
 };
 
@@ -254,6 +259,11 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
                 f.write_str("[")?;
                 self.write(f, *inner)?;
                 write!(f, "; {length}]")
+            }
+            MIRTypeKind::IncompleteArray { inner } => {
+                f.write_str("[")?;
+                self.write(f, *inner)?;
+                f.write_str("]")
             }
             MIRTypeKind::Structured { fields } => {
                 f.write_str("struct {")?;

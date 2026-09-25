@@ -124,7 +124,7 @@ pub fn typecheck_unop(
                         "bitwise not operator".into(),
                         "integer type".into(),
                         format!("{}", operand._type.display_with(&env.symbols)),
-                    )
+                    ),
                 );
             }
 
@@ -154,7 +154,7 @@ pub fn typecheck_unop(
                             "negation operator".into(),
                             "numeric type".into(),
                             format!("{}", operand._type.display_with(&env.symbols)),
-                        )
+                        ),
                     );
                 }
             };
@@ -206,7 +206,11 @@ pub fn typecheck_unop(
             if env.function.in_safe_context()
                 && matches!(operand._type.kind, THIRTypeKind::PointerTo { .. })
             {
-                return env.log_error(&operand.token_range, &catalogue::UNSAFE_OPERATION, "Deferencing a pointer".into());
+                return env.log_error(
+                    &operand.token_range,
+                    &catalogue::UNSAFE_OPERATION,
+                    "Deferencing a pointer".into(),
+                );
             }
 
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
@@ -217,7 +221,7 @@ pub fn typecheck_unop(
                         "dereference operator".into(),
                         "pointer type".into(),
                         format!("{}", operand._type.display_with(&env.symbols)),
-                    )
+                    ),
                 );
             };
 
@@ -246,12 +250,14 @@ pub fn typecheck_unop(
 pub(crate) fn typecheck_sizeof_type(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
-    _expr: &HIRExpression,
+    expr: &HIRExpression,
     ty: &HIRType,
 ) -> CXResult<TypecheckResult> {
     let tc_type = complete_type(env, namespace, ty)?;
 
-    Ok(sizeof_result(_expr.range.clone(), tc_type))
+    ensure_array_bound(env, expr.token_range(), &tc_type)?;
+
+    Ok(sizeof_result(expr.range.clone(), tc_type))
 }
 
 pub(crate) fn typecheck_alignof_type(
@@ -261,6 +267,7 @@ pub(crate) fn typecheck_alignof_type(
     ty: &HIRType,
 ) -> CXResult<TypecheckResult> {
     let tc_type = complete_type(env, namespace, ty)?;
+    ensure_array_bound(env, expr.token_range(), &tc_type)?;
     Ok(alignof_result(expr.range.clone(), tc_type))
 }
 
@@ -273,6 +280,7 @@ pub(crate) fn typecheck_alignof_expr(
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
         .and_then(|v| sizeof_promotion(env, v))?;
 
+    ensure_array_bound(env, &tc_expr.token_range, &tc_expr._type)?;
     Ok(alignof_result(tc_expr.token_range, tc_expr._type))
 }
 
@@ -285,7 +293,25 @@ pub(crate) fn typecheck_sizeof_expr(
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
         .and_then(|v| sizeof_promotion(env, v))?;
 
+    ensure_array_bound(env, &tc_expr.token_range, &tc_expr._type)?;
     Ok(sizeof_result(tc_expr.token_range, tc_expr._type))
+}
+
+fn ensure_array_bound(env: &TypeEnvironment, range: &TokenRange, ty: &THIRType) -> CXResult<()> {
+    if matches!(
+        ty.kind,
+        THIRTypeKind::Array {
+            length: cx_thir::thir::r#type::THIRArrayLength::Implicit,
+            ..
+        }
+    ) {
+        return env.log_error(
+            range,
+            &catalogue::INCOMPLETE_TYPE,
+            format!("{}", ty.display_with(&env.symbols)),
+        );
+    }
+    Ok(())
 }
 
 fn alignof_result(range: TokenRange, _type: THIRType) -> TypecheckResult {

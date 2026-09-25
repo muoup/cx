@@ -54,7 +54,6 @@ pub fn resolve_symbol(
             symbols,
         );
     }
-    let decay_implicit_array = rest.is_empty();
     let resolved = resolve_symbol_inner(
         env,
         evaluation_namespace,
@@ -62,7 +61,6 @@ pub fn resolve_symbol(
         name,
         first,
         first.tag,
-        decay_implicit_array,
     )?;
 
     for declaration in rest {
@@ -73,7 +71,6 @@ pub fn resolve_symbol(
             name,
             declaration,
             declaration.tag,
-            false,
         )?;
         if !mir_symbols_equivalent(env, &resolved, &candidate) {
             return env.log_error(
@@ -113,7 +110,6 @@ pub(crate) fn resolve_symbol_inner(
     name: &CXIdent,
     symbol: &HIRSymbol,
     tag: Option<HIRTagKind>,
-    decay_implicit_array: bool,
 ) -> CXResult<MIRSymbol> {
     let mut source = symbol.clone();
     let template = match &mut source.kind {
@@ -194,21 +190,7 @@ pub(crate) fn resolve_symbol_inner(
                 },
                 _type: env.symbols.mem_ref_to(ty.clone()),
             };
-            let expression = if decay_implicit_array
-                && matches!(_type.kind, HIRTypeKind::ImplicitSizedArray(_))
-            {
-                THIRExpression {
-                    token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::AddressOf {
-                        operand: Box::new(global),
-                    },
-                    _type: ty,
-                }
-            } else {
-                global
-            };
-
-            Ok(MIRSymbol::Expression(expression))
+            Ok(MIRSymbol::Expression(global))
         }
     }
 }
@@ -220,7 +202,10 @@ pub(crate) fn resolve_type_symbol<'a>(
 ) -> CXMaybeRawResult<&'a HIRSymbol> {
     let Some(first) = declarations.first() else {
         return env
-            .log_error_base(&catalogue::MISSING_ENTITY, ("declarations".into(), format!("type '{name}'")))
+            .log_error_base(
+                &catalogue::MISSING_ENTITY,
+                ("declarations".into(), format!("type '{name}'")),
+            )
             .map_err(Into::into);
     };
     let mut definition = None;
@@ -229,7 +214,10 @@ pub(crate) fn resolve_type_symbol<'a>(
             (&symbol.kind, &first.kind)
         else {
             return env
-                .log_error_base(&catalogue::UNEXPECTED_SYMBOL, (name.into(), "a type".into()))
+                .log_error_base(
+                    &catalogue::UNEXPECTED_SYMBOL,
+                    (name.into(), "a type".into()),
+                )
                 .map_err(Into::into);
         };
         if symbol.tag != first.tag || !type_template_kinds_equivalent(first_data, data) {
@@ -367,13 +355,21 @@ fn resolve_type_constructor(
         env.error(
             &range,
             &catalogue::TYPE_REQUIREMENT,
-            ("type constructor target".into(), "a tagged union".into(), None),
+            (
+                "type constructor target".into(),
+                "a tagged union".into(),
+                None,
+            ),
         )
     })?;
     let Some((_, variant_type)) = variants.get(variant_index).cloned() else {
         return crate::log::internal_type_error(
             &catalogue::INDEX_BOUNDS,
-            ("tagged union variant".into(), format!("{variant_index}"), Some(variants.len().to_string())),
+            (
+                "tagged union variant".into(),
+                format!("{variant_index}"),
+                Some(variants.len().to_string()),
+            ),
         );
     };
 

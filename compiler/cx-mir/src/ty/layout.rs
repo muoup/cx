@@ -107,6 +107,7 @@ fn layout_inner<Registry: MTRegistry>(
                 element.alignment,
             )
         }
+        MIRTypeKind::IncompleteArray { .. } => panic!("incomplete array has no layout"),
         MIRTypeKind::Structured { fields } => aggregate_layout(registry, fields, false, active),
         MIRTypeKind::Union { variants } => aggregate_layout(registry, variants, true, active),
         MIRTypeKind::TaggedUnion { variants } => {

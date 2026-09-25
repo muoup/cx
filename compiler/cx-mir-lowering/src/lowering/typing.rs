@@ -156,6 +156,17 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
 
+    if let MIRTypeKind::IncompleteArray { inner } = definition.kind() {
+        let element = convert_type(*inner, types);
+        return LMIRType {
+            alignment: element.alignment,
+            kind: LMIRTypeKind::Array {
+                element: Box::new(element),
+                size: 0,
+            },
+        };
+    }
+
     let kind = match &definition.kind() {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
         MIRTypeKind::Integer { ty, .. } => LMIRTypeKind::Integer(convert_integer_type(*ty)),
@@ -184,6 +195,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
             element: Box::new(convert_type(*inner, types)),
             size: *length,
         },
+        MIRTypeKind::IncompleteArray { .. } => unreachable!(),
         MIRTypeKind::Structured { fields } => LMIRTypeKind::Struct {
             name: format!("mir_type_{}", ty.index()),
             fields: fields

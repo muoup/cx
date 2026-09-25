@@ -94,6 +94,10 @@ fn same_kind<T: MTRegistry>(
             left_length == right_length
                 && same_type_inner(registry, compared, *left_inner, *right_inner)
         }
+        (
+            MIRTypeKind::IncompleteArray { inner: left },
+            MIRTypeKind::IncompleteArray { inner: right },
+        ) => same_type_inner(registry, compared, *left, *right),
         (MIRTypeKind::Function { signature: left }, MIRTypeKind::Function { signature: right }) => {
             left.variadic() == right.variadic()
                 && same_type_inner(registry, compared, left.return_type(), right.return_type())

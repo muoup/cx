@@ -98,7 +98,7 @@ pub enum THIRReferenceLifetime {
     Free,
     Ephemeral,
     Static,
-    Bounded(CXIdent)
+    Bounded(CXIdent),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
@@ -137,7 +137,7 @@ pub enum THIRTypeKind {
         bitfield: Option<THIRBitfieldAccess>,
     },
     Array {
-        length: Box<THIRExpression>,
+        length: THIRArrayLength,
         inner_type: THIRTypeID,
     },
     Function {
@@ -149,6 +149,12 @@ pub enum THIRTypeKind {
     },
     Undefined,
     Str,
+}
+
+#[derive(Debug, Clone)]
+pub enum THIRArrayLength {
+    Implicit,
+    Known(Box<THIRExpression>),
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Readable, Writable)]
@@ -613,8 +619,12 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
                 THIRTypeKind::TaggedUnion { variants: right },
             ) => compare_named_type_fields(left, right, definitions, state),
             (
-                THIRTypeKind::PointerTo { inner_type: left },
-                THIRTypeKind::PointerTo { inner_type: right },
+                THIRTypeKind::PointerTo {
+                    inner_type: left, ..
+                },
+                THIRTypeKind::PointerTo {
+                    inner_type: right, ..
+                },
             ) => left.compare(right, definitions, state),
             (
                 THIRTypeKind::MemoryReference {
@@ -636,12 +646,18 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
                     inner_type: right_inner,
                 },
             ) => {
-                let same_length = match (&left_length.kind, &right_length.kind) {
-                    (
-                        THIRExpressionKind::IntLiteral(left_length),
-                        THIRExpressionKind::IntLiteral(right_length),
-                    ) => left_length == right_length,
-                    _ => true,
+                let same_length = match (left_length, right_length) {
+                    (THIRArrayLength::Implicit, THIRArrayLength::Implicit) => true,
+                    (THIRArrayLength::Known(left_length), THIRArrayLength::Known(right_length)) => {
+                        match (&left_length.kind, &right_length.kind) {
+                            (
+                                THIRExpressionKind::IntLiteral(left_length),
+                                THIRExpressionKind::IntLiteral(right_length),
+                            ) => left_length == right_length,
+                            _ => true,
+                        }
+                    }
+                    _ => false,
                 };
 
                 same_length && left_inner.compare(right_inner, definitions, state)

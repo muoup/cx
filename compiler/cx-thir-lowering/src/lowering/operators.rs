@@ -1,7 +1,8 @@
+use cx_log::catalogue::mir;
 use cx_mir::{
-    MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstruction, MIRInstructionKind,
-    MIRIntIntrinsic, MIRIntType, MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget,
-    MIRTypeKind, MIRValue,
+    MIRAggregateIntrinsic, MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstruction,
+    MIRInstructionKind, MIRIntIntrinsic, MIRIntType, MIRInternalIntrinsic, MIRIntrinsic,
+    MIRPtrIntrinsic, MIRTarget, MIRTypeKind, MIRValue,
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::thir::{
@@ -11,7 +12,7 @@ use cx_thir::thir::{
         THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
         THIRPtrBinOp, THIRPtrDiffBinOp, THIRUnOp,
     },
-    r#type::{THIRIntType, THIRTypeKind},
+    r#type::THIRIntType,
 };
 use cx_thir::type_context::THIRTypeContext;
 
@@ -636,6 +637,60 @@ pub(super) fn lower_coercion<'thir>(
             );
             Ok(MIRValue::Register(out))
         }
+        THIRCoercion::StringToArray => {
+            let MIRValue::Constant(MIRConstant::String(string)) = operand else {
+                return crate::log::log_mir_error(
+                    &expr.token_range,
+                    (&mir::EXPECTED_CONSTANT, "string array initializer".into()),
+                )
+                .map_err(LowerStop::Diagnostic);
+            };
+            let Some(MIRTypeKind::Array { length, .. }) =
+                builder.types().definition(mir_to_type).map(|ty| ty.kind())
+            else {
+                unreachable!("string-to-array conversion requires an array target")
+            };
+            let length = *length;
+            if string.len() > length {
+                return crate::log::log_mir_error(
+                    &expr.token_range,
+                    (&mir::ARRAY_TOO_LONG, (string.len(), length)),
+                )
+                .map_err(LowerStop::Diagnostic);
+            }
+            let mut fields = string
+                .bytes()
+                .enumerate()
+                .map(|(index, byte)| {
+                    (
+                        index,
+                        MIRValue::Constant(MIRConstant::Integer {
+                            value: byte as i128,
+                            ty: MIRIntType::I8,
+                        }),
+                    )
+                })
+                .collect::<Vec<_>>();
+            if string.len() < length {
+                fields.push((
+                    string.len(),
+                    MIRValue::Constant(MIRConstant::Integer {
+                        value: 0,
+                        ty: MIRIntType::I8,
+                    }),
+                ));
+            }
+            let out = builder.fun_mut().new_register(mir_to_type, None);
+            builder.fun_mut().emit_intrinsic(
+                MIRAggregateIntrinsic::AggregateInit {
+                    out: MIRTarget::Register(out),
+                    ty: mir_to_type,
+                    fields,
+                },
+                expr.token_range.clone(),
+            );
+            Ok(MIRValue::Register(out))
+        }
         THIRCoercion::ReferenceBounding(_) => todo!(),
         THIRCoercion::Unreachable => {
             unreachable!("unreachable coercions are handled before lowering")
@@ -708,29 +763,19 @@ fn is_array_decay(
     operand: &THIRExpression,
     expr: &THIRExpression,
 ) -> bool {
-    let array_type = match &operand._type.kind {
-        THIRTypeKind::Array { .. } => &operand._type,
-        THIRTypeKind::MemoryReference { inner_type, .. } => {
-            builder.registry().resolve_type_id(*inner_type)
-        }
-        _ => return false,
-    };
-    let THIRTypeKind::Array {
-        inner_type: array_inner,
-        ..
-    } = &array_type.kind
-    else {
+    // TODO: The typechecker should be more reliant on type ids, this function is good proof of that
+
+    let array_type = builder
+        .registry()
+        .mem_ref_inner(&operand._type)
+        .unwrap_or(&operand._type);
+    let Some(array_inner) = builder.registry().array_inner(array_type) else {
         return false;
     };
-    let THIRTypeKind::PointerTo {
-        inner_type: pointer_inner,
-    } = &expr._type.kind
-    else {
+    let Some(pointer_inner) = builder.registry().ptr_inner(&expr._type) else {
         return false;
     };
 
-    let array_inner = builder.registry().resolve_type_id(*array_inner);
-    let pointer_inner = builder.registry().resolve_type_id(*pointer_inner);
     array_inner.clone().without_specifiers().contextual_eq(
         &pointer_inner.clone().without_specifiers(),
         builder.registry(),

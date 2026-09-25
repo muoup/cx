@@ -3,14 +3,15 @@ use cx_util::identifier::CXIdent;
 
 use crate::thir::comptime::THIRComptimeFn;
 use crate::thir::data::{
-    THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype, THIRFnSignature, THIRFunctionBody, THIRParameter,
+    THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
+    THIRFnSignature, THIRFunctionBody, THIRParameter,
 };
 use crate::thir::expression::{
     THIRBinOp, THIRBlockKind, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
 };
 use crate::thir::global::THIRGlobalVariable;
 use crate::thir::r#type::{
-    THIRField, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind,
+    THIRArrayLength, THIRField, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind,
 };
 use crate::type_context::THIRTypeContext;
 use crate::{THIRFunction, THIRUnit};
@@ -389,7 +390,7 @@ fn write_type_body(
         }
         THIRTypeKind::Void => write!(f, "void"),
         THIRTypeKind::Unreachable => write!(f, "unreachable"),
-        THIRTypeKind::PointerTo { inner_type } => {
+        THIRTypeKind::PointerTo { inner_type, .. } => {
             write_type_id(f, definitions, *inner_type, state)?;
             write!(f, "*")?;
             write_type_qualifiers_suffix(f, ty.specifiers)
@@ -416,7 +417,10 @@ fn write_type_body(
         } => {
             write!(f, "[")?;
             write_type_id(f, definitions, *inner_type, state)?;
-            write!(f, "; {}]", size.display_with(definitions))
+            match size {
+                THIRArrayLength::Implicit => write!(f, "]"),
+                THIRArrayLength::Known(size) => write!(f, "; {}]", size.display_with(definitions)),
+            }
         }
         THIRTypeKind::Opaque { size, alignment } => {
             write!(f, "opaque(size: {size}, align: {alignment})")
@@ -1356,9 +1360,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 .fmt(f)
             }
             THIRExpressionKind::Block {
-                statements,
-                kind,
-                ..
+                statements, kind, ..
             } => {
                 write!(
                     f,
@@ -1598,6 +1600,7 @@ impl Display for THIRCoercion {
             ),
 
             THIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
+            THIRCoercion::StringToArray => write!(f, "string_to_array"),
             THIRCoercion::Typechange => write!(f, "typechange"),
             THIRCoercion::Unreachable => write!(f, "unreachable"),
         }

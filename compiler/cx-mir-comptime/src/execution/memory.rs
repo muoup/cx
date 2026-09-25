@@ -32,6 +32,7 @@ pub(crate) fn read_target<'c, 'thir, C: ComptimeContext<'thir>>(
         MIRTarget::Global(reference) => read_global(engine.context(), reference, range),
         MIRTarget::Indirect(register) => {
             let pointer = engine.read(frame, body, &cx_mir::MIRValue::Register(register), range)?;
+            let inline_reference = frame.is_inline_reference(register);
             match pointer {
                 MIRConstant::GlobalRef(reference) => {
                     read_global(engine.context(), reference, range)
@@ -43,6 +44,7 @@ pub(crate) fn read_target<'c, 'thir, C: ComptimeContext<'thir>>(
                         "dereference a null pointer".into(),
                     ),
                 ),
+                value if inline_reference => Ok(value),
                 _ => comptime_error(
                     range.clone(),
                     (

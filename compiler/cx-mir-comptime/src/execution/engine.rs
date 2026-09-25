@@ -1,4 +1,7 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::{
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+};
 
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
@@ -216,6 +219,7 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
 
             MIRTarget::Register(id) => {
                 frame.registers_mut().insert(*id, value);
+                frame.inline_references.remove(id);
                 frame.liveness.initialize(MIRBindable::Register(*id));
                 Ok(())
             }
@@ -278,6 +282,7 @@ pub(crate) struct ExecutionFrame {
     instruction: usize,
     places: HashMap<MIRPlaceID, MIRConstant>,
     registers: HashMap<MIRRegisterID, MIRConstant>,
+    inline_references: HashSet<MIRRegisterID>,
     comptime_registers: HashMap<MIRComptimeRegisterID, MIRComptimeValue>,
     pub(crate) liveness: Liveness,
 }
@@ -289,6 +294,7 @@ impl ExecutionFrame {
             instruction: 0,
             places: HashMap::new(),
             registers: HashMap::new(),
+            inline_references: HashSet::new(),
             comptime_registers: HashMap::new(),
             liveness: Liveness::new(body, function),
         };
@@ -312,6 +318,14 @@ impl ExecutionFrame {
 
     pub(crate) fn registers_mut(&mut self) -> &mut HashMap<MIRRegisterID, MIRConstant> {
         &mut self.registers
+    }
+
+    pub(crate) fn is_inline_reference(&self, register: MIRRegisterID) -> bool {
+        self.inline_references.contains(&register)
+    }
+
+    pub(crate) fn mark_inline_reference(&mut self, register: MIRRegisterID) {
+        self.inline_references.insert(register);
     }
 
     pub(crate) fn comptime_registers_mut(

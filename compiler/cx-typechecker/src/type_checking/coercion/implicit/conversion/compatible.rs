@@ -1,6 +1,6 @@
 use cx_log::CXResult;
 use cx_thir::{
-    thir::r#type::{THIRType, THIRTypeKind},
+    thir::r#type::{THIRArrayLength, THIRType, THIRTypeKind},
     type_context::THIRTypeContext,
 };
 
@@ -78,9 +78,15 @@ pub fn compatible_types(
                 length: len2,
             },
         ) => {
-            if len1.display_with(&env.symbols).to_string()
-                != len2.display_with(&env.symbols).to_string()
-            {
+            let same_length = match (len1, len2) {
+                (THIRArrayLength::Implicit, THIRArrayLength::Implicit) => true,
+                (THIRArrayLength::Known(left), THIRArrayLength::Known(right)) => {
+                    left.display_with(&env.symbols).to_string()
+                        == right.display_with(&env.symbols).to_string()
+                }
+                _ => false,
+            };
+            if !same_length {
                 return Ok(false);
             }
 

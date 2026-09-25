@@ -11,7 +11,7 @@ use cx_thir::{
     thir::{
         comptime::THIRComptimeFn,
         data::{THIRComptimeValueType, THIRFnPrototype, THIRFnSignature},
-        r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
+        r#type::{THIRArrayLength, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
@@ -124,9 +124,14 @@ pub(crate) fn lower_type_kind<'thir>(
                 signed: bitfield.signed,
             }),
         },
-        THIRTypeKind::Array { length, inner_type } => MIRTypeKind::Array {
-            length: evaluate_integer(builder, length, "array length")?,
-            inner: lower_type_id(builder, *inner_type)?,
+        THIRTypeKind::Array { length, inner_type } => match length {
+            THIRArrayLength::Known(length) => MIRTypeKind::Array {
+                length: evaluate_integer(builder, length, "array length")?,
+                inner: lower_type_id(builder, *inner_type)?,
+            },
+            THIRArrayLength::Implicit => MIRTypeKind::IncompleteArray {
+                inner: lower_type_id(builder, *inner_type)?,
+            },
         },
         THIRTypeKind::Function { signature } => MIRTypeKind::Function {
             signature: lower_signature(builder, signature)?,
@@ -239,7 +244,18 @@ fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()
                 .and_then(|ty| find_array(registry, &ty.kind, seen))
         };
         match kind {
-            THIRTypeKind::Array { length, .. } => Some(length.token_range.clone()),
+            THIRTypeKind::Array { length, inner_type } => match length {
+                THIRArrayLength::Known(length)
+                    if matches!(
+                        length.kind,
+                        cx_thir::thir::expression::THIRExpressionKind::IntLiteral(_)
+                    ) =>
+                {
+                    check_id(*inner_type)
+                }
+                THIRArrayLength::Known(length) => Some(length.token_range.clone()),
+                THIRArrayLength::Implicit => Some(TokenRange::internal()),
+            },
             THIRTypeKind::PointerTo { inner_type }
             | THIRTypeKind::MemoryReference { inner_type, .. } => check_id(*inner_type),
             THIRTypeKind::Structured { fields }

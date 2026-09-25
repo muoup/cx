@@ -54,9 +54,11 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                 );
             };
             let base = engine.read(frame, body, base, range)?;
+            let inline_base = matches!(&base, MIRConstant::Aggregate { .. });
             let value =
                 project_aggregate(engine, body, *out, base, *field, offset, field_ty, range)?;
-            engine.write(frame, out, value)
+            engine.write(frame, out, value)?;
+            mark_inline_projection(engine, frame, body, *out, inline_base, range)
         }
         A::ArrayIndex {
             out,
@@ -65,6 +67,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             element_ty,
         } => {
             let base = engine.read(frame, body, base, range)?;
+            let inline_base = matches!(&base, MIRConstant::Aggregate { .. });
             let index = engine
                 .read(frame, body, index, range)
                 .and_then(|value| integer_value(value, range))?;
@@ -122,7 +125,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                     );
                 }
             };
-            engine.write(frame, out, value)
+            engine.write(frame, out, value)?;
+            mark_inline_projection(engine, frame, body, *out, inline_base, range)
         }
         A::SumIndex { out, value, .. } => {
             let value = engine.read(frame, body, value, range)?;
@@ -156,6 +160,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             sum_ty,
         } => {
             let base = engine.read(frame, body, base, range)?;
+            let inline_base = matches!(&base, MIRConstant::Aggregate { .. });
             let field_ty = field_byte_offset(engine.context().types(), *sum_ty, *variant)
                 .map(|(_, ty)| ty)
                 .ok_or_else(|| {
@@ -166,7 +171,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                     )
                 })?;
             let value = project_aggregate(engine, body, *out, base, *variant, 0, field_ty, range)?;
-            engine.write(frame, out, value)
+            engine.write(frame, out, value)?;
+            mark_inline_projection(engine, frame, body, *out, inline_base, range)
         }
         A::SumVariantL {
             out,
@@ -184,6 +190,27 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             engine.write(frame, &MIRTarget::Place(*out), payload)
         }
     }
+}
+
+fn mark_inline_projection<'thir, C: ComptimeContext<'thir>>(
+    engine: &Engine<'_, 'thir, C>,
+    frame: &mut ExecutionFrame,
+    body: &MIRComptimeBody<'_>,
+    out: MIRTarget,
+    inline_base: bool,
+    range: &TokenRange,
+) -> CXResult<()> {
+    if inline_base && let MIRTarget::Register(register) = out {
+        let ty = target_type(body, out, range)?;
+        let types = engine.context().types();
+        if types
+            .definition(ty)
+            .is_some_and(|ty| types.is_reference_type(ty))
+        {
+            frame.mark_inline_reference(register);
+        }
+    }
+    Ok(())
 }
 
 fn project_aggregate<'c, 'thir, C: ComptimeContext<'thir>>(

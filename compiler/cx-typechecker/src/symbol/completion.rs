@@ -27,7 +27,9 @@ use cx_thir::{
         },
         expression::THIRLocalID,
         name_mangling::mangle_rootable_name,
-        r#type::{THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind},
+        r#type::{
+            THIRArrayLength, THIRField, THIRMoveSemantics, THIRType, THIRTypeID, THIRTypeKind,
+        },
     },
     type_context::THIRTypeContext,
 };
@@ -68,11 +70,7 @@ pub fn complete_type(
     let id = complete_type_id(env, namespace, ty)?;
 
     let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
-        return env.log_error(
-            ty.range(),
-            &catalogue::INCOMPLETE_TYPE,
-            format!("{}", ty),
-        );
+        return env.log_error(ty.range(), &catalogue::INCOMPLETE_TYPE, format!("{}", ty));
     };
 
     Ok(completed)
@@ -118,11 +116,7 @@ pub(crate) fn complete_type_inner(
                 .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
 
             let Some(completed) = env.symbols.try_resolve_type_id(id).cloned() else {
-                return env.log_error(
-                    ty.range(),
-                    &catalogue::INCOMPLETE_TYPE,
-                    format!("{}", ty),
-                );
+                return env.log_error(ty.range(), &catalogue::INCOMPLETE_TYPE, format!("{}", ty));
             };
 
             completed
@@ -139,21 +133,25 @@ pub(crate) fn complete_type_inner(
             let size = implicit_cast(env, size, &integer_type)?;
             THIRTypeKind::Array {
                 inner_type: id,
-                length: Box::new(size),
+                length: THIRArrayLength::Known(Box::new(size)),
             }
             .into()
         }
 
         HIRTypeKind::ImplicitSizedArray(inner) => {
             let id = complete_type_id(env, namespace, inner)?;
-            ensure_valid_type_id_component(env, ty.range(), id, "a pointer target", true)?;
+            ensure_valid_type_id_component(env, ty.range(), id, "an array element", true)?;
 
-            THIRTypeKind::PointerTo { inner_type: id }.into()
+            THIRTypeKind::Array {
+                inner_type: id,
+                length: THIRArrayLength::Implicit,
+            }
+            .into()
         }
 
         HIRTypeKind::MemoryReference { inner_type, .. } => {
             let inner_type = complete_type_id(env, namespace, inner_type)?;
-            
+
             ensure_valid_type_id_component(
                 env,
                 ty.range(),
@@ -231,11 +229,7 @@ pub fn ensure_valid_type_id_component(
     enforce_allocatable: bool,
 ) -> CXResult<()> {
     let Some(ty) = env.symbols.try_resolve_type_id(ty) else {
-        return env.log_error(
-            range,
-            &catalogue::INCOMPLETE_TYPE,
-            format!("{}", context),
-        );
+        return env.log_error(range, &catalogue::INCOMPLETE_TYPE, format!("{}", context));
     };
 
     ensure_valid_type_component(env, range, ty, context, enforce_allocatable)
@@ -252,21 +246,29 @@ pub fn ensure_valid_type_component(
         THIRTypeKind::Unreachable => env.log_error(
             range,
             &catalogue::TYPE_REQUIREMENT,
-            (format!("type component {context}"), "a reachable type".into(), None),
+            (
+                format!("type component {context}"),
+                "a reachable type".into(),
+                None,
+            ),
         ),
 
         THIRTypeKind::Function { .. }
         | THIRTypeKind::Str
         | THIRTypeKind::Undefined
         | THIRTypeKind::Void
-            if enforce_allocatable =>
-        {
-            env.log_error(
-                range,
-                &catalogue::TYPE_REQUIREMENT,
-                (context.into(), "an allocatable type".into(), Some("an unsized type".into())),
-            )
-        }
+        | THIRTypeKind::Array {
+            length: THIRArrayLength::Implicit,
+            ..
+        } if enforce_allocatable => env.log_error(
+            range,
+            &catalogue::TYPE_REQUIREMENT,
+            (
+                context.into(),
+                "an allocatable type".into(),
+                Some("an unsized type".into()),
+            ),
+        ),
 
         _ => Ok(()),
     }
@@ -299,6 +301,18 @@ pub fn complete_prototype(
     let mut params = complete_explicit_parameters(env, namespace, prototype)?;
 
     let return_type = env.symbols.resolve_type_id(return_type_id).clone();
+
+    if return_type.is_array() {
+        return env.log_error(
+            &prototype.range,
+            &catalogue::TYPE_REQUIREMENT,
+            (
+                "a function return value".into(),
+                "a non-array type".into(),
+                Some(format!("{}", return_type.display_with(&env.symbols))),
+            ),
+        );
+    }
 
     if !return_type.is_unreachable() && !return_type.is_void() {
         ensure_valid_type_id_component(
@@ -482,11 +496,8 @@ fn complete_identifier_type(
     match symbol {
         MIRSymbol::Type(id) => {
             if template_input.is_some() {
-                env.log_error_base(
-                    &catalogue::TEMPLATE_ARGUMENTS,
-                    (format!("{}", name), false),
-                )
-                .map_err(|e| e.into())
+                env.log_error_base(&catalogue::TEMPLATE_ARGUMENTS, (format!("{}", name), false))
+                    .map_err(|e| e.into())
             } else {
                 Ok(id)
             }
@@ -530,7 +541,6 @@ pub(crate) fn complete_named_type(
             &name.name,
             symbol,
             symbol.tag,
-            true,
         );
     }
 
@@ -591,10 +601,7 @@ fn complete_template_type_lookup(
     match symbol {
         MIRSymbol::Type(id) => Ok(id),
         MIRSymbol::Template { .. } => env
-            .log_error_base(
-                &catalogue::TEMPLATE_NOT_CONCRETE,
-                name.into(),
-            )
+            .log_error_base(&catalogue::TEMPLATE_NOT_CONCRETE, name.into())
             .map_err(|e| e.into()),
         _ => env
             .log_error_base(
@@ -740,7 +747,11 @@ fn ensure_aggregate_move_restrictions(
         if owned_unsafe_move(env, field_type) && !aggregate_unsafe_move {
             return env.log_error_base(
                 &catalogue::FIELD_TRAIT,
-                (name.to_string(), "@unsafe_move field".into(), "@unsafe_move".into()),
+                (
+                    name.to_string(),
+                    "@unsafe_move field".into(),
+                    "@unsafe_move".into(),
+                ),
             );
         }
     }
@@ -838,6 +849,20 @@ fn complete_field(
             let id = complete_type_id(env, namespace, _type)?;
 
             if !env.symbols.contains_type_id(id) {
+                return env.log_error(
+                    _type.range(),
+                    &catalogue::INCOMPLETE_TYPE,
+                    format!("{}", name),
+                );
+            }
+
+            if matches!(
+                env.symbols.resolve_type_id(id).kind,
+                THIRTypeKind::Array {
+                    length: THIRArrayLength::Implicit,
+                    ..
+                }
+            ) {
                 return env.log_error(
                     _type.range(),
                     &catalogue::INCOMPLETE_TYPE,
