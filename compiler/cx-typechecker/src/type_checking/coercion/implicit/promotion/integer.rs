@@ -1,6 +1,6 @@
 use cx_log::CXResult;
 use cx_thir::thir::{
-    expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+    expression::{THIRCoercion, THIRExpression},
     r#type::{THIRType, THIRTypeKind},
 };
 
@@ -54,17 +54,15 @@ pub fn try_conversion(
     };
 
     if from_int == to_int {
-        if from_signed == to_signed {
-            let coerced = THIRExpression {
-                token_range: expr.token_range.clone(),
-                _type: to_type.clone(),
-                kind: THIRExpressionKind::Typechange(Box::new(expr)),
-            };
-
-            return CoercionResult::success(coerced);
-        }
-
-        return coercion_expr(expr, to_type.clone(), THIRCoercion::ReinterpretBits);
+        return coercion_expr(
+            expr,
+            to_type.clone(),
+            if from_signed == to_signed {
+                THIRCoercion::Typechange
+            } else {
+                THIRCoercion::Bitcast
+            },
+        );
     }
 
     coercion_expr(

@@ -843,17 +843,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::Typechange(expression) => {
-                write!(f, "Typechange <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: expression,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
             THIRExpressionKind::AddressOf { operand } => {
                 write!(f, "AddressOf <'")?;
                 self.write_type(f, &self.expr._type)?;
@@ -1599,7 +1588,7 @@ impl Display for THIRCoercion {
                     .join(", ")
             ),
 
-            THIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
+            THIRCoercion::Bitcast => write!(f, "bitcast"),
             THIRCoercion::StringToArray => write!(f, "string_to_array"),
             THIRCoercion::Typechange => write!(f, "typechange"),
             THIRCoercion::Unreachable => write!(f, "unreachable"),

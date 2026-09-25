@@ -142,9 +142,6 @@ pub enum THIRExpressionKind {
         operand: Box<THIRExpression>,
     },
 
-    // Represents a no-op used to change the type of an expression with no added semantics
-    Typechange(Box<THIRExpression>),
-
     // Aggregate Access
     MemberAccess {
         base: Box<THIRExpression>,
@@ -454,7 +451,7 @@ pub enum THIRCoercion {
     // meaning of the bits, such as converting from an f32 to an i32
     //
     // Converting from a bounded / ephemeral reference to a free reference (non-safe operation) also falls under this category
-    ReinterpretBits,
+    Bitcast,
 
     StringToArray,
 

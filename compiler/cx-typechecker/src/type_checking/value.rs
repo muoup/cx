@@ -8,7 +8,7 @@ use crate::environment::TypeEnvironment;
 use cx_thir::{
     thir::{
         data::THIRType,
-        expression::{THIRExpression, THIRExpressionKind},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
     },
     type_context::THIRTypeContext,
 };
@@ -39,7 +39,10 @@ pub(crate) fn resolve_indirect_base(
                 return IndirectBase {
                     source: THIRExpression {
                         token_range: TokenRange::internal(),
-                        kind: THIRExpressionKind::Typechange(Box::new(pointer)),
+                        kind: THIRExpressionKind::TypeConversion {
+                            operand: Box::new(pointer),
+                            conversion: THIRCoercion::Bitcast,
+                        },
                         _type: env.symbols.mem_ref_to(ptr_inner.clone()),
                     },
                     source_type: ptr_inner,
@@ -58,7 +61,10 @@ pub(crate) fn resolve_indirect_base(
                 return IndirectBase {
                     source: THIRExpression {
                         token_range: TokenRange::internal(),
-                        kind: THIRExpressionKind::Typechange(Box::new(pointer)),
+                        kind: THIRExpressionKind::TypeConversion {
+                            operand: Box::new(pointer),
+                            conversion: THIRCoercion::Bitcast,
+                        },
                         _type: env.symbols.mem_ref_to(array_inner.clone()),
                     },
                     source_type: array_inner,
@@ -86,7 +92,10 @@ pub(crate) fn resolve_indirect_base(
             return IndirectBase {
                 source: THIRExpression {
                     token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::Typechange(Box::new(source)),
+                    kind: THIRExpressionKind::TypeConversion {
+                        operand: Box::new(source),
+                        conversion: THIRCoercion::Bitcast,
+                    },
                     _type: env.symbols.mem_ref_to(inner_type.clone()),
                 },
                 source_type: inner_type,

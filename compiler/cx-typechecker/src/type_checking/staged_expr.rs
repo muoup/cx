@@ -185,7 +185,6 @@ fn collect_expression_locals(
         THIRExpressionKind::UnaryOperation { operand, .. }
         | THIRExpressionKind::AddressOf { operand }
         | THIRExpressionKind::Copy { source: operand }
-        | THIRExpressionKind::Typechange(operand)
         | THIRExpressionKind::MemberAccess { base: operand, .. }
         | THIRExpressionKind::TaggedUnionTag { value: operand, .. }
         | THIRExpressionKind::TaggedUnionInitializer { value: operand, .. }

@@ -66,13 +66,6 @@ pub(crate) fn validate_safe_expression(
             validate_safe_expression(env, value)
         }
 
-        THIRExpressionKind::Typechange(inner) => {
-            if inner._type.is_pointer() {
-                reject(env, expression, "Typechange to pointer type")
-            } else {
-                validate_safe_expression(env, inner)
-            }
-        }
         THIRExpressionKind::TypeConversion {
             operand,
             conversion,
@@ -82,6 +75,11 @@ pub(crate) fn validate_safe_expression(
                 THIRCoercion::PtrToInt { .. } | THIRCoercion::IntToPtr { .. }
             ) {
                 reject(env, expression, "Unsafe type conversion")
+            } else if matches!(conversion, THIRCoercion::Bitcast)
+                && operand._type.is_pointer()
+                && expression._type.is_memory_reference()
+            {
+                reject(env, expression, "Dereferencing a pointer")
             } else {
                 validate_safe_expression(env, operand)
             }

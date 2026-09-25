@@ -4,7 +4,7 @@ use cx_namespace::module::NamespacePath;
 use cx_namespace::module::QualifiedName;
 use cx_thir::{
     thir::{
-        expression::{THIRExpression, THIRExpressionKind},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
         r#type::THIRType,
     },
     type_context::THIRTypeContext,
@@ -79,7 +79,10 @@ pub fn typecheck_return(
                 some_value = THIRExpression {
                     _type: inner,
                     token_range: some_value.token_range.clone(),
-                    kind: THIRExpressionKind::Typechange(Box::new(some_value)),
+                    kind: THIRExpressionKind::TypeConversion {
+                        operand: Box::new(some_value),
+                        conversion: THIRCoercion::Typechange,
+                    },
                 };
             } else if env.symbols.mem_ref_inner(return_type).is_none() {
                 some_value = std_rval_promotion(env, some_value)?;

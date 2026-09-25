@@ -435,18 +435,6 @@ pub(crate) fn lower_expression<'thir>(
 
         THIRExpressionKind::AddressOf { operand } => lower_address_of(builder, expr, operand)?,
 
-        THIRExpressionKind::Typechange(inner) => {
-            let value = lower_expression(builder, inner)?;
-            if builder.registry().ptr_inner(&inner._type).is_some()
-                && expr._type.is_memory_reference()
-            {
-                let ty = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
-                operators::lower_pointer_typechange(builder, value, ty, &expr.token_range)
-            } else {
-                value
-            }
-        }
-
         THIRExpressionKind::MemberAccess {
             base,
             member_index,
@@ -1092,14 +1080,7 @@ pub(crate) fn lower_expression<'thir>(
                 return Err(LowerStop::Diverged);
             }
             let value = lower_expression(builder, operand)?;
-            lower_coercion(
-                builder,
-                expr,
-                value,
-                conversion,
-                &operand._type,
-                &expr._type,
-            )?
+            lower_coercion(builder, expr, value, conversion, &expr._type)?
         }
 
         THIRExpressionKind::Leak { expression: inner } => {

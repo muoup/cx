@@ -338,17 +338,10 @@ fn lower_pattern_if_condition<'thir>(
             conversion,
         } => lower_pattern_if_condition(builder, operand).map(|result| {
             let (value, subject, pattern, ty) = result?;
-            let value = operators::lower_coercion(
-                builder,
-                condition,
-                value,
-                conversion,
-                &operand._type,
-                &condition._type,
-            )?;
+            let value =
+                operators::lower_coercion(builder, condition, value, conversion, &condition._type)?;
             Ok((value, subject, pattern, ty))
         }),
-        THIRExpressionKind::Typechange(operand) => lower_pattern_if_condition(builder, operand),
         _ => None,
     }
 }

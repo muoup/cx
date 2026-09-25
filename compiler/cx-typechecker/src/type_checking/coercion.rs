@@ -58,13 +58,13 @@ pub fn try_explicit_cast(
 
         match (&from_type.kind, &target_type.kind) {
             (THIRTypeKind::PointerTo { .. }, THIRTypeKind::PointerTo { .. }) => {
-                coerced(THIRCoercion::ReinterpretBits)
+                coerced(THIRCoercion::Bitcast)
             }
 
             (THIRTypeKind::PointerTo { .. }, THIRTypeKind::MemoryReference { .. })
                 if env.symbols.is_c_str(&from_type) && env.symbols.is_cx_str(target_type) =>
             {
-                coerced(THIRCoercion::ReinterpretBits)
+                coerced(THIRCoercion::Bitcast)
             }
 
             (THIRTypeKind::PointerTo { .. }, THIRTypeKind::Integer { _type, .. }) => {

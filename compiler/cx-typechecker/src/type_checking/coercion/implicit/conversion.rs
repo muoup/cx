@@ -40,14 +40,12 @@ pub fn try_implicit_coercion(
     }
 
     if compatible::compatible_types(env, &expr._type, target_type)? {
-        return CoercionResult::success(THIRExpression {
-            token_range: expr.token_range.clone(),
-            kind: THIRExpressionKind::TypeConversion {
-                conversion: THIRCoercion::Typechange,
-                operand: Box::new(expr),
-            },
-            _type: target_type.clone(),
-        });
+        let conversion = if expr._type.is_pointer() && target_type.is_pointer() {
+            THIRCoercion::Bitcast
+        } else {
+            THIRCoercion::Typechange
+        };
+        return coercion_expr(expr, target_type.clone(), conversion);
     }
 
     match internal(env, expr, from_type, target_type)? {
@@ -288,11 +286,7 @@ fn internal(
             if env.symbols.resolve_type_id(*from_ptr).is_void()
                 || env.symbols.resolve_type_id(*to_ptr).is_void()
             {
-                return implicit::coercion_expr(
-                    expr,
-                    target_type.clone(),
-                    THIRCoercion::ReinterpretBits,
-                );
+                return implicit::coercion_expr(expr, target_type.clone(), THIRCoercion::Bitcast);
             }
 
             // If we are coercing T1* -> T2* and they are compatible as unqualified types, and we only
@@ -303,11 +297,7 @@ fn internal(
                 &to_inner.clone().without_specifiers(),
             )? && from_inner.specifiers & to_inner.specifiers == from_inner.specifiers
             {
-                return implicit::coercion_expr(
-                    expr,
-                    target_type.clone(),
-                    THIRCoercion::ReinterpretBits,
-                );
+                return implicit::coercion_expr(expr, target_type.clone(), THIRCoercion::Bitcast);
             }
 
             CoercionResult::unapplied(expr)

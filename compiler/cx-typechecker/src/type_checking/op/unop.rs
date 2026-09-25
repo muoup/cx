@@ -7,7 +7,7 @@ use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::{
     thir::{
-        expression::{THIRExpression, THIRExpressionKind, THIRUnOp},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp},
         r#type::{THIRIntType, THIRType, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -228,7 +228,10 @@ pub fn typecheck_unop(
             // Dereference returns a memory reference to the inner type
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Typechange(Box::new(operand)),
+                kind: THIRExpressionKind::TypeConversion {
+                    operand: Box::new(operand),
+                    conversion: THIRCoercion::Bitcast,
+                },
                 _type: env.symbols.mem_ref_to(inner),
             })
         }

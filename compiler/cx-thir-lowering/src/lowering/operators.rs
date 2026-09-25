@@ -2,7 +2,7 @@ use cx_log::catalogue::mir;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstruction,
     MIRInstructionKind, MIRIntIntrinsic, MIRIntType, MIRInternalIntrinsic, MIRIntrinsic,
-    MIRPtrIntrinsic, MIRTarget, MIRTypeID, MIRTypeKind, MIRValue,
+    MIRPtrIntrinsic, MIRTarget, MIRTypeKind, MIRValue,
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::thir::{
@@ -15,7 +15,6 @@ use cx_thir::thir::{
     r#type::THIRIntType,
 };
 use cx_thir::type_context::THIRTypeContext;
-use cx_tokens::TokenRange;
 
 use super::types::{lower_float_type, lower_int_type, lower_type_id};
 use crate::{
@@ -527,7 +526,6 @@ pub(super) fn lower_coercion<'thir>(
     expr: &'thir THIRExpression,
     operand: MIRValue,
     coercion: &THIRCoercion,
-    _from_type: &'thir THIRType,
     to_type: &'thir THIRType,
 ) -> LowerResult<MIRValue> {
     let mir_to_type = lower_type(builder, to_type).map_err(LowerStop::Diagnostic)?;
@@ -625,22 +623,8 @@ pub(super) fn lower_coercion<'thir>(
             );
             Ok(MIRValue::Register(out))
         }
-        THIRCoercion::Typechange => {
-            if builder.registry().ptr_inner(_from_type).is_some()
-                && builder.registry().ptr_inner(to_type).is_some()
-                && lower_type(builder, _from_type).map_err(LowerStop::Diagnostic)? != mir_to_type
-            {
-                Ok(lower_pointer_typechange(
-                    builder,
-                    operand,
-                    mir_to_type,
-                    &expr.token_range,
-                ))
-            } else {
-                Ok(operand)
-            }
-        }
-        THIRCoercion::ReinterpretBits => {
+        THIRCoercion::Typechange => Ok(operand),
+        THIRCoercion::Bitcast => {
             let out = builder.fun_mut().new_register(mir_to_type, None);
             builder.fun_mut().emit_intrinsic(
                 MIRInternalIntrinsic::Bitcast {
@@ -711,24 +695,6 @@ pub(super) fn lower_coercion<'thir>(
             unreachable!("unreachable coercions are handled before lowering")
         }
     }
-}
-
-pub(super) fn lower_pointer_typechange(
-    builder: &mut MIRBuilder<'_>,
-    value: MIRValue,
-    ty: MIRTypeID,
-    range: &TokenRange,
-) -> MIRValue {
-    let out = builder.fun_mut().new_register(ty, None);
-    builder.fun_mut().emit_intrinsic(
-        MIRInternalIntrinsic::Bitcast {
-            out: MIRTarget::Register(out),
-            value,
-            target_ty: ty,
-        },
-        range.clone(),
-    );
-    MIRValue::Register(out)
 }
 
 pub(super) fn lower_address_of<'thir>(

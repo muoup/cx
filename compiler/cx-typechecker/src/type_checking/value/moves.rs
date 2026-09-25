@@ -18,7 +18,9 @@ use cx_namespace::module::QualifiedName;
 use cx_thir::{
     thir::{
         data::{THIRType, THIRTypeKind},
-        expression::{THIRExpression, THIRExpressionKind, THIRLocalID, THIRUnpackBinding},
+        expression::{
+            THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID, THIRUnpackBinding,
+        },
     },
     type_context::THIRTypeContext,
 };
@@ -126,10 +128,14 @@ pub(crate) fn typecheck_adopt(
         );
     }
 
-    Ok(
-        TypecheckResult::new(inner_type, THIRExpressionKind::Typechange(Box::new(value)))
-            .with_adopting(),
+    Ok(TypecheckResult::new(
+        inner_type,
+        THIRExpressionKind::TypeConversion {
+            operand: Box::new(value),
+            conversion: THIRCoercion::Typechange,
+        },
     )
+    .with_adopting())
 }
 
 pub(crate) fn typecheck_leak(
