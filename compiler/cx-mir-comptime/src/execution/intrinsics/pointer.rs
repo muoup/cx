@@ -27,9 +27,9 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
     use MIRPtrIntrinsic as P;
     let result = match op {
         P::Add { ptr, offset, .. } | P::Sub { ptr, offset, .. } => {
-            let pointer = engine.read(frame, ptr, range)?;
+            let pointer = engine.read(frame, body, ptr, range)?;
             let delta = engine
-                .read(frame, offset, range)
+                .read(frame, body, offset, range)
                 .and_then(|value| integer_value(value, range))?;
             let delta = i64::try_from(delta).map_err(|_| {
                 internal_error(
@@ -95,8 +95,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             }
         }
         P::Diff { lhs, rhs, .. } => {
-            let lhs = engine.read(frame, lhs, range)?;
-            let rhs = engine.read(frame, rhs, range)?;
+            let lhs = engine.read(frame, body, lhs, range)?;
+            let rhs = engine.read(frame, body, rhs, range)?;
             let difference = match (lhs, rhs) {
                 (MIRConstant::GlobalRef(left), MIRConstant::GlobalRef(right))
                     if left.global == right.global =>
@@ -121,7 +121,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             }
         }
         P::ToInt { ptr, target_ty, .. } => {
-            let pointer = engine.read(frame, ptr, range)?;
+            let pointer = engine.read(frame, body, ptr, range)?;
             if !matches!(pointer, MIRConstant::Nullptr { .. }) {
                 return comptime_error(
                     range.clone(),
@@ -153,8 +153,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
         | P::Leq { lhs, rhs, .. }
         | P::Gt { lhs, rhs, .. }
         | P::Geq { lhs, rhs, .. } => {
-            let lhs = engine.read(frame, lhs, range)?;
-            let rhs = engine.read(frame, rhs, range)?;
+            let lhs = engine.read(frame, body, lhs, range)?;
+            let rhs = engine.read(frame, body, rhs, range)?;
             let ordering = pointer_order(&lhs, &rhs);
             let result = match op {
                 P::Eq { .. } => ordering == Some(Ordering::Equal),

@@ -23,7 +23,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
     range: &TokenRange,
 ) -> CXResult<()> {
     use MIRFloatIntrinsic as F;
-    let read = |value: &MIRValue| engine.read(frame, value, range);
+    let read = |value: &MIRValue| engine.read(frame, body, value, range);
     let (out, value) = match op {
         F::Neg { out, value } => {
             let value = -read(value).and_then(|value| float_value(value, range))?;

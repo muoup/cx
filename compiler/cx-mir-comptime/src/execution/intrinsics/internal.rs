@@ -27,7 +27,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             engine.write(frame, out, MIRConstant::GlobalRef(*global))
         }
         I::ArrayAddress { out, array } => {
-            let value = engine.read(frame, array, range)?;
+            let value = engine.read(frame, body, array, range)?;
             let value = match value {
                 MIRConstant::GlobalRef(mut reference) => {
                     let types = engine.context().types();
@@ -56,7 +56,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             out,
             reference: array,
         } => {
-            let value = engine.read(frame, array, range)?;
+            let value = engine.read(frame, body, array, range)?;
             engine.write(frame, out, value)
         }
         I::StringAddress { out, string } => {
@@ -68,7 +68,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             value,
             target_ty,
         } => {
-            let value = engine.read(frame, value, range)?;
+            let value = engine.read(frame, body, value, range)?;
             let value = match value {
                 MIRConstant::GlobalRef(mut reference) => {
                     reference.ty = match engine
@@ -97,14 +97,14 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             ),
         ),
         I::Assert { condition, message } => {
-            let condition = engine.read(frame, condition, range)?;
+            let condition = engine.read(frame, body, condition, range)?;
             if !scalar::truthy(&condition) {
                 return comptime_error(range.clone(), (&mir::COMPTIME_ASSERTION, message.clone()));
             }
             Ok(())
         }
         I::Assume { condition } => {
-            let _ = engine.read(frame, condition, range)?;
+            let _ = engine.read(frame, body, condition, range)?;
             Ok(())
         }
     }

@@ -173,11 +173,12 @@ impl<I> MIRBody<I> {
         &mut self,
         ty: MIRComptimeType,
         debug_name: Option<CXIdent>,
+        nodrop: bool,
         scope: MIRScopeID,
     ) -> MIRComptimeParameter {
         let parameter = match ty {
             MIRComptimeType::Standard(ty) => {
-                let place = self.add_place(ty, debug_name, false, scope);
+                let place = self.add_place(ty, debug_name, nodrop, scope);
                 self.parameters.push(place);
                 MIRComptimeParameter::Runtime(place)
             }

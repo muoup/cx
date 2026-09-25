@@ -65,6 +65,7 @@ pub(crate) fn lower_comptime_function<'thir>(
         let binding = builder.fun_mut().body_mut().add_comptime_parameter(
             declaration.ty,
             declaration.name,
+            parameter.value_type._type.is_nodrop(),
             scope,
         );
         match binding {
@@ -165,8 +166,8 @@ pub(crate) fn evaluate<'thir>(
         builder.restore_current_function(parent);
     }
     lowered?;
-    
-    match evaluate_body(builder, &body, &[])? {
+
+    match evaluate_body(builder, &body, &[], "<comptime expression>")? {
         MIRComptimeValue::Constant(value) => Ok(value),
         _ => Err(mir_error(
             &expression.token_range,
@@ -180,11 +181,13 @@ pub(crate) fn evaluate_function<'thir>(
     id: MIRFunctionID,
     args: &[MIRComptimeValue],
 ) -> CXResult<MIRComptimeValue> {
-    let body = builder
+    let function = builder
         .module()
         .comptime_function(id)
-        .and_then(|function| function.body())
         .expect("comptime function must be defined before evaluation");
-    
-    evaluate_body(builder, body, args)
+    let body = function
+        .body()
+        .expect("comptime function must be defined before evaluation");
+
+    evaluate_body(builder, body, args, function.prototype().name().as_str())
 }

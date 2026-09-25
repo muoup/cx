@@ -22,6 +22,7 @@ pub fn evaluate_body<'c, 'thir, C: ComptimeContext<'thir>>(
     context: &'c C,
     body: &MIRComptimeBody<'thir>,
     args: &[MIRComptimeValue],
+    function: &str,
 ) -> CXResult<MIRComptimeValue> {
-    execution::Engine::new(context).run(body, args)
+    execution::Engine::new(context).run(body, args, function)
 }

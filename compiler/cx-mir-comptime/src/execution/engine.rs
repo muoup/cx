@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     ComptimeContext,
-    execution::{execute_comptime_instruction, execute_runtime_instruction},
+    execution::{execute_comptime_instruction, execute_runtime_instruction, liveness::Liveness},
     log::{comptime_error, internal_error},
 };
 
@@ -57,6 +57,7 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
         &mut self,
         body: &MIRComptimeBody<'thir>,
         args: &[MIRComptimeValue],
+        function: &str,
     ) -> CXResult<MIRComptimeValue> {
         if self.depth >= self.limits.max_call_depth {
             return comptime_error(
@@ -79,7 +80,7 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
         }
 
         self.depth += 1;
-        let result = self.run_frame(body, ExecutionFrame::new(body, args));
+        let result = self.run_frame(body, ExecutionFrame::new(body, args, function));
         self.depth -= 1;
 
         result
@@ -122,7 +123,7 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
 
                 MIRComptimeInstruction::Comptime { op, token_range } => {
                     if let Some(value) =
-                        execute_comptime_instruction(self, &mut frame, op, token_range)?
+                        execute_comptime_instruction(self, &mut frame, body, op, token_range)?
                     {
                         return Ok(value);
                     }
@@ -134,13 +135,14 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
     pub(crate) fn read_comptime(
         &self,
         frame: &ExecutionFrame,
+        body: &MIRComptimeBody<'_>,
         operand: &MIRComptimeOperand,
         range: &TokenRange,
     ) -> CXResult<MIRComptimeValue> {
         match operand {
             MIRComptimeOperand::Known(value) => Ok(value.clone()),
             MIRComptimeOperand::Runtime(value) => self
-                .read(frame, value, range)
+                .read(frame, body, value, range)
                 .map(MIRComptimeValue::Constant),
             MIRComptimeOperand::Comptime(register) => frame
                 .comptime_registers
@@ -159,45 +161,44 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
     pub(crate) fn read(
         &self,
         frame: &ExecutionFrame,
+        body: &MIRComptimeBody<'_>,
         value: &MIRValue,
         range: &TokenRange,
     ) -> CXResult<MIRConstant> {
         match value {
             MIRValue::Constant(value) => Ok(value.clone()),
 
-            MIRValue::Register(id) => match frame.registers.get(id) {
-                Some(value) => Ok(value.clone()),
-                None => comptime_error(
-                    range.clone(),
-                    (
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "read of uninitialized comptime register".into(),
+            MIRValue::Register(id) => {
+                frame
+                    .liveness
+                    .require(body, &MIRBindable::Register(*id), "was used", range)?;
+                match frame.registers.get(id) {
+                    Some(value) => Ok(value.clone()),
+                    None => comptime_error(
+                        range.clone(),
+                        (
+                            &mir::COMPTIME_INVALID_OPERATION,
+                            "read of uninitialized comptime register".into(),
+                        ),
                     ),
-                ),
-            },
+                }
+            }
 
-            MIRValue::PlaceRef(id) => match frame.places.get(id) {
-                Some(value) => Ok(value.clone()),
-                None => comptime_error(
-                    range.clone(),
-                    (
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "read of uninitialized comptime place".into(),
+            MIRValue::PlaceRef(id) => {
+                frame
+                    .liveness
+                    .require(body, &MIRBindable::Place(*id), "was used", range)?;
+                match frame.places.get(id) {
+                    Some(value) => Ok(value.clone()),
+                    None => comptime_error(
+                        range.clone(),
+                        (
+                            &mir::COMPTIME_INVALID_OPERATION,
+                            "read of uninitialized comptime place".into(),
+                        ),
                     ),
-                ),
-            },
-        }
-    }
-
-    pub(crate) fn read_bindable(
-        &self,
-        frame: &ExecutionFrame,
-        value: &MIRBindable,
-        range: &TokenRange,
-    ) -> CXResult<MIRConstant> {
-        match value {
-            MIRBindable::Place(id) => self.read(frame, &MIRValue::PlaceRef(*id), range),
-            MIRBindable::Register(id) => self.read(frame, &MIRValue::Register(*id), range),
+                }
+            }
         }
     }
 
@@ -215,6 +216,7 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
 
             MIRTarget::Register(id) => {
                 frame.registers_mut().insert(*id, value);
+                frame.liveness.initialize(MIRBindable::Register(*id));
                 Ok(())
             }
 
@@ -256,10 +258,10 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
         let values = target
             .args
             .iter()
-            .map(|value| self.read(frame, value, range))
+            .map(|value| self.read(frame, body, value, range))
             .collect::<CXResult<Vec<_>>>()?;
         for (param, value) in block.params().iter().zip(values) {
-            frame.registers.insert(*param, value);
+            self.write(frame, &MIRTarget::Register(*param), value)?;
         }
         frame.block = target.block;
         frame.instruction = 0;
@@ -277,16 +279,18 @@ pub(crate) struct ExecutionFrame {
     places: HashMap<MIRPlaceID, MIRConstant>,
     registers: HashMap<MIRRegisterID, MIRConstant>,
     comptime_registers: HashMap<MIRComptimeRegisterID, MIRComptimeValue>,
+    pub(crate) liveness: Liveness,
 }
 
 impl ExecutionFrame {
-    fn new(body: &MIRComptimeBody<'_>, args: &[MIRComptimeValue]) -> Self {
+    fn new(body: &MIRComptimeBody<'_>, args: &[MIRComptimeValue], function: &str) -> Self {
         let mut frame = Self {
             block: body.entry(),
             instruction: 0,
             places: HashMap::new(),
             registers: HashMap::new(),
             comptime_registers: HashMap::new(),
+            liveness: Liveness::new(body, function),
         };
         for (parameter, value) in body.comptime_parameters().iter().zip(args) {
             match (parameter, value) {

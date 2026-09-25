@@ -30,7 +30,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                 .iter()
                 .map(|(index, value)| {
                     engine
-                        .read(frame, value, range)
+                        .read(frame, body, value, range)
                         .map(|value| (*index, value))
                 })
                 .collect::<CXResult<_>>()?;
@@ -53,7 +53,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                     ),
                 );
             };
-            let base = engine.read(frame, base, range)?;
+            let base = engine.read(frame, body, base, range)?;
             let value =
                 project_aggregate(engine, body, *out, base, *field, offset, field_ty, range)?;
             engine.write(frame, out, value)
@@ -64,9 +64,9 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             index,
             element_ty,
         } => {
-            let base = engine.read(frame, base, range)?;
+            let base = engine.read(frame, body, base, range)?;
             let index = engine
-                .read(frame, index, range)
+                .read(frame, body, index, range)
                 .and_then(|value| integer_value(value, range))?;
             let index = usize::try_from(index).ok();
             let Some(index) = index else {
@@ -125,7 +125,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             engine.write(frame, out, value)
         }
         A::SumIndex { out, value, .. } => {
-            let value = engine.read(frame, value, range)?;
+            let value = engine.read(frame, body, value, range)?;
             let index = match value {
                 MIRConstant::Aggregate { fields, .. } => {
                     fields.first().map(|(index, _)| *index).unwrap_or(0)
@@ -155,7 +155,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             variant,
             sum_ty,
         } => {
-            let base = engine.read(frame, base, range)?;
+            let base = engine.read(frame, body, base, range)?;
             let field_ty = field_byte_offset(engine.context().types(), *sum_ty, *variant)
                 .map(|(_, ty)| ty)
                 .ok_or_else(|| {
@@ -174,7 +174,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             variant,
             sum_ty,
         } => {
-            let base = engine.read(frame, source, range)?;
+            let base = engine.read(frame, body, source, range)?;
             let payload = memory::aggregate_field(&base, *variant).unwrap_or_else(|| {
                 let ty = field_byte_offset(engine.context().types(), *sum_ty, *variant)
                     .map(|(_, ty)| ty);

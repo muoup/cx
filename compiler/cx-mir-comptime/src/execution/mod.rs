@@ -1,6 +1,7 @@
 mod arithmetic;
 pub(crate) mod engine;
 mod intrinsics;
+mod liveness;
 pub(crate) mod memory;
 mod scalar;
 mod typing;
@@ -10,8 +11,7 @@ pub use engine::{Engine, EngineLimits};
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRBindable, MIRComptimeBody, MIRComptimeOp, MIRComptimeOutput, MIRComptimeValue, MIRConstant,
-    MIRInstruction, MIRInstructionKind, MIRStagedExpression,
-    expr::instruction::MIRInvalidationKind,
+    MIRInstruction, MIRInstructionKind, MIRStagedExpression, MIRTarget,
 };
 use cx_tokens::TokenRange;
 
@@ -29,11 +29,18 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
 ) -> CXResult<Option<MIRComptimeValue>> {
     let range = &instruction.token_range;
     match &instruction.kind {
-        MIRInstructionKind::Initialize { .. } | MIRInstructionKind::BindLifetime { .. } => {}
+        MIRInstructionKind::Initialize { place } => {
+            frame.liveness.initialize(place.clone());
+        }
+        MIRInstructionKind::BindLifetime {
+            bind: MIRBindable::Register(register),
+            ..
+        } => frame
+            .liveness
+            .require(body, &MIRBindable::Register(*register), "was used", range)?,
+        MIRInstructionKind::BindLifetime { .. } => {}
         MIRInstructionKind::Invalidate { place, kind } => {
-            if *kind != MIRInvalidationKind::Drop {
-                engine.read_bindable(frame, place, range)?;
-            }
+            frame.liveness.invalidate(body, place, kind, range)?;
             match place {
                 MIRBindable::Place(id) => {
                     frame.places_mut().remove(id);
@@ -44,11 +51,11 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             }
         }
         MIRInstructionKind::Lift { out, source } => {
-            let value = memory::read_target(engine, frame, *source, range)?;
-            frame.registers_mut().insert(*out, value);
+            let value = memory::read_target(engine, frame, body, *source, range)?;
+            engine.write(frame, &MIRTarget::Register(*out), value)?;
         }
         MIRInstructionKind::Store { target, value, .. } => {
-            let value = engine.read(frame, value, range)?;
+            let value = engine.read(frame, body, value, range)?;
             engine.write(frame, target, value)?;
         }
         MIRInstructionKind::Call { .. } => {
@@ -62,7 +69,7 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
         }
         MIRInstructionKind::Return { value } => {
             return Ok(Some(match value {
-                Some(value) => MIRComptimeValue::Constant(engine.read(frame, value, range)?),
+                Some(value) => MIRComptimeValue::Constant(engine.read(frame, body, value, range)?),
                 None => MIRComptimeValue::Constant(MIRConstant::Unit),
             }));
         }
@@ -72,7 +79,7 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             true_target,
             false_target,
         } => {
-            let cond = engine.read(frame, cond, range)?;
+            let cond = engine.read(frame, body, cond, range)?;
             let target = if scalar::truthy(&cond) {
                 true_target
             } else {
@@ -85,7 +92,7 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             cases,
             default,
         } => {
-            let value = engine.read(frame, value, range)?;
+            let value = engine.read(frame, body, value, range)?;
             let target = cases.iter().find(|(case, _)|
                     matches!(&value, MIRConstant::Integer { value, .. } if value == case))
                     .map(|(_, target)| target)
@@ -117,6 +124,7 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
 pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'thir>>(
     engine: &mut Engine<'c, 'thir, Context>,
     frame: &mut ExecutionFrame,
+    current_body: &MIRComptimeBody<'_>,
     op: &MIRComptimeOp<'thir>,
     range: &TokenRange,
 ) -> CXResult<Option<MIRComptimeValue>> {
@@ -141,10 +149,10 @@ pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'
             let args = args
                 .iter()
                 .zip(function.prototype().signature().params())
-                .map(|(operand, _)| engine.read_comptime(frame, operand, range))
+                .map(|(operand, _)| engine.read_comptime(frame, current_body, operand, range))
                 .collect::<CXResult<Vec<_>>>()?;
 
-            let result = engine.run(body, &args)?;
+            let result = engine.run(body, &args, function.prototype().name().as_str())?;
             match out {
                 Some(MIRComptimeOutput::Runtime(out)) => {
                     let MIRComptimeValue::Constant(value) = result else {
@@ -156,7 +164,7 @@ pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'
                             ),
                         );
                     };
-                    frame.registers_mut().insert(*out, value);
+                    engine.write(frame, &MIRTarget::Register(*out), value)?;
                 }
                 Some(MIRComptimeOutput::Comptime(out)) => {
                     frame.comptime_registers_mut().insert(*out, result);
@@ -176,7 +184,7 @@ pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'
                 .iter()
                 .map(|(id, operand)| {
                     engine
-                        .read_comptime(frame, operand, range)
+                        .read_comptime(frame, current_body, operand, range)
                         .map(|value| (*id, value))
                 })
                 .collect::<CXResult<_>>()?;
@@ -191,7 +199,7 @@ pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'
             Ok(None)
         }
         MIRComptimeOp::Return { value } => Ok(Some(match value {
-            Some(value) => engine.read_comptime(frame, value, range)?,
+            Some(value) => engine.read_comptime(frame, current_body, value, range)?,
             None => MIRComptimeValue::Constant(MIRConstant::Unit),
         })),
     }

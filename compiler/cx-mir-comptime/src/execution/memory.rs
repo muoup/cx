@@ -1,6 +1,7 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRConstant, MIRField, MIRGlobalRef, MIRGlobalState, MIRTarget, MIRTypeID, MIRTypeKind,
+    MIRComptimeBody, MIRConstant, MIRField, MIRGlobalRef, MIRGlobalState, MIRTarget, MIRTypeID,
+    MIRTypeKind,
     ty::{
         interface::MTRegistry,
         layout::{calculate_field_layout, calculate_type_layout},
@@ -17,17 +18,20 @@ use crate::{
 pub(crate) fn read_target<'c, 'thir, C: ComptimeContext<'thir>>(
     engine: &Engine<'c, 'thir, C>,
     frame: &ExecutionFrame,
+    body: &MIRComptimeBody<'_>,
     target: MIRTarget,
     range: &TokenRange,
 ) -> CXResult<MIRConstant> {
     match target {
-        MIRTarget::Place(place) => engine.read(frame, &cx_mir::MIRValue::PlaceRef(place), range),
+        MIRTarget::Place(place) => {
+            engine.read(frame, body, &cx_mir::MIRValue::PlaceRef(place), range)
+        }
         MIRTarget::Register(register) => {
-            engine.read(frame, &cx_mir::MIRValue::Register(register), range)
+            engine.read(frame, body, &cx_mir::MIRValue::Register(register), range)
         }
         MIRTarget::Global(reference) => read_global(engine.context(), reference, range),
         MIRTarget::Indirect(register) => {
-            let pointer = engine.read(frame, &cx_mir::MIRValue::Register(register), range)?;
+            let pointer = engine.read(frame, body, &cx_mir::MIRValue::Register(register), range)?;
             match pointer {
                 MIRConstant::GlobalRef(reference) => {
                     read_global(engine.context(), reference, range)

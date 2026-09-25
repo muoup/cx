@@ -27,7 +27,7 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
     match op {
         I::Neg { out, value } | I::BNot { out, value } | I::LNot { out, value } => {
             let (value, _) = engine
-                .read(frame, value, range)
+                .read(frame, body, value, range)
                 .and_then(|v| integer(&v, range))?;
             let ty = integer_type(engine.context().types(), body, *out, range)?;
 
@@ -47,7 +47,7 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
             sign_extend,
         } => {
             let (value, source) = engine
-                .read(frame, value, range)
+                .read(frame, body, value, range)
                 .and_then(|v| integer(&v, range))?;
             let result = if *sign_extend {
                 signed(value, bits(source)) as u128
@@ -64,7 +64,7 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
             signed: is_signed,
         } => {
             let (value, source) = engine
-                .read(frame, value, range)
+                .read(frame, body, value, range)
                 .and_then(|v| integer(&v, range))?;
             let float_value = if *is_signed {
                 signed(value, bits(source)) as f64
@@ -76,7 +76,7 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
         }
         I::ToPtr { out, value } => {
             let (value, _) = engine
-                .read(frame, value, range)
+                .read(frame, body, value, range)
                 .and_then(|v| integer(&v, range))?;
             if value != 0 {
                 return comptime_error(
@@ -137,10 +137,10 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
                 _ => unreachable!(),
             };
             let (lhs, source_ty) = engine
-                .read(frame, lhs, range)
+                .read(frame, body, lhs, range)
                 .and_then(|v| integer(&v, range))?;
             let (rhs, _) = engine
-                .read(frame, rhs, range)
+                .read(frame, body, rhs, range)
                 .and_then(|v| integer(&v, range))?;
             let width = bits(source_ty);
             let result_ty = integer_type(engine.context().types(), body, out, range)?;
