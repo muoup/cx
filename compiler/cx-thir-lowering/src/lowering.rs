@@ -328,12 +328,8 @@ pub(crate) fn lower_expression<'thir>(
 
         THIRExpressionKind::Copy { source } => {
             let lowered = lower_expression(builder, source)?;
-            if expr._type.is_memory_reference() && !matches!(lowered, MIRValue::PlaceRef(_)) {
-                lowered
-            } else {
-                let value_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
-                memory::copy(builder, lowered, value_type, &expr.token_range)
-            }
+            let value_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
+            memory::copy(builder, lowered, value_type, &expr.token_range)
         }
 
         THIRExpressionKind::Move { local_id, .. } => {
@@ -439,7 +435,17 @@ pub(crate) fn lower_expression<'thir>(
 
         THIRExpressionKind::AddressOf { operand } => lower_address_of(builder, expr, operand)?,
 
-        THIRExpressionKind::Typechange(inner) => lower_expression(builder, inner)?,
+        THIRExpressionKind::Typechange(inner) => {
+            let value = lower_expression(builder, inner)?;
+            if builder.registry().ptr_inner(&inner._type).is_some()
+                && expr._type.is_memory_reference()
+            {
+                let ty = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
+                operators::lower_pointer_typechange(builder, value, ty, &expr.token_range)
+            } else {
+                value
+            }
+        }
 
         THIRExpressionKind::MemberAccess {
             base,

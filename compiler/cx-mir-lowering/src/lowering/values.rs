@@ -41,6 +41,12 @@ pub(crate) fn lower_rvalue(
                 context.types().definition(source_ty).unwrap().kind()
             {
                 let inner = *inner;
+                if matches!(
+                    context.types().definition(inner).unwrap().kind(),
+                    MIRTypeKind::Function { .. }
+                ) {
+                    return context.reg(*register);
+                }
                 if let Some(bitfield) = context
                     .bitfields
                     .get(register)
@@ -100,6 +106,12 @@ pub(super) fn lower_read(context: &mut FunctionContext<'_, '_>, value: &MIRValue
             context.types().definition(ty).unwrap().kind()
         {
             let inner = *inner;
+            if matches!(
+                context.types().definition(inner).unwrap().kind(),
+                MIRTypeKind::Function { .. }
+            ) {
+                return context.reg(*register);
+            }
             if let Some(bitfield) = context
                 .bitfields
                 .get(register)

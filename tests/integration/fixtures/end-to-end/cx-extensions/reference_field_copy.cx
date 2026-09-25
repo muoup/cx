@@ -1,0 +1,15 @@
+import std::io as std;
+
+struct holder {
+    const _str& text;
+};
+
+void show(const _str& source) {
+    holder value = { .text = source };
+    std::println(value.text);
+}
+
+i32 main() {
+    show("hello");
+    return 0;
+}
