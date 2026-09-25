@@ -1,6 +1,9 @@
 use crate::lowering::memory;
 use cx_lmir::{LMIRBasicBlock, LMIRBlockTarget, LMIRInstruction, LMIRInstructionKind};
-use cx_mir::{MIRInstruction, MIRInstructionKind, MIRTarget};
+use cx_mir::ty::interface::MTRegistry;
+use cx_mir::{
+    MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntType, MIRTarget, MIRTypeKind, MIRValue,
+};
 use cx_util::identifier::CXIdent;
 
 use crate::context::FunctionContext;
@@ -17,6 +20,13 @@ pub(super) fn lower_instruction(
         | MIRInstructionKind::BindLifetime { .. } => {}
         MIRInstructionKind::Lift { out, source } => {
             let ty = values::target_type(context, *source);
+            if let MIRTarget::Indirect(register) = source {
+                if context.bitfields.contains_key(register) {
+                    let value = values::lower_read(context, &MIRValue::Register(*register));
+                    values::write_target(context, MIRTarget::Register(*out), value);
+                    return;
+                }
+            }
             let source = match source {
                 MIRTarget::Place(place) => context.places[place].clone(),
                 MIRTarget::Global(reference) => values::global_address(context, *reference),
@@ -89,10 +99,19 @@ pub(super) fn lower_instruction(
             cases,
             default,
         } => {
+            let integer_type = case_integer_type(context, value);
             let value = values::lower_read(context, value);
             let targets = cases
                 .iter()
-                .map(|(case, target)| (*case as u64, context.target(target)))
+                .filter_map(|(case, target)| {
+                    if integer_type.is_some_and(|(ty, signed)| !case_fits(ty, signed, *case)) {
+                        return None;
+                    }
+                    let case = integer_type
+                        .map(|(ty, signed)| case_entry(ty, signed, *case))
+                        .unwrap_or(*case as u64);
+                    Some((case, context.target(target)))
+                })
                 .collect();
             let default = default
                 .as_ref()
@@ -108,6 +127,59 @@ pub(super) fn lower_instruction(
             );
         }
         MIRInstructionKind::Unreachable => memory::void(context, LMIRInstructionKind::Unreachable),
+    }
+}
+
+fn case_integer_type(
+    context: &FunctionContext<'_, '_>,
+    value: &MIRValue,
+) -> Option<(MIRIntType, bool)> {
+    let mut ty = match value {
+        MIRValue::Register(register) => context.body.register(*register)?.ty,
+        MIRValue::PlaceRef(place) => context.body.place(*place)?.ty,
+        MIRValue::Constant(MIRConstant::GlobalRef(reference)) => reference.ty,
+        MIRValue::Constant(MIRConstant::Integer { .. }) => return None,
+        MIRValue::Constant(_) => return None,
+    };
+    loop {
+        match context.types().definition(ty)?.kind() {
+            MIRTypeKind::MemoryReference { inner, .. } => ty = *inner,
+            MIRTypeKind::Integer { ty, signed } => return Some((*ty, *signed)),
+            _ => return None,
+        }
+    }
+}
+
+fn case_fits(ty: MIRIntType, signed: bool, case: i128) -> bool {
+    let width = integer_width(ty);
+    if width == 128 {
+        return signed || case >= 0;
+    }
+    if signed {
+        let limit = 1i128 << (width - 1);
+        case >= -limit && case < limit
+    } else {
+        case >= 0 && case < (1i128 << width)
+    }
+}
+
+fn case_entry(ty: MIRIntType, signed: bool, case: i128) -> u64 {
+    let width = integer_width(ty);
+    if signed && case < 0 && width < 64 {
+        (case as u64) & ((1u64 << width) - 1)
+    } else {
+        case as u64
+    }
+}
+
+fn integer_width(ty: MIRIntType) -> usize {
+    match ty {
+        MIRIntType::I1 => 1,
+        MIRIntType::I8 => 8,
+        MIRIntType::I16 => 16,
+        MIRIntType::I32 => 32,
+        MIRIntType::I64 => 64,
+        MIRIntType::I128 => 128,
     }
 }
 

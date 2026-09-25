@@ -205,7 +205,7 @@ fn lower_comptime_value_type<'thir>(
     value_type: &'thir THIRComptimeValueType,
 ) -> CXResult<MIRComptimeType> {
     if !value_type.expr {
-        reject_comptime_array(builder, &value_type._type)?;
+        reject_comptime(builder, &value_type._type)?;
     }
     let result = lower_type(builder, &value_type._type)?;
     if value_type.expr {
@@ -220,7 +220,11 @@ fn lower_comptime_value_type<'thir>(
     }
 }
 
-pub(super) fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()> {
+pub(super) fn reject_comptime(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()> {
+    reject_comptime_array(builder, ty)
+}
+
+fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()> {
     fn find_array(
         registry: &impl THIRTypeContext,
         kind: &THIRTypeKind,

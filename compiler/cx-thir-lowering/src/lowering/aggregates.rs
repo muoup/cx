@@ -2,7 +2,7 @@ use crate::{
     builder::MIRBuilder,
     log::log_mir_error,
     lowering::{
-        lower_expression, memory,
+        LowerResult, LowerStop, lower_expression, memory,
         types::{lower_float_type, lower_int_type, lower_type, lower_type_id},
     },
 };
@@ -25,7 +25,7 @@ pub(super) fn lower_pattern_test<'thir>(
     pattern: &THIRPattern,
     result_type: &'thir THIRType,
     subject: Option<MIRValue>,
-) -> CXResult<MIRValue> {
+) -> LowerResult<MIRValue> {
     let token_range = lhs.token_range.clone();
     let tested = match pattern {
         THIRPattern::Binding { .. } => {
@@ -35,7 +35,8 @@ pub(super) fn lower_pattern_test<'thir>(
                     &mir::REQUIRED_CONTEXT,
                     ("binding patterns".into(), "match arms".into()),
                 ),
-            );
+            )
+            .map_err(LowerStop::Diagnostic);
         }
         THIRPattern::TaggedUnionVariant { variant_index, .. } => {
             let sum_type = match &lhs._type.kind {
@@ -44,7 +45,7 @@ pub(super) fn lower_pattern_test<'thir>(
                 }
                 _ => &lhs._type,
             };
-            let sum_type_id = lower_type(builder, sum_type)?;
+            let sum_type_id = lower_type(builder, sum_type).map_err(LowerStop::Diagnostic)?;
             let tag_type = builder.types_mut().intern(MIRType::new(
                 MIRTypeKind::Integer {
                     ty: MIRIntType::I8,
@@ -97,7 +98,7 @@ pub(super) fn lower_pattern_test<'thir>(
                 _ => &lhs._type,
             };
             let input = if lhs._type.is_memory_reference() {
-                let type_id = lower_type(builder, value_type)?;
+                let type_id = lower_type(builder, value_type).map_err(LowerStop::Diagnostic)?;
                 memory::copy(builder, input, type_id, &lhs.token_range)
             } else {
                 input
@@ -125,7 +126,7 @@ pub(super) fn lower_pattern_test<'thir>(
     };
 
     let (lhs, rhs, signed) = tested;
-    let result_type = lower_type(builder, result_type)?;
+    let result_type = lower_type(builder, result_type).map_err(LowerStop::Diagnostic)?;
     let out = builder.fun_mut().new_register(result_type, None);
     let target = MIRTarget::Register(out);
     let intrinsic: MIRIntrinsic = if signed {

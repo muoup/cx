@@ -1,4 +1,3 @@
-use cx_log::CXResult;
 use cx_mir::{
     MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstruction, MIRInstructionKind,
     MIRIntIntrinsic, MIRIntType, MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget,
@@ -6,17 +5,20 @@ use cx_mir::{
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::thir::{
-    contextual_eq::TypeContextEqual, data::THIRType, expression::{
+    contextual_eq::TypeContextEqual,
+    data::THIRType,
+    expression::{
         THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
         THIRPtrBinOp, THIRPtrDiffBinOp, THIRUnOp,
-    }, r#type::{THIRIntType, THIRTypeKind},
+    },
+    r#type::{THIRIntType, THIRTypeKind},
 };
 use cx_thir::type_context::THIRTypeContext;
 
 use super::types::{lower_float_type, lower_int_type, lower_type_id};
 use crate::{
     builder::MIRBuilder,
-    lowering::{lower_expression, memory, types::lower_type},
+    lowering::{LowerResult, LowerStop, lower_expression, memory, types::lower_type},
 };
 
 pub(super) fn lower_binary_op<'thir>(
@@ -25,7 +27,7 @@ pub(super) fn lower_binary_op<'thir>(
     lhs: &'thir THIRExpression,
     rhs: &'thir THIRExpression,
     op: &THIRBinOp,
-) -> CXResult<MIRValue> {
+) -> LowerResult<MIRValue> {
     if matches!(
         op,
         THIRBinOp::Integer {
@@ -40,7 +42,7 @@ pub(super) fn lower_binary_op<'thir>(
     let lhs = lower_expression(builder, lhs)?;
     let rhs = lower_expression(builder, rhs)?;
 
-    let result_type = lower_type(builder, &expr._type)?;
+    let result_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
     let out = builder.fun_mut().new_register(result_type, None);
 
     let target = MIRTarget::Register(out);
@@ -262,9 +264,9 @@ pub(super) fn lower_binary_op<'thir>(
             },
         }),
         THIRBinOp::PtrDiff { op, ptr_inner } => {
-            let ptr_inner_ty = lower_type_id(builder, *ptr_inner)?;
+            let ptr_inner_ty = lower_type_id(builder, *ptr_inner).map_err(LowerStop::Diagnostic)?;
             let size = calculate_type_layout(builder.types(), ptr_inner_ty).size();
-            let offset_ty = lower_type(builder, rhs_type)?;
+            let offset_ty = lower_type(builder, rhs_type).map_err(LowerStop::Diagnostic)?;
             let scaled = builder.fun_mut().new_register(offset_ty, None);
             let integer_ty = match &rhs_type.kind {
                 cx_thir::thir::data::THIRTypeKind::Integer { _type, .. } => lower_int_type(*_type),
@@ -308,11 +310,11 @@ pub(crate) fn lower_short_circuit<'thir>(
     lhs: &'thir THIRExpression,
     rhs: &'thir THIRExpression,
     op: &THIRBinOp,
-) -> CXResult<MIRValue> {
+) -> LowerResult<MIRValue> {
     let lhs_value = lower_expression(builder, lhs)?;
     let rhs_block = builder.fun_mut().new_block("logical.rhs");
     let merge_block = builder.fun_mut().new_block("logical.merge");
-    let result_type_id = lower_type(builder, &expr._type)?;
+    let result_type_id = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
 
     let result = builder
         .fun_mut()
@@ -341,14 +343,20 @@ pub(crate) fn lower_short_circuit<'thir>(
     ));
 
     builder.fun_mut().set_current_block(rhs_block);
-    let rhs_value = lower_expression(builder, rhs)?;
-    if !builder.fun().current_block_terminated() {
-        builder.emit(MIRInstruction::new(
-            MIRInstructionKind::Jump {
-                target: MIRBlockTarget::with_args(merge_block, vec![rhs_value]),
-            },
-            expr.token_range.clone(),
-        ));
+    let rhs_value = lower_expression(builder, rhs);
+    match rhs_value {
+        Ok(rhs_value) if !builder.fun().current_block_terminated() => {
+            builder.emit(MIRInstruction::new(
+                MIRInstructionKind::Jump {
+                    target: MIRBlockTarget::with_args(merge_block, vec![rhs_value]),
+                },
+                expr.token_range.clone(),
+            ));
+        }
+        Err(super::LowerStop::Diagnostic(error)) => {
+            return Err(super::LowerStop::Diagnostic(error));
+        }
+        _ => {}
     }
 
     builder.fun_mut().set_current_block(merge_block);
@@ -360,7 +368,7 @@ pub(super) fn lower_unary_op<'thir>(
     expr: &'thir THIRExpression,
     operand: &'thir THIRExpression,
     op: &THIRUnOp,
-) -> CXResult<MIRValue> {
+) -> LowerResult<MIRValue> {
     if let THIRUnOp::PreIncrement(amount) | THIRUnOp::PostIncrement(amount) = op {
         return lower_increment(
             builder,
@@ -372,7 +380,7 @@ pub(super) fn lower_unary_op<'thir>(
     }
 
     let operand = lower_expression(builder, operand)?;
-    let return_type = lower_type(builder, &expr._type)?;
+    let return_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
 
     let out = builder.fun_mut().new_register(return_type, None);
     let target = MIRTarget::Register(out);
@@ -408,7 +416,7 @@ fn lower_increment<'thir>(
     operand: &'thir THIRExpression,
     amount: i8,
     prefix: bool,
-) -> CXResult<MIRValue> {
+) -> LowerResult<MIRValue> {
     let operand_value = lower_expression(builder, operand)?;
     let operand_target = memory::expect_target(&operand_value);
 
@@ -419,7 +427,7 @@ fn lower_increment<'thir>(
         )
     };
 
-    let lowered_inner_id = lower_type(builder, inner_type)?;
+    let lowered_inner_id = lower_type(builder, inner_type).map_err(LowerStop::Diagnostic)?;
     let lowered_inner = builder
         .types()
         .definition(lowered_inner_id)
@@ -519,8 +527,8 @@ pub(super) fn lower_coercion<'thir>(
     coercion: &THIRCoercion,
     _from_type: &THIRType,
     to_type: &'thir THIRType,
-) -> CXResult<MIRValue> {
-    let mir_to_type = lower_type(builder, to_type)?;
+) -> LowerResult<MIRValue> {
+    let mir_to_type = lower_type(builder, to_type).map_err(LowerStop::Diagnostic)?;
 
     match coercion {
         THIRCoercion::Integral {
@@ -546,7 +554,9 @@ pub(super) fn lower_coercion<'thir>(
                     sign_extend: *sextend,
                 }
             };
-            builder.fun_mut().emit_intrinsic(intrinsic, expr.token_range.clone());
+            builder
+                .fun_mut()
+                .emit_intrinsic(intrinsic, expr.token_range.clone());
 
             Ok(MIRValue::Register(out))
         }
@@ -637,8 +647,8 @@ pub(super) fn lower_address_of<'thir>(
     builder: &mut MIRBuilder<'thir>,
     expr: &'thir THIRExpression,
     operand: &'thir THIRExpression,
-) -> CXResult<MIRValue> {
-    let result_type = lower_type(builder, &expr._type)?;
+) -> LowerResult<MIRValue> {
+    let result_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
     let out = builder.fun_mut().new_register(result_type, None);
     let target = MIRTarget::Register(out);
 

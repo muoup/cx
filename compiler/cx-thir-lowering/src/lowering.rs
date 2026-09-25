@@ -9,7 +9,7 @@ pub(crate) mod comptime;
 pub(crate) mod globals;
 pub(crate) mod types;
 
-use cx_log::{CXResult, catalogue::mir};
+use cx_log::{CXResult, catalogue::mir, error::CXError};
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBlockTarget, MIRComptimeType, MIRConstant,
     MIRFunctionID, MIRGlobalRef, MIRInstruction, MIRInstructionKind, MIRIntType,
@@ -31,15 +31,20 @@ use crate::{
     lowering::{
         memory::{allocate_variable, move_value},
         operators::{lower_address_of, lower_binary_op, lower_coercion, lower_unary_op},
-        types::{lower_int_type, lower_type, reject_comptime_array},
+        types::{lower_int_type, lower_type, reject_comptime},
     },
 };
+
+pub(crate) enum LowerStop {
+    Diverged,
+    Diagnostic(CXError),
+}
+
+pub(crate) type LowerResult<T> = Result<T, LowerStop>;
+
 use crate::{
     log::{log_mir_error, mir_error},
-    lowering::{
-        control_flow::{auto_cleanup, auto_cleanup_before},
-        types::lower_float_type,
-    },
+    lowering::{control_flow::auto_cleanup, types::lower_float_type},
 };
 
 pub(crate) fn lower_function<'thir>(
@@ -91,11 +96,16 @@ pub(crate) fn lower_function_block<'thir>(
     let prototype = &function.prototype;
     match block {
         THIRFunctionBody::Expression(expr) => {
-            let result = lower_expression(builder, expr)?;
+            let result = match lower_expression(builder, expr) {
+                Ok(value) => value,
+                Err(LowerStop::Diverged) => return Ok(()),
+                Err(LowerStop::Diagnostic(error)) => return Err(error),
+            };
             let result = if expr._type.is_void() {
                 None
             } else {
                 Some(match result {
+                    // TODO: I don't think this is necessary
                     MIRValue::PlaceRef(place) if !expr._type.is_memory_reference() => {
                         let ty = lower_type(builder, &expr._type)?;
                         memory::copy(builder, MIRValue::PlaceRef(place), ty, &expr.token_range)
@@ -106,8 +116,10 @@ pub(crate) fn lower_function_block<'thir>(
             emit_implicit_return(builder, result, expr.token_range.clone())?;
         }
         THIRFunctionBody::Block { exprs, token_range } => {
-            for statement in exprs {
-                lower_expression(builder, statement)?;
+            if let Err(LowerStop::Diagnostic(error)) =
+                control_flow::lower_sequence(builder, exprs, true)
+            {
+                return Err(error);
             }
 
             if prototype.signature().return_type.is_void() {
@@ -160,8 +172,11 @@ pub(super) fn emit_implicit_return(
         .first()
         .expect("active function has no root scope")
         .id();
-    auto_cleanup(builder, root_scope, range.clone())?;
-    builder.emit_if_open(MIRInstruction::new(
+    match auto_cleanup(builder, root_scope, true, range.clone()) {
+        Ok(()) | Err(LowerStop::Diverged) => {}
+        Err(LowerStop::Diagnostic(error)) => return Err(error),
+    }
+    builder.emit(MIRInstruction::new(
         MIRInstructionKind::Return { value },
         range,
     ));
@@ -171,13 +186,14 @@ pub(super) fn emit_implicit_return(
 pub(crate) fn lower_expression<'thir>(
     builder: &mut MIRBuilder<'thir>,
     expr: &'thir THIRExpression,
-) -> CXResult<MIRValue> {
+) -> LowerResult<MIRValue> {
     if builder
         .try_fun()
         .is_some_and(|function| function.body().comptime_prototype().is_some())
     {
-        reject_comptime_array(builder, &expr._type)?;
+        reject_comptime(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
     }
+
     let value = match &expr.kind {
         THIRExpressionKind::BoolLiteral(value) => MIRValue::Constant(MIRConstant::Integer {
             value: *value as i128,
@@ -218,7 +234,7 @@ pub(crate) fn lower_expression<'thir>(
         THIRExpressionKind::Unit => MIRValue::Constant(MIRConstant::Unit),
 
         THIRExpressionKind::SizeOf { _type } | THIRExpressionKind::AlignOf { _type } => {
-            let type_id = lower_type(builder, _type)?;
+            let type_id = lower_type(builder, _type).map_err(LowerStop::Diagnostic)?;
             let layout = calculate_type_layout(builder.types(), type_id);
 
             MIRValue::Constant(MIRConstant::Integer {
@@ -236,18 +252,21 @@ pub(crate) fn lower_expression<'thir>(
             if let Some(value) = builder.fun().comptime_local(*local_id) {
                 staged::runtime_value(builder, value, &expr.token_range)?
             } else {
-                builder.local_value(*local_id).ok_or_else(|| {
-                    mir_error(
-                        &expr.token_range,
-                        (
-                            &mir::MISSING_ENTITY,
+                builder
+                    .local_value(*local_id)
+                    .ok_or_else(|| {
+                        mir_error(
+                            &expr.token_range,
                             (
-                                format!("local {:?}", local_id),
-                                "MIR lowering context".into(),
+                                &mir::MISSING_ENTITY,
+                                (
+                                    format!("local {:?}", local_id),
+                                    "MIR lowering context".into(),
+                                ),
                             ),
-                        ),
-                    )
-                })?
+                        )
+                    })
+                    .map_err(LowerStop::Diagnostic)?
             }
         }
 
@@ -263,12 +282,13 @@ pub(crate) fn lower_expression<'thir>(
                             (format!("global '{symbol}'"), "MIR lowering context".into()),
                         ),
                     )
-                })?;
+                })
+                .map_err(LowerStop::Diagnostic)?;
             let ty = match &expr._type.kind {
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
-                    types::lower_type_id(builder, *inner_type)?
+                    types::lower_type_id(builder, *inner_type).map_err(LowerStop::Diagnostic)?
                 }
-                _ => lower_type(builder, &expr._type)?,
+                _ => lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?,
             };
 
             MIRValue::Constant(MIRConstant::GlobalRef(MIRGlobalRef {
@@ -295,7 +315,8 @@ pub(crate) fn lower_expression<'thir>(
                     ),
                 )
             })
-            .map(|v| MIRValue::Constant(MIRConstant::Function(v)))?,
+            .map(|v| MIRValue::Constant(MIRConstant::Function(v)))
+            .map_err(LowerStop::Diagnostic)?,
 
         THIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
             lower_binary_op(builder, expr, lhs, rhs, op)?
@@ -310,16 +331,16 @@ pub(crate) fn lower_expression<'thir>(
             if expr._type.is_memory_reference() && !matches!(lowered, MIRValue::PlaceRef(_)) {
                 lowered
             } else {
-                let value_type = lower_type(builder, &expr._type)?;
+                let value_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
                 memory::copy(builder, lowered, value_type, &expr.token_range)
             }
         }
 
         THIRExpressionKind::Move { local_id, .. } => {
             let local = builder.fun().local(*local_id).expect("local should exist");
-            let ty = lower_type(builder, &expr._type)?;
+            let ty = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
 
-            move_value(builder, local, ty, &expr.token_range)?
+            move_value(builder, local, ty, &expr.token_range).map_err(LowerStop::Diagnostic)?
         }
 
         THIRExpressionKind::CreateLocalVariable {
@@ -339,8 +360,9 @@ pub(crate) fn lower_expression<'thir>(
                 _type,
                 initial_value,
                 &expr.token_range,
-            )?;
-            
+            )
+            .map_err(LowerStop::Diagnostic)?;
+
             builder
                 .fun_mut()
                 .bind_local(*local_id, MIRValue::PlaceRef(place));
@@ -357,7 +379,7 @@ pub(crate) fn lower_expression<'thir>(
             initial_value,
         } => {
             let address = lower_expression(builder, initial_value)?;
-            let type_id = lower_type(builder, _type)?;
+            let type_id = lower_type(builder, _type).map_err(LowerStop::Diagnostic)?;
             let place = builder.new_place(type_id, Some(binding_name.clone()), _type.is_nodrop());
             builder.fun_mut().body_mut().mark_adopted(place);
             builder.fun_mut().emit_intrinsic(
@@ -379,7 +401,8 @@ pub(crate) fn lower_expression<'thir>(
         }
 
         THIRExpressionKind::Assign { target, value } => {
-            let assignment_type = lower_type(builder, &value._type)?;
+            let assignment_type =
+                lower_type(builder, &value._type).map_err(LowerStop::Diagnostic)?;
 
             let mlhs = lower_expression(builder, target)?;
             let mvalue = lower_expression(builder, value)?;
@@ -424,8 +447,9 @@ pub(crate) fn lower_expression<'thir>(
             aggregate_type,
         } => {
             let base_value = lower_expression(builder, base)?;
-            let type_id = lower_type(builder, &expr._type)?;
-            let aggregate_type_id = lower_type(builder, aggregate_type)?;
+            let type_id = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
+            let aggregate_type_id =
+                lower_type(builder, aggregate_type).map_err(LowerStop::Diagnostic)?;
             let out = builder.fun_mut().new_register(type_id, None);
             builder.fun_mut().emit_intrinsic(
                 MIRAggregateIntrinsic::StructField {
@@ -444,8 +468,9 @@ pub(crate) fn lower_expression<'thir>(
             index,
             element_type,
         } => {
-            let element_type_id = lower_type(builder, element_type)?;
-            let return_type = lower_type(builder, &expr._type)?;
+            let element_type_id =
+                lower_type(builder, element_type).map_err(LowerStop::Diagnostic)?;
+            let return_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
 
             let array = lower_expression(builder, array)?;
             let index = lower_expression(builder, index)?;
@@ -479,15 +504,19 @@ pub(crate) fn lower_expression<'thir>(
                 }
                 _ => &value._type,
             };
-            let struct_type_id = lower_type(builder, source_type)?;
+            let struct_type_id = lower_type(builder, source_type).map_err(LowerStop::Diagnostic)?;
             let moved =
-                memory::move_value(builder, lowered_value, struct_type_id, &expr.token_range)?;
+                memory::move_value(builder, lowered_value, struct_type_id, &expr.token_range)
+                    .map_err(LowerStop::Diagnostic)?;
             let base =
-                allocate_variable(builder, None, source_type, Some(moved), &expr.token_range)?;
+                allocate_variable(builder, None, source_type, Some(moved), &expr.token_range)
+                    .map_err(LowerStop::Diagnostic)?;
 
             for binding in bindings {
-                let field_type = lower_type(builder, &binding.field_type)?;
-                let aggregate_type = lower_type(builder, source_type)?;
+                let field_type =
+                    lower_type(builder, &binding.field_type).map_err(LowerStop::Diagnostic)?;
+                let aggregate_type =
+                    lower_type(builder, source_type).map_err(LowerStop::Diagnostic)?;
                 let field_register = builder.fun_mut().new_register(field_type, None);
                 builder.fun_mut().emit_intrinsic(
                     MIRAggregateIntrinsic::StructField {
@@ -516,9 +545,9 @@ pub(crate) fn lower_expression<'thir>(
 
         THIRExpressionKind::TaggedUnionTag { value, sum_type } => {
             let base = lower_expression(builder, value)?;
-            let type_id = lower_type(builder, &expr._type)?;
+            let type_id = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
             let out = builder.fun_mut().new_register(type_id, None);
-            let sum_type_id = lower_type(builder, sum_type)?;
+            let sum_type_id = lower_type(builder, sum_type).map_err(LowerStop::Diagnostic)?;
             builder.fun_mut().emit_intrinsic(
                 MIRAggregateIntrinsic::SumIndex {
                     out: MIRTarget::Register(out),
@@ -539,7 +568,7 @@ pub(crate) fn lower_expression<'thir>(
             let target_value = lower_expression(builder, target)?;
             let mtarget = memory::expect_target(&target_value);
             let value = lower_expression(builder, inner_value)?;
-            let sum_type_id = lower_type(builder, sum_type)?;
+            let sum_type_id = lower_type(builder, sum_type).map_err(LowerStop::Diagnostic)?;
             let constructed = builder.fun_mut().new_register(sum_type_id, None);
             builder.fun_mut().emit_intrinsic(
                 MIRAggregateIntrinsic::AggregateInit {
@@ -566,8 +595,8 @@ pub(crate) fn lower_expression<'thir>(
             sum_type,
         } => {
             let value = lower_expression(builder, value)?;
-            let sum_type_id = lower_type(builder, sum_type)?;
-            let type_id = lower_type(builder, &expr._type)?;
+            let sum_type_id = lower_type(builder, sum_type).map_err(LowerStop::Diagnostic)?;
+            let type_id = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
             let out = builder.fun_mut().new_register(type_id, None);
             builder.fun_mut().emit_intrinsic(
                 MIRAggregateIntrinsic::AggregateInit {
@@ -585,7 +614,7 @@ pub(crate) fn lower_expression<'thir>(
             for (index, element) in elements.iter().enumerate() {
                 fields.push((index, lower_expression(builder, element)?));
             }
-            let type_id = lower_type(builder, &expr._type)?;
+            let type_id = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
             if let Some(MIRTypeKind::Array { length, .. }) =
                 builder.types().definition(type_id).map(|ty| ty.kind())
                 && fields.len() > *length
@@ -593,7 +622,8 @@ pub(crate) fn lower_expression<'thir>(
                 return log_mir_error(
                     &expr.token_range,
                     (&mir::ARRAY_TOO_LONG, (fields.len(), *length)),
-                );
+                )
+                .map_err(LowerStop::Diagnostic);
             }
             let out = builder.fun_mut().new_register(type_id, None);
             builder.fun_mut().emit_intrinsic(
@@ -618,9 +648,10 @@ pub(crate) fn lower_expression<'thir>(
                     lower_expression(builder, &initialization.value)?,
                 ));
             }
-            let type_id = lower_type(builder, &expr._type)?;
+            let type_id = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
             let out = builder.fun_mut().new_register(type_id, None);
-            let aggregate_type_id = lower_type(builder, struct_type)?;
+            let aggregate_type_id =
+                lower_type(builder, struct_type).map_err(LowerStop::Diagnostic)?;
             builder.fun_mut().emit_intrinsic(
                 MIRAggregateIntrinsic::AggregateInit {
                     out: MIRTarget::Register(out),
@@ -647,11 +678,15 @@ pub(crate) fn lower_expression<'thir>(
             let Some((scope, target)) = target else {
                 return log_mir_error(
                     &expr.token_range,
-                    (&mir::REQUIRED_CONTEXT, ("break".into(), "a loop or switch".into())),
-                );
+                    (
+                        &mir::REQUIRED_CONTEXT,
+                        ("break".into(), "a loop or switch".into()),
+                    ),
+                )
+                .map_err(LowerStop::Diagnostic);
             };
 
-            auto_cleanup_before(builder, scope, expr.token_range.clone())?;
+            auto_cleanup(builder, scope, false, expr.token_range.clone())?;
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
@@ -659,7 +694,7 @@ pub(crate) fn lower_expression<'thir>(
                 expr.token_range.clone(),
             ));
 
-            MIRValue::Constant(MIRConstant::Unit)
+            return Err(LowerStop::Diverged);
         }
 
         THIRExpressionKind::Continue => {
@@ -678,10 +713,11 @@ pub(crate) fn lower_expression<'thir>(
                 return log_mir_error(
                     &expr.token_range,
                     (&mir::REQUIRED_CONTEXT, ("continue".into(), "a loop".into())),
-                );
+                )
+                .map_err(LowerStop::Diagnostic);
             };
 
-            auto_cleanup_before(builder, scope, expr.token_range.clone())?;
+            auto_cleanup(builder, scope, false, expr.token_range.clone())?;
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::new(target),
@@ -689,7 +725,7 @@ pub(crate) fn lower_expression<'thir>(
                 expr.token_range.clone(),
             ));
 
-            MIRValue::Constant(MIRConstant::Unit)
+            return Err(LowerStop::Diverged);
         }
 
         THIRExpressionKind::Goto { name } => {
@@ -706,9 +742,7 @@ pub(crate) fn lower_expression<'thir>(
                 },
                 expr.token_range.clone(),
             ));
-            let dead_block = builder.fun_mut().new_block("after.goto");
-            builder.fun_mut().set_current_block(dead_block);
-            MIRValue::Constant(MIRConstant::Unit)
+            return Err(LowerStop::Diverged);
         }
         THIRExpressionKind::Label { name, statement } => {
             let target = if let Some(target) = builder.fun_mut().label(name) {
@@ -795,7 +829,8 @@ pub(crate) fn lower_expression<'thir>(
                             &mir::COMPTIME_INVALID_OPERATION,
                             "staged return postcondition".into(),
                         ),
-                    );
+                    )
+                    .map_err(LowerStop::Diagnostic);
                 }
                 let root_scope = builder
                     .fun()
@@ -803,12 +838,12 @@ pub(crate) fn lower_expression<'thir>(
                     .first()
                     .expect("active function has no root scope")
                     .id();
-                auto_cleanup(builder, root_scope, expr.token_range.clone())?;
+                auto_cleanup(builder, root_scope, true, expr.token_range.clone())?;
                 builder.emit_comptime(
                     cx_mir::MIRComptimeOp::Return { value: operand },
                     expr.token_range.clone(),
                 );
-                return Ok(MIRValue::Constant(MIRConstant::Unit));
+                return Err(LowerStop::Diverged);
             }
             let value_expression = value.as_deref();
             let lowered_value = value_expression
@@ -819,8 +854,14 @@ pub(crate) fn lower_expression<'thir>(
                 (MIRValue::PlaceRef(target), Some(expression))
                     if !expression._type.is_memory_reference() =>
                 {
-                    let ty = lower_type(builder, &expression._type)?;
-                    memory::copy(builder, MIRValue::PlaceRef(target), ty, &expression.token_range)
+                    let ty =
+                        lower_type(builder, &expression._type).map_err(LowerStop::Diagnostic)?;
+                    memory::copy(
+                        builder,
+                        MIRValue::PlaceRef(target),
+                        ty,
+                        &expression.token_range,
+                    )
                 }
                 (value, _) => value,
             };
@@ -842,12 +883,12 @@ pub(crate) fn lower_expression<'thir>(
                 .first()
                 .expect("active function has no root scope")
                 .id();
-            auto_cleanup(builder, root_scope, expr.token_range.clone())?;
+            auto_cleanup(builder, root_scope, true, expr.token_range.clone())?;
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Return { value },
                 expr.token_range.clone(),
             ));
-            MIRValue::Constant(MIRConstant::Unit)
+            return Err(LowerStop::Diverged);
         }
 
         THIRExpressionKind::Unreachable => {
@@ -855,16 +896,13 @@ pub(crate) fn lower_expression<'thir>(
                 MIRInstructionKind::Unreachable,
                 expr.token_range.clone(),
             ));
-            MIRValue::Constant(MIRConstant::Unit)
+            return Err(LowerStop::Diverged);
         }
 
         THIRExpressionKind::Yield { value } => {
             let value = value
                 .as_deref()
-                .map(|value| {
-                    let lowered = lower_expression(builder, value)?;
-                    Ok(lowered)
-                })
+                .map(|value| lower_expression(builder, value))
                 .transpose()?;
 
             let target = builder
@@ -885,24 +923,26 @@ pub(crate) fn lower_expression<'thir>(
                         &mir::REQUIRED_CONTEXT,
                         ("yield".into(), "a yieldable scope".into()),
                     ),
-                );
+                )
+                .map_err(LowerStop::Diagnostic);
             };
 
             if let Some(value) = &value
                 && let Some(expected) = builder.fun().body().block_parameter_type(block_id, 0)
             {
-                memory::check_block_argument(builder, value, expected, &expr.token_range)?;
+                memory::check_block_argument(builder, value, expected, &expr.token_range)
+                    .map_err(LowerStop::Diagnostic)?;
             }
 
             let args = value.into_iter().collect();
-            auto_cleanup_before(builder, scope_id, expr.token_range.clone())?;
+            auto_cleanup(builder, scope_id, false, expr.token_range.clone())?;
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Jump {
                     target: MIRBlockTarget::with_args(block_id, args),
                 },
                 expr.token_range.clone(),
             ));
-            MIRValue::Constant(MIRConstant::Unit)
+            return Err(LowerStop::Diverged);
         }
 
         THIRExpressionKind::Assert { condition, message } => {
@@ -927,7 +967,7 @@ pub(crate) fn lower_expression<'thir>(
             kind,
             yields,
         } => {
-            let result_type = lower_type(builder, &expr._type)?;
+            let result_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
             let returns_value = !matches!(
                 builder.types().definition(result_type).map(|ty| ty.kind()),
                 Some(MIRTypeKind::Void)
@@ -937,7 +977,6 @@ pub(crate) fn lower_expression<'thir>(
             let yield_register = merge.and_then(|merge| {
                 returns_value.then(|| builder.fun_mut().set_yield_recipient(merge, result_type))
             });
-            let mut result = MIRValue::Constant(MIRConstant::Unit);
             if let Some(merge) = merge {
                 builder.fun_mut().push_control_scope();
                 builder
@@ -949,9 +988,10 @@ pub(crate) fn lower_expression<'thir>(
                 builder.fun_mut().push_scope(expr.token_range.clone());
             }
 
-            for statement in statements {
-                result = lower_expression(builder, statement)?;
-            }
+            let result = match control_flow::lower_sequence(builder, statements, true) {
+                Err(LowerStop::Diagnostic(error)) => return Err(LowerStop::Diagnostic(error)),
+                result => result,
+            };
 
             if merge.is_some() {
                 builder.fun_mut().pop_control_scope();
@@ -967,12 +1007,20 @@ pub(crate) fn lower_expression<'thir>(
                         expr.token_range.clone(),
                     ));
                 }
+                let reaches_merge = builder.fun().body().block_has_predecessor(merge);
                 builder.fun_mut().set_current_block(merge);
+                if !reaches_merge {
+                    builder.emit(MIRInstruction::new(
+                        MIRInstructionKind::Unreachable,
+                        expr.token_range.clone(),
+                    ));
+                    return Err(LowerStop::Diverged);
+                }
                 yield_register
                     .map(MIRValue::Register)
                     .unwrap_or(MIRValue::Constant(MIRConstant::Unit))
             } else {
-                result
+                result?
             }
         }
 
@@ -1012,7 +1060,7 @@ pub(crate) fn lower_expression<'thir>(
 
         THIRExpressionKind::VaArg { list, _type } => {
             let list = lower_expression(builder, list)?;
-            let ty = lower_type(builder, _type)?;
+            let ty = lower_type(builder, _type).map_err(LowerStop::Diagnostic)?;
             let out = builder.fun_mut().new_register(ty, None);
             builder.fun_mut().emit_intrinsic(
                 MIRVAIntrinsic::VaArg {
@@ -1031,7 +1079,11 @@ pub(crate) fn lower_expression<'thir>(
         } => {
             if matches!(conversion, THIRCoercion::Unreachable) {
                 lower_expression(builder, operand)?;
-                return Ok(MIRValue::Constant(MIRConstant::Undefined));
+                builder.emit(MIRInstruction::new(
+                    MIRInstructionKind::Unreachable,
+                    expr.token_range.clone(),
+                ));
+                return Err(LowerStop::Diverged);
             }
             let value = lower_expression(builder, operand)?;
             lower_coercion(
@@ -1067,7 +1119,8 @@ pub(crate) fn lower_expression<'thir>(
                     &mir::COMPTIME_INVALID_OPERATION,
                     "staged value requires a comptime destination".into(),
                 ),
-            );
+            )
+            .map_err(LowerStop::Diagnostic);
         }
         THIRExpressionKind::Materialize {
             expr: staged_expr,
@@ -1080,7 +1133,8 @@ pub(crate) fn lower_expression<'thir>(
                         &mir::COMPTIME_INVALID_OPERATION,
                         "materialization in a comptime function".into(),
                     ),
-                );
+                )
+                .map_err(LowerStop::Diagnostic);
             }
             let staged = staged::lower_operand(builder, staged_expr)?;
             staged::materialize(builder, staged, with_params, &expr.token_range)?

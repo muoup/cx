@@ -88,7 +88,6 @@ impl<'thir> MIRBodyBuilder<'thir> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn emit_comptime(&mut self, op: MIRComptimeOp<'thir>, token_range: TokenRange) {
         assert!(
             !self.current_block_terminated(),
@@ -114,6 +113,27 @@ impl<'thir> MIRBodyBuilder<'thir> {
                 .block(self.current_block)
                 .and_then(|block| block.last_instruction())
                 .is_some_and(MIRInstructionLike::is_terminator),
+        }
+    }
+
+    pub fn block_has_predecessor(&self, target: MIRBasicBlockID) -> bool {
+        let reaches = |instruction: &MIRInstruction| {
+            cx_mir::expr::visit::successors(instruction)
+                .iter()
+                .any(|successor| successor.block == target)
+        };
+        match &self.kind {
+            MIRBodyKind::Runtime { body, .. } => body
+                .blocks()
+                .iter()
+                .any(|block| block.last_instruction().is_some_and(&reaches)),
+            MIRBodyKind::Comptime { body, .. } | MIRBodyKind::ComptimeScratch { body } => body
+                .blocks()
+                .iter()
+                .any(|block| match block.last_instruction() {
+                    Some(MIRComptimeInstruction::Runtime(instruction)) => reaches(instruction),
+                    _ => false,
+                }),
         }
     }
 

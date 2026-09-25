@@ -8,7 +8,8 @@ use cx_lmir::{
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRBody, MIRFunction, MIRGlobalID, MIRPlaceID, MIRRegister, MIRTypeID, MIRUnit,
+    MIRBasicBlockID, MIRBitfieldAccess, MIRBody, MIRFunction, MIRGlobalID, MIRPlaceID, MIRRegister,
+    MIRTypeID, MIRUnit,
 };
 use cx_util::identifier::CXIdent;
 
@@ -70,6 +71,7 @@ pub(crate) struct FunctionContext<'a, 'mir> {
     pub current_block: usize,
     pub next_register: usize,
     pub places: HashMap<MIRPlaceID, LMIRValue>,
+    pub bitfields: HashMap<MIRRegister, MIRBitfieldAccess>,
 }
 
 impl<'a, 'mir> FunctionContext<'a, 'mir> {
@@ -89,6 +91,7 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
             current_block: 0,
             next_register: 0,
             places: HashMap::new(),
+            bitfields: HashMap::new(),
         }
     }
 

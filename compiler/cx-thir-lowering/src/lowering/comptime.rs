@@ -10,7 +10,11 @@ use cx_tokens::TokenRange;
 use crate::{
     builder::{MIRBuilder, MIRTypeRegistryBuilder},
     log::mir_error,
-    lowering::{control_flow::auto_cleanup, emit_implicit_return, lower_expression, staged},
+    lowering::{
+        LowerResult, LowerStop,
+        control_flow::{auto_cleanup, lower_sequence},
+        emit_implicit_return, lower_expression, staged,
+    },
 };
 
 impl<'thir> ComptimeContext<'thir> for MIRBuilder<'thir> {
@@ -94,34 +98,40 @@ pub(crate) fn lower_comptime_function<'thir>(
         }
     }
 
-    match body {
-        THIRFunctionBody::Expression(expression) => {
-            if function.prototype.return_type().expr {
-                let value = staged::lower_operand(builder, expression)?;
-                let root_scope = builder
-                    .fun()
-                    .scope_stack()
-                    .first()
-                    .expect("active function has no root scope")
-                    .id();
-                auto_cleanup(builder, root_scope, expression.token_range.clone())?;
-                builder.emit_comptime(
-                    cx_mir::MIRComptimeOp::Return { value: Some(value) },
-                    expression.token_range.clone(),
-                );
-            } else {
-                let value = lower_expression(builder, expression)?;
-                emit_implicit_return(builder, Some(value), expression.token_range.clone())?;
+    let lowered = (|| -> LowerResult<()> {
+        match body {
+            THIRFunctionBody::Expression(expression) => {
+                if function.prototype.return_type().expr {
+                    let value = staged::lower_operand(builder, expression)?;
+                    let root_scope = builder
+                        .fun()
+                        .scope_stack()
+                        .first()
+                        .expect("active function has no root scope")
+                        .id();
+                    auto_cleanup(builder, root_scope, true, expression.token_range.clone())?;
+                    builder.emit_comptime(
+                        cx_mir::MIRComptimeOp::Return { value: Some(value) },
+                        expression.token_range.clone(),
+                    );
+                } else {
+                    let value = lower_expression(builder, expression)?;
+                    emit_implicit_return(builder, Some(value), expression.token_range.clone())
+                        .map_err(LowerStop::Diagnostic)?;
+                }
+            }
+            THIRFunctionBody::Block { exprs, token_range } => {
+                lower_sequence(builder, exprs, true)?;
+                if function.prototype.return_type()._type.is_void() {
+                    emit_implicit_return(builder, None, token_range.clone())
+                        .map_err(LowerStop::Diagnostic)?;
+                }
             }
         }
-        THIRFunctionBody::Block { exprs, token_range } => {
-            for expression in exprs {
-                lower_expression(builder, expression)?;
-            }
-            if function.prototype.return_type()._type.is_void() {
-                emit_implicit_return(builder, None, token_range.clone())?;
-            }
-        }
+        Ok(())
+    })();
+    if let Err(LowerStop::Diagnostic(error)) = lowered {
+        return Err(error);
     }
     builder.finish_function()
 }
@@ -153,7 +163,7 @@ pub(crate) fn evaluate<'thir>(
     let id = builder.module_mut().allocate_function_id();
     builder.start_comptime_scratch(id);
 
-    let lowered = (|| {
+    let lowered = (|| -> LowerResult<()> {
         let value = lower_expression(builder, expression)?;
         builder.emit(MIRInstruction::new(
             MIRInstructionKind::Return { value: Some(value) },
@@ -165,7 +175,9 @@ pub(crate) fn evaluate<'thir>(
     if let Some(parent) = parent {
         builder.restore_current_function(parent);
     }
-    lowered?;
+    if let Err(LowerStop::Diagnostic(error)) = lowered {
+        return Err(error);
+    }
 
     match evaluate_body(builder, &body, &[], "<comptime expression>")? {
         MIRComptimeValue::Constant(value) => Ok(value),

@@ -211,14 +211,14 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.body.add_comptime_register(ty, debug_name)
     }
 
-    #[allow(dead_code)]
     pub fn register_type(&self, register: MIRRegister) -> Option<MIRTypeID> {
         self.body.register(register).map(|decl| decl.ty)
     }
 
     pub fn emit(&mut self, instr: MIRInstruction) {
-        self.open_unreachable_block();
-        self.body.emit(instr);
+        if !self.current_block_terminated() {
+            self.body.emit(instr);
+        }
     }
 
     pub fn emit_intrinsic(&mut self, intrinsic: impl Into<MIRIntrinsic>, range: TokenRange) {
@@ -228,10 +228,9 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         })
     }
 
-    pub fn open_unreachable_block(&mut self) {
-        if self.current_block_terminated() {
-            let block = self.new_block("unreachable");
-            self.set_current_block(block);
+    pub fn emit_comptime(&mut self, op: cx_mir::MIRComptimeOp<'thir>, range: TokenRange) {
+        if !self.current_block_terminated() {
+            self.body.emit_comptime(op, range);
         }
     }
 
@@ -275,7 +274,6 @@ impl<'thir> MIRFunctionBuilder<'thir> {
         self.comptime_values.get(&local).cloned()
     }
 
-    #[allow(dead_code)]
     pub fn locals(&self) -> HashMap<THIRLocalID, MIRValue> {
         self.local_values.clone()
     }

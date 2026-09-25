@@ -1,9 +1,12 @@
 use crate::lowering::memory;
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
-use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRValue};
+use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRValue};
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::calculate_type_layout;
-use cx_mir::{MIRConstant, MIRField, MIRGlobalRef, MIRTarget, MIRTypeID, MIRTypeKind, MIRValue};
+use cx_mir::{
+    MIRBitfieldAccess, MIRConstant, MIRField, MIRGlobalRef, MIRIntType, MIRTarget, MIRTypeID,
+    MIRTypeKind, MIRValue,
+};
 
 use crate::context::FunctionContext;
 
@@ -34,10 +37,18 @@ pub(crate) fn lower_rvalue(
             context.types().definition(expected).unwrap().kind(),
             MIRTypeKind::MemoryReference { .. }
         ) {
-            if let MIRTypeKind::MemoryReference { inner, .. } =
+            if let MIRTypeKind::MemoryReference { inner, bitfield } =
                 context.types().definition(source_ty).unwrap().kind()
             {
                 let inner = *inner;
+                if let Some(bitfield) = context
+                    .bitfields
+                    .get(register)
+                    .cloned()
+                    .or_else(|| bitfield.clone())
+                {
+                    return read_bitfield(context, context.reg(*register), inner, &bitfield);
+                }
                 return memory::load(context, context.reg(*register), inner);
             }
         }
@@ -85,10 +96,18 @@ pub(super) fn lower_read(context: &mut FunctionContext<'_, '_>, value: &MIRValue
     }
     if let MIRValue::Register(register) = value {
         let ty = context.body.register(*register).unwrap().ty;
-        if let MIRTypeKind::MemoryReference { inner, .. } =
+        if let MIRTypeKind::MemoryReference { inner, bitfield } =
             context.types().definition(ty).unwrap().kind()
         {
             let inner = *inner;
+            if let Some(bitfield) = context
+                .bitfields
+                .get(register)
+                .cloned()
+                .or_else(|| bitfield.clone())
+            {
+                return read_bitfield(context, context.reg(*register), inner, &bitfield);
+            }
             return memory::load(context, context.reg(*register), inner);
         }
     }
@@ -260,8 +279,208 @@ pub(super) fn write_target(
             let address = global_address(context, reference);
             memory::store(context, address, value, ty);
         }
-        MIRTarget::Indirect(id) => memory::store(context, context.reg(id), value, ty),
+        MIRTarget::Indirect(id) => {
+            let pointer_type = context.body.register(id).unwrap().ty;
+            let bitfield = context.bitfields.get(&id).cloned().or_else(|| {
+                match context.types().definition(pointer_type).unwrap().kind() {
+                    MIRTypeKind::MemoryReference { bitfield, .. } => bitfield.clone(),
+                    _ => None,
+                }
+            });
+            if let Some(bitfield) = bitfield {
+                write_bitfield(context, context.reg(id), value, ty, &bitfield);
+            } else {
+                memory::store(context, context.reg(id), value, ty);
+            }
+        }
     }
+}
+
+pub(super) fn read_bitfield(
+    context: &mut FunctionContext<'_, '_>,
+    address: LMIRValue,
+    storage_ty: MIRTypeID,
+    bitfield: &MIRBitfieldAccess,
+) -> LMIRValue {
+    let storage_type = context.ty(storage_ty);
+    let storage_bits = integer_bits(context, storage_ty);
+    let storage = memory::load(context, address, storage_ty);
+    if bitfield.bit_width == 0 {
+        return context.integer(0, integer_type(context, storage_ty));
+    }
+    let value = if bitfield.bit_offset == 0 {
+        storage
+    } else {
+        let shift_amount = context.integer(
+            bitfield.bit_offset as i128,
+            integer_type(context, storage_ty),
+        );
+        integer_binop(
+            context,
+            LMIRIntBinOp::LSHR,
+            storage,
+            shift_amount,
+            storage_type.clone(),
+        )
+    };
+    let value = if bitfield.bit_width < storage_bits {
+        let mask = bit_mask(context, storage_ty, bitfield.bit_width);
+        integer_binop(
+            context,
+            LMIRIntBinOp::BAND,
+            value,
+            mask,
+            storage_type.clone(),
+        )
+    } else {
+        value
+    };
+    if bitfield.signed && bitfield.bit_width < storage_bits {
+        let shift = storage_bits - bitfield.bit_width;
+        let shift_amount = context.integer(shift as i128, integer_type(context, storage_ty));
+        let value = integer_binop(
+            context,
+            LMIRIntBinOp::SHL,
+            value,
+            shift_amount.clone(),
+            storage_type.clone(),
+        );
+        integer_binop(
+            context,
+            LMIRIntBinOp::ASHR,
+            value,
+            shift_amount,
+            storage_type,
+        )
+    } else {
+        value
+    }
+}
+
+pub(super) fn write_bitfield(
+    context: &mut FunctionContext<'_, '_>,
+    address: LMIRValue,
+    value: LMIRValue,
+    storage_ty: MIRTypeID,
+    bitfield: &MIRBitfieldAccess,
+) {
+    if bitfield.bit_width == 0 {
+        return;
+    }
+    let storage_type = context.ty(storage_ty);
+    let integer_type = integer_type(context, storage_ty);
+    let field_mask = bit_mask(context, storage_ty, bitfield.bit_width);
+    let value = integer_binop(
+        context,
+        LMIRIntBinOp::BAND,
+        value,
+        field_mask.clone(),
+        storage_type.clone(),
+    );
+    let shifted_value = if bitfield.bit_offset == 0 {
+        value
+    } else {
+        let shift_amount = context.integer(bitfield.bit_offset as i128, integer_type);
+        integer_binop(
+            context,
+            LMIRIntBinOp::SHL,
+            value,
+            shift_amount,
+            storage_type.clone(),
+        )
+    };
+    let field_mask = if bitfield.bit_offset == 0 {
+        field_mask
+    } else {
+        let shift_amount = context.integer(bitfield.bit_offset as i128, integer_type);
+        integer_binop(
+            context,
+            LMIRIntBinOp::SHL,
+            field_mask,
+            shift_amount,
+            storage_type.clone(),
+        )
+    };
+    let field_mask = memory::temp(
+        context,
+        LMIRInstructionKind::IntegerUnOp {
+            op: LMIRIntUnOp::BNOT,
+            value: field_mask,
+        },
+        storage_type.clone(),
+    );
+    let storage = memory::load(context, address.clone(), storage_ty);
+    let preserved = integer_binop(
+        context,
+        LMIRIntBinOp::BAND,
+        storage,
+        field_mask,
+        storage_type.clone(),
+    );
+    let value = integer_binop(
+        context,
+        LMIRIntBinOp::BOR,
+        preserved,
+        shifted_value,
+        storage_type,
+    );
+    memory::store(context, address, value, storage_ty);
+}
+
+fn bit_mask(
+    context: &mut FunctionContext<'_, '_>,
+    storage_ty: MIRTypeID,
+    width: usize,
+) -> LMIRValue {
+    let bits = integer_bits(context, storage_ty);
+    if width >= bits {
+        return context.integer(-1, integer_type(context, storage_ty));
+    }
+    let all_ones = context.integer(-1, integer_type(context, storage_ty));
+    let shift_amount = context.integer((bits - width) as i128, integer_type(context, storage_ty));
+    let lowered_type = context.ty(storage_ty);
+    integer_binop(
+        context,
+        LMIRIntBinOp::LSHR,
+        all_ones,
+        shift_amount,
+        lowered_type,
+    )
+}
+
+fn integer_binop(
+    context: &mut FunctionContext<'_, '_>,
+    op: LMIRIntBinOp,
+    left: LMIRValue,
+    right: LMIRValue,
+    ty: LMIRType,
+) -> LMIRValue {
+    memory::temp(
+        context,
+        LMIRInstructionKind::IntegerBinOp { op, left, right },
+        ty,
+    )
+}
+
+fn integer_bits(context: &FunctionContext<'_, '_>, ty: MIRTypeID) -> usize {
+    match context.types().definition(ty).unwrap().kind() {
+        MIRTypeKind::Integer { ty, .. } => match ty {
+            MIRIntType::I1 => 1,
+            MIRIntType::I8 => 8,
+            MIRIntType::I16 => 16,
+            MIRIntType::I32 => 32,
+            MIRIntType::I64 => 64,
+            MIRIntType::I128 => 128,
+        },
+        _ => panic!("bitfield storage type is not an integer"),
+    }
+}
+
+fn integer_type(context: &FunctionContext<'_, '_>, ty: MIRTypeID) -> LMIRIntegerType {
+    let MIRTypeKind::Integer { ty, .. } = context.types().definition(ty).unwrap().kind() else {
+        panic!("bitfield storage type is not an integer")
+    };
+    convert_integer_type(*ty)
 }
 
 pub(super) fn field_location(
@@ -341,6 +560,22 @@ fn bitfield(field: &MIRField, offset: usize) -> Option<(usize, usize)> {
         MIRField::Bitfield { width, .. } => Some((offset, *width)),
         _ => None,
     }
+}
+
+pub(super) fn bitfield_access(
+    context: &FunctionContext<'_, '_>,
+    ty: MIRTypeID,
+    location: Option<(usize, usize)>,
+) -> Option<MIRBitfieldAccess> {
+    let (bit_offset, bit_width) = location?;
+    let MIRTypeKind::Integer { signed, .. } = context.types().definition(ty).unwrap().kind() else {
+        panic!("bitfield storage type is not an integer")
+    };
+    Some(MIRBitfieldAccess {
+        bit_offset,
+        bit_width,
+        signed: *signed,
+    })
 }
 
 fn align(value: usize, alignment: usize) -> usize {

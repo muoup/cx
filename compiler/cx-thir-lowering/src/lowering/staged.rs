@@ -10,13 +10,15 @@ use cx_thir::thir::{
 };
 
 use crate::{
-    builder::MIRBuilder, log::mir_error, lowering::{calls, control_flow, lower_expression, types::lower_type},
+    builder::MIRBuilder,
+    log::mir_error,
+    lowering::{LowerResult, LowerStop, calls, control_flow, lower_expression, types::lower_type},
 };
 
 pub(super) fn lower_operand<'thir>(
     builder: &mut MIRBuilder<'thir>,
     expression: &'thir THIRExpression,
-) -> CXResult<MIRComptimeOperand> {
+) -> LowerResult<MIRComptimeOperand> {
     match &expression.kind {
         THIRExpressionKind::StagedExpression(staged) => lower_emit(builder, staged),
         THIRExpressionKind::Variable { local_id, .. } => {
@@ -46,7 +48,7 @@ pub(super) fn runtime_value<'thir>(
     builder: &mut MIRBuilder<'thir>,
     operand: MIRComptimeOperand,
     range: &cx_tokens::TokenRange,
-) -> CXResult<MIRValue> {
+) -> LowerResult<MIRValue> {
     match operand {
         MIRComptimeOperand::Runtime(value)
         | MIRComptimeOperand::Known(MIRComptimeValue::Caller(value)) => Ok(value),
@@ -59,25 +61,26 @@ pub(super) fn runtime_value<'thir>(
             &[],
             range,
         ),
-        MIRComptimeOperand::Comptime(_) => Err(mir_error(
+        MIRComptimeOperand::Comptime(_) => Err(LowerStop::Diagnostic(mir_error(
             range,
             (
                 &mir::COMPTIME_INVALID_OPERATION,
                 "staged value requires materialization".into(),
             ),
-        )),
+        ))),
     }
 }
 
 fn lower_emit<'thir>(
     builder: &mut MIRBuilder<'thir>,
     staged: &'thir THIRStagedExpr,
-) -> CXResult<MIRComptimeOperand> {
+) -> LowerResult<MIRComptimeOperand> {
     let captures = staged
         .captures()
         .iter()
         .map(|id| capture(builder, *id).map(|value| (*id, value)))
-        .collect::<CXResult<BTreeMap<_, _>>>()?;
+        .collect::<CXResult<BTreeMap<_, _>>>()
+        .map_err(LowerStop::Diagnostic)?;
 
     if !builder.fun().body().is_comptime() {
         let captures = captures
@@ -104,12 +107,13 @@ fn lower_emit<'thir>(
         return Ok(MIRComptimeOperand::Known(MIRComptimeValue::Staged(id)));
     }
 
-    let result = lower_type(builder, &staged.expr()._type)?;
+    let result = lower_type(builder, &staged.expr()._type).map_err(LowerStop::Diagnostic)?;
     let params = staged
         .params()
         .iter()
         .map(|parameter| lower_type(builder, &parameter.ty))
-        .collect::<CXResult<Vec<_>>>()?;
+        .collect::<CXResult<Vec<_>>>()
+        .map_err(LowerStop::Diagnostic)?;
     let out = builder
         .fun_mut()
         .new_comptime_register(MIRComptimeType::StagedExpression { result, params }, None);
@@ -149,43 +153,43 @@ pub(super) fn materialize<'thir>(
     operand: MIRComptimeOperand,
     arguments: &'thir [THIRExpression],
     range: &cx_tokens::TokenRange,
-) -> CXResult<MIRValue> {
+) -> LowerResult<MIRValue> {
     if builder.fun().body().is_comptime() {
-        return Err(mir_error(
+        return Err(LowerStop::Diagnostic(mir_error(
             range,
             (
                 &mir::COMPTIME_INVALID_OPERATION,
                 "materialization in a comptime function".into(),
             ),
-        ));
+        )));
     }
     let MIRComptimeOperand::Known(MIRComptimeValue::Staged(id)) = operand else {
-        return Err(mir_error(
+        return Err(LowerStop::Diagnostic(mir_error(
             range,
             (
                 &mir::COMPTIME_INVALID_OPERATION,
                 "materialization requires an evaluated staged expression".into(),
             ),
-        ));
+        )));
     };
     let staged = builder
         .module()
         .staged_expression(id)
         .expect("staged expression is absent from its MIR unit");
     if arguments.len() != staged.parameters.len() {
-        return Err(mir_error(
+        return Err(LowerStop::Diagnostic(mir_error(
             range,
             (
                 &mir::COMPTIME_INVALID_OPERATION,
                 "staged argument count mismatch".into(),
             ),
-        ));
+        )));
     }
 
     let lowered_args = arguments
         .iter()
         .map(|argument| lower_expression(builder, argument))
-        .collect::<CXResult<Vec<_>>>()?;
+        .collect::<LowerResult<Vec<_>>>()?;
     let mut locals = builder.fun().locals();
     let mut comptime = builder.fun().comptime_locals();
     for (id, value) in staged.captures {

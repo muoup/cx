@@ -107,17 +107,8 @@ impl<'thir> MIRBuilder<'thir> {
         self.fun_mut().emit(instruction);
     }
 
-    pub(crate) fn emit_if_open(&mut self, instruction: MIRInstruction) {
-        if !self.fun().current_block_terminated() {
-            self.emit(instruction);
-        }
-    }
-
-    #[allow(dead_code)]
     pub(crate) fn emit_comptime(&mut self, op: MIRComptimeOp<'thir>, range: TokenRange) {
-        let function = self.fun_mut();
-        function.open_unreachable_block();
-        function.body_mut().emit_comptime(op, range);
+        self.fun_mut().emit_comptime(op, range);
     }
 
     pub fn new_place(
@@ -133,12 +124,10 @@ impl<'thir> MIRBuilder<'thir> {
         self.fun().local(local)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn take_current_function(&mut self) -> Option<MIRFunctionBuilder<'thir>> {
         self.function.take()
     }
 
-    #[allow(dead_code)]
     pub(crate) fn restore_current_function(&mut self, function: MIRFunctionBuilder<'thir>) {
         self.function = Some(function);
     }

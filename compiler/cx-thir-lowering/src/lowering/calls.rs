@@ -14,7 +14,9 @@ use cx_tokens::TokenRange;
 use crate::{
     builder::MIRBuilder,
     lowering::{
-        comptime, control_flow::auto_pop_scope, lower_expression, staged,
+        LowerResult, LowerStop, comptime,
+        control_flow::auto_pop_scope,
+        lower_expression, staged,
         types::{lower_type, lower_type_id},
     },
 };
@@ -26,7 +28,7 @@ pub(super) fn lower_call<'thir>(
     contract: &'thir THIRFnContract,
     result_type: &'thir THIRType,
     range: TokenRange,
-) -> CXResult<MIRComptimeOperand> {
+) -> LowerResult<MIRComptimeOperand> {
     let callee = lower_expression(builder, function)?;
     if let MIRValue::Constant(MIRConstant::Function(id)) = callee
         && builder.module().comptime_function(id).is_some()
@@ -48,7 +50,7 @@ pub(super) fn lower_call<'thir>(
                 )?));
             } else {
                 args.push(MIRComptimeOperand::Known(MIRComptimeValue::Constant(
-                    comptime::evaluate(builder, argument)?,
+                    comptime::evaluate(builder, argument).map_err(LowerStop::Diagnostic)?,
                 )));
             }
         }
@@ -65,7 +67,7 @@ pub(super) fn lower_call<'thir>(
             } else if result_type.is_void() || result_type.is_unreachable() {
                 None
             } else {
-                let ty = lower_type(builder, result_type)?;
+                let ty = lower_type(builder, result_type).map_err(LowerStop::Diagnostic)?;
                 Some(MIRComptimeOutput::Runtime(
                     builder.fun_mut().new_register(ty, None),
                 ))
@@ -100,8 +102,10 @@ pub(super) fn lower_call<'thir>(
                     unreachable!("runtime comptime call has a deferred register")
                 }
             })
-            .collect::<CXResult<Vec<_>>>()?;
-        let result = comptime::evaluate_function(builder, id, &args)?;
+            .collect::<CXResult<Vec<_>>>()
+            .map_err(LowerStop::Diagnostic)?;
+        let result =
+            comptime::evaluate_function(builder, id, &args).map_err(LowerStop::Diagnostic)?;
         return Ok(MIRComptimeOperand::Known(result));
     }
     let mut args = Vec::with_capacity(arguments.len());
@@ -130,7 +134,9 @@ pub(super) fn lower_call<'thir>(
         .unwrap_or_default();
 
     if let Some(precondition) = &contract.precondition {
-        builder.fun_mut().push_scope(precondition.token_range.clone());
+        builder
+            .fun_mut()
+            .push_scope(precondition.token_range.clone());
         for (name, value) in parameter_names.iter().zip(&args) {
             if let Some(name) = name {
                 builder.fun_mut().bind_named_value(name, value.clone());
@@ -143,7 +149,7 @@ pub(super) fn lower_call<'thir>(
     let out = if result_type.is_void() || result_type.is_unreachable() {
         None
     } else {
-        let type_id = lower_type(builder, result_type)?;
+        let type_id = lower_type(builder, result_type).map_err(LowerStop::Diagnostic)?;
         Some(builder.fun_mut().new_register(type_id, None))
     };
 
@@ -166,7 +172,9 @@ pub(super) fn lower_call<'thir>(
             }
         }
         if let (Some(name), Some(out)) = (&postcondition.binding, out) {
-            builder.fun_mut().bind_named_value(name, MIRValue::Register(out));
+            builder
+                .fun_mut()
+                .bind_named_value(name, MIRValue::Register(out));
         }
         let condition = lower_expression(builder, &postcondition.condition)?;
         builder.fun_mut().emit_intrinsic(
@@ -180,6 +188,7 @@ pub(super) fn lower_call<'thir>(
         || matches!(&function.kind, THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit")
     {
         builder.emit(MIRInstruction::new(MIRInstructionKind::Unreachable, range));
+        return Err(LowerStop::Diverged);
     }
 
     Ok(MIRComptimeOperand::Runtime(
