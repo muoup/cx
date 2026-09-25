@@ -1,7 +1,7 @@
 use crate::GlobalState;
 use crate::log::{LLVMError, LLVMResult};
 use crate::typing::{any_to_basic_type, bc_llvm_type, convert_linkage};
-use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue};
+use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue, LinkageType};
 use cx_log::catalogue::backend as catalogue;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
