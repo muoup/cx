@@ -1,6 +1,6 @@
 use crate::{
     environment::{StagingContext, TypeEnvironment},
-    symbol::completion::ensure_valid_type_component,
+    symbol::completion::assert_valid_type_component,
     type_checking::control_flow::expr_may_fall_through,
     type_checking::control_flow::r#return::typecheck_return,
     type_checking::typechecker::typecheck_expr,
@@ -44,7 +44,7 @@ pub fn typecheck_function(
         _type,
     } in prototype.signature().params.iter()
     {
-        ensure_valid_type_component(env, body.token_range(), _type, "a parameter", true)?;
+        assert_valid_type_component(env, body.token_range(), _type, "a parameter", true)?;
 
         let Some(name) = name else {
             continue;
@@ -119,7 +119,7 @@ pub fn typecheck_comptime_function(
             );
         } else {
             if !param.value_type.expr {
-                ensure_valid_type_component(
+                assert_valid_type_component(
                     env,
                     body.token_range(),
                     &param.value_type._type,

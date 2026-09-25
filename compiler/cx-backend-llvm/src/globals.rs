@@ -54,7 +54,7 @@ pub(crate) fn declare_global_variable(
 
             if matches!(global_state, LMIRGlobalState::External) {
                 global.set_linkage(Linkage::External);
-            } else if matches!(variable.linkage, cx_lmir::LinkageType::Static) {
+            } else if matches!(variable.linkage, LinkageType::Static) {
                 global.set_linkage(convert_linkage(variable.linkage));
             }
 
@@ -254,7 +254,7 @@ fn global_initializer<'ctx>(
             .const_float(value.into())
             .into()),
         LMIRGlobalInitializer::Aggregate { fields }
-            if matches!(basic_type, inkwell::types::BasicTypeEnum::PointerType(_))
+            if matches!(basic_type, BasicTypeEnum::PointerType(_))
                 && fields.len() == 1
                 && fields[0].0 == 0 =>
         {

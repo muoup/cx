@@ -1,6 +1,6 @@
 use crate::{
     environment::TypeEnvironment,
-    symbol::completion::{complete_type, ensure_valid_type_component},
+    symbol::completion::{complete_type, assert_valid_type_component},
     type_checking::{initializer::typecheck_object_initializer, result::TypecheckResult},
 };
 use cx_hir::ast::{
@@ -41,7 +41,7 @@ pub(crate) fn typecheck_var_declaration(
             ..
         }
     ) {
-        ensure_valid_type_component(env, expr.token_range(), &ty, "a variable", true)?;
+        assert_valid_type_component(env, expr.token_range(), &ty, "a variable", true)?;
     }
     if initial_value.is_none()
         && linkage != LinkageMode::Extern
@@ -116,7 +116,7 @@ pub(crate) fn typecheck_var_declaration(
                 }
                 None => (ty.clone(), None),
             };
-            ensure_valid_type_component(env, expr.token_range(), &global_type, "a variable", true)?;
+            assert_valid_type_component(env, expr.token_range(), &global_type, "a variable", true)?;
             let is_const = ty.get_specifier(HIR_CONST) || {
                 let mut element_type = env.symbols.array_inner(&global_type);
                 let mut is_const = false;
@@ -170,7 +170,7 @@ pub(crate) fn typecheck_var_declaration(
                 }
                 None => (ty.clone(), None, false),
             };
-            ensure_valid_type_component(env, expr.token_range(), &object_type, "a variable", true)?;
+            assert_valid_type_component(env, expr.token_range(), &object_type, "a variable", true)?;
             let mem_type = env.symbols.mem_ref_to(object_type.clone());
 
             let binding = THIRExpression {

@@ -149,3 +149,45 @@ pub fn compatible_types(
         _ => Ok(false),
     }
 }
+
+pub(crate) fn compatible_reassignment(
+    env: &TypeEnvironment,
+    type1: &THIRType,
+    type2: &THIRType,
+) -> CXResult<bool> {
+    if compatible_types(env, type1, type2)? {
+        return Ok(true);
+    }
+
+    match (&type1.kind, &type2.kind) {
+        // T[_] and T[N] are compatible for assignment if T is the same type, regardless of the array length.
+        (
+            THIRTypeKind::Array {
+                inner_type: inner1,
+                length: THIRArrayLength::Implicit,
+            },
+            THIRTypeKind::Array {
+                inner_type: inner2,
+                length: THIRArrayLength::Implicit | THIRArrayLength::Known(_),
+            },
+        )
+        | (
+            THIRTypeKind::Array {
+                inner_type: inner1,
+                length: THIRArrayLength::Known(_),
+            },
+            THIRTypeKind::Array {
+                inner_type: inner2,
+                length: THIRArrayLength::Implicit,
+            },
+        ) if env.type_eq(
+            env.symbols.resolve_type_id(*inner1),
+            env.symbols.resolve_type_id(*inner2),
+        ) =>
+        {
+            Ok(true)
+        }
+
+        _ => Ok(false),
+    }
+}

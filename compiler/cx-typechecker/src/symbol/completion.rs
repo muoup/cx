@@ -124,7 +124,7 @@ pub(crate) fn complete_type_inner(
 
         HIRTypeKind::ExplicitSizedArray(inner, size) => {
             let id = complete_type_id(env, namespace, inner)?;
-            ensure_valid_type_id_component(env, ty.range(), id, "an array element", true)?;
+            assert_valid_type_id_component(env, ty.range(), id, "an array element", true)?;
 
             let size = typecheck_expr(env, namespace, size, None)
                 .and_then(|v| v.standard_ready_coerce(env, size.token_range()))
@@ -140,7 +140,7 @@ pub(crate) fn complete_type_inner(
 
         HIRTypeKind::ImplicitSizedArray(inner) => {
             let id = complete_type_id(env, namespace, inner)?;
-            ensure_valid_type_id_component(env, ty.range(), id, "an array element", true)?;
+            assert_valid_type_id_component(env, ty.range(), id, "an array element", true)?;
 
             THIRTypeKind::Array {
                 inner_type: id,
@@ -152,7 +152,7 @@ pub(crate) fn complete_type_inner(
         HIRTypeKind::MemoryReference { inner_type, .. } => {
             let inner_type = complete_type_id(env, namespace, inner_type)?;
 
-            ensure_valid_type_id_component(
+            assert_valid_type_id_component(
                 env,
                 ty.range(),
                 inner_type,
@@ -169,7 +169,7 @@ pub(crate) fn complete_type_inner(
 
         HIRTypeKind::PointerTo { inner_type } => {
             let inner_type = complete_type_id(env, namespace, inner_type)?;
-            ensure_valid_type_id_component(env, ty.range(), inner_type, "a pointer target", false)?;
+            assert_valid_type_id_component(env, ty.range(), inner_type, "a pointer target", false)?;
 
             THIRTypeKind::PointerTo { inner_type }.into()
         }
@@ -221,7 +221,14 @@ pub(crate) fn complete_type_inner(
     Ok(completed)
 }
 
-pub fn ensure_valid_type_id_component(
+pub fn is_incomplete_type(
+    _env: &TypeEnvironment,
+    ty: &THIRType
+) -> CXResult<bool> {
+    Ok(matches!(ty.kind, THIRTypeKind::Array { length: THIRArrayLength::Implicit, .. }))
+}
+
+pub fn assert_valid_type_id_component(
     env: &TypeEnvironment,
     range: &TokenRange,
     ty: THIRTypeID,
@@ -232,10 +239,10 @@ pub fn ensure_valid_type_id_component(
         return env.log_error(range, &catalogue::INCOMPLETE_TYPE, format!("{}", context));
     };
 
-    ensure_valid_type_component(env, range, ty, context, enforce_allocatable)
+    assert_valid_type_component(env, range, ty, context, enforce_allocatable)
 }
 
-pub fn ensure_valid_type_component(
+pub fn assert_valid_type_component(
     env: &TypeEnvironment,
     range: &TokenRange,
     ty: &THIRType,
@@ -315,7 +322,7 @@ pub fn complete_prototype(
     }
 
     if !return_type.is_unreachable() && !return_type.is_void() {
-        ensure_valid_type_id_component(
+        assert_valid_type_id_component(
             env,
             &prototype.range,
             return_type_id,
