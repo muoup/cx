@@ -21,8 +21,10 @@ use cx_tokens::{
 use cx_util::identifier::CXIdent;
 
 use crate::parse::{
-    expressions::parse_expr, parser::ParserData, templates::try_parse_template,
-    types::parse_initializer,
+    expressions::parse_expr,
+    parser::ParserData,
+    templates::try_parse_template,
+    types::{parse_attributes, parse_initializer, DeclarationAttributes},
 };
 
 pub struct FunctionDeclaration {
@@ -41,7 +43,7 @@ pub fn try_function_parse(
     name: CXIdent,
     linkage: LinkageMode,
     symbol_naming: HIRSymbolNameScheme,
-    noreturn: bool,
+    attributes: DeclarationAttributes,
 ) -> CXResult<Option<FunctionDeclaration>> {
     let range_start = data.tokens.index;
 
@@ -74,19 +76,16 @@ pub fn try_function_parse(
     };
 
     let args = parse_params(data)?;
-    
-    let contract = HIRFunctionContract {
-        noreturn,
-        ..args.contract
-    };
-    
+
     let prototype = HIRFunctionPrototype {
-        return_type,
+        return_type: attributes
+            .merge(args.attributes)
+            .apply_to_return_type(return_type),
         kind,
-        contract,
+        contract: args.contract,
         linkage,
         symbol_naming,
-        
+
         params: args.params,
         var_args: args.var_args,
 
@@ -220,14 +219,16 @@ fn parse_comptime_params(data: &mut ParserData) -> CXResult<Vec<HIRComptimeParam
     Ok(params)
 }
 
-pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<HIRFunctionContract> {
-    skip_c_declaration_suffixes(data)?;
+pub(crate) fn parse_function_contract(
+    data: &mut ParserData,
+    attributes: &mut DeclarationAttributes,
+) -> CXResult<HIRFunctionContract> {
+    parse_c_declaration_suffixes(data, attributes)?;
 
     let safe = try_next!(data.tokens, keyword!(Safe));
 
     let mut contract = HIRFunctionContract {
         safe,
-        noreturn: false,
         precondition: None,
         postcondition: None,
     };
@@ -283,13 +284,18 @@ pub(crate) fn parse_function_contract(data: &mut ParserData) -> CXResult<HIRFunc
         }
     }
 
-    skip_c_declaration_suffixes(data)?;
+    parse_c_declaration_suffixes(data, attributes)?;
     Ok(contract)
 }
 
 // FIXME: Remove this hack and support declaration suffixes
-fn skip_c_declaration_suffixes(data: &mut ParserData) -> CXResult<()> {
+fn parse_c_declaration_suffixes(
+    data: &mut ParserData,
+    attributes: &mut DeclarationAttributes,
+) -> CXResult<()> {
     loop {
+        parse_attributes(&mut data.tokens, attributes);
+
         let Some(token) = data.tokens.peek() else {
             return Ok(());
         };
@@ -298,18 +304,10 @@ fn skip_c_declaration_suffixes(data: &mut ParserData) -> CXResult<()> {
             return Ok(());
         };
 
-        if matches!(name.as_str(), "__asm__" | "__asm" | "asm") {
-            data.tokens.next();
-            skip_optional_parenthesized_tokens(data)?;
-            continue;
-        }
-
-        if name.starts_with("__attribute")
-            || matches!(
-                name.as_str(),
-                "__declspec" | "__nonnull" | "__nonnull__" | "__wur"
-            )
-        {
+        if matches!(
+            name.as_str(),
+            "__asm__" | "__asm" | "asm" | "__declspec" | "__nonnull" | "__nonnull__" | "__wur"
+        ) {
             data.tokens.next();
             skip_optional_parenthesized_tokens(data)?;
             continue;
@@ -348,22 +346,25 @@ pub(crate) struct ParseParamsResult {
     pub(crate) params: Vec<HIRParameter>,
     pub(crate) var_args: bool,
     pub(crate) contract: HIRFunctionContract,
+    pub(crate) attributes: DeclarationAttributes,
 }
 
 pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult> {
     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
 
     let mut params = Vec::new();
+    let mut attributes = DeclarationAttributes::default();
 
     while !try_next!(data.tokens, punctuator!(CloseParen)) {
         if try_next!(data.tokens, punctuator!(Ellipsis)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            let contract = parse_function_contract(data)?;
+            let contract = parse_function_contract(data, &mut attributes)?;
 
             return Ok(ParseParamsResult {
                 params,
                 var_args: true,
                 contract,
+                attributes,
             });
         }
 
@@ -378,11 +379,12 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
         }
     }
 
-    let contract = parse_function_contract(data)?;
+    let contract = parse_function_contract(data, &mut attributes)?;
 
     Ok(ParseParamsResult {
         params,
         var_args: false,
         contract,
+        attributes,
     })
 }

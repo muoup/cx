@@ -354,6 +354,7 @@ impl Display for LMIRPtrBinOp {
             match self {
                 LMIRPtrBinOp::ADD => "+",
                 LMIRPtrBinOp::SUB => "-",
+                LMIRPtrBinOp::DIFF => "diff",
 
                 LMIRPtrBinOp::EQ => "==",
                 LMIRPtrBinOp::NE => "!=",

@@ -493,6 +493,9 @@ fn typecheck_expr_inner(
             } else {
                 env.current_function().signature().return_type.clone()
             };
+            if return_type.is_unreachable() {
+                return typecheck_return(env, namespace, expr.token_range(), None);
+            }
             let value = value
                 .as_ref()
                 .map(|v| {

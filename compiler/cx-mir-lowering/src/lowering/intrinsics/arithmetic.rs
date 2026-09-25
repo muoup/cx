@@ -15,7 +15,7 @@ use crate::context::FunctionContext;
 
 use super::output;
 use crate::lowering::typing::{convert_float_type, convert_integer_type};
-use crate::lowering::values::{lower_read, lower_value, target_type, write_target};
+use crate::lowering::values::{lower_read, lower_value};
 
 pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsic) {
     use MIRIntIntrinsic as I;
@@ -216,34 +216,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
 
 pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsic) {
     use MIRPtrIntrinsic as P;
-    let binary = match op {
-        P::Add { out, ptr, offset } => Some((*out, ptr, offset, LMIRPtrBinOp::ADD)),
-        P::Sub { out, ptr, offset } => Some((*out, ptr, offset, LMIRPtrBinOp::SUB)),
-        P::Eq { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRPtrBinOp::EQ)),
-        P::Neq { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRPtrBinOp::NE)),
-        P::Lt { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRPtrBinOp::LT)),
-        P::Leq { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRPtrBinOp::LE)),
-        P::Gt { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRPtrBinOp::GT)),
-        P::Geq { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRPtrBinOp::GE)),
-        _ => None,
-    };
-    if let Some((out, lhs, rhs, op)) = binary {
-        let left = lower_read(context, lhs);
-        let right = lower_read(context, rhs);
-        output(
-            context,
-            out,
-            LMIRInstructionKind::PointerBinOp {
-                op,
-                ptr_type: context.pointer(),
-                type_size: TypeSize::from(1),
-                left,
-                right,
-            },
-        );
-        return;
-    }
-    match op {
+    let (out, lhs, rhs, op, type_size) = match op {
         P::ToInt { out, ptr, .. } => {
             let value = lower_read(context, ptr);
             output(
@@ -254,53 +227,41 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
                     coercion_type: LMIRCoercionType::PtrToInt,
                 },
             );
+            return;
         }
-        P::Diff { out, lhs, rhs } => {
-            let left = lower_read(context, lhs);
-            let right = lower_read(context, rhs);
-            let stride = operand_type(context, lhs)
-                .map(|ty| pointer_stride(context, ty))
-                .unwrap_or(1);
-            let difference = memory::temp(
-                context,
-                LMIRInstructionKind::IntegerBinOp {
-                    op: LMIRIntBinOp::SUB,
-                    left,
-                    right,
-                },
-                context.ty(target_type(context, *out)),
-            );
-            let result = if stride > 1 {
-                memory::temp(
-                    context,
-                    LMIRInstructionKind::IntegerBinOp {
-                        op: LMIRIntBinOp::IDIV,
-                        left: difference,
-                        right: context.integer(
-                            stride as i128,
-                            convert_integer_type(
-                                integer_kind(context, target_type(context, *out)).0,
-                            ),
-                        ),
-                    },
-                    context.ty(target_type(context, *out)),
-                )
-            } else {
-                difference
-            };
-            write_target(context, *out, result);
+        P::Diff {
+            out,
+            lhs,
+            rhs,
+            element_ty,
+        } => {
+            let stride = calculate_type_layout(context.types(), *element_ty)
+                .size()
+                .max(1);
+            (*out, lhs, rhs, LMIRPtrBinOp::DIFF, stride)
         }
-        _ => unreachable!(),
-    }
-}
-
-fn pointer_stride(context: &FunctionContext<'_, '_>, ty: cx_mir::MIRTypeID) -> usize {
-    match context.types().definition(ty).unwrap().kind() {
-        MIRTypeKind::PointerTo { inner } | MIRTypeKind::MemoryReference { inner, .. } => {
-            calculate_type_layout(context.types(), *inner).size().max(1)
-        }
-        _ => 1,
-    }
+        P::Add { out, ptr, offset } => (*out, ptr, offset, LMIRPtrBinOp::ADD, 1),
+        P::Sub { out, ptr, offset } => (*out, ptr, offset, LMIRPtrBinOp::SUB, 1),
+        P::Eq { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::EQ, 1),
+        P::Neq { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::NE, 1),
+        P::Lt { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::LT, 1),
+        P::Leq { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::LE, 1),
+        P::Gt { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::GT, 1),
+        P::Geq { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::GE, 1),
+    };
+    let left = lower_read(context, lhs);
+    let right = lower_read(context, rhs);
+    output(
+        context,
+        out,
+        LMIRInstructionKind::PointerBinOp {
+            op,
+            ptr_type: context.pointer(),
+            type_size: TypeSize::from(type_size),
+            left,
+            right,
+        },
+    );
 }
 
 fn operand_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> Option<cx_mir::MIRTypeID> {

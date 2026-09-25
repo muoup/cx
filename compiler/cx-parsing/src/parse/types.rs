@@ -18,7 +18,7 @@ use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_namespace::module::QualifiedName;
 use cx_thir::intrinsic_types::is_intrinsic_type;
-use cx_tokens::token::{PunctuatorType, SpecifierType, TokenKind};
+use cx_tokens::token::{AttributeType, PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{
     identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,
 };
@@ -501,22 +501,72 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> HIRTypeQualifiers {
 pub(crate) struct ParsedSpecifiers {
     pub(crate) qualifiers: HIRTypeQualifiers,
     pub(crate) linkage: LinkageMode,
+    pub(crate) attributes: DeclarationAttributes,
+}
+
+/// Attributes attached to a declaration, gathered from `TokenKind::Attribute` tokens.
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct DeclarationAttributes {
+    pub(crate) noreturn: bool,
+}
+
+impl DeclarationAttributes {
+    pub(crate) fn record(&mut self, attribute: AttributeType) {
+        match attribute {
+            AttributeType::Noreturn => self.noreturn = true,
+        }
+    }
+
+    pub(crate) fn merge(self, other: DeclarationAttributes) -> DeclarationAttributes {
+        DeclarationAttributes {
+            noreturn: self.noreturn || other.noreturn,
+        }
+    }
+
+    /// A function that never returns is declared as returning `unreachable`,
+    /// regardless of the return type written in the source.
+    pub(crate) fn apply_to_return_type(&self, return_type: HIRType) -> HIRType {
+        if !self.noreturn {
+            return return_type;
+        }
+
+        let mut unreachable = HIRTypeKind::Identifier {
+            name: QualifiedName::root(CXIdent::new("unreachable")),
+            lookup: HIRTypeLookup::Standard,
+            template_input: None,
+        }
+        .to_type();
+        unreachable.range = return_type.range;
+        unreachable
+    }
+}
+
+pub(crate) fn parse_attributes(tokens: &mut TokenIter, attributes: &mut DeclarationAttributes) {
+    while let Some(TokenKind::Attribute(attribute)) = tokens.peek().map(|token| &token.kind) {
+        attributes.record(*attribute);
+        tokens.next();
+    }
 }
 
 pub(crate) fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
     let mut spec_acc: HIRTypeQualifiers = 0;
     let mut linkage = LinkageMode::Standard;
+    let mut attributes = DeclarationAttributes::default();
 
-    while let Ok(TokenKind::Specifier(spec)) = next_kind!(tokens) {
-        match spec {
-            SpecifierType::Const => spec_acc |= HIR_CONST,
-            SpecifierType::Volatile => spec_acc |= HIR_VOLATILE,
-            SpecifierType::Restrict => spec_acc |= HIR_RESTRICT,
-            SpecifierType::Extern => linkage = LinkageMode::Extern,
-            SpecifierType::Static => linkage = LinkageMode::Static,
-            SpecifierType::Inline | SpecifierType::ThreadLocal => {}
+    loop {
+        match next_kind!(tokens) {
+            Ok(TokenKind::Specifier(spec)) => match spec {
+                SpecifierType::Const => spec_acc |= HIR_CONST,
+                SpecifierType::Volatile => spec_acc |= HIR_VOLATILE,
+                SpecifierType::Restrict => spec_acc |= HIR_RESTRICT,
+                SpecifierType::Extern => linkage = LinkageMode::Extern,
+                SpecifierType::Static => linkage = LinkageMode::Static,
+                SpecifierType::Inline | SpecifierType::ThreadLocal => {}
 
-            SpecifierType::Public | SpecifierType::Private => break,
+                SpecifierType::Public | SpecifierType::Private => break,
+            },
+            Ok(TokenKind::Attribute(attribute)) => attributes.record(*attribute),
+            _ => break,
         }
     }
 
@@ -524,6 +574,7 @@ pub(crate) fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers 
     ParsedSpecifiers {
         qualifiers: spec_acc,
         linkage,
+        attributes,
     }
 }
 
@@ -775,18 +826,19 @@ pub(crate) fn parse_base_mods(
 
 pub(crate) fn parse_initializer(
     data: &mut ParserData,
-) -> CXResult<(Option<CXIdent>, HIRType, LinkageMode)> {
-    let prefix_specs = parse_decl_specifiers(&mut data.tokens);
+) -> CXResult<(Option<CXIdent>, HIRType, ParsedSpecifiers)> {
+    let mut prefix_specs = parse_decl_specifiers(&mut data.tokens);
     let type_base = parse_type_base(data)?;
+    parse_attributes(&mut data.tokens, &mut prefix_specs.attributes);
 
     let (name, _type) = parse_base_mods(data, type_base.add_specifier(prefix_specs.qualifiers))?;
-    Ok((name, _type, prefix_specs.linkage))
+    Ok((name, _type, prefix_specs))
 }
 
 pub(crate) fn parse_typedef_initializer(
     data: &mut ParserData,
 ) -> CXResult<(Option<CXIdent>, HIRType)> {
-    let (name, return_type, _) = parse_initializer(data)?;
+    let (name, return_type, specifiers) = parse_initializer(data)?;
 
     if name.is_none() || !peek_kind!(data.tokens, punctuator!(OpenParen)) {
         return Ok((name, return_type));
@@ -796,12 +848,15 @@ pub(crate) fn parse_typedef_initializer(
         params,
         var_args,
         contract,
-        ..
+        attributes,
     } = parse_params(data)?;
 
     let prototype = HIRFunctionPrototype {
         kind: HIRFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
-        return_type,
+        return_type: specifiers
+            .attributes
+            .merge(attributes)
+            .apply_to_return_type(return_type),
         params,
         var_args,
         contract,

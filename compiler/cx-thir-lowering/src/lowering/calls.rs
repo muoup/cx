@@ -5,7 +5,7 @@ use cx_mir::{
 };
 use cx_thir::thir::{
     data::THIRType,
-    expression::{THIRExpression, THIRExpressionKind, THIRFnContract},
+    expression::{THIRExpression, THIRFnContract},
     r#type::{THIRField, THIRTypeKind},
 };
 use cx_thir::type_context::THIRTypeContext;
@@ -162,6 +162,11 @@ pub(super) fn lower_call<'thir>(
         range.clone(),
     ));
 
+    if result_type.is_unreachable() {
+        builder.emit(MIRInstruction::new(MIRInstructionKind::Unreachable, range));
+        return Err(LowerStop::Diverged);
+    }
+
     if let Some(postcondition) = &contract.postcondition {
         builder
             .fun_mut()
@@ -182,13 +187,6 @@ pub(super) fn lower_call<'thir>(
             postcondition.condition.token_range.clone(),
         );
         auto_pop_scope(builder)?;
-    }
-
-    if contract.noreturn
-        || matches!(&function.kind, THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit")
-    {
-        builder.emit(MIRInstruction::new(MIRInstructionKind::Unreachable, range));
-        return Err(LowerStop::Diverged);
     }
 
     Ok(MIRComptimeOperand::Runtime(

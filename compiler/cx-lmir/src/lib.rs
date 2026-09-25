@@ -423,6 +423,9 @@ impl LMIRInstructionKind {
 pub enum LMIRPtrBinOp {
     ADD,
     SUB,
+    /// Pointer minus pointer, yielding a pointer-sized signed integer counted in
+    /// elements of `type_size` bytes.
+    DIFF,
 
     EQ,
     NE,

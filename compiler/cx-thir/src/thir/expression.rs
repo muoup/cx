@@ -29,7 +29,6 @@ impl THIRLocalID {
 #[derive(Clone, Debug, Default)]
 pub struct THIRFnContract {
     pub safe: bool,
-    pub noreturn: bool,
     pub precondition: Option<Box<THIRExpression>>,
     pub postcondition: Option<THIRPostcondition>,
 }
@@ -386,6 +385,10 @@ pub enum THIRBinOp {
     PtrDiff {
         op: THIRPtrDiffBinOp,
         ptr_inner: THIRTypeID,
+    },
+
+    PtrDifference {
+        element_ty: THIRTypeID,
     },
 
     Pointer {

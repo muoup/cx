@@ -72,6 +72,43 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
                 .map_err(LLVMError::from_error)?
                 .as_any_value_enum()
         },
+        LMIRPtrBinOp::DIFF => {
+            let pointer_int_type = global_state.pointer_int_type;
+            let left = function_state
+                .builder
+                .build_ptr_to_int(
+                    left_value.into_pointer_value(),
+                    pointer_int_type,
+                    crate::instruction::inst_num().as_str(),
+                )
+                .map_err(LLVMError::from_error)?;
+            let right = function_state
+                .builder
+                .build_ptr_to_int(
+                    right_value.into_pointer_value(),
+                    pointer_int_type,
+                    crate::instruction::inst_num().as_str(),
+                )
+                .map_err(LLVMError::from_error)?;
+            let byte_difference = function_state
+                .builder
+                .build_int_sub(left, right, crate::instruction::inst_num().as_str())
+                .map_err(LLVMError::from_error)?;
+
+            if type_size > 1 {
+                function_state
+                    .builder
+                    .build_int_exact_signed_div(
+                        byte_difference,
+                        pointer_int_type.const_int(type_size, false),
+                        crate::instruction::inst_num().as_str(),
+                    )
+                    .map_err(LLVMError::from_error)?
+                    .as_any_value_enum()
+            } else {
+                byte_difference.as_any_value_enum()
+            }
+        }
         LMIRPtrBinOp::EQ => function_state
             .builder
             .build_int_compare(

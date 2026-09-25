@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRComptimeBody, MIRConstant, MIRPtrIntrinsic, MIRTarget, MIRTypeKind,
-    ty::interface::MTRegistry,
+    ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_tokens::TokenRange;
 
@@ -94,9 +94,17 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                 }
             }
         }
-        P::Diff { lhs, rhs, .. } => {
+        P::Diff {
+            lhs,
+            rhs,
+            element_ty,
+            ..
+        } => {
             let lhs = engine.read(frame, body, lhs, range)?;
             let rhs = engine.read(frame, body, rhs, range)?;
+            let stride = calculate_type_layout(engine.context().types(), *element_ty)
+                .size()
+                .max(1) as i128;
             let difference = match (lhs, rhs) {
                 (MIRConstant::GlobalRef(left), MIRConstant::GlobalRef(right))
                     if left.global == right.global =>
@@ -114,6 +122,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                     );
                 }
             };
+            let difference = difference / stride;
             let ty = integer_type(engine.context().types(), body, target(op), range)?;
             MIRConstant::Integer {
                 value: mask_integer(difference, ty),

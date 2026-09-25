@@ -297,6 +297,15 @@ pub(super) fn lower_binary_op<'thir>(
                 },
             })
         }
+        THIRBinOp::PtrDifference { element_ty } => {
+            let element_ty = lower_type_id(builder, *element_ty).map_err(LowerStop::Diagnostic)?;
+            MIRIntrinsic::Pointer(MIRPtrIntrinsic::Diff {
+                out: target,
+                lhs,
+                rhs,
+                element_ty,
+            })
+        }
     };
     builder
         .fun_mut()

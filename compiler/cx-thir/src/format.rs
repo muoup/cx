@@ -741,6 +741,13 @@ impl<'a> MIRExpressionFormatter<'a> {
                     op
                 )
             }
+            THIRBinOp::PtrDifference { element_ty } => write!(
+                f,
+                "ptrdiff<{}>",
+                self.definitions
+                    .resolve_type_id(*element_ty)
+                    .display_with_definitions(self.definitions)
+            ),
             THIRBinOp::Pointer { op } => write!(f, "ptr {:?}", op),
         }
     }

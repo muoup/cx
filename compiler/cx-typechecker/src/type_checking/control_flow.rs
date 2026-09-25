@@ -50,16 +50,6 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
         THIRExpressionKind::Match { arms, .. } => {
             arms.iter().any(|(_, branch)| expr_may_fall_through(branch))
         }
-        THIRExpressionKind::CallFunction {
-            function, contract, ..
-        } => {
-            !contract.noreturn
-                && !matches!(
-                    &function.kind,
-                    THIRExpressionKind::FunctionReference { name, .. }
-                        if name.as_str() == "exit"
-                )
-        }
         _ => true,
     }
 }

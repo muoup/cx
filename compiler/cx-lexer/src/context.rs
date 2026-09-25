@@ -6,7 +6,7 @@ use std::{
 use cx_log::CXResult;
 use cx_log::catalogue::parse::{READ_FILE, UNCLOSED_SYNTAX};
 use cx_namespace::cx_library_directory;
-use cx_tokens::token::{PunctuatorType, Token, TokenKind};
+use cx_tokens::token::{AttributeType, PunctuatorType, Token, TokenKind};
 
 use crate::{
     lexer::{
@@ -32,6 +32,7 @@ pub(crate) enum Macro {
 pub(crate) enum BuiltinMacro {
     File,
     Line,
+    Attribute,
 }
 
 pub(crate) struct SourceInput {
@@ -293,6 +294,19 @@ impl LexingContext {
                         token,
                     ));
                     index += 1;
+                }
+                Macro::Builtin(BuiltinMacro::Attribute) => {
+                    let Some((args, next_index)) = parse_macro_args(&base_tokens, index + 1) else {
+                        expanded.push(token.clone());
+                        index += 1;
+                        continue;
+                    };
+                    expanded.extend(retarget_tokens(
+                        gnu_attributes(&args)
+                            .map(|attribute| Token::new_unknown(TokenKind::Attribute(attribute))),
+                        token,
+                    ));
+                    index = next_index;
                 }
                 Macro::Function {
                     params,
@@ -583,6 +597,18 @@ fn retarget_tokens(tokens: impl IntoIterator<Item = Token>, expansion_site: &Tok
             token
         })
         .collect()
+}
+
+/// Condenses the arguments of `__attribute__((a, b(x), ...))` into the attributes the
+/// compiler recognizes; anything unrecognized or malformed is dropped.
+fn gnu_attributes(args: &[Vec<Token>]) -> impl Iterator<Item = AttributeType> + '_ {
+    args.iter()
+        .filter_map(|arg| parse_macro_args(arg, 0).filter(|(_, end)| *end == arg.len()))
+        .flat_map(|(attributes, _)| attributes)
+        .filter_map(|attribute| match attribute.first().map(|token| &token.kind) {
+            Some(TokenKind::Identifier(name)) => AttributeType::from_gnu_name(name),
+            _ => None,
+        })
 }
 
 fn stringify_macro_arg(tokens: &[Token]) -> String {

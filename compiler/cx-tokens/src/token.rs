@@ -173,6 +173,17 @@ macro_rules! specifier {
 }
 
 #[macro_export]
+macro_rules! attribute {
+    () => {
+        cx_tokens::token::TokenKind::Attribute(_)
+    };
+
+    ($name:ident) => {
+        cx_tokens::token::TokenKind::Attribute(cx_tokens::token::AttributeType::$name)
+    };
+}
+
+#[macro_export]
 macro_rules! intrinsic {
     () => {
         cx_tokens::token::TokenKind::Intrinsic(_)
@@ -225,6 +236,7 @@ pub enum TokenKind {
     Operator(OperatorType),
 
     Specifier(SpecifierType),
+    Attribute(AttributeType),
     Keyword(KeywordType),
     Intrinsic(IntrinsicType),
     Punctuator(PunctuatorType),
@@ -472,6 +484,36 @@ impl IntrinsicType {
     }
 }
 
+/// A declaration attribute the compiler understands. The lexer condenses GNU
+/// `__attribute__((...))` lists and C keywords such as `_Noreturn` into these,
+/// dropping any attribute it does not recognize.
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum AttributeType {
+    Noreturn,
+}
+
+impl AttributeType {
+    /// Resolves a GNU attribute name, accepting both the plain and the
+    /// reserved `__name__` spelling.
+    pub fn from_gnu_name(name: &str) -> Option<Self> {
+        let name = name
+            .strip_prefix("__")
+            .and_then(|name| name.strip_suffix("__"))
+            .unwrap_or(name);
+
+        match name {
+            "noreturn" => Some(AttributeType::Noreturn),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AttributeType::Noreturn => "noreturn",
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum SpecifierType {
     Const,
@@ -572,6 +614,7 @@ impl TokenKind {
             "restrict" => TokenKind::Specifier(SpecifierType::Restrict),
             "const" => TokenKind::Specifier(SpecifierType::Const),
             "thread_local" => TokenKind::Specifier(SpecifierType::ThreadLocal),
+            "_Noreturn" => TokenKind::Attribute(AttributeType::Noreturn),
 
             // CX Extensions
             "import" => TokenKind::Keyword(KeywordType::Import),

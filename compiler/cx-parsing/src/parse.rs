@@ -294,15 +294,8 @@ fn parse_fn_merge(
 }
 
 fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
-    let noreturn = matches!(
-        data.tokens.peek().map(|token| &token.kind),
-        Some(TokenKind::Identifier(name)) if name == "_Noreturn"
-    );
-    if noreturn {
-        data.tokens.next();
-    }
-
-    let (name, return_type, linkage) = parse_initializer(data)?;
+    let (name, return_type, specifiers) = parse_initializer(data)?;
+    let linkage = specifiers.linkage;
     let symbol_naming = if data.c_mode {
         if linkage == LinkageMode::Static {
             HIRSymbolNameScheme::Namespaced
@@ -338,7 +331,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         name.clone(),
         linkage,
         symbol_naming,
-        noreturn,
+        specifiers.attributes,
     )? {
         return parse_fn_merge(
             data,

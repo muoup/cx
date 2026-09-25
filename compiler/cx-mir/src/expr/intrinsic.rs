@@ -277,6 +277,7 @@ pub enum MIRPtrIntrinsic {
         out: MIRTarget,
         lhs: MIRValue,
         rhs: MIRValue,
+        element_ty: MIRTypeID,
     },
     Eq {
         out: MIRTarget,

@@ -207,46 +207,15 @@ fn coerce_pointer_binop(
             }
             .into();
             let pointee = env.symbols.ptr_inner(&lhs._type).cloned().unwrap();
-            let difference_range = lhs.token_range.clone();
-            let pointer_to_integer = |operand: THIRExpression| THIRExpression {
-                token_range: operand.token_range.clone(),
-                kind: THIRExpressionKind::TypeConversion {
-                    operand: Box::new(operand),
-                    conversion: cx_thir::thir::expression::THIRCoercion::PtrToInt {
-                        to_type: pointer_integer,
-                    },
+            let element_ty = env.symbols.generate_type_id(pointee);
+            return Ok(TypecheckResult::new(
+                integer_type,
+                THIRExpressionKind::BinaryOperation {
+                    op: THIRBinOp::PtrDifference { element_ty },
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
                 },
-                _type: integer_type.clone(),
-            };
-            let difference = THIRExpression {
-                token_range: difference_range.clone(),
-                kind: THIRExpressionKind::BinaryOperation {
-                    op: THIRBinOp::Integer {
-                        itype: pointer_integer,
-                        op: THIRIntBinOp::IDIV,
-                    },
-                    lhs: Box::new(THIRExpression {
-                        token_range: difference_range.clone(),
-                        kind: THIRExpressionKind::BinaryOperation {
-                            op: THIRBinOp::Integer {
-                                itype: pointer_integer,
-                                op: THIRIntBinOp::SUB,
-                            },
-                            lhs: Box::new(pointer_to_integer(lhs)),
-                            rhs: Box::new(pointer_to_integer(rhs)),
-                        },
-                        _type: integer_type.clone(),
-                    }),
-                    rhs: Box::new(THIRExpression {
-                        token_range: difference_range.clone(),
-                        kind: THIRExpressionKind::SizeOf { _type: pointee },
-                        _type: integer_type.clone(),
-                    }),
-                },
-                _type: integer_type.clone(),
-            };
-
-            return Ok(TypecheckResult::from(difference));
+            ));
         }
 
         let (return_type, op) = match op {

@@ -330,8 +330,9 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
     let start_index = data.tokens.index;
 
     try_next!(data.tokens, keyword!(Register));
-    let specifiers = super::types::parse_decl_specifiers(&mut data.tokens);
+    let mut specifiers = super::types::parse_decl_specifiers(&mut data.tokens);
     let base_type = parse_type_base(data)?.add_specifier(specifiers.qualifiers);
+    super::types::parse_attributes(&mut data.tokens, &mut specifiers.attributes);
 
     let mut decls = Vec::new();
     data.change_comma_mode(false);
@@ -354,7 +355,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                     name.clone(),
                     linkage,
                     data.symbol_naming,
-                    false,
+                    specifiers.attributes,
                 )? {
                     data.add_stmt(cx_hir::ast::HIRStmt::FunctionDefinition {
                         prototype: function.prototype,

@@ -218,17 +218,27 @@ fn typecheck_function_body(
                 .collect::<CXResult<Vec<_>>>()
         }
         HIRFunctionBody::Expression(expression) => {
-            let value = typecheck_expr(
-                env,
-                namespace,
-                expression,
-                (!return_type.is_void()).then_some(return_type),
-            )?
-            .apply_expected_type(env, namespace, return_type)?
-            .standard_ready_coerce(env, expression.token_range())?;
+            let value = if return_type.is_unreachable() {
+                typecheck_expr(env, namespace, expression, None)?
+                    .standard_ready_coerce(env, expression.token_range())?
+            } else {
+                typecheck_expr(
+                    env,
+                    namespace,
+                    expression,
+                    (!return_type.is_void()).then_some(return_type),
+                )?
+                .apply_expected_type(env, namespace, return_type)?
+                .standard_ready_coerce(env, expression.token_range())?
+            };
 
             if value._type.is_unreachable() || !expr_may_fall_through(&value) {
                 return Ok(vec![value]);
+            }
+
+            if return_type.is_unreachable() {
+                return typecheck_return(env, namespace, expression.token_range(), None)
+                    .map(|_| Vec::new());
             }
 
             if return_type.is_void() && value._type.is_void() {

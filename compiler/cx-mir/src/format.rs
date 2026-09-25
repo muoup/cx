@@ -1090,9 +1090,26 @@ fn write_pointer_intrinsic<T: MTRegistry>(
         MIRPtrIntrinsic::Sub { out, ptr, offset } => {
             write_intrinsic_binary(f, unit, function, types, "pointer.sub", *out, ptr, offset)
         }
-        MIRPtrIntrinsic::Diff { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "pointer.diff", *out, lhs, rhs)
-        }
+        MIRPtrIntrinsic::Diff {
+            out,
+            lhs,
+            rhs,
+            element_ty,
+        } => write_intrinsic_call(
+            f,
+            unit,
+            function,
+            types,
+            Some(IntrinsicOutput::Target(*out)),
+            "pointer.diff",
+            |f, unit, function, types| {
+                write_value(f, unit, function, lhs)?;
+                f.write_str(", ")?;
+                write_value(f, unit, function, rhs)?;
+                f.write_str(", ")?;
+                types.write(f, *element_ty)
+            },
+        ),
         MIRPtrIntrinsic::Eq { out, lhs, rhs } => {
             write_intrinsic_binary(f, unit, function, types, "pointer.eq", *out, lhs, rhs)
         }

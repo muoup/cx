@@ -12,6 +12,14 @@ pub(crate) fn builtin_macros() -> HashMap<String, Macro> {
     define_target_predefines(&mut macros);
     macros.insert("__FILE__".to_string(), Macro::Builtin(BuiltinMacro::File));
     macros.insert("__LINE__".to_string(), Macro::Builtin(BuiltinMacro::Line));
+    macros.insert(
+        "__attribute__".to_string(),
+        Macro::Builtin(BuiltinMacro::Attribute),
+    );
+    macros.insert(
+        "__attribute".to_string(),
+        Macro::Builtin(BuiltinMacro::Attribute),
+    );
 
     macros
 }

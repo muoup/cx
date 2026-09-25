@@ -258,6 +258,17 @@ pub(crate) fn codegen_instruction(
                         context.builder.ins().isub(left, right_scaled)
                     }
 
+                    LMIRPtrBinOp::DIFF => {
+                        let byte_difference = context.builder.ins().isub(left, right);
+                        let type_size = usize::from(*type_size) as i64;
+
+                        if type_size > 1 {
+                            context.builder.ins().sdiv_imm(byte_difference, type_size)
+                        } else {
+                            byte_difference
+                        }
+                    }
+
                     LMIRPtrBinOp::EQ => {
                         context
                             .builder

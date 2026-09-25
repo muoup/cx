@@ -24,4 +24,4 @@ int srand(unsigned int seed);
 div_t div(int numer, int denom);
 int system(const char *command);
 
-void exit(int status);
+_Noreturn void exit(int status);
