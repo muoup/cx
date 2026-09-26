@@ -71,7 +71,12 @@ pub fn calculate_field_layouts<Registry: MTRegistry>(
         MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => (variants, true),
         _ => return None,
     };
-    let (layouts, _) = layout_fields(fields, is_union, |ty| calculate_type_layout(registry, ty));
+    let (layouts, _) = layout_fields(
+        fields,
+        is_union,
+        |ty| calculate_type_layout(registry, ty),
+        |left, right| registry.same_type(left, right),
+    );
     Some(layouts)
 }
 
@@ -94,7 +99,13 @@ fn layout_inner<Registry: MTRegistry>(
         is_union: bool,
         active: &mut HashSet<MIRTypeID>,
     ) -> MIRTypeLayout {
-        layout_fields(fields, is_union, |ty| layout_inner(registry, ty, active)).1
+        layout_fields(
+        fields,
+        is_union,
+        |ty| layout_inner(registry, ty, active),
+        |left, right| registry.same_type(left, right),
+    )
+    .1
     }
     
     assert!(active.insert(ty), "recursive value type {ty}");
@@ -149,6 +160,7 @@ fn layout_fields(
     fields: &[MIRField],
     is_union: bool,
     mut storage_layout: impl FnMut(MIRTypeID) -> MIRTypeLayout,
+    same_storage: impl Fn(MIRTypeID, MIRTypeID) -> bool,
 ) -> (Vec<MIRFieldLayout>, MIRTypeLayout) {
     struct BitfieldStorage {
         ty: MIRTypeID,
@@ -201,7 +213,7 @@ fn layout_fields(
                     size = size.max(storage.size);
                     (0, 0)
                 } else if let Some(storage) = unit.as_mut()
-                    && storage.ty == *integer_type_id
+                    && same_storage(storage.ty, *integer_type_id)
                     && storage.bits_used + *width <= capacity
                 {
                     let bit_offset = storage.bits_used;

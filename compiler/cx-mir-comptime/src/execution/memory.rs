@@ -203,12 +203,12 @@ pub(crate) fn bitfield_unit<R: MTRegistry>(
             offset,
             bit_offset,
             bit_width,
-            storage_type,
+            ..
         } = layout
         else {
             continue;
         };
-        if offset != unit_offset || storage_type != storage_ty || bit_width == 0 {
+        if offset != unit_offset || bit_width == 0 {
             continue;
         }
         if let Some(MIRConstant::Integer { value, .. }) = aggregate_field(aggregate, index) {
