@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cx_log::CXResult;
 use cx_mir::{
@@ -151,7 +151,7 @@ impl<'thir> MIRBuilder<'thir> {
             .filter(|(id, _)| parts.used_functions.contains(id))
             .collect();
 
-        let globals: HashMap<_, _> = parts
+        let globals: BTreeMap<_, _> = parts
             .globals
             .into_iter()
             .filter(|(id, global)| {

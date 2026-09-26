@@ -25,6 +25,10 @@ impl Pipeline {
         self.analyses.push(Box::new(analysis));
     }
 
+    pub fn retain_applicable(&mut self, env: &AnalysisEnvironment) {
+        self.analyses.retain(|analysis| analysis.applies_to(env));
+    }
+
     pub fn analyze_instruction(
         &mut self,
         env: &AnalysisEnvironment,
@@ -95,6 +99,10 @@ impl Pipeline {
 }
 
 pub trait AnalysisPass {
+    fn applies_to(&self, _env: &AnalysisEnvironment) -> bool {
+        true
+    }
+
     fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()>;
 
     fn finish(&mut self, _: &AnalysisEnvironment) -> CXResult<()> {

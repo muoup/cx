@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent, linkage::LinkageMode};
@@ -30,20 +30,20 @@ pub struct MIRUnit<'thir> {
     staged_expr_pool: MIRStagedExprPool<'thir>,
     types: MIRTypeRegistry,
 
-    functions: HashMap<MIRFunctionID, MIRFunction>,
-    comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
+    functions: BTreeMap<MIRFunctionID, MIRFunction>,
+    comptime_functions: BTreeMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
 
-    globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+    globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
 }
 
 impl<'thir> MIRUnit<'thir> {
     pub fn new(
         types: MIRTypeRegistry,
-        functions: HashMap<MIRFunctionID, MIRFunction>,
-        comptime_functions: HashMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
+        functions: BTreeMap<MIRFunctionID, MIRFunction>,
+        comptime_functions: BTreeMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
         staged_expr_pool: MIRStagedExprPool<'thir>,
-        globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+        globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
         global_order: Vec<MIRGlobalID>,
     ) -> Self {
         Self {
@@ -61,7 +61,7 @@ impl<'thir> MIRUnit<'thir> {
             staged_expr_pool: MIRStagedExprPool::new(),
             types: self.types,
             functions: self.functions,
-            comptime_functions: HashMap::new(),
+            comptime_functions: BTreeMap::new(),
             globals: self.globals,
             global_order: self.global_order,
         }

@@ -14,8 +14,6 @@ use crate::{
 };
 
 pub struct Values {
-    // Only safe functions consume the results (see `finish`), so the dataflow is skipped elsewhere
-    active: bool,
     known: HashMap<MIRBindable, i128>,
     reachable: bool,
     blocks: HashMap<MIRBasicBlockID, Option<HashMap<MIRBindable, i128>>>,
@@ -25,7 +23,6 @@ pub struct Values {
 impl Values {
     pub fn new() -> Self {
         Self {
-            active: false,
             known: HashMap::new(),
             reachable: true,
             blocks: HashMap::new(),
@@ -93,7 +90,7 @@ impl Values {
         target: &MIRBlockTarget,
     ) -> HashMap<MIRBindable, i128> {
         let mut state = self.known.clone();
-        let body = env.function().body().expect("analyzed function has a body");
+        let body = env.body();
         let block = body.block(target.block).expect("unknown target block");
         for (parameter, argument) in block.params().iter().zip(&target.args) {
             let value = self.value(argument);
@@ -109,8 +106,11 @@ impl Values {
 }
 
 impl AnalysisPass for Values {
-    fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
-        self.active = env.function().prototype().signature.safe();
+    fn applies_to(&self, env: &AnalysisEnvironment) -> bool {
+        env.function().prototype().signature.safe()
+    }
+
+    fn function_entry(&mut self, _: &AnalysisEnvironment) -> CXResult<()> {
         self.known.clear();
         self.reachable = true;
         self.blocks.clear();
@@ -119,10 +119,7 @@ impl AnalysisPass for Values {
     }
 
     fn finish(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
-        if !self.active {
-            return Ok(());
-        }
-        let body = env.function().body().expect("analyzed function has a body");
+        let body = env.body();
         for block in body.blocks() {
             let state = if block.id() == body.entry() {
                 Some(HashMap::new())
@@ -162,9 +159,6 @@ impl AnalysisPass for Values {
         env: &AnalysisEnvironment,
         instruction: &MIRInstruction,
     ) -> CXResult<()> {
-        if !self.active {
-            return Ok(());
-        }
         if !self.reachable {
             self.edges = successors(instruction)
                 .into_iter()
@@ -224,9 +218,6 @@ impl AnalysisPass for Values {
         other: MIRBasicBlockID,
         _: &TokenRange,
     ) -> CXResult<bool> {
-        if !self.active {
-            return Ok(false);
-        }
         let mut changed = false;
         for (_, incoming) in self.edges.iter().filter(|(block, _)| *block == other) {
             match (self.blocks.get_mut(&other), incoming) {

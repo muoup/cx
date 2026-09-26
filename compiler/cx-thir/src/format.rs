@@ -1598,6 +1598,7 @@ impl Display for THIRCoercion {
             THIRCoercion::Bitcast => write!(f, "bitcast"),
             THIRCoercion::StringToArray => write!(f, "string_to_array"),
             THIRCoercion::Typechange => write!(f, "typechange"),
+            THIRCoercion::Adopt => write!(f, "adopt"),
             THIRCoercion::Unreachable => write!(f, "unreachable"),
         }
     }

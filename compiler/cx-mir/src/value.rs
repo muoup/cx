@@ -17,6 +17,9 @@ pub struct MIRGlobalRef {
     pub ty: MIRTypeID,
 }
 
+// Places and global references are read as their stored value unless a reference or memory-resident
+// value is expected, in which case they denote the address; reference-typed registers are read through
+// wherever a non-reference value is expected
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
     Register(MIRRegisterID),
@@ -28,6 +31,13 @@ pub enum MIRValue {
 pub enum MIRBindable {
     Register(MIRRegisterID),
     Place(MIRPlaceID),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MIRLivenessState {
+    Available,
+    Moved,
+    Uninitialized,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

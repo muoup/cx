@@ -1,5 +1,4 @@
 use cx_log::CXResult;
-use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
     thir::{
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
@@ -26,22 +25,6 @@ pub fn try_explicit_cast(
 ) -> CXResult<CoercionResult> {
     try_implicit_coercion(env, expr, target_type)?.or_else(|expr| {
         let from_type = expr.get_type();
-
-        if env.function.in_safe_context()
-            && matches!(
-                (&from_type.kind, &target_type.kind),
-                (
-                    THIRTypeKind::PointerTo { .. },
-                    THIRTypeKind::MemoryReference { .. }
-                )
-            )
-        {
-            return env.log_error(
-                expr.token_range,
-                &catalogue::UNSAFE_OPERATION,
-                "Deferencing a pointer".into()
-            );
-        }
 
         let coerced = |conversion: THIRCoercion| {
             let coerced = THIRExpression {

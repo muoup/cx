@@ -1,14 +1,14 @@
 use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, TypeSize};
 use cx_target::ArchitectureConfig;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 pub mod compiler_functions;
 pub mod types;
 
 mod format;
 
-pub type LMIRFunctionMap = HashMap<String, LMIRFunctionPrototype>;
+pub type LMIRFunctionMap = BTreeMap<String, LMIRFunctionPrototype>;
 
 #[derive(Debug, Clone)]
 pub struct LMIRUnit {

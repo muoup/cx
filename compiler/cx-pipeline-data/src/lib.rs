@@ -9,7 +9,7 @@ use cx_namespace::module::{ModulePath, NamespacePath};
 pub use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
 use speedy::{Context, Readable, Writable};
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -38,7 +38,7 @@ pub struct GlobalCompilationContext {
     pub config: CompilerConfig,
     pub module_db: ModuleData,
 
-    pub linking_files: Mutex<HashSet<PathBuf>>,
+    pub linking_files: Mutex<BTreeSet<PathBuf>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

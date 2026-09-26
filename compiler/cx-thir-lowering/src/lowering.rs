@@ -1085,17 +1085,22 @@ pub(crate) fn lower_expression<'thir>(
 
         THIRExpressionKind::Leak { expression: inner } => {
             let value = lower_expression(builder, inner)?;
-            if let MIRValue::PlaceRef(place) = value {
-                builder.emit(MIRInstruction::new(
-                    MIRInstructionKind::Invalidate {
-                        place: cx_mir::MIRBindable::Place(place),
-                        kind: MIRInvalidationKind::Leak,
-                    },
-                    expr.token_range.clone(),
-                ));
-                MIRValue::PlaceRef(place)
-            } else {
-                value
+            let nodrop = builder
+                .registry()
+                .mem_ref_inner(&inner._type)
+                .is_some_and(|ty| ty.is_nodrop());
+            match value {
+                MIRValue::PlaceRef(place) if nodrop => {
+                    builder.emit(MIRInstruction::new(
+                        MIRInstructionKind::Invalidate {
+                            place: cx_mir::MIRBindable::Place(place),
+                            kind: MIRInvalidationKind::Leak,
+                        },
+                        expr.token_range.clone(),
+                    ));
+                    MIRValue::PlaceRef(place)
+                }
+                value => value,
             }
         }
         THIRExpressionKind::Unsafe { expression: inner } => lower_expression(builder, inner)?,

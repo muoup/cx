@@ -632,7 +632,7 @@ pub(super) fn lower_coercion<'thir>(
             );
             Ok(MIRValue::Register(out))
         }
-        THIRCoercion::Typechange => Ok(operand),
+        THIRCoercion::Typechange | THIRCoercion::Adopt => Ok(operand),
         THIRCoercion::Bitcast => {
             let out = builder.fun_mut().new_register(mir_to_type, None);
             builder.fun_mut().emit_intrinsic(

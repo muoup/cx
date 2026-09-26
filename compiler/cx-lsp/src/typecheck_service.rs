@@ -12,7 +12,7 @@ use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilationUnit, CompilerBackend, CompilerConfig,
     GlobalCompilationContext, OptimizationLevel,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tower_lsp::lsp_types::{
@@ -97,7 +97,7 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             predefined_macros: vec![],
         },
         module_db: ModuleData::new(),
-        linking_files: Mutex::new(HashSet::new()),
+        linking_files: Mutex::new(BTreeSet::new()),
     };
 
     let check_result = cx_pipeline::typecheck_only_lsp(&context, &unit);

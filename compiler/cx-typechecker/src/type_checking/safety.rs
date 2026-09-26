@@ -6,13 +6,27 @@ use cx_thir::thir::expression::{
 };
 use cx_thir::type_context::THIRTypeContext;
 
-/// Checks the explicit safe-expression whitelist for one fully typechecked body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum PermissionTier {
+    Safe,
+    Nonsafe,
+    Unsafe,
+}
+
+impl PermissionTier {
+    pub(crate) fn of_function(safe: bool) -> Self {
+        if safe { Self::Safe } else { Self::Nonsafe }
+    }
+}
+
+/// Checks the permission required by each operation in one fully typechecked body.
 ///
 /// This match is intentionally exhaustive. Adding a THIR expression variant
-/// requires choosing its safe semantics here before the typechecker compiles.
-pub(crate) fn validate_safe_expression(
+/// requires choosing its required permission here before the typechecker compiles.
+pub(crate) fn check_permissions(
     env: &TypeEnvironment,
     expression: &THIRExpression,
+    tier: PermissionTier,
 ) -> CXResult<()> {
     match &expression.kind {
         THIRExpressionKind::BoolLiteral(_)
@@ -25,90 +39,122 @@ pub(crate) fn validate_safe_expression(
         | THIRExpressionKind::Variable { .. }
         | THIRExpressionKind::GlobalVariable { .. }
         | THIRExpressionKind::ContractVariable { .. }
-        | THIRExpressionKind::Unsafe { .. }
-        | THIRExpressionKind::Move { .. }
         | THIRExpressionKind::Unpack { .. } => Ok(()),
 
-        THIRExpressionKind::Leak { .. } => reject(env, expression, "@leak"),
-        THIRExpressionKind::FunctionReference { .. } => validate_callable(env, expression),
+        THIRExpressionKind::Unsafe { expression } => {
+            check_permissions(env, expression, PermissionTier::Unsafe)
+        }
+        THIRExpressionKind::Move { .. } if expression._type.is_unsafe_move() => require(
+            env,
+            expression,
+            tier,
+            PermissionTier::Nonsafe,
+            "move of a type declared as @unsafe_move".into(),
+        ),
+        THIRExpressionKind::Move { .. } => Ok(()),
+
+        THIRExpressionKind::Leak { .. } => {
+            require(env, expression, tier, PermissionTier::Nonsafe, "@leak".into())
+        }
+        THIRExpressionKind::FunctionReference { name, debug_name } => {
+            if callable_is_safe(env, expression) {
+                Ok(())
+            } else {
+                let name = debug_name.as_ref().unwrap_or(name);
+                require(
+                    env,
+                    expression,
+                    tier,
+                    PermissionTier::Nonsafe,
+                    format!("call to non-safe function '{name}'"),
+                )
+            }
+        }
 
         THIRExpressionKind::VaStart { list, last } => {
-            validate_safe_expression(env, list)?;
-            validate_safe_expression(env, last)
+            check_permissions(env, list, tier)?;
+            check_permissions(env, last, tier)
         }
         THIRExpressionKind::VaEnd { list } | THIRExpressionKind::VaArg { list, .. } => {
-            validate_safe_expression(env, list)
+            check_permissions(env, list, tier)
         }
 
         THIRExpressionKind::BinaryOperation { lhs, rhs, .. } => {
-            validate_safe_expression(env, lhs)?;
-            validate_safe_expression(env, rhs)
+            check_permissions(env, lhs, tier)?;
+            check_permissions(env, rhs, tier)
         }
-        THIRExpressionKind::AddressOf { operand } if operand._type.is_function() => {
-            reject(env, expression, "Function address")
-        }
+        THIRExpressionKind::AddressOf { operand } if operand._type.is_function() => require(
+            env,
+            expression,
+            tier,
+            PermissionTier::Nonsafe,
+            "Function address".into(),
+        ),
         THIRExpressionKind::UnaryOperation { operand, .. }
-        | THIRExpressionKind::Copy { source: operand } => validate_safe_expression(env, operand),
-        THIRExpressionKind::AddressOf { operand } => validate_safe_expression(env, operand),
+        | THIRExpressionKind::Copy { source: operand } => check_permissions(env, operand, tier),
+        THIRExpressionKind::AddressOf { operand } => check_permissions(env, operand, tier),
 
         THIRExpressionKind::CreateLocalVariable { initial_value, .. } => initial_value
             .as_deref()
-            .map(|value| validate_safe_expression(env, value))
+            .map(|value| check_permissions(env, value, tier))
             .transpose()
             .map(|_| ()),
 
         THIRExpressionKind::AdoptRegion { initial_value, .. } => {
-            validate_safe_expression(env, initial_value)
+            check_permissions(env, initial_value, tier)
         }
 
         THIRExpressionKind::Assign { target, value } => {
-            validate_safe_expression(env, target)?;
-            validate_safe_expression(env, value)
+            check_permissions(env, target, tier)?;
+            check_permissions(env, value, tier)
         }
 
         THIRExpressionKind::TypeConversion {
             operand,
             conversion,
         } => {
-            if matches!(
-                conversion,
-                THIRCoercion::PtrToInt { .. } | THIRCoercion::IntToPtr { .. }
-            ) {
-                reject(env, expression, "Unsafe type conversion")
-            } else if matches!(conversion, THIRCoercion::Bitcast)
-                && operand._type.is_pointer()
-                && expression._type.is_memory_reference()
-            {
-                reject(env, expression, "Dereferencing a pointer")
-            } else {
-                validate_safe_expression(env, operand)
+            let operation = match conversion {
+                THIRCoercion::PtrToInt { .. } | THIRCoercion::IntToPtr { .. } => {
+                    Some("Unsafe type conversion")
+                }
+                THIRCoercion::Bitcast
+                    if operand._type.is_pointer() && expression._type.is_memory_reference() =>
+                {
+                    Some("Dereferencing a pointer")
+                }
+                THIRCoercion::Adopt => Some("@adopt"),
+                _ => None,
+            };
+            if let Some(operation) = operation {
+                require(env, expression, tier, PermissionTier::Nonsafe, operation.into())?;
             }
+            check_permissions(env, operand, tier)
         }
 
-        THIRExpressionKind::MemberAccess { base, .. } => validate_safe_expression(env, base),
+        THIRExpressionKind::MemberAccess { base, .. } => check_permissions(env, base, tier),
         THIRExpressionKind::ArrayAccess { array, index, .. } => {
-            validate_safe_expression(env, array)?;
-            validate_safe_expression(env, index)
+            check_permissions(env, array, tier)?;
+            check_permissions(env, index, tier)
         }
-        THIRExpressionKind::PatternIs { lhs, .. } => validate_safe_expression(env, lhs),
-        THIRExpressionKind::TaggedUnionTag { value, .. } => validate_safe_expression(env, value),
+        THIRExpressionKind::PatternIs { lhs, .. } => check_permissions(env, lhs, tier),
+        THIRExpressionKind::TaggedUnionTag { value, .. } => check_permissions(env, value, tier),
         THIRExpressionKind::TaggedUnionSet {
             target,
             inner_value,
             ..
         } => {
-            validate_safe_expression(env, target)?;
-            validate_safe_expression(env, inner_value)
+            check_permissions(env, target, tier)?;
+            check_permissions(env, inner_value, tier)
         }
         THIRExpressionKind::TaggedUnionInitializer { value, .. } => {
-            validate_safe_expression(env, value)
+            check_permissions(env, value, tier)
         }
-        THIRExpressionKind::ArrayInitializer { elements, .. } => validate_all(env, elements),
+        THIRExpressionKind::ArrayInitializer { elements, .. } => check_all(env, elements, tier),
         THIRExpressionKind::StructInitializer {
             initializations, ..
         } => {
             for initialization in initializations {
-                validate_safe_expression(env, &initialization.value)?;
+                check_permissions(env, &initialization.value, tier)?;
             }
             Ok(())
         }
@@ -117,25 +163,25 @@ pub(crate) fn validate_safe_expression(
         | THIRExpressionKind::Continue { .. }
         | THIRExpressionKind::Unreachable
         | THIRExpressionKind::Goto { .. } => Ok(()),
-        THIRExpressionKind::Label { statement, .. } => validate_safe_expression(env, statement),
+        THIRExpressionKind::Label { statement, .. } => check_permissions(env, statement, tier),
         THIRExpressionKind::If {
             condition,
             then_branch,
             else_branch,
         } => {
-            validate_safe_expression(env, condition)?;
-            validate_safe_expression(env, then_branch)?;
+            check_permissions(env, condition, tier)?;
+            check_permissions(env, then_branch, tier)?;
             else_branch
                 .as_deref()
-                .map(|branch| validate_safe_expression(env, branch))
+                .map(|branch| check_permissions(env, branch, tier))
                 .transpose()
                 .map(|_| ())
         }
         THIRExpressionKind::While {
             condition, body, ..
         } => {
-            validate_safe_expression(env, condition)?;
-            validate_safe_expression(env, body)
+            check_permissions(env, condition, tier)?;
+            check_permissions(env, body, tier)
         }
         THIRExpressionKind::For {
             init,
@@ -143,33 +189,33 @@ pub(crate) fn validate_safe_expression(
             increment,
             body,
         } => {
-            validate_safe_expression(env, init)?;
-            validate_safe_expression(env, condition)?;
-            validate_safe_expression(env, increment)?;
-            validate_safe_expression(env, body)
+            check_permissions(env, init, tier)?;
+            check_permissions(env, condition, tier)?;
+            check_permissions(env, increment, tier)?;
+            check_permissions(env, body, tier)
         }
         THIRExpressionKind::CSwitch {
             condition,
             cases,
             default,
         } => {
-            validate_safe_expression(env, condition)?;
+            check_permissions(env, condition, tier)?;
             for (case, body) in cases {
-                validate_safe_expression(env, case)?;
-                validate_safe_expression(env, body)?;
+                check_permissions(env, case, tier)?;
+                check_permissions(env, body, tier)?;
             }
             default
                 .as_deref()
-                .map(|branch| validate_safe_expression(env, branch))
+                .map(|branch| check_permissions(env, branch, tier))
                 .transpose()
                 .map(|_| ())
         }
         THIRExpressionKind::Match {
             condition, arms, ..
         } => {
-            validate_safe_expression(env, condition)?;
+            check_permissions(env, condition, tier)?;
             for (_, body) in arms {
-                validate_safe_expression(env, body)?;
+                check_permissions(env, body, tier)?;
             }
             Ok(())
         }
@@ -179,85 +225,111 @@ pub(crate) fn validate_safe_expression(
         } => {
             value
                 .as_deref()
-                .map(|value| validate_safe_expression(env, value))
+                .map(|value| check_permissions(env, value, tier))
                 .transpose()?;
             if let Some(postcondition) = postcondition {
-                validate_postcondition(env, postcondition)?;
+                check_postcondition(env, postcondition, tier)?;
             }
             Ok(())
         }
         THIRExpressionKind::Yield { value, .. } => {
             value
                 .as_deref()
-                .map(|value| validate_safe_expression(env, value))
+                .map(|value| check_permissions(env, value, tier))
                 .transpose()?;
             Ok(())
         }
-        THIRExpressionKind::Defer { expression } => validate_safe_expression(env, expression),
+        THIRExpressionKind::Defer { expression } => check_permissions(env, expression, tier),
         THIRExpressionKind::StagedExpression(staged) => {
-            validate_safe_expression(env, staged.expr())
+            check_permissions(env, staged.expr(), tier)
         }
         THIRExpressionKind::Materialize { expr, with_params } => {
-            validate_safe_expression(env, expr)?;
-            validate_all(env, with_params)
+            check_permissions(env, expr, tier)?;
+            check_all(env, with_params, tier)
         }
         THIRExpressionKind::Assert {
             condition: inner, ..
-        } => validate_safe_expression(env, inner),
-        THIRExpressionKind::Block { statements, .. } => validate_all(env, statements),
+        } => check_permissions(env, inner, tier),
+        THIRExpressionKind::Block { statements, .. } => check_all(env, statements, tier),
         THIRExpressionKind::CallFunction {
             function,
             arguments,
             contract,
         } => {
-            validate_callable(env, function)?;
-            validate_safe_expression(env, function)?;
-            validate_all(env, arguments)?;
-            validate_contract(env, contract)
+            if !matches!(function.kind, THIRExpressionKind::FunctionReference { .. })
+                && !callable_is_safe(env, function)
+            {
+                require(
+                    env,
+                    function,
+                    tier,
+                    PermissionTier::Nonsafe,
+                    "Non-safe function call".into(),
+                )?;
+            }
+            check_permissions(env, function, tier)?;
+            check_all(env, arguments, tier)?;
+            check_contract(
+                env,
+                contract,
+                PermissionTier::of_function(callable_is_safe(env, function)),
+            )
         }
     }
 }
 
-fn validate_callable(env: &TypeEnvironment, expression: &THIRExpression) -> CXResult<()> {
-    if env
-        .symbols
+fn callable_is_safe(env: &TypeEnvironment, expression: &THIRExpression) -> bool {
+    env.symbols
         .intern_signature(expression.get_type_ref())
         .is_some_and(|signature| signature.contract.safe)
-    {
-        Ok(())
-    } else {
-        reject(env, expression, "Non-safe function call")
-    }
 }
 
-fn validate_contract(env: &TypeEnvironment, contract: &THIRFnContract) -> CXResult<()> {
+fn check_contract(
+    env: &TypeEnvironment,
+    contract: &THIRFnContract,
+    tier: PermissionTier,
+) -> CXResult<()> {
     if let Some(precondition) = &contract.precondition {
-        validate_safe_expression(env, precondition)?;
+        check_permissions(env, precondition, tier)?;
     }
     if let Some(postcondition) = &contract.postcondition {
-        validate_postcondition(env, postcondition)?;
+        check_postcondition(env, postcondition, tier)?;
     }
     Ok(())
 }
 
-fn validate_postcondition(
+fn check_postcondition(
     env: &TypeEnvironment,
     postcondition: &THIRPostcondition,
+    tier: PermissionTier,
 ) -> CXResult<()> {
-    validate_safe_expression(env, &postcondition.condition)
+    check_permissions(env, &postcondition.condition, tier)
 }
 
-fn validate_all(env: &TypeEnvironment, expressions: &[THIRExpression]) -> CXResult<()> {
+fn check_all(
+    env: &TypeEnvironment,
+    expressions: &[THIRExpression],
+    tier: PermissionTier,
+) -> CXResult<()> {
     for expression in expressions {
-        validate_safe_expression(env, expression)?;
+        check_permissions(env, expression, tier)?;
     }
     Ok(())
 }
 
-fn reject<T>(env: &TypeEnvironment, expression: &THIRExpression, context: &str) -> CXResult<T> {
+fn require(
+    env: &TypeEnvironment,
+    expression: &THIRExpression,
+    tier: PermissionTier,
+    required: PermissionTier,
+    operation: String,
+) -> CXResult<()> {
+    if tier >= required {
+        return Ok(());
+    }
     env.log_error(
         &expression.token_range,
         &catalogue::UNSAFE_OPERATION,
-        context.into(),
+        operation,
     )
 }

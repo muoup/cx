@@ -16,8 +16,6 @@ pub(crate) fn typecheck_contract(
     prototype: &THIRFnSignature,
 ) -> CXResult<THIRFnContract> {
     let naive_contract = &prototype.contract;
-    let previous_mode = env.push_contract_mode(naive_contract.safe);
-
     env.push_scope(false, false, TokenRange::internal());
 
     for param in prototype.params.iter() {
@@ -84,7 +82,6 @@ pub(crate) fn typecheck_contract(
 
     env.pop_scope()
         .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
-    env.restore_function_mode(previous_mode);
 
     Ok(THIRFnContract {
         safe: naive_contract.safe,

@@ -97,8 +97,7 @@ impl THIRField {
 pub enum THIRReferenceLifetime {
     Free,
     Ephemeral,
-    Static,
-    Bounded(CXIdent),
+    Relative(CXIdent),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]

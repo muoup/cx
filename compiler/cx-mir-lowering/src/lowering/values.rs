@@ -4,8 +4,8 @@ use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, 
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::calculate_type_layout;
 use cx_mir::{
-    MIRBitfieldAccess, MIRConstant, MIRField, MIRGlobalRef, MIRIntType, MIRTarget, MIRTypeID,
-    MIRTypeKind, MIRValue,
+    MIRBitfieldAccess, MIRConstant, MIRField, MIRGlobalRef, MIRIntType, MIRRegister, MIRTarget,
+    MIRTypeID, MIRTypeKind, MIRValue,
 };
 
 use crate::context::FunctionContext;
@@ -32,30 +32,12 @@ pub(crate) fn lower_rvalue(
         return LMIRValue::NULL;
     }
     if let MIRValue::Register(register) = value {
-        let source_ty = context.body.register(*register).unwrap().ty;
         if !matches!(
             context.types().definition(expected).unwrap().kind(),
             MIRTypeKind::MemoryReference { .. }
         ) {
-            if let MIRTypeKind::MemoryReference { inner, bitfield } =
-                context.types().definition(source_ty).unwrap().kind()
-            {
-                let inner = *inner;
-                if matches!(
-                    context.types().definition(inner).unwrap().kind(),
-                    MIRTypeKind::Function { .. }
-                ) {
-                    return context.reg(*register);
-                }
-                if let Some(bitfield) = context
-                    .bitfields
-                    .get(register)
-                    .cloned()
-                    .or_else(|| bitfield.clone())
-                {
-                    return read_bitfield(context, context.reg(*register), inner, &bitfield);
-                }
-                return memory::load(context, context.reg(*register), inner);
+            if let Some(value) = read_through_reference(context, *register) {
+                return value;
             }
         }
     }
@@ -101,29 +83,39 @@ pub(super) fn lower_read(context: &mut FunctionContext<'_, '_>, value: &MIRValue
         return memory::load(context, context.places[place].clone(), ty);
     }
     if let MIRValue::Register(register) = value {
-        let ty = context.body.register(*register).unwrap().ty;
-        if let MIRTypeKind::MemoryReference { inner, bitfield } =
-            context.types().definition(ty).unwrap().kind()
-        {
-            let inner = *inner;
-            if matches!(
-                context.types().definition(inner).unwrap().kind(),
-                MIRTypeKind::Function { .. }
-            ) {
-                return context.reg(*register);
-            }
-            if let Some(bitfield) = context
-                .bitfields
-                .get(register)
-                .cloned()
-                .or_else(|| bitfield.clone())
-            {
-                return read_bitfield(context, context.reg(*register), inner, &bitfield);
-            }
-            return memory::load(context, context.reg(*register), inner);
+        if let Some(value) = read_through_reference(context, *register) {
+            return value;
         }
     }
     lower_value(context, value)
+}
+
+fn read_through_reference(
+    context: &mut FunctionContext<'_, '_>,
+    register: MIRRegister,
+) -> Option<LMIRValue> {
+    let ty = context.body.register(register).unwrap().ty;
+    let MIRTypeKind::MemoryReference { inner, bitfield } =
+        context.types().definition(ty).unwrap().kind()
+    else {
+        return None;
+    };
+    let inner = *inner;
+    if matches!(
+        context.types().definition(inner).unwrap().kind(),
+        MIRTypeKind::Function { .. }
+    ) {
+        return Some(context.reg(register));
+    }
+    if let Some(bitfield) = context
+        .bitfields
+        .get(&register)
+        .cloned()
+        .or_else(|| bitfield.clone())
+    {
+        return Some(read_bitfield(context, context.reg(register), inner, &bitfield));
+    }
+    Some(memory::load(context, context.reg(register), inner))
 }
 
 pub(super) fn global_address(

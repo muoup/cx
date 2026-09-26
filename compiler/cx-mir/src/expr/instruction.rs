@@ -106,17 +106,18 @@ pub enum MIRInstructionKind {
         kind: MIRInvalidationKind,
     },
 
+    // Produces the value held at an addressable source; the source is expected to be moved or not reused
     Lift {
         out: MIRRegisterID,
         source: MIRTarget,
     },
-    // Declares (for analysis) that a register or place must live at least as long as 'bind_to' for ownership analysis
-    // registe
+    // Declares that 'bind' is a view whose validity depends on 'bind_to' remaining live
     BindLifetime {
         bind: MIRBindable,
         bind_to: MIRPlaceID,
     },
 
+    // Eagerly copies 'value' into 'target', for writes whose source reuse cannot be tracked
     Store {
         target: MIRTarget,
         value: MIRValue,

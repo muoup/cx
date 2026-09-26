@@ -38,6 +38,6 @@ pub use unit::{
 pub use value::MIRRegisterID as MIRRegister;
 pub use value::{
     MIRBindable, MIRBlockTarget, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeParameter,
-    MIRComptimeRegisterID, MIRComptimeValue, MIRGlobalRef, MIRPlaceID, MIRRegisterID, MIRTarget,
-    MIRValue,
+    MIRComptimeRegisterID, MIRComptimeValue, MIRGlobalRef, MIRLivenessState, MIRPlaceID,
+    MIRRegisterID, MIRTarget, MIRValue,
 };

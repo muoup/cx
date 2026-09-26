@@ -21,7 +21,7 @@ use cx_util::identifier::CXIdent;
 
 pub use crate::environment::control_flow::{ControlTarget, ScopeEffects};
 use crate::{
-    environment::function_context::{FunctionContext, FunctionModeSnapshot},
+    environment::function_context::FunctionContext,
     symbol::registry::MIRSymbolRegistry,
 };
 use crate::{environment::items::ItemRegistry, log::generate_type_error};
@@ -152,24 +152,6 @@ impl TypeEnvironment<'_> {
         let effects = self.function.pop_scope()?;
         self.symbols.pop_local_scope();
         Ok(effects)
-    }
-
-    pub fn push_unsafe(&mut self) {
-        self.function.enter_unsafe();
-    }
-
-    pub fn pop_unsafe(&mut self) {
-        self.function.exit_unsafe();
-    }
-
-    pub fn push_contract_mode(&mut self, safe: bool) -> FunctionModeSnapshot {
-        let snapshot = self.function.snapshot_mode();
-        self.function.set_contract_mode(safe);
-        snapshot
-    }
-
-    pub fn restore_function_mode(&mut self, snapshot: FunctionModeSnapshot) {
-        self.function.restore_mode(snapshot);
     }
 
     pub fn in_comptime_context(&self) -> bool {

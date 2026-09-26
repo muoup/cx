@@ -67,14 +67,6 @@ pub(crate) fn typecheck_move(
         unreachable!()
     };
 
-    if inner_type.is_unsafe_move() && env.function.in_safe_context() {
-        return env.log_error(
-            inner_expr.token_range(),
-            &catalogue::UNSAFE_OPERATION,
-            "move of a type declared as @unsafe_move".into()
-        );
-    }
-
     Ok(TypecheckResult::new(
         inner_type,
         THIRExpressionKind::Move {
@@ -91,14 +83,6 @@ pub(crate) fn typecheck_adopt(
     expr: &HIRExpression,
     inner: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
-    if env.function.in_safe_context() {
-        return env.log_error(
-            expr.token_range(),
-            &catalogue::UNSAFE_OPERATION,
-            "@adopt".into()
-        );
-    }
-
     let value = typecheck_expr(env, namespace, inner, None)?;
     let binding = value.binding().cloned();
     let value = value.standard_ready_coerce(env, inner.token_range())?;
@@ -132,7 +116,7 @@ pub(crate) fn typecheck_adopt(
         inner_type,
         THIRExpressionKind::TypeConversion {
             operand: Box::new(value),
-            conversion: THIRCoercion::Typechange,
+            conversion: THIRCoercion::Adopt,
         },
     )
     .with_adopting())
@@ -144,14 +128,6 @@ pub(crate) fn typecheck_leak(
     expr: &HIRExpression,
     inner: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
-    if env.function.in_safe_context() {
-        return env.log_error(
-            expr.token_range(),
-            &catalogue::UNSAFE_OPERATION,
-            "@leak".into()
-        );
-    }
-
     let value = typecheck_expr(env, namespace, inner, None)?;
 
     let Some(binding) = value.binding().cloned() else {
@@ -180,12 +156,14 @@ pub(crate) fn typecheck_leak(
         );
     };
 
-    if !inner_type.is_nodrop() {
-        return Ok(TypecheckResult::from(value));
-    }
+    let leak_type = if inner_type.is_nodrop() {
+        THIRType::unit()
+    } else {
+        value._type.clone()
+    };
 
     Ok(TypecheckResult::new(
-        THIRType::unit(),
+        leak_type,
         THIRExpressionKind::Leak {
             expression: Box::new(value),
         },

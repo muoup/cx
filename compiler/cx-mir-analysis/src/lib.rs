@@ -10,14 +10,14 @@ pub(crate) mod log;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MIRAnalysisOptions {
-    pub ownership: bool,
+    pub liveness: bool,
     pub values: bool,
 }
 
 impl Default for MIRAnalysisOptions {
     fn default() -> Self {
         Self {
-            ownership: true,
+            liveness: true,
             values: true,
         }
     }
@@ -25,11 +25,11 @@ impl Default for MIRAnalysisOptions {
 
 pub fn analyze<'mir>(unit: &MIRUnit<'mir>, options: MIRAnalysisOptions) -> CXResult<()> {
     for (_, function) in unit.functions() {
-        if function.body().is_none() {
+        let Some(body) = function.body() else {
             continue;
-        }
-        
-        AnalysisEnvironment::new(unit, function, options).analyze()?;
+        };
+
+        AnalysisEnvironment::new(unit, function, body, options).analyze()?;
     }
 
     Ok(())

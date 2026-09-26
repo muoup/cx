@@ -1,7 +1,7 @@
 use cx_log::{CXMaybeRawResult, CXResult, catalogue::analysis};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRRegisterID,
-    MIRTarget,
+    MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRLivenessState, MIRPlaceID,
+    MIRRegisterID, MIRTarget,
     expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
 };
 use cx_tokens::TokenRange;
@@ -11,21 +11,14 @@ use crate::{
     log::{complete_analysis_error, log_analysis_error},
 };
 
-pub struct Ownership {
-    table: StateTable<OwnershipState>,
+pub struct Liveness {
+    table: StateTable<MIRLivenessState>,
 
     // Registers occupy the first `register_count` table slots, places the rest
     register_count: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OwnershipState {
-    Available,
-    Moved,
-    Uninitialized,
-}
-
-impl Ownership {
+impl Liveness {
     pub fn new() -> Self {
         Self {
             table: StateTable::new(),
@@ -40,27 +33,12 @@ impl Ownership {
         }
     }
 
-    fn get(&self, bindable: &MIRBindable) -> Option<OwnershipState> {
+    fn get(&self, bindable: &MIRBindable) -> Option<MIRLivenessState> {
         self.table.get(self.key(bindable))
     }
 
-    fn set(&mut self, bindable: &MIRBindable, state: OwnershipState) {
+    fn set(&mut self, bindable: &MIRBindable, state: MIRLivenessState) {
         self.table.set(self.key(bindable), state);
-    }
-
-    fn name(env: &AnalysisEnvironment, bindable: &MIRBindable) -> (String, bool) {
-        let body = env.function().body().expect("analyzed function has a body");
-        let debug_name = match bindable {
-            MIRBindable::Place(id) => body.place(*id).and_then(|place| place.debug_name.as_ref()),
-            MIRBindable::Register(id) => body
-                .register(*id)
-                .and_then(|register| register.debug_name.as_ref()),
-        };
-        let name = debug_name
-            .map(ToString::to_string)
-            .unwrap_or_else(|| format!("{bindable:?}"));
-        let discarded = debug_name.is_some_and(|name| name.as_str() == "_");
-        (name, discarded)
     }
 
     fn require_available(
@@ -71,11 +49,11 @@ impl Ownership {
         range: &TokenRange,
     ) -> CXResult<()> {
         let state = self.get(bindable);
-        if state == Some(OwnershipState::Available) {
+        if state == Some(MIRLivenessState::Available) {
             return Ok(());
         }
 
-        let (name, discarded) = Self::name(env, bindable);
+        let (name, discarded) = env.body().bindable_debug_name(bindable);
         let args = (
             env.function().prototype().display_name().to_string(),
             name,
@@ -83,7 +61,7 @@ impl Ownership {
             discarded,
         );
         match state {
-            Some(OwnershipState::Moved) => log_analysis_error(range, (&analysis::AFTER_MOVE, args)),
+            Some(MIRLivenessState::Moved) => log_analysis_error(range, (&analysis::AFTER_MOVE, args)),
             _ => log_analysis_error(range, (&analysis::BEFORE_INITIALIZATION, args)),
         }
     }
@@ -91,18 +69,14 @@ impl Ownership {
     fn join(
         env: &AnalysisEnvironment,
         bindable: MIRBindable,
-        existing: OwnershipState,
-        incoming: OwnershipState,
-    ) -> CXMaybeRawResult<OwnershipState> {
+        existing: MIRLivenessState,
+        incoming: MIRLivenessState,
+    ) -> CXMaybeRawResult<MIRLivenessState> {
         if let MIRBindable::Place(place) = bindable
-            && env
-                .function()
-                .body()
-                .and_then(|body| body.place(place))
-                .is_some_and(|place| place.nodrop)
-            && (existing == OwnershipState::Available || incoming == OwnershipState::Available)
+            && env.body().place(place).is_some_and(|place| place.nodrop)
+            && (existing == MIRLivenessState::Available || incoming == MIRLivenessState::Available)
         {
-            let (name, discarded) = Self::name(env, &bindable);
+            let (name, discarded) = env.body().bindable_debug_name(&bindable);
             return Err(analysis::PARTIAL_MOVE
                 .bind((
                     env.function().prototype().display_name().to_string(),
@@ -113,20 +87,20 @@ impl Ownership {
         }
 
         Ok(match (existing, incoming) {
-            (OwnershipState::Uninitialized, _) | (_, OwnershipState::Uninitialized) => {
-                OwnershipState::Uninitialized
+            (MIRLivenessState::Uninitialized, _) | (_, MIRLivenessState::Uninitialized) => {
+                MIRLivenessState::Uninitialized
             }
-            _ => OwnershipState::Moved,
+            _ => MIRLivenessState::Moved,
         })
     }
 }
 
-impl AnalysisPass for Ownership {
+impl AnalysisPass for Liveness {
     fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
-        let body = env.function().body().expect("analyzed function has a body");
+        let body = env.body();
         self.register_count = body.registers().len();
         self.table.reset(
-            OwnershipState::Uninitialized,
+            MIRLivenessState::Uninitialized,
             body.registers().len() + body.places().len(),
             body.blocks().len(),
         );
@@ -134,10 +108,9 @@ impl AnalysisPass for Ownership {
     }
 
     fn block_entry(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
-        let body = env.function().body().expect("analyzed function has a body");
-        if let Some(block) = body.block(block) {
+        if let Some(block) = env.body().block(block) {
             for register in block.params() {
-                self.set(&MIRBindable::Register(*register), OwnershipState::Available);
+                self.set(&MIRBindable::Register(*register), MIRLivenessState::Available);
             }
         }
         Ok(())
@@ -150,7 +123,7 @@ impl AnalysisPass for Ownership {
     ) -> CXResult<()> {
         let mut unavailable = None;
         visit_bindable_uses(&instruction.kind, |bindable| {
-            if unavailable.is_none() && self.get(&bindable) != Some(OwnershipState::Available) {
+            if unavailable.is_none() && self.get(&bindable) != Some(MIRLivenessState::Available) {
                 unavailable = Some(bindable);
             }
         });
@@ -160,19 +133,14 @@ impl AnalysisPass for Ownership {
 
         match &instruction.kind {
             MIRInstructionKind::Initialize { place } => {
-                self.set(place, OwnershipState::Available);
+                self.set(place, MIRLivenessState::Available);
             }
             MIRInstructionKind::Invalidate { place, kind } => {
                 if *kind == MIRInvalidationKind::Drop {
-                    if self.get(place) == Some(OwnershipState::Available) {
+                    if self.get(place) == Some(MIRLivenessState::Available) {
                         if let MIRBindable::Place(id) = place {
-                            if env
-                                .function()
-                                .body()
-                                .and_then(|body| body.place(*id))
-                                .is_some_and(|place| place.nodrop)
-                            {
-                                let (name, discarded) = Self::name(env, place);
+                            if env.body().place(*id).is_some_and(|place| place.nodrop) {
+                                let (name, discarded) = env.body().bindable_debug_name(place);
                                 return log_analysis_error(
                                     &instruction.token_range,
                                     (
@@ -189,7 +157,7 @@ impl AnalysisPass for Ownership {
                             }
                         }
                     }
-                    self.set(place, OwnershipState::Uninitialized);
+                    self.set(place, MIRLivenessState::Uninitialized);
                 } else {
                     self.require_available(
                         env,
@@ -201,7 +169,7 @@ impl AnalysisPass for Ownership {
                         },
                         &instruction.token_range,
                     )?;
-                    self.set(place, OwnershipState::Moved);
+                    self.set(place, MIRLivenessState::Moved);
                 }
             }
             MIRInstructionKind::Lift { out, source } => {
@@ -222,20 +190,20 @@ impl AnalysisPass for Ownership {
                     }
                     MIRTarget::Global(_) => {}
                 }
-                self.set(&MIRBindable::Register(*out), OwnershipState::Available);
+                self.set(&MIRBindable::Register(*out), MIRLivenessState::Available);
             }
             MIRInstructionKind::Store {
                 target: MIRTarget::Register(out),
                 ..
             } => {
-                self.set(&MIRBindable::Register(*out), OwnershipState::Available);
+                self.set(&MIRBindable::Register(*out), MIRLivenessState::Available);
             }
             MIRInstructionKind::Call { out: Some(out), .. } => {
-                self.set(&MIRBindable::Register(*out), OwnershipState::Available);
+                self.set(&MIRBindable::Register(*out), MIRLivenessState::Available);
             }
             MIRInstructionKind::IntrinsicOp(op) => {
                 if let Some(MIRTarget::Register(out)) = op.output_target() {
-                    self.set(&MIRBindable::Register(out), OwnershipState::Available);
+                    self.set(&MIRBindable::Register(out), MIRLivenessState::Available);
                 }
             }
             _ => {}

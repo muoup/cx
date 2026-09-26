@@ -449,6 +449,7 @@ pub enum THIRCoercion {
     // Conversions between types that have the same semantic meaning,
     // this is typically a no-op, but proves useful for type checking and verification
     Typechange,
+    Adopt,
 
     // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
     // meaning of the bits, such as converting from an f32 to an i32

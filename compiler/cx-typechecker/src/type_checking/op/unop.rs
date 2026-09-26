@@ -220,16 +220,6 @@ pub fn typecheck_unop(
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
 
-            if env.function.in_safe_context()
-                && matches!(operand._type.kind, THIRTypeKind::PointerTo { .. })
-            {
-                return env.log_error(
-                    &operand.token_range,
-                    &catalogue::UNSAFE_OPERATION,
-                    "Deferencing a pointer".into(),
-                );
-            }
-
             let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
                 return env.log_error(
                     &operand.token_range,
@@ -244,7 +234,7 @@ pub fn typecheck_unop(
 
             // Dereference returns a memory reference to the inner type
             TypecheckResult::from(THIRExpression {
-                token_range: TokenRange::internal(),
+                token_range: operand.token_range.clone(),
                 kind: THIRExpressionKind::TypeConversion {
                     operand: Box::new(operand),
                     conversion: THIRCoercion::Bitcast,

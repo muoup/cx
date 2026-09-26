@@ -9,7 +9,8 @@ use crate::{
         function::MIRFnParam,
     },
     value::{
-        MIRComptimeParameter, MIRComptimeRegisterID, MIRPlaceID, MIRRegisterID as MIRRegister,
+        MIRBindable, MIRComptimeParameter, MIRComptimeRegisterID, MIRPlaceID,
+        MIRRegisterID as MIRRegister,
     },
 };
 
@@ -220,5 +221,19 @@ impl<I> MIRBody<I> {
 
     pub fn comptime_register(&self, id: MIRComptimeRegisterID) -> Option<&MIRComptimeRegisterDecl> {
         self.comptime_registers.get(id.index())
+    }
+
+    pub fn bindable_debug_name(&self, bindable: &MIRBindable) -> (String, bool) {
+        let debug_name = match bindable {
+            MIRBindable::Place(id) => self.place(*id).and_then(|place| place.debug_name.as_ref()),
+            MIRBindable::Register(id) => self
+                .register(*id)
+                .and_then(|register| register.debug_name.as_ref()),
+        };
+        let name = debug_name
+            .map(ToString::to_string)
+            .unwrap_or_else(|| format!("{bindable:?}"));
+        let discarded = debug_name.is_some_and(|name| name.as_str() == "_");
+        (name, discarded)
     }
 }

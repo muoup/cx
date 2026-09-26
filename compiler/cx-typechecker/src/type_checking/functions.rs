@@ -3,7 +3,7 @@ use crate::{
     symbol::completion::assert_valid_type_component,
     type_checking::control_flow::expr_may_fall_through,
     type_checking::control_flow::r#return::typecheck_return,
-    type_checking::safety::validate_safe_expression,
+    type_checking::safety::{PermissionTier, check_permissions},
     type_checking::typechecker::typecheck_expr,
 };
 use cx_hir::ast::function::{HIRFunctionBody, HIRFunctionContract};
@@ -73,9 +73,12 @@ pub fn typecheck_function(
         return env.log_error(range, &catalogue::UNKNOWN_SYMBOL, name.into());
     }
 
-    if prototype.signature().contract.safe {
-        let safety_body = sequence_expression(statements.clone(), body.token_range().clone());
-        validate_safe_expression(env, &safety_body)?;
+    for statement in &statements {
+        check_permissions(
+            env,
+            statement,
+            PermissionTier::of_function(prototype.signature().contract.safe),
+        )?;
     }
 
     env.pop_scope()
@@ -208,16 +211,13 @@ fn typecheck_function_body(
     return_type: &THIRType,
 ) -> CXResult<Vec<THIRExpression>> {
     match body {
-        HIRFunctionBody::Block { statements, .. } => {
-            statements
-                .iter()
-                .map(|statement| {
-                    typecheck_expr(env, namespace, statement, None).and_then(|result| {
-                        result.standard_ready_coerce(env, statement.token_range())
-                    })
-                })
-                .collect::<CXResult<Vec<_>>>()
-        }
+        HIRFunctionBody::Block { statements, .. } => statements
+            .iter()
+            .map(|statement| {
+                typecheck_expr(env, namespace, statement, None)
+                    .and_then(|result| result.standard_ready_coerce(env, statement.token_range()))
+            })
+            .collect::<CXResult<Vec<_>>>(),
         HIRFunctionBody::Expression(expression) => {
             let value = if return_type.is_unreachable() {
                 typecheck_expr(env, namespace, expression, None)?
@@ -256,17 +256,5 @@ fn typecheck_function_body(
                     .internal_ready_assertion(),
             ])
         }
-    }
-}
-
-fn sequence_expression(statements: Vec<THIRExpression>, token_range: TokenRange) -> THIRExpression {
-    THIRExpression {
-        kind: THIRExpressionKind::Block {
-            statements,
-            kind: THIRBlockKind::Sequence,
-            yields: false,
-        },
-        _type: THIRType::unit(),
-        token_range,
     }
 }
