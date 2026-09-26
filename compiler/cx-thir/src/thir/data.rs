@@ -27,6 +27,15 @@ pub enum THIRFunctionBody {
     }
 }
 
+impl THIRFunctionBody {
+    pub fn exprs(&self) -> &[THIRExpression] {
+        match self {
+            THIRFunctionBody::Expression(expr) => std::slice::from_ref(expr),
+            THIRFunctionBody::Block { exprs, .. } => exprs,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct THIRParameter {
     pub name: Option<CXIdent>,
