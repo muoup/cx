@@ -2,10 +2,10 @@ use crate::lowering::memory;
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRValue};
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::ty::layout::calculate_type_layout;
+use cx_mir::ty::layout::{calculate_field_layout, calculate_type_layout};
 use cx_mir::{
-    MIRBitfieldAccess, MIRConstant, MIRField, MIRGlobalRef, MIRIntType, MIRRegister, MIRTarget,
-    MIRTypeID, MIRTypeKind, MIRValue,
+    MIRBitfieldAccess, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRIntType, MIRRegister,
+    MIRTarget, MIRTypeID, MIRTypeKind, MIRValue,
 };
 
 use crate::context::FunctionContext;
@@ -32,10 +32,7 @@ pub(crate) fn lower_rvalue(
         return LMIRValue::NULL;
     }
     if let MIRValue::Register(register) = value {
-        if !matches!(
-            context.types().definition(expected).unwrap().kind(),
-            MIRTypeKind::MemoryReference { .. }
-        ) {
+        if loads_through(context, *register, expected) {
             if let Some(value) = read_through_reference(context, *register) {
                 return value;
             }
@@ -73,6 +70,29 @@ pub(crate) fn lower_rvalue(
     lower_value(context, value)
 }
 
+/// Whether reading `register` as a value of type `expected` loads through it: always when
+/// `expected` is not a reference, and for a reference only when `register` refers to one.
+fn loads_through(
+    context: &FunctionContext<'_, '_>,
+    register: MIRRegister,
+    expected: MIRTypeID,
+) -> bool {
+    let types = context.types();
+    if !matches!(
+        types.definition(expected).unwrap().kind(),
+        MIRTypeKind::MemoryReference { .. }
+    ) {
+        return true;
+    }
+    let register_type = context.body.register(register).unwrap().ty;
+    match types.definition(register_type).unwrap().kind() {
+        MIRTypeKind::MemoryReference { inner } => {
+            !types.same_type(register_type, expected) && types.same_type(*inner, expected)
+        }
+        _ => false,
+    }
+}
+
 pub(super) fn lower_read(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> LMIRValue {
     if let MIRValue::Constant(MIRConstant::GlobalRef(reference)) = value {
         let address = global_address(context, *reference);
@@ -95,8 +115,7 @@ fn read_through_reference(
     register: MIRRegister,
 ) -> Option<LMIRValue> {
     let ty = context.body.register(register).unwrap().ty;
-    let MIRTypeKind::MemoryReference { inner, bitfield } =
-        context.types().definition(ty).unwrap().kind()
+    let MIRTypeKind::MemoryReference { inner } = context.types().definition(ty).unwrap().kind()
     else {
         return None;
     };
@@ -106,14 +125,6 @@ fn read_through_reference(
         MIRTypeKind::Function { .. }
     ) {
         return Some(context.reg(register));
-    }
-    if let Some(bitfield) = context
-        .bitfields
-        .get(&register)
-        .cloned()
-        .or_else(|| bitfield.clone())
-    {
-        return Some(read_bitfield(context, context.reg(register), inner, &bitfield));
     }
     Some(memory::load(context, context.reg(register), inner))
 }
@@ -195,10 +206,9 @@ pub(super) fn lower_constant(
                         },
                     );
                 }
-                let (offset, field_ty) = aggregate_member(context, *ty, *index);
-                let destination = memory::offset(context, address.clone(), offset as i64);
+                let location = member_location(context, *ty, *index);
                 let source = lower_constant(context, field);
-                memory::store(context, destination, source, field_ty);
+                store_member(context, address.clone(), location, source);
             }
             address
         }
@@ -206,20 +216,43 @@ pub(super) fn lower_constant(
     }
 }
 
-pub(super) fn aggregate_member(
+/// Where member `index` of an array or aggregate lives: its byte offset, the type stored there,
+/// and for a bitfield its bit offset and width within that storage unit.
+pub(super) fn member_location(
     context: &FunctionContext<'_, '_>,
     ty: MIRTypeID,
     index: usize,
-) -> (usize, MIRTypeID) {
-    match context.types().definition(ty).unwrap().kind() {
-        MIRTypeKind::Array { inner, .. } => (
-            index * calculate_type_layout(context.types(), *inner).size(),
-            *inner,
-        ),
-        _ => {
-            let (offset, ty, _) = field_location(context, ty, index);
-            (offset, ty)
+) -> (usize, MIRTypeID, Option<(usize, usize)>) {
+    if let MIRTypeKind::Array { inner, .. } = context.types().definition(ty).unwrap().kind() {
+        let stride = calculate_type_layout(context.types(), *inner).size();
+        return (index * stride, *inner, None);
+    }
+    match calculate_field_layout(context.types(), ty, index)
+        .expect("aggregate field index out of bounds")
+    {
+        MIRFieldLayout::Standard { offset, ty } => (offset, ty, None),
+        MIRFieldLayout::Bitfield {
+            offset,
+            bit_offset,
+            bit_width,
+            storage_type,
+        } => (offset, storage_type, Some((bit_offset, bit_width))),
+    }
+}
+
+/// Stores `value` into a member of the aggregate at `address`, as located by `member_location`.
+pub(super) fn store_member(
+    context: &mut FunctionContext<'_, '_>,
+    address: LMIRValue,
+    (offset, ty, bits): (usize, MIRTypeID, Option<(usize, usize)>),
+    value: LMIRValue,
+) {
+    let destination = memory::offset(context, address, offset as i64);
+    match bits {
+        Some((bit_offset, bit_width)) => {
+            write_bitfield(context, destination, value, ty, bit_offset, bit_width)
         }
+        None => memory::store(context, destination, value, ty),
     }
 }
 
@@ -283,23 +316,25 @@ pub(super) fn write_target(
             let address = global_address(context, reference);
             memory::store(context, address, value, ty);
         }
-        MIRTarget::Indirect(id) => {
-            let pointer_type = context.body.register(id).unwrap().ty;
-            let bitfield = context.bitfields.get(&id).cloned().or_else(|| {
-                match context.types().definition(pointer_type).unwrap().kind() {
-                    MIRTypeKind::MemoryReference { bitfield, .. } => bitfield.clone(),
-                    _ => None,
-                }
-            });
-            if let Some(bitfield) = bitfield {
-                write_bitfield(context, context.reg(id), value, ty, &bitfield);
-            } else {
-                memory::store(context, context.reg(id), value, ty);
-            }
-        }
+        MIRTarget::Indirect(id) => memory::store(context, context.reg(id), value, ty),
     }
 }
 
+/// The address of an addressable store target.
+pub(super) fn target_address(
+    context: &mut FunctionContext<'_, '_>,
+    target: MIRTarget,
+) -> LMIRValue {
+    match target {
+        MIRTarget::Place(id) => context.places[&id].clone(),
+        MIRTarget::Global(reference) => global_address(context, reference),
+        MIRTarget::Indirect(id) => context.reg(id),
+        MIRTarget::Register(_) => unreachable!("a register store target has no address"),
+    }
+}
+
+/// Extracts a bitfield from the storage unit at `address`, sign-extending it when `bitfield` is
+/// signed.
 pub(super) fn read_bitfield(
     context: &mut FunctionContext<'_, '_>,
     address: LMIRValue,
@@ -361,19 +396,22 @@ pub(super) fn read_bitfield(
     }
 }
 
+/// Inserts `value` into the `bit_width` bits at `bit_offset` of the storage unit at `address`,
+/// preserving the unit's other bits.
 pub(super) fn write_bitfield(
     context: &mut FunctionContext<'_, '_>,
     address: LMIRValue,
     value: LMIRValue,
     storage_ty: MIRTypeID,
-    bitfield: &MIRBitfieldAccess,
+    bit_offset: usize,
+    bit_width: usize,
 ) {
-    if bitfield.bit_width == 0 {
+    if bit_width == 0 {
         return;
     }
     let storage_type = context.ty(storage_ty);
     let integer_type = integer_type(context, storage_ty);
-    let field_mask = bit_mask(context, storage_ty, bitfield.bit_width);
+    let field_mask = bit_mask(context, storage_ty, bit_width);
     let value = integer_binop(
         context,
         LMIRIntBinOp::BAND,
@@ -381,10 +419,10 @@ pub(super) fn write_bitfield(
         field_mask.clone(),
         storage_type.clone(),
     );
-    let shifted_value = if bitfield.bit_offset == 0 {
+    let shifted_value = if bit_offset == 0 {
         value
     } else {
-        let shift_amount = context.integer(bitfield.bit_offset as i128, integer_type);
+        let shift_amount = context.integer(bit_offset as i128, integer_type);
         integer_binop(
             context,
             LMIRIntBinOp::SHL,
@@ -393,10 +431,10 @@ pub(super) fn write_bitfield(
             storage_type.clone(),
         )
     };
-    let field_mask = if bitfield.bit_offset == 0 {
+    let field_mask = if bit_offset == 0 {
         field_mask
     } else {
-        let shift_amount = context.integer(bitfield.bit_offset as i128, integer_type);
+        let shift_amount = context.integer(bit_offset as i128, integer_type);
         integer_binop(
             context,
             LMIRIntBinOp::SHL,
@@ -485,103 +523,4 @@ fn integer_type(context: &FunctionContext<'_, '_>, ty: MIRTypeID) -> LMIRInteger
         panic!("bitfield storage type is not an integer")
     };
     convert_integer_type(*ty)
-}
-
-pub(super) fn field_location(
-    context: &FunctionContext<'_, '_>,
-    ty: MIRTypeID,
-    index: usize,
-) -> (usize, MIRTypeID, Option<(usize, usize)>) {
-    let kind = context
-        .types()
-        .definition(ty)
-        .expect("unknown aggregate")
-        .kind();
-    let (fields, is_union) = match kind {
-        MIRTypeKind::Structured { fields } => (fields, false),
-        MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => (variants, true),
-        _ => panic!("field access on non-aggregate"),
-    };
-    let mut offset = 0;
-    let mut bits: Option<(MIRTypeID, usize)> = None;
-    for (position, field) in fields.iter().enumerate() {
-        let field_ty = field.ty();
-        let layout = calculate_type_layout(context.types(), field_ty);
-        let alignment = layout.alignment();
-        if is_union {
-            if position == index {
-                return (0, field_ty, bitfield(field, 0));
-            }
-            continue;
-        }
-        match field {
-            MIRField::Standard { .. } => {
-                bits = None;
-                offset = align(offset, alignment);
-                if position == index {
-                    return (offset, field_ty, None);
-                }
-                offset += layout.size();
-            }
-            MIRField::Bitfield { width, .. } => {
-                if *width == 0 {
-                    bits = None;
-                    offset = align(offset, alignment);
-                    if position == index {
-                        return (offset, field_ty, Some((0, 0)));
-                    }
-                    continue;
-                }
-                let bit_offset = match bits {
-                    Some((storage, used))
-                        if storage == field_ty && used + width <= layout.size() * 8 =>
-                    {
-                        bits = Some((storage, used + width));
-                        used
-                    }
-                    _ => {
-                        offset = align(offset, alignment);
-                        let start = offset;
-                        offset += layout.size();
-                        bits = Some((field_ty, *width));
-                        if position == index {
-                            return (start, field_ty, Some((0, *width)));
-                        }
-                        continue;
-                    }
-                };
-                if position == index {
-                    return (offset - layout.size(), field_ty, Some((bit_offset, *width)));
-                }
-            }
-        }
-    }
-    panic!("aggregate field index out of bounds")
-}
-
-fn bitfield(field: &MIRField, offset: usize) -> Option<(usize, usize)> {
-    match field {
-        MIRField::Bitfield { width, .. } => Some((offset, *width)),
-        _ => None,
-    }
-}
-
-pub(super) fn bitfield_access(
-    context: &FunctionContext<'_, '_>,
-    ty: MIRTypeID,
-    location: Option<(usize, usize)>,
-) -> Option<MIRBitfieldAccess> {
-    let (bit_offset, bit_width) = location?;
-    let MIRTypeKind::Integer { signed, .. } = context.types().definition(ty).unwrap().kind() else {
-        panic!("bitfield storage type is not an integer")
-    };
-    Some(MIRBitfieldAccess {
-        bit_offset,
-        bit_width,
-        signed: *signed,
-    })
-}
-
-fn align(value: usize, alignment: usize) -> usize {
-    value.div_ceil(alignment) * alignment
 }

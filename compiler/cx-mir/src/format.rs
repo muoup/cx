@@ -7,15 +7,18 @@ use crate::{
     expr::{
         body::MIRBody,
         comptime::{MIRComptimeInstruction, MIRComptimeOp},
-        instruction::{MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRInvalidationKind},
+        instruction::{
+            MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRInvalidationKind,
+            MIRStoreBitfield,
+        },
         intrinsic::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
     },
     ty::{
-        MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind, comptime::MIRComptimeType,
-        interface::MTRegistry,
+        MIRBitfieldAccess, MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind,
+        comptime::MIRComptimeType, interface::MTRegistry,
     },
     unit::{
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
@@ -237,14 +240,7 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
     fn write_kind(&mut self, f: &mut Formatter<'_>, kind: &MIRTypeKind) -> fmt::Result {
         match kind {
             MIRTypeKind::Void => f.write_str("void"),
-            MIRTypeKind::Integer { ty, signed } => {
-                write!(
-                    f,
-                    "{}{}",
-                    if *signed { 'i' } else { 'u' },
-                    integer_width(*ty)
-                )
-            }
+            MIRTypeKind::Integer { ty } => write!(f, "i{}", integer_width(*ty)),
             MIRTypeKind::Float { ty } => write!(f, "f{}", float_width(*ty)),
             MIRTypeKind::Str => f.write_str("str"),
             MIRTypeKind::PointerTo { inner } => {
@@ -553,10 +549,22 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" to ")?;
             write_place_name(f, unit, function, *to)
         }
-        MIRInstructionKind::Store { target, value, .. } => {
+        MIRInstructionKind::Store {
+            target,
+            value,
+            bitfield,
+            ..
+        } => {
             write_target(f, unit, function, *target)?;
+            if let Some(MIRStoreBitfield::Target(access)) = bitfield {
+                write_bitfield_access(f, access)?;
+            }
             f.write_str(" = ")?;
-            write_value(f, unit, function, value)
+            write_value(f, unit, function, value)?;
+            if let Some(MIRStoreBitfield::Source(access)) = bitfield {
+                write_bitfield_access(f, access)?;
+            }
+            Ok(())
         }
         MIRInstructionKind::Call { out, callee, args } => {
             if let Some(out) = out {
@@ -597,10 +605,11 @@ fn write_instruction<T: MTRegistry>(
         }
         MIRInstructionKind::CaseBranch {
             value,
+            signed,
             cases,
             default,
         } => {
-            f.write_str("switch ")?;
+            f.write_str(if *signed { "switch.signed " } else { "switch " })?;
             write_value(f, unit, function, value)?;
             f.write_str(" {")?;
             for (index, (case_value, target)) in cases.iter().enumerate() {
@@ -752,6 +761,16 @@ fn write_intrinsic_call<T: MTRegistry>(
     f.write_str(")")
 }
 
+fn write_bitfield_access(f: &mut Formatter<'_>, access: &MIRBitfieldAccess) -> fmt::Result {
+    write!(
+        f,
+        ".bits[{}:{}{}]",
+        access.bit_offset,
+        access.bit_width,
+        if access.signed { ", signed" } else { "" }
+    )
+}
+
 fn write_intrinsic_unary<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
@@ -885,9 +904,23 @@ fn write_int_intrinsic<T: MTRegistry>(
                 write!(f, ", f{}", float_width(*target))
             },
         ),
-        MIRIntIntrinsic::ToPtr { out, value } => {
-            write_intrinsic_unary(f, unit, function, types, "int.to_ptr", *out, value)
-        }
+        MIRIntIntrinsic::ToPtr {
+            out,
+            value,
+            sign_extend,
+        } => write_intrinsic_unary(
+            f,
+            unit,
+            function,
+            types,
+            if *sign_extend {
+                "int.to_ptr.signed"
+            } else {
+                "int.to_ptr.unsigned"
+            },
+            *out,
+            value,
+        ),
         MIRIntIntrinsic::IntCast {
             out,
             value,
@@ -1003,12 +1036,17 @@ fn write_float_intrinsic<T: MTRegistry>(
             out,
             value,
             target_ty,
+            signed,
         } => write_intrinsic_value_type(
             f,
             unit,
             function,
             types,
-            "float.to_int",
+            if *signed {
+                "float.to_int.signed"
+            } else {
+                "float.to_int.unsigned"
+            },
             *out,
             value,
             *target_ty,

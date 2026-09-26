@@ -3,7 +3,7 @@ use crate::{
     log::log_mir_error,
     lowering::{
         LowerResult, LowerStop, lower_expression, memory,
-        types::{lower_float_type, lower_int_type, lower_type, lower_type_id},
+        types::{bitfield_access, lower_float_type, lower_int_type, lower_type, lower_type_id},
     },
 };
 use cx_log::{CXResult, catalogue::mir};
@@ -46,13 +46,9 @@ pub(super) fn lower_pattern_test<'thir>(
                 _ => &lhs.ty,
             };
             let sum_type_id = lower_type(builder, sum_type).map_err(LowerStop::Diagnostic)?;
-            let tag_type = builder.types_mut().intern(MIRType::new(
-                MIRTypeKind::Integer {
-                    ty: MIRIntType::I8,
-                    signed: false,
-                },
-                None,
-            ));
+            let tag_type = builder
+                .types_mut()
+                .intern(MIRType::new(MIRTypeKind::Integer { ty: MIRIntType::I8 }));
             let out = builder.fun_mut().new_register(tag_type, None);
             let value = match subject {
                 Some(value) => value,
@@ -99,7 +95,8 @@ pub(super) fn lower_pattern_test<'thir>(
             };
             let input = if lhs.ty.is_memory_reference() {
                 let type_id = lower_type(builder, value_type).map_err(LowerStop::Diagnostic)?;
-                memory::copy(builder, input, type_id, &lhs.token_range)
+                let bitfield = bitfield_access(builder, &lhs.ty).map_err(LowerStop::Diagnostic)?;
+                memory::copy(builder, input, type_id, bitfield, &lhs.token_range)
             } else {
                 input
             };
@@ -200,13 +197,12 @@ pub(super) fn bind_pattern_payload<'thir>(
             let borrowed = sum_type.is_memory_reference();
             let range = builder.fun().current_scope_range();
             let value = if borrowed {
-                let result_type_id = builder.types_mut().intern(MIRType::new(
-                    MIRTypeKind::MemoryReference {
-                        inner: payload_type_id,
-                        bitfield: None,
-                    },
-                    None,
-                ));
+                let result_type_id =
+                    builder
+                        .types_mut()
+                        .intern(MIRType::new(MIRTypeKind::MemoryReference {
+                            inner: payload_type_id,
+                        }));
                 let out = builder
                     .fun_mut()
                     .new_register(result_type_id, inner_name.clone());

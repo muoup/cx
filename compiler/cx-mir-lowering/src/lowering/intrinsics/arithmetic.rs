@@ -77,7 +77,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             target,
             sign_extend,
         } => {
-            let (from, _) = integer_type(context, value);
+            let from = integer_type(context, value);
             let coercion_type = if from.bytes() < target.bytes() {
                 if *sign_extend {
                     LMIRCoercionType::SExtend
@@ -102,7 +102,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
         I::ToFloat {
             out, value, signed, ..
         } => {
-            let (from, _) = integer_type(context, value);
+            let from = integer_type(context, value);
             let value = lower_read(context, value);
             output(
                 context,
@@ -116,8 +116,12 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
                 },
             );
         }
-        I::ToPtr { out, value } => {
-            let (from, signed) = integer_type(context, value);
+        I::ToPtr {
+            out,
+            value,
+            sign_extend,
+        } => {
+            let from = integer_type(context, value);
             let value = lower_read(context, value);
             output(
                 context,
@@ -126,7 +130,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
                     value,
                     coercion_type: LMIRCoercionType::IntToPtr {
                         from: convert_integer_type(from),
-                        sextend: signed,
+                        sextend: *sign_extend,
                     },
                 },
             );
@@ -173,15 +177,9 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
             );
         }
         F::ToInt {
-            out,
-            value,
-            target_ty,
+            out, value, signed, ..
         } => {
             let from = float_type(context, value);
-            let signed = matches!(
-                context.types().definition(*target_ty).unwrap().kind(),
-                MIRTypeKind::Integer { signed: true, .. }
-            );
             let value = lower_read(context, value);
             output(
                 context,
@@ -190,7 +188,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
                     value,
                     coercion_type: LMIRCoercionType::FloatToInt {
                         from: convert_float_type(from),
-                        sextend: signed,
+                        sextend: *signed,
                     },
                 },
             );
@@ -272,17 +270,17 @@ fn operand_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> Option<c
     }
 }
 
-fn integer_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> (MIRIntType, bool) {
+fn integer_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> MIRIntType {
     if let MIRValue::Constant(MIRConstant::Integer { ty, .. }) = value {
-        return (*ty, false);
+        return *ty;
     }
     let ty = operand_type(context, value).expect("integer operand lacks a MIR type");
     integer_kind(context, ty)
 }
 
-fn integer_kind(context: &FunctionContext<'_, '_>, ty: cx_mir::MIRTypeID) -> (MIRIntType, bool) {
+fn integer_kind(context: &FunctionContext<'_, '_>, ty: cx_mir::MIRTypeID) -> MIRIntType {
     match context.types().definition(ty).unwrap().kind() {
-        MIRTypeKind::Integer { ty, signed } => (*ty, *signed),
+        MIRTypeKind::Integer { ty } => *ty,
         _ => panic!("integer operation on non-integer"),
     }
 }

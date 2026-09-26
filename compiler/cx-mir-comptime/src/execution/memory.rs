@@ -1,17 +1,20 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRComptimeBody, MIRConstant, MIRField, MIRGlobalRef, MIRGlobalState, MIRTarget, MIRTypeID,
-    MIRTypeKind,
+    MIRBitfieldAccess, MIRComptimeBody, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRGlobalState,
+    MIRTarget, MIRTypeID, MIRTypeKind, MIRValue,
     ty::{
         interface::MTRegistry,
-        layout::{calculate_field_layout, calculate_type_layout},
+        layout::{calculate_field_layouts, calculate_type_layout},
     },
 };
 use cx_tokens::TokenRange;
 
 use crate::{
     ComptimeContext,
-    execution::engine::{Engine, ExecutionFrame},
+    execution::{
+        engine::{Engine, ExecutionFrame},
+        scalar::{bits, int_const, integer, mask, signed},
+    },
     log::comptime_error,
 };
 
@@ -142,22 +145,24 @@ fn read_offset<R: MTRegistry>(
                 aggregate_field(value, index).unwrap_or_else(|| zero_value(registry, *inner));
             read_offset(registry, &element, *inner, remainder, target)
         }
-        MIRTypeKind::Structured { fields } | MIRTypeKind::Union { variants: fields } => {
-            let is_union = matches!(kind, MIRTypeKind::Union { .. });
-            for (index, field) in fields.iter().enumerate() {
-                let field_offset = field_offset(registry, fields, index, is_union)?;
-                let field_ty = field.ty();
-                let size = calculate_field_layout(registry, field).size();
+        MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. } => {
+            let layouts = calculate_field_layouts(registry, ty)?;
+            for (index, layout) in layouts.iter().enumerate() {
+                let size = match layout {
+                    MIRFieldLayout::Bitfield { bit_width: 0, .. } => continue,
+                    layout => calculate_type_layout(registry, layout.ty()).size(),
+                };
+                let field_offset = layout.offset();
                 if offset < field_offset || offset >= field_offset.checked_add(size)? {
                     continue;
                 }
-                let remainder = offset - field_offset;
-                let child =
-                    aggregate_field(value, index).unwrap_or_else(|| zero_value(registry, field_ty));
-                if matches!(field, MIRField::Bitfield { .. }) {
-                    return None;
+                if matches!(layout, MIRFieldLayout::Bitfield { .. }) {
+                    return (offset == field_offset && registry.same_type(layout.ty(), target))
+                        .then(|| bitfield_unit(registry, value, ty, field_offset, layout.ty()));
                 }
-                return read_offset(registry, &child, field_ty, remainder, target);
+                let child = aggregate_field(value, index)
+                    .unwrap_or_else(|| zero_value(registry, layout.ty()));
+                return read_offset(registry, &child, layout.ty(), offset - field_offset, target);
             }
             None
         }
@@ -170,67 +175,112 @@ pub(crate) fn field_byte_offset<R: MTRegistry>(
     ty: MIRTypeID,
     index: usize,
 ) -> Option<(usize, MIRTypeID)> {
-    let kind = registry.definition(ty)?.kind();
-    let (fields, is_union) = match kind {
-        MIRTypeKind::Structured { fields } => (fields, false),
-        MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => (variants, true),
-        _ => return None,
-    };
-    let field = fields.get(index)?;
-    Some((field_offset(registry, fields, index, is_union)?, field.ty()))
+    let layout = calculate_field_layouts(registry, ty)?.get(index).copied()?;
+    Some((layout.offset(), layout.ty()))
 }
 
-fn field_offset<R: MTRegistry>(
+/// Assembles the storage unit at `unit_offset` of an inline aggregate from the values of the
+/// bitfields packed into it.
+pub(crate) fn bitfield_unit<R: MTRegistry>(
     registry: &R,
-    fields: &[MIRField],
-    index: usize,
-    is_union: bool,
-) -> Option<usize> {
-    if is_union {
-        return Some(0);
-    }
-    let mut offset = 0;
-    let mut bitfield: Option<(MIRTypeID, usize, usize)> = None;
-    for (position, field) in fields.iter().enumerate() {
-        let field_ty = field.ty();
-        let layout = calculate_type_layout(registry, field_ty);
-        match field {
-            MIRField::Standard { .. } => {
-                bitfield = None;
-                offset = align(offset, layout.alignment());
-                if position == index {
-                    return Some(offset);
-                }
-                offset = offset.checked_add(layout.size())?;
-            }
-            MIRField::Bitfield { width, .. } => {
-                if *width == 0 {
-                    bitfield = None;
-                    offset = align(offset, layout.alignment());
-                    if position == index {
-                        return Some(offset);
-                    }
-                } else if let Some((storage, start, used)) = bitfield
-                    && storage == field_ty
-                    && used + width <= layout.size() * 8
-                {
-                    if position == index {
-                        return Some(start);
-                    }
-                    bitfield = Some((storage, start, used + width));
-                } else {
-                    offset = align(offset, layout.alignment());
-                    let start = offset;
-                    offset = offset.checked_add(layout.size())?;
-                    if position == index {
-                        return Some(start);
-                    }
-                    bitfield = Some((field_ty, start, *width));
-                }
-            }
+    aggregate: &MIRConstant,
+    aggregate_ty: MIRTypeID,
+    unit_offset: usize,
+    storage_ty: MIRTypeID,
+) -> MIRConstant {
+    let Some(MIRTypeKind::Integer { ty: storage }) =
+        registry.definition(storage_ty).map(|ty| ty.kind())
+    else {
+        panic!("bitfield storage type is not an integer")
+    };
+    let mut unit = 0u128;
+    for (index, layout) in calculate_field_layouts(registry, aggregate_ty)
+        .unwrap_or_default()
+        .into_iter()
+        .enumerate()
+    {
+        let MIRFieldLayout::Bitfield {
+            offset,
+            bit_offset,
+            bit_width,
+            storage_type,
+        } = layout
+        else {
+            continue;
+        };
+        if offset != unit_offset || storage_type != storage_ty || bit_width == 0 {
+            continue;
+        }
+        if let Some(MIRConstant::Integer { value, .. }) = aggregate_field(aggregate, index) {
+            unit |= mask(value as u128, bit_width as u32) << bit_offset;
         }
     }
-    None
+    int_const(unit, *storage)
+}
+
+/// Extracts a bitfield from the value of its storage unit.
+pub(crate) fn extract_bitfield(
+    unit: &MIRConstant,
+    access: &MIRBitfieldAccess,
+    range: &TokenRange,
+) -> CXResult<MIRConstant> {
+    let (unit, ty) = integer(unit, range)?;
+    let width = access.bit_width as u32;
+    if width == 0 {
+        return Ok(int_const(0, ty));
+    }
+    let value = mask(unit >> access.bit_offset, width);
+    let value = if access.signed && width < bits(ty) {
+        signed(value, width) as u128
+    } else {
+        value
+    };
+    Ok(int_const(value, ty))
+}
+
+/// Reads `value` as a value of type `ty`, loading through a reference register when `ty` is not
+/// itself a reference.
+pub(crate) fn read_rvalue<'c, 'thir, C: ComptimeContext<'thir>>(
+    engine: &Engine<'c, 'thir, C>,
+    frame: &ExecutionFrame,
+    body: &MIRComptimeBody<'_>,
+    value: &MIRValue,
+    ty: MIRTypeID,
+    range: &TokenRange,
+) -> CXResult<MIRConstant> {
+    let types = engine.context().types();
+    let is_reference = |ty: MIRTypeID| {
+        types
+            .definition(ty)
+            .is_some_and(|ty| types.is_reference_type(ty))
+    };
+    // Mirrors runtime lowering: a register is loaded through when it refers to a value of `ty`
+    let loads_through =
+        |register_ty: MIRTypeID| match types.definition(register_ty).map(|ty| ty.kind()) {
+            Some(MIRTypeKind::MemoryReference { inner }) => {
+                !is_reference(ty)
+                    || (!types.same_type(register_ty, ty) && types.same_type(*inner, ty))
+            }
+            _ => false,
+        };
+    if let MIRValue::Register(register) = value
+        && body
+            .register(*register)
+            .is_some_and(|register| loads_through(register.ty))
+    {
+        return read_target(engine, frame, body, MIRTarget::Indirect(*register), range);
+    }
+    if !is_reference(ty) {
+        match value {
+            MIRValue::Constant(MIRConstant::GlobalRef(reference))
+                if !is_reference(reference.ty) =>
+            {
+                return read_global(engine.context(), *reference, range);
+            }
+            _ => {}
+        }
+    }
+    engine.read(frame, body, value, range)
 }
 
 pub(super) fn aggregate_field(value: &MIRConstant, index: usize) -> Option<MIRConstant> {
@@ -241,8 +291,4 @@ pub(super) fn aggregate_field(value: &MIRConstant, index: usize) -> Option<MIRCo
         .iter()
         .find(|(field, _)| *field == index)
         .map(|(_, value)| value.clone())
-}
-
-fn align(value: usize, alignment: usize) -> usize {
-    value.div_ceil(alignment) * alignment
 }

@@ -18,10 +18,16 @@ impl Liveness {
     pub(crate) fn new(body: &MIRComptimeBody<'_>, function: &str) -> Self {
         let mut states = HashMap::new();
         for place in body.places() {
-            states.insert(MIRBindable::Place(place.id), MIRLivenessState::Uninitialized);
+            states.insert(
+                MIRBindable::Place(place.id),
+                MIRLivenessState::Uninitialized,
+            );
         }
         for register in body.registers() {
-            states.insert(MIRBindable::Register(register.id), MIRLivenessState::Uninitialized);
+            states.insert(
+                MIRBindable::Register(register.id),
+                MIRLivenessState::Uninitialized,
+            );
         }
         for parameter in body.comptime_parameters() {
             if let MIRComptimeParameter::Runtime(place) = parameter {
@@ -48,7 +54,9 @@ impl Liveness {
         let (name, discarded) = body.bindable_debug_name(bindable);
         let args = (self.function.clone(), name, operation.to_owned(), discarded);
         match state {
-            Some(MIRLivenessState::Moved) => comptime_error(range.clone(), (&analysis::AFTER_MOVE, args)),
+            Some(MIRLivenessState::Moved) => {
+                comptime_error(range.clone(), (&analysis::AFTER_MOVE, args))
+            }
             _ => comptime_error(range.clone(), (&analysis::BEFORE_INITIALIZATION, args)),
         }
     }
@@ -84,7 +92,8 @@ impl Liveness {
                     ),
                 );
             }
-            self.states.insert(bindable.clone(), MIRLivenessState::Uninitialized);
+            self.states
+                .insert(bindable.clone(), MIRLivenessState::Uninitialized);
         } else {
             self.require(
                 body,
@@ -96,7 +105,8 @@ impl Liveness {
                 },
                 range,
             )?;
-            self.states.insert(bindable.clone(), MIRLivenessState::Moved);
+            self.states
+                .insert(bindable.clone(), MIRLivenessState::Moved);
         }
         Ok(())
     }

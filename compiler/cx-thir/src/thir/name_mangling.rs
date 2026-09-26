@@ -96,14 +96,12 @@ fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String
             let mut mangled = String::from("r");
             if let Some(bitfield) = bitfield {
                 mangled.push('1');
-                push_component(&mut mangled, bitfield.bit_offset().to_string().as_str());
-                push_component(&mut mangled, bitfield.bit_width().to_string().as_str());
-                let storage_type = mangle_type_name(
+                let aggregate_type = mangle_type_name(
                     definitions,
-                    definitions.resolve_type_id(bitfield.storage_type()),
+                    definitions.resolve_type_id(bitfield.aggregate_type()),
                 );
-                push_component(&mut mangled, storage_type.as_str());
-                push_component(&mut mangled, if bitfield.is_signed() { "1" } else { "0" });
+                push_component(&mut mangled, aggregate_type.as_str());
+                push_component(&mut mangled, bitfield.field_index().to_string().as_str());
             } else {
                 mangled.push('0');
             }

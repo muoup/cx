@@ -2,7 +2,11 @@ use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
 use crate::{
-    MIRTarget, expr::intrinsic::MIRIntrinsic, ty::MIRTypeID, unit::MIRBasicBlockID, value::{MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRValue},
+    MIRTarget,
+    expr::intrinsic::MIRIntrinsic,
+    ty::{MIRBitfieldAccess, MIRTypeID},
+    unit::MIRBasicBlockID,
+    value::{MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRValue},
 };
 
 dense_id!(MIRScopeID, "scope.");
@@ -117,11 +121,12 @@ pub enum MIRInstructionKind {
         bind_to: MIRPlaceID,
     },
 
-    // Eagerly copies 'value' into 'target', for writes whose source reuse cannot be tracked
+    // Eagerly copies 'value' into 'target'; used for assignments and all copies
     Store {
         target: MIRTarget,
         value: MIRValue,
         ty: MIRTypeID,
+        bitfield: Option<MIRStoreBitfield>,
     },
 
     Call {
@@ -143,13 +148,24 @@ pub enum MIRInstructionKind {
         true_target: MIRBlockTarget,
         false_target: MIRBlockTarget,
     },
+    // 'signed' selects how 'value' and the case constants are interpreted
     CaseBranch {
         value: MIRValue,
+        signed: bool,
         cases: Vec<(i128, MIRBlockTarget)>,
         default: Option<MIRBlockTarget>,
     },
 
     Unreachable,
+}
+
+/// Which side of a store addresses a bitfield; a single store never touches two bitfields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MIRStoreBitfield {
+    /// 'value' references the bitfield's storage unit, and the extracted field is stored.
+    Source(MIRBitfieldAccess),
+    /// 'target' addresses the bitfield's storage unit, and the value is inserted into the field.
+    Target(MIRBitfieldAccess),
 }
 
 impl MIRInstructionKind {

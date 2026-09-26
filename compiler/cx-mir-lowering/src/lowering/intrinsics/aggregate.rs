@@ -7,8 +7,8 @@ use cx_mir::{MIRAggregateIntrinsic, MIRTarget, MIRTypeID, MIRTypeKind};
 
 use crate::context::FunctionContext;
 use crate::lowering::values::{
-    aggregate_member, bitfield_access, field_location, lower_read, lower_rvalue, read_bitfield,
-    tagged_union_tag_offset, target_type, write_bitfield, write_target,
+    lower_read, lower_rvalue, member_location, store_member, tagged_union_tag_offset, target_type,
+    write_target,
 };
 
 pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntrinsic) {
@@ -43,22 +43,9 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                         },
                     );
                 }
-                let (offset, field_ty, bitfield_location) = if matches!(
-                    context.types().definition(*ty).unwrap().kind(),
-                    MIRTypeKind::Array { .. }
-                ) {
-                    let (offset, field_ty) = aggregate_member(context, *ty, *index);
-                    (offset, field_ty, None)
-                } else {
-                    field_location(context, *ty, *index)
-                };
-                let destination = memory::offset(context, address.clone(), offset as i64);
-                let value = lower_rvalue(context, field, field_ty);
-                if let Some(bitfield) = bitfield_access(context, field_ty, bitfield_location) {
-                    write_bitfield(context, destination, value, field_ty, &bitfield);
-                } else {
-                    memory::store(context, destination, value, field_ty);
-                }
+                let location = member_location(context, *ty, *index);
+                let value = lower_rvalue(context, field, location.1);
+                store_member(context, address.clone(), location, value);
             }
             write_target(context, *out, address);
         }
@@ -68,29 +55,11 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
             field,
             struct_ty,
         } => {
-            let (offset, field_ty, bitfield_location) = field_location(context, *struct_ty, *field);
+            // A bitfield projects to its storage unit; bitfield-aware stores extract from it
+            let (offset, field_ty, _) = member_location(context, *struct_ty, *field);
             let base = lower_read(context, base);
             let address = memory::offset(context, base, offset as i64);
-            if let Some(bitfield) = bitfield_access(context, field_ty, bitfield_location) {
-                if matches!(
-                    context
-                        .types()
-                        .definition(target_type(context, *out))
-                        .unwrap()
-                        .kind(),
-                    MIRTypeKind::MemoryReference { .. }
-                ) {
-                    if let MIRTarget::Register(register) = out {
-                        context.bitfields.insert(*register, bitfield);
-                    }
-                    write_projection(context, *out, address, field_ty, false);
-                } else {
-                    let value = read_bitfield(context, address, field_ty, &bitfield);
-                    write_target(context, *out, value);
-                }
-            } else {
-                write_projection(context, *out, address, field_ty, false);
-            }
+            write_projection(context, *out, address, field_ty, false);
         }
         A::ArrayIndex {
             out,

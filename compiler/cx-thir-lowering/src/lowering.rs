@@ -11,11 +11,15 @@ pub(crate) mod types;
 
 use cx_log::{CXResult, catalogue::mir, error::CXError};
 use cx_mir::{
-    MIRAggregateIntrinsic, MIRBindable, MIRBlockTarget, MIRComptimeType, MIRConstant,
-    MIRFunctionID, MIRGlobalRef, MIRInstruction, MIRInstructionKind, MIRIntType,
-    MIRInternalIntrinsic, MIRTarget, MIRTypeKind, MIRVAIntrinsic, MIRValue,
+    MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRBlockTarget, MIRComptimeType,
+    MIRConstant, MIRFieldLayout, MIRFunctionID, MIRGlobalRef, MIRInstruction, MIRInstructionKind,
+    MIRIntType, MIRInternalIntrinsic, MIRStoreBitfield, MIRTarget, MIRTypeKind, MIRVAIntrinsic,
+    MIRValue,
     expr::instruction::MIRInvalidationKind,
-    ty::{interface::MTRegistry, layout::calculate_type_layout},
+    ty::{
+        interface::MTRegistry,
+        layout::{calculate_field_layout, calculate_type_layout},
+    },
 };
 use cx_thir::{
     thir::{
@@ -31,7 +35,7 @@ use crate::{
     lowering::{
         memory::{allocate_variable, move_value},
         operators::{lower_address_of, lower_binary_op, lower_coercion, lower_unary_op},
-        types::{lower_int_type, lower_type, reject_comptime},
+        types::{bitfield_access, is_signed_integer, lower_int_type, lower_type, reject_comptime},
     },
 };
 
@@ -108,7 +112,13 @@ pub(crate) fn lower_function_block<'thir>(
                     // TODO: I don't think this is necessary
                     MIRValue::PlaceRef(place) if !expr.ty.is_memory_reference() => {
                         let ty = lower_type(builder, &expr.ty)?;
-                        memory::copy(builder, MIRValue::PlaceRef(place), ty, &expr.token_range)
+                        memory::copy(
+                            builder,
+                            MIRValue::PlaceRef(place),
+                            ty,
+                            None,
+                            &expr.token_range,
+                        )
                     }
                     value => value,
                 })
@@ -225,7 +235,7 @@ pub(crate) fn lower_expression<'thir>(
             if builder.types().find_kind(&MIRTypeKind::Str).is_none() {
                 builder
                     .types_mut()
-                    .intern(cx_mir::MIRType::new(MIRTypeKind::Str, None));
+                    .intern(cx_mir::MIRType::new(MIRTypeKind::Str));
             }
 
             MIRValue::Constant(MIRConstant::String(value.clone()))
@@ -329,7 +339,8 @@ pub(crate) fn lower_expression<'thir>(
         THIRExpressionKind::Copy { source } => {
             let lowered = lower_expression(builder, source)?;
             let value_type = lower_type(builder, &expr.ty).map_err(LowerStop::Diagnostic)?;
-            memory::copy(builder, lowered, value_type, &expr.token_range)
+            let bitfield = bitfield_access(builder, &source.ty).map_err(LowerStop::Diagnostic)?;
+            memory::copy(builder, lowered, value_type, bitfield, &expr.token_range)
         }
 
         THIRExpressionKind::Move { local_id, .. } => {
@@ -398,6 +409,7 @@ pub(crate) fn lower_expression<'thir>(
 
         THIRExpressionKind::Assign { target, value } => {
             let assignment_type = lower_type(builder, &value.ty).map_err(LowerStop::Diagnostic)?;
+            let bitfield = bitfield_access(builder, &target.ty).map_err(LowerStop::Diagnostic)?;
 
             let mlhs = lower_expression(builder, target)?;
             let mvalue = lower_expression(builder, value)?;
@@ -425,6 +437,7 @@ pub(crate) fn lower_expression<'thir>(
                     target: mtarget,
                     value: mvalue,
                     ty: assignment_type,
+                    bitfield: bitfield.map(MIRStoreBitfield::Target),
                 },
                 target.token_range.clone(),
             ));
@@ -510,7 +523,31 @@ pub(crate) fn lower_expression<'thir>(
                     lower_type(builder, &binding.field_type).map_err(LowerStop::Diagnostic)?;
                 let aggregate_type =
                     lower_type(builder, source_type).map_err(LowerStop::Diagnostic)?;
-                let field_register = builder.fun_mut().new_register(field_type, None);
+                // A bitfield projects to its storage unit, so it is extracted through a reference
+                let bitfield = match calculate_field_layout(
+                    builder.types(),
+                    aggregate_type,
+                    binding.field_index,
+                ) {
+                    Some(MIRFieldLayout::Bitfield {
+                        bit_offset,
+                        bit_width,
+                        ..
+                    }) => Some(MIRBitfieldAccess {
+                        bit_offset,
+                        bit_width,
+                        signed: is_signed_integer(builder, &binding.field_type),
+                    }),
+                    _ => None,
+                };
+                let projection_type = match bitfield {
+                    Some(_) => builder
+                        .types_mut()
+                        .reference_to(field_type)
+                        .map_err(LowerStop::Diagnostic)?,
+                    None => field_type,
+                };
+                let field_register = builder.fun_mut().new_register(projection_type, None);
                 builder.fun_mut().emit_intrinsic(
                     MIRAggregateIntrinsic::StructField {
                         out: MIRTarget::Register(field_register),
@@ -520,9 +557,19 @@ pub(crate) fn lower_expression<'thir>(
                     },
                     expr.token_range.clone(),
                 );
+                let field_value = match bitfield {
+                    Some(access) => memory::copy(
+                        builder,
+                        MIRValue::Register(field_register),
+                        field_type,
+                        Some(access),
+                        &expr.token_range,
+                    ),
+                    None => MIRValue::Register(field_register),
+                };
                 builder
                     .fun_mut()
-                    .bind_local(binding.binding_local_id, MIRValue::Register(field_register));
+                    .bind_local(binding.binding_local_id, field_value);
             }
 
             builder.emit(MIRInstruction::new(
@@ -576,6 +623,7 @@ pub(crate) fn lower_expression<'thir>(
                     target: mtarget,
                     value: MIRValue::Register(constructed),
                     ty: sum_type_id,
+                    bitfield: None,
                 },
                 expr.token_range.clone(),
             ));
@@ -852,6 +900,7 @@ pub(crate) fn lower_expression<'thir>(
                         builder,
                         MIRValue::PlaceRef(target),
                         ty,
+                        None,
                         &expression.token_range,
                     )
                 }

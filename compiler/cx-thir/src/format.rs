@@ -400,12 +400,7 @@ fn write_type_body(
             bitfield,
         } => {
             if let Some(bitfield) = bitfield {
-                write!(
-                    f,
-                    "&<bitfield @{}:{}>",
-                    bitfield.bit_offset(),
-                    bitfield.bit_width()
-                )?;
+                write!(f, "&<bitfield #{}>", bitfield.field_index())?;
             } else {
                 write!(f, "&")?;
             }

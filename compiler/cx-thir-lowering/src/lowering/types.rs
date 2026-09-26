@@ -4,9 +4,9 @@ use cx_log::CXResult;
 use cx_log::catalogue::mir;
 use cx_mir::{
     MIRBitfieldAccess, MIRComptimeContext, MIRComptimeFnParam, MIRComptimeFnPrototype,
-    MIRComptimeFnSignature, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType,
-    MIRType, MIRTypeID, MIRTypeKind,
-    ty::{comptime::MIRComptimeType, interface::MTRegistry},
+    MIRComptimeFnSignature, MIRFieldLayout, MIRFloatType, MIRFnParam, MIRFnPrototype,
+    MIRFnSignature, MIRIntType, MIRType, MIRTypeID, MIRTypeKind,
+    ty::{comptime::MIRComptimeType, interface::MTRegistry, layout::calculate_field_layout},
 };
 use cx_thir::{
     thir::{
@@ -35,13 +35,46 @@ pub fn lower_type<'thir>(
 
     let kind = lower_type_kind(builder, &ty.kind)?;
     let debug_name = builder.registry().type_debug_name(ty);
-    let id = builder.types_mut().intern(MIRType::new(kind, None));
+    let id = builder.types_mut().intern(MIRType::new(kind));
     if builder.types().debug_name(id).is_none()
         && let Some(debug_name) = debug_name
     {
         builder.types_mut().set_debug_name(id, debug_name);
     }
     Ok(id)
+}
+
+/// The placement of the bitfield addressed by a reference of type `ty`, or `None` if `ty` is not a
+/// bitfield reference. Loads and stores through such a reference must carry this placement.
+pub(crate) fn bitfield_access<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    ty: &'thir THIRType,
+) -> CXResult<Option<MIRBitfieldAccess>> {
+    let Some(bitfield) = ty.bitfield_access() else {
+        return Ok(None);
+    };
+    let aggregate = lower_type_id(builder, bitfield.aggregate_type())?;
+    let Some(MIRFieldLayout::Bitfield {
+        bit_offset,
+        bit_width,
+        ..
+    }) = calculate_field_layout(builder.types(), aggregate, bitfield.field_index())
+    else {
+        unreachable!("bitfield reference does not address a bitfield")
+    };
+    Ok(Some(MIRBitfieldAccess {
+        bit_offset,
+        bit_width,
+        signed: is_signed_integer(builder, ty),
+    }))
+}
+
+/// Whether `ty`, looking through references, is a signed integer type.
+pub(crate) fn is_signed_integer<'a>(builder: &'a MIRBuilder<'_>, mut ty: &'a THIRType) -> bool {
+    while let Some(inner) = builder.registry().mem_ref_inner(ty) {
+        ty = inner;
+    }
+    matches!(ty.kind, THIRTypeKind::Integer { signed: true, .. })
 }
 
 pub fn lower_type_id<'thir>(
@@ -66,7 +99,7 @@ pub fn lower_type_id<'thir>(
             return Ok(mir_id);
         };
         let debug_name = builder.registry().type_debug_name(&ty);
-        let definition = MIRType::new(lower_type_kind(builder, &ty.kind)?, None);
+        let definition = MIRType::new(lower_type_kind(builder, &ty.kind)?);
         builder.types_mut().define(mir_id, definition)?;
         if let Some(debug_name) = debug_name {
             builder.types_mut().set_debug_name(mir_id, debug_name);
@@ -84,9 +117,8 @@ pub(crate) fn lower_type_kind<'thir>(
 ) -> CXResult<MIRTypeKind> {
     Ok(match kind {
         THIRTypeKind::Void => MIRTypeKind::Void,
-        THIRTypeKind::Integer { ty, signed } => MIRTypeKind::Integer {
+        THIRTypeKind::Integer { ty, .. } => MIRTypeKind::Integer {
             ty: lower_int_type(*ty),
-            signed: *signed,
         },
         THIRTypeKind::Float { ty } => MIRTypeKind::Float {
             ty: match ty {
@@ -115,16 +147,10 @@ pub(crate) fn lower_type_kind<'thir>(
         THIRTypeKind::PointerTo { inner_type } => MIRTypeKind::PointerTo {
             inner: lower_type_id(builder, *inner_type)?,
         },
-        THIRTypeKind::MemoryReference {
-            inner_type,
-            bitfield,
-        } => MIRTypeKind::MemoryReference {
+        // Bitfield references are erased here; loads and stores through them carry the
+        // bitfield's placement instead (see `bitfield_access`)
+        THIRTypeKind::MemoryReference { inner_type, .. } => MIRTypeKind::MemoryReference {
             inner: lower_type_id(builder, *inner_type)?,
-            bitfield: bitfield.as_ref().map(|bitfield| MIRBitfieldAccess {
-                bit_offset: bitfield.bit_offset(),
-                bit_width: bitfield.bit_width(),
-                signed: bitfield.is_signed(),
-            }),
         },
         THIRTypeKind::Array { length, inner_type } => match length {
             THIRArrayLength::Known(length) => MIRTypeKind::Array {
@@ -248,10 +274,7 @@ fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()
         match kind {
             THIRTypeKind::Array { length, inner_type } => match length {
                 THIRArrayLength::Known(length)
-                    if matches!(
-                        length.kind,
-                        THIRExpressionKind::IntLiteral(_)
-                    ) =>
+                    if matches!(length.kind, THIRExpressionKind::IntLiteral(_)) =>
                 {
                     check_id(*inner_type)
                 }

@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
     thir::{
         contextual_eq::TypeContextEqual,
@@ -238,6 +239,21 @@ fn internal(
         ) => {
             let i1 = env.symbols.resolve_type_id(*i1);
             let i2 = env.symbols.resolve_type_id(*i2);
+
+            // Bitfield references only exist as the operands of loads and stores
+            if from_type.is_bitfield_reference() {
+                if !env.type_eq(
+                    &i1.clone().without_specifiers(),
+                    &i2.clone().without_specifiers(),
+                ) {
+                    return CoercionResult::unapplied(expr);
+                }
+                return env.log_error(
+                    &expr.token_range,
+                    &catalogue::BITFIELD_REFERENCE,
+                    "bind a reference to".into(),
+                );
+            }
 
             if i1.is_memory_reference() {
                 return lvalue::try_conversion(env, expr, false);

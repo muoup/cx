@@ -41,9 +41,10 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             out,
             value,
             target_ty,
+            signed,
         } => {
             let value = read(value).and_then(|value| float_value(value, range))?;
-            let Some(MIRTypeKind::Integer { ty, signed }) = engine
+            let Some(MIRTypeKind::Integer { ty }) = engine
                 .context()
                 .types()
                 .definition(*target_ty)

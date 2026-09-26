@@ -1,10 +1,10 @@
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::expr::instruction::MIRInvalidationKind;
-use cx_mir::{
-    MIRBindable, MIRConstant, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRRegister,
-    MIRTarget, MIRTypeID, MIRValue,
-};
 use cx_mir::ty::interface::MTRegistry;
+use cx_mir::{
+    MIRBindable, MIRBitfieldAccess, MIRConstant, MIRInstruction, MIRInstructionKind, MIRPlaceID,
+    MIRRegister, MIRStoreBitfield, MIRTarget, MIRTypeID, MIRValue,
+};
 use cx_thir::thir::data::THIRType;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -29,6 +29,7 @@ pub(crate) fn allocate_variable<'thir>(
                 target: MIRTarget::Place(place),
                 ty: type_id,
                 value,
+                bitfield: None,
             },
             range.clone(),
         ));
@@ -62,7 +63,10 @@ pub(crate) fn check_block_argument(
     let MIRValue::Register(register) = value else {
         return Ok(());
     };
-    let actual = builder.fun().register_type(*register).expect("unknown block argument");
+    let actual = builder
+        .fun()
+        .register_type(*register)
+        .expect("unknown block argument");
     let expected_kind = builder.types().definition(expected).unwrap().kind();
     let actual_kind = builder.types().definition(actual).unwrap().kind();
     if expected_kind != actual_kind {
@@ -110,16 +114,25 @@ pub(crate) fn move_operand_to_place<'thir>(
     Ok(place)
 }
 
+/// Copies the value `value` refers to into a new register. `bitfield` is set when `value` is a
+/// bitfield reference, in which case the extracted field is copied.
 pub(crate) fn copy(
     builder: &mut MIRBuilder<'_>,
     value: MIRValue,
     ty: MIRTypeID,
+    bitfield: Option<MIRBitfieldAccess>,
     range: &TokenRange,
 ) -> MIRValue {
-    let target = expect_target(&value);
     let out = target_register(builder, ty);
-    let kind = MIRInstructionKind::Lift { out, source: target };
-    builder.emit(MIRInstruction::new(kind, range.clone()));
+    builder.emit(MIRInstruction::new(
+        MIRInstructionKind::Store {
+            target: MIRTarget::Register(out),
+            value,
+            ty,
+            bitfield: bitfield.map(MIRStoreBitfield::Source),
+        },
+        range.clone(),
+    ));
 
     MIRValue::Register(out)
 }
@@ -157,6 +170,7 @@ pub(crate) fn move_value(
                     target: MIRTarget::Register(out),
                     value: MIRValue::Register(source),
                     ty,
+                    bitfield: None,
                 },
                 range.clone(),
             ));

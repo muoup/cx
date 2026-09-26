@@ -17,7 +17,7 @@ use crate::{
     log::log_mir_error,
     lowering::{
         LowerResult, LowerStop, aggregates, comptime, lower_expression, memory, operators,
-        types::lower_type,
+        types::{bitfield_access, is_signed_integer, lower_type},
     },
 };
 
@@ -535,6 +535,7 @@ pub(super) fn lower_switch<'thir>(
     builder.emit(MIRInstruction::new(
         MIRInstructionKind::CaseBranch {
             value,
+            signed: is_signed_integer(builder, &condition.ty),
             cases: targets,
             default: Some(MIRBlockTarget::new(default_block)),
         },
@@ -621,13 +622,9 @@ pub(super) fn lower_match<'thir>(
     let variant_match = matches!(&subject_type.kind, THIRTypeKind::TaggedUnion { .. });
     let dispatch_value = if variant_match {
         let sum_type = lower_type(builder, subject_type).map_err(LowerStop::Diagnostic)?;
-        let tag_type = builder.types_mut().intern(MIRType::new(
-            MIRTypeKind::Integer {
-                ty: MIRIntType::I8,
-                signed: false,
-            },
-            None,
-        ));
+        let tag_type = builder
+            .types_mut()
+            .intern(MIRType::new(MIRTypeKind::Integer { ty: MIRIntType::I8 }));
         let out = builder.fun_mut().new_register(tag_type, None);
         builder.fun_mut().emit_intrinsic(
             MIRAggregateIntrinsic::SumIndex {
@@ -641,7 +638,15 @@ pub(super) fn lower_match<'thir>(
     } else {
         if condition.ty.is_memory_reference() {
             let ty = lower_type(builder, subject_type).map_err(LowerStop::Diagnostic)?;
-            memory::copy(builder, subject_value.clone(), ty, &condition.token_range)
+            let bitfield =
+                bitfield_access(builder, &condition.ty).map_err(LowerStop::Diagnostic)?;
+            memory::copy(
+                builder,
+                subject_value.clone(),
+                ty,
+                bitfield,
+                &condition.token_range,
+            )
         } else {
             subject_value.clone()
         }
@@ -691,6 +696,7 @@ pub(super) fn lower_match<'thir>(
     builder.emit(MIRInstruction::new(
         MIRInstructionKind::CaseBranch {
             value: dispatch_value,
+            signed: !variant_match && is_signed_integer(builder, &condition.ty),
             cases,
             default: Some(MIRBlockTarget::new(default_block)),
         },

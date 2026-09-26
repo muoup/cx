@@ -11,7 +11,7 @@ pub use engine::{Engine, EngineLimits};
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRBindable, MIRComptimeBody, MIRComptimeOp, MIRComptimeOutput, MIRComptimeValue, MIRConstant,
-    MIRInstruction, MIRInstructionKind, MIRStagedExpression, MIRTarget,
+    MIRInstruction, MIRInstructionKind, MIRStagedExpression, MIRStoreBitfield, MIRTarget, MIRValue,
 };
 use cx_tokens::TokenRange;
 
@@ -54,8 +54,43 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             let value = memory::read_target(engine, frame, body, *source, range)?;
             engine.write(frame, &MIRTarget::Register(*out), value)?;
         }
-        MIRInstructionKind::Store { target, value, .. } => {
-            let value = engine.read(frame, body, value, range)?;
+        MIRInstructionKind::Store {
+            target,
+            value,
+            ty,
+            bitfield,
+        } => {
+            let value = match bitfield {
+                None => memory::read_rvalue(engine, frame, body, value, *ty, range)?,
+                Some(MIRStoreBitfield::Source(access)) => {
+                    let MIRValue::Register(register) = value else {
+                        return comptime_error(
+                            range.clone(),
+                            (
+                                &mir::COMPTIME_INVALID_OPERATION,
+                                "bitfield read through a non-reference".into(),
+                            ),
+                        );
+                    };
+                    let unit = memory::read_target(
+                        engine,
+                        frame,
+                        body,
+                        MIRTarget::Indirect(*register),
+                        range,
+                    )?;
+                    memory::extract_bitfield(&unit, access, range)?
+                }
+                Some(MIRStoreBitfield::Target(_)) => {
+                    return comptime_error(
+                        range.clone(),
+                        (
+                            &mir::COMPTIME_INVALID_OPERATION,
+                            "write to a bitfield".into(),
+                        ),
+                    );
+                }
+            };
             engine.write(frame, target, value)?;
         }
         MIRInstructionKind::Call { .. } => {
@@ -91,6 +126,7 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             value,
             cases,
             default,
+            ..
         } => {
             let value = engine.read(frame, body, value, range)?;
             let target = cases.iter().find(|(case, _)|

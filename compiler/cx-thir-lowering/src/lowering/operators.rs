@@ -2,7 +2,7 @@ use cx_log::catalogue::mir;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstruction,
     MIRInstructionKind, MIRIntIntrinsic, MIRIntType, MIRInternalIntrinsic, MIRIntrinsic,
-    MIRPtrIntrinsic, MIRTarget, MIRTypeKind, MIRValue,
+    MIRPtrIntrinsic, MIRStoreBitfield, MIRTarget, MIRTypeKind, MIRValue,
     ty::{interface::MTRegistry, layout::calculate_type_layout},
 };
 use cx_thir::thir::{
@@ -16,7 +16,7 @@ use cx_thir::thir::{
 };
 use cx_thir::type_context::THIRTypeContext;
 
-use super::types::{lower_float_type, lower_int_type, lower_type_id};
+use super::types::{bitfield_access, lower_float_type, lower_int_type, lower_type_id};
 use crate::{
     builder::MIRBuilder,
     lowering::{LowerResult, LowerStop, lower_expression, memory, types::lower_type},
@@ -429,6 +429,7 @@ fn lower_increment<'thir>(
 ) -> LowerResult<MIRValue> {
     let operand_value = lower_expression(builder, operand)?;
     let operand_target = memory::expect_target(&operand_value);
+    let bitfield = bitfield_access(builder, &operand.ty).map_err(LowerStop::Diagnostic)?;
 
     let Some(inner_type) = builder.registry().mem_ref_inner(&operand.ty) else {
         unreachable!(
@@ -452,6 +453,7 @@ fn lower_increment<'thir>(
             target: MIRTarget::Register(current_value),
             value: operand_value.clone(),
             ty: lowered_inner_id,
+            bitfield: bitfield.map(MIRStoreBitfield::Source),
         },
         token_range: expr.token_range.clone(),
     });
@@ -519,6 +521,7 @@ fn lower_increment<'thir>(
             target: operand_target,
             value: MIRValue::Register(out),
             ty: lowered_inner_id,
+            bitfield: bitfield.map(MIRStoreBitfield::Target),
         },
         token_range: expr.token_range.clone(),
     });
@@ -596,7 +599,7 @@ pub(super) fn lower_coercion<'thir>(
         }
         THIRCoercion::FloatToInt {
             to_type: _,
-            sextend: _,
+            sextend,
         } => {
             let out = builder.fun_mut().new_register(mir_to_type, None);
             builder.fun_mut().emit_intrinsic(
@@ -604,6 +607,7 @@ pub(super) fn lower_coercion<'thir>(
                     out: MIRTarget::Register(out),
                     value: operand,
                     target_ty: mir_to_type,
+                    signed: *sextend,
                 },
                 expr.token_range.clone(),
             );
@@ -621,12 +625,13 @@ pub(super) fn lower_coercion<'thir>(
             );
             Ok(MIRValue::Register(out))
         }
-        THIRCoercion::IntToPtr { sextend: _ } => {
+        THIRCoercion::IntToPtr { sextend } => {
             let out = builder.fun_mut().new_register(mir_to_type, None);
             builder.fun_mut().emit_intrinsic(
                 MIRIntIntrinsic::ToPtr {
                     out: MIRTarget::Register(out),
                     value: operand,
+                    sign_extend: *sextend,
                 },
                 expr.token_range.clone(),
             );

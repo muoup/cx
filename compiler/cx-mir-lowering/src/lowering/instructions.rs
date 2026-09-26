@@ -3,7 +3,8 @@ use cx_lmir::types::LMIRType;
 use cx_lmir::{LMIRBasicBlock, LMIRBlockTarget, LMIRInstruction, LMIRInstructionKind};
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntType, MIRTarget, MIRTypeKind, MIRValue,
+    MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntType, MIRStoreBitfield, MIRTarget,
+    MIRTypeKind, MIRValue,
 };
 use cx_util::identifier::CXIdent;
 
@@ -21,13 +22,6 @@ pub(super) fn lower_instruction(
         | MIRInstructionKind::BindLifetime { .. } => {}
         MIRInstructionKind::Lift { out, source } => {
             let ty = values::target_type(context, *source);
-            if let MIRTarget::Indirect(register) = source {
-                if context.bitfields.contains_key(register) {
-                    let value = values::lower_read(context, &MIRValue::Register(*register));
-                    values::write_target(context, MIRTarget::Register(*out), value);
-                    return;
-                }
-            }
             let source = match source {
                 MIRTarget::Place(place) => context.places[place].clone(),
                 MIRTarget::Global(reference) => values::global_address(context, *reference),
@@ -57,7 +51,42 @@ pub(super) fn lower_instruction(
                 );
             }
         }
-        MIRInstructionKind::Store { target, value, ty } => {
+        MIRInstructionKind::Store {
+            target,
+            value,
+            ty,
+            bitfield: Some(MIRStoreBitfield::Source(access)),
+        } => {
+            let MIRValue::Register(reference) = value else {
+                unreachable!("a bitfield load must read through a reference register")
+            };
+            let unit = context.reg(*reference);
+            let value = values::read_bitfield(context, unit, *ty, access);
+            values::write_target(context, *target, value);
+        }
+        MIRInstructionKind::Store {
+            target,
+            value,
+            ty,
+            bitfield: Some(MIRStoreBitfield::Target(access)),
+        } => {
+            let source = values::lower_rvalue(context, value, *ty);
+            let address = values::target_address(context, *target);
+            values::write_bitfield(
+                context,
+                address,
+                source,
+                *ty,
+                access.bit_offset,
+                access.bit_width,
+            );
+        }
+        MIRInstructionKind::Store {
+            target,
+            value,
+            ty,
+            bitfield: None,
+        } => {
             let source = values::lower_rvalue(context, value, *ty);
             if matches!(target, cx_mir::MIRTarget::Register(_))
                 && context.ty(*ty).is_memory_resident()
@@ -97,19 +126,21 @@ pub(super) fn lower_instruction(
         }
         MIRInstructionKind::CaseBranch {
             value,
+            signed,
             cases,
             default,
         } => {
+            let signed = *signed;
             let integer_type = case_integer_type(context, value);
             let value = values::lower_read(context, value);
             let targets = cases
                 .iter()
                 .filter_map(|(case, target)| {
-                    if integer_type.is_some_and(|(ty, signed)| !case_fits(ty, signed, *case)) {
+                    if integer_type.is_some_and(|ty| !case_fits(ty, signed, *case)) {
                         return None;
                     }
                     let case = integer_type
-                        .map(|(ty, signed)| case_entry(ty, signed, *case))
+                        .map(|ty| case_entry(ty, signed, *case))
                         .unwrap_or(*case as u64);
                     Some((case, context.target(target)))
                 })
@@ -131,10 +162,7 @@ pub(super) fn lower_instruction(
     }
 }
 
-fn case_integer_type(
-    context: &FunctionContext<'_, '_>,
-    value: &MIRValue,
-) -> Option<(MIRIntType, bool)> {
+fn case_integer_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> Option<MIRIntType> {
     let mut ty = match value {
         MIRValue::Register(register) => context.body.register(*register)?.ty,
         MIRValue::PlaceRef(place) => context.body.place(*place)?.ty,
@@ -145,7 +173,7 @@ fn case_integer_type(
     loop {
         match context.types().definition(ty)?.kind() {
             MIRTypeKind::MemoryReference { inner, .. } => ty = *inner,
-            MIRTypeKind::Integer { ty, signed } => return Some((*ty, *signed)),
+            MIRTypeKind::Integer { ty } => return Some(*ty),
             _ => return None,
         }
     }

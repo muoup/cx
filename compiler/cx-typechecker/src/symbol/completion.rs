@@ -665,7 +665,6 @@ where
         attributes: THIRTypeAttributes {
             semantics: move_attributes,
             unsafe_move,
-            ..Default::default()
         },
         strong_identifier,
         lookup_identifier,

@@ -318,13 +318,7 @@ impl MIRTypeRegistryBuilder {
     }
 
     pub fn reference_to(&mut self, id: MIRTypeID) -> CXResult<MIRTypeID> {
-        let ty = MIRType::new(
-            MIRTypeKind::MemoryReference {
-                inner: id,
-                bitfield: None,
-            },
-            None,
-        );
+        let ty = MIRType::new(MIRTypeKind::MemoryReference { inner: id });
 
         Ok(self.intern(ty))
     }

@@ -20,8 +20,7 @@ pub(crate) fn same_type_inner<T: MTRegistry>(
         return false;
     };
 
-    left.minimum_layout == right.minimum_layout
-        && same_kind(registry, compared, &left.kind, &right.kind)
+    same_kind(registry, compared, &left.kind, &right.kind)
 }
 
 fn same_kind<T: MTRegistry>(
@@ -34,16 +33,7 @@ fn same_kind<T: MTRegistry>(
         (MIRTypeKind::Void, MIRTypeKind::Void)
         | (MIRTypeKind::Undefined, MIRTypeKind::Undefined)
         | (MIRTypeKind::Str, MIRTypeKind::Str) => true,
-        (
-            MIRTypeKind::Integer {
-                ty: left_ty,
-                signed: left_signed,
-            },
-            MIRTypeKind::Integer {
-                ty: right_ty,
-                signed: right_signed,
-            },
-        ) => left_ty == right_ty && left_signed == right_signed,
+        (MIRTypeKind::Integer { ty: left }, MIRTypeKind::Integer { ty: right }) => left == right,
         (MIRTypeKind::Float { ty: left }, MIRTypeKind::Float { ty: right }) => left == right,
         (MIRTypeKind::Structured { fields: left }, MIRTypeKind::Structured { fields: right })
         | (MIRTypeKind::Union { variants: left }, MIRTypeKind::Union { variants: right })
@@ -61,26 +51,9 @@ fn same_kind<T: MTRegistry>(
             same_type_inner(registry, compared, *left, *right)
         }
         (
-            MIRTypeKind::MemoryReference {
-                inner: left_inner,
-                bitfield: left_bitfield,
-            },
-            MIRTypeKind::MemoryReference {
-                inner: right_inner,
-                bitfield: right_bitfield,
-            },
-        ) => {
-            same_type_inner(registry, compared, *left_inner, *right_inner)
-                && match (left_bitfield, right_bitfield) {
-                    (None, None) => true,
-                    (Some(left), Some(right)) => {
-                        left.bit_offset == right.bit_offset
-                            && left.bit_width == right.bit_width
-                            && left.signed == right.signed
-                    }
-                    _ => false,
-                }
-        }
+            MIRTypeKind::MemoryReference { inner: left },
+            MIRTypeKind::MemoryReference { inner: right },
+        ) => same_type_inner(registry, compared, *left, *right),
         (
             MIRTypeKind::Array {
                 length: left_length,

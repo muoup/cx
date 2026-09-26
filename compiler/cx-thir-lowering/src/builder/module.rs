@@ -1,11 +1,13 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet}};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+};
 
 use cx_log::{CXResult, catalogue::mir as catalogue};
 use cx_mir::{
     MIRBody, MIRComptimeBody, MIRComptimeFnPrototype, MIRComptimeFunction, MIRFnPrototype,
     MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
-    constant::MIRStagedExprPool,
-    MIRStagedExpression, MIRStagedID,
+    MIRStagedExpression, MIRStagedID, constant::MIRStagedExprPool,
 };
 use cx_tokens::TokenRange;
 
@@ -118,12 +120,20 @@ impl<'thir> MIRUnitBuilder<'thir> {
         id
     }
 
-    pub(crate) fn add_staged_expression(&self, expression: MIRStagedExpression<'thir>) -> MIRStagedID {
-        self.staged_expressions.borrow_mut().add_staged_expression(expression)
+    pub(crate) fn add_staged_expression(
+        &self,
+        expression: MIRStagedExpression<'thir>,
+    ) -> MIRStagedID {
+        self.staged_expressions
+            .borrow_mut()
+            .add_staged_expression(expression)
     }
 
     pub(crate) fn staged_expression(&self, id: MIRStagedID) -> Option<MIRStagedExpression<'thir>> {
-        self.staged_expressions.borrow().staged_expression(id).cloned()
+        self.staged_expressions
+            .borrow()
+            .staged_expression(id)
+            .cloned()
     }
 
     pub(crate) fn allocate_global_id(&mut self) -> MIRGlobalID {
@@ -174,7 +184,10 @@ impl<'thir> MIRUnitBuilder<'thir> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn comptime_function(&self, id: MIRFunctionID) -> Option<&MIRComptimeFunction<'thir>> {
+    pub(crate) fn comptime_function(
+        &self,
+        id: MIRFunctionID,
+    ) -> Option<&MIRComptimeFunction<'thir>> {
         self.comptime_functions.get(&id)
     }
 

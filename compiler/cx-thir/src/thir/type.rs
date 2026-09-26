@@ -29,7 +29,6 @@ pub struct THIRType {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct THIRTypeAttributes {
     pub semantics: THIRMoveSemantics,
-    pub minimum_alignment: Option<usize>,
     pub unsafe_move: bool,
 }
 
@@ -100,43 +99,29 @@ pub enum THIRReferenceLifetime {
     Relative(CXIdent),
 }
 
+/// Marks a reference as addressing a bitfield, identified by its aggregate type and field index.
+/// The reference's inner type is the bitfield's storage type; the field's placement within its
+/// storage unit is a layout concern resolved during MIR generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct THIRBitfieldAccess {
-    storage_type: THIRTypeID,
-    bit_offset: usize,
-    bit_width: usize,
-    signed: bool,
+    aggregate_type: THIRTypeID,
+    field_index: usize,
 }
 
 impl THIRBitfieldAccess {
-    pub fn new(
-        storage_type: THIRTypeID,
-        bit_offset: usize,
-        bit_width: usize,
-        signed: bool,
-    ) -> Self {
+    pub fn new(aggregate_type: THIRTypeID, field_index: usize) -> Self {
         Self {
-            storage_type,
-            bit_offset,
-            bit_width,
-            signed,
+            aggregate_type,
+            field_index,
         }
     }
 
-    pub fn storage_type(&self) -> THIRTypeID {
-        self.storage_type
+    pub fn aggregate_type(&self) -> THIRTypeID {
+        self.aggregate_type
     }
 
-    pub fn bit_offset(&self) -> usize {
-        self.bit_offset
-    }
-
-    pub fn bit_width(&self) -> usize {
-        self.bit_width
-    }
-
-    pub fn is_signed(&self) -> bool {
-        self.signed
+    pub fn field_index(&self) -> usize {
+        self.field_index
     }
 }
 
@@ -463,6 +448,17 @@ impl THIRType {
 
     pub fn is_memory_reference(&self) -> bool {
         matches!(self.kind, THIRTypeKind::MemoryReference { .. })
+    }
+
+    pub fn bitfield_access(&self) -> Option<&THIRBitfieldAccess> {
+        match &self.kind {
+            THIRTypeKind::MemoryReference { bitfield, .. } => bitfield.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn is_bitfield_reference(&self) -> bool {
+        self.bitfield_access().is_some()
     }
 
     pub fn strong_identifier(&self) -> Option<&str> {

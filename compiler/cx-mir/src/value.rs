@@ -1,7 +1,9 @@
 use cx_util::dense_id;
 
 use crate::{
-    MIRStagedID, ty::MIRTypeID, unit::{MIRBasicBlockID, MIRGlobalID},
+    MIRStagedID,
+    ty::MIRTypeID,
+    unit::{MIRBasicBlockID, MIRGlobalID},
 };
 
 pub use crate::constant::MIRConstant;
@@ -65,7 +67,7 @@ pub enum MIRComptimeOperand {
 pub enum MIRComptimeValue {
     Constant(MIRConstant),
     Staged(MIRStagedID),
-    Caller(MIRValue)
+    Caller(MIRValue),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

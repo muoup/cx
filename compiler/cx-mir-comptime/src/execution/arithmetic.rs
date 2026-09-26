@@ -74,7 +74,7 @@ pub(crate) fn execute_integer_op<'c, 'thir, C: ComptimeContext<'thir>>(
 
             engine.write(frame, out, float_const(float_value, *target))?;
         }
-        I::ToPtr { out, value } => {
+        I::ToPtr { out, value, .. } => {
             let (value, _) = engine
                 .read(frame, body, value, range)
                 .and_then(|v| integer(&v, range))?;

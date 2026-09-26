@@ -28,7 +28,7 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
         match value {
             MIRValue::Register(register) => visit(MIRBindable::Register(*register)),
             MIRValue::PlaceRef(place) => visit(MIRBindable::Place(*place)),
-            MIRValue::Constant(constant) => constant_value(constant, visit)
+            MIRValue::Constant(constant) => constant_value(constant, visit),
         }
     }
 
@@ -175,15 +175,18 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
     }
 
     match kind {
-        MIRInstructionKind::Initialize { .. }
-        | MIRInstructionKind::Unreachable => {}
+        MIRInstructionKind::Initialize { .. } | MIRInstructionKind::Unreachable => {}
         MIRInstructionKind::Lift { source, .. } => target(*source, &mut visit),
         MIRInstructionKind::BindLifetime {
             bind: MIRBindable::Register(register),
             ..
         } => visit(MIRBindable::Register(*register)),
         MIRInstructionKind::Invalidate { .. } | MIRInstructionKind::BindLifetime { .. } => {}
-        MIRInstructionKind::Store { target: destination, value: input, .. } => {
+        MIRInstructionKind::Store {
+            target: destination,
+            value: input,
+            ..
+        } => {
             target(*destination, &mut visit);
             value(input, &mut visit);
         }
@@ -213,6 +216,7 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
             value: subject,
             cases,
             default,
+            ..
         } => {
             value(subject, &mut visit);
             for (_, target) in cases {

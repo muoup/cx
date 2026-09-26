@@ -189,6 +189,14 @@ pub fn typecheck_unop(
             let operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
 
+            if operand.ty.is_bitfield_reference() {
+                return env.log_error(
+                    &operand.token_range,
+                    &catalogue::BITFIELD_REFERENCE,
+                    "take the address of".into(),
+                );
+            }
+
             let Some(inner) = env
                 .symbols
                 .mem_ref_inner(&operand.ty)

@@ -47,6 +47,7 @@ pub enum MIRIntIntrinsic {
     ToPtr {
         out: MIRTarget,
         value: MIRValue,
+        sign_extend: bool,
     },
 
     Add {
@@ -195,6 +196,7 @@ pub enum MIRFloatIntrinsic {
         out: MIRTarget,
         value: MIRValue,
         target_ty: MIRTypeID,
+        signed: bool,
     },
     FloatCast {
         out: MIRTarget,

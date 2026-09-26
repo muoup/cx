@@ -1,0 +1,10 @@
+struct flags {
+    u32 low : 3;
+    u32 high : 5;
+};
+
+i32 main() {
+    flags value;
+    u32& low = value.low;
+    return 0;
+}

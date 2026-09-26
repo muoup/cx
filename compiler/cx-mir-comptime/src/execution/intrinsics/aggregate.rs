@@ -1,7 +1,10 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRAggregateIntrinsic, MIRComptimeBody, MIRConstant, MIRTarget, MIRTypeID,
-    ty::{interface::MTRegistry, layout::calculate_type_layout},
+    MIRAggregateIntrinsic, MIRComptimeBody, MIRConstant, MIRFieldLayout, MIRTarget, MIRTypeID,
+    ty::{
+        interface::MTRegistry,
+        layout::{calculate_field_layout, calculate_type_layout},
+    },
 };
 use cx_tokens::TokenRange;
 
@@ -247,8 +250,26 @@ fn project_aggregate<'c, 'thir, C: ComptimeContext<'thir>>(
                 read_global(engine.context(), reference, range)
             }
         }
-        value @ MIRConstant::Aggregate { .. } => Ok(memory::aggregate_field(&value, field)
-            .unwrap_or_else(|| memory::zero_value(engine.context().types(), field_ty))),
+        MIRConstant::Aggregate { ty, .. } => {
+            let types = engine.context().types();
+            // A bitfield projects to its whole storage unit, like its runtime counterpart
+            if let Some(MIRFieldLayout::Bitfield {
+                offset,
+                storage_type,
+                ..
+            }) = calculate_field_layout(types, ty, field)
+            {
+                return Ok(memory::bitfield_unit(
+                    types,
+                    &base,
+                    ty,
+                    offset,
+                    storage_type,
+                ));
+            }
+            Ok(memory::aggregate_field(&base, field)
+                .unwrap_or_else(|| memory::zero_value(types, field_ty)))
+        }
         _ => comptime_error(
             range.clone(),
             (
