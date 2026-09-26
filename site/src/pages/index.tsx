@@ -1,200 +1,278 @@
-import type { ReactNode } from "react";
+import {useState, type ReactNode} from "react";
+import clsx from "clsx";
 import Link from "@docusaurus/Link";
 import Layout from "@theme/Layout";
 import Heading from "@theme/Heading";
 
-import {tokenizeCx} from "../lib/cx-syntax.mjs";
+import Foliage from "../components/Foliage";
+import {cxLines} from "../lib/cx-lines";
 import styles from "./index.module.css";
 
-const featurePanels = [
+const leakingServer = `import std::{optional, span} as std;
+import std::net::{tcp, address} as std::net;
+
+void serve(std::net::tcp_listener& server) {
+    while (true) {
+        std::net::tcp_stream client = server
+            |> std::net::tcp_listener::accept()
+            |> std::opt::unwrap_or_else(.{ continue; });
+
+        std::span<const u8> reply = std::span::str_as_bytes("hello\\n");
+        client |> std::net::tcp_stream::write(reply)
+            |> std::opt::unwrap_or_else(.{ continue; });
+
+        move client |> std::net::tcp_stream::close();
+    }
+}`;
+
+const fixedServer = `import std::{optional, span} as std;
+import std::net::{tcp, address} as std::net;
+
+void serve(std::net::tcp_listener& server) {
+    while (true) {
+        std::net::tcp_stream client = server
+            |> std::net::tcp_listener::accept()
+            |> std::opt::unwrap_or_else(.{ continue; });
+
+        std::span<const u8> reply = std::span::str_as_bytes("hello\\n");
+        client |> std::net::tcp_stream::write(reply)
+            |> std::opt::unwrap_or_else(.{
+                move client |> std::net::tcp_stream::close();
+                continue;
+            });
+
+        move client |> std::net::tcp_stream::close();
+    }
+}`;
+
+const principles = [
     {
-        title: "Linear Resources",
-        body: "No RAII, no garbage collection, all resources are linear and must be destroyed, and destroyed explicitly."
+        title: "Linear resources",
+        body: <>No RAII and no garbage collector. A <code>@nodrop</code> value must be moved or explicitly destroyed before it goes out of scope.</>,
+        code: `struct tcp_stream : @nodrop {
+    i32 fd;
+};`,
     },
     {
-        title: "Modern Features",
-        body: "Algebraic data types and templates supported out of the box and kept traceable via a one-symbol one-definition philosophy"
+        title: "Modern features",
+        body: <>Tagged unions and templates out of the box, kept traceable by a one-symbol, one-definition rule.</>,
+        code: `enum union shape {
+    circle :: f64,
+    point :: void
+};`,
     },
     {
-        title: "Safe Subset",
-        body: "Mark critical parts of code as safe to prevent undefined behavior and enable enforcement of safety properties."
+        title: "Safe subset",
+        body: <>Mark critical code as <code>safe</code> to rule out undefined behavior and state contracts the compiler can check.</>,
+        code: `int fn() safe
+where
+    post(ret): (ret == 1)`,
     },
     {
-        title: "C Interop",
-        body: "CX is designed as a strict superset of C, all valid C code is valid CX code."
+        title: "C interop",
+        body: <>CX is designed as a strict superset of C. C headers and libraries work directly, with no bindings layer.</>,
+        code: `extern "C":
+i32 close(int fd);`,
     },
 ];
 
-const socketSnippet = [
-`import std::io as std;
-import std::optional as std;
-import std::span as std;
-import std::string as std;
-import std::functional as std;
+const status: {area: string; state: "working" | "partial" | "progress"; label: string; notes: ReactNode}[] = [
+    {area: "Cranelift backend", state: "working", label: "Working", notes: "Default code generator."},
+    {area: "Projects and modules", state: "working", label: "Working", notes: <><code>cx init</code>, <code>cx build</code>, and <code>cx.toml</code>.</>},
+    {area: "Linear resources, tagged unions, templates", state: "working", label: "Working", notes: "Covered in the manual."},
+    {area: "C99 compatibility", state: "partial", label: "Partial", notes: "Most C compiles unchanged; some features are missing."},
+    {area: "LLVM backend", state: "partial", label: "Optional", notes: <>Build with <code>--features backend-llvm</code>.</>},
+    {area: "Contracts and safe functions", state: "progress", label: "In progress", notes: "Syntax is still changing."},
+];
 
-import std::net::udp as std::net;
-import std::net::address as std::net;
+const installCommands = ["git clone https://github.com/muoup/cx.git", "cd cx && cargo build --release"];
 
-std::opt<std::net::udp_socket> try_serve(u16 port) {
-    std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", port)
-        |> std::opt::try();
-    std::net::udp_socket socket = std::net::udp_socket::open()
-        |> std::opt::try();
+function CopyButton({text}: {text: string}) {
+    const [copied, setCopied] = useState(false);
 
-    socket 
-        |> std::net::udp_socket::bind(addr)`,
-"        |> std::opt::try();",`
-    std::span<const u8> buffer = std::span::str_as_bytes("Hello, world!");
-    socket 
-        |> std::net::udp_socket::send_to(buffer, addr)
-        |> std::opt::try_or(.{
-            move socket |> std::net::udp_socket::close();
-        });
-    
-    return move socket |> std::opt::some();
-}`];
+    async function copy() {
+        if (typeof navigator === "undefined" || !navigator.clipboard) {
+            return;
+        }
 
-function highlightedLine(line: string) {
-    const parts: ReactNode[] = [];
-
-    for (const [index, token] of tokenizeCx(line).entries()) {
-        parts.push(
-            token.kind ? (
-                <span className={`cx-token-${token.kind}`} key={`${index}-${token.text}`}>
-                    {token.text}
-                </span>
-            ) : (
-                token.text
-            ),
-        );
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
     }
 
-    return parts;
+    return (
+        <button className={styles.copyButton} onClick={copy} type="button">
+            {copied ? "Copied" : "Copy"}
+        </button>
+    );
+}
+
+function Install() {
+    return (
+        <div className={styles.install}>
+            <div className={styles.installHead}>
+                <span>Build from source</span>
+                <CopyButton text={installCommands.join("\n")} />
+            </div>
+            <pre>
+                {installCommands.map((command) => (
+                    <span key={command}>
+                        <span className={styles.prompt}>$ </span>
+                        {command}
+                        {"\n"}
+                    </span>
+                ))}
+            </pre>
+        </div>
+    );
+}
+
+function Code({source, errorLine}: {source: string; errorLine?: number}) {
+    return (
+        <pre className={clsx("cx-code-block", styles.code)}>
+            <code className="cx-code-lines">
+                {cxLines(source).map((line, index) => (
+                    <span
+                        className={clsx("cx-line", index + 1 === errorLine && "cx-line-error")}
+                        data-n={index + 1}
+                        key={index}
+                    >
+                        {line}
+                        {"\n"}
+                    </span>
+                ))}
+            </code>
+        </pre>
+    );
+}
+
+function LeakDiagnostic() {
+    const gutter = (text: string) => <span className={styles.gutter}>{text}</span>;
+
+    return (
+        <div className={styles.diagnostic}>
+            <span className={styles.error}>error:</span> `client` is marked @nodrop but is leaked without cleanup{"\n"}
+            {"  "}{gutter("-->")} server.cx:12:44{"\n"}
+            {"   "}{gutter("|")}{"\n"}
+            {gutter("12 |")}{"             |> std::opt::unwrap_or_else(.{ continue; });\n"}
+            {"   "}{gutter("|")}{" ".repeat(44)}
+            <span className={styles.error}>^^^^^^^^ `client` leaks here</span>{"\n"}
+            {"   "}{gutter("=")} <span className={styles.help}>help:</span> close it first: move client |&gt; std::net::tcp_stream::close();
+        </div>
+    );
+}
+
+function Example() {
+    const [fixed, setFixed] = useState(false);
+
+    return (
+        <div className={styles.example}>
+            <div className={styles.frame}>
+                <div className={styles.frameHead}>
+                    <span>server.cx</span>
+                    <div className={styles.pills} role="group" aria-label="Example version">
+                        <button aria-pressed={!fixed} onClick={() => setFixed(false)} type="button">
+                            Leaks
+                        </button>
+                        <button aria-pressed={fixed} onClick={() => setFixed(true)} type="button">
+                            Fixed
+                        </button>
+                    </div>
+                </div>
+                {fixed ? <Code source={fixedServer} /> : <Code source={leakingServer} errorLine={12} />}
+            </div>
+            {fixed ? (
+                <div className={clsx(styles.diagnostic, styles.ok)}>
+                    <span className={styles.help}>ok:</span> server.cx compiles; every path consumes `client`
+                </div>
+            ) : (
+                <LeakDiagnostic />
+            )}
+        </div>
+    );
 }
 
 function Hero() {
     return (
-        <div className={styles.hero}>
-            <div className={styles.heroInner}>
-                <div className={styles.heroLeft}>
-                    <Heading as="h1" className={styles.heroTitle}>
-                        CX
-                    </Heading>
-                    <div className={styles.heroTagline}>
-                        low-level control for safe, traceable, and performant
-                        systems
-                    </div>
-                </div>
-                <div className={styles.heroRight}>
-                    <div className={styles.getStartedBox}>
-                        <div className={styles.getStartedHeader}>
-                            RESEARCH PREVIEW
-                        </div>
-                        <div className={styles.getStartedBody}>
-                            <Link
-                                className="button button--secondary button--block"
-                                to="/docs/getting-started"
-                            >
-                                INSTALL COMPILER
-                            </Link>
-                            <div className={styles.getStartedLinks}>
-                                <Link to="https://github.com/muoup/cx">
-                                    GitHub
-                                </Link>
-                                <Link to="/docs/manual/overview">Manual</Link>
-                                <Link to="/docs/getting-started">
-                                    Getting Started
-                                </Link>
-                            </div>
-                        </div>
-                    </div>
+        <section className={styles.hero}>
+            <div>
+                <Heading as="h1" className={styles.title}>
+                    Low-level control for safe, traceable, and performant systems.
+                </Heading>
+                <p className={styles.lede}>
+                    CX is an experimental systems language built as a superset of C. There are no
+                    implicit destructors and no hidden control flow: every resource you acquire is
+                    released in code you can read, and the compiler checks that you did.
+                </p>
+                <Install />
+                <div className={styles.actions}>
+                    <Link className={styles.button} to="/docs/getting-started">
+                        Getting started
+                    </Link>
+                    <Link to="/docs/manual/overview">Read the manual</Link>
+                    <Link to="https://github.com/muoup/cx">GitHub</Link>
                 </div>
             </div>
-        </div>
+            <Example />
+        </section>
     );
 }
 
-function MainLayout() {
+function Principles() {
     return (
-        <div className={styles.mainGrid}>
-            <div className={styles.contentColumn}>
-                <p className={styles.introParagraph}>
-                    CX is a work-in-progress experimental systems language for writing low-level code with modern convenience and
-                    compiler-assisted correctness. No implicit destructors, no implicit control-flow,
-                    the language is verbose by design to ensure that the code you write is the code that runs.
-                </p>
-
-                <div className={styles.featureGrid}>
-                    {featurePanels.map((feature) => (
-                        <section
-                            className={styles.featurePanel}
-                            key={feature.title}
-                        >
-                            <h2>{feature.title}</h2>
-                            <p>{feature.body}</p>
-                        </section>
-                    ))}
-                </div>
-            </div>
-
-            <div className={styles.codeColumn}>
-                <div className={styles.codeSnippet}>
-                    <div className={styles.codeSnippetHeader}>
-                        Example UDP Server
-                    </div>
-                    <pre>
-                        <code>
-                            {socketSnippet.map((line, index) => (
-                                <span
-                                    className={
-                                        index === 1
-                                            ? styles.errorLine
-                                            : undefined
-                                    }
-                                    key={`${index}-${line}`}
-                                >
-                                    {highlightedLine(line)}
+        <section className={styles.section}>
+            <Heading as="h2" className={styles.eyebrow}>
+                <span className={styles.pipe}>|&gt;</span>Principles
+            </Heading>
+            <div className={styles.principles}>
+                {principles.map(({title, body, code}) => (
+                    <article className={styles.principle} key={title}>
+                        <h3>{title}</h3>
+                        <p>{body}</p>
+                        <pre>
+                            {cxLines(code).map((line, index) => (
+                                <span key={index}>
+                                    {line}
                                     {"\n"}
                                 </span>
                             ))}
-                        </code>
-                    </pre>
-                    <div className={styles.diagnostic}>
-                        <div className={styles.diagnosticTitle}>
-                            error: `socket` is marked @nodrop but is leaked without cleanup
-                        </div>
-                        <div className={styles.diagnosticBody}>
-                            {"  --> udp_server.cx:18:12\n"}
-                            {"   |\n"}
-                            {"18 |         |> std::opt::try();\n"}
-                            {"   |            "}
-                            <span className={styles.diagnosticCaret}>
-                                ^^^^^^^^^^^^^^^ early return leaks `socket`
-                            </span>
-                        </div>
-                    </div>
-                </div>
+                        </pre>
+                    </article>
+                ))}
             </div>
-        </div>
+        </section>
     );
 }
 
-function FoliageBorder() {
+function Status() {
     return (
-        <div className={styles.foliageBorder} aria-hidden="true">
-            <span
-                className={`${styles.foliageCluster} ${styles.foliageTopLeft}`}
-            />
-            <span
-                className={`${styles.foliageCluster} ${styles.foliageTopRight}`}
-            />
-            <span
-                className={`${styles.foliageCluster} ${styles.foliageBottomLeft}`}
-            />
-            <span
-                className={`${styles.foliageCluster} ${styles.foliageBottomRight}`}
-            />
-        </div>
+        <section className={styles.section}>
+            <Heading as="h2" className={styles.eyebrow}>
+                <span className={styles.pipe}>|&gt;</span>Status
+            </Heading>
+            <div className={styles.tableScroll}>
+                <table className={styles.status}>
+                    <thead>
+                        <tr>
+                            <th>Area</th>
+                            <th>State</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {status.map(({area, state, label, notes}) => (
+                            <tr key={area}>
+                                <td>{area}</td>
+                                <td>
+                                    <span className={clsx(styles.state, styles[state])}>{label}</span>
+                                </td>
+                                <td>{notes}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </section>
     );
 }
 
@@ -202,14 +280,14 @@ export default function Home(): ReactNode {
     return (
         <Layout
             title="The CX Programming Language"
-            description="Explicit resource management and formal verification."
-            noFooter
+            description="An experimental systems language built as a superset of C, with linear resources and no hidden control flow."
             wrapperClassName="landing-page"
         >
-            <FoliageBorder />
-            <main className={styles.container}>
+            <Foliage full />
+            <main className={styles.page}>
                 <Hero />
-                <MainLayout />
+                <Principles />
+                <Status />
             </main>
         </Layout>
     );

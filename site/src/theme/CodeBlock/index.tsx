@@ -2,7 +2,7 @@ import {useState, type ReactNode} from "react";
 import clsx from "clsx";
 import OriginalCodeBlock from "@theme-original/CodeBlock";
 
-import {tokenizeCx} from "../../lib/cx-syntax.mjs";
+import {cxLines} from "../../lib/cx-lines";
 
 type CodeBlockProps = {
     children?: ReactNode;
@@ -22,20 +22,6 @@ function codeTitle({metastring, title}: CodeBlockProps) {
     }
 
     return metastring?.match(/title=(['"])(.*?)\1/)?.[2] ?? "";
-}
-
-function renderCxTokens(source: string) {
-    return tokenizeCx(source).map((token, index) => {
-        if (!token.kind) {
-            return token.text;
-        }
-
-        return (
-            <span className={`cx-token-${token.kind}`} key={`${index}-${token.text}`}>
-                {token.text}
-            </span>
-        );
-    });
 }
 
 function CxCopyButton({source}: {source: string}) {
@@ -63,15 +49,23 @@ export default function CodeBlock(props: CodeBlockProps): ReactNode {
         return <OriginalCodeBlock {...props} />;
     }
 
-    const source = String(props.children ?? "");
+    const source = String(props.children ?? "").replace(/\n$/, "");
     const title = codeTitle(props);
+    const lines = cxLines(source);
 
     return (
         <div className={clsx("theme-code-block", "cx-code-block-container")}>
             {title ? <div className="cx-code-block-title">{title}</div> : null}
             <div className="cx-code-block-content">
-                <pre className="cx-code-block" tabIndex={0}>
-                    <code>{renderCxTokens(source)}</code>
+                <pre className={clsx("cx-code-block", lines.length === 1 && "cx-code-block--single")} tabIndex={0}>
+                    <code className="cx-code-lines">
+                        {lines.map((line, index) => (
+                            <span className="cx-line" data-n={index + 1} key={index}>
+                                {line}
+                                {"\n"}
+                            </span>
+                        ))}
+                    </code>
                 </pre>
                 <CxCopyButton source={source} />
             </div>

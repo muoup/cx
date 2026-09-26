@@ -1,0 +1,103 @@
+.foliage {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.symbols {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* Fills are unscoped so they reach into the <use> shadow trees. */
+:global(.b1) { fill: var(--cx-bush-1); }
+:global(.b2) { fill: var(--cx-bush-2); }
+:global(.b3) { fill: var(--cx-bush-3); }
+:global(.berry) { fill: var(--cx-berry); }
+:global(.fh) { fill: var(--cx-facet-hi); }
+:global(.fl) { fill: var(--cx-facet-lo); }
+:global(.dl) { fill: var(--cx-bush-3); }
+
+.bush {
+  position: absolute;
+  overflow: visible;
+}
+
+.topLeft { left: -30px; top: -34px; width: 230px; height: 230px; }
+.topRight { right: -36px; top: -40px; width: 330px; height: 330px; transform: scaleX(-1); }
+.bottomLeft { left: -36px; bottom: -40px; width: 320px; height: 320px; transform: scaleY(-1); }
+.bottomRight { right: -30px; bottom: -34px; width: 230px; height: 230px; transform: scale(-1); }
+.bottomLeft.small { width: 200px; height: 200px; }
+
+.wind {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  --travel: calc(100vw + 120px);
+}
+
+.wind i {
+  position: absolute;
+  left: -60px;
+  top: var(--y);
+  opacity: 0;
+  animation: blow var(--d) linear var(--delay) infinite;
+}
+
+.wind i svg {
+  display: block;
+  width: var(--s);
+  height: calc(var(--s) * 0.7);
+  animation: bob var(--sw) ease-in-out var(--delay) infinite alternate;
+}
+
+@keyframes blow {
+  0% { opacity: 0; transform: translate(0, 0); }
+  6%, 90% { opacity: 0.7; }
+  100% { opacity: 0; transform: translate(var(--travel), var(--dy)); }
+}
+
+@keyframes bob {
+  from { transform: translateY(-10px) rotate(var(--r0)); }
+  to { transform: translateY(10px) rotate(var(--r1)); }
+}
+
+.gust {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  height: 28px;
+  overflow: visible;
+}
+
+.gust path {
+  fill: none;
+  stroke: var(--cx-bush-3);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 28 200;
+  stroke-dashoffset: 28;
+  opacity: 0;
+  animation: gust var(--d) ease-in-out var(--delay) infinite;
+}
+
+@keyframes gust {
+  0% { stroke-dashoffset: 28; opacity: 0; }
+  6% { opacity: 0.9; }
+  40% { stroke-dashoffset: -100; opacity: 0.9; }
+  46%, 100% { stroke-dashoffset: -100; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wind { display: none; }
+}
+
+@media (max-width: 680px) {
+  .topLeft, .bottomLeft:not(.small) { display: none; }
+  .topRight { width: 170px; height: 170px; }
+  .bottomLeft.small { width: 150px; height: 150px; }
+}

@@ -7,7 +7,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'CX Programming Language',
   tagline: 'A C-shaped systems language experiment in linear resources',
-  favicon: 'img/cx-logo.svg',
+  favicon: 'img/favicon.svg',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
@@ -64,11 +64,6 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'CX',
-      logo: {
-        alt: 'CX logo',
-        src: 'img/cx-logo.svg',
-      },
       items: [
         {
           type: 'docSidebar',
@@ -103,7 +98,7 @@ const config: Config = {
         {label: 'Standard Library', to: '/docs/stdlib'},
         {label: 'GitHub', href: 'https://github.com/muoup/cx'},
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Zachary Verlardi. Built with Docusaurus.`,
+      copyright: `© ${new Date().getFullYear()} Zachary Verlardi`,
     },
     prism: {
       theme: prismThemes.github,
