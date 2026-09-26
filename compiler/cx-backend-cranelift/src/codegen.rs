@@ -123,10 +123,10 @@ pub(crate) fn codegen_function(
     for fn_block in &bc_func.blocks {
         let block = context.get_block(&fn_block.id);
         for parameter in &fn_block.params {
-            let parameter_type = if parameter._type.is_memory_resident() {
+            let parameter_type = if parameter.ty.is_memory_resident() {
                 context.pointer_type
             } else {
-                get_cranelift_type(&parameter._type).map_err(|err| {
+                get_cranelift_type(&parameter.ty).map_err(|err| {
                     CXError::new(
                         err,
                         CXInternalContext::error(format!(

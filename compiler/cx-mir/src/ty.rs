@@ -1,30 +1,35 @@
 pub mod comparison;
+pub mod comptime;
 pub mod interface;
 pub mod layout;
 pub mod registry;
 
 use cx_util::dense_id;
 
-pub use layout::{MIRFieldLayout, MIRLayoutError, MIRTypeLayout};
+pub use layout::{MIRFieldLayout, MIRTypeLayout};
 
-dense_id!(MIRTypeID);
+use crate::unit::function::MIRFnSignature;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+dense_id!(MIRTypeID, "t");
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MIRType {
-    pub kind: MIRTypeKind,
-    pub layout: Option<MIRTypeLayout>,
+    kind: MIRTypeKind,
 }
 
 impl MIRType {
-    pub fn new(kind: MIRTypeKind, layout: Option<MIRTypeLayout>) -> Self {
-        Self { kind, layout }
+    pub fn new(kind: MIRTypeKind) -> Self {
+        Self { kind }
     }
 
     pub fn undefined() -> Self {
         Self {
             kind: MIRTypeKind::Undefined,
-            layout: None
         }
+    }
+
+    pub fn kind(&self) -> &MIRTypeKind {
+        &self.kind
     }
 }
 
@@ -122,57 +127,28 @@ impl MIRField {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// The location of a bitfield within its storage unit, as consumed by a bitfield-aware store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MIRBitfieldAccess {
     pub bit_offset: usize,
     pub bit_width: usize,
     pub signed: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MIRFunctionType {
-    pub params: Vec<MIRTypeID>,
-    pub return_type: MIRTypeID,
-    pub variadic: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MIRTypeKind {
     Void,
-    Integer {
-        ty: MIRIntType,
-        signed: bool,
-    },
-    Float {
-        ty: MIRFloatType,
-    },
-    Structured {
-        fields: Vec<MIRField>,
-    },
-    Union {
-        variants: Vec<MIRField>,
-    },
-    TaggedUnion {
-        variants: Vec<MIRField>,
-    },
-    PointerTo {
-        inner: MIRTypeID,
-    },
-    MemoryReference {
-        inner: MIRTypeID,
-        bitfield: Option<MIRBitfieldAccess>,
-    },
-    Array {
-        length: usize,
-        inner: MIRTypeID,
-    },
-    Function {
-        signature: MIRFunctionType,
-    },
-    Opaque {
-        size: usize,
-        alignment: usize,
-    },
+    Integer { ty: MIRIntType },
+    Float { ty: MIRFloatType },
+    Structured { fields: Vec<MIRField> },
+    Union { variants: Vec<MIRField> },
+    TaggedUnion { variants: Vec<MIRField> },
+    PointerTo { inner: MIRTypeID },
+    MemoryReference { inner: MIRTypeID },
+    Array { length: usize, inner: MIRTypeID },
+    IncompleteArray { inner: MIRTypeID },
+    Function { signature: MIRFnSignature },
+    Opaque { size: usize, alignment: usize },
     Undefined,
     Str,
 }

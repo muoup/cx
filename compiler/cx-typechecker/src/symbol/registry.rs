@@ -10,7 +10,7 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         expression::{THIRExpression, THIRLocalID},
-        r#type::{THIRType, THIRTypeID, THIRTypeKind},
+        r#type::{THIRBitfieldAccess, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
@@ -175,6 +175,11 @@ impl<'a> MIRSymbolRegistry<'a> {
         self.local_symbols.insert(name, MIRSymbol::Expression(expr));
     }
 
+    pub fn insert_borrowed_local_value(&mut self, name: QualifiedName, expr: THIRExpression) {
+        self.local_symbols
+            .insert(name, MIRSymbol::BorrowedExpression(expr));
+    }
+
     pub fn insert_local_staged_expression_function(
         &mut self,
         name: QualifiedName,
@@ -202,10 +207,15 @@ impl<'a> MIRSymbolRegistry<'a> {
     }
 
     pub fn mem_ref_to(&mut self, ty: THIRType) -> THIRType {
+        self.field_ref_to(ty, None)
+    }
+
+    /// A reference to an aggregate field, marked as a bitfield reference when `bitfield` is set.
+    pub fn field_ref_to(&mut self, ty: THIRType, bitfield: Option<THIRBitfieldAccess>) -> THIRType {
         let inner_type = self.generate_type_id(ty);
         THIRTypeKind::MemoryReference {
             inner_type,
-            bitfield: None,
+            bitfield,
         }
         .into()
     }

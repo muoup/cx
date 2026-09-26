@@ -1,0 +1,14 @@
+struct Resource : @nodrop {
+    int value;
+};
+
+void consume(Resource value) {
+    @leak(value);
+}
+
+void bad(int condition, Resource value) {
+    if (condition) {
+        consume(move value);
+    }
+    consume(move value);
+}

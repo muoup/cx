@@ -20,7 +20,7 @@ pub fn coercion_expr(
 ) -> CXResult<CoercionResult> {
     let coerced = THIRExpression {
         token_range: expr.token_range.clone(),
-        _type: target_type,
+        ty: target_type,
         kind: THIRExpressionKind::TypeConversion {
             operand: Box::new(expr),
             conversion: coercion,
@@ -35,7 +35,7 @@ pub fn implicit_cast(
     value: THIRExpression,
     to_type: &THIRType,
 ) -> CXResult<THIRExpression> {
-    let from_type = value.get_type();
+    let from_type = value.ty.clone();
 
     try_implicit_coercion(env, value, to_type)?.catch_unapplied(|expr, _| {
         env.log_error(

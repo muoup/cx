@@ -12,7 +12,7 @@ pub(crate) fn explicit_cast(
     value: THIRExpression,
     to_type: &THIRType,
 ) -> CXResult<THIRExpression> {
-    let from_type = value.get_type();
+    let from_type = value.ty.clone();
 
     match try_explicit_cast(env, value, to_type)? {
         CoercionResult::Success { expr, .. } => Ok(expr),

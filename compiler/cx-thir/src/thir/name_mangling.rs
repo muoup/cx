@@ -5,7 +5,7 @@ use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 use crate::{
     thir::{
         data::{THIRTemplateInput, THIRType, THIRTypeKind},
-        r#type::THIRField,
+        r#type::{THIRArrayLength, THIRField},
     },
     type_context::THIRTypeContext,
 };
@@ -30,9 +30,9 @@ pub fn mangle_template_name(
     name: String,
     input: &THIRTemplateInput,
 ) -> String {
-    let mut base = format!("_T{}_{}_{}_", input.args.len(), name.len(), name);
+    let mut base = format!("_T{}_{}_{}_", input.args().len(), name.len(), name);
 
-    for arg in &input.args {
+    for arg in input.args() {
         base.push_str(
             format!(
                 "{}_",
@@ -72,17 +72,17 @@ fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String
     }
 
     match &ty.kind {
-        THIRTypeKind::Integer { _type, signed } => {
-            format!("i{}{}", if *signed { 's' } else { 'u' }, _type)
+        THIRTypeKind::Integer { ty, signed } => {
+            format!("i{}{}", if *signed { 's' } else { 'u' }, ty)
         }
-        THIRTypeKind::Float { _type } => {
-            format!("f{}", _type)
+        THIRTypeKind::Float { ty } => {
+            format!("f{}", ty)
         }
         THIRTypeKind::Str => "s".to_owned(),
         THIRTypeKind::Undefined => "u".to_owned(),
         THIRTypeKind::Void => "v".to_owned(),
         THIRTypeKind::Unreachable => "n".to_owned(),
-        THIRTypeKind::PointerTo { inner_type } => {
+        THIRTypeKind::PointerTo { inner_type, .. } => {
             let inner_type = definitions.resolve_type_id(*inner_type);
             let mut mangled = String::from("p");
             let inner_type = mangle_type_name(definitions, inner_type);
@@ -96,14 +96,12 @@ fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String
             let mut mangled = String::from("r");
             if let Some(bitfield) = bitfield {
                 mangled.push('1');
-                push_component(&mut mangled, bitfield.bit_offset.to_string().as_str());
-                push_component(&mut mangled, bitfield.bit_width.to_string().as_str());
-                let storage_type = mangle_type_name(
+                let aggregate_type = mangle_type_name(
                     definitions,
-                    definitions.resolve_type_id(bitfield.storage_type),
+                    definitions.resolve_type_id(bitfield.aggregate_type()),
                 );
-                push_component(&mut mangled, storage_type.as_str());
-                push_component(&mut mangled, if bitfield.signed { "1" } else { "0" });
+                push_component(&mut mangled, aggregate_type.as_str());
+                push_component(&mut mangled, bitfield.field_index().to_string().as_str());
             } else {
                 mangled.push('0');
             }
@@ -123,7 +121,10 @@ fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String
             inner_type,
         } => {
             let mut mangled = String::from("a");
-            let size = size.display_with(definitions).to_string();
+            let size = match size {
+                THIRArrayLength::Implicit => String::from("?"),
+                THIRArrayLength::Known(size) => size.display_with(definitions).to_string(),
+            };
             push_component(&mut mangled, size.as_str());
             let inner_type =
                 mangle_type_name(definitions, definitions.resolve_type_id(*inner_type));
@@ -132,14 +133,14 @@ fn mangle_type_name(definitions: &impl THIRTypeContext, ty: &THIRType) -> String
         }
         THIRTypeKind::Function { signature } => {
             let mut mangled = String::from("f");
-            let return_type = mangle_type_name(definitions, &signature.return_type);
+            let return_type = mangle_type_name(definitions, signature.return_type());
             push_component(&mut mangled, return_type.as_str());
-            push_component(&mut mangled, signature.params.len().to_string().as_str());
-            for param in &signature.params {
-                let param_type = mangle_type_name(definitions, &param._type);
+            push_component(&mut mangled, signature.params().len().to_string().as_str());
+            for param in signature.params() {
+                let param_type = mangle_type_name(definitions, param.ty());
                 push_component(&mut mangled, param_type.as_str());
             }
-            push_component(&mut mangled, if signature.var_args { "1" } else { "0" });
+            push_component(&mut mangled, if signature.var_args() { "1" } else { "0" });
             mangled
         }
         THIRTypeKind::Structured { fields } => {

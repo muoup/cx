@@ -8,7 +8,7 @@ use crate::environment::TypeEnvironment;
 use cx_thir::{
     thir::{
         data::THIRType,
-        expression::{THIRExpression, THIRExpressionKind},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
     },
     type_context::THIRTypeContext,
 };
@@ -17,7 +17,6 @@ use cx_tokens::TokenRange;
 pub(crate) struct IndirectBase {
     pub source: THIRExpression,
     pub source_type: THIRType,
-    pub owned: bool,
 }
 
 pub(crate) fn resolve_indirect_base(
@@ -25,7 +24,7 @@ pub(crate) fn resolve_indirect_base(
     mut source: THIRExpression,
 ) -> IndirectBase {
     loop {
-        let source_type = source._type.clone();
+        let source_type = source.ty.clone();
 
         if let Some(inner_type) = env.symbols.mem_ref_inner(&source_type).cloned() {
             if let Some(ptr_inner) = env.symbols.ptr_inner(&inner_type).cloned() {
@@ -34,38 +33,41 @@ pub(crate) fn resolve_indirect_base(
                     kind: THIRExpressionKind::Copy {
                         source: Box::new(source),
                     },
-                    _type: env.symbols.pointer_to(ptr_inner.clone()),
+                    ty: env.symbols.pointer_to(ptr_inner.clone()),
                 };
 
                 return IndirectBase {
                     source: THIRExpression {
                         token_range: TokenRange::internal(),
-                        kind: THIRExpressionKind::Typechange(Box::new(pointer)),
-                        _type: env.symbols.mem_ref_to(ptr_inner.clone()),
+                        kind: THIRExpressionKind::TypeConversion {
+                            operand: Box::new(pointer),
+                            conversion: THIRCoercion::Bitcast,
+                        },
+                        ty: env.symbols.mem_ref_to(ptr_inner.clone()),
                     },
                     source_type: ptr_inner,
-                    owned: false,
                 };
             }
 
             if let Some(array_inner) = env.symbols.array_inner(&inner_type).cloned() {
                 let pointer = THIRExpression {
                     token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::TypeConversion {
+                    kind: THIRExpressionKind::AddressOf {
                         operand: Box::new(source),
-                        conversion: cx_thir::thir::expression::THIRCoercion::ReinterpretBits,
                     },
-                    _type: env.symbols.pointer_to(array_inner.clone()),
+                    ty: env.symbols.pointer_to(array_inner.clone()),
                 };
 
                 return IndirectBase {
                     source: THIRExpression {
                         token_range: TokenRange::internal(),
-                        kind: THIRExpressionKind::Typechange(Box::new(pointer)),
-                        _type: env.symbols.mem_ref_to(array_inner.clone()),
+                        kind: THIRExpressionKind::TypeConversion {
+                            operand: Box::new(pointer),
+                            conversion: THIRCoercion::Bitcast,
+                        },
+                        ty: env.symbols.mem_ref_to(array_inner.clone()),
                     },
                     source_type: array_inner,
-                    owned: false,
                 };
             }
 
@@ -75,7 +77,7 @@ pub(crate) fn resolve_indirect_base(
                     kind: THIRExpressionKind::Copy {
                         source: Box::new(source),
                     },
-                    _type: inner_type,
+                    ty: inner_type,
                 };
                 continue;
             }
@@ -83,7 +85,6 @@ pub(crate) fn resolve_indirect_base(
             return IndirectBase {
                 source,
                 source_type: inner_type,
-                owned: false,
             };
         }
 
@@ -91,18 +92,19 @@ pub(crate) fn resolve_indirect_base(
             return IndirectBase {
                 source: THIRExpression {
                     token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::Typechange(Box::new(source)),
-                    _type: env.symbols.mem_ref_to(inner_type.clone()),
+                    kind: THIRExpressionKind::TypeConversion {
+                        operand: Box::new(source),
+                        conversion: THIRCoercion::Bitcast,
+                    },
+                    ty: env.symbols.mem_ref_to(inner_type.clone()),
                 },
                 source_type: inner_type,
-                owned: false,
             };
         }
 
         return IndirectBase {
             source,
             source_type,
-            owned: true,
         };
     }
 }

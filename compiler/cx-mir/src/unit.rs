@@ -1,33 +1,69 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use cx_tokens::TokenRange;
+use cx_util::{dense_id, identifier::CXIdent, linkage::LinkageMode};
+
+pub mod comptime_function;
+pub mod function;
 
 use crate::{
-    MIRBasicBlockID, MIRScopeID,
-    global::{MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable},
-    ty::registry::MIRTypeRegistry,
+    constant::{MIRConstant, MIRStagedExprPool},
+    expr::instruction::MIRScopeID,
+    ty::{MIRTypeID, comptime::MIRComptimeType, registry::MIRTypeRegistry},
+    unit::comptime_function::MIRComptimeFunction,
+    unit::function::{MIRFunction, MIRFunctionID},
+    value::{MIRComptimeRegisterID, MIRPlaceID, MIRRegisterID as MIRRegister},
 };
 
+dense_id!(MIRGlobalID, "global.");
+dense_id!(MIRBasicBlockID, "bb");
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MIRGlobalState {
+    External,
+    ZeroInitialized,
+    Initialized(MIRConstant),
+}
+
 #[derive(Debug, Clone)]
-pub struct MIRUnit {
+pub struct MIRUnit<'thir> {
+    staged_expr_pool: MIRStagedExprPool<'thir>,
     types: MIRTypeRegistry,
-    functions: HashMap<MIRFunctionID, MIRFunction>,
-    globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+
+    functions: BTreeMap<MIRFunctionID, MIRFunction>,
+    comptime_functions: BTreeMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
+
+    globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
 }
 
-impl MIRUnit {
+impl<'thir> MIRUnit<'thir> {
     pub fn new(
         types: MIRTypeRegistry,
-        functions: HashMap<MIRFunctionID, MIRFunction>,
-        globals: HashMap<MIRGlobalID, MIRGlobalVariable>,
+        functions: BTreeMap<MIRFunctionID, MIRFunction>,
+        comptime_functions: BTreeMap<MIRFunctionID, MIRComptimeFunction<'thir>>,
+        staged_expr_pool: MIRStagedExprPool<'thir>,
+        globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
         global_order: Vec<MIRGlobalID>,
     ) -> Self {
         Self {
             types,
             functions,
+            comptime_functions,
+            staged_expr_pool,
             globals,
             global_order,
+        }
+    }
+
+    pub fn into_static_runtime_only(self) -> MIRUnit<'static> {
+        MIRUnit {
+            staged_expr_pool: MIRStagedExprPool::new(),
+            types: self.types,
+            functions: self.functions,
+            comptime_functions: BTreeMap::new(),
+            globals: self.globals,
+            global_order: self.global_order,
         }
     }
 
@@ -35,12 +71,20 @@ impl MIRUnit {
         &self.types
     }
 
-    pub fn functions(&self) -> impl ExactSizeIterator<Item = &MIRFunction> {
-        self.functions.values()
+    pub fn functions(&self) -> impl ExactSizeIterator<Item = (MIRFunctionID, &MIRFunction)> {
+        self.functions.iter().map(|(id, func)| (*id, func))
     }
 
-    pub fn globals(&self) -> impl ExactSizeIterator<Item = &MIRGlobalVariable> {
-        self.globals.values()
+    pub fn comptime_functions(&self) -> impl ExactSizeIterator<Item = &MIRComptimeFunction<'thir>> {
+        self.comptime_functions.values()
+    }
+
+    pub fn constants(&self) -> &MIRStagedExprPool<'thir> {
+        &self.staged_expr_pool
+    }
+
+    pub fn globals(&self) -> impl ExactSizeIterator<Item = (MIRGlobalID, &MIRGlobalVariable)> {
+        self.globals.iter().map(|(id, global)| (*id, global))
     }
 
     pub fn global_order(&self) -> &[MIRGlobalID] {
@@ -51,27 +95,99 @@ impl MIRUnit {
         self.functions.get(&id)
     }
 
+    pub fn comptime_function(&self, id: MIRFunctionID) -> Option<&MIRComptimeFunction<'thir>> {
+        self.comptime_functions.get(&id)
+    }
+
     pub fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
         self.globals.get(&id)
     }
+}
 
-    pub fn instruction_range(
-        &self,
-        function: MIRFunctionID,
-        block: MIRBasicBlockID,
-        instruction: usize,
-    ) -> Option<&TokenRange> {
-        self.function(function)
-            .and_then(|function| function.definition())
-            .and_then(|definition| definition.block(block))
-            .and_then(|block| block.instrs.get(instruction))
-            .map(|instruction| &instruction.token_range)
+#[derive(Debug, Clone)]
+pub struct MIRPlaceDecl {
+    pub id: MIRPlaceID,
+    pub ty: MIRTypeID,
+    pub debug_name: Option<CXIdent>,
+    pub nodrop: bool,
+    pub scope: MIRScopeID,
+    pub adopted: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRScopeDecl {
+    pub id: MIRScopeID,
+    pub token_range: TokenRange,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRRegisterDecl {
+    pub id: MIRRegister,
+    pub ty: MIRTypeID,
+    pub debug_name: Option<CXIdent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRComptimeRegisterDecl {
+    pub id: MIRComptimeRegisterID,
+    pub ty: MIRComptimeType,
+    pub debug_name: Option<CXIdent>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MIRGlobalVariable {
+    name: CXIdent,
+    linkage: LinkageMode,
+
+    ty: MIRTypeID,
+    state: MIRGlobalState,
+    is_mutable: bool,
+}
+
+impl MIRGlobalVariable {
+    pub fn new(
+        name: CXIdent,
+        linkage: LinkageMode,
+        ty: MIRTypeID,
+        state: MIRGlobalState,
+        is_mutable: bool,
+    ) -> Self {
+        Self {
+            name,
+            linkage,
+            ty,
+            state,
+            is_mutable,
+        }
     }
 
-    pub fn scope_range(&self, function: MIRFunctionID, scope: MIRScopeID) -> Option<&TokenRange> {
-        self.function(function)
-            .and_then(|function| function.definition())
-            .and_then(|definition| definition.scope(scope))
-            .map(|scope| &scope.token_range)
+    pub fn define(&mut self, state: MIRGlobalState) {
+        assert!(
+            matches!(self.state, MIRGlobalState::External),
+            "Attempt to redefine global variable: {}",
+            self.name
+        );
+
+        self.state = state;
+    }
+
+    pub fn name(&self) -> &CXIdent {
+        &self.name
+    }
+
+    pub fn linkage(&self) -> LinkageMode {
+        self.linkage
+    }
+
+    pub fn ty(&self) -> MIRTypeID {
+        self.ty
+    }
+
+    pub fn state(&self) -> &MIRGlobalState {
+        &self.state
+    }
+
+    pub fn is_mutable(&self) -> bool {
+        self.is_mutable
     }
 }

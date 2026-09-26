@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 cx-log = { path = "../cx-log" }
 cx-mir = { path = "../cx-mir" }
+cx-tokens = { path = "../cx-tokens" }
 
 [dev-dependencies]
 cx-hir = { path = "../cx-hir" }

@@ -1,10 +1,13 @@
 use cx_log::CXResult;
+use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
     thir::{
-        contextual_eq::TypeContextEqual, expression::{
+        contextual_eq::TypeContextEqual,
+        expression::{
             THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp,
             THIRPtrBinOp,
-        }, r#type::{THIRIntType, THIRType, THIRTypeKind}
+        },
+        r#type::{THIRIntType, THIRType, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
@@ -27,7 +30,7 @@ pub fn try_implicit_coercion(
     expr: THIRExpression,
     target_type: &THIRType,
 ) -> CXResult<CoercionResult> {
-    let from_type = expr.get_type();
+    let from_type = expr.ty.clone();
 
     if env.type_eq(&from_type, target_type) {
         return CoercionResult::success(expr);
@@ -37,20 +40,18 @@ pub fn try_implicit_coercion(
         return coercion_expr(expr, target_type.clone(), THIRCoercion::Unreachable);
     }
 
-    if compatible::compatible_types(env, &expr._type, target_type)? {
-        return CoercionResult::success(THIRExpression {
-            token_range: expr.token_range.clone(),
-            kind: THIRExpressionKind::TypeConversion {
-                conversion: THIRCoercion::Typechange,
-                operand: Box::new(expr),
-            },
-            _type: target_type.clone(),
-        });
+    if compatible::compatible_types(env, &expr.ty, target_type)? {
+        let conversion = if expr.ty.is_pointer() && target_type.is_pointer() {
+            THIRCoercion::Bitcast
+        } else {
+            THIRCoercion::Typechange
+        };
+        return coercion_expr(expr, target_type.clone(), conversion);
     }
 
     match internal(env, expr, from_type, target_type)? {
         CoercionResult::Success { expr } => {
-            if env.type_eq(expr.get_type_ref(), target_type) {
+            if env.type_eq(&expr.ty, target_type) {
                 CoercionResult::success(expr)
             } else {
                 try_implicit_coercion(env, expr, target_type)
@@ -68,13 +69,19 @@ fn internal(
     target_type: &THIRType,
 ) -> CXResult<CoercionResult> {
     if env.symbols.is_cx_str(&from_type) && is_char_array(env, target_type) {
-        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
+        return coercion_expr(expr, target_type.clone(), THIRCoercion::StringToArray);
     }
 
     if env.symbols.is_cx_str(&from_type)
         && matches!(target_type.kind, THIRTypeKind::PointerTo { .. })
     {
-        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
+        return CoercionResult::success(THIRExpression {
+            token_range: expr.token_range.clone(),
+            ty: target_type.clone(),
+            kind: THIRExpressionKind::AddressOf {
+                operand: Box::new(expr),
+            },
+        });
     }
 
     if matches!(expr.kind, THIRExpressionKind::IntLiteral(0))
@@ -102,12 +109,18 @@ fn internal(
             env.symbols.resolve_type_id(*to_inner),
         )?
     {
-        return coercion_expr(expr, target_type.clone(), THIRCoercion::ReinterpretBits);
+        return CoercionResult::success(THIRExpression {
+            token_range: expr.token_range.clone(),
+            ty: target_type.clone(),
+            kind: THIRExpressionKind::AddressOf {
+                operand: Box::new(expr),
+            },
+        });
     }
 
-    if expr._type.is_integer() {
-        if let THIRTypeKind::Float { _type } = &target_type.kind {
-            let THIRTypeKind::Integer { signed, .. } = &expr._type.kind else {
+    if expr.ty.is_integer() {
+        if let THIRTypeKind::Float { ty } = &target_type.kind {
+            let THIRTypeKind::Integer { signed, .. } = &expr.ty.kind else {
                 unreachable!("integer type predicate should match integer kind");
             };
             let signed = *signed;
@@ -116,7 +129,7 @@ fn internal(
                 expr,
                 target_type.clone(),
                 THIRCoercion::IntToFloat {
-                    to_type: *_type,
+                    to_type: *ty,
                     sextend: signed,
                 },
             );
@@ -126,8 +139,8 @@ fn internal(
     }
 
     // TODO: Organize this into different XXX::try_conversion functions / modules
-    match (&expr._type.kind, &target_type.kind) {
-        (THIRTypeKind::Float { _type: from_float }, THIRTypeKind::Float { _type: to_float })
+    match (&expr.ty.kind, &target_type.kind) {
+        (THIRTypeKind::Float { ty: from_float }, THIRTypeKind::Float { ty: to_float })
             if from_float != to_float =>
         {
             implicit::coercion_expr(
@@ -138,13 +151,13 @@ fn internal(
         }
 
         (
-            THIRTypeKind::Float { _type: from_float },
+            THIRTypeKind::Float { ty: from_float },
             THIRTypeKind::Integer {
-                _type: THIRIntType::I1,
+                ty: THIRIntType::I1,
                 ..
             },
         ) => CoercionResult::success(THIRExpression {
-            _type: target_type.clone(),
+            ty: target_type.clone(),
             token_range: expr.token_range.clone(),
             kind: THIRExpressionKind::BinaryOperation {
                 op: THIRBinOp::Float {
@@ -152,7 +165,7 @@ fn internal(
                     op: THIRFloatBinOp::FNE,
                 },
                 rhs: Box::new(THIRExpression {
-                    _type: THIRTypeKind::Float { _type: *from_float }.into(),
+                    ty: THIRTypeKind::Float { ty: *from_float }.into(),
                     token_range: expr.token_range.clone(),
                     kind: THIRExpressionKind::FloatLiteral(0.0.into()),
                 }),
@@ -163,23 +176,23 @@ fn internal(
         (
             THIRTypeKind::PointerTo { .. },
             THIRTypeKind::Integer {
-                _type: THIRIntType::I1,
+                ty: THIRIntType::I1,
                 ..
             },
         ) => CoercionResult::success(THIRExpression {
-            _type: target_type.clone(),
+            ty: target_type.clone(),
             token_range: expr.token_range.clone(),
             kind: THIRExpressionKind::BinaryOperation {
                 op: THIRBinOp::Pointer {
                     op: THIRPtrBinOp::NE,
                 },
                 rhs: Box::new(THIRExpression {
-                    _type: from_type.clone(),
+                    ty: from_type.clone(),
                     token_range: expr.token_range.clone(),
                     kind: THIRExpressionKind::TypeConversion {
                         conversion: THIRCoercion::IntToPtr { sextend: false },
                         operand: Box::new(THIRExpression {
-                            _type: env.get_intrinsic_type("int"),
+                            ty: env.get_intrinsic_type("int"),
                             token_range: expr.token_range.clone(),
                             kind: THIRExpressionKind::IntLiteral(0),
                         }),
@@ -189,33 +202,35 @@ fn internal(
             },
         }),
 
-        (
-            THIRTypeKind::Float { .. },
-            THIRTypeKind::Integer {
-                signed,
-                _type: to_int,
-            },
-        ) => implicit::coercion_expr(
-            expr,
-            target_type.clone(),
-            THIRCoercion::FloatToInt {
-                to_type: *to_int,
-                sextend: *signed,
-            },
-        ),
+        (THIRTypeKind::Float { .. }, THIRTypeKind::Integer { signed, ty: to_int }) => {
+            implicit::coercion_expr(
+                expr,
+                target_type.clone(),
+                THIRCoercion::FloatToInt {
+                    to_type: *to_int,
+                    sextend: *signed,
+                },
+            )
+        }
 
-        (THIRTypeKind::PointerTo { .. }, THIRTypeKind::Integer { _type: itype, .. }) => {
+        (THIRTypeKind::PointerTo { .. }, THIRTypeKind::Integer { ty: itype, .. }) => {
             implicit::coercion_expr(
                 expr,
                 target_type.clone(),
                 THIRCoercion::PtrToInt { to_type: *itype },
             )
-        },
+        }
 
-        (THIRTypeKind::Function { .. }, THIRTypeKind::PointerTo { inner_type, .. }) 
+        (THIRTypeKind::Function { .. }, THIRTypeKind::PointerTo { inner_type, .. })
             if from_type.contextual_eq(env.symbols.resolve_type_id(*inner_type), &env.symbols) =>
         {
-            implicit::coercion_expr(expr, target_type.clone(), THIRCoercion::GetFnPtr)
+            CoercionResult::success(THIRExpression {
+                token_range: expr.token_range.clone(),
+                ty: target_type.clone(),
+                kind: THIRExpressionKind::AddressOf {
+                    operand: Box::new(expr),
+                },
+            })
         }
 
         (
@@ -225,6 +240,21 @@ fn internal(
             let i1 = env.symbols.resolve_type_id(*i1);
             let i2 = env.symbols.resolve_type_id(*i2);
 
+            // Bitfield references only exist as the operands of loads and stores
+            if from_type.is_bitfield_reference() {
+                if !env.type_eq(
+                    &i1.clone().without_specifiers(),
+                    &i2.clone().without_specifiers(),
+                ) {
+                    return CoercionResult::unapplied(expr);
+                }
+                return env.log_error(
+                    &expr.token_range,
+                    &catalogue::BITFIELD_REFERENCE,
+                    "bind a reference to".into(),
+                );
+            }
+
             if i1.is_memory_reference() {
                 return lvalue::try_conversion(env, expr, false);
             }
@@ -233,7 +263,7 @@ fn internal(
                 return implicit::coercion_expr(
                     expr,
                     target_type.clone(),
-                    THIRCoercion::ReinterpretBits,
+                    THIRCoercion::Typechange,
                 );
             }
 
@@ -246,7 +276,7 @@ fn internal(
                 return implicit::coercion_expr(
                     expr,
                     target_type.clone(),
-                    THIRCoercion::ReinterpretBits,
+                    THIRCoercion::Typechange,
                 );
             }
 
@@ -268,11 +298,7 @@ fn internal(
             if env.symbols.resolve_type_id(*from_ptr).is_void()
                 || env.symbols.resolve_type_id(*to_ptr).is_void()
             {
-                return implicit::coercion_expr(
-                    expr,
-                    target_type.clone(),
-                    THIRCoercion::ReinterpretBits,
-                );
+                return implicit::coercion_expr(expr, target_type.clone(), THIRCoercion::Bitcast);
             }
 
             // If we are coercing T1* -> T2* and they are compatible as unqualified types, and we only
@@ -283,11 +309,7 @@ fn internal(
                 &to_inner.clone().without_specifiers(),
             )? && from_inner.specifiers & to_inner.specifiers == from_inner.specifiers
             {
-                return implicit::coercion_expr(
-                    expr,
-                    target_type.clone(),
-                    THIRCoercion::ReinterpretBits,
-                );
+                return implicit::coercion_expr(expr, target_type.clone(), THIRCoercion::Bitcast);
             }
 
             CoercionResult::unapplied(expr)
@@ -297,15 +319,17 @@ fn internal(
     }
 }
 
-fn is_char_array(env: &TypeEnvironment, ty: &THIRType) -> bool {
+pub(crate) fn is_char_array(env: &TypeEnvironment, ty: &THIRType) -> bool {
     let ty = env.symbols.mem_ref_inner(ty).unwrap_or(ty);
-    let THIRTypeKind::Array { inner_type, .. } = ty.kind else {
+
+    let Some(inner_type) = env.symbols.array_inner(ty) else {
         return false;
     };
+
     matches!(
-        env.symbols.resolve_type_id(inner_type).kind,
+        inner_type.kind,
         THIRTypeKind::Integer {
-            _type: THIRIntType::I8,
+            ty: THIRIntType::I8,
             signed: false,
         }
     )

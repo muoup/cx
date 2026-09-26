@@ -1,5 +1,8 @@
 use cx_thir::{
-    thir::data::{THIRType, THIRTypeKind},
+    thir::{
+        data::{THIRType, THIRTypeKind},
+        r#type::THIRField,
+    },
     type_context::THIRTypeContext,
 };
 
@@ -8,6 +11,7 @@ use crate::symbol::registry::MIRSymbolRegistry;
 pub struct StructField {
     pub index: usize,
     pub field_type: THIRType,
+    pub is_bitfield: bool,
 }
 
 pub fn struct_field(
@@ -32,6 +36,10 @@ pub fn struct_field(
         .position(|field| field.name() == Some(field_name))
         .map(|index| {
             let field_type = definitions.resolve_type_id(fields[index].ty()).clone();
-            StructField { index, field_type }
+            StructField {
+                index,
+                field_type,
+                is_bitfield: matches!(fields[index], THIRField::Bitfield { .. }),
+            }
         })
 }

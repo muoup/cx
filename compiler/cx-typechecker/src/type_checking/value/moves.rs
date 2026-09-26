@@ -18,7 +18,9 @@ use cx_namespace::module::QualifiedName;
 use cx_thir::{
     thir::{
         data::{THIRType, THIRTypeKind},
-        expression::{THIRExpression, THIRExpressionKind, THIRLocalID, THIRUnpackBinding},
+        expression::{
+            THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID, THIRUnpackBinding,
+        },
     },
     type_context::THIRTypeContext,
 };
@@ -33,7 +35,7 @@ pub(crate) fn typecheck_move(
     let binding = inner.binding().cloned();
     let inner_val = inner.standard_ready_coerce(env, inner_expr.token_range())?;
 
-    if !inner_val._type.is_memory_reference() {
+    if !inner_val.ty.is_memory_reference() {
         return Ok(TypecheckResult::from(inner_val));
     }
 
@@ -61,17 +63,9 @@ pub(crate) fn typecheck_move(
         );
     }
 
-    let Some(inner_type) = env.symbols.mem_ref_inner(&inner_val._type).cloned() else {
+    let Some(inner_type) = env.symbols.mem_ref_inner(&inner_val.ty).cloned() else {
         unreachable!()
     };
-
-    if inner_type.is_unsafe_move() && env.function.in_safe_context() {
-        return env.log_error(
-            inner_expr.token_range(),
-            &catalogue::UNSAFE_OPERATION,
-            "move of a type declared as @unsafe_move".into()
-        );
-    }
 
     Ok(TypecheckResult::new(
         inner_type,
@@ -89,30 +83,30 @@ pub(crate) fn typecheck_adopt(
     expr: &HIRExpression,
     inner: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
-    if env.function.in_safe_context() {
-        return env.log_error(
-            expr.token_range(),
-            &catalogue::UNSAFE_OPERATION,
-            "@adopt".into()
-        );
-    }
-
     let value = typecheck_expr(env, namespace, inner, None)?;
     let binding = value.binding().cloned();
     let value = value.standard_ready_coerce(env, inner.token_range())?;
-    let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
+    let Some(inner_type) = env.symbols.mem_ref_inner(&value.ty).cloned() else {
         return env.log_error(
             expr.token_range(),
             &catalogue::TYPE_MISMATCH,
-            ("@adopt".into(), "memory reference type".into(), format!("{}", value._type.display_with(&env.symbols)))
+            (
+                "@adopt".into(),
+                "memory reference type".into(),
+                format!("{}", value.ty.display_with(&env.symbols)),
+            ),
         );
     };
 
-    if value._type.get_specifier(HIR_CONST) || inner_type.get_specifier(HIR_CONST) {
+    if value.ty.get_specifier(HIR_CONST) || inner_type.get_specifier(HIR_CONST) {
         return env.log_error(
             expr.token_range(),
             &catalogue::TYPE_MISMATCH,
-            ("@adopt".into(), "non-const type".into(), format!("{}", value._type.display_with(&env.symbols)))
+            (
+                "@adopt".into(),
+                "non-const type".into(),
+                format!("{}", value.ty.display_with(&env.symbols)),
+            ),
         );
     }
 
@@ -126,10 +120,14 @@ pub(crate) fn typecheck_adopt(
         );
     }
 
-    Ok(
-        TypecheckResult::new(inner_type, THIRExpressionKind::Typechange(Box::new(value)))
-            .with_adopting(),
+    Ok(TypecheckResult::new(
+        inner_type,
+        THIRExpressionKind::TypeConversion {
+            operand: Box::new(value),
+            conversion: THIRCoercion::Adopt,
+        },
     )
+    .with_adopting())
 }
 
 pub(crate) fn typecheck_leak(
@@ -138,14 +136,6 @@ pub(crate) fn typecheck_leak(
     expr: &HIRExpression,
     inner: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
-    if env.function.in_safe_context() {
-        return env.log_error(
-            expr.token_range(),
-            &catalogue::UNSAFE_OPERATION,
-            "@leak".into()
-        );
-    }
-
     let value = typecheck_expr(env, namespace, inner, None)?;
 
     let Some(binding) = value.binding().cloned() else {
@@ -166,21 +156,27 @@ pub(crate) fn typecheck_leak(
 
     let value = value.standard_ready_coerce(env, inner.token_range())?;
 
-    let Some(inner_type) = env.symbols.mem_ref_inner(&value._type).cloned() else {
+    let Some(inner_type) = env.symbols.mem_ref_inner(&value.ty).cloned() else {
         return env.log_error(
             expr.token_range(),
             &catalogue::TYPE_MISMATCH,
-            ("@leak".into(), "memory reference type".into(), format!("{}", value._type.display_with(&env.symbols)))
+            (
+                "@leak".into(),
+                "memory reference type".into(),
+                format!("{}", value.ty.display_with(&env.symbols)),
+            ),
         );
     };
 
-    if !inner_type.is_nodrop() {
-        return Ok(TypecheckResult::from(value));
-    }
+    let leak_type = if inner_type.is_nodrop() {
+        THIRType::unit()
+    } else {
+        value.ty.clone()
+    };
 
     Ok(TypecheckResult::new(
-        THIRType::unit(),
-        THIRExpressionKind::LeakLifetime {
+        leak_type,
+        THIRExpressionKind::Leak {
             expression: Box::new(value),
         },
     ))
@@ -197,11 +193,15 @@ pub(crate) fn typecheck_unpack(
         .standard_ready_assure(env, expr.token_range())?;
 
     let thir_expr = value.standard_ready_coerce(env, inner.token_range())?;
-    let THIRTypeKind::Structured { fields } = &thir_expr._type.kind else {
+    let THIRTypeKind::Structured { fields } = &thir_expr.ty.kind else {
         return env.log_error(
             expr.token_range(),
             &catalogue::TYPE_MISMATCH,
-            ("@unpack".into(), "owned structured type".into(), format!("{}", thir_expr._type.display_with(&env.symbols)))
+            (
+                "@unpack".into(),
+                "owned structured type".into(),
+                format!("{}", thir_expr.ty.display_with(&env.symbols)),
+            ),
         );
     };
 
@@ -220,7 +220,7 @@ pub(crate) fn typecheck_unpack(
                 expr.token_range(),
                 &catalogue::UNKNOWN_MEMBER,
                 (
-                    format!("{}", thir_expr._type.display_with(&env.symbols)),
+                    format!("{}", thir_expr.ty.display_with(&env.symbols)),
                     format!("{}", unpack_binding.field),
                 ),
             );
@@ -272,7 +272,7 @@ pub(crate) fn typecheck_unpack(
                 &catalogue::UNKNOWN_MEMBER,
                 (
                     format!("{}", unpack_binding.field),
-                    format!("{}", thir_expr._type.display_with(&env.symbols)),
+                    format!("{}", thir_expr.ty.display_with(&env.symbols)),
                 ),
             );
         };
@@ -284,7 +284,7 @@ pub(crate) fn typecheck_unpack(
             QualifiedName::new_raw(unpack_binding.binding.clone()),
             THIRExpression {
                 token_range: TokenRange::internal(),
-                _type: symbol_type,
+                ty: symbol_type,
                 kind: THIRExpressionKind::Variable {
                     name: unpack_binding.binding.clone(),
                     local_id,

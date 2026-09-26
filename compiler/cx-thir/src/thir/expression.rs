@@ -1,10 +1,12 @@
 use std::cell::Cell;
 
 use cx_tokens::TokenRange;
+use cx_util::dense_id;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
 use crate::thir::comptime::THIRStagedExpr;
+use crate::thir::data::THIRTypeID;
 use crate::thir::pattern::THIRPattern;
 use crate::thir::r#type::{THIRFloatType, THIRIntType, THIRType, THIRTypeKind};
 
@@ -12,37 +14,75 @@ thread_local! {
     static NEXT_LOCAL_ID: Cell<u64> = const { Cell::new(0) };
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct THIRLocalID(pub u64);
+dense_id!(THIRLocalID, "local.");
 
 impl THIRLocalID {
     pub fn fresh() -> Self {
         NEXT_LOCAL_ID.with(|next| {
             let id = next.get();
-            next.set(id.checked_add(1).expect("THIR local id counter overflowed"));
-            Self(id)
+            next.set(id + 1);
+            Self::new(id as usize)
         })
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct THIRFnContract {
-    pub safe: bool,
-    pub noreturn: bool,
-    pub precondition: Option<Box<THIRExpression>>,
-    pub postcondition: Option<THIRPostcondition>,
+    safe: bool,
+    precondition: Option<Box<THIRExpression>>,
+    postcondition: Option<THIRPostcondition>,
+}
+
+impl THIRFnContract {
+    pub fn new(
+        safe: bool,
+        precondition: Option<Box<THIRExpression>>,
+        postcondition: Option<THIRPostcondition>,
+    ) -> Self {
+        Self {
+            safe,
+            precondition,
+            postcondition,
+        }
+    }
+
+    pub fn is_safe(&self) -> bool {
+        self.safe
+    }
+
+    pub fn precondition(&self) -> Option<&THIRExpression> {
+        self.precondition.as_deref()
+    }
+
+    pub fn postcondition(&self) -> Option<&THIRPostcondition> {
+        self.postcondition.as_ref()
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct THIRPostcondition {
-    pub binding: Option<CXIdent>,
-    pub condition: Box<THIRExpression>,
+    binding: Option<CXIdent>,
+    condition: Box<THIRExpression>,
+}
+
+impl THIRPostcondition {
+    pub fn new(binding: Option<CXIdent>, condition: Box<THIRExpression>) -> Self {
+        Self { binding, condition }
+    }
+
+    pub fn binding(&self) -> Option<&CXIdent> {
+        self.binding.as_ref()
+    }
+
+    pub fn condition(&self) -> &THIRExpression {
+        &self.condition
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct THIRExpression {
     pub kind: THIRExpressionKind,
-    pub _type: THIRType,
+    pub ty: THIRType,
     pub token_range: TokenRange,
 }
 
@@ -50,28 +90,8 @@ impl Default for THIRExpression {
     fn default() -> Self {
         Self {
             kind: THIRExpressionKind::default(),
-            _type: THIRType::default(),
+            ty: THIRType::default(),
             token_range: TokenRange::internal(),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum THIRPureExpression {
-    IntegerLiteral(i64, THIRIntType, bool),
-}
-
-impl THIRPureExpression {
-    pub fn as_value(&self) -> THIRExpression {
-        match self {
-            Self::IntegerLiteral(value, integer_type, signed) => THIRExpression {
-                token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::IntLiteral(*value),
-                _type: THIRType::from(THIRTypeKind::Integer {
-                    _type: *integer_type,
-                    signed: *signed,
-                }),
-            },
         }
     }
 }
@@ -115,10 +135,10 @@ pub enum THIRExpressionKind {
         debug_name: Option<CXIdent>,
     },
     SizeOf {
-        _type: THIRType,
+        ty: THIRType,
     },
     AlignOf {
-        _type: THIRType,
+        ty: THIRType,
     },
 
     // Arithmetic & Logic
@@ -136,9 +156,14 @@ pub enum THIRExpressionKind {
     CreateLocalVariable {
         name: CXIdent,
         local_id: THIRLocalID,
-        _type: THIRType,
+        ty: THIRType,
         initial_value: Option<Box<THIRExpression>>,
-        adopting: bool,
+    },
+    AdoptRegion {
+        binding_name: CXIdent,
+        local_id: THIRLocalID,
+        ty: THIRType,
+        initial_value: Box<THIRExpression>,
     },
     Copy {
         source: Box<THIRExpression>,
@@ -152,8 +177,9 @@ pub enum THIRExpressionKind {
         value: Box<THIRExpression>,
     },
 
-    // Represents a no-op used to change the type of an expression with no added semantics
-    Typechange(Box<THIRExpression>),
+    AddressOf {
+        operand: Box<THIRExpression>,
+    },
 
     // Aggregate Access
     MemberAccess {
@@ -179,11 +205,6 @@ pub enum THIRExpressionKind {
     TaggedUnionTag {
         value: Box<THIRExpression>,
         sum_type: THIRType,
-    },
-    TaggedUnionGet {
-        value: Box<THIRExpression>,
-        variant_type: THIRType,
-        variant_index: usize,
     },
     TaggedUnionSet {
         target: Box<THIRExpression>,
@@ -266,7 +287,7 @@ pub enum THIRExpressionKind {
     },
     Block {
         statements: Vec<THIRExpression>,
-        creates_scope: bool,
+        kind: THIRBlockKind,
         yields: bool,
     },
 
@@ -288,7 +309,7 @@ pub enum THIRExpressionKind {
 
     VaArg {
         list: Box<THIRExpression>,
-        _type: THIRType,
+        ty: THIRType,
     },
 
     // Type Conversion
@@ -298,27 +319,25 @@ pub enum THIRExpressionKind {
     },
 
     // Lifetime Management
-    LifetimeStart {
-        variable: CXIdent,
-        _type: THIRType,
-    },
-    LifetimeEnd {
-        variable: CXIdent,
-        _type: THIRType,
-    },
-    LeakLifetime {
+    Leak {
         expression: Box<THIRExpression>,
     },
-
     Unsafe {
         expression: Box<THIRExpression>,
     },
 
     StagedExpression(THIRStagedExpr),
-    MaterializeStagedExpression {
+    Materialize {
         expr: Box<THIRExpression>,
         with_params: Vec<THIRExpression>,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum THIRBlockKind {
+    Sequence,
+    Statement,
+    Expression,
 }
 
 #[derive(Clone, Debug, Readable, Writable)]
@@ -405,9 +424,11 @@ pub enum THIRBinOp {
      */
     PtrDiff {
         op: THIRPtrDiffBinOp,
+        ptr_inner: THIRTypeID,
+    },
 
-        // Boxed for size reasons
-        ptr_inner: Box<THIRType>,
+    PtrDifference {
+        element_ty: THIRTypeID,
     },
 
     Pointer {
@@ -417,7 +438,6 @@ pub enum THIRBinOp {
 
 #[derive(Clone, Debug, Readable, Writable)]
 pub enum THIRUnOp {
-    NEG,
     INEG,
     FNEG,
     BNOT,
@@ -427,7 +447,7 @@ pub enum THIRUnOp {
     PostIncrement(i8),
 }
 
-#[derive(Clone, Copy, Debug, Readable, Writable)]
+#[derive(Clone, Debug, Readable, Writable)]
 pub enum THIRCoercion {
     // Any integer to any integer conversion
     Integral {
@@ -463,16 +483,22 @@ pub enum THIRCoercion {
         sextend: bool,
     },
 
-    // Decay of function designator to a pointer value
-    GetFnPtr,
+    // Converts an ephemeral reference to a bounded reference
+    ReferenceBounding(Vec<THIRLocalID>),
 
-    // Conversions between types that have the same semantic meaning
-    // in assembly, this is typically a no-op, but proves useful for type checking and verification
+    // Conversions between types that have the same semantic meaning,
+    // this is typically a no-op, but proves useful for type checking and verification
     Typechange,
+    Adopt,
 
     // A similar no-op operation like Typechange, but represents conversions that *do* change the semantic
     // meaning of the bits, such as converting from an f32 to an i32
-    ReinterpretBits,
+    //
+    // Converting from a bounded / ephemeral reference to a free reference (non-safe operation) also falls under this category
+    Bitcast,
+
+    StringToArray,
+
     Unreachable,
 }
 
@@ -493,20 +519,12 @@ pub struct StructInitialization {
 }
 
 impl THIRExpression {
-    pub fn get_type(&self) -> THIRType {
-        self._type.clone()
-    }
-
-    pub fn get_type_ref(&self) -> &THIRType {
-        &self._type
-    }
-
     pub fn int_literal(value: i64, itype: THIRIntType, is_signed: bool) -> Self {
         Self {
             kind: THIRExpressionKind::IntLiteral(value),
-            _type: THIRType {
+            ty: THIRType {
                 kind: THIRTypeKind::Integer {
-                    _type: itype,
+                    ty: itype,
                     signed: is_signed,
                 },
 

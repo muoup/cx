@@ -131,8 +131,8 @@ impl LMIRTypeKind {
     pub fn implicit_size(&self) -> TypeSize {
         TypeSize(match &self {
             LMIRTypeKind::Opaque { bytes } => *bytes,
-            LMIRTypeKind::Integer(_type) => _type.bytes() as usize,
-            LMIRTypeKind::Float(_type) => _type.bytes() as usize,
+            LMIRTypeKind::Integer(ty) => ty.bytes() as usize,
+            LMIRTypeKind::Float(ty) => ty.bytes() as usize,
             LMIRTypeKind::Pointer { bytes, .. } => *bytes as usize,
             LMIRTypeKind::Vector { element, count } => element.bytes() as usize * count,
             LMIRTypeKind::Array { element, size } => usize::from(element.size()) * size,

@@ -66,13 +66,10 @@ pub(crate) fn any_to_basic_val(any_value: AnyValueEnum) -> LLVMResult<BasicValue
     }
 }
 
-pub(crate) fn bc_llvm_type<'a>(
-    context: &'a Context,
-    _type: &LMIRType,
-) -> LLVMResult<AnyTypeEnum<'a>> {
-    Ok(match &_type.kind {
+pub(crate) fn bc_llvm_type<'a>(context: &'a Context, ty: &LMIRType) -> LLVMResult<AnyTypeEnum<'a>> {
+    Ok(match &ty.kind {
         LMIRTypeKind::Void => context.void_type().as_any_type_enum(),
-        LMIRTypeKind::Integer(_type) => match _type {
+        LMIRTypeKind::Integer(ty) => match ty {
             LMIRIntegerType::I1 => context.bool_type().as_any_type_enum(),
             LMIRIntegerType::I8 => context.i8_type().as_any_type_enum(),
             LMIRIntegerType::I16 => context.i16_type().as_any_type_enum(),
@@ -81,7 +78,7 @@ pub(crate) fn bc_llvm_type<'a>(
             LMIRIntegerType::I128 => context.i128_type().as_any_type_enum(),
         },
 
-        LMIRTypeKind::Float(_type) => match _type {
+        LMIRTypeKind::Float(ty) => match ty {
             LMIRFloatType::F32 => context.f32_type().as_any_type_enum(),
             LMIRFloatType::F64 => context.f64_type().as_any_type_enum(),
         },
@@ -111,14 +108,14 @@ pub(crate) fn bc_llvm_type<'a>(
             let type_s = fields
                 .iter()
                 .map(|(_, field_type)| -> LLVMResult<_> {
-                    let _type = bc_llvm_type(context, field_type)?;
+                    let ty = bc_llvm_type(context, field_type)?;
 
-                    any_to_basic_type(_type)
+                    any_to_basic_type(ty)
                 })
                 .collect::<LLVMResult<Vec<_>>>()?;
 
-            if let Some(_type) = context.get_struct_type(struct_name.as_str()) {
-                return Ok(_type.as_any_type_enum());
+            if let Some(ty) = context.get_struct_type(struct_name.as_str()) {
+                return Ok(ty.as_any_type_enum());
             }
 
             let struct_def = context.opaque_struct_type(struct_name.as_str());
@@ -129,7 +126,7 @@ pub(crate) fn bc_llvm_type<'a>(
 
         LMIRTypeKind::Opaque { bytes }
             if *bytes == ArchitectureConfig::native().pointer_size()
-                && usize::from(_type.alignment)
+                && usize::from(ty.alignment)
                     == ArchitectureConfig::native().pointer_alignment() =>
         {
             context.ptr_type(AddressSpace::from(0)).as_any_type_enum()
@@ -155,7 +152,7 @@ pub(crate) fn bc_llvm_signature<'a>(
         match &param.abi {
             LMIRParameterABI::Direct { slots } => {
                 for slot in slots {
-                    let bc_arg = bc_llvm_type(state.context, &slot._type)?;
+                    let bc_arg = bc_llvm_type(state.context, &slot.ty)?;
                     let basic_type = any_to_basic_type(bc_arg)?;
                     let md_type = unsafe { BasicMetadataTypeEnum::new(basic_type.as_type_ref()) };
                     args.push(md_type);
@@ -170,13 +167,13 @@ pub(crate) fn bc_llvm_signature<'a>(
     let return_type = match &signature.return_abi {
         LMIRReturnABI::Void => state.context.void_type().as_any_type_enum(),
         LMIRReturnABI::Direct { slots } if slots.len() == 1 => {
-            bc_llvm_type(state.context, &slots[0]._type)?
+            bc_llvm_type(state.context, &slots[0].ty)?
         }
         LMIRReturnABI::Direct { slots } => {
             let fields = slots
                 .iter()
                 .map(|slot| {
-                    let field = bc_llvm_type(state.context, &slot._type)?;
+                    let field = bc_llvm_type(state.context, &slot.ty)?;
                     any_to_basic_type(field)
                 })
                 .collect::<LLVMResult<Vec<_>>>()?;
@@ -234,7 +231,7 @@ pub(crate) fn apply_llvm_parameter_attributes<'a>(
         match &parameter.abi {
             LMIRParameterABI::Direct { slots } => {
                 for slot in slots {
-                    for attribute in get_type_attributes(context, &slot._type) {
+                    for attribute in get_type_attributes(context, &slot.ty) {
                         function.add_attribute(AttributeLoc::Param(index as u32), attribute);
                     }
                     index += 1;
@@ -252,7 +249,7 @@ pub(crate) fn apply_llvm_parameter_attributes<'a>(
                 for attribute in get_type_attributes(context, &pointer) {
                     function.add_attribute(AttributeLoc::Param(index as u32), attribute);
                 }
-                let pointee = bc_llvm_type(context, &parameter._type)?;
+                let pointee = bc_llvm_type(context, &parameter.ty)?;
                 function.add_attribute(
                     AttributeLoc::Param(index as u32),
                     attr_byval(context, pointee),

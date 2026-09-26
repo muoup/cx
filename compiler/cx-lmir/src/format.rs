@@ -1,3 +1,5 @@
+use cx_util::identifier::CXIdent;
+
 use crate::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
 use crate::{
     LMIRBasicBlock, LMIRBlockTarget, LMIRFloatBinOp, LMIRFloatUnOp, LMIRFunction,
@@ -12,7 +14,7 @@ impl Display for LMIRUnit {
         writeln!(f, "LMIR Program:")?;
 
         for global in self.global_vars.iter() {
-            writeln!(f, "{} :: {}", global.name, global._type)?;
+            writeln!(f, "{} :: {}", global.name, global.ty)?;
         }
 
         for func in self.fn_defs.iter() {
@@ -44,14 +46,17 @@ impl Display for LMIRBasicBlock {
                 if index != 0 {
                     f.write_str(", ")?;
                 }
-                write!(f, "{}: {}", param.register, param._type)?;
+                write!(f, "{}: {}", param.register, param.ty)?;
             }
             f.write_str(")")?;
         }
         writeln!(
             f,
             ":   ({})",
-            self.debug_name.as_deref().unwrap_or_default()
+            self.debug_name
+                .as_ref()
+                .map(CXIdent::as_str)
+                .unwrap_or("unnamed")
         )?;
 
         for instruction in self.body.iter() {
@@ -70,7 +75,7 @@ impl Display for LMIRFunctionSignature {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", arg._type)?;
+            write!(f, "{}", arg.ty)?;
         }
 
         write!(f, ") -> {}", self.return_type)
@@ -89,11 +94,11 @@ impl Display for LMIRGlobalType {
             LMIRGlobalType::StringLiteral(s) => {
                 write!(f, "string_literal \"{}\"", s.replace('\n', "\\n"))
             }
-            LMIRGlobalType::Variable { _type, state } => {
+            LMIRGlobalType::Variable { ty, state } => {
                 if matches!(state, LMIRGlobalState::External) {
-                    write!(f, "variable {_type} external")
+                    write!(f, "variable {ty} external")
                 } else {
-                    write!(f, "variable {_type} = {state}")
+                    write!(f, "variable {ty} = {state}")
                 }
             }
         }
@@ -113,17 +118,8 @@ impl Display for LMIRGlobalState {
 impl Display for LMIRGlobalInitializer {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Integer {
-                value,
-                _type,
-                signed,
-            } => write!(
-                f,
-                "{value}:{}{}",
-                if *signed { 'i' } else { 'u' },
-                integer_width(*_type)
-            ),
-            Self::Float { value, _type } => write!(f, "{value}:{}", float_name(*_type)),
+            Self::Integer { value, ty } => write!(f, "{value}:{}", integer_width(*ty)),
+            Self::Float { value, ty } => write!(f, "{value}:{}", float_name(*ty)),
             Self::Aggregate { fields } => {
                 f.write_str("{")?;
                 for (index, value) in fields.iter().enumerate() {
@@ -191,11 +187,11 @@ impl Display for LMIRValue {
         match self {
             LMIRValue::NULL => write!(f, "null"),
             LMIRValue::ParameterRef(index) => write!(f, "@param.{index}"),
-            LMIRValue::IntImmediate { val, _type } => write!(f, "{_type} {val}"),
-            LMIRValue::FloatImmediate { val, _type } => write!(f, "{_type} {val}"),
+            LMIRValue::IntImmediate { val, ty } => write!(f, "{ty} {val}"),
+            LMIRValue::FloatImmediate { val, ty } => write!(f, "{ty} {val}"),
             LMIRValue::FunctionRef(name) => write!(f, "{name}"),
             LMIRValue::Global(id) => write!(f, "g{id}"),
-            LMIRValue::Register { register, _type } => write!(f, "{_type} {register}"),
+            LMIRValue::Register { register, ty } => write!(f, "{ty} {register}"),
         }
     }
 }
@@ -210,25 +206,21 @@ impl Display for LMIRInstruction {
             LMIRInstructionKind::Alias { value } => {
                 write!(f, "{value}")
             }
-            LMIRInstructionKind::Allocate { _type, .. } => {
-                write!(f, "alloca {_type}")
+            LMIRInstructionKind::Allocate { ty, .. } => {
+                write!(f, "alloca {ty}")
             }
-            LMIRInstructionKind::Store {
-                value,
-                memory,
-                _type,
-            } => {
-                write!(f, "store ({_type}) {value}, {memory}")
+            LMIRInstructionKind::Store { value, memory, ty } => {
+                write!(f, "store ({ty}) {value}, {memory}")
             }
             LMIRInstructionKind::Memcpy {
                 dest, src, size, ..
             } => {
                 write!(f, "memcpy {dest}, {src}, {size}")
             }
-            LMIRInstructionKind::Load { memory, _type, .. } => {
-                write!(f, "load {_type}, {memory}")
+            LMIRInstructionKind::Load { memory, ty, .. } => {
+                write!(f, "load {ty}, {memory}")
             }
-            LMIRInstructionKind::ZeroMemory { memory, _type } => {
+            LMIRInstructionKind::ZeroMemory { memory, ty: _ } => {
                 write!(f, "*{memory} := 0")
             }
             LMIRInstructionKind::StructAccess {
@@ -309,8 +301,8 @@ impl Display for LMIRInstruction {
                 write!(f, "va_start({list}, {last})")
             }
             LMIRInstructionKind::VaEnd { list } => write!(f, "va_end({list})"),
-            LMIRInstructionKind::VaArg { list, _type } => {
-                write!(f, "va_arg({list}, {_type})")
+            LMIRInstructionKind::VaArg { list, ty } => {
+                write!(f, "va_arg({list}, {ty})")
             }
             LMIRInstructionKind::PointerBinOp {
                 left,
@@ -358,6 +350,7 @@ impl Display for LMIRPtrBinOp {
             match self {
                 LMIRPtrBinOp::ADD => "+",
                 LMIRPtrBinOp::SUB => "-",
+                LMIRPtrBinOp::DIFF => "diff",
 
                 LMIRPtrBinOp::EQ => "==",
                 LMIRPtrBinOp::NE => "!=",
@@ -495,8 +488,8 @@ impl Display for LMIRTypeKind {
         match &self {
             LMIRTypeKind::Opaque { bytes } => write!(f, "opaque_{}", *bytes),
 
-            LMIRTypeKind::Integer(_type) => write!(f, "{}", _type),
-            LMIRTypeKind::Float(_type) => write!(f, "{}", _type),
+            LMIRTypeKind::Integer(ty) => write!(f, "{}", ty),
+            LMIRTypeKind::Float(ty) => write!(f, "{}", ty),
 
             LMIRTypeKind::Pointer {
                 nullable,
@@ -525,7 +518,7 @@ impl Display for LMIRTypeKind {
             LMIRTypeKind::Struct { fields, .. } => {
                 let fields = fields
                     .iter()
-                    .map(|(_, _type)| format!("{_type}"))
+                    .map(|(_, ty)| format!("{ty}"))
                     .collect::<Vec<_>>()
                     .join(", ");
 

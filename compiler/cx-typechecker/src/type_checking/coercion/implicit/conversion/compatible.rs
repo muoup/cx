@@ -1,6 +1,6 @@
 use cx_log::CXResult;
 use cx_thir::{
-    thir::r#type::{THIRType, THIRTypeKind},
+    thir::r#type::{THIRArrayLength, THIRType, THIRTypeKind},
     type_context::THIRTypeContext,
 };
 
@@ -78,9 +78,15 @@ pub fn compatible_types(
                 length: len2,
             },
         ) => {
-            if len1.display_with(&env.symbols).to_string()
-                != len2.display_with(&env.symbols).to_string()
-            {
+            let same_length = match (len1, len2) {
+                (THIRArrayLength::Implicit, THIRArrayLength::Implicit) => true,
+                (THIRArrayLength::Known(left), THIRArrayLength::Known(right)) => {
+                    left.display_with(&env.symbols).to_string()
+                        == right.display_with(&env.symbols).to_string()
+                }
+                _ => false,
+            };
+            if !same_length {
                 return Ok(false);
             }
 
@@ -138,6 +144,48 @@ pub fn compatible_types(
 
                 compatible_types(env, field_type1, field_type2).unwrap_or(false)
             }))
+        }
+
+        _ => Ok(false),
+    }
+}
+
+pub(crate) fn compatible_reassignment(
+    env: &TypeEnvironment,
+    type1: &THIRType,
+    type2: &THIRType,
+) -> CXResult<bool> {
+    if compatible_types(env, type1, type2)? {
+        return Ok(true);
+    }
+
+    match (&type1.kind, &type2.kind) {
+        // T[_] and T[N] are compatible for assignment if T is the same type, regardless of the array length.
+        (
+            THIRTypeKind::Array {
+                inner_type: inner1,
+                length: THIRArrayLength::Implicit,
+            },
+            THIRTypeKind::Array {
+                inner_type: inner2,
+                length: THIRArrayLength::Implicit | THIRArrayLength::Known(_),
+            },
+        )
+        | (
+            THIRTypeKind::Array {
+                inner_type: inner1,
+                length: THIRArrayLength::Known(_),
+            },
+            THIRTypeKind::Array {
+                inner_type: inner2,
+                length: THIRArrayLength::Implicit,
+            },
+        ) if env.type_eq(
+            env.symbols.resolve_type_id(*inner1),
+            env.symbols.resolve_type_id(*inner2),
+        ) =>
+        {
+            Ok(true)
         }
 
         _ => Ok(false),

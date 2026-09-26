@@ -13,16 +13,13 @@ pub(crate) fn typecheck_unsafe(
     inner: &HIRExpression,
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
-    env.push_unsafe();
-    let inner_result = typecheck_expr(env, namespace, inner, expected_type);
-    env.pop_unsafe();
-    let inner_result = inner_result?;
+    let inner_result = typecheck_expr(env, namespace, inner, expected_type)?;
 
     let adopting = inner_result.is_adopting();
     let inner_expr = inner_result.standard_ready_coerce(env, inner.token_range())?;
 
     let result = TypecheckResult::new(
-        inner_expr._type.clone(),
+        inner_expr.ty.clone(),
         THIRExpressionKind::Unsafe {
             expression: Box::new(inner_expr),
         },

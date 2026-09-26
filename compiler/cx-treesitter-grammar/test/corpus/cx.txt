@@ -155,6 +155,48 @@ int run(int value) {
               (identifier))))))))
 
 ==================
+lifetime reference boundaries
+==================
+int 'a
+& read(int 'a /*split*/ & value) {
+    return value;
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type))
+      (reference_modifier
+        (lifetime_modifier
+          (identifier))
+        (operator)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type))
+            (reference_modifier
+              (lifetime_modifier
+                (identifier))
+              (comment)
+              (operator)))
+          (declarator
+            (identifier)))))
+    (compound_statement
+      (return_statement
+        (keyword)
+        (expression
+          (primary_expression
+            (qualified_name
+              (identifier))))))))
+
+==================
 function pointers and declarations
 ==================
 typedef int callback_t(int value);
@@ -700,3 +742,43 @@ int main() {
         (ERROR
           (operator)))))
   (ERROR))
+
+==================
+lifetime reference suffix
+==================
+int 'a& read(int 'a& value) {
+    return value;
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type))
+      (reference_modifier
+        (lifetime_modifier
+          (identifier))
+        (operator)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type))
+            (reference_modifier
+              (lifetime_modifier
+                (identifier))
+              (operator)))
+          (declarator
+            (identifier)))))
+    (compound_statement
+      (return_statement
+        (keyword)
+        (expression
+          (primary_expression
+            (qualified_name
+              (identifier))))))))

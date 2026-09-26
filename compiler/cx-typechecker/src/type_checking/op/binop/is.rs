@@ -35,7 +35,7 @@ pub(crate) fn typecheck_is(
                 "is operator".into(),
                 "tagged union type".into(),
                 format!("{}", union_type.display_with(&env.symbols)),
-            )
+            ),
         );
     };
     let variants = variants.clone();
@@ -66,7 +66,7 @@ pub(crate) fn typecheck_is(
             ),
         );
     }
-    
+
     let Some((expected_tag, variant_type)) = variants
         .iter()
         .enumerate()
@@ -82,17 +82,21 @@ pub(crate) fn typecheck_is(
     let inner_local_id = inner_name.as_ref().map(|_| THIRLocalID::fresh());
     if let (Some(inner_name), Some(inner_local_id)) = (&inner_name, inner_local_id) {
         let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
-        env.symbols.insert_local_value(
-            QualifiedName::new_raw(inner_name.clone()),
-            THIRExpression {
-                token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Variable {
-                    name: inner_name.clone(),
-                    local_id: inner_local_id,
-                },
-                _type: variant_ref_type,
+        let binding = THIRExpression {
+            token_range: TokenRange::internal(),
+            kind: THIRExpressionKind::Variable {
+                name: inner_name.clone(),
+                local_id: inner_local_id,
             },
-        );
+            ty: variant_ref_type,
+        };
+        if tc_lhs.source.ty.is_memory_reference() {
+            env.symbols
+                .insert_borrowed_local_value(QualifiedName::new_raw(inner_name.clone()), binding);
+        } else {
+            env.symbols
+                .insert_local_value(QualifiedName::new_raw(inner_name.clone()), binding);
+        }
     }
 
     Ok(TypecheckResult::new(

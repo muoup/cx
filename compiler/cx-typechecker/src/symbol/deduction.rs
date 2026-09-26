@@ -32,7 +32,7 @@ use crate::{
 
 type TemplateBindings = HashMap<String, THIRType>;
 
-pub(crate) fn complete_templated_callee_maybe(
+pub(crate) fn complete_templated_callee(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     name: &QualifiedName,
@@ -176,7 +176,7 @@ fn deduce_template_input(
         })
         .collect::<CXMaybeRawResult<Vec<_>>>()?;
 
-    Ok(THIRTemplateInput { args })
+    Ok(THIRTemplateInput::new(args))
 }
 
 fn is_unreachable_type(ty: &HIRType) -> bool {
@@ -215,11 +215,11 @@ impl<'a> TemplateDeductionShell<'a> {
 
     fn formal_types(&self) -> Vec<&'a HIRType> {
         match self {
-            Self::Runtime(shell) => shell.params.iter().map(|param| &param._type).collect(),
+            Self::Runtime(shell) => shell.params.iter().map(|param| &param.ty).collect(),
             Self::Comptime(shell) => shell
                 .params
                 .iter()
-                .map(|param| &param.value_type._type)
+                .map(|param| &param.value_type.ty)
                 .collect(),
             Self::TypeConstructor(_) => Vec::new(),
         }
@@ -228,7 +228,7 @@ impl<'a> TemplateDeductionShell<'a> {
     fn return_type(&self) -> &'a HIRType {
         match self {
             Self::Runtime(shell) => &shell.return_type,
-            Self::Comptime(shell) => &shell.return_type._type,
+            Self::Comptime(shell) => &shell.return_type.ty,
             Self::TypeConstructor(union_type) => union_type,
         }
     }
@@ -294,7 +294,7 @@ fn deduce_from_cx_type(
                 );
             };
 
-            if !template_base_matches(name, template_info.base_name.as_ref()) {
+            if !template_base_matches(name, template_info.base_name()) {
                 return crate::log::internal_type_error(
                     &catalogue::TYPE_REQUIREMENT,
                     (
@@ -303,8 +303,7 @@ fn deduce_from_cx_type(
                         Some(format!(
                             "{}",
                             template_info
-                                .base_name
-                                .as_ref()
+                                .base_name()
                                 .map(|name| name.to_string())
                                 .unwrap_or_else(|| "<anonymous>".to_string())
                         )),
@@ -312,13 +311,13 @@ fn deduce_from_cx_type(
                 );
             }
 
-            if input.params.len() != template_info.template_input.args.len() {
+            if input.params.len() != template_info.template_input().args().len() {
                 return crate::log::internal_type_error(
                     &catalogue::ARGUMENT_COUNT,
                     (
                         format!("{}", name),
                         input.params.len(),
-                        template_info.template_input.args.len(),
+                        template_info.template_input().args().len(),
                         false,
                     ),
                 );
@@ -327,7 +326,7 @@ fn deduce_from_cx_type(
             for (formal_arg, actual_arg) in input
                 .params
                 .iter()
-                .zip(template_info.template_input.args.iter())
+                .zip(template_info.template_input().args().iter())
             {
                 let actual_arg = env.symbols.resolve_type_id(*actual_arg).clone();
                 deduce_from_cx_type(
@@ -343,7 +342,7 @@ fn deduce_from_cx_type(
             Ok(())
         }
 
-        HIRTypeKind::MemoryReference { inner_type } => {
+        HIRTypeKind::MemoryReference { inner_type, .. } => {
             let THIRTypeKind::MemoryReference {
                 inner_type: actual_inner,
                 ..
@@ -444,24 +443,24 @@ fn deduce_from_function_signature(
     formal: &HIRFunctionPrototype,
     actual: &THIRFnSignature,
 ) -> CXResult<()> {
-    if formal.var_args != actual.var_args {
+    if formal.var_args != actual.var_args() {
         return crate::log::internal_type_error(
             &catalogue::TYPE_MISMATCH,
             (
                 "function pointer varargs".into(),
                 format!("{}", formal.var_args),
-                format!("{}", actual.var_args),
+                format!("{}", actual.var_args()),
             ),
         );
     }
 
-    if formal.params.len() != actual.params.len() {
+    if formal.params.len() != actual.params().len() {
         return crate::log::internal_type_error(
             &catalogue::TYPE_MISMATCH,
             (
                 "function pointer parameters".into(),
                 format!("{}", formal.params.len()),
-                format!("{}", actual.params.len()),
+                format!("{}", actual.params().len()),
             ),
         );
     }
@@ -472,17 +471,17 @@ fn deduce_from_function_signature(
         template_prototype,
         bindings,
         &formal.return_type,
-        &actual.return_type,
+        actual.return_type(),
     )?;
 
-    for (formal_param, actual_param) in formal.params.iter().zip(actual.params.iter()) {
+    for (formal_param, actual_param) in formal.params.iter().zip(actual.params().iter()) {
         deduce_from_cx_type(
             env,
             namespace,
             template_prototype,
             bindings,
-            &formal_param._type,
-            &actual_param._type,
+            &formal_param.ty,
+            actual_param.ty(),
         )?;
     }
 

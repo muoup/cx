@@ -1,0 +1,19 @@
+struct Source {
+    int values[3];
+};
+
+Source source = { { 1, 2, 3 } };
+int copied[] = source.values;
+
+comptime Source generate() {
+    return { { 4, 5, 6 } };
+}
+
+int generated[] = generate().values;
+
+int main() {
+    return copied[0] == 1 && copied[1] == 2 && copied[2] == 3
+        && generated[0] == 4 && generated[1] == 5 && generated[2] == 6
+        && sizeof(copied) == 3 * sizeof(int)
+        && sizeof(generated) == 3 * sizeof(int) ? 0 : 1;
+}

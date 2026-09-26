@@ -1,0 +1,16 @@
+enum union Choice {
+    none :: void,
+    some :: int
+};
+
+int read(Choice& value) {
+    return match (value) {
+        Choice::some(inner) => yield move inner;
+        Choice::none() => yield 0;
+    };
+}
+
+int main() {
+    Choice value = Choice::some(1);
+    return read(value);
+}

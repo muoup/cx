@@ -4,14 +4,14 @@ use cx_util::identifier::CXIdent;
 use crate::thir::comptime::THIRComptimeFn;
 use crate::thir::data::{
     THIRComptimeFnPrototype, THIRComptimeParameter, THIRComptimeValueType, THIRFnPrototype,
-    THIRFnSignature, THIRParameter,
+    THIRFnSignature, THIRFunctionBody, THIRParameter,
 };
 use crate::thir::expression::{
-    THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
+    THIRBinOp, THIRBlockKind, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
 };
 use crate::thir::global::THIRGlobalVariable;
 use crate::thir::r#type::{
-    THIRField, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind,
+    THIRArrayLength, THIRField, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind,
 };
 use crate::type_context::THIRTypeContext;
 use crate::{THIRFunction, THIRUnit};
@@ -195,12 +195,12 @@ fn write_type_name(
         return Ok(true);
     };
 
-    if template_info.template_input.args.is_empty() {
+    if template_info.template_input().args().is_empty() {
         return Ok(true);
     }
 
     write!(f, "<")?;
-    for (idx, arg) in template_info.template_input.args.iter().enumerate() {
+    for (idx, arg) in template_info.template_input().args().iter().enumerate() {
         if idx > 0 {
             write!(f, ", ")?;
         }
@@ -219,7 +219,7 @@ fn write_type_base_name(
 ) -> Result<bool, std::fmt::Error> {
     if let Some(name) = ty
         .get_template_data()
-        .and_then(|template_info| template_info.base_name.as_ref())
+        .and_then(|template_info| template_info.base_name())
         .or_else(|| ty.lookup_identifier())
         .or_else(|| id.and_then(|id| definitions.type_id_lookup_identifier(id)))
     {
@@ -231,7 +231,7 @@ fn write_type_base_name(
 
 fn has_type_name(definitions: &dyn THIRTypeContext, ty: &THIRType, id: Option<THIRTypeID>) -> bool {
     ty.get_template_data()
-        .and_then(|template_info| template_info.base_name.as_ref())
+        .and_then(|template_info| template_info.base_name())
         .or_else(|| ty.lookup_identifier())
         .or_else(|| id.and_then(|id| definitions.type_id_lookup_identifier(id)))
         .is_some()
@@ -375,10 +375,10 @@ fn write_type_body(
     }
 
     match &ty.kind {
-        THIRTypeKind::Integer { _type, signed } => {
-            write!(f, "{}{}", if *signed { 'i' } else { 'u' }, _type)
+        THIRTypeKind::Integer { ty, signed } => {
+            write!(f, "{}{}", if *signed { 'i' } else { 'u' }, ty)
         }
-        THIRTypeKind::Float { _type } => write!(f, "{_type}"),
+        THIRTypeKind::Float { ty } => write!(f, "{ty}"),
         THIRTypeKind::Structured { fields } => {
             write_aggregate(f, "struct", ty, fields, definitions, state)
         }
@@ -390,7 +390,7 @@ fn write_type_body(
         }
         THIRTypeKind::Void => write!(f, "void"),
         THIRTypeKind::Unreachable => write!(f, "unreachable"),
-        THIRTypeKind::PointerTo { inner_type } => {
+        THIRTypeKind::PointerTo { inner_type, .. } => {
             write_type_id(f, definitions, *inner_type, state)?;
             write!(f, "*")?;
             write_type_qualifiers_suffix(f, ty.specifiers)
@@ -400,11 +400,7 @@ fn write_type_body(
             bitfield,
         } => {
             if let Some(bitfield) = bitfield {
-                write!(
-                    f,
-                    "&<bitfield @{}:{}>",
-                    bitfield.bit_offset, bitfield.bit_width
-                )?;
+                write!(f, "&<bitfield #{}>", bitfield.field_index())?;
             } else {
                 write!(f, "&")?;
             }
@@ -417,7 +413,10 @@ fn write_type_body(
         } => {
             write!(f, "[")?;
             write_type_id(f, definitions, *inner_type, state)?;
-            write!(f, "; {}]", size.display_with(definitions))
+            match size {
+                THIRArrayLength::Implicit => write!(f, "]"),
+                THIRArrayLength::Known(size) => write!(f, "; {}]", size.display_with(definitions)),
+            }
         }
         THIRTypeKind::Opaque { size, alignment } => {
             write!(f, "opaque(size: {size}, align: {alignment})")
@@ -448,13 +447,26 @@ impl Display for THIRDisplay<'_, THIRComptimeFn> {
             f,
             "{}",
             self.content
-                .prototype
+                .prototype()
                 .display_with_definitions(self.definitions)
         )?;
 
-        if let Some(body) = &self.content.body {
+        if let Some(body) = self.content.body() {
             writeln!(f, "Body:")?;
-            MIRExpressionFormatter::with_definitions(body, 1, self.definitions).fmt(f)
+
+            match body {
+                THIRFunctionBody::Expression(expr) => {
+                    MIRExpressionFormatter::with_definitions(expr, 1, self.definitions).fmt(f)?;
+                }
+                THIRFunctionBody::Block { exprs, .. } => {
+                    for statement in exprs {
+                        MIRExpressionFormatter::with_definitions(statement, 1, self.definitions)
+                            .fmt(f)?;
+                    }
+                }
+            }
+
+            Ok(())
         } else {
             write!(f, "Declaration")
         }
@@ -486,12 +498,9 @@ impl Display for THIRDisplay<'_, THIRComptimeParameter> {
         write!(
             f,
             "{}: {}",
+            self.content.name().unwrap_or(&CXIdent::from("<unnamed>")),
             self.content
-                .name
-                .as_ref()
-                .unwrap_or(&CXIdent::from("<unnamed>")),
-            self.content
-                .value_type
+                .value_type()
                 .display_with_definitions(self.definitions)
         )
     }
@@ -499,16 +508,14 @@ impl Display for THIRDisplay<'_, THIRComptimeParameter> {
 
 impl Display for THIRDisplay<'_, THIRComptimeValueType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.content.expr {
+        if self.content.is_expr() {
             write!(f, "expr ")?;
         }
 
         write!(
             f,
             "{}",
-            self.content
-                ._type
-                .display_with_definitions(self.definitions)
+            self.content.ty().display_with_definitions(self.definitions)
         )
     }
 }
@@ -519,13 +526,26 @@ impl Display for THIRDisplay<'_, THIRFunction> {
             f,
             "{}",
             self.content
-                .prototype
+                .prototype()
                 .display_with_definitions(self.definitions)
         )?;
 
-        if let Some(body) = &self.content.body {
+        if let Some(body) = self.content.body() {
             writeln!(f, "Body:")?;
-            MIRExpressionFormatter::with_definitions(body, 1, self.definitions).fmt(f)
+
+            match body {
+                THIRFunctionBody::Expression(expr) => {
+                    MIRExpressionFormatter::with_definitions(expr, 1, self.definitions).fmt(f)?;
+                }
+                THIRFunctionBody::Block { exprs, .. } => {
+                    for statement in exprs {
+                        MIRExpressionFormatter::with_definitions(statement, 1, self.definitions)
+                            .fmt(f)?;
+                    }
+                }
+            }
+
+            Ok(())
         } else {
             write!(f, "Declaration")
         }
@@ -575,21 +595,17 @@ fn write_function_name(f: &mut Formatter<'_>, prototype: &THIRFnPrototype) -> st
 
 impl Display for THIRDisplay<'_, THIRParameter> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(name) = &self.content.name {
+        if let Some(name) = self.content.name() {
             write!(
                 f,
                 "{name}: {}",
-                self.content
-                    ._type
-                    .display_with_definitions(self.definitions)
+                self.content.ty().display_with_definitions(self.definitions)
             )
         } else {
             write!(
                 f,
                 "{}",
-                self.content
-                    ._type
-                    .display_with_definitions(self.definitions)
+                self.content.ty().display_with_definitions(self.definitions)
             )
         }
     }
@@ -597,11 +613,16 @@ impl Display for THIRDisplay<'_, THIRParameter> {
 
 impl Display for THIRDisplay<'_, THIRGlobalVariable> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "global {} {}", self.content.linkage, self.content.name)?;
+        write!(
+            f,
+            "global {} {}",
+            self.content.linkage(),
+            self.content.name()
+        )?;
         write!(
             f,
             " [{}]",
-            if self.content.is_mutable {
+            if self.content.is_mutable() {
                 "mutable"
             } else {
                 "immutable"
@@ -610,9 +631,7 @@ impl Display for THIRDisplay<'_, THIRGlobalVariable> {
         write!(
             f,
             " : {}",
-            self.content
-                ._type
-                .display_with_definitions(self.definitions)
+            self.content.ty().display_with_definitions(self.definitions)
         )?;
         Ok(())
     }
@@ -648,25 +667,21 @@ fn write_signature_with_context(
     state: &mut TypeDisplayState,
 ) -> std::fmt::Result {
     write!(f, "fn(")?;
-    for (i, param) in signature.params.iter().enumerate() {
+    for (i, param) in signature.params().iter().enumerate() {
         if i > 0 {
             write!(f, ", ")?;
         }
-        write!(
-            f,
-            "{}: ",
-            param.name.as_ref().map(CXIdent::as_str).unwrap_or("_")
-        )?;
-        write_type_value(f, definitions, &param._type, state)?;
+        write!(f, "{}: ", param.name().map(CXIdent::as_str).unwrap_or("_"))?;
+        write_type_value(f, definitions, param.ty(), state)?;
     }
-    if signature.var_args {
-        if !signature.params.is_empty() {
+    if signature.var_args() {
+        if !signature.params().is_empty() {
             write!(f, ", ")?;
         }
         write!(f, "...")?;
     }
     write!(f, ") -> ")?;
-    write_type_value(f, definitions, &signature.return_type, state)?;
+    write_type_value(f, definitions, signature.return_type(), state)?;
 
     Ok(())
 }
@@ -706,10 +721,19 @@ impl<'a> MIRExpressionFormatter<'a> {
                 write!(
                     f,
                     "ptrdiff<{}> {:?}",
-                    ptr_inner.display_with_definitions(self.definitions),
+                    self.definitions
+                        .resolve_type_id(*ptr_inner)
+                        .display_with_definitions(self.definitions),
                     op
                 )
             }
+            THIRBinOp::PtrDifference { element_ty } => write!(
+                f,
+                "ptrdiff<{}>",
+                self.definitions
+                    .resolve_type_id(*element_ty)
+                    .display_with_definitions(self.definitions)
+            ),
             THIRBinOp::Pointer { op } => write!(f, "ptr {:?}", op),
         }
     }
@@ -721,56 +745,56 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
         match &self.expr.kind {
             THIRExpressionKind::BoolLiteral(value) => {
                 write!(f, "BoolLiteral {} <'", value)?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::IntLiteral(value) => {
                 write!(f, "IntLiteral {} <'", value)?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::FloatLiteral(value) => {
                 write!(f, "FloatLiteral f{} <'", value)?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::StringLiteral { value } => {
                 write!(f, "StringLiteral \"{}\" <'", value)?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::Unit => {
                 write!(f, "Unit <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
-            THIRExpressionKind::SizeOf { _type } => {
+            THIRExpressionKind::SizeOf { ty } => {
                 write!(f, "SizeOf ")?;
-                self.write_type(f, _type)?;
+                self.write_type(f, ty)?;
                 writeln!(f, " <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
-            THIRExpressionKind::AlignOf { _type } => {
+            THIRExpressionKind::AlignOf { ty } => {
                 write!(f, "AlignOf ")?;
-                self.write_type(f, _type)?;
+                self.write_type(f, ty)?;
                 writeln!(f, " <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::GlobalVariable { symbol } => {
                 write!(f, "GlobalVariable \"{symbol}\" <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::Variable { name, .. } => {
                 write!(f, "LocalVariable {} <'", name)?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::ContractVariable { name, .. } => {
                 write!(f, "ContractVariable \"{name}\" <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::FunctionReference { name, debug_name } => {
@@ -779,14 +803,14 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     "FunctionReference {} <'",
                     debug_name.as_ref().unwrap_or(name)
                 )?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
                 write!(f, "BinaryOperation ")?;
                 self.write_bin_op(f, op)?;
                 write!(f, " <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: lhs,
@@ -803,7 +827,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::UnaryOperation { operand, op } => {
                 write!(f, "UnaryOperation {} <'", op)?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: operand,
@@ -812,12 +836,12 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::Typechange(expression) => {
-                write!(f, "Typechange <'")?;
-                self.write_type(f, &self.expr._type)?;
+            THIRExpressionKind::AddressOf { operand } => {
+                write!(f, "AddressOf <'")?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
-                    expr: expression,
+                    expr: operand,
                     depth: self.depth + 1,
                     definitions: self.definitions,
                 }
@@ -825,7 +849,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::Assign { target, value } => {
                 write!(f, "Assign <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: target,
@@ -843,15 +867,14 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             THIRExpressionKind::CreateLocalVariable {
                 name,
                 local_id,
-                _type,
+                ty,
                 initial_value,
-                adopting,
             } => {
                 write!(f, "CreateLocalVariable {} (ty=", name)?;
-                self.write_type(f, _type)?;
+                self.write_type(f, ty)?;
                 write!(f, ", local_id={:?}) <'", local_id)?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ", adopting={adopting}>")?;
+                self.write_type(f, &self.expr.ty)?;
+                writeln!(f, ">")?;
                 if let Some(initial_value) = initial_value {
                     MIRExpressionFormatter {
                         expr: initial_value,
@@ -863,10 +886,28 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     Ok(())
                 }
             }
+            THIRExpressionKind::AdoptRegion {
+                binding_name,
+                local_id,
+                ty,
+                initial_value,
+            } => {
+                write!(f, "AdoptRegion {} (ty=", binding_name)?;
+                self.write_type(f, ty)?;
+                write!(f, ", local_id={:?}) <'", local_id)?;
+                self.write_type(f, &self.expr.ty)?;
+                writeln!(f, ">")?;
+                MIRExpressionFormatter {
+                    expr: initial_value,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
             THIRExpressionKind::Copy { source } => {
                 write!(f, "Copy")?;
                 write!(f, " <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: source,
@@ -878,7 +919,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
 
             THIRExpressionKind::Move { name, .. } => {
                 write!(f, "Move <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, "> {}", name)
             }
 
@@ -891,7 +932,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 write!(f, "MemberAccess [")?;
                 self.write_type(f, aggregate_type)?;
                 write!(f, "] member {member_index} <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: base,
@@ -902,7 +943,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::ArrayAccess { array, index, .. } => {
                 write!(f, "ArrayAccess <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: array,
@@ -919,7 +960,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::PatternIs { lhs, pattern } => {
                 write!(f, "PatternIs {pattern} <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: lhs,
@@ -931,11 +972,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             THIRExpressionKind::Unpack {
                 value, bindings, ..
             } => {
-                write!(
-                    f,
-                    "Unpack <'{}>",
-                    value._type.display_with(self.definitions)
-                )?;
+                write!(f, "Unpack <'{}>", value.ty.display_with(self.definitions))?;
                 MIRExpressionFormatter {
                     expr: value,
                     depth: self.depth + 1,
@@ -951,24 +988,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
 
             THIRExpressionKind::TaggedUnionTag { value, .. } => {
                 write!(f, "TaggedUnionTag <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: value,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)
-            }
-            THIRExpressionKind::TaggedUnionGet {
-                value,
-                variant_type,
-                ..
-            } => {
-                write!(f, "TaggedUnionGet [")?;
-                self.write_type(f, variant_type)?;
-                write!(f, "] <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: value,
@@ -984,7 +1004,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 ..
             } => {
                 write!(f, "TaggedUnionSet variant {} <'", variant_index)?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: target,
@@ -1005,7 +1025,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 ..
             } => {
                 write!(f, "ConstructTaggedUnion variant {} <'", variant_index)?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: value,
@@ -1021,7 +1041,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 write!(f, "StructInitializer ")?;
                 self.write_type(f, struct_type)?;
                 write!(f, " {{ <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 for initializer in initializations {
                     self.indent(f)?;
@@ -1043,7 +1063,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 write!(f, "ArrayInitializer ")?;
                 self.write_type(f, element_type)?;
                 write!(f, " [ <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 for element in elements {
                     MIRExpressionFormatter {
@@ -1062,7 +1082,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 else_branch,
             } => {
                 write!(f, "If <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: condition,
@@ -1093,7 +1113,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             } => {
                 let name = if *pre_eval { "While" } else { "Do-While" };
                 write!(f, "{} <'", name)?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: condition,
@@ -1115,7 +1135,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 body,
             } => {
                 write!(f, "For <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: init,
@@ -1148,7 +1168,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 default,
             } => {
                 write!(f, "CSwitch <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: condition,
@@ -1191,7 +1211,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 ..
             } => {
                 write!(f, "Match <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 self.indent(f)?;
                 writeln!(f, "Subject #{}:", subject.0)?;
@@ -1218,7 +1238,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 postcondition,
             } => {
                 write!(f, "Return <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 if let Some(value) = value {
                     MIRExpressionFormatter {
@@ -1232,14 +1252,14 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     self.indent(f)?;
                     write!(f, " ++ Postcondition")?;
 
-                    if let Some(name) = &postcondition.binding {
+                    if let Some(name) = postcondition.binding() {
                         write!(f, "({})", name)?;
                     }
 
                     writeln!(f, ":")?;
 
                     MIRExpressionFormatter {
-                        expr: &postcondition.condition,
+                        expr: postcondition.condition(),
                         depth: self.depth + 2,
                         definitions: self.definitions,
                     }
@@ -1249,12 +1269,12 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::Unreachable => {
                 write!(f, "Unreachable <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
             THIRExpressionKind::Yield { value } => {
                 write!(f, "Yield <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 if let Some(value) = value {
                     MIRExpressionFormatter {
@@ -1269,8 +1289,8 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             THIRExpressionKind::StagedExpression(staged_expr) => {
                 write!(f, "StagedExpression [")?;
                 for param in staged_expr.params() {
-                    write!(f, " {}: ", param.name)?;
-                    self.write_type(f, &param.ty)?;
+                    write!(f, " {}: ", param.name())?;
+                    self.write_type(f, param.ty())?;
                 }
                 MIRExpressionFormatter {
                     expr: staged_expr.expr(),
@@ -1279,7 +1299,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::MaterializeStagedExpression { expr, with_params } => {
+            THIRExpressionKind::Materialize { expr, with_params } => {
                 writeln!(f, "MaterializeStagedExpression")?;
                 MIRExpressionFormatter {
                     expr,
@@ -1308,7 +1328,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::Defer { expression } => {
                 write!(f, "Defer <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: expression,
@@ -1318,16 +1338,18 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 .fmt(f)
             }
             THIRExpressionKind::Block {
-                statements,
-                creates_scope,
-                ..
+                statements, kind, ..
             } => {
                 write!(
                     f,
                     "{}Block {{ <'",
-                    if *creates_scope { "Scoped " } else { "" }
+                    match kind {
+                        THIRBlockKind::Sequence => "Sequence ",
+                        THIRBlockKind::Statement => "Statement ",
+                        THIRBlockKind::Expression => "Expression ",
+                    }
                 )?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 for stmt in statements {
                     MIRExpressionFormatter {
@@ -1346,7 +1368,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 contract,
             } => {
                 write!(f, "CallFunction <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: function,
@@ -1363,7 +1385,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     .fmt(f)?;
                 }
 
-                if let Some(precondition) = contract.precondition.as_ref() {
+                if let Some(precondition) = contract.precondition() {
                     self.indent(f)?;
                     writeln!(f, "Precondition:")?;
                     MIRExpressionFormatter {
@@ -1374,11 +1396,11 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     .fmt(f)?;
                 }
 
-                if let Some(postcondition) = contract.postcondition.as_ref() {
+                if let Some(postcondition) = contract.postcondition() {
                     self.indent(f)?;
                     write!(f, " ++ Postcondition")?;
 
-                    if let Some(binding) = &postcondition.binding {
+                    if let Some(binding) = postcondition.binding() {
                         self.indent(f)?;
                         write!(f, "(binding: {binding})")?;
                     }
@@ -1386,7 +1408,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                     writeln!(f, ":")?;
 
                     MIRExpressionFormatter {
-                        expr: &postcondition.condition,
+                        expr: postcondition.condition(),
                         depth: self.depth + 2,
                         definitions: self.definitions,
                     }
@@ -1397,7 +1419,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::VaStart { list, last } => {
                 write!(f, "VaStart <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: list,
@@ -1414,7 +1436,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::VaEnd { list } => {
                 write!(f, "VaEnd <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: list,
@@ -1423,9 +1445,9 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::VaArg { list, _type } => {
+            THIRExpressionKind::VaArg { list, ty } => {
                 write!(f, "VaArg <'")?;
-                self.write_type(f, _type)?;
+                self.write_type(f, ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: list,
@@ -1440,7 +1462,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             } => {
                 write!(f, "TypeConversion {}", conversion)?;
                 write!(f, " <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: operand,
@@ -1449,23 +1471,9 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::LifetimeStart { variable, _type } => {
-                write!(f, "LifetimeStart {} (", variable)?;
-                self.write_type(f, _type)?;
-                write!(f, ") <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")
-            }
-            THIRExpressionKind::LifetimeEnd { variable, _type } => {
-                write!(f, "LifetimeEnd {} (", variable)?;
-                self.write_type(f, _type)?;
-                write!(f, ") <'")?;
-                self.write_type(f, &self.expr._type)?;
-                writeln!(f, ">")
-            }
-            THIRExpressionKind::LeakLifetime { expression } => {
+            THIRExpressionKind::Leak { expression } => {
                 write!(f, "LeakLifetime <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: expression,
@@ -1476,7 +1484,7 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::Unsafe { expression } => {
                 write!(f, "Unsafe <'")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
                 MIRExpressionFormatter {
                     expr: expression,
@@ -1487,22 +1495,22 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
             }
             THIRExpressionKind::Break => {
                 write!(f, "Break <type='")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, "'>")
             }
             THIRExpressionKind::Continue => {
                 write!(f, "Continue <type='")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, "'>")
             }
             THIRExpressionKind::Goto { name } => {
                 write!(f, "Goto {name} <type='")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, "'>")
             }
             THIRExpressionKind::Label { name, statement } => {
                 write!(f, "Label {name} <type='")?;
-                self.write_type(f, &self.expr._type)?;
+                self.write_type(f, &self.expr.ty)?;
                 writeln!(f, "'>")?;
                 MIRExpressionFormatter {
                     expr: statement,
@@ -1518,7 +1526,6 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
 impl Display for THIRUnOp {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            THIRUnOp::NEG => write!(f, "neg"),
             THIRUnOp::INEG => write!(f, "ineg"),
             THIRUnOp::FNEG => write!(f, "fneg"),
             THIRUnOp::BNOT => write!(f, "bnot"),
@@ -1560,18 +1567,22 @@ impl Display for THIRCoercion {
                 if *sextend { "sext" } else { "zext" },
                 to_type
             ),
-            THIRCoercion::GetFnPtr => write!(f, "get_fn_ptr"),
+            THIRCoercion::ReferenceBounding(locals) => write!(
+                f,
+                "reference_bounding(bound_to: {})",
+                locals
+                    .iter()
+                    .map(|local| format!("{}", local))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
 
-            THIRCoercion::ReinterpretBits => write!(f, "reinterpret_bits"),
+            THIRCoercion::Bitcast => write!(f, "bitcast"),
+            THIRCoercion::StringToArray => write!(f, "string_to_array"),
             THIRCoercion::Typechange => write!(f, "typechange"),
+            THIRCoercion::Adopt => write!(f, "adopt"),
             THIRCoercion::Unreachable => write!(f, "unreachable"),
         }
-    }
-}
-
-impl Display for THIRTypeID {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "T{}", self.0)
     }
 }
 

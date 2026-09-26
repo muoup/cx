@@ -100,17 +100,17 @@ pub enum HIRExprKind {
         expr: Box<HIRExpression>,
     },
     SizeOfType {
-        _type: HIRType,
+        ty: HIRType,
     },
     AlignOfExpr {
         expr: Box<HIRExpression>,
     },
     AlignOfType {
-        _type: HIRType,
+        ty: HIRType,
     },
 
     VarDeclaration {
-        _type: HIRType,
+        ty: HIRType,
         name: CXIdent,
         initial_value: Option<Box<HIRExpression>>,
         linkage: LinkageMode,
@@ -127,7 +127,7 @@ pub enum HIRExprKind {
 
     Block {
         exprs: Vec<HIRExpression>,
-        creates_scope: bool,
+        kind: HIRBlockKind,
     },
 
     Defer {
@@ -179,8 +179,15 @@ pub enum HIRExprKind {
 
     VaArg {
         list: Box<HIRExpression>,
-        _type: HIRType,
+        ty: HIRType,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HIRBlockKind {
+    Sequence,
+    Statement,
+    Expression,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

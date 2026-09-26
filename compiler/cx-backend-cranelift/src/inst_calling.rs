@@ -18,7 +18,7 @@ pub(crate) fn prepare_function_sig(
         LMIRReturnABI::Void => {}
         LMIRReturnABI::Direct { slots } => {
             for slot in slots {
-                sig.returns.push(get_cranelift_abi_type(&slot._type)?);
+                sig.returns.push(get_cranelift_abi_type(&slot.ty)?);
             }
         }
         LMIRReturnABI::IndirectSret { .. } => {}
@@ -35,7 +35,7 @@ pub(crate) fn prepare_function_sig(
         match &param.abi {
             LMIRParameterABI::Direct { slots } => {
                 for slot in slots {
-                    sig.params.push(get_cranelift_abi_type(&slot._type)?);
+                    sig.params.push(get_cranelift_abi_type(&slot.ty)?);
                 }
             }
             LMIRParameterABI::Indirect { .. } => sig.params.push(ir::AbiParam::new(
@@ -43,7 +43,7 @@ pub(crate) fn prepare_function_sig(
             )),
             LMIRParameterABI::ByValue { .. } => {
                 let stack_alignment = object_module.target_config().pointer_type().bytes() as usize;
-                let size = usize::from(param._type.size())
+                let size = usize::from(param.ty.size())
                     .div_ceil(stack_alignment)
                     .saturating_mul(stack_alignment);
                 sig.params.push(ir::AbiParam::special(

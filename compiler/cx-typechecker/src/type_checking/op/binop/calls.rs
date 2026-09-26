@@ -1,5 +1,5 @@
 use crate::environment::TypeEnvironment;
-use crate::symbol::deduction::complete_templated_callee_maybe;
+use crate::symbol::deduction::complete_templated_callee;
 use crate::type_checking::coercion::implicit::conversion::compatible;
 use crate::type_checking::coercion::implicit::implicit_cast;
 use crate::type_checking::coercion::implicit::promotion::lvalue;
@@ -8,7 +8,9 @@ use crate::type_checking::contracts::typecheck_contract;
 use crate::type_checking::result::{
     ComptimeFunctionTC, StagedBindingTC, StagedTC, TypecheckResult, TypecheckedExpr,
 };
-use crate::type_checking::staged_expr::into_expression as staged_into_expression;
+use crate::type_checking::staged_expr::{
+    into_expression as staged_into_expression, stage_expression,
+};
 use crate::type_checking::typechecker::typecheck_expr;
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
@@ -74,35 +76,54 @@ fn typecheck_internal_method_call(
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let args = comma_separated_exprs(rhs);
-    let is_start = matches!(name, "va_start" | "__builtin_va_start");
-    let expected = if is_start { 2 } else { 1 };
-    if args.len() != expected {
-        return env.log_error(
-            expr.token_range(),
-            &catalogue::ARGUMENT_COUNT,
-            (format!("{}", name), expected, args.len(), false),
-        );
-    }
 
-    let list = typecheck_va_list(env, namespace, args[0])?;
-    if is_start {
-        let last = typecheck_expr(env, namespace, args[1], None)?
-            .standard_ready_assure(env, args[1].token_range())?
-            .internal_ready_assertion();
-        Ok(TypecheckResult::new(
-            THIRType::unit(),
-            THIRExpressionKind::VaStart {
-                list: Box::new(list),
-                last: Box::new(last),
-            },
-        ))
-    } else {
-        Ok(TypecheckResult::new(
-            THIRType::unit(),
-            THIRExpressionKind::VaEnd {
-                list: Box::new(list),
-            },
-        ))
+    match name {
+        "va_start" | "__builtin_va_start" => {
+            if args.len() != 2 {
+                return env.log_error(
+                    expr.token_range(),
+                    &catalogue::ARGUMENT_COUNT,
+                    (format!("{}", name), 2, args.len(), false),
+                );
+            }
+
+            let list = typecheck_va_list(env, namespace, args[0])?;
+            let last = typecheck_expr(env, namespace, args[1], None)?
+                .standard_ready_assure(env, args[1].token_range())?
+                .internal_ready_assertion();
+
+            Ok(TypecheckResult::new(
+                THIRType::unit(),
+                THIRExpressionKind::VaStart {
+                    list: Box::new(list),
+                    last: Box::new(last),
+                },
+            ))
+        }
+
+        "va_end" | "__builtin_va_end" => {
+            if args.len() != 1 {
+                return env.log_error(
+                    expr.token_range(),
+                    &catalogue::ARGUMENT_COUNT,
+                    (format!("{}", name), 1, args.len(), false),
+                );
+            }
+
+            let list = typecheck_va_list(env, namespace, args[0])?;
+            Ok(TypecheckResult::new(
+                THIRType::unit(),
+                THIRExpressionKind::VaEnd {
+                    list: Box::new(list),
+                },
+            ))
+        }
+
+        _ => env.log_error(
+            expr.token_range(),
+            &catalogue::UNSUPPORTED_FEATURE,
+            format!("{}", name),
+        ),
     }
 }
 
@@ -114,10 +135,7 @@ pub(crate) fn typecheck_va_list(
     let list = typecheck_expr(env, namespace, expr, None)?
         .standard_ready_assure(env, expr.token_range())?
         .internal_ready_assertion();
-    let actual = env
-        .symbols
-        .mem_ref_inner(&list._type)
-        .unwrap_or(&list._type);
+    let actual = env.symbols.mem_ref_inner(&list.ty).unwrap_or(&list.ty);
     let expected = env.get_intrinsic_type("__builtin_va_list");
     if !compatible::compatible_types(env, actual, &expected)? {
         return env.log_error(
@@ -127,7 +145,7 @@ pub(crate) fn typecheck_va_list(
                 "va_list expression".into(),
                 format!("{}", expected.display_with(&env.symbols)),
                 format!("{}", actual.display_with(&env.symbols)),
-            )
+            ),
         );
     }
     Ok(list)
@@ -143,6 +161,7 @@ pub(crate) fn typecheck_callee_call(
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let raw_args = comma_separated_exprs(rhs);
+
     let tc_args = if matches!(&callee, TypecheckResult::IncompleteTemplate(_)) {
         env.in_staged(|env| typecheck_args(env, namespace, raw_args.as_slice()))?
     } else {
@@ -163,6 +182,7 @@ pub(crate) fn typecheck_callee_call(
         CompletedCallee::Staged(staged) => {
             return complete_staged_call(env, namespace, expr, staged, raw_args);
         }
+
         CompletedCallee::Comptime(prototype) => {
             return complete_comptime_call(
                 env,
@@ -173,6 +193,7 @@ pub(crate) fn typecheck_callee_call(
                 raw_args,
             );
         }
+
         CompletedCallee::Runtime(callee) => callee,
     };
 
@@ -191,7 +212,7 @@ pub(crate) fn typecheck_callee_call(
     let contract = typecheck_contract(env, namespace, &signature)?;
 
     Ok(TypecheckResult::new(
-        signature.return_type,
+        signature.return_type().clone(),
         THIRExpressionKind::CallFunction {
             function: Box::new(loaded_function),
             arguments,
@@ -217,12 +238,8 @@ fn load_callable(
 ) -> CXResult<(THIRExpression, THIRFnSignature)> {
     let loaded_function =
         lvalue::try_conversion(env, function, false)?.catch_unapplied(|expr, _| Ok(expr))?;
-    let function_type = loaded_function.get_type();
-    let Some(callable_type) = env
-        .symbols
-        .intern_signature(loaded_function.get_type_ref())
-        .cloned()
-    else {
+    let function_type = loaded_function.ty.clone();
+    let Some(callable_type) = env.symbols.intern_signature(&loaded_function.ty).cloned() else {
         return env.log_error(
             expr.token_range(),
             &catalogue::TYPE_MISMATCH,
@@ -230,7 +247,7 @@ fn load_callable(
                 "call expression".into(),
                 "callable type".into(),
                 format!("{}", function_type.display_with(&env.symbols)),
-            )
+            ),
         );
     };
 
@@ -243,17 +260,17 @@ fn check_argument_count(
     signature: &THIRFnSignature,
     arg_count: usize,
 ) -> CXResult<()> {
-    if arg_count != signature.params.len() && !signature.var_args 
-        || arg_count < signature.params.len()
+    if arg_count != signature.params().len() && !signature.var_args()
+        || arg_count < signature.params().len()
     {
         return env.log_error(
             expr.token_range(),
             &catalogue::ARGUMENT_COUNT,
             (
                 "Function".into(),
-                signature.params.len(),
+                signature.params().len(),
                 arg_count,
-                signature.var_args,
+                signature.var_args(),
             ),
         );
     }
@@ -285,28 +302,28 @@ fn complete_vararg_argument(
     let mut val = val.standard_ready_coerce(env, expr.token_range())?;
 
     val = std_rval_promotion(env, val)?;
-    let arg_type = val._type.clone();
+    let arg_type = val.ty.clone();
 
     match &arg_type.kind {
         THIRTypeKind::PointerTo { .. } => {}
         THIRTypeKind::Integer { .. } => {}
         THIRTypeKind::Float {
-            _type: THIRFloatType::F32,
+            ty: THIRFloatType::F32,
         } => {
             val = implicit_cast(
                 env,
                 val,
                 &THIRTypeKind::Float {
-                    _type: THIRFloatType::F64,
+                    ty: THIRFloatType::F64,
                 }
                 .into(),
             )?;
         }
-        
+
         THIRTypeKind::Float {
-            _type: THIRFloatType::F64,
+            ty: THIRFloatType::F64,
         } => {}
-        
+
         _ => {
             return env.log_error(
                 expr.token_range(),
@@ -315,7 +332,7 @@ fn complete_vararg_argument(
                     "vararg argument".into(),
                     "arithmetic type".into(),
                     format!("{}", arg_type.display_with(&env.symbols)),
-                )
+                ),
             );
         }
     }
@@ -332,8 +349,8 @@ fn complete_call_arguments(
     args.into_iter()
         .enumerate()
         .map(|(i, val)| {
-            if let Some(param) = signature.params.get(i) {
-                val.apply_expected_type(env, namespace, &param._type)
+            if let Some(param) = signature.params().get(i) {
+                val.apply_expected_type(env, namespace, param.ty())
             } else {
                 Ok(val)
             }
@@ -350,8 +367,8 @@ fn coerce_call_arguments(
     let mut coerced_args = Vec::with_capacity(args.len());
 
     for (i, val) in args.into_iter().enumerate() {
-        let val = if let Some(param) = signature.params.get(i) {
-            coerce_fixed_argument(env, expr, val, &param._type)?
+        let val = if let Some(param) = signature.params().get(i) {
+            coerce_fixed_argument(env, expr, val, param.ty())?
         } else {
             complete_vararg_argument(env, expr, val)?
         };
@@ -375,22 +392,19 @@ fn complete_callee(
         TypecheckResult::IncompleteTemplate(parts) => {
             let deduction_arg_types = implicit_args
                 .iter()
-                .map(THIRExpression::get_type)
+                .map(|arg| arg.ty.clone())
                 .chain(args.iter().filter_map(|(_, arg)| arg.ready_type().cloned()))
                 .collect::<Vec<_>>();
-            let symbol = match complete_templated_callee_maybe(
+
+            let symbol = complete_templated_callee(
                 env,
                 namespace,
                 &parts.name,
                 parts.template_input.as_ref(),
                 &deduction_arg_types,
                 expected_type,
-            ) {
-                Ok(symbol) => symbol,
-                Err(err) => {
-                    return Err(env.complete_maybe_err(err, expr.token_range()));
-                }
-            };
+            )
+            .map_err(|err| env.complete_maybe_err(err, expr.token_range()))?;
 
             TypecheckResult::from_symbol(symbol, parts.name, parts.template_input)
                 .map_err(|err| env.complete_err(err, expr.token_range()))?
@@ -435,8 +449,8 @@ fn complete_comptime_call(
         cx_thir::thir::name_mangling::mangle_comptime_context(
             &env.symbols,
             name.to_owned(),
-            context.return_type.as_ref(),
-            context.yield_type.as_ref(),
+            context.return_type(),
+            context.yield_type(),
         )
     });
     env.items
@@ -454,7 +468,7 @@ fn complete_comptime_call(
                 prototype.pretty_name().into(),
                 prototype.params().len(),
                 total,
-                false
+                false,
             ),
         );
     }
@@ -465,7 +479,7 @@ fn complete_comptime_call(
         .iter()
         .zip(prototype.params().iter().take(implicit_args.len()))
     {
-        let target_type = &parameter.value_type._type;
+        let target_type = parameter.value_type().ty();
         let argument = if target_type.is_memory_reference() {
             argument.clone()
         } else {
@@ -478,12 +492,12 @@ fn complete_comptime_call(
         .into_iter()
         .zip(prototype.params().iter().skip(implicit_args.len()))
     {
-        let value_type = &parameter.value_type;
+        let value_type = parameter.value_type();
 
-        if value_type.expr && !value_type.params.is_empty() {
+        if value_type.is_expr() && !value_type.params().is_empty() {
             let result = typecheck_expr(env, namespace, argument, None)?
                 .apply_staged_type(env, namespace, value_type)?;
-            
+
             let TypecheckResult::Ready(TypecheckedExpr::Staged(StagedTC::Literal(staged))) = result
             else {
                 return env.log_error(
@@ -492,23 +506,23 @@ fn complete_comptime_call(
                     (
                         "staged typed argument".into(),
                         "staged expression".into(),
-                        "non-staged expression".into()
-                    )
+                        "non-staged expression".into(),
+                    ),
                 );
             };
-            
+
             arguments.push(staged_into_expression(staged));
             continue;
         }
 
-        let target_type = &value_type._type;
+        let target_type = value_type.ty();
         let expected_type =
-            if value_type.expr && (target_type.is_void() || target_type.is_unreachable()) {
+            if value_type.is_expr() && (target_type.is_void() || target_type.is_unreachable()) {
                 None
             } else {
                 Some(target_type)
             };
-        if value_type.expr {
+        if value_type.is_expr() {
             let result = env.in_staged(|env| {
                 let result = typecheck_expr(env, namespace, argument, expected_type)?;
                 let result = if let Some(expected_type) = expected_type {
@@ -526,7 +540,7 @@ fn complete_comptime_call(
                     implicit_cast(env, result, target_type)
                 }
             })?;
-            arguments.push(result);
+            arguments.push(staged_into_expression(stage_expression(result)));
             continue;
         }
 
@@ -547,13 +561,13 @@ fn complete_comptime_call(
 
     Ok(TypecheckResult::from(THIRExpression {
         token_range: expr.token_range().clone(),
-        _type: prototype.return_type()._type.clone(),
+        ty: prototype.return_type().ty().clone(),
         kind: THIRExpressionKind::CallFunction {
             function: Box::new(THIRExpression {
                 token_range: TokenRange::internal(),
                 // The callee's type is undefined; lowering dispatches on the
                 // symbol name against the unit's comptime function list.
-                _type: THIRTypeKind::Undefined.into(),
+                ty: THIRTypeKind::Undefined.into(),
                 kind: THIRExpressionKind::FunctionReference {
                     name: CXIdent::new(prototype.symbol_name()),
                     debug_name: prototype.debug_name().cloned(),
@@ -577,9 +591,9 @@ fn complete_staged_call(
             let params = staged
                 .params()
                 .iter()
-                .map(|parameter| parameter.ty.clone())
+                .map(|parameter| parameter.ty().clone())
                 .collect();
-            let return_type = staged.expr()._type.clone();
+            let return_type = staged.expr().ty.clone();
             (staged_into_expression(staged), params, return_type)
         }
         StagedTC::Binding(StagedBindingTC {
@@ -595,9 +609,9 @@ fn complete_staged_call(
             &catalogue::ARGUMENT_COUNT,
             (
                 "staged expression".into(),
-                params.len(), 
+                params.len(),
                 raw_args.len(),
-                false
+                false,
             ),
         );
     }
@@ -607,7 +621,7 @@ fn complete_staged_call(
         let result = typecheck_expr(env, namespace, argument, Some(target_type))?
             .apply_expected_type(env, namespace, target_type)?
             .standard_ready_coerce(env, argument.token_range())?;
-        let result = if target_type.is_memory_reference() && result._type.is_memory_reference() {
+        let result = if target_type.is_memory_reference() && result.ty.is_memory_reference() {
             result
         } else if target_type.is_memory_reference() {
             implicit_cast(env, result, target_type)?
@@ -620,7 +634,7 @@ fn complete_staged_call(
 
     Ok(TypecheckResult::new(
         return_type,
-        THIRExpressionKind::MaterializeStagedExpression {
+        THIRExpressionKind::Materialize {
             expr: Box::new(callee),
             with_params: arguments,
         },

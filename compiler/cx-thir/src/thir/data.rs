@@ -1,5 +1,6 @@
 use cx_hir::ast::function::HIRFunctionContract;
 use cx_namespace::module::QualifiedName;
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::thir::contextual_eq::{TypeComparisonState, TypeContextEqual, compare_ordered};
@@ -11,16 +12,86 @@ use crate::type_context::THIRTypeContext;
 
 #[derive(Debug, Clone)]
 pub struct THIRFunction {
-    pub require_explicit_return: bool,
-    pub prototype: THIRFnPrototype,
-    pub body: Option<THIRExpression>,
+    prototype: THIRFnPrototype,
+    body: Option<THIRFunctionBody>,
+
+    reject_nonvoid_fallthrough: bool,
+}
+
+impl THIRFunction {
+    pub fn new(
+        prototype: THIRFnPrototype,
+        body: Option<THIRFunctionBody>,
+        reject_nonvoid_fallthrough: bool,
+    ) -> Self {
+        Self {
+            prototype,
+            body,
+            reject_nonvoid_fallthrough,
+        }
+    }
+
+    pub fn prototype(&self) -> &THIRFnPrototype {
+        &self.prototype
+    }
+
+    pub fn body(&self) -> Option<&THIRFunctionBody> {
+        self.body.as_ref()
+    }
+
+    pub fn reject_nonvoid_fallthrough(&self) -> bool {
+        self.reject_nonvoid_fallthrough
+    }
+
+    /// Replaces this function's prototype and body with those of `definition`, keeping this
+    /// function's fallthrough policy.
+    pub fn take_definition(&mut self, definition: THIRFunction) {
+        self.prototype = definition.prototype;
+        self.body = definition.body;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum THIRFunctionBody {
+    Expression(THIRExpression),
+    Block {
+        exprs: Vec<THIRExpression>,
+        token_range: TokenRange,
+    }
+}
+
+impl THIRFunctionBody {
+    pub fn exprs(&self) -> &[THIRExpression] {
+        match self {
+            THIRFunctionBody::Expression(expr) => std::slice::from_ref(expr),
+            THIRFunctionBody::Block { exprs, .. } => exprs,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct THIRParameter {
-    pub name: Option<CXIdent>,
-    pub local_id: THIRLocalID,
-    pub _type: THIRType,
+    name: Option<CXIdent>,
+    local_id: THIRLocalID,
+    ty: THIRType,
+}
+
+impl THIRParameter {
+    pub fn new(name: Option<CXIdent>, local_id: THIRLocalID, ty: THIRType) -> Self {
+        Self { name, local_id, ty }
+    }
+
+    pub fn name(&self) -> Option<&CXIdent> {
+        self.name.as_ref()
+    }
+
+    pub fn local_id(&self) -> THIRLocalID {
+        self.local_id
+    }
+
+    pub fn ty(&self) -> &THIRType {
+        &self.ty
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -35,16 +106,60 @@ pub struct THIRComptimeFnPrototype {
 
 #[derive(Debug, Clone)]
 pub struct THIRComptimeParameter {
-    pub name: Option<CXIdent>,
-    pub local_id: THIRLocalID,
-    pub value_type: THIRComptimeValueType,
+    name: Option<CXIdent>,
+    local_id: THIRLocalID,
+    value_type: THIRComptimeValueType,
+}
+
+impl THIRComptimeParameter {
+    pub fn new(
+        name: Option<CXIdent>,
+        local_id: THIRLocalID,
+        value_type: THIRComptimeValueType,
+    ) -> Self {
+        Self {
+            name,
+            local_id,
+            value_type,
+        }
+    }
+
+    pub fn name(&self) -> Option<&CXIdent> {
+        self.name.as_ref()
+    }
+
+    pub fn local_id(&self) -> THIRLocalID {
+        self.local_id
+    }
+
+    pub fn value_type(&self) -> &THIRComptimeValueType {
+        &self.value_type
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct THIRComptimeValueType {
-    pub expr: bool,
-    pub params: Vec<THIRType>,
-    pub _type: THIRType,
+    expr: bool,
+    params: Vec<THIRType>,
+    ty: THIRType,
+}
+
+impl THIRComptimeValueType {
+    pub fn new(expr: bool, params: Vec<THIRType>, ty: THIRType) -> Self {
+        Self { expr, params, ty }
+    }
+
+    pub fn is_expr(&self) -> bool {
+        self.expr
+    }
+
+    pub fn params(&self) -> &[THIRType] {
+        &self.params
+    }
+
+    pub fn ty(&self) -> &THIRType {
+        &self.ty
+    }
 }
 
 impl THIRComptimeFnPrototype {
@@ -111,16 +226,48 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRParame
         definitions: &Context,
         state: &mut TypeComparisonState,
     ) -> bool {
-        self.name == other.name && self._type.compare(&other._type, definitions, state)
+        self.name == other.name && self.ty.compare(&other.ty, definitions, state)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct THIRFnSignature {
-    pub return_type: THIRType,
-    pub params: Vec<THIRParameter>,
-    pub var_args: bool,
-    pub contract: HIRFunctionContract,
+    return_type: THIRType,
+    params: Vec<THIRParameter>,
+    var_args: bool,
+    contract: HIRFunctionContract,
+}
+
+impl THIRFnSignature {
+    pub fn new(
+        return_type: THIRType,
+        params: Vec<THIRParameter>,
+        var_args: bool,
+        contract: HIRFunctionContract,
+    ) -> Self {
+        Self {
+            return_type,
+            params,
+            var_args,
+            contract,
+        }
+    }
+
+    pub fn return_type(&self) -> &THIRType {
+        &self.return_type
+    }
+
+    pub fn params(&self) -> &[THIRParameter] {
+        &self.params
+    }
+
+    pub fn var_args(&self) -> bool {
+        self.var_args
+    }
+
+    pub fn contract(&self) -> &HIRFunctionContract {
+        &self.contract
+    }
 }
 
 impl Default for THIRFnSignature {
@@ -150,7 +297,7 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRFnSign
                 .params
                 .iter()
                 .zip(other.params.iter())
-                .all(|(left, right)| left._type.compare(&right._type, definitions, state))
+                .all(|(left, right)| left.ty.compare(&right.ty, definitions, state))
     }
 }
 
@@ -238,7 +385,17 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRFnProt
 
 #[derive(Debug, Clone)]
 pub struct THIRTemplateInput {
-    pub args: Vec<THIRTypeID>,
+    args: Vec<THIRTypeID>,
+}
+
+impl THIRTemplateInput {
+    pub fn new(args: Vec<THIRTypeID>) -> Self {
+        Self { args }
+    }
+
+    pub fn args(&self) -> &[THIRTypeID] {
+        &self.args
+    }
 }
 
 impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTemplateInput {
@@ -254,8 +411,25 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTempla
 
 #[derive(Debug, Clone)]
 pub struct TemplateInfo {
-    pub base_name: Option<QualifiedName>,
-    pub template_input: THIRTemplateInput,
+    base_name: Option<QualifiedName>,
+    template_input: THIRTemplateInput,
+}
+
+impl TemplateInfo {
+    pub fn new(base_name: Option<QualifiedName>, template_input: THIRTemplateInput) -> Self {
+        Self {
+            base_name,
+            template_input,
+        }
+    }
+
+    pub fn base_name(&self) -> Option<&QualifiedName> {
+        self.base_name.as_ref()
+    }
+
+    pub fn template_input(&self) -> &THIRTemplateInput {
+        &self.template_input
+    }
 }
 
 impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for TemplateInfo {

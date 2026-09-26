@@ -1,0 +1,13 @@
+struct Data {
+    int value;
+};
+
+comptime int invalid() {
+    Data data = (Data) { .value = 1 };
+    Data moved = move data;
+    return data.value;
+}
+
+int main() {
+    return invalid();
+}

@@ -1,6 +1,5 @@
 use cx_log::catalogue::driver as catalogue;
 mod backends;
-mod diagnostics;
 mod linker;
 mod log;
 use log::pipeline_error;
@@ -23,7 +22,7 @@ use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
 use cx_util::format::{with_dump_directory, without_dumps};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -44,7 +43,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     let compiler_context = GlobalCompilationContext {
         config,
         module_db: ModuleData::new(),
-        linking_files: Mutex::new(HashSet::new()),
+        linking_files: Mutex::new(BTreeSet::new()),
     };
 
     let _base_file_str = base_file.to_str().ok_or(pipeline_error(
@@ -129,7 +128,7 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
     let compiler_context = GlobalCompilationContext {
         config,
         module_db: ModuleData::new(),
-        linking_files: Mutex::new(HashSet::new()),
+        linking_files: Mutex::new(BTreeSet::new()),
     };
 
     let mut reporter = ProgressReporter::new(verbose);
@@ -189,7 +188,7 @@ pub fn library_compilation(
     let compiler_context = GlobalCompilationContext {
         config,
         module_db: ModuleData::new(),
-        linking_files: Mutex::new(HashSet::new()),
+        linking_files: Mutex::new(BTreeSet::new()),
     };
 
     let _base_file_str = base_file.to_str().ok_or(pipeline_error(

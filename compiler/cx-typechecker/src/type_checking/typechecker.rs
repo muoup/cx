@@ -26,12 +26,12 @@ use crate::type_checking::value::{
     moves::{typecheck_adopt, typecheck_leak, typecheck_unpack},
     unsafe_ops::typecheck_unsafe,
 };
-use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
+use cx_hir::ast::expression::{HIRBinOp, HIRBlockKind, HIRExprKind, HIRExpression};
 use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_namespace::module::NamespacePath;
-use cx_thir::thir::data::{THIRIntType, THIRTypeKind};
-use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
+use cx_thir::thir::data::THIRTypeKind;
+use cx_thir::thir::expression::{THIRBlockKind, THIRExpression, THIRExpressionKind};
 use cx_tokens::TokenRange;
 
 use crate::type_checking::control_flow::r#match::typecheck_match;
@@ -54,19 +54,16 @@ fn typecheck_expr_inner(
     expected_type: Option<&THIRType>,
 ) -> CXResult<TypecheckResult> {
     let mut result = match &expr.kind {
-        HIRExprKind::Block {
-            exprs,
-            creates_scope,
-        } => {
-            let handles_yield = *creates_scope
-                && !env.function.flow().at_function_root()
-                && (!env.in_staged_context()
-                    || expected_type.is_some_and(|ty| !ty.is_void() && !ty.is_unreachable()));
-            if handles_yield {
+        HIRExprKind::Block { exprs, kind } => {
+            let creates_scope = !matches!(kind, HIRBlockKind::Sequence);
+            let captures_yield = matches!(kind, HIRBlockKind::Expression);
+            if captures_yield {
                 let expected_yield = expected_type
                     .cloned()
                     .or_else(|| env.function.flow().yield_state().expected_type);
                 env.push_yield_scope(expected_yield);
+            } else if creates_scope {
+                env.push_scope(false, false, expr.token_range().clone());
             }
 
             let checked = exprs
@@ -77,7 +74,7 @@ fn typecheck_expr_inner(
                 })
                 .collect::<CXResult<Vec<_>>>();
 
-            let effects = if handles_yield {
+            let effects = if creates_scope {
                 Some(
                     env.pop_scope()
                         .map_err(|err| env.complete_err(err, expr.token_range()))?,
@@ -86,25 +83,34 @@ fn typecheck_expr_inner(
                 None
             };
             let statements = checked?;
-            let yield_type = effects.and_then(|effects| effects.yield_type);
+            let yield_type = captures_yield
+                .then(|| effects.and_then(|effects| effects.yield_type))
+                .flatten();
             let yields = yield_type.is_some();
             let result_type = yield_type.unwrap_or_else(THIRType::unit);
-            let block = THIRExpression {
-                token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Block {
-                    statements,
-                    creates_scope: *creates_scope,
-                    yields,
-                },
-                _type: result_type,
-            };
-            if yields && expr_may_fall_through(&block) {
+
+            // FIXME: There's gotta be a better way to do this, but I can't think of one right now.
+            if yields && statements.iter().all(|s| expr_may_fall_through(s)) {
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::MISSING_YIELD,
                     "Block".into(),
                 );
             }
+
+            let block = THIRExpression {
+                token_range: expr.token_range().clone(),
+                kind: THIRExpressionKind::Block {
+                    statements,
+                    kind: match kind {
+                        HIRBlockKind::Sequence => THIRBlockKind::Sequence,
+                        HIRBlockKind::Statement => THIRBlockKind::Statement,
+                        HIRBlockKind::Expression => THIRBlockKind::Expression,
+                    },
+                    yields,
+                },
+                ty: result_type,
+            };
 
             TypecheckResult::from(block)
         }
@@ -114,15 +120,15 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("defer statement".into(), "another deferred context".into())
+                    ("defer statement".into(), "another deferred context".into()),
                 );
             }
-            
+
             if env.in_comptime_context() && !env.in_runtime_emit_context() {
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("defer statement".into(), "compile-time context".into())
+                    ("defer statement".into(), "compile-time context".into()),
                 );
             }
 
@@ -130,21 +136,21 @@ fn typecheck_expr_inner(
                 typecheck_expr(env, namespace, deferred, None)?
                     .standard_ready_coerce(env, deferred.token_range())
             })?;
-            
-            if !deferred._type.is_void() {
+
+            if !deferred.ty.is_void() {
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::TYPE_MISMATCH,
-                    ("defer statement".into(), "void type".into(), format!("{}", deferred._type.display_with(&env.symbols)))
+                    (
+                        "defer statement".into(),
+                        "void type".into(),
+                        format!("{}", deferred.ty.display_with(&env.symbols)),
+                    ),
                 );
             }
-            
+
             if !expr_may_fall_through(&deferred) {
-                return env.log_error(
-                    expr.token_range(),
-                    &catalogue::DEFER_FALLTHROUGH,
-                    (),
-                );
+                return env.log_error(expr.token_range(), &catalogue::DEFER_FALLTHROUGH, ());
             }
 
             TypecheckResult::new(
@@ -163,7 +169,10 @@ fn typecheck_expr_inner(
             return env.log_error(
                 expr.token_range(),
                 &catalogue::INVALID_CONTEXT,
-                ("then expression".into(), "outside of a backward pipe operator".into())
+                (
+                    "then expression".into(),
+                    "outside of a backward pipe operator".into(),
+                ),
             );
         }
 
@@ -176,7 +185,7 @@ fn typecheck_expr_inner(
         HIRExprKind::BoolLiteral(value) => TypecheckResult::from(THIRExpression {
             token_range: expr.token_range().clone(),
             kind: THIRExpressionKind::BoolLiteral(*value),
-            _type: THIRType::bool(),
+            ty: THIRType::bool(),
         }),
 
         HIRExprKind::FloatLiteral { val, suffix } => {
@@ -190,7 +199,7 @@ fn typecheck_expr_inner(
         ),
 
         HIRExprKind::VarDeclaration {
-            _type,
+            ty,
             name,
             initial_value,
             linkage,
@@ -198,7 +207,7 @@ fn typecheck_expr_inner(
             env,
             namespace,
             expr,
-            _type,
+            ty,
             name,
             initial_value.as_ref().map(|v| v.as_ref()),
             *linkage,
@@ -209,14 +218,14 @@ fn typecheck_expr_inner(
             template_input,
         } => typecheck_identifier(env, namespace, expr, name, template_input.as_ref())?,
 
-        HIRExprKind::VaArg { list, _type } => {
+        HIRExprKind::VaArg { list, ty } => {
             let list = typecheck_va_list(env, namespace, list)?;
-            let _type = complete_type(env, namespace, _type)?;
+            let ty = complete_type(env, namespace, ty)?;
             TypecheckResult::new(
-                _type.clone(),
+                ty.clone(),
                 THIRExpressionKind::VaArg {
                     list: Box::new(list),
-                    _type: _type.clone(),
+                    ty,
                 },
             )
         }
@@ -226,6 +235,7 @@ fn typecheck_expr_inner(
             then_branch,
             else_branch,
         } => {
+            env.push_scope(false, false, condition.token_range().clone());
             let condition_result = typecheck_expr(env, namespace, condition, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))
@@ -234,6 +244,8 @@ fn typecheck_expr_inner(
             env.push_scope(false, false, then_branch.token_range().clone());
             let then_result = typecheck_expr(env, namespace, then_branch, None)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
+            env.pop_scope()
+                .map_err(|err| env.complete_err(err, expr.token_range()))?;
             env.pop_scope()
                 .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
@@ -256,7 +268,7 @@ fn typecheck_expr_inner(
                     then_branch: Box::new(then_result),
                     else_branch: else_result.map(Box::new),
                 },
-                _type: cx_thir::thir::data::THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -272,21 +284,21 @@ fn typecheck_expr_inner(
             let then_result = typecheck_expr(env, namespace, then_branch, expected_type)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
-            let else_expected = (!then_result._type.is_unreachable())
-                .then_some(&then_result._type)
+            let else_expected = (!then_result.ty.is_unreachable())
+                .then_some(&then_result.ty)
                 .or(expected_type);
             let else_result = typecheck_expr(env, namespace, else_branch, else_expected)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
-            let result_type = if then_result._type.is_unreachable() {
-                else_result._type.clone()
+            let result_type = if then_result.ty.is_unreachable() {
+                else_result.ty.clone()
             } else {
-                then_result._type.clone()
+                then_result.ty.clone()
             };
 
             let then_result =
                 implicit_cast(env, then_result, &result_type).map(|v| THIRExpression {
-                    _type: THIRType::unit(),
+                    ty: THIRType::unit(),
                     kind: THIRExpressionKind::Yield {
                         value: Some(Box::new(v)),
                     },
@@ -294,7 +306,7 @@ fn typecheck_expr_inner(
                 })?;
             let else_result =
                 implicit_cast(env, else_result, &result_type).map(|v| THIRExpression {
-                    _type: THIRType::unit(),
+                    ty: THIRType::unit(),
                     kind: THIRExpressionKind::Yield {
                         value: Some(Box::new(v)),
                     },
@@ -308,7 +320,7 @@ fn typecheck_expr_inner(
                     then_branch: Box::new(then_result),
                     else_branch: Some(Box::new(else_result)),
                 },
-                _type: result_type,
+                ty: result_type,
             })
         }
 
@@ -335,7 +347,7 @@ fn typecheck_expr_inner(
                     body: Box::new(body_result),
                     pre_eval: *pre_eval,
                 },
-                _type: cx_thir::thir::data::THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -374,7 +386,7 @@ fn typecheck_expr_inner(
                     increment: Box::new(increment_result),
                     body: Box::new(body_result),
                 },
-                _type: cx_thir::thir::data::THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -383,7 +395,7 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("break statement".into(), "deferred context".into())
+                    ("break statement".into(), "deferred context".into()),
                 );
             }
 
@@ -392,14 +404,14 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("break statement".into(), "non-loop context".into())
+                    ("break statement".into(), "non-loop context".into()),
                 );
             }
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Break,
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -408,7 +420,7 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("continue statement".into(), "deferred context".into())
+                    ("continue statement".into(), "deferred context".into()),
                 );
             }
 
@@ -417,14 +429,14 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("continue statement".into(), "non-loop context".into())
+                    ("continue statement".into(), "non-loop context".into()),
                 );
             }
 
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Continue,
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -433,7 +445,7 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::INVALID_CONTEXT,
-                    ("goto statement".into(), "deferred context".into())
+                    ("goto statement".into(), "deferred context".into()),
                 );
             }
             env.function
@@ -441,7 +453,7 @@ fn typecheck_expr_inner(
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Goto { name: name.clone() },
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -450,7 +462,10 @@ fn typecheck_expr_inner(
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::DUPLICATE_ITEM,
-                    ("label".into(), format!("function {}", env.current_function().symbol_name()))
+                    (
+                        "label".into(),
+                        format!("function {}", env.current_function().symbol_name()),
+                    ),
                 );
             }
             let statement = typecheck_expr(env, namespace, statement, None)
@@ -461,23 +476,26 @@ fn typecheck_expr_inner(
                     name: name.clone(),
                     statement: Box::new(statement),
                 },
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
         HIRExprKind::Return { value } => {
             let return_type = if env.in_staged_context() || env.in_runtime_emit_context() {
-                let Some(return_type) = env.staging_context().return_type else {
+                let Some(return_type) = env.staging_context().return_type().cloned() else {
                     return env.log_error(
                         expr.token_range(),
                         &catalogue::INVALID_CONTEXT,
-                        ("return statement".into(), "non-function context".into())
+                        ("return statement".into(), "non-function context".into()),
                     );
                 };
                 return_type
             } else {
-                env.current_function().signature().return_type.clone()
+                env.current_function().signature().return_type().clone()
             };
+            if return_type.is_unreachable() {
+                return typecheck_return(env, namespace, expr.token_range(), None);
+            }
             let value = value
                 .as_ref()
                 .map(|v| {
@@ -490,7 +508,7 @@ fn typecheck_expr_inner(
                             staged,
                         ))) if env.in_comptime_context() => {
                             let mut reference = staged.reference;
-                            reference._type = return_type.clone();
+                            reference.ty = return_type.clone();
                             Ok(reference)
                         }
                         result => result
@@ -579,11 +597,11 @@ fn typecheck_expr_inner(
 
         HIRExprKind::Void => typecheck_unit(),
 
-        HIRExprKind::SizeOfType { _type } => typecheck_sizeof_type(env, namespace, expr, _type)?,
+        HIRExprKind::SizeOfType { ty } => typecheck_sizeof_type(env, namespace, expr, ty)?,
 
         HIRExprKind::SizeOfExpr { expr } => typecheck_sizeof_expr(env, namespace, expr)?,
 
-        HIRExprKind::AlignOfType { _type } => typecheck_alignof_type(env, namespace, expr, _type)?,
+        HIRExprKind::AlignOfType { ty } => typecheck_alignof_type(env, namespace, expr, ty)?,
 
         HIRExprKind::AlignOfExpr { expr } => typecheck_alignof_expr(env, namespace, expr)?,
 
@@ -612,53 +630,4 @@ fn typecheck_expr_inner(
     result.set_token_range_if_missing(expr.range.clone())?;
 
     Ok(result)
-}
-
-pub fn add_implicit_return(
-    env: &mut TypeEnvironment,
-    namespace: &NamespacePath,
-    expr: THIRExpression,
-) -> CXResult<THIRExpression> {
-    if !expr_may_fall_through(&expr) {
-        return Ok(expr);
-    }
-
-    let func = env.current_function().clone();
-
-    if func.signature().return_type.is_unreachable() {
-        return Ok(expr);
-    }
-
-    let implicit_value = if func.symbol_name() == "main" {
-        Some(Box::new(THIRExpression {
-            token_range: TokenRange::internal(),
-            kind: THIRExpressionKind::IntLiteral(0),
-            _type: THIRType::from(THIRTypeKind::Integer {
-                _type: THIRIntType::I32,
-                signed: true,
-            }),
-        }))
-    } else if func.signature().return_type.is_void() {
-        None
-    } else {
-        return Ok(expr);
-    };
-
-    let ret = typecheck_return(
-        env,
-        namespace,
-        &expr.token_range,
-        implicit_value.map(|v| *v),
-    )?
-    .internal_ready_assertion();
-
-    Ok(THIRExpression {
-        token_range: TokenRange::internal(),
-        kind: THIRExpressionKind::Block {
-            statements: vec![expr, ret],
-            creates_scope: false,
-            yields: false,
-        },
-        _type: THIRType::unit(),
-    })
 }

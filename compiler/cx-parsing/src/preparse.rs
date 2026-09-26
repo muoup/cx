@@ -8,7 +8,9 @@ use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::{Import, PreparseContents};
 use cx_tokens::{
-    identifier, keyword, operator, punctuator, specifier, token::TokenKind, TokenIter,
+    identifier, keyword, operator, punctuator, specifier,
+    token::{KeywordType, PunctuatorType, SpecifierType, TokenKind},
+    TokenIter,
 };
 use cx_util::identifier::CXIdent;
 
@@ -54,13 +56,13 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     let next_kind = next_token.kind.clone();
 
     match &next_kind {
-        cx_tokens::token::TokenKind::IncludeBegin => {
+        TokenKind::IncludeBegin => {
             data.include_states.push(PreparseIncludeState {
                 visibility: data.visibility_mode,
             });
         }
 
-        cx_tokens::token::TokenKind::IncludeEnd => {
+        TokenKind::IncludeEnd => {
             let Some(state) = data.include_states.pop() else {
                 return parse_point_error(&data.tokens, &UNEXPECTED_END, Some("included source".into()));
             };
@@ -178,10 +180,10 @@ fn is_extern_c_section_after_access(data: &PreparseData) -> bool {
                 .map(|token| &token.kind),
         ),
         (
-            Some(cx_tokens::token::TokenKind::Specifier(
-                cx_tokens::token::SpecifierType::Extern
+            Some(TokenKind::Specifier(
+                SpecifierType::Extern
             )),
-            Some(cx_tokens::token::TokenKind::StringLiteral(abi))
+            Some(TokenKind::StringLiteral(abi))
         ) if abi == "C"
     )
 }
@@ -193,10 +195,10 @@ fn is_extern_c_section(data: &PreparseData) -> bool {
             data.tokens.peek().map(|token| &token.kind),
         ),
         (
-            Some(cx_tokens::token::TokenKind::Specifier(
-                cx_tokens::token::SpecifierType::Extern
+            Some(TokenKind::Specifier(
+                SpecifierType::Extern
             )),
-            Some(cx_tokens::token::TokenKind::StringLiteral(abi))
+            Some(TokenKind::StringLiteral(abi))
         ) if abi == "C"
     )
 }
@@ -208,7 +210,7 @@ fn parse_extern_c_mod(
     assert_token_matches!(data.tokens, specifier!(Extern), "'extern'");
     assert_token_matches!(
         data.tokens,
-        cx_tokens::token::TokenKind::StringLiteral(abi),
+        TokenKind::StringLiteral(abi),
         "\"C\""
     );
     let abi = abi.clone();
@@ -271,8 +273,8 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
         if frames.len() == 1
             && matches!(
                 &next_token.kind,
-                TokenKind::Keyword(cx_tokens::token::KeywordType::As)
-                    | TokenKind::Punctuator(cx_tokens::token::PunctuatorType::Semicolon)
+                TokenKind::Keyword(KeywordType::As)
+                    | TokenKind::Punctuator(PunctuatorType::Semicolon)
             )
         {
             let frame = frames

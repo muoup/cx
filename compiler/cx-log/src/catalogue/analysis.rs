@@ -17,7 +17,7 @@ define_errors! {
         }
         result
     };
-    PARTIAL_MOVE: (String, String, bool) = "A0002" => |(function, place, discarded)| ownership_message(function, format!("@nodrop variable '{place}' is moved on only some control-flow paths"), discarded);
+    PARTIAL_MOVE: (String, String, bool) = "A0002" => |(function, place, discarded)| ownership_message(function, format!("@nodrop variable '{place}' has inconsistent ownership across control-flow paths"), discarded);
     VALUE_NOT_CONSUMED: (String, String, String, String, bool) = "A0003" => |(function, kind, place, exit, discarded)| ownership_message(function, format!("@nodrop {kind} '{place}' is not moved or leaked before {exit} exit"), discarded);
     AFTER_MOVE: (String, String, String, bool) = "A0004" => |(function, place, operation, discarded)| ownership_message(function, format!("Variable '{place}' {operation} after it was moved"), discarded);
     BEFORE_INITIALIZATION: (String, String, String, bool) = "A0005" => |(function, place, operation, discarded)| ownership_message(function, format!("Variable '{place}' {operation} before it was initialized"), discarded);

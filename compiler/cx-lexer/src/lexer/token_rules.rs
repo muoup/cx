@@ -12,7 +12,7 @@ pub(crate) fn literal_or_prefixed_token(iter: &mut LexCursor<'_>) -> CXResult<Op
         Some('0'..='9') => number(iter).map(Some),
         Some('.') if iter.next_is(u8::is_ascii_digit) => number(iter).map(Some),
         Some('"') => Ok(string(iter)),
-        Some('\'') => char_literal(iter).map(Some),
+        Some('\'') if !starts_lifetime_modifier(iter) => char_literal(iter).map(Some),
         _ => Ok(None),
     }
 }
@@ -67,6 +67,7 @@ pub(crate) fn operator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
             }
             _ => try_assignment(iter, OperatorType::Minus),
         },
+        '\'' => Some(TokenKind::Punctuator(PunctuatorType::Apostrophe)),
         '&' => match iter.peek() {
             Some('&') => {
                 iter.next();
@@ -233,4 +234,33 @@ fn char_literal(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
     };
 
     Ok(kind)
+}
+
+pub(crate) fn starts_lifetime_modifier(iter: &LexCursor<'_>) -> bool {
+    let source = &iter.source()[iter.cursor()..];
+    let mut chars = source.chars().peekable();
+    if chars.next() != Some('\'') {
+        return false;
+    }
+
+    let Some(first) = chars.next() else {
+        return false;
+    };
+
+    if first != '_' && !first.is_ascii_alphabetic() {
+        return false;
+    }
+
+    if first != '_' && !first.is_ascii_alphabetic() {
+        return false;
+    }
+
+    while chars
+        .peek()
+        .is_some_and(|character| *character == '_' || character.is_ascii_alphanumeric())
+    {
+        chars.next();
+    }
+
+    chars.peek() != Some(&'\'')
 }

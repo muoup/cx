@@ -4,7 +4,7 @@ use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
     thir::{
         expression::{
-            THIRBinOp, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
+            THIRBinOp, THIRBlockKind, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
             THIRPtrBinOp, THIRPtrDiffBinOp,
         },
         r#type::{THIRIntType, THIRType, THIRTypeKind},
@@ -41,10 +41,10 @@ pub(crate) fn dispatch(
 
 fn resolve_comma(lhs: THIRExpression, rhs: THIRExpression) -> CXResult<TypecheckResult> {
     Ok(TypecheckResult::new(
-        rhs._type.clone(),
+        rhs.ty.clone(),
         THIRExpressionKind::Block {
             statements: vec![lhs, rhs],
-            creates_scope: false,
+            kind: THIRBlockKind::Sequence,
             yields: false,
         },
     ))
@@ -59,9 +59,8 @@ pub(crate) fn resolve_logical(
     lhs = std_rval_promotion(env, lhs)?;
     rhs = std_rval_promotion(env, rhs)?;
 
-    let valid_logical_operand = |expr: &THIRExpression| {
-        expr._type.is_integer() || expr._type.is_float() || expr._type.is_pointer()
-    };
+    let valid_logical_operand =
+        |expr: &THIRExpression| expr.ty.is_integer() || expr.ty.is_float() || expr.ty.is_pointer();
 
     if !valid_logical_operand(&lhs) || !valid_logical_operand(&rhs) {
         return env.log_error(
@@ -69,8 +68,8 @@ pub(crate) fn resolve_logical(
             &catalogue::INVALID_BINARY_OPERANDS,
             (
                 format!("{:?}", op),
-                format!("{}", lhs._type.display_with(&env.symbols)),
-                format!("{}", rhs._type.display_with(&env.symbols)),
+                format!("{}", lhs.ty.display_with(&env.symbols)),
+                format!("{}", rhs.ty.display_with(&env.symbols)),
             ),
         );
     }
@@ -106,11 +105,11 @@ pub(crate) fn resolve_std_arithmetic(
     lhs = std_rval_promotion(env, lhs)?;
     rhs = std_rval_promotion(env, rhs)?;
 
-    if lhs._type.is_float() || rhs._type.is_float() {
+    if lhs.ty.is_float() || rhs.ty.is_float() {
         coerce_float_binop(env, op, lhs, rhs)
-    } else if lhs._type.is_pointer() || rhs._type.is_pointer() {
+    } else if lhs.ty.is_pointer() || rhs.ty.is_pointer() {
         coerce_pointer_binop(env, op, lhs, rhs)
-    } else if lhs._type.is_integer() && rhs._type.is_integer() {
+    } else if lhs.ty.is_integer() && rhs.ty.is_integer() {
         coerce_integral_binop(env, op, lhs, rhs)
     } else {
         env.log_error(
@@ -118,8 +117,8 @@ pub(crate) fn resolve_std_arithmetic(
             &catalogue::INVALID_BINARY_OPERANDS,
             (
                 format!("{}", op),
-                format!("{}", lhs.get_type().display_with(&env.symbols)),
-                format!("{}", rhs.get_type().display_with(&env.symbols)),
+                format!("{}", lhs.ty.clone().display_with(&env.symbols)),
+                format!("{}", rhs.ty.clone().display_with(&env.symbols)),
             ),
         )
     }
@@ -131,30 +130,30 @@ fn coerce_float_binop(
     mut lhs: THIRExpression,
     mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
-    if let THIRTypeKind::Float { _type: lftype } = lhs._type.kind
-        && let THIRTypeKind::Float { _type: rftype } = rhs._type.kind
+    if let THIRTypeKind::Float { ty: lftype } = lhs.ty.kind
+        && let THIRTypeKind::Float { ty: rftype } = rhs.ty.kind
         && lftype != rftype
     {
         let common_ftype = if lftype.bytes() > rftype.bytes() {
-            lhs._type.clone()
+            lhs.ty.clone()
         } else {
-            rhs._type.clone()
+            rhs.ty.clone()
         };
 
         rhs = implicit_cast(env, rhs, &common_ftype)?;
     }
 
-    if !rhs._type.is_float() {
-        rhs = implicit_cast(env, rhs, &lhs._type)?;
+    if !rhs.ty.is_float() {
+        rhs = implicit_cast(env, rhs, &lhs.ty)?;
     } else {
-        lhs = implicit_cast(env, lhs, &rhs._type)?;
+        lhs = implicit_cast(env, lhs, &rhs.ty)?;
     }
 
     let (op, return_type) = match op {
-        HIRBinOp::Add => (THIRFloatBinOp::FADD, lhs._type.clone()),
-        HIRBinOp::Subtract => (THIRFloatBinOp::FSUB, lhs._type.clone()),
-        HIRBinOp::Multiply => (THIRFloatBinOp::FMUL, lhs._type.clone()),
-        HIRBinOp::Divide => (THIRFloatBinOp::FDIV, lhs._type.clone()),
+        HIRBinOp::Add => (THIRFloatBinOp::FADD, lhs.ty.clone()),
+        HIRBinOp::Subtract => (THIRFloatBinOp::FSUB, lhs.ty.clone()),
+        HIRBinOp::Multiply => (THIRFloatBinOp::FMUL, lhs.ty.clone()),
+        HIRBinOp::Divide => (THIRFloatBinOp::FDIV, lhs.ty.clone()),
 
         HIRBinOp::Equal => (THIRFloatBinOp::FEQ, THIRType::bool()),
         HIRBinOp::NotEqual => (THIRFloatBinOp::FNE, THIRType::bool()),
@@ -169,8 +168,8 @@ fn coerce_float_binop(
                 &catalogue::INVALID_BINARY_OPERANDS,
                 (
                     format!("{}", op),
-                    format!("{}", lhs.get_type().display_with(&env.symbols)),
-                    format!("{}", rhs.get_type().display_with(&env.symbols)),
+                    format!("{}", lhs.ty.clone().display_with(&env.symbols)),
+                    format!("{}", rhs.ty.clone().display_with(&env.symbols)),
                 ),
             );
         }
@@ -180,8 +179,8 @@ fn coerce_float_binop(
         return_type,
         THIRExpressionKind::BinaryOperation {
             op: THIRBinOp::Float {
-                ftype: match lhs._type.kind {
-                    THIRTypeKind::Float { _type } => _type,
+                ftype: match lhs.ty.kind {
+                    THIRTypeKind::Float { ty } => ty,
                     _ => unreachable!(),
                 },
                 op,
@@ -198,55 +197,24 @@ fn coerce_pointer_binop(
     mut lhs: THIRExpression,
     mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
-    if lhs._type.is_pointer() && rhs._type.is_pointer() {
+    if lhs.ty.is_pointer() && rhs.ty.is_pointer() {
         if *op == HIRBinOp::Subtract {
             let pointer_integer = env.symbols.pointer_integer_type();
             let integer_type: THIRType = THIRTypeKind::Integer {
-                _type: pointer_integer,
+                ty: pointer_integer,
                 signed: true,
             }
             .into();
-            let pointee = env.symbols.ptr_inner(&lhs._type).cloned().unwrap();
-            let difference_range = lhs.token_range.clone();
-            let pointer_to_integer = |operand: THIRExpression| THIRExpression {
-                token_range: operand.token_range.clone(),
-                kind: THIRExpressionKind::TypeConversion {
-                    operand: Box::new(operand),
-                    conversion: cx_thir::thir::expression::THIRCoercion::PtrToInt {
-                        to_type: pointer_integer,
-                    },
+            let pointee = env.symbols.ptr_inner(&lhs.ty).cloned().unwrap();
+            let element_ty = env.symbols.generate_type_id(pointee);
+            return Ok(TypecheckResult::new(
+                integer_type,
+                THIRExpressionKind::BinaryOperation {
+                    op: THIRBinOp::PtrDifference { element_ty },
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
                 },
-                _type: integer_type.clone(),
-            };
-            let difference = THIRExpression {
-                token_range: difference_range.clone(),
-                kind: THIRExpressionKind::BinaryOperation {
-                    op: THIRBinOp::Integer {
-                        itype: pointer_integer,
-                        op: THIRIntBinOp::IDIV,
-                    },
-                    lhs: Box::new(THIRExpression {
-                        token_range: difference_range.clone(),
-                        kind: THIRExpressionKind::BinaryOperation {
-                            op: THIRBinOp::Integer {
-                                itype: pointer_integer,
-                                op: THIRIntBinOp::SUB,
-                            },
-                            lhs: Box::new(pointer_to_integer(lhs)),
-                            rhs: Box::new(pointer_to_integer(rhs)),
-                        },
-                        _type: integer_type.clone(),
-                    }),
-                    rhs: Box::new(THIRExpression {
-                        token_range: difference_range.clone(),
-                        kind: THIRExpressionKind::SizeOf { _type: pointee },
-                        _type: integer_type.clone(),
-                    }),
-                },
-                _type: integer_type.clone(),
-            };
-
-            return Ok(TypecheckResult::from(difference));
+            ));
         }
 
         let (return_type, op) = match op {
@@ -263,8 +231,8 @@ fn coerce_pointer_binop(
                     &catalogue::INVALID_BINARY_OPERANDS,
                     (
                         format!("{}", op),
-                        format!("{}", lhs.get_type().display_with(&env.symbols)),
-                        format!("{}", rhs.get_type().display_with(&env.symbols)),
+                        format!("{}", lhs.ty.clone().display_with(&env.symbols)),
+                        format!("{}", rhs.ty.clone().display_with(&env.symbols)),
                     )
                 );
             }
@@ -280,41 +248,54 @@ fn coerce_pointer_binop(
         ));
     }
 
-    let (pointer, non_pointer) = if lhs._type.is_pointer() {
+    if matches!(op, HIRBinOp::Subtract) && !lhs.ty.is_pointer() {
+        return env.log_error(
+            &lhs.token_range,
+            &catalogue::INVALID_BINARY_OPERANDS,
+            (
+                format!("{}", op),
+                format!("{}", lhs.ty.clone().display_with(&env.symbols)),
+                format!("{}", rhs.ty.clone().display_with(&env.symbols)),
+            ),
+        );
+    }
+
+    let (pointer, non_pointer) = if lhs.ty.is_pointer() {
         (&mut lhs, &mut rhs)
     } else {
         (&mut rhs, &mut lhs)
     };
 
-    let ptr_type = pointer._type.clone();
+    let ptr_type = pointer.ty.clone();
     if matches!(op, HIRBinOp::Equal | HIRBinOp::NotEqual)
         && matches!(non_pointer.kind, THIRExpressionKind::IntLiteral(0))
     {
         *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &ptr_type)?;
     } else {
         let intptr = THIRTypeKind::Integer {
-            _type: env.symbols.pointer_integer_type(),
+            ty: env.symbols.pointer_integer_type(),
             signed: true,
         };
         *non_pointer = implicit_cast(env, std::mem::take(non_pointer), &intptr.into())?;
     }
 
-    let ptr_inner = Box::new(env.symbols.ptr_inner(&ptr_type).cloned().unwrap());
+    let ptr_inner = env.symbols.ptr_inner(&ptr_type).cloned().unwrap();
+    let ptr_inner_id = env.symbols.generate_type_id(ptr_inner.clone());
 
     let (return_type, op) = match op {
         HIRBinOp::Add => (
             ptr_type,
             THIRBinOp::PtrDiff {
                 op: THIRPtrDiffBinOp::ADD,
-                ptr_inner,
+                ptr_inner: ptr_inner_id,
             },
         ),
 
         HIRBinOp::ArrayIndex => (
-            env.symbols.mem_ref_to(ptr_inner.as_ref().clone()),
+            env.symbols.mem_ref_to(ptr_inner),
             THIRBinOp::PtrDiff {
                 op: THIRPtrDiffBinOp::ADD,
-                ptr_inner,
+                ptr_inner: ptr_inner_id,
             },
         ),
 
@@ -322,7 +303,7 @@ fn coerce_pointer_binop(
             ptr_type,
             THIRBinOp::PtrDiff {
                 op: THIRPtrDiffBinOp::SUB,
-                ptr_inner,
+                ptr_inner: ptr_inner_id,
             },
         ),
 
@@ -352,12 +333,16 @@ fn coerce_pointer_binop(
                 &catalogue::INVALID_BINARY_OPERANDS,
                 (
                     format!("{}", op),
-                    format!("{}", lhs.get_type().display_with(&env.symbols)),
-                    format!("{}", rhs.get_type().display_with(&env.symbols)),
+                    format!("{}", lhs.ty.clone().display_with(&env.symbols)),
+                    format!("{}", rhs.ty.clone().display_with(&env.symbols)),
                 )
             );
         }
     };
+
+    if matches!(op, THIRBinOp::PtrDiff { .. }) && rhs.ty.is_pointer() {
+        std::mem::swap(&mut lhs, &mut rhs);
+    }
 
     Ok(TypecheckResult::new(
         return_type,
@@ -375,17 +360,17 @@ fn coerce_integral_binop(
     mut lhs: THIRExpression,
     mut rhs: THIRExpression,
 ) -> CXResult<TypecheckResult> {
-    let THIRTypeKind::Integer { _type: litype, .. } = lhs._type.kind else {
+    let THIRTypeKind::Integer { ty: litype, .. } = lhs.ty.kind else {
         unreachable!("Expected integer type for lhs of integral binary operation");
     };
-    let THIRTypeKind::Integer { _type: ritype, .. } = rhs._type.kind else {
+    let THIRTypeKind::Integer { ty: ritype, .. } = rhs.ty.kind else {
         unreachable!("Expected integer type for rhs of integral binary operation");
     };
 
     if litype.rank() < ritype.rank() {
-        lhs = implicit_cast(env, lhs, &rhs._type)?;
+        lhs = implicit_cast(env, lhs, &rhs.ty)?;
     } else if ritype.rank() < litype.rank() {
-        rhs = implicit_cast(env, rhs, &lhs._type)?;
+        rhs = implicit_cast(env, rhs, &lhs.ty)?;
     }
 
     let return_type = match op {
@@ -398,7 +383,7 @@ fn coerce_integral_binop(
         | HIRBinOp::BitOr
         | HIRBinOp::BitXor
         | HIRBinOp::LShift
-        | HIRBinOp::RShift => lhs._type.clone(),
+        | HIRBinOp::RShift => lhs.ty.clone(),
 
         HIRBinOp::Less
         | HIRBinOp::Greater
@@ -413,14 +398,14 @@ fn coerce_integral_binop(
                 &catalogue::INVALID_BINARY_OPERANDS,
                 (
                     format!("{}", op),
-                    format!("{}", lhs.get_type().display_with(&env.symbols)),
-                    format!("{}", rhs.get_type().display_with(&env.symbols))
+                    format!("{}", lhs.ty.clone().display_with(&env.symbols)),
+                    format!("{}", rhs.ty.clone().display_with(&env.symbols)),
                 ),
             );
         }
     };
 
-    let signed = match lhs._type.kind {
+    let signed = match lhs.ty.kind {
         THIRTypeKind::Integer { signed, .. } => signed,
         _ => unreachable!(),
     };
@@ -431,8 +416,8 @@ fn coerce_integral_binop(
             &catalogue::INVALID_BINARY_OPERANDS,
             (
                 format!("{}", op),
-                format!("{}", lhs.get_type().display_with(&env.symbols)),
-                format!("{}", rhs.get_type().display_with(&env.symbols))
+                format!("{}", lhs.ty.clone().display_with(&env.symbols)),
+                format!("{}", rhs.ty.clone().display_with(&env.symbols)),
             ),
         );
     };
@@ -441,8 +426,8 @@ fn coerce_integral_binop(
         return_type,
         THIRExpressionKind::BinaryOperation {
             op: THIRBinOp::Integer {
-                itype: match lhs._type.kind {
-                    THIRTypeKind::Integer { _type, .. } => _type,
+                itype: match lhs.ty.kind {
+                    THIRTypeKind::Integer { ty, .. } => ty,
                     _ => unreachable!(),
                 },
                 op,

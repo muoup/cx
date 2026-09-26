@@ -32,11 +32,11 @@ pub fn typecheck(env: &mut TypeEnvironment, ast: &HIR) -> CXResult<()> {
 
                 match body {
                     Some(body) => typecheck_function(env, &namespace, prototype, body)?,
-                    None => env.items.push_generated_function(THIRFunction {
-        require_explicit_return: env.require_explicit_return(),
+                    None => env.items.push_generated_function(THIRFunction::new(
                         prototype,
-                        body: None,
-                    }),
+                        None,
+                        env.require_explicit_return(),
+                    )),
                 };
             }
 
@@ -44,7 +44,7 @@ pub fn typecheck(env: &mut TypeEnvironment, ast: &HIR) -> CXResult<()> {
                 variable:
                     HIRGlobalVariable::Standard {
                         name,
-                        _type: hir_type,
+                        ty: hir_type,
                         linkage,
                         symbol_name_scheme: name_scheme,
                         initializer,

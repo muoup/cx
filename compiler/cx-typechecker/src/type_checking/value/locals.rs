@@ -1,9 +1,7 @@
 use crate::{
     environment::TypeEnvironment,
-    symbol::completion::{complete_type, ensure_valid_type_component},
-    type_checking::{
-        coercion::implicit::implicit_cast, result::TypecheckResult, typechecker::typecheck_expr,
-    },
+    symbol::completion::{complete_type, assert_valid_type_component},
+    type_checking::{initializer::typecheck_object_initializer, result::TypecheckResult},
 };
 use cx_hir::ast::{
     expression::HIRExpression,
@@ -18,6 +16,7 @@ use cx_thir::{
     thir::{
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
+        r#type::{THIRArrayLength, THIRTypeKind},
     },
     type_context::THIRTypeContext,
 };
@@ -34,12 +33,36 @@ pub(crate) fn typecheck_var_declaration(
     linkage: LinkageMode,
 ) -> CXResult<TypecheckResult> {
     let ty = complete_type(env, namespace, ty)?;
-    let mem_type = env.symbols.mem_ref_to(ty.clone());
 
-    ensure_valid_type_component(env, expr.token_range(), &ty, "a variable", true)?;
+    if !matches!(
+        ty.kind,
+        THIRTypeKind::Array {
+            length: THIRArrayLength::Implicit,
+            ..
+        }
+    ) {
+        assert_valid_type_component(env, expr.token_range(), &ty, "a variable", true)?;
+    }
+    if initial_value.is_none()
+        && linkage != LinkageMode::Extern
+        && matches!(
+            ty.kind,
+            THIRTypeKind::Array {
+                length: THIRArrayLength::Implicit,
+                ..
+            }
+        )
+    {
+        return env.log_error(
+            expr.token_range(),
+            &catalogue::INCOMPLETE_TYPE,
+            format!("{}", name),
+        );
+    }
 
     let expr = match linkage {
         LinkageMode::Extern => {
+            let mem_type = env.symbols.mem_ref_to(ty.clone());
             let symbol_name = QualifiedName::new_raw(name.clone());
 
             let sym_expr = if let Some(symbol) = env.get_symbol(namespace, &symbol_name)? {
@@ -47,7 +70,7 @@ pub(crate) fn typecheck_var_declaration(
                     .as_expression()
                     .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
-                if !env.type_eq(&mem_type, &sym_expr._type) {
+                if !env.type_eq(&mem_type, &sym_expr.ty) {
                     return env.log_error(
                         expr.token_range(),
                         &catalogue::VARIABLE_REDECLARATION,
@@ -58,14 +81,13 @@ pub(crate) fn typecheck_var_declaration(
                 sym_expr
             } else {
                 env.items.push_generated_global(
-                    THIRGlobalVariable {
-                        name: name.clone(),
-                        _type: ty.clone(),
-
-                        is_mutable: true,
-                        linkage: LinkageMode::Extern,
-                        initializer: None,
-                    },
+                    THIRGlobalVariable::new(
+                        name.clone(),
+                        ty.clone(),
+                        None,
+                        LinkageMode::Extern,
+                        true,
+                    ),
                     false,
                 );
 
@@ -74,7 +96,7 @@ pub(crate) fn typecheck_var_declaration(
                     kind: THIRExpressionKind::GlobalVariable {
                         symbol: name.clone(),
                     },
-                    _type: mem_type,
+                    ty: mem_type,
                 }
             };
 
@@ -88,28 +110,12 @@ pub(crate) fn typecheck_var_declaration(
             let symbol_name = format!("_S{}_{}_{}", name.as_str().len(), name, function_name);
             let (global_type, initializer) = match initial_value {
                 Some(initial_value) => {
-                    let init_tc = typecheck_expr(env, namespace, initial_value, Some(&ty))?;
-                    let init_expr = init_tc
-                        .standard_ready_coerce(env, expr.token_range())
-                        .and_then(|value| implicit_cast(env, value, &ty))?;
-                    let global_type = match &init_expr.kind {
-                        THIRExpressionKind::ArrayInitializer { .. } => init_expr._type.clone(),
-                        THIRExpressionKind::TypeConversion {
-                            conversion: cx_thir::thir::expression::THIRCoercion::ReinterpretBits,
-                            operand,
-                        } if matches!(
-                            operand.kind,
-                            THIRExpressionKind::ArrayInitializer { .. }
-                        ) =>
-                        {
-                            operand._type.clone()
-                        }
-                        _ => ty.clone(),
-                    };
-                    (global_type, Some(init_expr))
+                    let checked = typecheck_object_initializer(env, namespace, initial_value, &ty)?;
+                    (checked.object_type, Some(checked.value))
                 }
                 None => (ty.clone(), None),
             };
+            assert_valid_type_component(env, expr.token_range(), &global_type, "a variable", true)?;
             let is_const = ty.get_specifier(HIR_CONST) || {
                 let mut element_type = env.symbols.array_inner(&global_type);
                 let mut is_const = false;
@@ -124,20 +130,19 @@ pub(crate) fn typecheck_var_declaration(
             };
 
             env.items.push_generated_global(
-                THIRGlobalVariable {
-                    name: CXIdent::new(symbol_name.clone()),
-                    _type: global_type.clone(),
-
-                    is_mutable: !is_const,
-                    linkage: LinkageMode::Static,
+                THIRGlobalVariable::new(
+                    CXIdent::new(symbol_name.clone()),
+                    global_type.clone(),
                     initializer,
-                },
+                    LinkageMode::Static,
+                    !is_const,
+                ),
                 false,
             );
 
             let symbol = THIRExpression {
                 token_range: expr.token_range().clone(),
-                _type: env.symbols.mem_ref_to(global_type),
+                ty: env.symbols.mem_ref_to(global_type),
                 kind: THIRExpressionKind::GlobalVariable {
                     symbol: CXIdent::new(symbol_name),
                 },
@@ -152,28 +157,38 @@ pub(crate) fn typecheck_var_declaration(
         LinkageMode::Standard => {
             let local_id = THIRLocalID::fresh();
 
-            let (initial_value, adopting) = match initial_value {
+            let (object_type, initial_value, adopting) = match initial_value {
                 Some(init_expr) => {
-                    let init_tc = typecheck_expr(env, namespace, init_expr, Some(&ty))?;
-                    let adopting = init_tc.is_adopting();
-                    let init_expr = init_tc
-                        .standard_ready_coerce(env, expr.token_range())
-                        .and_then(|v| implicit_cast(env, v, &ty))?;
-                    (Some(Box::new(init_expr)), adopting)
+                    let checked = typecheck_object_initializer(env, namespace, init_expr, &ty)?;
+                    (
+                        checked.object_type,
+                        Some(Box::new(checked.value)),
+                        checked.adopting,
+                    )
                 }
-                None => (None, false),
+                None => (ty.clone(), None, false),
             };
+            assert_valid_type_component(env, expr.token_range(), &object_type, "a variable", true)?;
+            let mem_type = env.symbols.mem_ref_to(object_type.clone());
 
             let binding = THIRExpression {
                 token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::CreateLocalVariable {
-                    name: name.clone(),
-                    local_id,
-                    _type: ty.clone(),
-                    initial_value,
-                    adopting,
+                kind: match adopting {
+                    true => THIRExpressionKind::AdoptRegion {
+                        binding_name: name.clone(),
+                        local_id,
+                        ty: object_type.clone(),
+                        initial_value: initial_value
+                            .expect("adopting binding must have an initial value"),
+                    },
+                    false => THIRExpressionKind::CreateLocalVariable {
+                        name: name.clone(),
+                        local_id,
+                        ty: object_type.clone(),
+                        initial_value,
+                    },
                 },
-                _type: mem_type.clone(),
+                ty: mem_type.clone(),
             };
 
             env.symbols.insert_local_value(
@@ -184,7 +199,7 @@ pub(crate) fn typecheck_var_declaration(
                         name: name.clone(),
                         local_id,
                     },
-                    _type: mem_type,
+                    ty: mem_type,
                 },
             );
 

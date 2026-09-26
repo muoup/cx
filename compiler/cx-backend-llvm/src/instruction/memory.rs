@@ -12,13 +12,13 @@ use inkwell::values::{AnyValue, AnyValueEnum, BasicValue};
 
 pub(super) fn generate_allocate<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
-    _type: &LMIRType,
+    ty: &LMIRType,
     alignment: u8,
 ) -> LLVMResult<CodegenValue<'a>> {
     let basic_ty = function_state
         .context
         .i8_type()
-        .array_type(usize::from(_type.size()) as u32);
+        .array_type(usize::from(ty.size()) as u32);
     let previous_block = function_state
         .builder
         .get_insert_block()
@@ -85,7 +85,7 @@ pub(super) fn generate_store<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     memory: &LMIRValue,
     value: &LMIRValue,
-    _type: &LMIRType,
+    ty: &LMIRType,
 ) -> LLVMResult<CodegenValue<'a>> {
     let codegen_value = function_state.get_value(value)?;
     let memory = function_state
@@ -119,7 +119,7 @@ pub(super) fn generate_store<'a, 'b>(
                     .build_store(field_ptr, value)
                     .map_err(LLVMError::from_error)?;
                 store
-                    .set_alignment(slot._type.alignment() as u32)
+                    .set_alignment(slot.ty.alignment() as u32)
                     .map_err(LLVMError::from_error)?;
             }
         }
@@ -130,7 +130,7 @@ pub(super) fn generate_store<'a, 'b>(
                 .build_store(memory, basic_value)
                 .map_err(LLVMError::from_error)?;
             store
-                .set_alignment(_type.alignment() as u32)
+                .set_alignment(ty.alignment() as u32)
                 .map_err(LLVMError::from_error)?;
         }
         CodegenValue::Null => {}
@@ -146,20 +146,11 @@ pub(super) fn generate_memcpy<'a, 'b>(
     size: &LMIRValue,
     alignment: u8,
 ) -> LLVMResult<CodegenValue<'a>> {
-    let src = match function_state.get_value(src)?.get_value()? {
-        AnyValueEnum::PointerValue(value) => value,
-        value => {
-            let value = any_to_basic_val(value)?;
-            let temporary = function_state
-                .builder
-                .build_alloca(value.get_type(), inst_num().as_str())
-                .map_err(LLVMError::from_error)?;
-            function_state
-                .builder
-                .build_store(temporary, value)
-                .map_err(LLVMError::from_error)?;
-            temporary
-        }
+    let AnyValueEnum::PointerValue(src) = function_state.get_value(src)?.get_value()? else {
+        return Err(LLVMError::new(
+            &catalogue::ENTITY_REQUIREMENT,
+            ("memcpy source".into(), "a pointer value".into(), None),
+        ));
     };
     let dest = function_state
         .get_value(dest)?
@@ -180,7 +171,7 @@ pub(super) fn generate_load<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
     memory: &LMIRValue,
-    _type: &LMIRType,
+    ty: &LMIRType,
 ) -> LLVMResult<CodegenValue<'a>> {
     let memory = function_state
         .get_value(memory)?
@@ -189,7 +180,7 @@ pub(super) fn generate_load<'a, 'b>(
     let loaded = function_state
         .builder
         .build_load(
-            any_to_basic_type(bc_llvm_type(global_state.context, _type)?)?,
+            any_to_basic_type(bc_llvm_type(global_state.context, ty)?)?,
             memory,
             inst_num().as_str(),
         )
@@ -197,7 +188,7 @@ pub(super) fn generate_load<'a, 'b>(
     loaded
         .as_instruction_value()
         .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
-        .set_alignment(_type.alignment() as u32)
+        .set_alignment(ty.alignment() as u32)
         .map_err(LLVMError::from_error)?;
     Ok(CodegenValue::Value(loaded.as_any_value_enum()))
 }
@@ -206,7 +197,7 @@ pub(super) fn generate_zero_memory<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
     memory: &LMIRValue,
-    _type: &LMIRType,
+    ty: &LMIRType,
 ) -> LLVMResult<CodegenValue<'a>> {
     let memory = function_state
         .get_value(memory)?
@@ -215,10 +206,10 @@ pub(super) fn generate_zero_memory<'a, 'b>(
     let zero = global_state.context.i8_type().const_zero();
     let size = global_state
         .pointer_int_type
-        .const_int(usize::from(_type.size()) as u64, false);
+        .const_int(usize::from(ty.size()) as u64, false);
     function_state
         .builder
-        .build_memset(memory, _type.alignment() as u32, zero, size)
+        .build_memset(memory, ty.alignment() as u32, zero, size)
         .map_err(LLVMError::from_error)?;
     Ok(CodegenValue::Null)
 }

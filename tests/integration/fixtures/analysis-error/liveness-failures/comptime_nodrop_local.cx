@@ -1,0 +1,12 @@
+struct Resource : @nodrop {
+    int value;
+};
+
+comptime void discard() {
+    Resource resource = (Resource) { .value = 1 };
+}
+
+int main() {
+    discard();
+    return 0;
+}

@@ -36,7 +36,7 @@ pub fn typecheck_match(
         .and_then(|value| value.standard_ready_coerce(env, condition.token_range()))
         .map(|value| resolve_indirect_base(env, value))?;
     let expr_type = expr_value.source_type.clone();
-    let condition_owned = expr_value.owned;
+    let condition_owned = !expr_value.source.ty.is_memory_reference();
 
     env.push_yield_scope(expected_type.cloned());
 
@@ -59,8 +59,12 @@ pub fn typecheck_match(
 
             for (pattern, body) in arms {
                 if let HIRPattern::Binding(name) = pattern {
-                    let (pattern, body, flow) =
-                        typecheck_arm(env, namespace, body, Some((name, &expr_type)))?;
+                    let (pattern, body, flow) = typecheck_arm(
+                        env,
+                        namespace,
+                        body,
+                        Some((name, &expr_type, condition_owned)),
+                    )?;
                     arm_flows.push(flow);
                     result_arms.push((pattern.expect("binding pattern"), Box::new(body)));
                     continue;
@@ -94,15 +98,6 @@ pub fn typecheck_match(
         }
         THIRTypeKind::TaggedUnion { variants, .. } => {
             let expected_union_name = expr_type.member_lookup_identifier().unwrap();
-            let subject_name = CXIdent::from("__internal_match_subject");
-            let subject_expr = THIRExpression {
-                _type: expr_value.source._type.clone(),
-                token_range: TokenRange::internal(),
-                kind: THIRExpressionKind::Variable {
-                    name: subject_name,
-                    local_id: subject,
-                },
-            };
             let mut result_arms = Vec::new();
             let mut matched_variants = HashSet::new();
 
@@ -116,8 +111,12 @@ pub fn typecheck_match(
                 }
 
                 if let HIRPattern::Binding(name) = pattern {
-                    let (pattern, body, flow) =
-                        typecheck_arm(env, namespace, body, Some((name, &expr_type)))?;
+                    let (pattern, body, flow) = typecheck_arm(
+                        env,
+                        namespace,
+                        body,
+                        Some((name, &expr_type, condition_owned)),
+                    )?;
                     arm_flows.push(flow);
                     result_arms.push((pattern.expect("binding pattern"), Box::new(body)));
                     continue;
@@ -174,55 +173,30 @@ pub fn typecheck_match(
                 let body_expr = if let Some(inner_name) = &inner_name {
                     let local_id = inner_local_id.expect("match binding local id");
                     let variant_ref_type = env.symbols.mem_ref_to(variant_type.clone());
-                    env.symbols.insert_local_value(
-                        QualifiedName::new_raw(inner_name.clone()),
-                        THIRExpression {
-                            token_range: TokenRange::internal(),
-                            kind: THIRExpressionKind::Variable {
-                                name: inner_name.clone(),
-                                local_id,
-                            },
-                            _type: variant_ref_type.clone(),
+                    let binding = THIRExpression {
+                        token_range: TokenRange::internal(),
+                        kind: THIRExpressionKind::Variable {
+                            name: inner_name.clone(),
+                            local_id,
                         },
-                    );
-
-                    let body_expr = typecheck_expr(env, namespace, body, None)?
-                        .standard_ready_coerce(env, body.token_range())?;
+                        ty: variant_ref_type,
+                    };
                     if condition_owned {
-                        let variant = THIRExpression {
-                            token_range: TokenRange::internal(),
-                            _type: variant_ref_type,
-                            kind: THIRExpressionKind::TaggedUnionGet {
-                                value: Box::new(subject_expr.clone()),
-                                variant_type: variant_type.clone(),
-                                variant_index: variant_id,
-                            },
-                        };
-                        let binding = THIRExpression {
-                            token_range: TokenRange::internal(),
-                            _type: env.symbols.mem_ref_to(variant_type.clone()),
-                            kind: THIRExpressionKind::CreateLocalVariable {
-                                name: inner_name.clone(),
-                                local_id,
-                                _type: variant_type.clone(),
-                                initial_value: Some(Box::new(variant)),
-                                adopting: true,
-                            },
-                        };
-                        THIRExpression {
-                            token_range: TokenRange::internal(),
-                            _type: THIRType::unit(),
-                            kind: THIRExpressionKind::Block {
-                                statements: vec![binding, body_expr],
-                                creates_scope: false,
-                                yields: false,
-                            },
-                        }
+                        env.symbols.insert_local_value(
+                            QualifiedName::new_raw(inner_name.clone()),
+                            binding,
+                        );
                     } else {
-                        body_expr
+                        env.symbols.insert_borrowed_local_value(
+                            QualifiedName::new_raw(inner_name.clone()),
+                            binding,
+                        );
                     }
+
+                    typecheck_expr(env, namespace, body, None)?
+                        .standard_ready_coerce(env, body.token_range())?
                 } else {
-                    if variant_type.is_nodrop() {
+                    if condition_owned && variant_type.is_nodrop() {
                         return env.log_error(
                             condition.token_range(),
                             &catalogue::MATCH_PAYLOAD_BINDING,
@@ -322,23 +296,27 @@ fn typecheck_arm(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     body: &HIRExpression,
-    binding: Option<(&CXIdent, &THIRType)>,
+    binding: Option<(&CXIdent, &THIRType, bool)>,
 ) -> CXResult<(Option<THIRPattern>, THIRExpression, MatchArmFlow)> {
     env.push_scope(false, false, body.token_range().clone());
-    let pattern = binding.map(|(name, ty)| {
+    let pattern = binding.map(|(name, ty, owned)| {
         let local_id = THIRLocalID::fresh();
         let binding_type = env.symbols.mem_ref_to(ty.clone());
-        env.symbols.insert_local_value(
-            QualifiedName::new_raw(name.clone()),
-            THIRExpression {
-                token_range: body.token_range().clone(),
-                kind: THIRExpressionKind::Variable {
-                    name: name.clone(),
-                    local_id,
-                },
-                _type: binding_type,
+        let binding = THIRExpression {
+            token_range: body.token_range().clone(),
+            kind: THIRExpressionKind::Variable {
+                name: name.clone(),
+                local_id,
             },
-        );
+            ty: binding_type,
+        };
+        if owned {
+            env.symbols
+                .insert_local_value(QualifiedName::new_raw(name.clone()), binding);
+        } else {
+            env.symbols
+                .insert_borrowed_local_value(QualifiedName::new_raw(name.clone()), binding);
+        }
         THIRPattern::Binding {
             name: name.clone(),
             local_id,
@@ -375,7 +353,7 @@ fn validate_variant_template_input(
         );
     };
 
-    if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
+    if !completed_input.contextual_eq(template_data.template_input(), &env.symbols) {
         return env.log_error(condition.token_range(), &catalogue::INVALID_PATTERN, ());
     }
 

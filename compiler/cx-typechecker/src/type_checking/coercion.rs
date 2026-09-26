@@ -1,5 +1,4 @@
 use cx_log::CXResult;
-use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
     thir::{
         expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
@@ -25,28 +24,12 @@ pub fn try_explicit_cast(
     target_type: &THIRType,
 ) -> CXResult<CoercionResult> {
     try_implicit_coercion(env, expr, target_type)?.or_else(|expr| {
-        let from_type = expr.get_type();
-
-        if env.function.in_safe_context()
-            && matches!(
-                (&from_type.kind, &target_type.kind),
-                (
-                    THIRTypeKind::PointerTo { .. },
-                    THIRTypeKind::MemoryReference { .. }
-                )
-            )
-        {
-            return env.log_error(
-                expr.token_range,
-                &catalogue::UNSAFE_OPERATION,
-                "Deferencing a pointer".into()
-            );
-        }
+        let from_type = expr.ty.clone();
 
         let coerced = |conversion: THIRCoercion| {
             let coerced = THIRExpression {
                 token_range: expr.token_range.clone(),
-                _type: target_type.clone(),
+                ty: target_type.clone(),
                 kind: THIRExpressionKind::TypeConversion {
                     operand: Box::new(expr.clone()),
                     conversion,
@@ -58,17 +41,17 @@ pub fn try_explicit_cast(
 
         match (&from_type.kind, &target_type.kind) {
             (THIRTypeKind::PointerTo { .. }, THIRTypeKind::PointerTo { .. }) => {
-                coerced(THIRCoercion::ReinterpretBits)
+                coerced(THIRCoercion::Bitcast)
             }
 
             (THIRTypeKind::PointerTo { .. }, THIRTypeKind::MemoryReference { .. })
                 if env.symbols.is_c_str(&from_type) && env.symbols.is_cx_str(target_type) =>
             {
-                coerced(THIRCoercion::ReinterpretBits)
+                coerced(THIRCoercion::Bitcast)
             }
 
-            (THIRTypeKind::PointerTo { .. }, THIRTypeKind::Integer { _type, .. }) => {
-                coerced(THIRCoercion::PtrToInt { to_type: *_type })
+            (THIRTypeKind::PointerTo { .. }, THIRTypeKind::Integer { ty, .. }) => {
+                coerced(THIRCoercion::PtrToInt { to_type: *ty })
             }
 
             (THIRTypeKind::Integer { signed, .. }, THIRTypeKind::PointerTo { .. }) => {

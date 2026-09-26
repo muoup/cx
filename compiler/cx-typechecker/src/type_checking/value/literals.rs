@@ -59,15 +59,15 @@ pub(crate) fn typecheck_int_literal(
         token_range: token_range.clone(),
         // MIR stores integer literal bits in an i64; signedness lives in the MIR type.
         kind: THIRExpressionKind::IntLiteral(magnitude as i64),
-        _type: literal_type,
+        ty: literal_type,
     }))
 }
 
 fn integer_type_can_represent(candidate: &THIRType, magnitude: u64) -> bool {
-    let THIRTypeKind::Integer { _type, signed } = candidate.kind else {
+    let THIRTypeKind::Integer { ty, signed } = candidate.kind else {
         unreachable!("integer literal candidate was not an integer type")
     };
-    let bits = (_type.bytes() * 8) as u32;
+    let bits = (ty.bytes() * 8) as u32;
     if signed {
         bits > 64 || magnitude <= ((1_u64 << (bits - 1)) - 1)
     } else {
@@ -92,7 +92,7 @@ pub(crate) fn typecheck_float_literal(
     Ok(TypecheckResult::from(THIRExpression {
         token_range: token_range.clone(),
         kind: THIRExpressionKind::FloatLiteral(val),
-        _type: env.get_intrinsic_type(if suffix == FloatSuffix::Float {
+        ty: env.get_intrinsic_type(if suffix == FloatSuffix::Float {
             "float"
         } else {
             "double"
@@ -104,6 +104,6 @@ pub(crate) fn typecheck_unit() -> TypecheckResult {
     TypecheckResult::from(THIRExpression {
         token_range: TokenRange::internal(),
         kind: THIRExpressionKind::Unit,
-        _type: THIRType::unit(),
+        ty: THIRType::unit(),
     })
 }

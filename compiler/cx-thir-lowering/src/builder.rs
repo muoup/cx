@@ -1,43 +1,36 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cx_log::CXResult;
 use cx_mir::{
-    MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID, MIRFunctionMode,
-    MIRGlobalID, MIRGlobalVariable, MIRInstrKind, MIRLayoutError, MIRPlace, MIRStagedCapture,
-    MIRStagedTemplate, MIRType, MIRTypeID, MIRTypeKind, MIRTypeLayout, MIRUnit, MIRValue,
+    MIRComptimeOp, MIRFunctionID, MIRInstruction, MIRPlaceID, MIRType, MIRTypeID, MIRTypeKind,
+    MIRUnit, MIRValue,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
-use cx_mir_comptime::ComptimeContext;
 use cx_target::ArchitectureConfig;
 use cx_thir::{
     THIRUnit,
     registry::THIRDecomposedRegistry,
-    thir::{
-        data::{THIRComptimeFnPrototype, THIRFnPrototype},
-        expression::{THIRExpression, THIRLocalID},
-        r#type::{THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
-    },
+    thir::{expression::THIRLocalID, r#type::THIRTypeID},
     type_context::THIRTypeContext,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
 
+pub(crate) mod body;
 mod function;
 mod module;
 
-use crate::lowering::{self, types::lower_type};
-use function::{CaptureContext, MIRFunctionBuilder};
-use module::{MIRModuleBuilder, ModuleParts};
+use crate::builder::body::MIRBodyKind;
+pub(crate) use function::DeferredExpression;
+use function::MIRFunctionBuilder;
+use module::{MIRUnitBuilder, ModuleParts};
 
 pub struct MIRBuilder<'thir> {
     types: MIRTypeRegistryBuilder,
-    module: MIRModuleBuilder,
+    module: MIRUnitBuilder<'thir>,
     registry: &'thir THIRDecomposedRegistry,
-    function: Option<MIRFunctionBuilder>,
+    function: Option<MIRFunctionBuilder<'thir>>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +39,7 @@ pub struct MIRTypeRegistryBuilder {
     definitions: Vec<Option<MIRType>>,
 
     lowering_types: HashSet<THIRTypeID>,
-    interner: HashMap<MIRType, MIRTypeID>,
+    interner: Vec<(MIRType, MIRTypeID)>,
     debug_names: HashMap<MIRTypeID, String>,
     next_id: usize,
 }
@@ -54,20 +47,20 @@ pub struct MIRTypeRegistryBuilder {
 impl<'thir> MIRBuilder<'thir> {
     pub fn new(thir: &'thir THIRUnit) -> Self {
         let mut builder = Self {
-            types: MIRTypeRegistryBuilder::new(*thir.registry.architecture()),
-            module: MIRModuleBuilder::new(),
-            registry: &thir.registry,
+            types: MIRTypeRegistryBuilder::new(*thir.registry().architecture()),
+            module: MIRUnitBuilder::new(),
+            registry: thir.registry(),
             function: None,
         };
 
         builder
             .types
-            .reserve_id_space(thir.registry.type_id_bound());
+            .reserve_id_space(thir.registry().type_id_bound());
 
         builder
     }
 
-    pub fn registry(&self) -> &THIRDecomposedRegistry {
+    pub fn registry(&self) -> &'thir THIRDecomposedRegistry {
         self.registry
     }
 
@@ -80,221 +73,89 @@ impl<'thir> MIRBuilder<'thir> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn module(&self) -> &MIRModuleBuilder {
+    pub(crate) fn module(&self) -> &MIRUnitBuilder<'thir> {
         &self.module
     }
 
-    pub(crate) fn module_mut(&mut self) -> &mut MIRModuleBuilder {
+    pub(crate) fn module_mut(&mut self) -> &mut MIRUnitBuilder<'thir> {
         &mut self.module
     }
 
-    pub(crate) fn resolve_function(
-        &mut self,
-        name: &str,
-    ) -> Option<(MIRFunctionID, MIRFnPrototype)> {
-        let id = self.module_mut().function_symbol(name)?;
-        let prototype = self.module().function(id)?.prototype().clone();
-        Some((id, prototype))
-    }
-
-    pub(crate) fn try_fun(&self) -> Option<&MIRFunctionBuilder> {
+    #[allow(dead_code)]
+    pub(crate) fn try_fun(&self) -> Option<&MIRFunctionBuilder<'thir>> {
         self.function.as_ref()
     }
 
-    pub(crate) fn fun(&self) -> &MIRFunctionBuilder {
+    pub(crate) fn fun(&self) -> &MIRFunctionBuilder<'thir> {
         self.function
             .as_ref()
             .expect("no MIR function is currently active")
     }
 
     #[allow(dead_code)]
-    pub(crate) fn try_fun_mut(&mut self) -> Option<&mut MIRFunctionBuilder> {
+    pub(crate) fn try_fun_mut(&mut self) -> Option<&mut MIRFunctionBuilder<'thir>> {
         self.function.as_mut()
     }
 
-    pub(crate) fn fun_mut(&mut self) -> &mut MIRFunctionBuilder {
+    pub(crate) fn fun_mut(&mut self) -> &mut MIRFunctionBuilder<'thir> {
         self.function
             .as_mut()
             .expect("no MIR function is currently active")
     }
 
-    pub(crate) fn is_capturing(&self) -> bool {
-        self.try_fun()
-            .is_some_and(|function| function.capture.is_some())
+    pub(crate) fn emit(&mut self, instruction: MIRInstruction) {
+        self.fun_mut().emit(instruction);
     }
 
-    pub(crate) fn set_source_range(&mut self, range: TokenRange) -> TokenRange {
-        self.fun_mut().set_source_range(range)
+    pub(crate) fn emit_comptime(&mut self, op: MIRComptimeOp<'thir>, range: TokenRange) {
+        self.fun_mut().emit_comptime(op, range);
     }
 
-    pub(crate) fn restore_source_range(&mut self, range: TokenRange) {
-        self.fun_mut().restore_source_range(range);
-    }
-
-    pub(crate) fn source_range(&self) -> &TokenRange {
-        self.fun().source_range()
-    }
-
-    pub fn emit(&mut self, instr: MIRInstrKind) {
-        let range = self.fun().source_range().clone();
-
-        self.fun_mut().emit(instr, range);
-    }
-
-    pub fn create(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>, nodrop: bool) -> MIRPlace {
-        let place = self.fun_mut().new_place(ty, debug_name, nodrop);
-        self.emit(MIRInstrKind::Create { out: place, ty });
-        place
-    }
-
-    pub(crate) fn local_value(
+    pub fn new_place(
         &mut self,
-        local: THIRLocalID,
-        ty: &THIRType,
-    ) -> CXResult<Option<MIRValue>> {
-        if let Some(value) = self.fun().local(local) {
-            return Ok(Some(value));
-        }
-
-        let Some(capture) = self.fun().capture.as_ref() else {
-            return Ok(None);
-        };
-        let Some(source) = capture.source_locals.get(&local).cloned() else {
-            return Ok(None);
-        };
-        let runtime_places = capture.runtime_places;
-        let (input, value) = match &source {
-            MIRValue::PlaceRef(_) if runtime_places => {
-                let pointee = ty
-                    .mem_ref_inner()
-                    .map(|pointee| self.registry.resolve_type_id(pointee).clone())
-                    .unwrap_or_else(|| ty.clone());
-                let ty = lower_type(self, &pointee)?;
-                let MIRPlace::FunctionLocal(place) = self.fun_mut().new_place(ty, None, true)
-                else {
-                    unreachable!("captured place placeholder is not function-local");
-                };
-                (
-                    MIRStagedCapture::Place(place),
-                    MIRValue::PlaceRef(MIRPlace::FunctionLocal(place)),
-                )
-            }
-            _ => {
-                let ty = lower_type(self, ty)?;
-                let register = self.fun_mut().new_register(ty, None);
-                (
-                    MIRStagedCapture::Register(register),
-                    MIRValue::Register(register),
-                )
-            }
-        };
-        self.fun_mut().bind_local(local, value.clone());
-        let capture = self
-            .fun_mut()
-            .capture
-            .as_mut()
-            .expect("capture context is active");
-        capture.captures.push((input, source));
-        Ok(Some(value))
+        ty: MIRTypeID,
+        debug_name: Option<CXIdent>,
+        nodrop: bool,
+    ) -> MIRPlaceID {
+        self.fun_mut().new_place(ty, debug_name, nodrop)
     }
 
-    // TODO: Is this needed?
-    pub(crate) fn capture_staged(
-        &mut self,
-        expression: &THIRExpression,
-        params: &[(THIRLocalID, &THIRType)],
-        diverges: Option<bool>,
-    ) -> CXResult<(Arc<MIRStagedTemplate>, Vec<MIRValue>)> {
-        let id = self.module_mut().allocate_function_id();
-        let prototype = self.fun().prototype().clone();
-        let source_locals = self.fun().locals();
-        let saved_function = self.function.take();
-        let runtime_places = saved_function
-            .as_ref()
-            .is_some_and(|function| function.capture.is_some())
-            || saved_function
-                .as_ref()
-                .is_some_and(|function| function.mode() != MIRFunctionMode::Comptime);
-        self.function = Some(MIRFunctionBuilder::new(
-            MIRFunction::new(id, prototype, None),
-            saved_function.as_ref(),
-        ));
-        self.fun_mut().restore_source_range(TokenRange::internal());
-        self.fun_mut().set_capture(Some(CaptureContext {
-            source_locals,
-            captures: Vec::new(),
-            params: Vec::new(),
-            runtime_places,
-        }));
-
-        for (local, ty) in params {
-            let ty = lower_type(self, ty)?;
-            let input = self.fun_mut().new_register(ty, None);
-            self.fun_mut().bind_local(*local, MIRValue::Register(input));
-            self.fun_mut()
-                .capture
-                .as_mut()
-                .expect("capture context is active")
-                .params
-                .push(input);
-        }
-
-        let lowered = (|| -> CXResult<MIRTypeID> {
-            let value = lowering::lower_expression(self, expression)?;
-            let result_type = lower_type(self, &expression._type)?;
-            if !self.fun().current_block_terminated() {
-                self.emit(MIRInstrKind::StagedReturn { value });
-            }
-            Ok(result_type)
-        })();
-
-        let mut scratch = self.function.take().expect("capture builder is present");
-        let capture = scratch.take_capture().expect("capture context is present");
-        self.function = saved_function;
-
-        let result_type = lowered?;
-        let (_, body) = scratch.concise_finish();
-        let (inputs, values): (Vec<_>, Vec<_>) = capture.captures.into_iter().unzip();
-        Ok((
-            Arc::new(MIRStagedTemplate::new(
-                body,
-                inputs,
-                capture.params,
-                result_type,
-                diverges.unwrap_or_else(|| expression._type.is_unreachable()),
-            )),
-            values,
-        ))
+    pub(crate) fn local_value(&mut self, local: THIRLocalID) -> Option<MIRValue> {
+        self.fun().local(local)
     }
 
-    pub(crate) fn take_current_function(&mut self) -> Option<MIRFunctionBuilder> {
+    pub(crate) fn take_current_function(&mut self) -> Option<MIRFunctionBuilder<'thir>> {
         self.function.take()
     }
 
-    pub(crate) fn restore_current_function(&mut self, function: MIRFunctionBuilder) {
+    pub(crate) fn restore_current_function(&mut self, function: MIRFunctionBuilder<'thir>) {
         self.function = Some(function);
     }
 
-    pub fn finish(self) -> MIRUnit {
-        let parts: ModuleParts = self.module.into_parts();
+    pub fn finish(self) -> MIRUnit<'thir> {
+        let parts: ModuleParts<'thir> = self.module.into_parts();
 
-        let functions: HashMap<_, _> = parts
+        let functions = parts
             .functions
             .into_iter()
-            .filter(|(_, function)| {
-                let linkage = function.prototype().linkage;
-                let mode = function.mode();
-                mode == MIRFunctionMode::Comptime
-                    || linkage != LinkageMode::Static
-                    || parts.used_functions.contains(&function.id())
+            .filter(|(id, function)| {
+                parts.used_functions.contains(id)
+                    || (function.body().is_some()
+                        && function.prototype().linkage != LinkageMode::Static)
             })
             .collect();
 
-        let globals: HashMap<_, _> = parts
+        let comp_functions = parts
+            .comptime_functions
+            .into_iter()
+            .filter(|(id, _)| parts.used_functions.contains(id))
+            .collect();
+
+        let globals: BTreeMap<_, _> = parts
             .globals
             .into_iter()
             .filter(|(id, global)| {
-                global.linkage != LinkageMode::Static || parts.used_globals.contains(id)
+                global.linkage() != LinkageMode::Static || parts.used_globals.contains(id)
             })
             .collect();
 
@@ -304,107 +165,14 @@ impl<'thir> MIRBuilder<'thir> {
             .filter(|id| globals.contains_key(id))
             .collect();
 
-        MIRUnit::new(self.types.finish(), functions, globals, global_order)
-    }
-
-    pub(crate) fn lower_prototype(
-        &mut self,
-        prototype: &THIRFnPrototype,
-        mode: MIRFunctionMode,
-    ) -> CXResult<MIRFnPrototype> {
-        let signature = prototype.signature();
-
-        let mut params = Vec::with_capacity(signature.params.len());
-        for parameter in &signature.params {
-            let ty = lower_type(self, &parameter._type)?;
-            let param = match parameter.name.clone() {
-                Some(name) => MIRFnParam::named(name, ty),
-                None => MIRFnParam::new(ty),
-            };
-            params.push(param);
-        }
-
-        let return_type = lower_type(self, &signature.return_type)?;
-
-        Ok(MIRFnPrototype::new(
-            MIRFnSignature::new(
-                CXIdent::from(prototype.symbol_name().to_string()),
-                prototype.debug_name().cloned(),
-                params,
-                return_type,
-                mode,
-                signature.var_args,
-                signature.contract.safe,
-            ),
-            prototype.linkage(),
-        ))
-    }
-
-    pub(crate) fn lower_comptime_prototype(
-        &mut self,
-        prototype: &THIRComptimeFnPrototype,
-    ) -> CXResult<MIRFnPrototype> {
-        let mut params = Vec::with_capacity(prototype.params().len());
-        for parameter in prototype.params() {
-            let ty = lower_type(self, &parameter.value_type._type)?;
-            let staged_params = if parameter.value_type.expr {
-                Some(
-                    parameter
-                        .value_type
-                        .params
-                        .iter()
-                        .map(|ty| lower_type(self, ty))
-                        .collect::<CXResult<Vec<_>>>()?,
-                )
-            } else {
-                None
-            };
-            let param = match parameter.name.clone() {
-                Some(name) => MIRFnParam::named(name, ty),
-                None => MIRFnParam::new(ty),
-            }
-            .with_staged(
-                staged_params,
-                parameter.value_type.expr && parameter.value_type._type.is_unreachable(),
-            );
-            params.push(param);
-        }
-
-        let return_type = lower_type(self, &prototype.return_type()._type)?;
-        let return_staged_params = if prototype.return_type().expr {
-            Some(
-                prototype
-                    .return_type()
-                    .params
-                    .iter()
-                    .map(|ty| lower_type(self, ty))
-                    .collect::<CXResult<Vec<_>>>()?,
-            )
-        } else {
-            None
-        };
-
-        Ok(MIRFnPrototype::new(
-            MIRFnSignature::new(
-                CXIdent::from(prototype.symbol_name().to_string()),
-                prototype.debug_name().cloned(),
-                params,
-                return_type,
-                MIRFunctionMode::Comptime,
-                false,
-                true,
-            )
-            .with_staged_return(return_staged_params),
-            LinkageMode::Static,
-        ))
-    }
-
-    pub(crate) fn start_custom_function(
-        &mut self,
-        function: MIRFunction,
-        parent: Option<&MIRFunctionBuilder>,
-    ) {
-        self.function = Some(MIRFunctionBuilder::new(function, parent));
+        MIRUnit::new(
+            self.types.finish(),
+            functions,
+            comp_functions,
+            parts.staged_expressions,
+            globals,
+            global_order,
+        )
     }
 
     pub(crate) fn start_function(&mut self, id: MIRFunctionID) {
@@ -414,16 +182,50 @@ impl<'thir> MIRBuilder<'thir> {
             .cloned()
             .expect("function context must be declared in the module before starting");
 
-        self.function = Some(MIRFunctionBuilder::new(function, None));
+        self.function = Some(MIRFunctionBuilder::new_runtime(id, function));
     }
 
-    pub(crate) fn finish_function(&mut self) {
+    pub(crate) fn start_comptime_function(
+        &mut self,
+        id: MIRFunctionID,
+        prototype: cx_mir::MIRComptimeFnPrototype,
+    ) {
+        self.function = Some(MIRFunctionBuilder::new_comptime(id, prototype));
+    }
+
+    pub(crate) fn start_comptime_scratch(&mut self, id: MIRFunctionID) {
+        self.function = Some(MIRFunctionBuilder::new_comptime_scratch(id));
+    }
+
+    pub(crate) fn finish_comptime_scratch(&mut self) -> cx_mir::MIRComptimeBody<'thir> {
+        let function = self.function.take().expect("missing comptime scratch body");
+        match function.thin_finish().1 {
+            MIRBodyKind::ComptimeScratch { body } => body,
+            MIRBodyKind::Runtime { .. } | MIRBodyKind::Comptime { .. } => {
+                unreachable!("scratch body must not be a function body")
+            }
+        }
+    }
+
+    pub(crate) fn finish_function(&mut self) -> CXResult<()> {
         let Some(fn_builder) = self.function.take() else {
             unreachable!("No function context available at finish_function");
         };
 
-        let (id, body) = fn_builder.concise_finish();
-        self.module.define_function(id, body);
+        let (id, body) = fn_builder.thin_finish();
+
+        match body {
+            MIRBodyKind::Runtime { body, .. } => {
+                self.module_mut().define_function(id, body);
+                Ok(())
+            }
+            MIRBodyKind::Comptime { body, .. } => {
+                self.module_mut().define_comptime_function(id, body)
+            }
+            MIRBodyKind::ComptimeScratch { .. } => {
+                unreachable!("scratch body cannot define a function")
+            }
+        }
     }
 }
 
@@ -437,13 +239,15 @@ impl MTRegistry for MIRTypeRegistryBuilder {
     }
 
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID> {
-        self.interner.get(ty).copied()
+        self.interner
+            .iter()
+            .find_map(|(candidate, id)| (candidate == ty).then_some(*id))
     }
 
     fn find_kind(&self, kind: &MIRTypeKind) -> Option<MIRTypeID> {
         self.interner
             .iter()
-            .find_map(|(ty, id)| if &ty.kind == kind { Some(*id) } else { None })
+            .find_map(|(ty, id)| (ty.kind() == kind).then_some(*id))
     }
 
     fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
@@ -456,7 +260,7 @@ impl MIRTypeRegistryBuilder {
         Self {
             architecture,
             definitions: Vec::new(),
-            interner: HashMap::new(),
+            interner: Vec::new(),
             lowering_types: HashSet::new(),
             debug_names: HashMap::new(),
             next_id: 0,
@@ -464,7 +268,7 @@ impl MIRTypeRegistryBuilder {
     }
 
     pub fn intern(&mut self, definition: MIRType) -> MIRTypeID {
-        if let Some(id) = self.interner.get(&definition).copied() {
+        if let Some(id) = self.find(&definition) {
             return id;
         }
 
@@ -472,7 +276,7 @@ impl MIRTypeRegistryBuilder {
         self.next_id += 1;
         self.ensure_capacity(id.index());
         self.definitions[id.index()] = Some(definition.clone());
-        self.interner.insert(definition, id);
+        self.interner.push((definition, id));
         id
     }
 
@@ -490,18 +294,19 @@ impl MIRTypeRegistryBuilder {
     }
 
     pub fn find(&self, definition: &MIRType) -> Option<MIRTypeID> {
-        self.interner.get(definition).copied()
+        self.interner
+            .iter()
+            .find_map(|(candidate, id)| (candidate == definition).then_some(*id))
     }
 
-    pub fn define(&mut self, id: MIRTypeID, definition: MIRType) -> Result<(), MIRLayoutError> {
+    pub fn define(&mut self, id: MIRTypeID, definition: MIRType) -> CXResult<()> {
         self.ensure_capacity(id.index());
         self.next_id = self.next_id.max(id.index() + 1);
-        let slot = &mut self.definitions[id.index()];
-        if slot.is_some() {
-            return Err(MIRLayoutError::DuplicateType(id));
+
+        self.definitions[id.index()] = Some(definition.clone());
+        if self.find(&definition).is_none() {
+            self.interner.push((definition, id));
         }
-        *slot = Some(definition.clone());
-        self.interner.entry(definition).or_insert(id);
         Ok(())
     }
 
@@ -512,17 +317,9 @@ impl MIRTypeRegistryBuilder {
         }
     }
 
-    pub fn reference_to(&mut self, id: MIRTypeID) -> Result<MIRTypeID, MIRLayoutError> {
-        let ty = MIRType {
-            kind: MIRTypeKind::MemoryReference {
-                inner: id,
-                bitfield: None,
-            },
-            layout: Some(MIRTypeLayout {
-                size: self.architecture().pointer_size(),
-                alignment: self.architecture().pointer_alignment(),
-            }),
-        };
+    pub fn reference_to(&mut self, id: MIRTypeID) -> CXResult<MIRTypeID> {
+        let ty = MIRType::new(MIRTypeKind::MemoryReference { inner: id });
+
         Ok(self.intern(ty))
     }
 
@@ -547,42 +344,5 @@ impl MIRTypeRegistryBuilder {
             .collect();
 
         MIRTypeRegistry::new(self.architecture, definitions, self.debug_names)
-    }
-}
-
-impl ComptimeContext for MIRBuilder<'_> {
-    type Registry = MIRTypeRegistryBuilder;
-
-    fn resolve(&self, id: MIRFunctionID) -> Option<&MIRFunction> {
-        self.module().function(id)
-    }
-
-    fn types(&self) -> &MIRTypeRegistryBuilder {
-        self.types()
-    }
-
-    fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
-        self.module().global(id)
-    }
-
-    fn global_initializer(&self, id: MIRGlobalID) -> Option<MIRFunctionID> {
-        self.module().global_initializer(id)
-    }
-}
-
-pub(crate) fn integer_type(ty: &THIRType) -> (cx_mir::MIRIntType, bool) {
-    match ty.kind {
-        THIRTypeKind::Integer { _type, signed } => (
-            match _type {
-                THIRIntType::I1 => cx_mir::MIRIntType::I1,
-                THIRIntType::I8 => cx_mir::MIRIntType::I8,
-                THIRIntType::I16 => cx_mir::MIRIntType::I16,
-                THIRIntType::I32 => cx_mir::MIRIntType::I32,
-                THIRIntType::I64 => cx_mir::MIRIntType::I64,
-                THIRIntType::I128 => cx_mir::MIRIntType::I128,
-            },
-            signed,
-        ),
-        _ => (cx_mir::MIRIntType::I64, true),
     }
 }

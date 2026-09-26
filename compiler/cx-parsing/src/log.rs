@@ -3,13 +3,13 @@ use cx_log::{
     catalogue::ErrorDefinition,
     error::{
         context::{from_token_range, CXInternalContext, CXPointingContext},
-        CXError,
+        CXError, CXErrorContext,
     },
     CXResult,
 };
 use cx_tokens::{TokenIter, TokenRange};
 
-fn pointing_context(tokens: &TokenIter<'_>) -> cx_log::error::CXErrorContext {
+fn pointing_context(tokens: &TokenIter<'_>) -> CXErrorContext {
     if let Some(token) = tokens.peek().or_else(|| tokens.prev()) {
         CXPointingContext::error(
             token.file_origin.as_ref().to_path_buf(),
@@ -20,14 +20,14 @@ fn pointing_context(tokens: &TokenIter<'_>) -> cx_log::error::CXErrorContext {
     }
 }
 
-fn range_context(range: &TokenRange) -> cx_log::error::CXErrorContext {
+fn range_context(range: &TokenRange) -> CXErrorContext {
     from_token_range(range)
 }
 
 fn parse_error<A>(
     definition: &ErrorDefinition<A>,
     args: A,
-    context: cx_log::error::CXErrorContext,
+    context: CXErrorContext,
 ) -> CXError {
     CXError::new(definition.bind(args), context)
 }
