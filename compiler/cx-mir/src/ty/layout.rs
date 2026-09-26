@@ -75,7 +75,6 @@ pub fn calculate_field_layouts<Registry: MTRegistry>(
         fields,
         is_union,
         |ty| calculate_type_layout(registry, ty),
-        |left, right| registry.same_type(left, right),
     );
     Some(layouts)
 }
@@ -99,15 +98,9 @@ fn layout_inner<Registry: MTRegistry>(
         is_union: bool,
         active: &mut HashSet<MIRTypeID>,
     ) -> MIRTypeLayout {
-        layout_fields(
-        fields,
-        is_union,
-        |ty| layout_inner(registry, ty, active),
-        |left, right| registry.same_type(left, right),
-    )
-    .1
+        layout_fields(fields, is_union, |ty| layout_inner(registry, ty, active)).1
     }
-    
+
     assert!(active.insert(ty), "recursive value type {ty}");
     let definition = registry.definition(ty).expect("MIR type has no definition");
     let layout = match definition.kind() {
@@ -156,85 +149,70 @@ fn layout_inner<Registry: MTRegistry>(
     MIRTypeLayout::new(align_to(layout.size, alignment), alignment)
 }
 
+/// System V bitfield layout: a bitfield takes the next free bit unless it would cross an alignment
+/// boundary of its type, and is accessed as a word of its type at the aligned offset containing it.
 fn layout_fields(
     fields: &[MIRField],
     is_union: bool,
     mut storage_layout: impl FnMut(MIRTypeID) -> MIRTypeLayout,
-    same_storage: impl Fn(MIRTypeID, MIRTypeID) -> bool,
 ) -> (Vec<MIRFieldLayout>, MIRTypeLayout) {
-    struct BitfieldStorage {
-        ty: MIRTypeID,
-        offset: usize,
-        bits_used: usize,
-    }
-    
     let mut layouts = Vec::with_capacity(fields.len());
+    let mut bits = 0usize;
     let mut size = 0usize;
     let mut alignment = 1usize;
-    let mut unit: Option<BitfieldStorage> = None;
 
     for field in fields {
         let storage = storage_layout(field.ty());
-        alignment = alignment.max(storage.alignment);
 
         let layout = match field {
             MIRField::Standard { type_id, .. } => {
-                unit = None;
+                alignment = alignment.max(storage.alignment);
                 let offset = if is_union {
-                    size = size.max(storage.size);
                     0
                 } else {
-                    let offset = align_to(size, storage.alignment);
-                    size = offset
-                        .checked_add(storage.size)
-                        .expect("aggregate layout overflows");
-                    offset
+                    align_to(bits.div_ceil(8), storage.alignment)
                 };
+                let end = offset
+                    .checked_add(storage.size)
+                    .expect("aggregate layout overflows");
+                bits = end * 8;
+                size = size.max(end);
                 MIRFieldLayout::Standard {
                     offset,
                     ty: *type_id,
                 }
             }
             MIRField::Bitfield {
+                name,
                 integer_type_id,
                 width,
-                ..
             } => {
                 let capacity = storage.size * 8;
                 assert!(*width <= capacity, "bitfield exceeds its storage type");
-                
-                let (offset, bit_offset) = if *width == 0 {
-                    unit = None;
-                    if !is_union {
-                        size = align_to(size, storage.alignment);
-                    }
-                    (if is_union { 0 } else { size }, 0)
-                } else if is_union {
-                    size = size.max(storage.size);
-                    (0, 0)
-                } else if let Some(storage) = unit.as_mut()
-                    && same_storage(storage.ty, *integer_type_id)
-                    && storage.bits_used + *width <= capacity
-                {
-                    let bit_offset = storage.bits_used;
-                    storage.bits_used += *width;
-                    (storage.offset, bit_offset)
+                let boundary = storage.alignment * 8;
+
+                let start = if is_union {
+                    0
+                } else if *width == 0 || bits % boundary + *width > capacity {
+                    align_to(bits, boundary)
                 } else {
-                    let start = align_to(size, storage.alignment);
-                    size = start
-                        .checked_add(storage.size)
-                        .expect("aggregate layout overflows");
-                    unit = Some(BitfieldStorage {
-                        ty: *integer_type_id,
-                        offset: start,
-                        bits_used: *width,
-                    });
-                    (start, 0)
+                    bits
                 };
-                
+                let offset = start / boundary * storage.alignment;
+                if *width != 0 {
+                    bits = start + *width;
+                    size = size.max(bits.div_ceil(8));
+                    if name.is_some() {
+                        alignment = alignment.max(storage.alignment);
+                        size = size.max(offset + storage.size);
+                    }
+                } else {
+                    bits = start;
+                }
+
                 MIRFieldLayout::Bitfield {
                     offset,
-                    bit_offset,
+                    bit_offset: start - offset * 8,
                     bit_width: *width,
                     storage_type: *integer_type_id,
                 }
@@ -243,6 +221,9 @@ fn layout_fields(
         layouts.push(layout);
     }
 
+    if !is_union {
+        size = size.max(bits.div_ceil(8));
+    }
     (
         layouts,
         MIRTypeLayout::new(align_to(size, alignment), alignment),

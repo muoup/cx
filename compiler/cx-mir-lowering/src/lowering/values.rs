@@ -4,7 +4,7 @@ use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, 
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::{calculate_field_layout, calculate_type_layout};
 use cx_mir::{
-    MIRBitfieldAccess, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRIntType, MIRRegister,
+    MIRBitfieldAccess, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRRegister,
     MIRTarget, MIRTypeID, MIRTypeKind, MIRValue,
 };
 
@@ -341,59 +341,74 @@ pub(super) fn read_bitfield(
     storage_ty: MIRTypeID,
     bitfield: &MIRBitfieldAccess,
 ) -> LMIRValue {
-    let storage_type = context.ty(storage_ty);
-    let storage_bits = integer_bits(context, storage_ty);
-    let storage = memory::load(context, address, storage_ty);
+    let (word, word_type) = bitfield_word(context, storage_ty);
     if bitfield.bit_width == 0 {
         return context.integer(0, integer_type(context, storage_ty));
     }
+    let word_bits = word.bytes() as usize * 8;
+    let storage = memory::temp(
+        context,
+        LMIRInstructionKind::Load {
+            memory: address,
+            ty: word_type.clone(),
+        },
+        word_type.clone(),
+    );
     let value = if bitfield.bit_offset == 0 {
         storage
     } else {
-        let shift_amount = context.integer(
-            bitfield.bit_offset as i128,
-            integer_type(context, storage_ty),
-        );
+        let shift_amount = context.integer(bitfield.bit_offset as i128, word);
         integer_binop(
             context,
             LMIRIntBinOp::LSHR,
             storage,
             shift_amount,
-            storage_type.clone(),
+            word_type.clone(),
         )
     };
-    let value = if bitfield.bit_width < storage_bits {
-        let mask = bit_mask(context, storage_ty, bitfield.bit_width);
+    let value = if bitfield.bit_width < word_bits {
+        let mask = bit_mask(context, word, bitfield.bit_width);
         integer_binop(
             context,
             LMIRIntBinOp::BAND,
             value,
             mask,
-            storage_type.clone(),
+            word_type.clone(),
         )
     } else {
         value
     };
-    if bitfield.signed && bitfield.bit_width < storage_bits {
-        let shift = storage_bits - bitfield.bit_width;
-        let shift_amount = context.integer(shift as i128, integer_type(context, storage_ty));
+    let value = if bitfield.signed && bitfield.bit_width < word_bits {
+        let shift_amount = context.integer((word_bits - bitfield.bit_width) as i128, word);
         let value = integer_binop(
             context,
             LMIRIntBinOp::SHL,
             value,
             shift_amount.clone(),
-            storage_type.clone(),
+            word_type.clone(),
         );
         integer_binop(
             context,
             LMIRIntBinOp::ASHR,
             value,
             shift_amount,
-            storage_type,
+            word_type,
         )
     } else {
         value
+    };
+    if word == integer_type(context, storage_ty) {
+        return value;
     }
+    let storage_type = context.ty(storage_ty);
+    memory::temp(
+        context,
+        LMIRInstructionKind::Coercion {
+            value,
+            coercion_type: LMIRCoercionType::Trunc,
+        },
+        storage_type,
+    )
 }
 
 /// Inserts `value` into the `bit_width` bits at `bit_offset` of the storage unit at `address`,
@@ -409,38 +424,46 @@ pub(super) fn write_bitfield(
     if bit_width == 0 {
         return;
     }
-    let storage_type = context.ty(storage_ty);
-    let integer_type = integer_type(context, storage_ty);
-    let field_mask = bit_mask(context, storage_ty, bit_width);
+    let (word, word_type) = bitfield_word(context, storage_ty);
+    let value = if word == integer_type(context, storage_ty) {
+        value
+    } else {
+        memory::temp(
+            context,
+            LMIRInstructionKind::Coercion {
+                value,
+                coercion_type: LMIRCoercionType::ZExtend,
+            },
+            word_type.clone(),
+        )
+    };
+    let field_mask = bit_mask(context, word, bit_width);
     let value = integer_binop(
         context,
         LMIRIntBinOp::BAND,
         value,
         field_mask.clone(),
-        storage_type.clone(),
+        word_type.clone(),
     );
-    let shifted_value = if bit_offset == 0 {
-        value
+    let (shifted_value, field_mask) = if bit_offset == 0 {
+        (value, field_mask)
     } else {
-        let shift_amount = context.integer(bit_offset as i128, integer_type);
-        integer_binop(
-            context,
-            LMIRIntBinOp::SHL,
-            value,
-            shift_amount,
-            storage_type.clone(),
-        )
-    };
-    let field_mask = if bit_offset == 0 {
-        field_mask
-    } else {
-        let shift_amount = context.integer(bit_offset as i128, integer_type);
-        integer_binop(
-            context,
-            LMIRIntBinOp::SHL,
-            field_mask,
-            shift_amount,
-            storage_type.clone(),
+        let shift_amount = context.integer(bit_offset as i128, word);
+        (
+            integer_binop(
+                context,
+                LMIRIntBinOp::SHL,
+                value,
+                shift_amount.clone(),
+                word_type.clone(),
+            ),
+            integer_binop(
+                context,
+                LMIRIntBinOp::SHL,
+                field_mask,
+                shift_amount,
+                word_type.clone(),
+            ),
         )
     };
     let field_mask = memory::temp(
@@ -449,45 +472,66 @@ pub(super) fn write_bitfield(
             op: LMIRIntUnOp::BNOT,
             value: field_mask,
         },
-        storage_type.clone(),
+        word_type.clone(),
     );
-    let storage = memory::load(context, address.clone(), storage_ty);
+    let storage = memory::temp(
+        context,
+        LMIRInstructionKind::Load {
+            memory: address.clone(),
+            ty: word_type.clone(),
+        },
+        word_type.clone(),
+    );
     let preserved = integer_binop(
         context,
         LMIRIntBinOp::BAND,
         storage,
         field_mask,
-        storage_type.clone(),
+        word_type.clone(),
     );
     let value = integer_binop(
         context,
         LMIRIntBinOp::BOR,
         preserved,
         shifted_value,
-        storage_type,
+        word_type.clone(),
     );
-    memory::store(context, address, value, storage_ty);
+    memory::void(
+        context,
+        LMIRInstructionKind::Store {
+            memory: address,
+            value,
+            ty: word_type,
+        },
+    );
 }
 
-fn bit_mask(
-    context: &mut FunctionContext<'_, '_>,
+/// The integer word a bitfield of `storage_ty` is accessed through; a `_Bool` bitfield's word is
+/// its whole byte, since other bitfields may share it.
+fn bitfield_word(
+    context: &FunctionContext<'_, '_>,
     storage_ty: MIRTypeID,
-    width: usize,
-) -> LMIRValue {
-    let bits = integer_bits(context, storage_ty);
-    if width >= bits {
-        return context.integer(-1, integer_type(context, storage_ty));
-    }
-    let all_ones = context.integer(-1, integer_type(context, storage_ty));
-    let shift_amount = context.integer((bits - width) as i128, integer_type(context, storage_ty));
-    let lowered_type = context.ty(storage_ty);
-    integer_binop(
-        context,
-        LMIRIntBinOp::LSHR,
-        all_ones,
-        shift_amount,
-        lowered_type,
+) -> (LMIRIntegerType, LMIRType) {
+    let word = match integer_type(context, storage_ty) {
+        LMIRIntegerType::I1 => LMIRIntegerType::I8,
+        word => word,
+    };
+    (
+        word,
+        LMIRType::with_implicit_abi(context.types().architecture(), LMIRTypeKind::Integer(word)),
     )
+}
+
+fn bit_mask(context: &mut FunctionContext<'_, '_>, word: LMIRIntegerType, width: usize) -> LMIRValue {
+    let bits = word.bytes() as usize * 8;
+    let all_ones = context.integer(-1, word);
+    if width >= bits {
+        return all_ones;
+    }
+    let shift_amount = context.integer((bits - width) as i128, word);
+    let word_type =
+        LMIRType::with_implicit_abi(context.types().architecture(), LMIRTypeKind::Integer(word));
+    integer_binop(context, LMIRIntBinOp::LSHR, all_ones, shift_amount, word_type)
 }
 
 fn integer_binop(
@@ -502,20 +546,6 @@ fn integer_binop(
         LMIRInstructionKind::IntegerBinOp { op, left, right },
         ty,
     )
-}
-
-fn integer_bits(context: &FunctionContext<'_, '_>, ty: MIRTypeID) -> usize {
-    match context.types().definition(ty).unwrap().kind() {
-        MIRTypeKind::Integer { ty, .. } => match ty {
-            MIRIntType::I1 => 1,
-            MIRIntType::I8 => 8,
-            MIRIntType::I16 => 16,
-            MIRIntType::I32 => 32,
-            MIRIntType::I64 => 64,
-            MIRIntType::I128 => 128,
-        },
-        _ => panic!("bitfield storage type is not an integer"),
-    }
 }
 
 fn integer_type(context: &FunctionContext<'_, '_>, ty: MIRTypeID) -> LMIRIntegerType {

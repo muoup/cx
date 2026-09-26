@@ -1,6 +1,6 @@
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRBitfieldAccess, MIRComptimeBody, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRGlobalState,
+    MIRBitfieldAccess, MIRComptimeBody, MIRIntType, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRGlobalState,
     MIRTarget, MIRTypeID, MIRTypeKind, MIRValue,
     ty::{
         interface::MTRegistry,
@@ -157,8 +157,10 @@ fn read_offset<R: MTRegistry>(
                     continue;
                 }
                 if matches!(layout, MIRFieldLayout::Bitfield { .. }) {
-                    return (offset == field_offset && registry.same_type(layout.ty(), target))
-                        .then(|| bitfield_unit(registry, value, ty, field_offset, layout.ty()));
+                    if offset == field_offset && registry.same_type(layout.ty(), target) {
+                        return Some(bitfield_unit(registry, value, ty, field_offset, target));
+                    }
+                    continue;
                 }
                 let child = aggregate_field(value, index)
                     .unwrap_or_else(|| zero_value(registry, layout.ty()));
@@ -179,8 +181,8 @@ pub(crate) fn field_byte_offset<R: MTRegistry>(
     Some((layout.offset(), layout.ty()))
 }
 
-/// Assembles the storage unit at `unit_offset` of an inline aggregate from the values of the
-/// bitfields packed into it.
+/// Assembles the integer word of type `storage_ty` at `unit_offset` of an inline aggregate from
+/// the bits of every bitfield overlapping it.
 pub(crate) fn bitfield_unit<R: MTRegistry>(
     registry: &R,
     aggregate: &MIRConstant,
@@ -188,11 +190,13 @@ pub(crate) fn bitfield_unit<R: MTRegistry>(
     unit_offset: usize,
     storage_ty: MIRTypeID,
 ) -> MIRConstant {
-    let Some(MIRTypeKind::Integer { ty: storage }) =
-        registry.definition(storage_ty).map(|ty| ty.kind())
-    else {
-        panic!("bitfield storage type is not an integer")
+    let storage = match registry.definition(storage_ty).map(|ty| ty.kind()) {
+        Some(MIRTypeKind::Integer { ty: MIRIntType::I1 }) => MIRIntType::I8,
+        Some(MIRTypeKind::Integer { ty }) => *ty,
+        _ => panic!("bitfield storage type is not an integer"),
     };
+    let unit_start = unit_offset * 8;
+    let unit_end = unit_start + bits(storage) as usize;
     let mut unit = 0u128;
     for (index, layout) in calculate_field_layouts(registry, aggregate_ty)
         .unwrap_or_default()
@@ -208,26 +212,33 @@ pub(crate) fn bitfield_unit<R: MTRegistry>(
         else {
             continue;
         };
-        if offset != unit_offset || bit_width == 0 {
+        let start = offset * 8 + bit_offset;
+        if bit_width == 0 || start + bit_width <= unit_start || start >= unit_end {
             continue;
         }
         if let Some(MIRConstant::Integer { value, .. }) = aggregate_field(aggregate, index) {
-            unit |= mask(value as u128, bit_width as u32) << bit_offset;
+            let value = mask(value as u128, bit_width as u32);
+            unit |= if start >= unit_start {
+                value << (start - unit_start)
+            } else {
+                value >> (unit_start - start)
+            };
         }
     }
-    int_const(unit, *storage)
+    int_const(unit, storage)
 }
 
-/// Extracts a bitfield from the value of its storage unit.
+/// Extracts a bitfield from the value of its storage unit as a `result` integer.
 pub(crate) fn extract_bitfield(
     unit: &MIRConstant,
     access: &MIRBitfieldAccess,
+    result: MIRIntType,
     range: &TokenRange,
 ) -> CXResult<MIRConstant> {
     let (unit, ty) = integer(unit, range)?;
     let width = access.bit_width as u32;
     if width == 0 {
-        return Ok(int_const(0, ty));
+        return Ok(int_const(0, result));
     }
     let value = mask(unit >> access.bit_offset, width);
     let value = if access.signed && width < bits(ty) {
@@ -235,7 +246,7 @@ pub(crate) fn extract_bitfield(
     } else {
         value
     };
-    Ok(int_const(value, ty))
+    Ok(int_const(value, result))
 }
 
 /// Reads `value` as a value of type `ty`, loading through a reference register when `ty` is not

@@ -1,0 +1,18 @@
+/* CX-STDOUT: comptime 50997 */
+#include <stdio.h>
+
+struct mixed {
+    u8 low : 3;
+    u32 mid : 7;
+    i16 delta : 5;
+};
+
+comptime i32 unpack(i32 low, i32 mid, i32 delta) {
+    mixed value = { .low = low, .mid = mid, .delta = delta };
+    return value.low * 10000 + value.mid * 10 + value.delta;
+}
+
+int main() {
+    printf("comptime %d\n", unpack(13, 100, -3));
+    return 0;
+}

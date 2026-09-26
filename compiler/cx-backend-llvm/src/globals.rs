@@ -105,6 +105,7 @@ pub(crate) fn define_global_variable(
         LMIRGlobalState::External => unreachable!(),
     };
     global.set_initializer(&initializer);
+    global.set_alignment(u32::from(ty.alignment()));
     Ok(())
 }
 

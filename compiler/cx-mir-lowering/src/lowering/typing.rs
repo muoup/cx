@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
     LMIRABISlot, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI,
@@ -216,18 +218,18 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
     }
 }
 
-/// The LMIR fields of a MIR struct and where each MIR field landed among them. Bitfields sharing a
-/// storage unit share one LMIR field, zero-width bitfields have none, and padding fields are
-/// inserted wherever the MIR layout places a field past its natural LMIR offset.
+/// The LMIR fields of a MIR struct and where each MIR field landed among them. Every byte occupied
+/// by bitfields becomes an `I8` field, and padding keeps each field at its MIR offset.
 pub(crate) struct StructMembers {
     pub fields: Vec<(String, LMIRType)>,
     pub members: Vec<Option<StructMember>>,
+    pub bitfield_bytes: HashMap<usize, usize>,
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct StructMember {
-    pub field: usize,
-    pub bitfield: Option<(usize, usize)>,
+pub(crate) enum StructMember {
+    Field(usize),
+    Bitfield { bit: usize, width: usize },
 }
 
 pub(crate) fn struct_members(
@@ -235,65 +237,79 @@ pub(crate) fn struct_members(
     fields: &[MIRField],
     types: &MIRTypeRegistry,
 ) -> StructMembers {
+    fn pad(lowered: &mut Vec<(String, LMIRType)>, name: String, bytes: usize) {
+        if bytes != 0 {
+            lowered.push((
+                name,
+                LMIRType::new(LMIRTypeKind::Opaque { bytes }, 1),
+            ));
+        }
+    }
+
     let layouts = calculate_field_layouts(types, ty).expect("struct has no field layout");
     let mut lowered: Vec<(String, LMIRType)> = Vec::new();
     let mut members = Vec::with_capacity(fields.len());
+    let mut bitfield_bytes = HashMap::new();
     let mut end = 0usize;
-    // The LMIR field holding the open bitfield storage unit, with its byte offset
-    let mut unit: Option<(usize, usize)> = None;
+    let mut field_alignment = 1usize;
 
     for (index, (field, layout)) in fields.iter().zip(layouts).enumerate() {
-        let bitfield = match layout {
-            MIRFieldLayout::Bitfield { bit_width: 0, .. } => {
-                members.push(None);
-                continue;
-            }
+        match layout {
+            MIRFieldLayout::Bitfield { bit_width: 0, .. } => members.push(None),
             MIRFieldLayout::Bitfield {
+                offset,
                 bit_offset,
                 bit_width,
                 ..
-            } => Some((bit_offset, bit_width)),
-            MIRFieldLayout::Standard { .. } => None,
-        };
-        if let (Some(_), Some((field, offset))) = (bitfield, unit) {
-            if offset == layout.offset() {
-                members.push(Some(StructMember { field, bitfield }));
-                continue;
+            } => {
+                let bit = offset * 8 + bit_offset;
+                let first = (bit / 8).max(end);
+                let last = (bit + bit_width).div_ceil(8);
+                if first < last {
+                    pad(&mut lowered, format!("padding_{index}"), first - end);
+                    for byte in first..last {
+                        bitfield_bytes.insert(byte, lowered.len());
+                        lowered.push((
+                            format!("bitfield_byte_{byte}"),
+                            LMIRType::new(LMIRTypeKind::Integer(LMIRIntegerType::I8), 1),
+                        ));
+                    }
+                    end = last;
+                }
+                members.push(Some(StructMember::Bitfield {
+                    bit,
+                    width: bit_width,
+                }));
+            }
+            MIRFieldLayout::Standard { offset, ty } => {
+                let lowered_type = convert_type(ty, types);
+                let alignment = usize::from(lowered_type.alignment()).max(1);
+                if end.next_multiple_of(alignment) != offset {
+                    pad(&mut lowered, format!("padding_{index}"), offset - end);
+                }
+                field_alignment = field_alignment.max(alignment);
+                end = offset + usize::from(lowered_type.size());
+                members.push(Some(StructMember::Field(lowered.len())));
+                lowered.push((
+                    field
+                        .name()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| format!("field_{index}")),
+                    lowered_type,
+                ));
             }
         }
+    }
 
-        let lowered_type = convert_type(layout.ty(), types);
-        let alignment = usize::from(lowered_type.alignment()).max(1);
-        if end.next_multiple_of(alignment) != layout.offset() {
-            lowered.push((
-                format!("padding_{index}"),
-                LMIRType::new(
-                    LMIRTypeKind::Opaque {
-                        bytes: layout.offset() - end,
-                    },
-                    1,
-                ),
-            ));
-        }
-        end = layout.offset() + usize::from(lowered_type.size());
-        let name = match bitfield {
-            Some(_) => format!("bitfield_{index}"),
-            None => field
-                .name()
-                .map(str::to_owned)
-                .unwrap_or_else(|| format!("field_{index}")),
-        };
-        unit = bitfield.map(|_| (lowered.len(), layout.offset()));
-        members.push(Some(StructMember {
-            field: lowered.len(),
-            bitfield,
-        }));
-        lowered.push((name, lowered_type));
+    let size = calculate_type_layout(types, ty).size();
+    if end.next_multiple_of(field_alignment) != size {
+        pad(&mut lowered, "padding_tail".to_owned(), size - end);
     }
 
     StructMembers {
         fields: lowered,
         members,
+        bitfield_bytes,
     }
 }
 

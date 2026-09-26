@@ -79,7 +79,9 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
                         MIRTarget::Indirect(*register),
                         range,
                     )?;
-                    memory::extract_bitfield(&unit, access, range)?
+                    let result =
+                        typing::integer_type(engine.context().types(), body, *target, range)?;
+                    memory::extract_bitfield(&unit, access, result, range)?
                 }
                 Some(MIRStoreBitfield::Target(_)) => {
                     return comptime_error(

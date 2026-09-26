@@ -1,3 +1,4 @@
+use cx_lmir::types::LMIRIntegerType;
 use cx_lmir::{
     LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue, LinkageType,
 };
@@ -9,7 +10,7 @@ use cx_mir::{
 use crate::context::GlobalContext;
 
 use super::typing::{
-    convert_float_type, convert_integer_type, convert_linkage, convert_type, struct_members,
+    convert_float_type, convert_integer_type, convert_linkage, convert_type, struct_members, StructMember,
 };
 
 pub(super) fn lower_globals(context: &mut GlobalContext<'_>) {
@@ -149,40 +150,49 @@ fn lower_initializer(
     }
 }
 
-/// Lowers a struct initializer onto the struct's LMIR fields, packing bitfields that share a
-/// storage unit into a single integer.
+/// Lowers a struct initializer onto the struct's LMIR fields, spreading each bitfield's bits over
+/// the byte fields it occupies.
 fn lower_struct_initializer(
     context: &mut GlobalContext<'_>,
     values: &[(usize, MIRConstant)],
     struct_ty: MIRTypeID,
     fields: &[MIRField],
 ) -> LMIRGlobalInitializer {
-    let members = struct_members(struct_ty, fields, context.unit.types()).members;
+    let members = struct_members(struct_ty, fields, context.unit.types());
     let mut lowered: Vec<(usize, LMIRGlobalInitializer)> = Vec::new();
     for (index, value) in values {
-        let Some(member) = members[*index] else {
-            continue;
-        };
-        let field_ty = fields[*index].ty();
-        let Some((bit_offset, bit_width)) = member.bitfield else {
-            lowered.push((member.field, lower_initializer(context, value, field_ty)));
-            continue;
-        };
-        let MIRConstant::Integer { value, ty } = value else {
-            panic!("bitfield initializer is not an integer constant")
-        };
-        let bits = (*value as u128 & low_bits(bit_width)) << bit_offset;
-        match lowered.iter_mut().find(|(field, _)| *field == member.field) {
-            Some((_, LMIRGlobalInitializer::Integer { value, .. })) => {
-                *value = (*value as u128 | bits) as i128;
+        match members.members[*index] {
+            None => {}
+            Some(StructMember::Field(field)) => {
+                lowered.push((field, lower_initializer(context, value, fields[*index].ty())));
             }
-            _ => lowered.push((
-                member.field,
-                LMIRGlobalInitializer::Integer {
-                    value: bits as i128,
-                    ty: convert_integer_type(*ty),
-                },
-            )),
+            Some(StructMember::Bitfield { bit, width }) => {
+                let MIRConstant::Integer { value, .. } = value else {
+                    panic!("bitfield initializer is not an integer constant")
+                };
+                let bits = *value as u128 & low_bits(width);
+                for byte in bit / 8..(bit + width).div_ceil(8) {
+                    let shift = byte as isize * 8 - bit as isize;
+                    let part = if shift >= 0 {
+                        bits >> shift
+                    } else {
+                        bits << -shift
+                    } & 0xFF;
+                    let field = members.bitfield_bytes[&byte];
+                    match lowered.iter_mut().find(|(index, _)| *index == field) {
+                        Some((_, LMIRGlobalInitializer::Integer { value, .. })) => {
+                            *value |= part as i128;
+                        }
+                        _ => lowered.push((
+                            field,
+                            LMIRGlobalInitializer::Integer {
+                                value: part as i128,
+                                ty: LMIRIntegerType::I8,
+                            },
+                        )),
+                    }
+                }
+            }
         }
     }
     LMIRGlobalInitializer::Aggregate { fields: lowered }
