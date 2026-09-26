@@ -30,7 +30,7 @@
 .topRight { right: -36px; top: -40px; width: 330px; height: 330px; transform: scaleX(-1); }
 .bottomLeft { left: -36px; bottom: -40px; width: 320px; height: 320px; transform: scaleY(-1); }
 .bottomRight { right: -30px; bottom: -34px; width: 230px; height: 230px; transform: scale(-1); }
-.bottomLeft.small { width: 200px; height: 200px; }
+.bottomRight.small { width: 200px; height: 200px; }
 
 .wind {
   position: absolute;
@@ -97,7 +97,7 @@
 }
 
 @media (max-width: 680px) {
-  .topLeft, .bottomLeft:not(.small) { display: none; }
+  .topLeft, .bottomLeft { display: none; }
   .topRight { width: 170px; height: 170px; }
-  .bottomLeft.small { width: 150px; height: 150px; }
+  .bottomRight.small { width: 150px; height: 150px; }
 }

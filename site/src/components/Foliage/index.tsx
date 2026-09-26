@@ -67,7 +67,7 @@ export default function Foliage({full = false}: {full?: boolean}): ReactNode {
                     <Wind />
                 </>
             ) : (
-                <Bush symbol="bush-b" className={`${styles.bottomLeft} ${styles.small}`} />
+                <Bush symbol="bush-b" className={`${styles.bottomRight} ${styles.small}`} />
             )}
         </div>
     );

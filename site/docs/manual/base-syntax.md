@@ -1,5 +1,6 @@
 ---
 title: Language Basics
+description: "Primitive and reference types, member access, and string literals."
 ---
 
 # Language Basics

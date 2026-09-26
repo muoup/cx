@@ -38,6 +38,22 @@ function sourcePath(record) {
     return record.source ?? "lib/std/<module>.cx";
 }
 
+function sourceLink(record) {
+    return `[${inlineCode(sourcePath(record))}](https://github.com/muoup/cx/blob/main/${sourcePath(record)})`;
+}
+
+function tableCell(value) {
+    return String(value ?? "").replaceAll("|", "\\|").replaceAll("\n", " ");
+}
+
+function renderTable(headers, rows) {
+    return [
+        `| ${headers.join(" | ")} |`,
+        `| ${headers.map(() => "---").join(" | ")} |`,
+        ...rows.map((row) => `| ${row.map(tableCell).join(" | ")} |`),
+    ].join("\n");
+}
+
 function yamlString(value) {
     return JSON.stringify(String(value ?? ""));
 }
@@ -60,11 +76,10 @@ function renderParameters(parameters = []) {
         return "No parameters.";
     }
 
-    return parameters
-        .map((parameter) => {
-            return `- ${inlineCode(parameter.name)}: ${inlineCode(parameter.type)} — ${parameter.description}`;
-        })
-        .join("\n");
+    return renderTable(
+        ["Name", "Type", "Description"],
+        parameters.map((parameter) => [inlineCode(parameter.name), inlineCode(parameter.type), parameter.description]),
+    );
 }
 
 function renderFields(fields = []) {
@@ -72,9 +87,10 @@ function renderFields(fields = []) {
         return "No public fields are listed.";
     }
 
-    return fields
-        .map((field) => `- ${inlineCode(field.name)}: ${inlineCode(field.type)} — ${field.description}`)
-        .join("\n");
+    return renderTable(
+        ["Name", "Type", "Description"],
+        fields.map((field) => [inlineCode(field.name), inlineCode(field.type), field.description]),
+    );
 }
 
 function renderVariants(variants = []) {
@@ -82,12 +98,14 @@ function renderVariants(variants = []) {
         return "No variants are listed.";
     }
 
-    return variants
-        .map((variant) => {
-            const payload = variant.payloadType ? `: ${inlineCode(variant.payloadType)}` : "";
-            return `- ${inlineCode(variant.name)}${payload} — ${variant.description}`;
-        })
-        .join("\n");
+    return renderTable(
+        ["Variant", "Payload", "Description"],
+        variants.map((variant) => [
+            inlineCode(variant.name),
+            variant.payloadType ? inlineCode(variant.payloadType) : "",
+            variant.description,
+        ]),
+    );
 }
 
 function renderType(type) {
@@ -120,9 +138,9 @@ function renderFunction(functionRecord) {
         : [
             "#### Returns",
             "",
-            `- ${inlineCode(returnType)} — ${functionRecord.returnDescription ?? "The documented return value."}`,
+            `${inlineCode(returnType)} — ${functionRecord.returnDescription ?? "The documented return value."}`,
         ];
-    const metadataBlock = metadata ? [`> ${metadata}`, ""] : [];
+    const metadataBlock = metadata ? [`<div className="cx-stdlib-meta">`, "", metadata, "", "</div>", ""] : [];
     const examples = (functionRecord.examples ?? [])
         .map((example, index) => {
             const heading = example.title ?? `Example ${index + 1}`;
@@ -136,7 +154,11 @@ function renderFunction(functionRecord) {
         "",
         functionRecord.description,
         "",
+        `<div className="cx-stdlib-signature">`,
+        "",
         `~~~cx\n${functionRecord.signature}\n~~~`,
+        "",
+        "</div>",
         "",
         ...metadataBlock,
         "#### Parameters",
@@ -172,9 +194,11 @@ function renderModule(record) {
         "",
         `# ${record.module}`,
         "",
-        `${record.summary ?? "Standard-library module."}`,
+        `<div className="cx-stdlib-meta">`,
         "",
-        `Source: ${inlineCode(sourcePath(record))}`,
+        `Source: ${sourceLink(record)}`,
+        "",
+        "</div>",
         "",
         sections.join("\n\n"),
         "",

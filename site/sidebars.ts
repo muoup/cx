@@ -29,6 +29,11 @@ const sidebars: SidebarsConfig = {
             id: "getting-started/c-interop",
             label: "Libraries and C Interop",
         },
+        {
+            type: "doc",
+            id: "getting-started/status",
+            label: "Project Status",
+        },
     ],
     stdlibSidebar: [
         {

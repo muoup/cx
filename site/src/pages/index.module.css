@@ -4,22 +4,31 @@
   padding-inline: var(--ifm-navbar-padding-horizontal);
 }
 
-/* Hero */
+/* Hero: fills the first screen, with a hint that the page continues */
 .hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: min(calc(100svh - 64px), 960px);
+  padding-block: 32px 96px;
+}
+
+.heroGrid {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   gap: 56px;
   align-items: start;
-  padding-block: 40px 64px;
 }
 
 .title {
   margin: 0 0 18px;
-  font-size: clamp(2rem, 1.4rem + 2vw, 2.7rem);
-  line-height: 1.14;
-  letter-spacing: -0.02em;
+  font-size: clamp(2rem, 1.4rem + 2vw, 2.8rem);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
   text-wrap: balance;
 }
+
 
 .lede {
   max-width: 34em;
@@ -188,63 +197,103 @@
   color: var(--cx-muted);
 }
 
+.scrollHint {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--cx-muted);
+  font-size: 13px;
+  text-decoration: none;
+  transform: translateX(-50%);
+}
+
+.scrollHint:hover {
+  color: var(--cx-ink);
+  text-decoration: none;
+}
+
+.scrollPipe {
+  color: var(--cx-code-kw);
+  font: 600 15px var(--ifm-font-family-monospace);
+  transform: rotate(90deg);
+  animation: nudge 2.4s ease-in-out infinite;
+}
+
+@keyframes nudge {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 4px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrollPipe { animation: none; }
+}
+
 /* Sections */
 .section {
-  padding-block: 8px 48px;
+  padding-block: 56px 32px;
+  scroll-margin-top: 16px;
 }
 
 .eyebrow {
-  margin: 0 0 18px;
-  font-size: 20px;
+  margin: 0 0 8px;
+  font-size: 24px;
   letter-spacing: -0.01em;
 }
 
 .pipe {
-  margin-right: 10px;
+  margin-right: 12px;
   color: var(--cx-code-kw);
-  font: 500 16px var(--ifm-font-family-monospace);
+  font: 500 18px var(--ifm-font-family-monospace);
 }
 
-.principles {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px 28px;
-  padding: 28px;
-  border-radius: 16px;
-  background: var(--cx-band);
+.more {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .principle {
   display: grid;
-  grid-row: span 3;
-  grid-template-rows: subgrid;
-  row-gap: 10px;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 56px;
+  align-items: center;
+  padding-block: 40px;
+  border-bottom: 1px solid var(--cx-rule);
 }
 
-.principle h3 {
-  margin: 0;
-  font-size: 16px;
+.principle:last-child {
+  border-bottom: 0;
 }
 
-.principle p {
-  margin: 0;
+.principle:nth-of-type(even) {
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+}
+
+.principle:nth-of-type(even) .principleText {
+  order: 2;
+}
+
+.principleText h3 {
+  margin: 0 0 14px;
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+}
+
+.principleText p {
+  max-width: 34em;
+  margin: 0 0 14px;
   color: var(--cx-muted);
-  font-size: 14.5px;
-  line-height: 1.55;
+  font-size: 16px;
+  line-height: 1.65;
 }
 
-.principle pre {
-  margin: 6px 0 0;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: var(--cx-surface);
-  color: var(--cx-ink);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.principle p code,
-.status code {
+.principleText p code,
+.standing code {
   padding: 1px 5px;
   border: 0;
   border-radius: 4px;
@@ -252,92 +301,92 @@
   font-size: 0.86em;
 }
 
-.tableScroll {
-  overflow-x: auto;
+.principleCode {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 
-.status {
-  display: table;
-  width: 100%;
+.placeholder .principleText {
+  padding: 16px 20px;
+  border: 1px dashed var(--cx-rule);
+  border-radius: var(--ifm-global-radius);
+}
+
+.standingLede {
+  max-width: 40em;
+  margin: 0 0 24px;
+  color: var(--cx-muted);
+  font-size: 17px;
+}
+
+.standing {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.standing > div {
+  padding: 22px 26px;
+  border-radius: 12px;
+  background: var(--cx-band);
+}
+
+.standing h3 {
+  margin: 0 0 12px;
+  font-size: 1.15rem;
+}
+
+.standing ul {
   margin: 0;
-  border-collapse: collapse;
+  padding: 0;
+  list-style: none;
+}
+
+.standing li {
+  position: relative;
+  margin: 0;
+  padding: 6px 0 6px 22px;
   font-size: 15px;
 }
 
-.status tr,
-.status thead tr {
-  border: 0;
+.standing li::before {
+  content: "";
+  position: absolute;
+  top: 0.95em;
+  left: 2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cx-moss);
+}
+
+.standing > div:last-child li::before {
+  border: 1.5px solid var(--cx-clay);
   background: transparent;
-}
-
-.status th,
-.status td {
-  border: 0;
-  border-bottom: 1px solid var(--cx-rule);
-  background: transparent;
-  text-align: left;
-  vertical-align: middle;
-}
-
-.status th {
-  padding: 0 16px 8px 0;
-  color: var(--cx-muted);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.status td {
-  padding: 10px 16px 10px 0;
-}
-
-.status tr:last-child td {
-  border-bottom: 0;
-}
-
-.status td:first-child {
-  font-weight: 500;
-}
-
-.status td:last-child {
-  color: var(--cx-muted);
-}
-
-.state {
-  display: inline-block;
-  padding: 1px 10px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.working {
-  background: var(--cx-moss-tint);
-  color: var(--cx-moss);
-}
-
-.partial {
-  background: var(--cx-clay-tint);
-  color: var(--cx-clay);
-}
-
-.progress {
-  box-shadow: inset 0 0 0 1px var(--cx-rule);
-  color: var(--cx-muted);
 }
 
 @media (max-width: 1000px) {
   .hero {
+    min-height: 0;
+    padding-bottom: 48px;
+  }
+
+  .heroGrid,
+  .principle,
+  .principle:nth-of-type(even) {
     grid-template-columns: minmax(0, 1fr);
-    gap: 36px;
+    gap: 28px;
   }
 
-  .principles {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .principle:nth-of-type(even) .principleText {
+    order: 0;
   }
 
-  .principle:nth-child(n + 3) {
-    margin-top: 20px;
+  .scrollHint {
+    display: none;
   }
 }
 
@@ -350,12 +399,7 @@
     padding-block: 24px 48px;
   }
 
-  .principles {
+  .standing {
     grid-template-columns: minmax(0, 1fr);
-    padding: 20px;
-  }
-
-  .principle:nth-child(n + 2) {
-    margin-top: 16px;
   }
 }

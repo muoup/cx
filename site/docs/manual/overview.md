@@ -1,6 +1,9 @@
 ---
 title: Language Overview
+description: "How the manual is organized, and what to know about C before reading it."
 ---
+
+import ChapterList from "@site/src/components/ChapterList";
 
 # Language Overview
 
@@ -10,3 +13,7 @@ Recommended Resources:
 - [W3Schools' C Programming Tutorial](https://www.w3schools.com/c/) for the basics of the language
 - [CPPReference](https://cppreference.com/c/language) for an approachable technical overview of C's semantics
 - [The GNU C Reference Manual](https://www.gnu.org/software/gnu-c-manual/gnu-c-manual.html) as a precise and verbose authoritative source
+
+## Contents
+
+<ChapterList />

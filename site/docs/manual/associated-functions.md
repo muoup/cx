@@ -1,5 +1,6 @@
 ---
 title: Functions and Calls
+description: "Associated functions, and forward and backward pipe calls."
 ---
 
 # Functions and Calls

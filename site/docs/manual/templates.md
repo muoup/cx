@@ -1,5 +1,6 @@
 ---
 title: Templates
+description: "Templated functions and types under the one-symbol, one-definition rule."
 ---
 
 # Templates

@@ -45,44 +45,155 @@ void serve(std::net::tcp_listener& server) {
     }
 }`;
 
-const principles = [
+type Principle = {
+    title: string;
+    body: ReactNode;
+    files: {name: string; code: string}[];
+    link?: {to: string; label: string};
+    placeholder?: boolean;
+};
+
+const principles: Principle[] = [
     {
         title: "Linear resources",
-        body: <>No RAII and no garbage collector. A <code>@nodrop</code> value must be moved or explicitly destroyed before it goes out of scope.</>,
-        code: `struct tcp_stream : @nodrop {
-    i32 fd;
-};`,
+        body: (
+            <>
+                <p>
+                    CX has no destructors and no garbage collector. A type marked <code>@nodrop</code> cannot
+                    quietly fall out of scope: each value must be moved somewhere else or handed to a function
+                    that releases it.
+                </p>
+                <p>
+                    Cleanup is an ordinary call you can read in the source, and the compiler rejects any path
+                    that skips it, including early returns and error branches.
+                </p>
+            </>
+        ),
+        files: [
+            {
+                name: "string.cx",
+                code: `struct string : @nodrop {
+    char* data;
+    usize length;
+    usize capacity;
+};
+
+void string::drop(string this) {
+    free(this.data);
+    @leak(this);
+}
+
+void use_string(string s) {
+    std::print(s |> std::string::as_str());
+    move s |> string::drop();
+}`,
+            },
+        ],
+        link: {to: "/docs/manual/linear-resources", label: "Chapter 7: Linear Resources"},
     },
     {
         title: "Modern features",
-        body: <>Tagged unions and templates out of the box, kept traceable by a one-symbol, one-definition rule.</>,
-        code: `enum union shape {
+        body: (
+            <>
+                <p>
+                    Tagged unions are declared with <code>enum union</code> and taken apart with
+                    exhaustive <code>match</code> statements, so adding a variant surfaces every place that
+                    needs to handle it.
+                </p>
+                <p>
+                    Templates cover generic functions and types under a one-symbol, one-definition rule. There
+                    is no partial specialization, so a call always resolves to one definition you can find.
+                </p>
+            </>
+        ),
+        files: [
+            {
+                name: "shape.cx",
+                code: `enum union shape {
     circle :: f64,
+    rectangle :: struct { f64 width; f64 height; },
     point :: void
-};`,
+};
+
+float get_area(shape& s) {
+    match (s) {
+        shape::circle(radius) => return radius * radius * 3.14;
+        shape::rectangle(r) => return r.width * r.height;
+        shape::point() => return 0;
+    }
+}`,
+            },
+        ],
+        link: {to: "/docs/manual/tagged-unions", label: "Chapter 4: Tagged Unions"},
     },
     {
         title: "Safe subset",
-        body: <>Mark critical code as <code>safe</code> to rule out undefined behavior and state contracts the compiler can check.</>,
-        code: `int fn() safe
-where
-    post(ret): (ret == 1)`,
+        body: (
+            <>
+                <p>
+                    Placeholder: what marking a function <code>safe</code> rules out, and how the compiler
+                    checks it.
+                </p>
+                <p>Placeholder: when code steps outside the safe subset, and how that is made visible.</p>
+            </>
+        ),
+        files: [{name: "safe.cx", code: "// Placeholder: a short safe function example."}],
+        placeholder: true,
     },
     {
         title: "C interop",
-        body: <>CX is designed as a strict superset of C. C headers and libraries work directly, with no bindings layer.</>,
-        code: `extern "C":
-i32 close(int fd);`,
+        body: (
+            <>
+                <p>
+                    Most C code compiles as CX with the same semantics, so an existing codebase can move over
+                    one file at a time.
+                </p>
+                <p>
+                    Going the other way, a <code>.cxh</code> entry file builds into an object file and a
+                    generated C header. C programs link against CX code with no bindings layer.
+                </p>
+            </>
+        ),
+        files: [
+            {
+                name: "mathlib.cxh",
+                code: `i32 add(i32 a, i32 b) {
+    return a + b;
+}`,
+            },
+            {
+                name: "main.c",
+                code: `#include <stdio.h>
+#include "mathlib.h"
+
+int main(void) {
+    printf("3 + 4 = %d\\n", add(3, 4));
+}`,
+            },
+        ],
+        link: {to: "/docs/getting-started/c-interop", label: "Libraries and C Interop"},
     },
 ];
 
-const status: {area: string; state: "working" | "partial" | "progress"; label: string; notes: ReactNode}[] = [
-    {area: "Cranelift backend", state: "working", label: "Working", notes: "Default code generator."},
-    {area: "Projects and modules", state: "working", label: "Working", notes: <><code>cx init</code>, <code>cx build</code>, and <code>cx.toml</code>.</>},
-    {area: "Linear resources, tagged unions, templates", state: "working", label: "Working", notes: "Covered in the manual."},
-    {area: "C99 compatibility", state: "partial", label: "Partial", notes: "Most C compiles unchanged; some features are missing."},
-    {area: "LLVM backend", state: "partial", label: "Optional", notes: <>Build with <code>--features backend-llvm</code>.</>},
-    {area: "Contracts and safe functions", state: "progress", label: "In progress", notes: "Syntax is still changing."},
+const standing: {title: string; items: ReactNode[]}[] = [
+    {
+        title: "Works today",
+        items: [
+            "Cranelift code generation, the default backend",
+            <><code>cx init</code>, <code>cx build</code>, and <code>cx.toml</code> projects</>,
+            "Linear resources, tagged unions, and templates",
+            "Most C99 code, compiled unchanged",
+        ],
+    },
+    {
+        title: "Not there yet",
+        items: [
+            "Full C99 coverage",
+            "Safe functions and contracts, both in progress",
+            "Stable template syntax; type bounds are planned",
+            "Stability guarantees between releases",
+        ],
+    },
 ];
 
 const installCommands = ["git clone https://github.com/muoup/cx.git", "cd cx && cargo build --release"];
@@ -128,10 +239,12 @@ function Install() {
 }
 
 function Code({source, errorLine}: {source: string; errorLine?: number}) {
+    const lines = cxLines(source);
+
     return (
-        <pre className={clsx("cx-code-block", styles.code)}>
+        <pre className={clsx("cx-code-block", lines.length === 1 && "cx-code-block--single", styles.code)}>
             <code className="cx-code-lines">
-                {cxLines(source).map((line, index) => (
+                {lines.map((line, index) => (
                     <span
                         className={clsx("cx-line", index + 1 === errorLine && "cx-line-error")}
                         data-n={index + 1}
@@ -195,83 +308,98 @@ function Example() {
 function Hero() {
     return (
         <section className={styles.hero}>
-            <div>
-                <Heading as="h1" className={styles.title}>
-                    Low-level control for safe, traceable, and performant systems.
-                </Heading>
-                <p className={styles.lede}>
-                    CX is an experimental systems language built as a superset of C. There are no
-                    implicit destructors and no hidden control flow: every resource you acquire is
-                    released in code you can read, and the compiler checks that you did.
-                </p>
-                <Install />
-                <div className={styles.actions}>
-                    <Link className={styles.button} to="/docs/getting-started">
-                        Getting started
-                    </Link>
-                    <Link to="/docs/manual/overview">Read the manual</Link>
-                    <Link to="https://github.com/muoup/cx">GitHub</Link>
+            <div className={styles.heroGrid}>
+                <div>
+                    <Heading as="h1" className={styles.title}>
+                        Low-level control for safe, traceable, and performant systems.
+                    </Heading>
+                    <p className={styles.lede}>
+                        CX is an experimental systems language built as a superset of C. There are no
+                        implicit destructors and no hidden control flow: every resource you acquire is
+                        released in code you can read, and the compiler checks that you did.
+                    </p>
+                    <Install />
+                    <div className={styles.actions}>
+                        <Link className={styles.button} to="/docs/getting-started">
+                            Getting started
+                        </Link>
+                        <Link to="/docs/manual/overview">Read the manual</Link>
+                        <Link to="https://github.com/muoup/cx">GitHub</Link>
+                    </div>
                 </div>
+                <Example />
             </div>
-            <Example />
+            <a className={styles.scrollHint} href="#principles">
+                Principles
+                <span className={styles.scrollPipe} aria-hidden="true">
+                    |&gt;
+                </span>
+            </a>
         </section>
+    );
+}
+
+function Eyebrow({children}: {children: ReactNode}) {
+    return (
+        <Heading as="h2" className={styles.eyebrow}>
+            <span className={styles.pipe}>|&gt;</span>
+            {children}
+        </Heading>
     );
 }
 
 function Principles() {
     return (
-        <section className={styles.section}>
-            <Heading as="h2" className={styles.eyebrow}>
-                <span className={styles.pipe}>|&gt;</span>Principles
-            </Heading>
-            <div className={styles.principles}>
-                {principles.map(({title, body, code}) => (
-                    <article className={styles.principle} key={title}>
+        <section className={styles.section} id="principles">
+            <Eyebrow>Principles</Eyebrow>
+            {principles.map(({title, body, files, link, placeholder}) => (
+                <article className={clsx(styles.principle, placeholder && styles.placeholder)} key={title}>
+                    <div className={styles.principleText}>
                         <h3>{title}</h3>
-                        <p>{body}</p>
-                        <pre>
-                            {cxLines(code).map((line, index) => (
-                                <span key={index}>
-                                    {line}
-                                    {"\n"}
-                                </span>
-                            ))}
-                        </pre>
-                    </article>
-                ))}
-            </div>
+                        {body}
+                        {link && (
+                            <Link className={styles.more} to={link.to}>
+                                {link.label} →
+                            </Link>
+                        )}
+                    </div>
+                    <div className={styles.principleCode}>
+                        {files.map(({name, code}) => (
+                            <div className={styles.frame} key={name}>
+                                <div className={styles.frameHead}>{name}</div>
+                                <Code source={code} />
+                            </div>
+                        ))}
+                    </div>
+                </article>
+            ))}
         </section>
     );
 }
 
-function Status() {
+function Standing() {
     return (
-        <section className={styles.section}>
-            <Heading as="h2" className={styles.eyebrow}>
-                <span className={styles.pipe}>|&gt;</span>Status
-            </Heading>
-            <div className={styles.tableScroll}>
-                <table className={styles.status}>
-                    <thead>
-                        <tr>
-                            <th>Area</th>
-                            <th>State</th>
-                            <th>Notes</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {status.map(({area, state, label, notes}) => (
-                            <tr key={area}>
-                                <td>{area}</td>
-                                <td>
-                                    <span className={clsx(styles.state, styles[state])}>{label}</span>
-                                </td>
-                                <td>{notes}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+        <section className={styles.section} id="status">
+            <Eyebrow>Where it stands</Eyebrow>
+            <p className={styles.standingLede}>
+                CX is a research preview. The compiler builds working programs, but the language and standard
+                library are still changing.
+            </p>
+            <div className={styles.standing}>
+                {standing.map(({title, items}) => (
+                    <div key={title}>
+                        <h3>{title}</h3>
+                        <ul>
+                            {items.map((item, index) => (
+                                <li key={index}>{item}</li>
+                            ))}
+                        </ul>
+                    </div>
+                ))}
             </div>
+            <Link className={styles.more} to="/docs/getting-started/status">
+                Full project status →
+            </Link>
         </section>
     );
 }
@@ -287,7 +415,7 @@ export default function Home(): ReactNode {
             <main className={styles.page}>
                 <Hero />
                 <Principles />
-                <Status />
+                <Standing />
             </main>
         </Layout>
     );

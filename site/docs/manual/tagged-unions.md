@@ -1,5 +1,6 @@
 ---
 title: Tagged Unions
+description: "Declaring enum unions and constructing their variants."
 ---
 
 # Tagged Unions
