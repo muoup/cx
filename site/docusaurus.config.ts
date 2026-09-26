@@ -59,7 +59,7 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/cx-social-card.svg',
+    image: 'img/cx-social-card.png',
     colorMode: {
       respectPrefersColorScheme: true,
     },
@@ -96,8 +96,14 @@ const config: Config = {
       ],
     },
     footer: {
-      style: 'dark',
-      copyright: `Copyright © ${new Date().getFullYear()}. Built with Docusaurus.`,
+      style: 'light',
+      links: [
+        {label: 'Guides', to: '/docs/getting-started'},
+        {label: 'Manual', to: '/docs/manual/overview'},
+        {label: 'Standard Library', to: '/docs/stdlib'},
+        {label: 'GitHub', href: 'https://github.com/muoup/cx'},
+      ],
+      copyright: `Copyright © ${new Date().getFullYear()} Zachary Verlardi. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,

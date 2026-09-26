@@ -163,6 +163,15 @@ function MainLayout() {
                         <div className={styles.diagnosticTitle}>
                             error: `socket` is marked @nodrop but is leaked without cleanup
                         </div>
+                        <div className={styles.diagnosticBody}>
+                            {"  --> udp_server.cx:18:12\n"}
+                            {"   |\n"}
+                            {"18 |         |> std::opt::try();\n"}
+                            {"   |            "}
+                            <span className={styles.diagnosticCaret}>
+                                ^^^^^^^^^^^^^^^ early return leaks `socket`
+                            </span>
+                        </div>
                     </div>
                 </div>
             </div>

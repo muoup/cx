@@ -1,7 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="CX Programming Language">
-  <rect width="1200" height="630" fill="#101820"/>
-  <rect x="72" y="72" width="1056" height="486" rx="28" fill="#162631" stroke="#2b4654" stroke-width="3"/>
-  <text x="120" y="260" fill="#ffffff" font-family="Inter, Arial, sans-serif" font-size="92" font-weight="800">CX Programming Language</text>
-  <text x="120" y="348" fill="#d6e0e6" font-family="Inter, Arial, sans-serif" font-size="38">C-shaped systems programming with explicit ownership</text>
-  <text x="120" y="410" fill="#5fd0b5" font-family="Inter, Arial, sans-serif" font-size="34">Tagged unions · contracts · safe functions · opt-in verification</text>
+  <rect width="1200" height="630" fill="#edf3e9"/>
+  <circle cx="-40" cy="-60" r="190" fill="#cfddca"/>
+  <circle cx="1240" cy="690" r="190" fill="#cfddca"/>
+  <rect x="72" y="72" width="1056" height="486" fill="#e5ede1" stroke="#bdcdb8" stroke-width="2"/>
+  <rect x="72" y="72" width="6" height="486" fill="#2f6b4f"/>
+  <g transform="translate(120 128) scale(0.75)">
+    <rect width="128" height="128" rx="16" fill="#2f6b4f"/>
+    <path fill="#cfddca" d="M40 88c-14 0-24-10-24-24s10-24 24-24c8 0 15 3 19 9l-10 8c-2-3-5-5-9-5-7 0-12 5-12 12s5 12 12 12c4 0 7-2 9-5l10 8c-4 6-11 9-19 9Z"/>
+    <path fill="#edf3e9" d="m77 64-17-23h15l10 14 10-14h15L93 64l18 23H96L85 72 74 87H59l18-23Z"/>
+  </g>
+  <text x="120" y="330" fill="#17231b" font-family="Inter, Arial, sans-serif" font-size="76" font-weight="800" letter-spacing="-2">CX Programming Language</text>
+  <text x="120" y="400" fill="#526158" font-family="Inter, Arial, sans-serif" font-size="32">A C-shaped systems language experiment in linear resources</text>
+  <text x="120" y="494" fill="#2f6b4f" font-family="JetBrains Mono, monospace" font-size="26" font-weight="700">LINEAR RESOURCES · TAGGED UNIONS · TEMPLATES · C INTEROP</text>
 </svg>

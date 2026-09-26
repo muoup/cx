@@ -4,6 +4,9 @@
  * work well for content-centric websites.
  */
 
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
 /* Flat sage and forest palette */
 :root {
   --cx-color-page: #edf3e9;
@@ -38,8 +41,8 @@
   --ifm-color-primary-lightest: #418f6c;
 
   --ifm-code-font-size: 95%;
-  --ifm-font-family-base: "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --ifm-font-family-monospace: "JetBrains Mono", "Fira Code", "Source Code Pro", Menlo, Monaco, Consolas, "Courier New", monospace;
+  --ifm-font-family-base: "Inter Variable", "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --ifm-font-family-monospace: "JetBrains Mono Variable", "JetBrains Mono", "Fira Code", "Source Code Pro", Menlo, Monaco, Consolas, "Courier New", monospace;
 
   --ifm-background-color: var(--cx-color-page);
   --ifm-background-surface-color: var(--cx-color-surface);
@@ -49,6 +52,11 @@
   --ifm-color-emphasis-100: var(--cx-color-surface);
   --ifm-color-emphasis-200: var(--cx-color-surface-strong);
   --ifm-color-emphasis-300: var(--cx-color-border);
+
+  --ifm-global-radius: 0;
+  --ifm-code-border-radius: 0;
+  --ifm-breadcrumb-border-radius: 0;
+  --ifm-code-background: var(--cx-color-code-surface);
 
   --docusaurus-highlighted-code-line-bg: var(--cx-color-surface-strong);
 }
@@ -94,8 +102,90 @@
   border-bottom: 1px solid var(--ifm-color-emphasis-200);
 }
 
+code,
+pre,
+kbd {
+  font-variant-ligatures: none;
+}
+
+::selection {
+  background: var(--cx-color-foliage);
+  color: var(--cx-color-text);
+}
+
+.markdown a:not(.hash-link, .card) {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+.markdown a:not(.hash-link, .card):hover {
+  color: var(--cx-color-link-hover);
+  text-decoration-color: currentColor;
+}
+
+/* The landing page has its own hero, so keep only the logo and right-hand items. */
 body:has(.landing-page) .navbar {
+  position: relative;
+  border-bottom: 0;
+  background: transparent;
+}
+
+body:has(.landing-page) .navbar__title,
+body:has(.landing-page) .navbar__items:not(.navbar__items--right) > .navbar__item {
   display: none;
+}
+
+/* Docs typography */
+.markdown h1 {
+  letter-spacing: -0.03em;
+}
+
+.markdown h2 {
+  border-bottom: 1px solid var(--cx-color-border);
+  padding-bottom: 0.35rem;
+}
+
+.menu__link {
+  border-radius: 0;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  background: transparent;
+  box-shadow: inset 2px 0 0 var(--ifm-color-primary);
+  font-weight: 600;
+}
+
+.table-of-contents {
+  position: relative;
+}
+
+.table-of-contents__left-border {
+  border-left-color: var(--cx-color-border);
+}
+
+.table-of-contents__link--active {
+  font-weight: 600;
+}
+
+.table-of-contents__link--active::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  width: 2px;
+  height: 1.25em;
+  background: var(--ifm-color-primary);
+}
+
+.pagination-nav__link {
+  border: 1px solid var(--cx-color-border);
+  background: var(--cx-color-surface);
+  transition: border-color var(--ifm-transition-fast);
+}
+
+.pagination-nav__link:hover {
+  border-color: var(--ifm-color-primary);
 }
 
 .footer {
@@ -107,6 +197,21 @@ body:has(.landing-page) .navbar {
 .footer__copyright,
 .footer__link-item {
   color: var(--cx-color-footer-text);
+}
+
+.footer__links {
+  margin-bottom: 0.75rem;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.85rem;
+}
+
+.footer__link-item:hover {
+  color: var(--ifm-color-primary);
+}
+
+.footer__copyright {
+  color: var(--cx-color-text-muted);
+  font-size: 0.8rem;
 }
 
 .button--secondary {
@@ -122,6 +227,7 @@ body:has(.landing-page) .navbar {
 /* Keep highlighted source examples inside the site's sage and forest palette. */
 .theme-code-block {
   overflow: hidden;
+  scrollbar-color: var(--cx-color-code-border) transparent;
   border: 1px solid var(--cx-color-code-border);
   background: var(--cx-color-code-surface);
   box-shadow: none;
@@ -264,14 +370,21 @@ body:has(.landing-page) .navbar {
   background: var(--cx-color-surface-strong);
 }
 
+@media (hover: hover) {
+  .cx-code-block-copy {
+    opacity: 0;
+    transition: opacity var(--ifm-transition-fast);
+  }
+
+  .cx-code-block-content:hover .cx-code-block-copy,
+  .cx-code-block-copy:focus-visible {
+    opacity: 1;
+  }
+}
+
 .cx-stdlib-page h1,
 .cx-stdlib-page h2 {
   color: var(--ifm-color-primary);
-}
-
-.cx-stdlib-page h2 {
-  border-bottom: 1px solid var(--cx-color-border);
-  padding-bottom: 0.35rem;
 }
 
 .cx-stdlib-page .cx-stdlib-type-name {

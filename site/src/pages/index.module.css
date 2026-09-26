@@ -1,7 +1,7 @@
 .container {
   max-width: 1500px;
   margin: 0 auto;
-  padding: 3rem 3rem 5rem;
+  padding: 1.5rem 3rem 5rem;
   position: relative;
   z-index: 1;
 }
@@ -166,7 +166,6 @@
   color: var(--ifm-color-primary);
   font-size: 0.9em;
   padding: 0.1rem 0.3rem;
-  border-radius: 3px;
 }
 
 /* Feature Sections */
@@ -257,6 +256,7 @@
   border-top: 1px solid var(--ifm-color-emphasis-200);
   color: var(--ifm-color-content-secondary);
   font-family: var(--ifm-font-family-monospace);
+  font-variant-ligatures: none;
   font-size: 0.78rem;
   line-height: 1.5;
   padding: 1rem 1.5rem 0.5rem;
@@ -268,9 +268,20 @@
   margin-bottom: 0.35rem;
 }
 
+.diagnosticBody {
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  white-space: pre;
+}
+
+.diagnosticCaret {
+  color: var(--cx-color-error);
+  font-weight: 700;
+}
+
 @media screen and (max-width: 1200px) {
   .mainGrid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 4rem;
   }
   
@@ -296,5 +307,42 @@
 @media screen and (max-width: 700px) {
   .foliageBorder {
     display: none;
+  }
+
+  .container {
+    padding: 1rem 1rem 3rem;
+  }
+
+  .heroTitle {
+    font-size: 3.5rem;
+  }
+
+  .heroTagline {
+    font-size: 1rem;
+  }
+
+  .mainGrid {
+    gap: 2.5rem;
+  }
+
+  .featureGrid {
+    padding: 1rem 1rem 0.25rem;
+  }
+
+  .featurePanel {
+    min-height: 0;
+  }
+
+  .codeSnippet pre {
+    padding: 1rem;
+  }
+
+  .errorLine {
+    margin: 0 -1rem;
+    padding: 0 1rem;
+  }
+
+  .diagnostic {
+    padding: 0.75rem 1rem 0.25rem;
   }
 }
