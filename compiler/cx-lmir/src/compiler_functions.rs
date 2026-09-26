@@ -52,20 +52,20 @@ fn assertion_prototype(arch: ArchitectureConfig) -> LMIRFunctionPrototype {
             params: vec![
                 LMIRParameter {
                     name: Some(CXIdent::new("condition")),
-                    _type: LMIRType::bool(),
+                    ty: LMIRType::bool(),
                     abi: LMIRParameterABI::Direct {
                         slots: vec![LMIRABISlot {
-                            _type: LMIRType::bool(),
+                            ty: LMIRType::bool(),
                             offset: 0,
                         }],
                     },
                 },
                 LMIRParameter {
                     name: Some(CXIdent::new("message")),
-                    _type: pointer.clone(),
+                    ty: pointer.clone(),
                     abi: LMIRParameterABI::Direct {
                         slots: vec![LMIRABISlot {
-                            _type: pointer,
+                            ty: pointer,
                             offset: 0,
                         }],
                     },

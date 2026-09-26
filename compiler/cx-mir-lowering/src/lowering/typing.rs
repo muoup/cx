@@ -74,7 +74,7 @@ fn classify_return(
         return LMIRReturnABI::Direct {
             slots: vec![LMIRABISlot {
                 offset: 0,
-                _type: return_type,
+                ty: return_type,
             }],
         };
     }
@@ -101,7 +101,7 @@ fn classify_param(
         LMIRParameterABI::Direct {
             slots: vec![LMIRABISlot {
                 offset: 0,
-                _type: lowered.clone(),
+                ty: lowered.clone(),
             }],
         }
     } else {
@@ -121,7 +121,7 @@ fn classify_param(
     };
     LMIRParameter {
         name,
-        _type: lowered,
+        ty: lowered,
         abi,
     }
 }
@@ -257,7 +257,7 @@ fn direct_aggregate_slots(
 ) -> Option<Vec<LMIRABISlot>> {
     if let Some(slot) = direct_sse_aggregate_type(architecture, ty) {
         return Some(vec![LMIRABISlot {
-            _type: slot,
+            ty: slot,
             offset: 0,
         }]);
     }
@@ -273,17 +273,17 @@ fn direct_aggregate_slots(
                 );
                 return Some(if size == 2 {
                     vec![LMIRABISlot {
-                        _type: vector,
+                        ty: vector,
                         offset: 0,
                     }]
                 } else {
                     vec![
                         LMIRABISlot {
-                            _type: vector.clone(),
+                            ty: vector.clone(),
                             offset: 0,
                         },
                         LMIRABISlot {
-                            _type: vector,
+                            ty: vector,
                             offset: 8,
                         },
                     ]
@@ -291,7 +291,7 @@ fn direct_aggregate_slots(
             }
             (1, _) => {
                 return Some(vec![LMIRABISlot {
-                    _type: LMIRType::with_implicit_abi(architecture, LMIRTypeKind::Float(float)),
+                    ty: LMIRType::with_implicit_abi(architecture, LMIRTypeKind::Float(float)),
                     offset: 0,
                 }]);
             }
@@ -301,19 +301,19 @@ fn direct_aggregate_slots(
     match size {
         0 => None,
         size @ 1..=8 => Some(vec![LMIRABISlot {
-            _type: integer_slot_type(architecture, size)?,
+            ty: integer_slot_type(architecture, size)?,
             offset: 0,
         }]),
         size @ 9..=16 => Some(vec![
             LMIRABISlot {
-                _type: LMIRType::with_implicit_abi(
+                ty: LMIRType::with_implicit_abi(
                     architecture,
                     LMIRTypeKind::Integer(LMIRIntegerType::I64),
                 ),
                 offset: 0,
             },
             LMIRABISlot {
-                _type: integer_slot_type(architecture, size - 8)?,
+                ty: integer_slot_type(architecture, size - 8)?,
                 offset: 8,
             },
         ]),

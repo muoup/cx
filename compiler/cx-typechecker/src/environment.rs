@@ -122,13 +122,13 @@ impl TypeEnvironment<'_> {
     pub fn finish_thir_unit(self, source_namespace: NamespacePath) -> CXResult<THIRUnit> {
         let (functions, comptime_functions, globals) = self.items.drain_generated_items();
 
-        Ok(THIRUnit {
+        Ok(THIRUnit::new(
             source_namespace,
+            self.symbols.decompose(),
             functions,
             comptime_functions,
-            global_variables: globals,
-            registry: self.symbols.decompose(),
-        })
+            globals,
+        ))
     }
 
     pub fn push_scope(
@@ -173,24 +173,24 @@ impl TypeEnvironment<'_> {
     }
 
     pub fn staging_context(&self) -> StagingContext {
-        let mut context = self
-            .comptime_context
-            .clone()
-            .unwrap_or_else(|| StagingContext {
-                return_type: self
-                    .try_current_function()
-                    .map(|f| f.signature().return_type.clone()),
-                yield_type: None,
-            });
+        let mut context = self.comptime_context.clone().unwrap_or_else(|| {
+            StagingContext::new(
+                self.try_current_function()
+                    .map(|f| f.signature().return_type().clone()),
+                None,
+            )
+        });
         if self.try_current_function().is_some()
             && (!self.in_comptime_context() || self.in_runtime_emit_context())
         {
-            context.yield_type = self
-                .function
-                .flow()
-                .yield_state()
-                .expected_type
-                .or(context.yield_type);
+            let fallback = context.yield_type().cloned();
+            context.set_yield_type(
+                self.function
+                    .flow()
+                    .yield_state()
+                    .expected_type
+                    .or(fallback),
+            );
         }
         context
     }

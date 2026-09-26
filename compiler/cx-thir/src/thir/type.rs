@@ -102,10 +102,42 @@ pub enum THIRReferenceLifetime {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct THIRBitfieldAccess {
-    pub storage_type: THIRTypeID,
-    pub bit_offset: usize,
-    pub bit_width: usize,
-    pub signed: bool,
+    storage_type: THIRTypeID,
+    bit_offset: usize,
+    bit_width: usize,
+    signed: bool,
+}
+
+impl THIRBitfieldAccess {
+    pub fn new(
+        storage_type: THIRTypeID,
+        bit_offset: usize,
+        bit_width: usize,
+        signed: bool,
+    ) -> Self {
+        Self {
+            storage_type,
+            bit_offset,
+            bit_width,
+            signed,
+        }
+    }
+
+    pub fn storage_type(&self) -> THIRTypeID {
+        self.storage_type
+    }
+
+    pub fn bit_offset(&self) -> usize {
+        self.bit_offset
+    }
+
+    pub fn bit_width(&self) -> usize {
+        self.bit_width
+    }
+
+    pub fn is_signed(&self) -> bool {
+        self.signed
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -113,11 +145,11 @@ pub enum THIRTypeKind {
     Void,
     Unreachable,
     Integer {
-        _type: THIRIntType,
+        ty: THIRIntType,
         signed: bool,
     },
     Float {
-        _type: THIRFloatType,
+        ty: THIRFloatType,
     },
     Structured {
         fields: Vec<THIRField>,
@@ -275,10 +307,11 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRType {
             (Some(left), Some(right)) => {
                 return left == right
                     && match (&self.template_info, &other.template_info) {
-                        (Some(left), Some(right)) => {
-                            left.template_input
-                                .compare(&right.template_input, definitions, state)
-                        }
+                        (Some(left), Some(right)) => left.template_input().compare(
+                            right.template_input(),
+                            definitions,
+                            state,
+                        ),
                         (None, None) => true,
                         (Some(_), None) | (None, Some(_)) => false,
                     };
@@ -299,7 +332,7 @@ impl THIRType {
     pub fn bool() -> Self {
         THIRType {
             kind: THIRTypeKind::Integer {
-                _type: THIRIntType::I1,
+                ty: THIRIntType::I1,
                 signed: false,
             },
             ..Default::default()
@@ -444,7 +477,7 @@ impl THIRType {
         self.lookup_identifier.as_ref().or_else(|| {
             self.template_info
                 .as_ref()
-                .and_then(|info| info.base_name.as_ref())
+                .and_then(|info| info.base_name())
         })
     }
 
@@ -596,18 +629,17 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
             | (THIRTypeKind::Str, THIRTypeKind::Str) => true,
             (
                 THIRTypeKind::Integer {
-                    _type: left_type,
+                    ty: left_type,
                     signed: left_signed,
                 },
                 THIRTypeKind::Integer {
-                    _type: right_type,
+                    ty: right_type,
                     signed: right_signed,
                 },
             ) => left_type == right_type && left_signed == right_signed,
-            (
-                THIRTypeKind::Float { _type: left_type },
-                THIRTypeKind::Float { _type: right_type },
-            ) => left_type == right_type,
+            (THIRTypeKind::Float { ty: left_type }, THIRTypeKind::Float { ty: right_type }) => {
+                left_type == right_type
+            }
             (
                 THIRTypeKind::Structured { fields: left },
                 THIRTypeKind::Structured { fields: right },

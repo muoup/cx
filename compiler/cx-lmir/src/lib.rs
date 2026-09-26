@@ -32,7 +32,7 @@ pub type ElementID = u32;
 #[derive(Debug, Clone)]
 pub struct LMIRGlobalValue {
     pub name: CXIdent,
-    pub _type: LMIRGlobalType,
+    pub ty: LMIRGlobalType,
     pub linkage: LinkageType,
 }
 
@@ -40,7 +40,7 @@ pub struct LMIRGlobalValue {
 pub enum LMIRGlobalType {
     StringLiteral(String),
     Variable {
-        _type: LMIRType,
+        ty: LMIRType,
         state: LMIRGlobalState,
     },
 }
@@ -56,11 +56,11 @@ pub enum LMIRGlobalState {
 pub enum LMIRGlobalInitializer {
     Integer {
         value: i128,
-        _type: LMIRIntegerType
+        ty: LMIRIntegerType,
     },
     Float {
         value: FloatWrapper,
-        _type: LMIRFloatType,
+        ty: LMIRFloatType,
     },
     Aggregate {
         fields: Vec<(usize, LMIRGlobalInitializer)>,
@@ -79,15 +79,15 @@ pub enum LMIRValue {
     NULL,
     Register {
         register: LMIRRegister,
-        _type: LMIRType,
+        ty: LMIRType,
     },
     ParameterRef(u32),
     IntImmediate {
-        _type: LMIRType,
+        ty: LMIRType,
         val: i64,
     },
     FloatImmediate {
-        _type: LMIRType,
+        ty: LMIRType,
         val: FloatWrapper,
     },
     Global(ElementID),
@@ -116,7 +116,7 @@ impl From<LMIRRegister> for CXIdent {
 #[derive(Debug, Clone)]
 pub struct LMIRParameter {
     pub name: Option<CXIdent>,
-    pub _type: LMIRType,
+    pub ty: LMIRType,
     pub abi: LMIRParameterABI,
 }
 
@@ -144,7 +144,7 @@ pub enum LMIRReturnABI {
 
 #[derive(Debug, Clone)]
 pub struct LMIRABISlot {
-    pub _type: LMIRType,
+    pub ty: LMIRType,
     pub offset: usize,
 }
 
@@ -193,7 +193,7 @@ impl LMIRFunctionSignature {
             match &param.abi {
                 LMIRParameterABI::Direct { slots } => {
                     if index < slots.len() {
-                        return Some(slots[index]._type.clone());
+                        return Some(slots[index].ty.clone());
                     }
                     index -= slots.len();
                 }
@@ -232,7 +232,7 @@ pub struct LMIRFunction {
 #[derive(Debug, Clone)]
 pub struct LMIRBlockParameter {
     pub register: LMIRRegister,
-    pub _type: LMIRType,
+    pub ty: LMIRType,
 }
 
 #[derive(Debug, Clone)]
@@ -278,7 +278,7 @@ pub struct LMIRInstruction {
 #[derive(Debug, Clone)]
 pub enum LMIRInstructionKind {
     Allocate {
-        _type: LMIRType,
+        ty: LMIRType,
         alignment: u8,
     },
 
@@ -296,7 +296,7 @@ pub enum LMIRInstructionKind {
     Store {
         memory: LMIRValue,
         value: LMIRValue,
-        _type: LMIRType,
+        ty: LMIRType,
     },
 
     Memcpy {
@@ -308,12 +308,12 @@ pub enum LMIRInstructionKind {
 
     Load {
         memory: LMIRValue,
-        _type: LMIRType,
+        ty: LMIRType,
     },
 
     ZeroMemory {
         memory: LMIRValue,
-        _type: LMIRType,
+        ty: LMIRType,
     },
 
     Coercion {
@@ -372,7 +372,7 @@ pub enum LMIRInstructionKind {
     },
     VaArg {
         list: LMIRValue,
-        _type: LMIRType,
+        ty: LMIRType,
     },
 
     GetFunctionAddr {

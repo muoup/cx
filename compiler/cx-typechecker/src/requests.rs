@@ -72,33 +72,33 @@ fn realize_tagged_union_constructor(
     let prototype = THIRFnPrototype::new(
         symbol_name,
         LinkageMode::Static,
-        THIRFnSignature {
-            return_type: union_type.clone(),
-            params: if variant_type.is_void() {
+        THIRFnSignature::new(
+            union_type.clone(),
+            if variant_type.is_void() {
                 Vec::new()
             } else {
-                vec![THIRParameter {
-                    name: Some(param_name.clone()),
-                    local_id: param_local_id,
-                    _type: variant_type.clone(),
-                }]
+                vec![THIRParameter::new(
+                    Some(param_name.clone()),
+                    param_local_id,
+                    variant_type.clone(),
+                )]
             },
-            var_args: false,
-            contract: HIRFunctionContract::default(),
-        },
+            false,
+            HIRFunctionContract::default(),
+        ),
     )
     .with_debug_name(debug_name);
 
     let value = if variant_type.is_void() {
         THIRExpression {
             token_range: TokenRange::internal(),
-            _type: variant_type.clone(),
+            ty: variant_type.clone(),
             kind: THIRExpressionKind::Unit,
         }
     } else {
         THIRExpression {
             token_range: TokenRange::internal(),
-            _type: variant_type.clone(),
+            ty: variant_type.clone(),
             kind: THIRExpressionKind::Move {
                 name: param_name,
                 local_id: param_local_id,
@@ -108,7 +108,7 @@ fn realize_tagged_union_constructor(
 
     let constructed = THIRExpression {
         token_range: TokenRange::internal(),
-        _type: union_type.clone(),
+        ty: union_type.clone(),
         kind: THIRExpressionKind::TaggedUnionInitializer {
             variant_index,
             value: Box::new(value),
@@ -116,11 +116,11 @@ fn realize_tagged_union_constructor(
         },
     };
 
-    env.items.push_generated_function(THIRFunction {
-        reject_nonvoid_fallthrough: env.require_explicit_return(),
+    env.items.push_generated_function(THIRFunction::new(
         prototype,
-        body: Some(THIRFunctionBody::Expression(constructed)),
-    });
+        Some(THIRFunctionBody::Expression(constructed)),
+        env.require_explicit_return(),
+    ));
 }
 
 fn realize_fn_template(

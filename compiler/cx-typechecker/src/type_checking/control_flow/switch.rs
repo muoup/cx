@@ -61,7 +61,7 @@ pub fn typecheck_switch(
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
         .and_then(|v| std_rval_promotion(env, v))?;
 
-    let THIRTypeKind::Integer { .. } = condition_value.get_type().kind else {
+    let THIRTypeKind::Integer { .. } = condition_value.ty.kind else {
         return env.log_error(
             &condition_value.token_range,
             &catalogue::TYPE_MISMATCH,
@@ -73,7 +73,7 @@ pub fn typecheck_switch(
         );
     };
 
-    let condition_type = condition_value.get_type().clone();
+    let condition_type = condition_value.ty.clone();
     env.push_scope(true, false, expr.token_range().clone());
 
     let mut arms = Vec::new();

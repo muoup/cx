@@ -6,7 +6,7 @@ pub(crate) mod switch;
 pub(crate) mod r#yield;
 
 pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
-    if expr._type.is_unreachable() {
+    if expr.ty.is_unreachable() {
         return false;
     }
     match &expr.kind {
@@ -46,7 +46,7 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
         }
-        THIRExpressionKind::Match { .. } if !expr._type.is_void() => true,
+        THIRExpressionKind::Match { .. } if !expr.ty.is_void() => true,
         THIRExpressionKind::Match { arms, .. } => {
             arms.iter().any(|(_, branch)| expr_may_fall_through(branch))
         }

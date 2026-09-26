@@ -47,7 +47,7 @@ pub(crate) fn typecheck_identifier(
                     name: name.name.clone(),
                     local_id,
                 },
-                _type: THIRTypeKind::Undefined.into(),
+                ty: THIRTypeKind::Undefined.into(),
             },
             params,
             return_type,

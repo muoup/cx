@@ -70,7 +70,7 @@ pub(crate) fn typecheck_var_declaration(
                     .as_expression()
                     .map_err(|err| env.complete_err(err, expr.token_range()))?;
 
-                if !env.type_eq(&mem_type, &sym_expr._type) {
+                if !env.type_eq(&mem_type, &sym_expr.ty) {
                     return env.log_error(
                         expr.token_range(),
                         &catalogue::VARIABLE_REDECLARATION,
@@ -81,14 +81,13 @@ pub(crate) fn typecheck_var_declaration(
                 sym_expr
             } else {
                 env.items.push_generated_global(
-                    THIRGlobalVariable {
-                        name: name.clone(),
-                        _type: ty.clone(),
-
-                        is_mutable: true,
-                        linkage: LinkageMode::Extern,
-                        initializer: None,
-                    },
+                    THIRGlobalVariable::new(
+                        name.clone(),
+                        ty.clone(),
+                        None,
+                        LinkageMode::Extern,
+                        true,
+                    ),
                     false,
                 );
 
@@ -97,7 +96,7 @@ pub(crate) fn typecheck_var_declaration(
                     kind: THIRExpressionKind::GlobalVariable {
                         symbol: name.clone(),
                     },
-                    _type: mem_type,
+                    ty: mem_type,
                 }
             };
 
@@ -131,20 +130,19 @@ pub(crate) fn typecheck_var_declaration(
             };
 
             env.items.push_generated_global(
-                THIRGlobalVariable {
-                    name: CXIdent::new(symbol_name.clone()),
-                    _type: global_type.clone(),
-
-                    is_mutable: !is_const,
-                    linkage: LinkageMode::Static,
+                THIRGlobalVariable::new(
+                    CXIdent::new(symbol_name.clone()),
+                    global_type.clone(),
                     initializer,
-                },
+                    LinkageMode::Static,
+                    !is_const,
+                ),
                 false,
             );
 
             let symbol = THIRExpression {
                 token_range: expr.token_range().clone(),
-                _type: env.symbols.mem_ref_to(global_type),
+                ty: env.symbols.mem_ref_to(global_type),
                 kind: THIRExpressionKind::GlobalVariable {
                     symbol: CXIdent::new(symbol_name),
                 },
@@ -179,18 +177,18 @@ pub(crate) fn typecheck_var_declaration(
                     true => THIRExpressionKind::AdoptRegion {
                         binding_name: name.clone(),
                         local_id,
-                        _type: object_type.clone(),
+                        ty: object_type.clone(),
                         initial_value: initial_value
                             .expect("adopting binding must have an initial value"),
                     },
                     false => THIRExpressionKind::CreateLocalVariable {
                         name: name.clone(),
                         local_id,
-                        _type: object_type.clone(),
+                        ty: object_type.clone(),
                         initial_value,
                     },
                 },
-                _type: mem_type.clone(),
+                ty: mem_type.clone(),
             };
 
             env.symbols.insert_local_value(
@@ -201,7 +199,7 @@ pub(crate) fn typecheck_var_declaration(
                         name: name.clone(),
                         local_id,
                     },
-                    _type: mem_type,
+                    ty: mem_type,
                 },
             );
 

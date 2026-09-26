@@ -84,12 +84,12 @@ pub(crate) fn lower_type_kind<'thir>(
 ) -> CXResult<MIRTypeKind> {
     Ok(match kind {
         THIRTypeKind::Void => MIRTypeKind::Void,
-        THIRTypeKind::Integer { _type, signed } => MIRTypeKind::Integer {
-            ty: lower_int_type(*_type),
+        THIRTypeKind::Integer { ty, signed } => MIRTypeKind::Integer {
+            ty: lower_int_type(*ty),
             signed: *signed,
         },
-        THIRTypeKind::Float { _type } => MIRTypeKind::Float {
-            ty: match _type {
+        THIRTypeKind::Float { ty } => MIRTypeKind::Float {
+            ty: match ty {
                 cx_thir::thir::r#type::THIRFloatType::F32 => cx_mir::MIRFloatType::F32,
                 cx_thir::thir::r#type::THIRFloatType::F64 => cx_mir::MIRFloatType::F64,
             },
@@ -121,9 +121,9 @@ pub(crate) fn lower_type_kind<'thir>(
         } => MIRTypeKind::MemoryReference {
             inner: lower_type_id(builder, *inner_type)?,
             bitfield: bitfield.as_ref().map(|bitfield| MIRBitfieldAccess {
-                bit_offset: bitfield.bit_offset,
-                bit_width: bitfield.bit_width,
-                signed: bitfield.signed,
+                bit_offset: bitfield.bit_offset(),
+                bit_width: bitfield.bit_width(),
+                signed: bitfield.is_signed(),
             }),
         },
         THIRTypeKind::Array { length, inner_type } => match length {
@@ -170,17 +170,17 @@ pub(crate) fn lower_signature<'thir>(
     builder: &mut MIRBuilder<'thir>,
     signature: &'thir THIRFnSignature,
 ) -> CXResult<MIRFnSignature> {
-    let return_type = lower_type(builder, &signature.return_type)?;
+    let return_type = lower_type(builder, signature.return_type())?;
     let params = signature
-        .params
+        .params()
         .iter()
         .map(|parameter| {
-            let ty = lower_type(builder, &parameter._type)?;
+            let ty = lower_type(builder, parameter.ty())?;
 
             Ok(MIRFnParam::new(
-                parameter.name.clone(),
+                parameter.name().cloned(),
                 ty,
-                parameter._type.is_nodrop(),
+                parameter.ty().is_nodrop(),
             ))
         })
         .collect::<CXResult<Vec<_>>>()?;
@@ -188,8 +188,8 @@ pub(crate) fn lower_signature<'thir>(
     Ok(MIRFnSignature::new(
         params,
         return_type,
-        signature.var_args,
-        signature.contract.safe,
+        signature.var_args(),
+        signature.contract().safe,
     ))
 }
 
@@ -211,13 +211,13 @@ fn lower_comptime_value_type<'thir>(
     builder: &mut MIRBuilder<'thir>,
     value_type: &'thir THIRComptimeValueType,
 ) -> CXResult<MIRComptimeType> {
-    if !value_type.expr {
-        reject_comptime(builder, &value_type._type)?;
+    if !value_type.is_expr() {
+        reject_comptime(builder, value_type.ty())?;
     }
-    let result = lower_type(builder, &value_type._type)?;
-    if value_type.expr {
+    let result = lower_type(builder, value_type.ty())?;
+    if value_type.is_expr() {
         let params = value_type
-            .params
+            .params()
             .iter()
             .map(|ty| lower_type(builder, ty))
             .collect::<CXResult<Vec<_>>>()?;
@@ -266,11 +266,11 @@ fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()
                 fields.iter().find_map(|field| check_id(field.ty()))
             }
             THIRTypeKind::Function { signature } => {
-                find_array(registry, &signature.return_type.kind, seen).or_else(|| {
+                find_array(registry, &signature.return_type().kind, seen).or_else(|| {
                     signature
-                        .params
+                        .params()
                         .iter()
-                        .find_map(|param| find_array(registry, &param._type.kind, seen))
+                        .find_map(|param| find_array(registry, &param.ty().kind, seen))
                 })
             }
             _ => None,
@@ -293,29 +293,27 @@ pub(crate) fn lower_comptime_prototype<'thir>(
     builder: &mut MIRBuilder<'thir>,
     function: &'thir THIRComptimeFn,
 ) -> CXResult<MIRComptimeFnPrototype> {
-    let prototype = &function.prototype;
+    let prototype = function.prototype();
     let return_type = lower_comptime_value_type(builder, prototype.return_type())?;
     let params = prototype
         .params()
         .iter()
         .map(|param| {
             Ok(MIRComptimeFnParam {
-                name: param.name.clone(),
-                ty: lower_comptime_value_type(builder, &param.value_type)?,
+                name: param.name().cloned(),
+                ty: lower_comptime_value_type(builder, param.value_type())?,
             })
         })
         .collect::<CXResult<Vec<_>>>()?;
     let context = MIRComptimeContext {
         expected_return_type: function
-            .context
-            .return_type
-            .as_ref()
+            .context()
+            .return_type()
             .map(|ty| lower_type(builder, ty))
             .transpose()?,
         expected_yield_type: function
-            .context
-            .yield_type
-            .as_ref()
+            .context()
+            .yield_type()
             .map(|ty| lower_type(builder, ty))
             .transpose()?,
     };

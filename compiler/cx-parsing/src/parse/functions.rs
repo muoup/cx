@@ -172,11 +172,11 @@ fn parse_comptime_initializer(data: &mut ParserData) -> CXResult<ComptimeValueIn
 
     if expr && try_next!(data.tokens, punctuator!(OpenParen)) {
         while !try_next!(data.tokens, punctuator!(CloseParen)) {
-            let (name, _type, _) = parse_initializer(data)?;
+            let (name, ty, _) = parse_initializer(data)?;
             if name.is_some() {
                 return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a staged parameter type name".into(), None, None));
             }
-            params.push(_type);
+            params.push(ty);
 
             if !try_next!(data.tokens, operator!(Comma)) {
                 assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
@@ -185,15 +185,11 @@ fn parse_comptime_initializer(data: &mut ParserData) -> CXResult<ComptimeValueIn
         }
     }
 
-    let (name, _type, _) = parse_initializer(data)?;
+    let (name, ty, _) = parse_initializer(data)?;
 
     Ok(ComptimeValueInitializer {
         name,
-        value_type: HIRComptimeValueType {
-            expr,
-            params,
-            _type,
-        },
+        value_type: HIRComptimeValueType { expr, params, ty },
     })
 }
 
@@ -368,10 +364,10 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             });
         }
 
-        let (name, _type, _) = parse_initializer(data)?;
+        let (name, ty, _) = parse_initializer(data)?;
         let name = name;
 
-        params.push(HIRParameter { name, _type });
+        params.push(HIRParameter { name, ty });
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");

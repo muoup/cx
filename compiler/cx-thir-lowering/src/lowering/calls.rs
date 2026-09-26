@@ -113,7 +113,7 @@ pub(super) fn lower_call<'thir>(
         args.push(lower_expression(builder, argument)?);
     }
 
-    let mut function_type = &function._type;
+    let mut function_type = &function.ty;
     let signature = loop {
         match &function_type.kind {
             THIRTypeKind::PointerTo { inner_type, .. }
@@ -126,14 +126,14 @@ pub(super) fn lower_call<'thir>(
     let parameter_names = signature
         .map(|signature| {
             signature
-                .params
+                .params()
                 .iter()
-                .map(|parameter| parameter.name.clone())
+                .map(|parameter| parameter.name().cloned())
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
 
-    if let Some(precondition) = &contract.precondition {
+    if let Some(precondition) = contract.precondition() {
         builder
             .fun_mut()
             .push_scope(precondition.token_range.clone());
@@ -167,24 +167,24 @@ pub(super) fn lower_call<'thir>(
         return Err(LowerStop::Diverged);
     }
 
-    if let Some(postcondition) = &contract.postcondition {
+    if let Some(postcondition) = contract.postcondition() {
         builder
             .fun_mut()
-            .push_scope(postcondition.condition.token_range.clone());
+            .push_scope(postcondition.condition().token_range.clone());
         for (name, value) in parameter_names.iter().zip(&args) {
             if let Some(name) = name {
                 builder.fun_mut().bind_named_value(name, value.clone());
             }
         }
-        if let (Some(name), Some(out)) = (&postcondition.binding, out) {
+        if let (Some(name), Some(out)) = (postcondition.binding(), out) {
             builder
                 .fun_mut()
                 .bind_named_value(name, MIRValue::Register(out));
         }
-        let condition = lower_expression(builder, &postcondition.condition)?;
+        let condition = lower_expression(builder, postcondition.condition())?;
         builder.fun_mut().emit_intrinsic(
             MIRInternalIntrinsic::Assume { condition },
-            postcondition.condition.token_range.clone(),
+            postcondition.condition().token_range.clone(),
         );
         auto_pop_scope(builder)?;
     }

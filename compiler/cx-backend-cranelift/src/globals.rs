@@ -10,7 +10,7 @@ pub(crate) fn declare_global(
     state: &mut GlobalState,
     variable: &LMIRGlobalValue,
 ) -> CXResult<DataId> {
-    Ok(match &variable._type {
+    Ok(match &variable.ty {
         LMIRGlobalType::StringLiteral(str) => {
             let _ = str;
             state
@@ -20,7 +20,7 @@ pub(crate) fn declare_global(
         }
 
         LMIRGlobalType::Variable {
-            _type,
+            ty: _,
             state: global_state,
         } => {
             let linkage = match global_state {
@@ -47,7 +47,7 @@ pub(crate) fn define_global(
     id: DataId,
     variable: &LMIRGlobalValue,
 ) -> CXResult<()> {
-    let (data, defined) = match &variable._type {
+    let (data, defined) = match &variable.ty {
         LMIRGlobalType::StringLiteral(str) => {
             let mut bytes = str.to_owned().into_bytes();
             bytes.push(b'\0');
@@ -56,7 +56,7 @@ pub(crate) fn define_global(
             (data, true)
         }
         LMIRGlobalType::Variable {
-            _type,
+            ty,
             state: global_state,
         } => {
             if matches!(global_state, LMIRGlobalState::External) {
@@ -66,11 +66,11 @@ pub(crate) fn define_global(
             let mut data = DataDescription::new();
             match global_state {
                 LMIRGlobalState::ZeroInitialized => {
-                    data.define_zeroinit(usize::from(_type.size()));
+                    data.define_zeroinit(usize::from(ty.size()));
                 }
                 LMIRGlobalState::Initialized(initializer) => {
-                    data.define(initializer_bytes(initializer, _type).into_boxed_slice());
-                    write_initializer_relocations(state, &mut data, initializer, _type, 0);
+                    data.define(initializer_bytes(initializer, ty).into_boxed_slice());
+                    write_initializer_relocations(state, &mut data, initializer, ty, 0);
                 }
                 LMIRGlobalState::External => unreachable!(),
             }
@@ -90,7 +90,7 @@ fn initializer_bytes(
 ) -> Vec<u8> {
     let bytes = match initializer {
         LMIRGlobalInitializer::Integer { value, .. } => value.to_ne_bytes().to_vec(),
-        LMIRGlobalInitializer::Float { value, _type } => match _type {
+        LMIRGlobalInitializer::Float { value, ty } => match ty {
             LMIRFloatType::F32 => {
                 let value: f32 = value.into();
                 value.to_ne_bytes().to_vec()

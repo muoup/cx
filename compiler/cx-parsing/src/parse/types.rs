@@ -108,7 +108,7 @@ fn parse_type_attributes(
 fn aggregate_field_from_decl(
     data: &mut ParserData,
     name: Option<CXIdent>,
-    _type: HIRType,
+    ty: HIRType,
 ) -> CXResult<HIRField> {
     if try_next!(data.tokens, punctuator!(Colon)) {
         let width = match next_kind!(data.tokens)? {
@@ -128,7 +128,7 @@ fn aggregate_field_from_decl(
 
         return Ok(HIRField::Bitfield {
             name: name.map(|name| name.to_string()),
-            integer_type: _type,
+            integer_type: ty,
             width,
         });
     }
@@ -137,11 +137,11 @@ fn aggregate_field_from_decl(
         return parse_point_error(
             &data.tokens,
             &UNSUPPORTED_FEATURE,
-            (format!("nameless member of {_type}"), "the parser".into()),
+            (format!("nameless member of {ty}"), "the parser".into()),
         );
     };
 
-    Ok(HIRField::standard(name.to_string(), _type))
+    Ok(HIRField::standard(name.to_string(), ty))
 }
 
 fn parse_aggregate_fields(data: &mut ParserData) -> CXResult<Vec<HIRField>> {
@@ -150,8 +150,8 @@ fn parse_aggregate_fields(data: &mut ParserData) -> CXResult<Vec<HIRField>> {
     let mut fields = Vec::new();
 
     loop {
-        let (name, _type) = parse_base_mods(data, type_base.clone())?;
-        fields.push(aggregate_field_from_decl(data, name, _type)?);
+        let (name, ty) = parse_base_mods(data, type_base.clone())?;
+        fields.push(aggregate_field_from_decl(data, name, ty)?);
 
         if !try_next!(data.tokens, operator!(Comma)) {
             break;
@@ -199,7 +199,7 @@ fn predeclaration_type(
             name: Some(definition_name),
             visibility: data.visibility,
             template_prototype,
-            _type: ty.clone(),
+            ty: ty.clone(),
             tag: Some(predeclaration),
         });
     }
@@ -210,7 +210,7 @@ fn predeclaration_type(
 fn defined_type(
     data: &mut ParserData,
     name: Option<CXIdent>,
-    _type: HIRType,
+    ty: HIRType,
     template_prototype: Option<HIRTemplatePrototype>,
     predeclaration: HIRTagKind,
 ) -> CXResult<HIRType> {
@@ -222,7 +222,7 @@ fn defined_type(
             name: Some(name.clone()),
             visibility: data.visibility,
             template_prototype,
-            _type,
+            ty,
             tag: Some(predeclaration),
         });
 
@@ -236,7 +236,7 @@ fn defined_type(
         // If the structure definition is anonymous, it can only be parsed as
         // an in-place type.
 
-        Ok(_type)
+        Ok(ty)
     }
 }
 
@@ -411,7 +411,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
 
         match parse_initializer(data) {
             // Success Path = Valid Type + No Name
-            Ok((None, _type, _)) => variants.push(HIRField::standard(name.to_string(), _type)),
+            Ok((None, ty, _)) => variants.push(HIRField::standard(name.to_string(), ty)),
 
             Ok((Some(_), _, _)) => {
                 return parse_point_error(
@@ -775,7 +775,7 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
         return parse_point_error(&data.tokens, &UNEXPECTED_END, Some("type".into()));
     };
 
-    let _type = match &next_token.kind {
+    let ty = match &next_token.kind {
         identifier!() => {
             let Some(ident) = try_parse_type_identifier(data)? else {
                 unreachable!();
@@ -806,11 +806,9 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
 
     let specifiers = parse_specifier(&mut data.tokens);
 
-    Ok(_type?.add_specifier(specifiers).with_range(token_range(
-        data,
-        start_index,
-        data.tokens.index,
-    )))
+    Ok(ty?
+        .add_specifier(specifiers)
+        .with_range(token_range(data, start_index, data.tokens.index)))
 }
 
 pub(crate) fn parse_base_mods(
@@ -831,8 +829,8 @@ pub(crate) fn parse_initializer(
     let type_base = parse_type_base(data)?;
     parse_attributes(&mut data.tokens, &mut prefix_specs.attributes);
 
-    let (name, _type) = parse_base_mods(data, type_base.add_specifier(prefix_specs.qualifiers))?;
-    Ok((name, _type, prefix_specs))
+    let (name, ty) = parse_base_mods(data, type_base.add_specifier(prefix_specs.qualifiers))?;
+    Ok((name, ty, prefix_specs))
 }
 
 pub(crate) fn parse_typedef_initializer(

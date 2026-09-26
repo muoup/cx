@@ -88,9 +88,9 @@ pub(crate) fn typecheck_is(
                 name: inner_name.clone(),
                 local_id: inner_local_id,
             },
-            _type: variant_ref_type,
+            ty: variant_ref_type,
         };
-        if tc_lhs.source._type.is_memory_reference() {
+        if tc_lhs.source.ty.is_memory_reference() {
             env.symbols
                 .insert_borrowed_local_value(QualifiedName::new_raw(inner_name.clone()), binding);
         } else {

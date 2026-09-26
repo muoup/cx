@@ -40,7 +40,7 @@ pub enum HIRStmt {
         name: Option<CXIdent>,
         visibility: VisibilityMode,
         template_prototype: Option<HIRTemplatePrototype>,
-        _type: HIRType,
+        ty: HIRType,
         tag: Option<HIRTagKind>,
     },
 

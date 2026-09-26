@@ -59,7 +59,7 @@ pub fn complete_template_input(
         .map(|param| complete_type_id(env, namespace, param))
         .collect::<CXResult<Vec<_>>>()?;
 
-    Ok(THIRTemplateInput { args })
+    Ok(THIRTemplateInput::new(args))
 }
 
 pub fn complete_type(
@@ -335,7 +335,7 @@ pub fn complete_prototype(
     if params.len() == 1 {
         let first_param = &params[0];
 
-        if first_param._type.is_void() && first_param.name.is_none() {
+        if first_param.ty().is_void() && first_param.name().is_none() {
             params.clear();
         }
     }
@@ -351,12 +351,12 @@ pub fn complete_prototype(
     Ok(THIRFnPrototype::new(
         symbol_name,
         prototype.linkage,
-        THIRFnSignature {
+        THIRFnSignature::new(
             return_type,
             params,
-            var_args: prototype.var_args,
-            contract: prototype.contract.clone(),
-        },
+            prototype.var_args,
+            prototype.contract.clone(),
+        ),
     ))
     .map(|prototype| {
         prototype
@@ -370,34 +370,34 @@ pub fn complete_comptime_prototype(
     namespace: &NamespacePath,
     prototype: &HIRComptimeFnPrototype,
 ) -> CXResult<THIRComptimeFnPrototype> {
-    let return_type = THIRComptimeValueType {
-        expr: prototype.return_type.expr,
-        params: prototype
+    let return_type = THIRComptimeValueType::new(
+        prototype.return_type.expr,
+        prototype
             .return_type
             .params
             .iter()
             .map(|param| complete_type(env, namespace, param))
             .collect::<CXResult<Vec<_>>>()?,
-        _type: complete_type(env, namespace, &prototype.return_type._type)?,
-    };
+        complete_type(env, namespace, &prototype.return_type.ty)?,
+    );
     let params = prototype
         .params
         .iter()
         .map(|param| {
-            Ok(THIRComptimeParameter {
-                name: param.name.clone(),
-                local_id: THIRLocalID::fresh(),
-                value_type: THIRComptimeValueType {
-                    expr: param.value_type.expr,
-                    params: param
+            Ok(THIRComptimeParameter::new(
+                param.name.clone(),
+                THIRLocalID::fresh(),
+                THIRComptimeValueType::new(
+                    param.value_type.expr,
+                    param
                         .value_type
                         .params
                         .iter()
                         .map(|param| complete_type(env, namespace, param))
                         .collect::<CXResult<Vec<_>>>()?,
-                    _type: complete_type(env, namespace, &param.value_type._type)?,
-                },
-            })
+                    complete_type(env, namespace, &param.value_type.ty)?,
+                ),
+            ))
         })
         .collect::<CXResult<Vec<_>>>()?;
 
@@ -433,17 +433,17 @@ fn complete_explicit_parameters(
         .params
         .iter()
         .map(|param| {
-            let completed = complete_type(env, namespace, &param._type)?;
-            let _type = if let Some(inner) = env.symbols.array_inner(&completed) {
+            let completed = complete_type(env, namespace, &param.ty)?;
+            let ty = if let Some(inner) = env.symbols.array_inner(&completed) {
                 env.symbols.pointer_to(inner.clone())
             } else {
                 completed
             };
-            Ok(THIRParameter {
-                name: param.name.clone(),
-                local_id: THIRLocalID::fresh(),
-                _type,
-            })
+            Ok(THIRParameter::new(
+                param.name.clone(),
+                THIRLocalID::fresh(),
+                ty,
+            ))
         })
         .collect::<CXResult<Vec<_>>>()
 }
@@ -852,15 +852,11 @@ fn complete_field(
     field: &HIRField,
 ) -> CXResult<THIRField> {
     match field {
-        HIRField::Standard { name, _type } => {
-            let id = complete_type_id(env, namespace, _type)?;
+        HIRField::Standard { name, ty } => {
+            let id = complete_type_id(env, namespace, ty)?;
 
             if !env.symbols.contains_type_id(id) {
-                return env.log_error(
-                    _type.range(),
-                    &catalogue::INCOMPLETE_TYPE,
-                    format!("{}", name),
-                );
+                return env.log_error(ty.range(), &catalogue::INCOMPLETE_TYPE, format!("{}", name));
             }
 
             if matches!(
@@ -870,11 +866,7 @@ fn complete_field(
                     ..
                 }
             ) {
-                return env.log_error(
-                    _type.range(),
-                    &catalogue::INCOMPLETE_TYPE,
-                    format!("{}", name),
-                );
+                return env.log_error(ty.range(), &catalogue::INCOMPLETE_TYPE, format!("{}", name));
             }
 
             Ok(THIRField::standard(name.clone(), id))

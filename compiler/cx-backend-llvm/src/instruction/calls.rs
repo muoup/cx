@@ -122,7 +122,7 @@ pub(super) fn apply_call_abi_attributes<'a>(
             LMIRParameterABI::Direct { slots } => index += slots.len(),
             LMIRParameterABI::Indirect { .. } => index += 1,
             LMIRParameterABI::ByValue { alignment } => {
-                let pointee = bc_llvm_type(global_state.context, &parameter._type)?;
+                let pointee = bc_llvm_type(global_state.context, &parameter.ty)?;
                 call.add_attribute(
                     AttributeLoc::Param(index as u32),
                     attr_byval(global_state.context, pointee),
@@ -149,7 +149,7 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
 
     let memory = memory.into_pointer_value();
     if slots.len() == 1 {
-        let ty = any_to_basic_type(bc_llvm_type(global_state.context, &slots[0]._type)?)?;
+        let ty = any_to_basic_type(bc_llvm_type(global_state.context, &slots[0].ty)?)?;
         let loaded = function_state
             .builder
             .build_load(ty, memory, inst_num().as_str())
@@ -157,14 +157,14 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
         loaded
             .as_instruction_value()
             .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
-            .set_alignment(slots[0]._type.alignment() as u32)
+            .set_alignment(slots[0].ty.alignment() as u32)
             .map_err(LLVMError::from_error)?;
         return Ok(loaded);
     }
 
     let fields = slots
         .iter()
-        .map(|slot| any_to_basic_type(bc_llvm_type(global_state.context, &slot._type)?))
+        .map(|slot| any_to_basic_type(bc_llvm_type(global_state.context, &slot.ty)?))
         .collect::<LLVMResult<Vec<_>>>()?;
     let struct_type = global_state.context.struct_type(fields.as_slice(), false);
     let mut aggregate = struct_type.const_zero();
@@ -190,7 +190,7 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
                 inst_num().as_str(),
             )
             .map_err(LLVMError::from_error)?;
-        let field_ty = any_to_basic_type(bc_llvm_type(global_state.context, &slot._type)?)?;
+        let field_ty = any_to_basic_type(bc_llvm_type(global_state.context, &slot.ty)?)?;
         let field = function_state
             .builder
             .build_load(field_ty, field_ptr, inst_num().as_str())
@@ -198,7 +198,7 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
         field
             .as_instruction_value()
             .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
-            .set_alignment(slot._type.alignment() as u32)
+            .set_alignment(slot.ty.alignment() as u32)
             .map_err(LLVMError::from_error)?;
         aggregate = function_state
             .builder

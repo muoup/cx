@@ -109,7 +109,7 @@ fn typecheck_expr_inner(
                     },
                     yields,
                 },
-                _type: result_type,
+                ty: result_type,
             };
 
             TypecheckResult::from(block)
@@ -137,14 +137,14 @@ fn typecheck_expr_inner(
                     .standard_ready_coerce(env, deferred.token_range())
             })?;
 
-            if !deferred._type.is_void() {
+            if !deferred.ty.is_void() {
                 return env.log_error(
                     expr.token_range(),
                     &catalogue::TYPE_MISMATCH,
                     (
                         "defer statement".into(),
                         "void type".into(),
-                        format!("{}", deferred._type.display_with(&env.symbols)),
+                        format!("{}", deferred.ty.display_with(&env.symbols)),
                     ),
                 );
             }
@@ -185,7 +185,7 @@ fn typecheck_expr_inner(
         HIRExprKind::BoolLiteral(value) => TypecheckResult::from(THIRExpression {
             token_range: expr.token_range().clone(),
             kind: THIRExpressionKind::BoolLiteral(*value),
-            _type: THIRType::bool(),
+            ty: THIRType::bool(),
         }),
 
         HIRExprKind::FloatLiteral { val, suffix } => {
@@ -199,7 +199,7 @@ fn typecheck_expr_inner(
         ),
 
         HIRExprKind::VarDeclaration {
-            _type,
+            ty,
             name,
             initial_value,
             linkage,
@@ -207,7 +207,7 @@ fn typecheck_expr_inner(
             env,
             namespace,
             expr,
-            _type,
+            ty,
             name,
             initial_value.as_ref().map(|v| v.as_ref()),
             *linkage,
@@ -218,14 +218,14 @@ fn typecheck_expr_inner(
             template_input,
         } => typecheck_identifier(env, namespace, expr, name, template_input.as_ref())?,
 
-        HIRExprKind::VaArg { list, _type } => {
+        HIRExprKind::VaArg { list, ty } => {
             let list = typecheck_va_list(env, namespace, list)?;
-            let _type = complete_type(env, namespace, _type)?;
+            let ty = complete_type(env, namespace, ty)?;
             TypecheckResult::new(
-                _type.clone(),
+                ty.clone(),
                 THIRExpressionKind::VaArg {
                     list: Box::new(list),
-                    _type: _type.clone(),
+                    ty,
                 },
             )
         }
@@ -268,7 +268,7 @@ fn typecheck_expr_inner(
                     then_branch: Box::new(then_result),
                     else_branch: else_result.map(Box::new),
                 },
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -284,21 +284,21 @@ fn typecheck_expr_inner(
             let then_result = typecheck_expr(env, namespace, then_branch, expected_type)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
-            let else_expected = (!then_result._type.is_unreachable())
-                .then_some(&then_result._type)
+            let else_expected = (!then_result.ty.is_unreachable())
+                .then_some(&then_result.ty)
                 .or(expected_type);
             let else_result = typecheck_expr(env, namespace, else_branch, else_expected)
                 .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
-            let result_type = if then_result._type.is_unreachable() {
-                else_result._type.clone()
+            let result_type = if then_result.ty.is_unreachable() {
+                else_result.ty.clone()
             } else {
-                then_result._type.clone()
+                then_result.ty.clone()
             };
 
             let then_result =
                 implicit_cast(env, then_result, &result_type).map(|v| THIRExpression {
-                    _type: THIRType::unit(),
+                    ty: THIRType::unit(),
                     kind: THIRExpressionKind::Yield {
                         value: Some(Box::new(v)),
                     },
@@ -306,7 +306,7 @@ fn typecheck_expr_inner(
                 })?;
             let else_result =
                 implicit_cast(env, else_result, &result_type).map(|v| THIRExpression {
-                    _type: THIRType::unit(),
+                    ty: THIRType::unit(),
                     kind: THIRExpressionKind::Yield {
                         value: Some(Box::new(v)),
                     },
@@ -320,7 +320,7 @@ fn typecheck_expr_inner(
                     then_branch: Box::new(then_result),
                     else_branch: Some(Box::new(else_result)),
                 },
-                _type: result_type,
+                ty: result_type,
             })
         }
 
@@ -347,7 +347,7 @@ fn typecheck_expr_inner(
                     body: Box::new(body_result),
                     pre_eval: *pre_eval,
                 },
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -386,7 +386,7 @@ fn typecheck_expr_inner(
                     increment: Box::new(increment_result),
                     body: Box::new(body_result),
                 },
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -411,7 +411,7 @@ fn typecheck_expr_inner(
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Break,
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -436,7 +436,7 @@ fn typecheck_expr_inner(
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Continue,
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -453,7 +453,7 @@ fn typecheck_expr_inner(
             TypecheckResult::from(THIRExpression {
                 token_range: TokenRange::internal(),
                 kind: THIRExpressionKind::Goto { name: name.clone() },
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
@@ -476,13 +476,13 @@ fn typecheck_expr_inner(
                     name: name.clone(),
                     statement: Box::new(statement),
                 },
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             })
         }
 
         HIRExprKind::Return { value } => {
             let return_type = if env.in_staged_context() || env.in_runtime_emit_context() {
-                let Some(return_type) = env.staging_context().return_type else {
+                let Some(return_type) = env.staging_context().return_type().cloned() else {
                     return env.log_error(
                         expr.token_range(),
                         &catalogue::INVALID_CONTEXT,
@@ -491,7 +491,7 @@ fn typecheck_expr_inner(
                 };
                 return_type
             } else {
-                env.current_function().signature().return_type.clone()
+                env.current_function().signature().return_type().clone()
             };
             if return_type.is_unreachable() {
                 return typecheck_return(env, namespace, expr.token_range(), None);
@@ -508,7 +508,7 @@ fn typecheck_expr_inner(
                             staged,
                         ))) if env.in_comptime_context() => {
                             let mut reference = staged.reference;
-                            reference._type = return_type.clone();
+                            reference.ty = return_type.clone();
                             Ok(reference)
                         }
                         result => result
@@ -597,11 +597,11 @@ fn typecheck_expr_inner(
 
         HIRExprKind::Void => typecheck_unit(),
 
-        HIRExprKind::SizeOfType { _type } => typecheck_sizeof_type(env, namespace, expr, _type)?,
+        HIRExprKind::SizeOfType { ty } => typecheck_sizeof_type(env, namespace, expr, ty)?,
 
         HIRExprKind::SizeOfExpr { expr } => typecheck_sizeof_expr(env, namespace, expr)?,
 
-        HIRExprKind::AlignOfType { _type } => typecheck_alignof_type(env, namespace, expr, _type)?,
+        HIRExprKind::AlignOfType { ty } => typecheck_alignof_type(env, namespace, expr, ty)?,
 
         HIRExprKind::AlignOfExpr { expr } => typecheck_alignof_expr(env, namespace, expr)?,
 

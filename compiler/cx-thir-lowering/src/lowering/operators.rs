@@ -39,11 +39,11 @@ pub(super) fn lower_binary_op<'thir>(
         return lower_short_circuit(builder, expr, lhs, rhs, op);
     }
 
-    let rhs_type = &rhs._type;
+    let rhs_type = &rhs.ty;
     let lhs = lower_expression(builder, lhs)?;
     let rhs = lower_expression(builder, rhs)?;
 
-    let result_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
+    let result_type = lower_type(builder, &expr.ty).map_err(LowerStop::Diagnostic)?;
     let out = builder.fun_mut().new_register(result_type, None);
 
     let target = MIRTarget::Register(out);
@@ -270,7 +270,7 @@ pub(super) fn lower_binary_op<'thir>(
             let offset_ty = lower_type(builder, rhs_type).map_err(LowerStop::Diagnostic)?;
             let scaled = builder.fun_mut().new_register(offset_ty, None);
             let integer_ty = match &rhs_type.kind {
-                THIRTypeKind::Integer { _type, .. } => lower_int_type(*_type),
+                THIRTypeKind::Integer { ty, .. } => lower_int_type(*ty),
                 _ => unreachable!("pointer offset must be an integer"),
             };
             builder.fun_mut().emit_intrinsic(
@@ -324,7 +324,7 @@ pub(crate) fn lower_short_circuit<'thir>(
     let lhs_value = lower_expression(builder, lhs)?;
     let rhs_block = builder.fun_mut().new_block("logical.rhs");
     let merge_block = builder.fun_mut().new_block("logical.merge");
-    let result_type_id = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
+    let result_type_id = lower_type(builder, &expr.ty).map_err(LowerStop::Diagnostic)?;
 
     let result = builder
         .fun_mut()
@@ -390,7 +390,7 @@ pub(super) fn lower_unary_op<'thir>(
     }
 
     let operand = lower_expression(builder, operand)?;
-    let return_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
+    let return_type = lower_type(builder, &expr.ty).map_err(LowerStop::Diagnostic)?;
 
     let out = builder.fun_mut().new_register(return_type, None);
     let target = MIRTarget::Register(out);
@@ -430,10 +430,10 @@ fn lower_increment<'thir>(
     let operand_value = lower_expression(builder, operand)?;
     let operand_target = memory::expect_target(&operand_value);
 
-    let Some(inner_type) = builder.registry().mem_ref_inner(&operand._type) else {
+    let Some(inner_type) = builder.registry().mem_ref_inner(&operand.ty) else {
         unreachable!(
             "increment requires a memory reference type, got {:?}",
-            operand._type
+            operand.ty
         )
     };
 
@@ -711,7 +711,7 @@ pub(super) fn lower_address_of<'thir>(
     expr: &'thir THIRExpression,
     operand: &'thir THIRExpression,
 ) -> LowerResult<MIRValue> {
-    let result_type = lower_type(builder, &expr._type).map_err(LowerStop::Diagnostic)?;
+    let result_type = lower_type(builder, &expr.ty).map_err(LowerStop::Diagnostic)?;
     let out = builder.fun_mut().new_register(result_type, None);
     let target = MIRTarget::Register(out);
 
@@ -775,12 +775,12 @@ fn is_array_decay(
 
     let array_type = builder
         .registry()
-        .mem_ref_inner(&operand._type)
-        .unwrap_or(&operand._type);
+        .mem_ref_inner(&operand.ty)
+        .unwrap_or(&operand.ty);
     let Some(array_inner) = builder.registry().array_inner(array_type) else {
         return false;
     };
-    let Some(pointer_inner) = builder.registry().ptr_inner(&expr._type) else {
+    let Some(pointer_inner) = builder.registry().ptr_inner(&expr.ty) else {
         return false;
     };
 

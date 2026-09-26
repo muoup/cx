@@ -47,15 +47,15 @@ pub struct MIRTypeRegistryBuilder {
 impl<'thir> MIRBuilder<'thir> {
     pub fn new(thir: &'thir THIRUnit) -> Self {
         let mut builder = Self {
-            types: MIRTypeRegistryBuilder::new(*thir.registry.architecture()),
+            types: MIRTypeRegistryBuilder::new(*thir.registry().architecture()),
             module: MIRUnitBuilder::new(),
-            registry: &thir.registry,
+            registry: thir.registry(),
             function: None,
         };
 
         builder
             .types
-            .reserve_id_space(thir.registry.type_id_bound());
+            .reserve_id_space(thir.registry().type_id_bound());
 
         builder
     }

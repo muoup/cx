@@ -48,7 +48,7 @@ pub(crate) fn lower_global(
 
     let previous = env.items.generated_global(&symbol_name).cloned();
     if let Some(previous) = &previous {
-        if previous.initializer.is_some() && initializer.is_some() {
+        if previous.initializer().is_some() && initializer.is_some() {
             return env.log_error(
                 hir_type.range(),
                 &catalogue::VARIABLE_REDECLARATION,
@@ -56,8 +56,8 @@ pub(crate) fn lower_global(
             );
         }
 
-        if !previous._type.contextual_eq(&declared_type, &env.symbols)
-            && !compatible_reassignment(env, &previous._type, &declared_type)?
+        if !previous.ty().contextual_eq(&declared_type, &env.symbols)
+            && !compatible_reassignment(env, previous.ty(), &declared_type)?
         {
             return env.log_error(
                 hir_type.range(),
@@ -76,8 +76,8 @@ pub(crate) fn lower_global(
         .unwrap_or_else(|| (declared_type.clone(), None));
 
     if let Some(previous) = &previous
-        && !previous._type.contextual_eq(&global_type, &env.symbols)
-        && !compatible_reassignment(env, &previous._type, &global_type)?
+        && !previous.ty().contextual_eq(&global_type, &env.symbols)
+        && !compatible_reassignment(env, previous.ty(), &global_type)?
     {
         return env.log_error(
             hir_type.range(),
@@ -95,14 +95,14 @@ pub(crate) fn lower_global(
             Some(previous),
         ) if initializer.is_none()
             && matches!(
-                previous._type.kind,
+                previous.ty().kind,
                 THIRTypeKind::Array {
                     length: THIRArrayLength::Known(_),
                     ..
                 }
             ) =>
         {
-            previous._type.clone()
+            previous.ty().clone()
         }
         _ => global_type,
     };
@@ -140,7 +140,7 @@ pub(crate) fn lower_global(
             kind: THIRExpressionKind::GlobalVariable {
                 symbol: CXIdent::new(symbol_name.clone()),
             },
-            _type: global_value_type,
+            ty: global_value_type,
         },
     );
 
@@ -149,15 +149,13 @@ pub(crate) fn lower_global(
     }
 
     let is_mutable = !global_type.get_specifier(HIR_CONST);
-    let global = THIRGlobalVariable {
-        name: CXIdent::new(symbol_name),
-        _type: global_type,
-
-        is_mutable,
-        initializer: comptime_init,
-
+    let global = THIRGlobalVariable::new(
+        CXIdent::new(symbol_name),
+        global_type,
+        comptime_init,
         linkage,
-    };
+        is_mutable,
+    );
 
     env.items.push_generated_global(global, true);
     Ok(())

@@ -135,7 +135,7 @@ pub(super) fn lower_constant(
         MIRConstant::Integer { ty, value } => context.integer(*value, convert_integer_type(*ty)),
         MIRConstant::Float { ty, value } => LMIRValue::FloatImmediate {
             val: *value,
-            _type: LMIRType::with_implicit_abi(
+            ty: LMIRType::with_implicit_abi(
                 context.types().architecture(),
                 LMIRTypeKind::Float(convert_float_type(*ty)),
             ),
@@ -172,7 +172,7 @@ pub(super) fn lower_constant(
                 context,
                 LMIRInstructionKind::ZeroMemory {
                     memory: address.clone(),
-                    _type: context.ty(*ty),
+                    ty: context.ty(*ty),
                 },
             );
             let kind = context.types().definition(*ty).unwrap().kind().clone();
@@ -188,7 +188,7 @@ pub(super) fn lower_constant(
                         LMIRInstructionKind::Store {
                             memory: tag,
                             value: context.integer(*index as i128, LMIRIntegerType::I8),
-                            _type: LMIRType::with_implicit_abi(
+                            ty: LMIRType::with_implicit_abi(
                                 context.types().architecture(),
                                 LMIRTypeKind::Integer(LMIRIntegerType::I8),
                             ),

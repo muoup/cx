@@ -39,11 +39,11 @@ pub(super) fn lower_pattern_test<'thir>(
             .map_err(LowerStop::Diagnostic);
         }
         THIRPattern::TaggedUnionVariant { variant_index, .. } => {
-            let sum_type = match &lhs._type.kind {
+            let sum_type = match &lhs.ty.kind {
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
                     builder.registry().resolve_type_id(*inner_type)
                 }
-                _ => &lhs._type,
+                _ => &lhs.ty,
             };
             let sum_type_id = lower_type(builder, sum_type).map_err(LowerStop::Diagnostic)?;
             let tag_type = builder.types_mut().intern(MIRType::new(
@@ -80,24 +80,24 @@ pub(super) fn lower_pattern_test<'thir>(
                 Some(value) => value,
                 None => lower_expression(builder, lhs)?,
             };
-            let ty = match lhs._type.kind {
-                THIRTypeKind::Integer { _type, .. } => lower_int_type(_type),
+            let ty = match lhs.ty.kind {
+                THIRTypeKind::Integer { ty, .. } => lower_int_type(ty),
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
                     let inner = builder.registry().resolve_type_id(inner_type);
                     match inner.kind {
-                        THIRTypeKind::Integer { _type, .. } => lower_int_type(_type),
+                        THIRTypeKind::Integer { ty, .. } => lower_int_type(ty),
                         _ => unreachable!("integer pattern has non-integer subject"),
                     }
                 }
                 _ => unreachable!("integer pattern has non-integer subject"),
             };
-            let value_type = match &lhs._type.kind {
+            let value_type = match &lhs.ty.kind {
                 THIRTypeKind::MemoryReference { inner_type, .. } => {
                     builder.registry().resolve_type_id(*inner_type)
                 }
-                _ => &lhs._type,
+                _ => &lhs.ty,
             };
-            let input = if lhs._type.is_memory_reference() {
+            let input = if lhs.ty.is_memory_reference() {
                 let type_id = lower_type(builder, value_type).map_err(LowerStop::Diagnostic)?;
                 memory::copy(builder, input, type_id, &lhs.token_range)
             } else {

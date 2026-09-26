@@ -72,7 +72,7 @@ pub enum HIRSymbolKind {
     ComptimeFunction(HIRComptimeFunctionSymbol),
     AddressableGlobal {
         name: CXIdent,
-        _type: HIRType,
+        ty: HIRType,
         symbol_naming: HIRSymbolNameScheme,
     },
     EnumIdent {

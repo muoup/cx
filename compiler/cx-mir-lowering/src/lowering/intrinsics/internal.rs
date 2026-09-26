@@ -15,10 +15,14 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
         I::AdoptPlace { place, address } => {
             let result = context.places[place].clone();
             let address = lower_value(context, address);
-            let LMIRValue::Register { register, _type } = result else {
+            let LMIRValue::Register { register, ty } = result else {
                 unreachable!("adopted place must have a reserved pointer register")
             };
-            context.emit(LMIRInstructionKind::Alias { value: address }, _type, Some(register));
+            context.emit(
+                LMIRInstructionKind::Alias { value: address },
+                ty,
+                Some(register),
+            );
         }
         I::PlaceAddress { out, place } => {
             write_target(context, *out, context.places[place].clone());
@@ -111,7 +115,7 @@ pub(super) fn variadic(context: &mut FunctionContext<'_, '_>, op: &MIRVAIntrinsi
                 *out,
                 LMIRInstructionKind::VaArg {
                     list,
-                    _type: context.ty(*ty),
+                    ty: context.ty(*ty),
                 },
             );
         }

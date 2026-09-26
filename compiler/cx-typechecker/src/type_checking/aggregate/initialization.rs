@@ -188,7 +188,7 @@ fn typecheck_array_initializer(
         let integer_type = env.get_intrinsic_type("int");
         THIRExpression {
             token_range: TokenRange::internal(),
-            _type: integer_type,
+            ty: integer_type,
             kind: THIRExpressionKind::IntLiteral(indices.len() as i64),
         }
     });

@@ -51,7 +51,7 @@ pub struct HIRFunctionPrototype {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct HIRParameter {
     pub name: Option<CXIdent>,
-    pub _type: HIRType,
+    pub ty: HIRType,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -72,7 +72,7 @@ pub struct HIRComptimeParameter {
 pub struct HIRComptimeValueType {
     pub expr: bool,
     pub params: Vec<HIRType>,
-    pub _type: HIRType,
+    pub ty: HIRType,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

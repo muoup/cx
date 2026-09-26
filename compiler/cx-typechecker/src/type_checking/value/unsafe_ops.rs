@@ -19,7 +19,7 @@ pub(crate) fn typecheck_unsafe(
     let inner_expr = inner_result.standard_ready_coerce(env, inner.token_range())?;
 
     let result = TypecheckResult::new(
-        inner_expr._type.clone(),
+        inner_expr.ty.clone(),
         THIRExpressionKind::Unsafe {
             expression: Box::new(inner_expr),
         },

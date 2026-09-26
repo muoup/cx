@@ -36,7 +36,7 @@ pub fn typecheck_match(
         .and_then(|value| value.standard_ready_coerce(env, condition.token_range()))
         .map(|value| resolve_indirect_base(env, value))?;
     let expr_type = expr_value.source_type.clone();
-    let condition_owned = !expr_value.source._type.is_memory_reference();
+    let condition_owned = !expr_value.source.ty.is_memory_reference();
 
     env.push_yield_scope(expected_type.cloned());
 
@@ -179,7 +179,7 @@ pub fn typecheck_match(
                             name: inner_name.clone(),
                             local_id,
                         },
-                        _type: variant_ref_type,
+                        ty: variant_ref_type,
                     };
                     if condition_owned {
                         env.symbols.insert_local_value(
@@ -308,7 +308,7 @@ fn typecheck_arm(
                 name: name.clone(),
                 local_id,
             },
-            _type: binding_type,
+            ty: binding_type,
         };
         if owned {
             env.symbols
@@ -353,7 +353,7 @@ fn validate_variant_template_input(
         );
     };
 
-    if !completed_input.contextual_eq(&template_data.template_input, &env.symbols) {
+    if !completed_input.contextual_eq(template_data.template_input(), &env.symbols) {
         return env.log_error(condition.token_range(), &catalogue::INVALID_PATTERN, ());
     }
 

@@ -32,7 +32,7 @@ pub(super) fn lower_call(
         if let Some(parameter) = signature.params.get(index) {
             let param_ty = parameter_type(context, callee, index);
             match &parameter.abi {
-                LMIRParameterABI::Direct { slots } if parameter._type.is_memory_resident() => {
+                LMIRParameterABI::Direct { slots } if parameter.ty.is_memory_resident() => {
                     let address = values::lower_rvalue(context, argument, param_ty);
                     for slot in slots {
                         let source = memory::offset(context, address.clone(), slot.offset as i64);
@@ -40,9 +40,9 @@ pub(super) fn lower_call(
                             context,
                             LMIRInstructionKind::Load {
                                 memory: source,
-                                _type: slot._type.clone(),
+                                ty: slot.ty.clone(),
                             },
-                            slot._type.clone(),
+                            slot.ty.clone(),
                         ));
                     }
                 }
@@ -106,7 +106,7 @@ pub(super) fn lower_call(
                 LMIRInstructionKind::Store {
                     memory: address.clone(),
                     value: returned,
-                    _type: context.ty(ty),
+                    ty: context.ty(ty),
                 },
             );
             memory::assign(

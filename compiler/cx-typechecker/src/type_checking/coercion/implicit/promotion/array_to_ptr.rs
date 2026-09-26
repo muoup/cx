@@ -17,7 +17,7 @@ use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResul
 ///
 
 pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResult<CoercionResult> {
-    let Some(mem_inner) = env.symbols.mem_ref_inner(&expr._type).cloned() else {
+    let Some(mem_inner) = env.symbols.mem_ref_inner(&expr.ty).cloned() else {
         return CoercionResult::unapplied(expr);
     };
 
@@ -32,7 +32,7 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
     let new_type = env.symbols.pointer_to(array_inner);
 
     let coerced = THIRExpression {
-        _type: new_type,
+        ty: new_type,
         token_range: expr.token_range.clone(),
         kind: THIRExpressionKind::AddressOf {
             operand: Box::new(expr),

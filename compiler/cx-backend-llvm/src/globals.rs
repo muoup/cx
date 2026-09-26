@@ -21,7 +21,7 @@ pub(crate) fn declare_global_variable(
     state: &mut GlobalState,
     variable: &LMIRGlobalValue,
 ) -> LLVMResult<()> {
-    match &variable._type {
+    match &variable.ty {
         LMIRGlobalType::StringLiteral(str) => {
             let val = state.context.const_string(str.as_bytes(), true);
 
@@ -39,15 +39,15 @@ pub(crate) fn declare_global_variable(
         }
 
         LMIRGlobalType::Variable {
-            _type,
+            ty,
             state: global_state,
         } => {
             let basic_type = match global_state {
                 LMIRGlobalState::Initialized(initializer) => {
-                    global_llvm_type(state, _type, &[initializer])?
+                    global_llvm_type(state, ty, &[initializer])?
                 }
                 LMIRGlobalState::ZeroInitialized | LMIRGlobalState::External => {
-                    let llvm_type = bc_llvm_type(state.context, _type)?;
+                    let llvm_type = bc_llvm_type(state.context, ty)?;
                     any_to_basic_type(llvm_type)?
                 }
             };
@@ -73,9 +73,9 @@ pub(crate) fn define_global_variable(
     variable: &LMIRGlobalValue,
 ) -> LLVMResult<()> {
     let LMIRGlobalType::Variable {
-        _type,
+        ty,
         state: global_state,
-    } = &variable._type
+    } = &variable.ty
     else {
         return Ok(());
     };
@@ -84,11 +84,9 @@ pub(crate) fn define_global_variable(
     }
 
     let basic_type = match global_state {
-        LMIRGlobalState::Initialized(initializer) => {
-            global_llvm_type(state, _type, &[initializer])?
-        }
+        LMIRGlobalState::Initialized(initializer) => global_llvm_type(state, ty, &[initializer])?,
         LMIRGlobalState::ZeroInitialized => {
-            let llvm_type = bc_llvm_type(state.context, _type)?;
+            let llvm_type = bc_llvm_type(state.context, ty)?;
             any_to_basic_type(llvm_type)?
         }
         LMIRGlobalState::External => unreachable!(),
@@ -144,25 +142,25 @@ fn get_global<'ctx>(
 
 fn global_llvm_type<'ctx>(
     state: &GlobalState<'ctx>,
-    _type: &LMIRType,
+    ty: &LMIRType,
     initializers: &[&LMIRGlobalInitializer],
 ) -> LLVMResult<BasicTypeEnum<'ctx>> {
     let base_type = || -> LLVMResult<BasicTypeEnum<'ctx>> {
-        let llvm_type = bc_llvm_type(state.context, _type)?;
+        let llvm_type = bc_llvm_type(state.context, ty)?;
         any_to_basic_type(llvm_type)
     };
 
     if !initializers
         .iter()
-        .any(|initializer| has_function_pointer_initializer(_type, initializer))
+        .any(|initializer| has_function_pointer_initializer(ty, initializer))
     {
         return base_type();
     }
 
-    match &_type.kind {
+    match &ty.kind {
         LMIRTypeKind::Opaque { bytes }
             if *bytes == state.architecture.pointer_size()
-                && usize::from(_type.alignment) == state.architecture.pointer_alignment() =>
+                && usize::from(ty.alignment) == state.architecture.pointer_alignment() =>
         {
             Ok(state
                 .context
@@ -209,11 +207,8 @@ fn global_llvm_type<'ctx>(
     }
 }
 
-fn has_function_pointer_initializer(
-    _type: &LMIRType,
-    initializer: &LMIRGlobalInitializer,
-) -> bool {
-    match (&_type.kind, initializer) {
+fn has_function_pointer_initializer(ty: &LMIRType, initializer: &LMIRGlobalInitializer) -> bool {
+    match (&ty.kind, initializer) {
         (LMIRTypeKind::Opaque { .. }, LMIRGlobalInitializer::Function(_)) => true,
         (
             LMIRTypeKind::Opaque { .. },

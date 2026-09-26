@@ -17,20 +17,20 @@ pub(crate) fn predeclare_global<'thir>(
     builder: &mut MIRBuilder<'thir>,
     global: &'thir THIRGlobalVariable,
 ) -> CXResult<MIRGlobalID> {
-    let ty = lower_type(builder, &global._type)?;
-    let id = builder.module_mut().reserve_global(global.name.as_str());
+    let ty = lower_type(builder, global.ty())?;
+    let id = builder.module_mut().reserve_global(global.name().as_str());
     builder.module_mut().define_global(
         id,
         MIRGlobalVariable::new(
-            global.name.clone(),
-            global.linkage,
+            global.name().clone(),
+            global.linkage(),
             ty,
-            if global.linkage == LinkageMode::Extern || global.initializer.is_some() {
+            if global.linkage() == LinkageMode::Extern || global.initializer().is_some() {
                 MIRGlobalState::External
             } else {
                 MIRGlobalState::ZeroInitialized
             },
-            global.is_mutable,
+            global.is_mutable(),
         ),
     );
     Ok(id)
@@ -41,8 +41,7 @@ pub(crate) fn lower_global<'thir>(
     global: &'thir THIRGlobalVariable,
 ) -> Option<MIRGlobalInitRequest<'thir>> {
     global
-        .initializer
-        .as_ref()
+        .initializer()
         .map(|initializer| MIRGlobalInitRequest {
             global_id: id,
             initializer,

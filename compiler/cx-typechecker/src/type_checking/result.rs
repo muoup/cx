@@ -134,11 +134,11 @@ impl From<THIRExpression> for TypecheckResult {
 }
 
 impl TypecheckResult {
-    pub fn new(_type: THIRType, kind: THIRExpressionKind) -> Self {
+    pub fn new(ty: THIRType, kind: THIRExpressionKind) -> Self {
         Self::standard(THIRExpression {
             token_range: TokenRange::internal(),
             kind,
-            _type,
+            ty,
         })
     }
 
@@ -294,7 +294,7 @@ impl TypecheckResult {
     }
 
     pub fn ready_type(&self) -> Option<&THIRType> {
-        self.ready_expression().map(|expression| &expression._type)
+        self.ready_expression().map(|expression| &expression.ty)
     }
 
     pub fn apply_expected_type(

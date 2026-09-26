@@ -59,13 +59,13 @@ pub fn complete_staged_expr(
     deferred: DeferredStagedExpr,
     value_type: &THIRComptimeValueType,
 ) -> CXResult<THIRStagedExpr> {
-    if deferred.params.len() != value_type.params.len() {
+    if deferred.params.len() != value_type.params().len() {
         return env.log_error(
             deferred.body.token_range(),
             &catalogue::ARGUMENT_COUNT,
             (
                 "Staged expression".into(),
-                value_type.params.len(),
+                value_type.params().len(),
                 deferred.params.len(),
                 false,
             ),
@@ -75,7 +75,7 @@ pub fn complete_staged_expr(
     env.symbols.push_local_scope();
 
     let mut params = Vec::with_capacity(deferred.params.len());
-    for (name, ty) in deferred.params.into_iter().zip(&value_type.params) {
+    for (name, ty) in deferred.params.into_iter().zip(value_type.params()) {
         let local_id = THIRLocalID::fresh();
         env.symbols.insert_local_value(
             QualifiedName::new_raw(name.clone()),
@@ -85,21 +85,17 @@ pub fn complete_staged_expr(
                     name: name.clone(),
                     local_id,
                 },
-                _type: ty.clone(),
+                ty: ty.clone(),
             },
         );
-        params.push(THIRStagedParameter {
-            name,
-            local_id,
-            ty: ty.clone(),
-        });
+        params.push(THIRStagedParameter::new(name, local_id, ty.clone()));
     }
 
-    let rewritten = external_yield_block(&deferred.body, value_type._type.is_void());
+    let rewritten = external_yield_block(&deferred.body, value_type.ty().is_void());
     let body_expression = rewritten.as_ref().unwrap_or(&deferred.body);
     let body = env.in_staged(|env| {
-        let expected = (!value_type._type.is_void() && !value_type._type.is_unreachable())
-            .then_some(&value_type._type);
+        let expected = (!value_type.ty().is_void() && !value_type.ty().is_unreachable())
+            .then_some(value_type.ty());
         let result = typecheck_expr(env, namespace, body_expression, expected)?;
         let result = if let Some(expected) = expected {
             result.apply_expected_type(env, namespace, expected)?
@@ -144,7 +140,7 @@ fn collect_captures(staged: &THIRStagedExpr) -> Vec<THIRLocalID> {
     let mut references = Vec::new();
     let mut bindings = HashSet::new();
     for parameter in staged.params() {
-        bindings.insert(parameter.local_id);
+        bindings.insert(parameter.local_id());
     }
     collect_expression_locals(staged.expr(), &mut references, &mut bindings);
 
@@ -370,7 +366,7 @@ fn collect_expression_locals(
         }
         THIRExpressionKind::StagedExpression(nested) => {
             references.extend(nested.captures().iter().copied());
-            bindings.extend(nested.params().iter().map(|parameter| parameter.local_id));
+            bindings.extend(nested.params().iter().map(|parameter| parameter.local_id()));
             collect_expression_locals(nested.expr(), references, bindings);
         }
         THIRExpressionKind::Materialize { expr, with_params } => {
@@ -407,7 +403,7 @@ fn collect_postcondition(
     references: &mut Vec<THIRLocalID>,
     bindings: &mut HashSet<THIRLocalID>,
 ) {
-    collect_expression_locals(&postcondition.condition, references, bindings);
+    collect_expression_locals(postcondition.condition(), references, bindings);
 }
 
 fn collect_contract(
@@ -415,17 +411,17 @@ fn collect_contract(
     references: &mut Vec<THIRLocalID>,
     bindings: &mut HashSet<THIRLocalID>,
 ) {
-    if let Some(precondition) = &contract.precondition {
+    if let Some(precondition) = contract.precondition() {
         collect_expression_locals(precondition, references, bindings);
     }
-    if let Some(postcondition) = &contract.postcondition {
+    if let Some(postcondition) = contract.postcondition() {
         collect_postcondition(postcondition, references, bindings);
     }
 }
 
 pub fn into_expression(staged: THIRStagedExpr) -> THIRExpression {
     THIRExpression {
-        _type: staged.expr()._type.clone(),
+        ty: staged.expr().ty.clone(),
         token_range: staged.expr().token_range.clone(),
         kind: THIRExpressionKind::StagedExpression(staged),
     }

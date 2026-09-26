@@ -37,7 +37,7 @@ pub(super) fn lower_operand<'thir>(
             function,
             arguments,
             contract,
-            &expression._type,
+            &expression.ty,
             expression.token_range.clone(),
         ),
         _ => lower_expression(builder, expression).map(MIRComptimeOperand::Runtime),
@@ -107,11 +107,11 @@ fn lower_emit<'thir>(
         return Ok(MIRComptimeOperand::Known(MIRComptimeValue::Staged(id)));
     }
 
-    let result = lower_type(builder, &staged.expr()._type).map_err(LowerStop::Diagnostic)?;
+    let result = lower_type(builder, &staged.expr().ty).map_err(LowerStop::Diagnostic)?;
     let params = staged
         .params()
         .iter()
-        .map(|parameter| lower_type(builder, &parameter.ty))
+        .map(|parameter| lower_type(builder, parameter.ty()))
         .collect::<CXResult<Vec<_>>>()
         .map_err(LowerStop::Diagnostic)?;
     let out = builder
@@ -209,7 +209,7 @@ pub(super) fn materialize<'thir>(
         }
     }
     for (parameter, argument) in staged.parameters.iter().zip(lowered_args) {
-        locals.insert(parameter.local_id, argument);
+        locals.insert(parameter.local_id(), argument);
     }
 
     let saved = builder.fun_mut().replace_local_bindings(locals, comptime);

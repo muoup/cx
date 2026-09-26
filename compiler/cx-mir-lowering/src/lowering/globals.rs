@@ -14,8 +14,8 @@ pub(super) fn lower_globals(context: &mut GlobalContext<'_>) {
         let global = context.unit.global(id).expect("missing ordered MIR global");
         context.globals.push(LMIRGlobalValue {
             name: global.name().clone(),
-            _type: LMIRGlobalType::Variable {
-                _type: convert_type(global.ty(), context.unit.types()),
+            ty: LMIRGlobalType::Variable {
+                ty: convert_type(global.ty(), context.unit.types()),
                 state: LMIRGlobalState::External,
             },
             linkage: convert_linkage(global.linkage()),
@@ -44,8 +44,8 @@ fn lower_global(context: &mut GlobalContext<'_>, global: &MIRGlobalVariable) -> 
     };
     LMIRGlobalValue {
         name: global.name().clone(),
-        _type: LMIRGlobalType::Variable {
-            _type: convert_type(global.ty(), context.unit.types()),
+        ty: LMIRGlobalType::Variable {
+            ty: convert_type(global.ty(), context.unit.types()),
             state,
         },
         linkage,
@@ -68,11 +68,11 @@ fn lower_initializer(
     match value {
         MIRConstant::Integer { value, ty } => LMIRGlobalInitializer::Integer {
             value: *value,
-            _type: convert_integer_type(*ty),
+            ty: convert_integer_type(*ty),
         },
         MIRConstant::Float { value, ty } => LMIRGlobalInitializer::Float {
             value: *value,
-            _type: convert_float_type(*ty),
+            ty: convert_float_type(*ty),
         },
         MIRConstant::Aggregate { fields, .. } => {
             if matches!(destination_kind, MIRTypeKind::Union { .. })
@@ -116,7 +116,7 @@ fn lower_initializer(
                                 index,
                                 LMIRGlobalInitializer::Integer {
                                     value: i128::from(byte),
-                                    _type: convert_integer_type(MIRIntType::I8),
+                                    ty: convert_integer_type(MIRIntType::I8),
                                 },
                             )
                         })

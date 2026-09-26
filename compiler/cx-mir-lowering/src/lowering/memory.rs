@@ -17,10 +17,7 @@ pub(crate) fn temp(
     let register = LMIRRegister::new(format!("tmp.{}", context.next_register));
     context.next_register += 1;
     context.emit(kind, ty.clone(), Some(register.clone()));
-    LMIRValue::Register {
-        register,
-        _type: ty,
-    }
+    LMIRValue::Register { register, ty }
 }
 
 pub(crate) fn assign(
@@ -28,10 +25,10 @@ pub(crate) fn assign(
     out: MIRRegister,
     kind: LMIRInstructionKind,
 ) {
-    let LMIRValue::Register { register, _type } = context.reg(out) else {
+    let LMIRValue::Register { register, ty } = context.reg(out) else {
         unreachable!()
     };
-    context.emit(kind, _type, Some(register));
+    context.emit(kind, ty, Some(register));
 }
 
 pub(crate) fn offset(
@@ -60,7 +57,7 @@ pub(crate) fn allocate(context: &mut FunctionContext<'_, '_>, ty: MIRTypeID) -> 
     temp(
         context,
         LMIRInstructionKind::Allocate {
-            _type: context.ty(ty),
+            ty: context.ty(ty),
             alignment: layout.alignment() as u8,
         },
         context.pointer(),
@@ -94,7 +91,7 @@ pub(crate) fn store(
             LMIRInstructionKind::Store {
                 memory: address,
                 value,
-                _type: lowered,
+                ty: lowered,
             },
         );
     }
@@ -116,7 +113,7 @@ pub(crate) fn load(
             context,
             LMIRInstructionKind::Load {
                 memory: address,
-                _type: lowered.clone(),
+                ty: lowered.clone(),
             },
             lowered,
         )

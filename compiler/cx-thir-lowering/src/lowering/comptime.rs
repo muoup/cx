@@ -45,7 +45,7 @@ pub(crate) fn lower_comptime_function<'thir>(
     id: MIRFunctionID,
     function: &'thir THIRComptimeFn,
 ) -> CXResult<()> {
-    let Some(body) = function.body.as_ref() else {
+    let Some(body) = function.body() else {
         return Ok(());
     };
     let prototype = builder
@@ -64,12 +64,12 @@ pub(crate) fn lower_comptime_function<'thir>(
         .params()
         .to_vec();
 
-    for (parameter, declaration) in function.prototype.params().iter().zip(declarations) {
+    for (parameter, declaration) in function.prototype().params().iter().zip(declarations) {
         let scope = builder.fun().current_scope_id();
         let binding = builder.fun_mut().body_mut().add_comptime_parameter(
             declaration.ty,
             declaration.name,
-            parameter.value_type._type.is_nodrop(),
+            parameter.value_type().ty().is_nodrop(),
             scope,
         );
         match binding {
@@ -82,8 +82,8 @@ pub(crate) fn lower_comptime_function<'thir>(
                 ));
                 builder
                     .fun_mut()
-                    .bind_local(parameter.local_id, MIRValue::PlaceRef(place));
-                if let Some(name) = &parameter.name {
+                    .bind_local(parameter.local_id(), MIRValue::PlaceRef(place));
+                if let Some(name) = parameter.name() {
                     builder
                         .fun_mut()
                         .bind_named_value(name, MIRValue::PlaceRef(place));
@@ -91,7 +91,7 @@ pub(crate) fn lower_comptime_function<'thir>(
             }
             MIRComptimeParameter::Comptime(register) => {
                 builder.fun_mut().bind_comptime_local(
-                    parameter.local_id,
+                    parameter.local_id(),
                     MIRComptimeOperand::Comptime(register),
                 );
             }
@@ -101,7 +101,7 @@ pub(crate) fn lower_comptime_function<'thir>(
     let lowered = (|| -> LowerResult<()> {
         match body {
             THIRFunctionBody::Expression(expression) => {
-                if function.prototype.return_type().expr {
+                if function.prototype().return_type().is_expr() {
                     let value = staged::lower_operand(builder, expression)?;
                     let root_scope = builder
                         .fun()
@@ -122,7 +122,7 @@ pub(crate) fn lower_comptime_function<'thir>(
             }
             THIRFunctionBody::Block { exprs, token_range } => {
                 lower_sequence(builder, exprs, true)?;
-                if function.prototype.return_type()._type.is_void() {
+                if function.prototype().return_type().ty().is_void() {
                     emit_implicit_return(builder, None, token_range.clone())
                         .map_err(LowerStop::Diagnostic)?;
                 }

@@ -46,7 +46,7 @@ impl<'mir> GlobalContext<'mir> {
         let index = self.globals.len() as u32;
         self.globals.push(LMIRGlobalValue {
             name: CXIdent::new(format!(".str.{index}")),
-            _type: LMIRGlobalType::StringLiteral(text.to_owned()),
+            ty: LMIRGlobalType::StringLiteral(text.to_owned()),
             linkage: LinkageType::Static,
         });
         self.strings.insert(text.to_owned(), index);
@@ -112,7 +112,7 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
     pub fn reg(&self, id: MIRRegister) -> LMIRValue {
         LMIRValue::Register {
             register: LMIRRegister::new(format!("mir.{}", id.index())),
-            _type: self.ty(self.body.register(id).expect("unknown MIR register").ty),
+            ty: self.ty(self.body.register(id).expect("unknown MIR register").ty),
         }
     }
 
@@ -126,10 +126,7 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
 
     pub fn integer(&self, value: i128, ty: LMIRIntegerType) -> LMIRValue {
         LMIRValue::IntImmediate {
-            _type: LMIRType::with_implicit_abi(
-                self.types().architecture(),
-                LMIRTypeKind::Integer(ty),
-            ),
+            ty: LMIRType::with_implicit_abi(self.types().architecture(), LMIRTypeKind::Integer(ty)),
             val: value as i64,
         }
     }

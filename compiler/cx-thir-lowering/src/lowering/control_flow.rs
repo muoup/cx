@@ -329,10 +329,10 @@ fn lower_pattern_if_condition<'thir>(
                 builder,
                 lhs,
                 pattern,
-                &condition._type,
+                &condition.ty,
                 Some(subject.clone()),
             )?;
-            Ok((result, subject, pattern, &lhs._type))
+            Ok((result, subject, pattern, &lhs.ty))
         })()),
         THIRExpressionKind::TypeConversion {
             operand,
@@ -340,7 +340,7 @@ fn lower_pattern_if_condition<'thir>(
         } => lower_pattern_if_condition(builder, operand).map(|result| {
             let (value, subject, pattern, ty) = result?;
             let value =
-                operators::lower_coercion(builder, condition, value, conversion, &condition._type)?;
+                operators::lower_coercion(builder, condition, value, conversion, &condition.ty)?;
             Ok((value, subject, pattern, ty))
         }),
         _ => None,
@@ -598,13 +598,13 @@ pub(super) fn lower_match<'thir>(
     result_type: &'thir THIRType,
 ) -> LowerResult<MIRValue> {
     let subject_value = lower_expression(builder, condition)?;
-    let subject_value = if condition._type.is_memory_reference() {
+    let subject_value = if condition.ty.is_memory_reference() {
         subject_value
     } else {
         let place = memory::move_operand_to_place(
             builder,
             subject_value,
-            &condition._type,
+            &condition.ty,
             None,
             &condition.token_range,
         )
@@ -612,11 +612,11 @@ pub(super) fn lower_match<'thir>(
         MIRValue::PlaceRef(place)
     };
     builder.fun_mut().bind_local(subject, subject_value.clone());
-    let subject_type = match &condition._type.kind {
+    let subject_type = match &condition.ty.kind {
         THIRTypeKind::MemoryReference { inner_type, .. } => {
             builder.registry().resolve_type_id(*inner_type)
         }
-        _ => &condition._type,
+        _ => &condition.ty,
     };
     let variant_match = matches!(&subject_type.kind, THIRTypeKind::TaggedUnion { .. });
     let dispatch_value = if variant_match {
@@ -639,7 +639,7 @@ pub(super) fn lower_match<'thir>(
         );
         MIRValue::Register(out)
     } else {
-        if condition._type.is_memory_reference() {
+        if condition.ty.is_memory_reference() {
             let ty = lower_type(builder, subject_type).map_err(LowerStop::Diagnostic)?;
             memory::copy(builder, subject_value.clone(), ty, &condition.token_range)
         } else {
@@ -705,7 +705,7 @@ pub(super) fn lower_match<'thir>(
             .current_control_mut()
             .set_yield_target(exit);
         builder.fun_mut().push_scope(body.token_range.clone());
-        aggregates::bind_pattern_payload(builder, pattern, subject_value.clone(), &condition._type)
+        aggregates::bind_pattern_payload(builder, pattern, subject_value.clone(), &condition.ty)
             .map_err(LowerStop::Diagnostic)?;
         let body_result = lower_expression(builder, body);
         if let Ok(body_value) = &body_result {

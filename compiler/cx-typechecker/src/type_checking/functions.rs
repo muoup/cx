@@ -31,7 +31,7 @@ pub fn typecheck_function(
     prototype: THIRFnPrototype,
     body: &HIRFunctionBody,
 ) -> CXResult<()> {
-    if prototype.signature().contract.safe && prototype.signature().var_args {
+    if prototype.signature().contract().safe && prototype.signature().var_args() {
         return env.log_error(
             body.token_range(),
             &catalogue::INVALID_CONTEXT,
@@ -40,19 +40,14 @@ pub fn typecheck_function(
     }
 
     let body = typecheck_function_scope(env, namespace, prototype.clone(), body, |env| {
-        for THIRParameter {
-            name,
-            local_id,
-            _type,
-        } in prototype.signature().params.iter()
-        {
-            assert_valid_type_component(env, body.token_range(), _type, "a parameter", true)?;
+        for param in prototype.signature().params() {
+            assert_valid_type_component(env, body.token_range(), param.ty(), "a parameter", true)?;
 
-            let Some(name) = name else {
+            let Some(name) = param.name() else {
                 continue;
             };
 
-            let ref_type = env.symbols.mem_ref_to(_type.clone());
+            let ref_type = env.symbols.mem_ref_to(param.ty().clone());
 
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
@@ -60,9 +55,9 @@ pub fn typecheck_function(
                     token_range: TokenRange::internal(),
                     kind: THIRExpressionKind::Variable {
                         name: name.clone(),
-                        local_id: *local_id,
+                        local_id: param.local_id(),
                     },
-                    _type: ref_type,
+                    ty: ref_type,
                 },
             );
         }
@@ -70,16 +65,16 @@ pub fn typecheck_function(
         Ok(())
     })?;
 
-    let tier = PermissionTier::of_function(prototype.signature().contract.safe);
+    let tier = PermissionTier::of_function(prototype.signature().contract().safe);
     for expr in body.exprs() {
         check_permissions(env, expr, tier)?;
     }
 
-    env.items.push_generated_function(THIRFunction {
-        reject_nonvoid_fallthrough: env.require_explicit_return(),
+    env.items.push_generated_function(THIRFunction::new(
         prototype,
-        body: Some(body),
-    });
+        Some(body),
+        env.require_explicit_return(),
+    ));
 
     Ok(())
 }
@@ -92,21 +87,21 @@ pub fn typecheck_comptime_function(
     context: StagingContext,
 ) -> CXResult<()> {
     let debug_name = prototype.debug_name().cloned();
-    let return_type = prototype.return_type()._type.clone();
+    let return_type = prototype.return_type().ty().clone();
 
     let bookkeeping_params = prototype
         .params()
         .iter()
         .filter_map(|param| {
-            Some(THIRParameter {
-                name: Some(param.name.clone()?),
-                local_id: param.local_id,
-                _type: if is_parameterized_staged(param) {
+            Some(THIRParameter::new(
+                Some(param.name().cloned()?),
+                param.local_id(),
+                if is_parameterized_staged(param) {
                     THIRTypeKind::Undefined.into()
                 } else {
-                    param.value_type._type.clone()
+                    param.value_type().ty().clone()
                 },
-            })
+            ))
         })
         .collect();
 
@@ -115,46 +110,46 @@ pub fn typecheck_comptime_function(
     let bookkeeping = THIRFnPrototype::new(
         prototype.symbol_name().to_owned(),
         LinkageMode::Static,
-        THIRFnSignature {
+        THIRFnSignature::new(
             return_type,
-            params: bookkeeping_params,
-            var_args: false,
-            contract: HIRFunctionContract::default(),
-        },
+            bookkeeping_params,
+            false,
+            HIRFunctionContract::default(),
+        ),
     )
     .with_debug_name(debug_name.unwrap_or_else(|| CXIdent::new(prototype.pretty_name())));
 
     let previous_context = env.comptime_context.replace(context.clone());
     let checked = typecheck_function_scope(env, namespace, bookkeeping, body, |env| {
         for param in prototype.params() {
-            let Some(name) = param.name.clone() else {
+            let Some(name) = param.name().cloned() else {
                 continue;
             };
 
             if is_parameterized_staged(param) {
                 env.symbols.insert_local_staged_expression_function(
                     QualifiedName::new_raw(name),
-                    param.local_id,
-                    param.value_type.params.clone(),
-                    param.value_type._type.clone(),
+                    param.local_id(),
+                    param.value_type().params().to_vec(),
+                    param.value_type().ty().clone(),
                 );
                 continue;
             }
 
-            if !param.value_type.expr {
+            if !param.value_type().is_expr() {
                 assert_valid_type_component(
                     env,
                     body.token_range(),
-                    &param.value_type._type,
+                    param.value_type().ty(),
                     "a parameter",
                     true,
                 )?;
             }
 
-            let local_type = if param.value_type.expr {
-                param.value_type._type.clone()
+            let local_type = if param.value_type().is_expr() {
+                param.value_type().ty().clone()
             } else {
-                env.symbols.mem_ref_to(param.value_type._type.clone())
+                env.symbols.mem_ref_to(param.value_type().ty().clone())
             };
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
@@ -162,9 +157,9 @@ pub fn typecheck_comptime_function(
                     token_range: TokenRange::internal(),
                     kind: THIRExpressionKind::Variable {
                         name,
-                        local_id: param.local_id,
+                        local_id: param.local_id(),
                     },
-                    _type: local_type,
+                    ty: local_type,
                 },
             );
         }
@@ -173,17 +168,14 @@ pub fn typecheck_comptime_function(
     });
     env.comptime_context = previous_context;
 
-    env.items.push_generated_comptime_function(THIRComptimeFn {
-        prototype,
-        body: Some(checked?),
-        context,
-    });
+    env.items
+        .push_generated_comptime_function(THIRComptimeFn::new(prototype, Some(checked?), context));
 
     Ok(())
 }
 
 fn is_parameterized_staged(param: &THIRComptimeParameter) -> bool {
-    param.value_type.expr && !param.value_type.params.is_empty()
+    param.value_type().is_expr() && !param.value_type().params().is_empty()
 }
 
 /// Typechecks `body` as the body of `prototype`, managing the function context and the
@@ -195,7 +187,7 @@ fn typecheck_function_scope(
     body: &HIRFunctionBody,
     bind_params: impl FnOnce(&mut TypeEnvironment) -> CXResult<()>,
 ) -> CXResult<THIRFunctionBody> {
-    let return_type = prototype.signature().return_type.clone();
+    let return_type = prototype.signature().return_type().clone();
 
     env.function.begin_function(prototype);
     env.push_scope(false, false, body.token_range().clone());
@@ -261,7 +253,7 @@ fn typecheck_expression_body(
         .standard_ready_coerce(env, expression.token_range())?
     };
 
-    if value._type.is_unreachable() || !expr_may_fall_through(&value) {
+    if value.ty.is_unreachable() || !expr_may_fall_through(&value) {
         return Ok(vec![value]);
     }
 
@@ -270,7 +262,7 @@ fn typecheck_expression_body(
             .map(|_| Vec::new());
     }
 
-    if return_type.is_void() && value._type.is_void() {
+    if return_type.is_void() && value.ty.is_void() {
         let mut statements = vec![value];
         statements.push(
             typecheck_return(env, namespace, expression.token_range(), None)?

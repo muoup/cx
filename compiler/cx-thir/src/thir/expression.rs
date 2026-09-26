@@ -28,21 +28,61 @@ impl THIRLocalID {
 
 #[derive(Clone, Debug, Default)]
 pub struct THIRFnContract {
-    pub safe: bool,
-    pub precondition: Option<Box<THIRExpression>>,
-    pub postcondition: Option<THIRPostcondition>,
+    safe: bool,
+    precondition: Option<Box<THIRExpression>>,
+    postcondition: Option<THIRPostcondition>,
+}
+
+impl THIRFnContract {
+    pub fn new(
+        safe: bool,
+        precondition: Option<Box<THIRExpression>>,
+        postcondition: Option<THIRPostcondition>,
+    ) -> Self {
+        Self {
+            safe,
+            precondition,
+            postcondition,
+        }
+    }
+
+    pub fn is_safe(&self) -> bool {
+        self.safe
+    }
+
+    pub fn precondition(&self) -> Option<&THIRExpression> {
+        self.precondition.as_deref()
+    }
+
+    pub fn postcondition(&self) -> Option<&THIRPostcondition> {
+        self.postcondition.as_ref()
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct THIRPostcondition {
-    pub binding: Option<CXIdent>,
-    pub condition: Box<THIRExpression>,
+    binding: Option<CXIdent>,
+    condition: Box<THIRExpression>,
+}
+
+impl THIRPostcondition {
+    pub fn new(binding: Option<CXIdent>, condition: Box<THIRExpression>) -> Self {
+        Self { binding, condition }
+    }
+
+    pub fn binding(&self) -> Option<&CXIdent> {
+        self.binding.as_ref()
+    }
+
+    pub fn condition(&self) -> &THIRExpression {
+        &self.condition
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct THIRExpression {
     pub kind: THIRExpressionKind,
-    pub _type: THIRType,
+    pub ty: THIRType,
     pub token_range: TokenRange,
 }
 
@@ -50,7 +90,7 @@ impl Default for THIRExpression {
     fn default() -> Self {
         Self {
             kind: THIRExpressionKind::default(),
-            _type: THIRType::default(),
+            ty: THIRType::default(),
             token_range: TokenRange::internal(),
         }
     }
@@ -95,10 +135,10 @@ pub enum THIRExpressionKind {
         debug_name: Option<CXIdent>,
     },
     SizeOf {
-        _type: THIRType,
+        ty: THIRType,
     },
     AlignOf {
-        _type: THIRType,
+        ty: THIRType,
     },
 
     // Arithmetic & Logic
@@ -116,13 +156,13 @@ pub enum THIRExpressionKind {
     CreateLocalVariable {
         name: CXIdent,
         local_id: THIRLocalID,
-        _type: THIRType,
+        ty: THIRType,
         initial_value: Option<Box<THIRExpression>>,
     },
     AdoptRegion {
         binding_name: CXIdent,
         local_id: THIRLocalID,
-        _type: THIRType,
+        ty: THIRType,
         initial_value: Box<THIRExpression>,
     },
     Copy {
@@ -269,7 +309,7 @@ pub enum THIRExpressionKind {
 
     VaArg {
         list: Box<THIRExpression>,
-        _type: THIRType,
+        ty: THIRType,
     },
 
     // Type Conversion
@@ -479,20 +519,12 @@ pub struct StructInitialization {
 }
 
 impl THIRExpression {
-    pub fn get_type(&self) -> THIRType {
-        self._type.clone()
-    }
-
-    pub fn get_type_ref(&self) -> &THIRType {
-        &self._type
-    }
-
     pub fn int_literal(value: i64, itype: THIRIntType, is_signed: bool) -> Self {
         Self {
             kind: THIRExpressionKind::IntLiteral(value),
-            _type: THIRType {
+            ty: THIRType {
                 kind: THIRTypeKind::Integer {
-                    _type: itype,
+                    ty: itype,
                     signed: is_signed,
                 },
 

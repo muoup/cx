@@ -113,14 +113,14 @@ impl FunctionState<'_> {
                 Ok(CodegenValue::Value(as_value))
             }
 
-            LMIRValue::IntImmediate { val, _type } => {
-                let int_type = get_cranelift_type(_type);
+            LMIRValue::IntImmediate { val, ty } => {
+                let int_type = get_cranelift_type(ty);
                 let value = self.builder.ins().iconst(int_type?, *val);
 
                 Ok(CodegenValue::Value(value))
             }
 
-            LMIRValue::FloatImmediate { val, _type } => match _type.kind {
+            LMIRValue::FloatImmediate { val, ty } => match ty.kind {
                 LMIRTypeKind::Float(LMIRFloatType::F32) => {
                     let as_f32: f32 = val.into();
                     let value = self.builder.ins().f32const(as_f32);
@@ -136,7 +136,7 @@ impl FunctionState<'_> {
                     (
                         "float immediate".into(),
                         "a float type".into(),
-                        Some(format!("{_type:?}")),
+                        Some(format!("{ty:?}")),
                     ),
                 )),
             },
@@ -161,7 +161,7 @@ impl FunctionState<'_> {
                 Ok(CodegenValue::Value(gv))
             }
 
-            LMIRValue::Register { register, _type } => {
+            LMIRValue::Register { register, ty: _ } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
                     return Err(raw(
                         &MISSING_ENTITY,

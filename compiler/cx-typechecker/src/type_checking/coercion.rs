@@ -24,12 +24,12 @@ pub fn try_explicit_cast(
     target_type: &THIRType,
 ) -> CXResult<CoercionResult> {
     try_implicit_coercion(env, expr, target_type)?.or_else(|expr| {
-        let from_type = expr.get_type();
+        let from_type = expr.ty.clone();
 
         let coerced = |conversion: THIRCoercion| {
             let coerced = THIRExpression {
                 token_range: expr.token_range.clone(),
-                _type: target_type.clone(),
+                ty: target_type.clone(),
                 kind: THIRExpressionKind::TypeConversion {
                     operand: Box::new(expr.clone()),
                     conversion,
@@ -50,8 +50,8 @@ pub fn try_explicit_cast(
                 coerced(THIRCoercion::Bitcast)
             }
 
-            (THIRTypeKind::PointerTo { .. }, THIRTypeKind::Integer { _type, .. }) => {
-                coerced(THIRCoercion::PtrToInt { to_type: *_type })
+            (THIRTypeKind::PointerTo { .. }, THIRTypeKind::Integer { ty, .. }) => {
+                coerced(THIRCoercion::PtrToInt { to_type: *ty })
             }
 
             (THIRTypeKind::Integer { signed, .. }, THIRTypeKind::PointerTo { .. }) => {

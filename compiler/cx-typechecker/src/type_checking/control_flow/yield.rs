@@ -28,7 +28,9 @@ pub fn typecheck_yield(
 
     let mut state = env.function.flow().yield_state();
     if state.target == ControlTarget::Staged {
-        state.expected_type = state.expected_type.or(env.staging_context().yield_type);
+        state.expected_type = state
+            .expected_type
+            .or(env.staging_context().yield_type().cloned());
     }
     if state.target == ControlTarget::Invalid {
         return env.log_error(
@@ -43,7 +45,7 @@ pub fn typecheck_yield(
             let result = typecheck_expr(env, namespace, value, state.expected_type.as_ref())?;
 
             if state.saw_empty {
-                let result_type = result.standard_ready_coerce(env, value.token_range())?._type;
+                let result_type = result.standard_ready_coerce(env, value.token_range())?.ty;
 
                 return env.log_error(
                     yield_range,
@@ -69,19 +71,19 @@ pub fn typecheck_yield(
                 expression = std_rval_promotion(env, expression)?;
             }
             if let Some(expected_type) = &state.expected_type
-                && !env.type_eq(&expression._type, expected_type)
+                && !env.type_eq(&expression.ty, expected_type)
             {
                 return env.log_error(
                     yield_range,
                     &catalogue::MIXED_YIELDS,
                     (
-                        Some(format!("{}", expression._type.display_with(&env.symbols))),
+                        Some(format!("{}", expression.ty.display_with(&env.symbols))),
                         Some(format!("{}", expected_type.display_with(&env.symbols))),
                     ),
                 );
             }
 
-            let yield_type = expression._type.clone();
+            let yield_type = expression.ty.clone();
             (Some(Box::new(expression)), yield_type, true)
         }
         None => {

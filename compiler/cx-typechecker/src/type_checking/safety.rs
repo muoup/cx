@@ -44,7 +44,7 @@ pub(crate) fn check_permissions(
         THIRExpressionKind::Unsafe { expression } => {
             check_permissions(env, expression, PermissionTier::Unsafe)
         }
-        THIRExpressionKind::Move { .. } if expression._type.is_unsafe_move() => require(
+        THIRExpressionKind::Move { .. } if expression.ty.is_unsafe_move() => require(
             env,
             expression,
             tier,
@@ -83,7 +83,7 @@ pub(crate) fn check_permissions(
             check_permissions(env, lhs, tier)?;
             check_permissions(env, rhs, tier)
         }
-        THIRExpressionKind::AddressOf { operand } if operand._type.is_function() => require(
+        THIRExpressionKind::AddressOf { operand } if operand.ty.is_function() => require(
             env,
             expression,
             tier,
@@ -118,7 +118,7 @@ pub(crate) fn check_permissions(
                     Some("Unsafe type conversion")
                 }
                 THIRCoercion::Bitcast
-                    if operand._type.is_pointer() && expression._type.is_memory_reference() =>
+                    if operand.ty.is_pointer() && expression.ty.is_memory_reference() =>
                 {
                     Some("Dereferencing a pointer")
                 }
@@ -280,8 +280,8 @@ pub(crate) fn check_permissions(
 
 fn callable_is_safe(env: &TypeEnvironment, expression: &THIRExpression) -> bool {
     env.symbols
-        .intern_signature(expression.get_type_ref())
-        .is_some_and(|signature| signature.contract.safe)
+        .intern_signature(&expression.ty)
+        .is_some_and(|signature| signature.contract().safe)
 }
 
 fn check_contract(
@@ -289,10 +289,10 @@ fn check_contract(
     contract: &THIRFnContract,
     tier: PermissionTier,
 ) -> CXResult<()> {
-    if let Some(precondition) = &contract.precondition {
+    if let Some(precondition) = contract.precondition() {
         check_permissions(env, precondition, tier)?;
     }
-    if let Some(postcondition) = &contract.postcondition {
+    if let Some(postcondition) = contract.postcondition() {
         check_postcondition(env, postcondition, tier)?;
     }
     Ok(())
@@ -303,7 +303,7 @@ fn check_postcondition(
     postcondition: &THIRPostcondition,
     tier: PermissionTier,
 ) -> CXResult<()> {
-    check_permissions(env, &postcondition.condition, tier)
+    check_permissions(env, postcondition.condition(), tier)
 }
 
 fn check_all(

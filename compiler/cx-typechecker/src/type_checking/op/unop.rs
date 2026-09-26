@@ -51,7 +51,7 @@ pub fn typecheck_unop(
             // load through the outer layers so the increment applies to the referent
             while let Some(inner) = env
                 .symbols
-                .mem_ref_inner(&operand._type)
+                .mem_ref_inner(&operand.ty)
                 .filter(|inner| inner.is_memory_reference())
                 .cloned()
             {
@@ -60,18 +60,18 @@ pub fn typecheck_unop(
                     kind: THIRExpressionKind::Copy {
                         source: Box::new(operand),
                     },
-                    _type: inner,
+                    ty: inner,
                 };
             }
 
-            let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
+            let Some(inner) = env.symbols.mem_ref_inner(&operand.ty).cloned() else {
                 return env.log_error(
                     &operand.token_range,
                     &catalogue::TYPE_MISMATCH,
                     (
                         "increment operator".into(),
                         "reference type".into(),
-                        format!("{}", operand._type.display_with(&env.symbols)),
+                        format!("{}", operand.ty.display_with(&env.symbols)),
                     ),
                 );
             };
@@ -79,7 +79,7 @@ pub fn typecheck_unop(
             match &inner.kind {
                 THIRTypeKind::PointerTo { .. } | THIRTypeKind::Integer { .. } => match op {
                     HIRUnOp::PreIncrement(_) => TypecheckResult::new(
-                        operand._type.clone(),
+                        operand.ty.clone(),
                         THIRExpressionKind::UnaryOperation {
                             op: THIRUnOp::PreIncrement(*increment_amount),
                             operand: Box::new(operand),
@@ -117,7 +117,7 @@ pub fn typecheck_unop(
 
             TypecheckResult::new(
                 THIRTypeKind::Integer {
-                    _type: THIRIntType::I1,
+                    ty: THIRIntType::I1,
                     signed: false,
                 }
                 .into(),
@@ -133,20 +133,20 @@ pub fn typecheck_unop(
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
 
-            if !operand._type.is_integer() {
+            if !operand.ty.is_integer() {
                 return env.log_error(
                     &operand.token_range,
                     &catalogue::TYPE_MISMATCH,
                     (
                         "bitwise not operator".into(),
                         "integer type".into(),
-                        format!("{}", operand._type.display_with(&env.symbols)),
+                        format!("{}", operand.ty.display_with(&env.symbols)),
                     ),
                 );
             }
 
             TypecheckResult::new(
-                operand._type.clone(),
+                operand.ty.clone(),
                 THIRExpressionKind::UnaryOperation {
                     operand: Box::new(operand),
                     op: THIRUnOp::BNOT,
@@ -159,7 +159,7 @@ pub fn typecheck_unop(
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
 
-            let operator = match &operand._type.kind {
+            let operator = match &operand.ty.kind {
                 THIRTypeKind::Integer { .. } => THIRUnOp::INEG,
                 THIRTypeKind::Float { .. } => THIRUnOp::FNEG,
 
@@ -170,14 +170,14 @@ pub fn typecheck_unop(
                         (
                             "negation operator".into(),
                             "numeric type".into(),
-                            format!("{}", operand._type.display_with(&env.symbols)),
+                            format!("{}", operand.ty.display_with(&env.symbols)),
                         ),
                     );
                 }
             };
 
             TypecheckResult::new(
-                operand._type.clone(),
+                operand.ty.clone(),
                 THIRExpressionKind::UnaryOperation {
                     operand: Box::new(operand),
                     op: operator,
@@ -191,9 +191,9 @@ pub fn typecheck_unop(
 
             let Some(inner) = env
                 .symbols
-                .mem_ref_inner(&operand._type)
+                .mem_ref_inner(&operand.ty)
                 .cloned()
-                .or_else(|| operand._type.is_function().then(|| operand._type.clone()))
+                .or_else(|| operand.ty.is_function().then(|| operand.ty.clone()))
             else {
                 return env.log_error(
                     &operand.token_range,
@@ -201,14 +201,14 @@ pub fn typecheck_unop(
                     (
                         "address-of operator".into(),
                         "reference or function type".into(),
-                        format!("{}", operand._type.display_with(&env.symbols)),
+                        format!("{}", operand.ty.display_with(&env.symbols)),
                     ),
                 );
             };
 
             TypecheckResult::from(THIRExpression {
                 token_range: operand.token_range.clone(),
-                _type: env.symbols.pointer_to(inner.clone()),
+                ty: env.symbols.pointer_to(inner.clone()),
                 kind: THIRExpressionKind::AddressOf {
                     operand: Box::new(operand),
                 },
@@ -220,14 +220,14 @@ pub fn typecheck_unop(
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))
                 .and_then(|v| std_rval_promotion(env, v))?;
 
-            let Some(inner) = env.symbols.ptr_inner(&operand._type).cloned() else {
+            let Some(inner) = env.symbols.ptr_inner(&operand.ty).cloned() else {
                 return env.log_error(
                     &operand.token_range,
                     &catalogue::TYPE_MISMATCH,
                     (
                         "dereference operator".into(),
                         "pointer type".into(),
-                        format!("{}", operand._type.display_with(&env.symbols)),
+                        format!("{}", operand.ty.display_with(&env.symbols)),
                     ),
                 );
             };
@@ -239,7 +239,7 @@ pub fn typecheck_unop(
                     operand: Box::new(operand),
                     conversion: THIRCoercion::Bitcast,
                 },
-                _type: env.symbols.mem_ref_to(inner),
+                ty: env.symbols.mem_ref_to(inner),
             })
         }
 
@@ -290,8 +290,8 @@ pub(crate) fn typecheck_alignof_expr(
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
         .and_then(|v| sizeof_promotion(env, v))?;
 
-    ensure_array_bound(env, &tc_expr.token_range, &tc_expr._type)?;
-    Ok(alignof_result(tc_expr.token_range, tc_expr._type))
+    ensure_array_bound(env, &tc_expr.token_range, &tc_expr.ty)?;
+    Ok(alignof_result(tc_expr.token_range, tc_expr.ty))
 }
 
 pub(crate) fn typecheck_sizeof_expr(
@@ -303,8 +303,8 @@ pub(crate) fn typecheck_sizeof_expr(
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
         .and_then(|v| sizeof_promotion(env, v))?;
 
-    ensure_array_bound(env, &tc_expr.token_range, &tc_expr._type)?;
-    Ok(sizeof_result(tc_expr.token_range, tc_expr._type))
+    ensure_array_bound(env, &tc_expr.token_range, &tc_expr.ty)?;
+    Ok(sizeof_result(tc_expr.token_range, tc_expr.ty))
 }
 
 fn ensure_array_bound(env: &TypeEnvironment, range: &TokenRange, ty: &THIRType) -> CXResult<()> {
@@ -324,23 +324,23 @@ fn ensure_array_bound(env: &TypeEnvironment, range: &TokenRange, ty: &THIRType) 
     Ok(())
 }
 
-fn alignof_result(range: TokenRange, _type: THIRType) -> TypecheckResult {
+fn alignof_result(range: TokenRange, ty: THIRType) -> TypecheckResult {
     TypecheckResult::from(THIRExpression {
         token_range: range,
-        kind: THIRExpressionKind::AlignOf { _type },
-        _type: THIRType::from(THIRTypeKind::Integer {
-            _type: THIRIntType::I64,
+        kind: THIRExpressionKind::AlignOf { ty },
+        ty: THIRType::from(THIRTypeKind::Integer {
+            ty: THIRIntType::I64,
             signed: false,
         }),
     })
 }
 
-fn sizeof_result(range: TokenRange, _type: THIRType) -> TypecheckResult {
+fn sizeof_result(range: TokenRange, ty: THIRType) -> TypecheckResult {
     TypecheckResult::from(THIRExpression {
         token_range: range,
-        kind: THIRExpressionKind::SizeOf { _type },
-        _type: THIRType::from(THIRTypeKind::Integer {
-            _type: THIRIntType::I64,
+        kind: THIRExpressionKind::SizeOf { ty },
+        ty: THIRType::from(THIRTypeKind::Integer {
+            ty: THIRIntType::I64,
             signed: false,
         }),
     })

@@ -76,7 +76,7 @@ impl MIRSymbol {
         match self {
             MIRSymbol::FunctionReference(prototype) => Ok(THIRExpression {
                 token_range: TokenRange::internal(),
-                _type: THIRTypeKind::Function {
+                ty: THIRTypeKind::Function {
                     signature: Box::new(prototype.signature().clone()),
                 }
                 .into(),

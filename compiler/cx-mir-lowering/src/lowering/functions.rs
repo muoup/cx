@@ -27,10 +27,10 @@ pub(super) fn lower_function<'mir>(
             .iter()
             .filter(|id| !context.ty(body.register(**id).unwrap().ty).is_void())
             .map(|id| {
-                let LMIRValue::Register { register, _type } = context.reg(*id) else {
+                let LMIRValue::Register { register, ty } = context.reg(*id) else {
                     unreachable!()
                 };
-                LMIRBlockParameter { register, _type }
+                LMIRBlockParameter { register, ty }
             })
             .collect();
         let index = context.blocks.len();
@@ -47,7 +47,7 @@ pub(super) fn lower_function<'mir>(
         let address = if place.adopted {
             LMIRValue::Register {
                 register: LMIRRegister::new(format!("mir.place.{}", place.id.index())),
-                _type: context.pointer(),
+                ty: context.pointer(),
             }
         } else {
             memory::allocate(&mut context, place.ty)
@@ -84,7 +84,7 @@ fn lower_parameters(context: &mut FunctionContext<'_, '_>) {
                         LMIRInstructionKind::Store {
                             memory: destination,
                             value: LMIRValue::ParameterRef(abi_index),
-                            _type: slot._type,
+                            ty: slot.ty,
                         },
                     );
                     abi_index += 1;

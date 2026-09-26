@@ -32,17 +32,17 @@ pub(crate) fn resolve_enum_block(
 
     let integer_type = env.get_intrinsic_type("int");
     let integer_kind = match &integer_type.kind {
-        THIRTypeKind::Integer { _type, .. } => *_type,
+        THIRTypeKind::Integer { ty, .. } => *ty,
         _ => unreachable!("intrinsic int is not an integer type"),
     };
     let one = THIRExpression {
         token_range: TokenRange::internal(),
-        _type: integer_type.clone(),
+        ty: integer_type.clone(),
         kind: THIRExpressionKind::IntLiteral(1),
     };
     let mut next_value = THIRExpression {
         token_range: TokenRange::internal(),
-        _type: integer_type.clone(),
+        ty: integer_type.clone(),
         kind: THIRExpressionKind::IntLiteral(0),
     };
 
@@ -63,12 +63,12 @@ pub(crate) fn resolve_enum_block(
         next_value = match &value.kind {
             THIRExpressionKind::IntLiteral(value) => THIRExpression {
                 token_range: TokenRange::internal(),
-                _type: integer_type.clone(),
+                ty: integer_type.clone(),
                 kind: THIRExpressionKind::IntLiteral(value + 1),
             },
             _ => THIRExpression {
                 token_range: TokenRange::internal(),
-                _type: integer_type.clone(),
+                ty: integer_type.clone(),
                 kind: THIRExpressionKind::BinaryOperation {
                     lhs: Box::new(value.clone()),
                     rhs: Box::new(one.clone()),

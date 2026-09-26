@@ -24,7 +24,7 @@ pub(crate) fn resolve_indirect_base(
     mut source: THIRExpression,
 ) -> IndirectBase {
     loop {
-        let source_type = source._type.clone();
+        let source_type = source.ty.clone();
 
         if let Some(inner_type) = env.symbols.mem_ref_inner(&source_type).cloned() {
             if let Some(ptr_inner) = env.symbols.ptr_inner(&inner_type).cloned() {
@@ -33,7 +33,7 @@ pub(crate) fn resolve_indirect_base(
                     kind: THIRExpressionKind::Copy {
                         source: Box::new(source),
                     },
-                    _type: env.symbols.pointer_to(ptr_inner.clone()),
+                    ty: env.symbols.pointer_to(ptr_inner.clone()),
                 };
 
                 return IndirectBase {
@@ -43,7 +43,7 @@ pub(crate) fn resolve_indirect_base(
                             operand: Box::new(pointer),
                             conversion: THIRCoercion::Bitcast,
                         },
-                        _type: env.symbols.mem_ref_to(ptr_inner.clone()),
+                        ty: env.symbols.mem_ref_to(ptr_inner.clone()),
                     },
                     source_type: ptr_inner,
                 };
@@ -55,7 +55,7 @@ pub(crate) fn resolve_indirect_base(
                     kind: THIRExpressionKind::AddressOf {
                         operand: Box::new(source),
                     },
-                    _type: env.symbols.pointer_to(array_inner.clone()),
+                    ty: env.symbols.pointer_to(array_inner.clone()),
                 };
 
                 return IndirectBase {
@@ -65,7 +65,7 @@ pub(crate) fn resolve_indirect_base(
                             operand: Box::new(pointer),
                             conversion: THIRCoercion::Bitcast,
                         },
-                        _type: env.symbols.mem_ref_to(array_inner.clone()),
+                        ty: env.symbols.mem_ref_to(array_inner.clone()),
                     },
                     source_type: array_inner,
                 };
@@ -77,7 +77,7 @@ pub(crate) fn resolve_indirect_base(
                     kind: THIRExpressionKind::Copy {
                         source: Box::new(source),
                     },
-                    _type: inner_type,
+                    ty: inner_type,
                 };
                 continue;
             }
@@ -96,7 +96,7 @@ pub(crate) fn resolve_indirect_base(
                         operand: Box::new(source),
                         conversion: THIRCoercion::Bitcast,
                     },
-                    _type: env.symbols.mem_ref_to(inner_type.clone()),
+                    ty: env.symbols.mem_ref_to(inner_type.clone()),
                 },
                 source_type: inner_type,
             };

@@ -26,7 +26,7 @@ pub fn typecheck_assignment(
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let lhs_expr = lhs.standard_ready_coerce(env, expr.token_range())?;
-    let lhs_type = lhs_expr._type.clone();
+    let lhs_type = lhs_expr.ty.clone();
 
     let Some(inner) = env.symbols.mem_ref_inner(&lhs_type).cloned() else {
         return env.log_error(

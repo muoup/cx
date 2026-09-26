@@ -34,7 +34,7 @@ pub(crate) fn typecheck_object_initializer(
     let expression = if declared_type.is_array()
         && env
             .symbols
-            .mem_ref_inner(&expression._type)
+            .mem_ref_inner(&expression.ty)
             .is_some_and(THIRType::is_array)
     {
         lvalue::try_conversion(env, expression, true)?
@@ -49,7 +49,7 @@ pub(crate) fn typecheck_object_initializer(
         ..
     } = &declared_type.kind
     {
-        let length = match &expression._type.kind {
+        let length = match &expression.ty.kind {
             THIRTypeKind::Array {
                 length: THIRArrayLength::Known(length),
                 ..
@@ -58,7 +58,7 @@ pub(crate) fn typecheck_object_initializer(
                 THIRExpressionKind::StringLiteral { value } => {
                     THIRArrayLength::Known(Box::new(THIRExpression {
                         token_range: TokenRange::internal(),
-                        _type: env.get_intrinsic_type("int"),
+                        ty: env.get_intrinsic_type("int"),
                         kind: THIRExpressionKind::IntLiteral((value.len() + 1) as i64),
                     }))
                 }

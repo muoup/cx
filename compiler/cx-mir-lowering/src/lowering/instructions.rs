@@ -52,7 +52,7 @@ pub(super) fn lower_instruction(
                     *out,
                     LMIRInstructionKind::Load {
                         memory: source,
-                        _type: context.ty(ty),
+                        ty: context.ty(ty),
                     },
                 );
             }

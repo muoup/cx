@@ -44,8 +44,8 @@ impl From<&THIRType> for IntrinsicShape {
             return Self::Named;
         }
         match &ty.kind {
-            THIRTypeKind::Integer { _type, signed } => Self::Integer(*_type, *signed),
-            THIRTypeKind::Float { _type } => Self::Float(*_type),
+            THIRTypeKind::Integer { ty, signed } => Self::Integer(*ty, *signed),
+            THIRTypeKind::Float { ty } => Self::Float(*ty),
             kind => Self::Kind(discriminant(kind)),
         }
     }

@@ -341,7 +341,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
     data.change_comma_mode(false);
 
     loop {
-        let (name, _type) = parse_base_mods(data, base_type.clone())?;
+        let (name, ty) = parse_base_mods(data, base_type.clone())?;
 
         if let Some(name) = name {
             if data.c_mode || specifiers.linkage == LinkageMode::Extern {
@@ -354,7 +354,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 };
                 if let Some(function) = try_function_parse(
                     data,
-                    _type.clone(),
+                    ty.clone(),
                     name.clone(),
                     linkage,
                     data.symbol_naming,
@@ -387,7 +387,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
 
             decls.push(
                 HIRExprKind::VarDeclaration {
-                    _type,
+                    ty,
                     name,
                     initial_value,
                     linkage: specifiers.linkage,

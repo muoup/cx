@@ -196,7 +196,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         None
     };
 
-    let (name, _type) = parse_typedef_initializer(data)?;
+    let (name, ty) = parse_typedef_initializer(data)?;
 
     let Some(name) = name else {
         return parse_point_error(
@@ -212,7 +212,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         name: type_name,
         lookup,
         template_input: None,
-    } = &_type.kind
+    } = &ty.kind
     {
         let is_existing_type_alias = *lookup == HIRTypeLookup::Standard
             || data.ast.definition_stmts.iter().any(|definition| {
@@ -228,7 +228,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
             data.add_stmt(HIRStmt::TypeDefinition {
                 name: Some(name),
                 visibility: data.visibility,
-                _type: _type.clone(),
+                ty: ty.clone(),
                 template_prototype: template_prototype.clone(),
                 tag: None,
             });
@@ -239,7 +239,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     data.add_stmt(HIRStmt::TypeDefinition {
         name: Some(name),
         visibility: data.visibility,
-        _type: _type.clone(),
+        ty: ty.clone(),
         template_prototype: template_prototype.clone(),
         tag: None,
     });
@@ -350,7 +350,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                 visibility: data.visibility,
                 variable: HIRGlobalVariable::Standard {
                     name: name.clone(),
-                    _type: return_type.clone(),
+                    ty: return_type.clone(),
                     is_mutable: true,
                     linkage,
                     symbol_name_scheme: symbol_naming,
@@ -444,7 +444,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
 fn add_global_variable(
     data: &mut ParserData,
     name: CXIdent,
-    _type: HIRType,
+    ty: HIRType,
     linkage: LinkageMode,
     symbol_naming: HIRSymbolNameScheme,
     inherited_external: bool,
@@ -454,7 +454,7 @@ fn add_global_variable(
         visibility: data.visibility,
         variable: HIRGlobalVariable::Standard {
             name,
-            _type,
+            ty,
             is_mutable: true,
             linkage: if inherited_external {
                 LinkageMode::Extern

@@ -20,7 +20,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                 context,
                 LMIRInstructionKind::ZeroMemory {
                     memory: address.clone(),
-                    _type: context.ty(*ty),
+                    ty: context.ty(*ty),
                 },
             );
             let kind = context.types().definition(*ty).unwrap().kind().clone();
@@ -36,7 +36,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                         LMIRInstructionKind::Store {
                             memory: tag,
                             value: context.integer(*index as i128, LMIRIntegerType::I8),
-                            _type: LMIRType::with_implicit_abi(
+                            ty: LMIRType::with_implicit_abi(
                                 context.types().architecture(),
                                 LMIRTypeKind::Integer(LMIRIntegerType::I8),
                             ),
@@ -129,7 +129,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                 context,
                 LMIRInstructionKind::Load {
                     memory: address,
-                    _type: tag_type.clone(),
+                    ty: tag_type.clone(),
                 },
                 tag_type,
             );

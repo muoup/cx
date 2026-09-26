@@ -15,11 +15,11 @@ pub(crate) fn typecheck_contract(
     namespace: &NamespacePath,
     prototype: &THIRFnSignature,
 ) -> CXResult<THIRFnContract> {
-    let naive_contract = &prototype.contract;
+    let naive_contract = prototype.contract();
     env.push_scope(false, false, TokenRange::internal());
 
-    for param in prototype.params.iter() {
-        if let Some(name) = &param.name {
+    for param in prototype.params().iter() {
+        if let Some(name) = param.name() {
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 THIRExpression {
@@ -28,7 +28,7 @@ pub(crate) fn typecheck_contract(
                         name: name.clone(),
                         force_param: false,
                     },
-                    _type: param._type.clone(),
+                    ty: param.ty().clone(),
                 },
             );
         }
@@ -48,7 +48,7 @@ pub(crate) fn typecheck_contract(
                     condition: Box::new(condition),
                     message: "Precondition failed".to_string(),
                 },
-                _type: THIRType::unit(),
+                ty: THIRType::unit(),
             }))
         })
         .transpose()?;
@@ -63,7 +63,7 @@ pub(crate) fn typecheck_contract(
                         name: ret_name.clone(),
                         force_param: false,
                     },
-                    _type: prototype.return_type.clone(),
+                    ty: prototype.return_type().clone(),
                 },
             );
         }
@@ -72,10 +72,7 @@ pub(crate) fn typecheck_contract(
             .and_then(|value| value.standard_ready_coerce(env, post_expr.token_range()))
             .and_then(|value| std_rval_promotion(env, value))
             .and_then(|value| implicit_cast(env, value, &THIRType::bool()))?;
-        Some(THIRPostcondition {
-            binding: ret_name.clone(),
-            condition: Box::new(tc_post),
-        })
+        Some(THIRPostcondition::new(ret_name.clone(), Box::new(tc_post)))
     } else {
         None
     };
@@ -83,9 +80,9 @@ pub(crate) fn typecheck_contract(
     env.pop_scope()
         .map_err(|err| env.complete_err(err, &TokenRange::internal()))?;
 
-    Ok(THIRFnContract {
-        safe: naive_contract.safe,
+    Ok(THIRFnContract::new(
+        naive_contract.safe,
         precondition,
         postcondition,
-    })
+    ))
 }

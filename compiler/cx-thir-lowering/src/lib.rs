@@ -23,11 +23,11 @@ pub fn generate_mir<'thir>(thir: &'thir THIRUnit) -> CXResult<MIRUnit<'thir>> {
     let mut global_pairs = vec![];
     let mut global_requests = vec![];
 
-    for global in &thir.global_variables {
-        builder.module_mut().reserve_global(global.name.as_str());
+    for global in thir.global_variables() {
+        builder.module_mut().reserve_global(global.name().as_str());
     }
 
-    for comptime_fn in &thir.comptime_functions {
+    for comptime_fn in thir.comptime_functions() {
         let prototype = lower_comptime_prototype(&mut builder, comptime_fn)?;
         let id = builder.module_mut().declare_comptime_function(prototype);
 
@@ -38,13 +38,13 @@ pub fn generate_mir<'thir>(thir: &'thir THIRUnit) -> CXResult<MIRUnit<'thir>> {
         lower_comptime_function(&mut builder, id, comptime_fn)?;
     }
 
-    for function in &thir.functions {
-        let prototype = lower_prototype(&mut builder, &function.prototype)?;
+    for function in thir.functions() {
+        let prototype = lower_prototype(&mut builder, function.prototype())?;
         let id = builder.module_mut().declare_function(prototype);
         fn_pairs.push((function, id));
     }
 
-    for global in &thir.global_variables {
+    for global in thir.global_variables() {
         let id = globals::predeclare_global(&mut builder, global)?;
         global_pairs.push((global, id));
     }
