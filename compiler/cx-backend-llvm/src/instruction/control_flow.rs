@@ -63,22 +63,12 @@ pub(super) fn generate_branch<'a, 'b>(
     true_target: &LMIRBlockTarget,
     false_target: &LMIRBlockTarget,
 ) -> LLVMResult<CodegenValue<'a>> {
-    let condition = match function_state.get_value(condition)?.get_value()? {
-        AnyValueEnum::IntValue(value) => value,
-        AnyValueEnum::PointerValue(value) => function_state
-            .builder
-            .build_is_not_null(value, inst_num().as_str())
-            .map_err(LLVMError::from_error)?,
-        _ => {
-            return Err(LLVMError::new(
-                &catalogue::ENTITY_REQUIREMENT,
-                (
-                    "branch condition".into(),
-                    "an integer or pointer value".into(),
-                    None,
-                ),
-            ));
-        }
+    let AnyValueEnum::IntValue(condition) = function_state.get_value(condition)?.get_value()?
+    else {
+        return Err(LLVMError::new(
+            &catalogue::ENTITY_REQUIREMENT,
+            ("branch condition".into(), "an integer value".into(), None),
+        ));
     };
 
     let (true_edge, finish_true) = edge_destination(

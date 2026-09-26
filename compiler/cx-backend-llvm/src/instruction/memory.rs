@@ -146,20 +146,11 @@ pub(super) fn generate_memcpy<'a, 'b>(
     size: &LMIRValue,
     alignment: u8,
 ) -> LLVMResult<CodegenValue<'a>> {
-    let src = match function_state.get_value(src)?.get_value()? {
-        AnyValueEnum::PointerValue(value) => value,
-        value => {
-            let value = any_to_basic_val(value)?;
-            let temporary = function_state
-                .builder
-                .build_alloca(value.get_type(), inst_num().as_str())
-                .map_err(LLVMError::from_error)?;
-            function_state
-                .builder
-                .build_store(temporary, value)
-                .map_err(LLVMError::from_error)?;
-            temporary
-        }
+    let AnyValueEnum::PointerValue(src) = function_state.get_value(src)?.get_value()? else {
+        return Err(LLVMError::new(
+            &catalogue::ENTITY_REQUIREMENT,
+            ("memcpy source".into(), "a pointer value".into(), None),
+        ));
     };
     let dest = function_state
         .get_value(dest)?
