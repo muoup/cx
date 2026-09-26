@@ -44,8 +44,25 @@ pub fn typecheck_unop(
             .and_then(|v| typecheck_move(env, namespace, v, operand))?,
 
         HIRUnOp::PreIncrement(increment_amount) | HIRUnOp::PostIncrement(increment_amount) => {
-            let operand = typecheck_expr(env, namespace, operand, None)
+            let mut operand = typecheck_expr(env, namespace, operand, None)
                 .and_then(|v| v.standard_ready_coerce(env, operand.token_range()))?;
+
+            // An lvalue of reference type (e.g. a `T&` parameter) is a reference to a reference;
+            // load through the outer layers so the increment applies to the referent
+            while let Some(inner) = env
+                .symbols
+                .mem_ref_inner(&operand._type)
+                .filter(|inner| inner.is_memory_reference())
+                .cloned()
+            {
+                operand = THIRExpression {
+                    token_range: operand.token_range.clone(),
+                    kind: THIRExpressionKind::Copy {
+                        source: Box::new(operand),
+                    },
+                    _type: inner,
+                };
+            }
 
             let Some(inner) = env.symbols.mem_ref_inner(&operand._type).cloned() else {
                 return env.log_error(

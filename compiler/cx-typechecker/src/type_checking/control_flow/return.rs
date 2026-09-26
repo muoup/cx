@@ -147,6 +147,8 @@ pub fn typecheck_return(
                 continue;
             };
 
+            // Inside the callee, parameters resolve to their storage rather than to argument values
+            let param_ref_type = env.symbols.mem_ref_to(param._type.clone());
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 THIRExpression {
@@ -155,7 +157,7 @@ pub fn typecheck_return(
                         force_param: true,
                     },
                     token_range: TokenRange::internal(),
-                    _type: param._type.clone(),
+                    _type: param_ref_type,
                 },
             );
         }

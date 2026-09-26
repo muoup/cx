@@ -667,7 +667,22 @@ pub(crate) fn codegen_instruction(
         LMIRInstructionKind::Coercion {
             coercion_type: LMIRCoercionType::BitCast,
             value,
-        } => context.get_value(value)?,
+        } => {
+            // Pointers and same-width integers share a Cranelift type, so every bitcast the
+            // typechecker produces (pointer -> pointer, integer signedness changes) is a no-op
+            let value = context.get_value(value)?.as_value();
+            let value_type = context.builder.func.dfg.value_type(value);
+            let target_type = get_cranelift_type(&instruction.value_type)?;
+
+            if value_type != target_type {
+                unreachable!(
+                    "bitcast between distinct Cranelift types ({value_type} -> {target_type}); \
+                     integer <-> float bitcasts are never produced by the typechecker"
+                );
+            }
+
+            CodegenValue::Value(value)
+        }
 
         LMIRInstructionKind::Coercion {
             coercion_type: LMIRCoercionType::FloatCast { .. },

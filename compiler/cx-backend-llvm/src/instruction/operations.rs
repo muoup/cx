@@ -1,9 +1,10 @@
 use super::inst_num;
 use crate::arithmetic::{generate_int_binop, generate_ptr_binop};
 use crate::log::{LLVMError, LLVMResult};
-use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_type};
+use crate::typing::bc_llvm_type;
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_lmir::types::{LMIRType, TypeSize};
+use cx_lmir::types::{LMIRType, LMIRTypeKind, TypeSize};
+use cx_log::catalogue::backend as catalogue;
 use cx_lmir::{LMIRFloatBinOp, LMIRFloatUnOp, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRValue};
 use inkwell::AddressSpace;
 use inkwell::values::{AnyValue, AnyValueEnum};
@@ -164,21 +165,44 @@ pub(super) fn generate_bit_cast<'a, 'b>(
     value: &LMIRValue,
     target_type: &LMIRType,
 ) -> LLVMResult<CodegenValue<'a>> {
-    let value = function_state.get_value(value)?.get_value()?;
-    if let AnyValueEnum::FunctionValue(value) = value {
-        let value = value.as_global_value().as_pointer_value();
-        return Ok(CodegenValue::Value(AnyValueEnum::PointerValue(value)));
+    let value = match function_state.get_value(value)?.get_value()? {
+        AnyValueEnum::FunctionValue(function) => {
+            function.as_global_value().as_pointer_value().as_any_value_enum()
+        }
+        value => value,
+    };
+
+    match (value, &target_type.kind) {
+        (AnyValueEnum::PointerValue(_), LMIRTypeKind::Pointer { .. }) => {
+            Ok(CodegenValue::Value(value))
+        }
+        (AnyValueEnum::IntValue(int), LMIRTypeKind::Integer(_)) => {
+            let target = bc_llvm_type(global_state.context, target_type)?.into_int_type();
+            if int.get_type().get_bit_width() != target.get_bit_width() {
+                return Err(LLVMError::new(
+                    &catalogue::ENTITY_REQUIREMENT,
+                    (
+                        "bitcast".into(),
+                        "an operand the same size as its target".into(),
+                        Some(format!("{} -> {}", int.get_type(), target)),
+                    ),
+                ));
+            }
+            Ok(CodegenValue::Value(value))
+        }
+        (
+            AnyValueEnum::IntValue(_) | AnyValueEnum::FloatValue(_),
+            LMIRTypeKind::Integer(_) | LMIRTypeKind::Float(_),
+        ) => unreachable!("integer <-> float bitcasts are never produced by the typechecker"),
+        (value, _) => Err(LLVMError::new(
+            &catalogue::ENTITY_REQUIREMENT,
+            (
+                "bitcast".into(),
+                "a pointer -> pointer or integer -> integer operand".into(),
+                Some(format!("{:?} -> {:?}", value.get_type(), target_type.kind)),
+            ),
+        )),
     }
-    if let AnyValueEnum::PointerValue(value) = value {
-        return Ok(CodegenValue::Value(AnyValueEnum::PointerValue(value)));
-    }
-    let value = any_to_basic_val(value)?;
-    let target = any_to_basic_type(bc_llvm_type(global_state.context, target_type)?)?;
-    let value = function_state
-        .builder
-        .build_bit_cast(value, target, inst_num().as_str())
-        .map_err(LLVMError::from_error)?;
-    Ok(CodegenValue::Value(value.as_any_value_enum()))
 }
 
 pub(super) fn generate_int_to_ptr<'a, 'b>(

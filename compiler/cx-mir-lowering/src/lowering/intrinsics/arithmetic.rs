@@ -1,4 +1,3 @@
-use crate::lowering::memory;
 use cx_lmir::types::TypeSize;
 use cx_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstructionKind, LMIRIntBinOp,
@@ -15,7 +14,7 @@ use crate::context::FunctionContext;
 
 use super::output;
 use crate::lowering::typing::{convert_float_type, convert_integer_type};
-use crate::lowering::values::{lower_read, lower_value};
+use crate::lowering::values::lower_read;
 
 pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsic) {
     use MIRIntIntrinsic as I;
@@ -49,8 +48,8 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
         _ => None,
     };
     if let Some((out, lhs, rhs, op)) = binary {
-        let left = numeric_value(context, lhs);
-        let right = numeric_value(context, rhs);
+        let left = lower_read(context, lhs);
+        let right = lower_read(context, rhs);
         output(
             context,
             out,
@@ -65,7 +64,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
                 I::LNot { .. } => LMIRIntUnOp::LNOT,
                 _ => LMIRIntUnOp::BNOT,
             };
-            let value = numeric_value(context, value);
+            let value = lower_read(context, value);
             output(
                 context,
                 *out,
@@ -90,7 +89,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             } else {
                 LMIRCoercionType::BitCast
             };
-            let value = numeric_value(context, value);
+            let value = lower_read(context, value);
             output(
                 context,
                 *out,
@@ -104,7 +103,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             out, value, signed, ..
         } => {
             let (from, _) = integer_type(context, value);
-            let value = numeric_value(context, value);
+            let value = lower_read(context, value);
             output(
                 context,
                 *out,
@@ -119,7 +118,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
         }
         I::ToPtr { out, value } => {
             let (from, signed) = integer_type(context, value);
-            let value = numeric_value(context, value);
+            let value = lower_read(context, value);
             output(
                 context,
                 *out,
@@ -152,8 +151,8 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
         _ => None,
     };
     if let Some((out, lhs, rhs, op)) = binary {
-        let left = numeric_value(context, lhs);
-        let right = numeric_value(context, rhs);
+        let left = lower_read(context, lhs);
+        let right = lower_read(context, rhs);
         output(
             context,
             out,
@@ -163,7 +162,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
     }
     match op {
         F::Neg { out, value } => {
-            let value = numeric_value(context, value);
+            let value = lower_read(context, value);
             output(
                 context,
                 *out,
@@ -183,7 +182,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
                 context.types().definition(*target_ty).unwrap().kind(),
                 MIRTypeKind::Integer { signed: true, .. }
             );
-            let value = numeric_value(context, value);
+            let value = lower_read(context, value);
             output(
                 context,
                 *out,
@@ -198,7 +197,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
         }
         F::FloatCast { out, value, .. } => {
             let from = float_type(context, value);
-            let value = numeric_value(context, value);
+            let value = lower_read(context, value);
             output(
                 context,
                 *out,
@@ -284,7 +283,6 @@ fn integer_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> (MIRIntT
 fn integer_kind(context: &FunctionContext<'_, '_>, ty: cx_mir::MIRTypeID) -> (MIRIntType, bool) {
     match context.types().definition(ty).unwrap().kind() {
         MIRTypeKind::Integer { ty, signed } => (*ty, *signed),
-        MIRTypeKind::MemoryReference { inner, .. } => integer_kind(context, *inner),
         _ => panic!("integer operation on non-integer"),
     }
 }
@@ -296,36 +294,6 @@ fn float_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> cx_mir::MI
     let ty = operand_type(context, value).expect("float operand lacks a MIR type");
     match context.types().definition(ty).unwrap().kind() {
         MIRTypeKind::Float { ty } => *ty,
-        MIRTypeKind::MemoryReference { inner, .. } => {
-            match context.types().definition(*inner).unwrap().kind() {
-                MIRTypeKind::Float { ty } => *ty,
-                _ => panic!("float operation on non-float"),
-            }
-        }
         _ => panic!("float operation on non-float"),
     }
-}
-
-fn numeric_value(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> cx_lmir::LMIRValue {
-    match value {
-        MIRValue::Register(id) => {
-            let ty = context.body.register(*id).unwrap().ty;
-            if let MIRTypeKind::MemoryReference { inner, .. } =
-                context.types().definition(ty).unwrap().kind()
-            {
-                let inner = *inner;
-                return memory::load(context, context.reg(*id), inner);
-            }
-        }
-        MIRValue::PlaceRef(id) => {
-            let ty = context.body.place(*id).unwrap().ty;
-            return memory::load(context, context.places[id].clone(), ty);
-        }
-        MIRValue::Constant(MIRConstant::GlobalRef(reference)) => {
-            let address = crate::lowering::values::global_address(context, *reference);
-            return memory::load(context, address, reference.ty);
-        }
-        _ => {}
-    }
-    lower_value(context, value)
 }

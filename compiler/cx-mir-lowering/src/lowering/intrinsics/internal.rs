@@ -1,8 +1,6 @@
 use crate::lowering::memory;
 use cx_lmir::compiler_functions::ASSERTION;
 use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRValue};
-use cx_mir::ty::interface::MTRegistry;
-use cx_mir::MIRTypeKind;
 use cx_mir::{MIRInternalIntrinsic, MIRVAIntrinsic};
 use cx_util::identifier::CXIdent;
 
@@ -30,29 +28,8 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             write_target(context, *out, address);
         }
         I::ReferenceAddress { out, reference } => {
-            let ty = match reference {
-                cx_mir::MIRValue::Register(id) => Some(context.body.register(*id).unwrap().ty),
-                cx_mir::MIRValue::PlaceRef(id) => Some(context.body.place(*id).unwrap().ty),
-                _ => None,
-            };
-            let inner = ty.and_then(|ty| match context.types().definition(ty).unwrap().kind() {
-                MIRTypeKind::MemoryReference { inner, .. }
-                    if matches!(
-                        context.types().definition(*inner).unwrap().kind(),
-                        MIRTypeKind::MemoryReference { .. }
-                    ) =>
-                {
-                    Some(*inner)
-                }
-                _ => None,
-            });
             let address = lower_value(context, reference);
-            let value = if let Some(inner) = inner {
-                memory::load(context, address, inner)
-            } else {
-                address
-            };
-            write_target(context, *out, value);
+            write_target(context, *out, address);
         }
         I::ArrayAddress { out, array } => {
             let address = lower_value(context, array);
@@ -77,34 +54,8 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
                 LMIRInstructionKind::GetFunctionAddr { func: name },
             );
         }
-        I::Bitcast {
-            out,
-            value,
-            target_ty,
-        } => {
-            let source = match value {
-                cx_mir::MIRValue::Register(id) => {
-                    let ty = context.body.register(*id).unwrap().ty;
-                    match context.types().definition(ty).unwrap().kind() {
-                        MIRTypeKind::MemoryReference { inner, .. }
-                            if matches!(
-                                context.types().definition(*target_ty).unwrap().kind(),
-                                MIRTypeKind::Integer { .. } | MIRTypeKind::Float { .. }
-                            ) =>
-                        {
-                            Some(*inner)
-                        }
-                        _ => None,
-                    }
-                }
-                _ => None,
-            };
-            let value = if let Some(ty) = source {
-                let address = lower_value(context, value);
-                memory::load(context, address, ty)
-            } else {
-                lower_read(context, value)
-            };
+        I::Bitcast { out, value, .. } => {
+            let value = lower_read(context, value);
             output(
                 context,
                 *out,

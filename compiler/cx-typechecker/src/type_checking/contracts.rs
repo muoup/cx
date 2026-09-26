@@ -22,8 +22,6 @@ pub(crate) fn typecheck_contract(
 
     for param in prototype.params.iter() {
         if let Some(name) = &param.name {
-            let _ty = env.symbols.mem_ref_to(param._type.clone());
-
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 THIRExpression {
