@@ -16,13 +16,15 @@ struct L gl = { 1000000, 1099511627775ULL };
 struct S gs = { -3, -50, 200 };
 
 int main() {
-    struct A a; a.x = 1; a.y = 5;
-    struct B b; b.x = 6; b.y = 9;
-    struct C c; c.x = -1; c.c = 'q';
-    struct X x; x.a = 7; x.y = 123456789;
-    struct L l; l.a = 777777; l.b = 555555555555ULL;
-    struct S s; s.s = -4; s.t = 60; s.u = -200;
+    struct A a = { .x = 1, .y = 5 };
+    struct B b = { .x = 6, .y = 9 };
+    struct C c = { .x = -1, .c = 'q' };
+    struct X x = { .a = 7, .y = 123456789 };
+    struct L l = { .a = 777777, .b = 555555555555ULL };
+    struct S s = { .s = -4, .t = 60, .u = -200 };
+    
     s.t = s.t + 1;
+    
     printf("%d %d %d | %d %d %d | %d %d %c | %d %d %u\n", (int)sizeof(struct A), (int)a.x, (int)a.y,
         (int)sizeof(struct B), (int)b.x, (int)b.y, (int)sizeof(struct C), (int)c.x, c.c,
         (int)sizeof(struct X), (int)x.a, (unsigned)x.y);
@@ -30,5 +32,6 @@ int main() {
         (int)sizeof(struct Z), (int)sizeof(struct S), (int)s.s, (int)s.t, (int)s.u);
     printf("%d %d | %u %llu | %d %d %d\n", (int)gb.x, (int)gb.y, (unsigned)gl.a, (unsigned long long)gl.b,
         (int)gs.s, (int)gs.t, (int)gs.u);
+    
     return 0;
 }
