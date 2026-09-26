@@ -7,6 +7,7 @@ use cx_lmir::{
     LMIRValue, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
+use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::{
     MIRBasicBlockID, MIRBitfieldAccess, MIRBody, MIRFunction, MIRGlobalID, MIRPlaceID, MIRRegister,
     MIRTypeID, MIRUnit,
@@ -15,6 +16,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::lowering::memory;
 use crate::lowering::typing::convert_type;
+use crate::lowering::values::lower_rvalue;
 
 pub(crate) struct GlobalContext<'mir> {
     pub unit: &'mir MIRUnit<'mir>,
@@ -95,7 +97,7 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
         }
     }
 
-    pub fn types(&self) -> &cx_mir::ty::registry::MIRTypeRegistry {
+    pub fn types(&self) -> &MIRTypeRegistry {
         self.global.unit.types()
     }
 
@@ -148,7 +150,7 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
                 if self.ty(ty).is_void() {
                     return None;
                 }
-                let value = crate::lowering::values::lower_rvalue(self, arg, ty);
+                let value = lower_rvalue(self, arg, ty);
                 if self.ty(ty).is_memory_resident() {
                     let copy = memory::allocate(self, ty);
                     memory::store(self, copy.clone(), value, ty);

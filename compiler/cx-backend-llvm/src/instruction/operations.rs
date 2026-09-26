@@ -6,7 +6,7 @@ use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::types::{LMIRType, LMIRTypeKind, TypeSize};
 use cx_log::catalogue::backend as catalogue;
 use cx_lmir::{LMIRFloatBinOp, LMIRFloatUnOp, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRValue};
-use inkwell::AddressSpace;
+use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 use inkwell::values::{AnyValue, AnyValueEnum};
 
 pub(super) fn generate_pointer_binop<'a, 'b>(
@@ -52,7 +52,7 @@ pub(super) fn generate_integer_unop<'a, 'b>(
         LMIRIntUnOp::LNOT => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::EQ,
+                IntPredicate::EQ,
                 value,
                 value.get_type().const_int(0, false),
                 inst_num().as_str(),
@@ -140,12 +140,12 @@ pub(super) fn generate_float_binop<'a, 'b>(
         | LMIRFloatBinOp::FGT
         | LMIRFloatBinOp::FGE => {
             let predicate = match op {
-                LMIRFloatBinOp::EQ => inkwell::FloatPredicate::OEQ,
-                LMIRFloatBinOp::NEQ => inkwell::FloatPredicate::ONE,
-                LMIRFloatBinOp::FLT => inkwell::FloatPredicate::OLT,
-                LMIRFloatBinOp::FLE => inkwell::FloatPredicate::OLE,
-                LMIRFloatBinOp::FGT => inkwell::FloatPredicate::OGT,
-                LMIRFloatBinOp::FGE => inkwell::FloatPredicate::OGE,
+                LMIRFloatBinOp::EQ => FloatPredicate::OEQ,
+                LMIRFloatBinOp::NEQ => FloatPredicate::ONE,
+                LMIRFloatBinOp::FLT => FloatPredicate::OLT,
+                LMIRFloatBinOp::FLE => FloatPredicate::OLE,
+                LMIRFloatBinOp::FGT => FloatPredicate::OGT,
+                LMIRFloatBinOp::FGE => FloatPredicate::OGE,
                 _ => {
                     unreachable!("invalid floating-point comparison operation: {op:?}")
                 }

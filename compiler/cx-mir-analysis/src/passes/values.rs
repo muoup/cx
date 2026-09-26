@@ -14,6 +14,8 @@ use crate::{
 };
 
 pub struct Values {
+    // Only safe functions consume the results (see `finish`), so the dataflow is skipped elsewhere
+    active: bool,
     known: HashMap<MIRBindable, i128>,
     reachable: bool,
     blocks: HashMap<MIRBasicBlockID, Option<HashMap<MIRBindable, i128>>>,
@@ -23,6 +25,7 @@ pub struct Values {
 impl Values {
     pub fn new() -> Self {
         Self {
+            active: false,
             known: HashMap::new(),
             reachable: true,
             blocks: HashMap::new(),
@@ -106,7 +109,8 @@ impl Values {
 }
 
 impl AnalysisPass for Values {
-    fn function_entry(&mut self, _: &AnalysisEnvironment) -> CXResult<()> {
+    fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
+        self.active = env.function().prototype().signature.safe();
         self.known.clear();
         self.reachable = true;
         self.blocks.clear();
@@ -115,7 +119,7 @@ impl AnalysisPass for Values {
     }
 
     fn finish(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
-        if !env.function().prototype().signature.safe() {
+        if !self.active {
             return Ok(());
         }
         let body = env.function().body().expect("analyzed function has a body");
@@ -158,6 +162,9 @@ impl AnalysisPass for Values {
         env: &AnalysisEnvironment,
         instruction: &MIRInstruction,
     ) -> CXResult<()> {
+        if !self.active {
+            return Ok(());
+        }
         if !self.reachable {
             self.edges = successors(instruction)
                 .into_iter()
@@ -217,6 +224,9 @@ impl AnalysisPass for Values {
         other: MIRBasicBlockID,
         _: &TokenRange,
     ) -> CXResult<bool> {
+        if !self.active {
+            return Ok(false);
+        }
         let mut changed = false;
         for (_, incoming) in self.edges.iter().filter(|(block, _)| *block == other) {
             match (self.blocks.get_mut(&other), incoming) {

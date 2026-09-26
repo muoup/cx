@@ -7,7 +7,7 @@ use cx_thir::thir::{
         THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRFunctionBody,
         THIRParameter, THIRTemplateInput,
     },
-    expression::{THIRExpression, THIRExpressionKind},
+    expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     r#type::THIRType,
 };
 use cx_tokens::TokenRange;
@@ -68,7 +68,7 @@ fn realize_tagged_union_constructor(
     env.items.mark_request_fulfilled(symbol_name.clone());
 
     let param_name = CXIdent::new("value");
-    let param_local_id = cx_thir::thir::expression::THIRLocalID::fresh();
+    let param_local_id = THIRLocalID::fresh();
     let prototype = THIRFnPrototype::new(
         symbol_name,
         LinkageMode::Static,

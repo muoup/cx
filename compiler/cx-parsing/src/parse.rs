@@ -4,7 +4,7 @@ use cx_hir::ast::{
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
-    types::{HIRTypeKind, HIRTypeLookup},
+    types::{HIRType, HIRTypeKind, HIRTypeLookup},
     HIRStmt,
 };
 use cx_log::catalogue::parse::*;
@@ -444,11 +444,11 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
 fn add_global_variable(
     data: &mut ParserData,
     name: CXIdent,
-    _type: cx_hir::ast::types::HIRType,
+    _type: HIRType,
     linkage: LinkageMode,
     symbol_naming: HIRSymbolNameScheme,
     inherited_external: bool,
-    initializer: Option<cx_hir::ast::expression::HIRExpression>,
+    initializer: Option<HIRExpression>,
 ) {
     data.add_stmt(HIRStmt::GlobalVariableDefinition {
         visibility: data.visibility,

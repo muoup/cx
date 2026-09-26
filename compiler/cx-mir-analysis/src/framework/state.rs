@@ -1,134 +1,70 @@
-use std::{collections::HashMap, hash::Hash};
-
 use cx_log::CXMaybeRawResult;
 use cx_mir::MIRBasicBlockID;
 
-use crate::framework::environment::AnalysisEnvironment;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LatticeState<Key: Clone, T: Clone> {
-    Bottom,
-    Known(T),
-    #[allow(dead_code)]
-    Top,
-
-    _PHANTOM(std::marker::PhantomData<Key>),
-}
-
-pub trait Mergeable<Key: Clone>: Clone {
-    fn merge(
-        &self,
-        env: &AnalysisEnvironment,
-        other: &Self,
-        key: Key,
-    ) -> CXMaybeRawResult<Option<LatticeState<Key, Self>>>
-    where
-        Self: Sized;
-}
-
-impl<Key: Clone, T: Mergeable<Key>> LatticeState<Key, T> {
-    pub fn merge(
-        &self,
-        env: &AnalysisEnvironment,
-        other: &LatticeState<Key, T>,
-        place: Key,
-    ) -> CXMaybeRawResult<Option<LatticeState<Key, T>>> {
-        Ok(match (self, other) {
-            (LatticeState::Bottom, LatticeState::Bottom) => None,
-            (LatticeState::Top, _) => None,
-
-            (LatticeState::Bottom | LatticeState::Known(_), LatticeState::Top) => {
-                Some(LatticeState::Top)
-            }
-
-            (LatticeState::Bottom, known @ LatticeState::Known(_)) => Some(known.clone()),
-            (known @ LatticeState::Known(_), LatticeState::Bottom) => Some(known.clone()),
-
-            (LatticeState::Known(value), LatticeState::Known(other_value)) => {
-                value.merge(env, other_value, place)?
-            }
-
-            _ => unreachable!("Invalid lattice state combination"),
-        })
-    }
-}
-
+/// Dense per-function dataflow state: one slot per tracked key, plus a snapshot of the
+/// incoming state for every block that has been reached.
 #[derive(Debug, Clone)]
-pub struct StateTable<Key: Hash + Eq + Clone, State: Mergeable<Key>> {
-    snapshots: HashMap<MIRBasicBlockID, HashMap<Key, LatticeState<Key, State>>>,
-
-    states: Vec<(Key, LatticeState<Key, State>)>,
-    map: HashMap<Key, usize>,
+pub struct StateTable<State: Copy + PartialEq> {
+    states: Vec<State>,
+    snapshots: Vec<Option<Vec<State>>>,
 }
 
-impl<Key: Hash + Eq + Clone, State: Clone + Mergeable<Key>> StateTable<Key, State> {
+impl<State: Copy + PartialEq> StateTable<State> {
     pub fn new() -> Self {
         Self {
-            snapshots: HashMap::new(),
             states: Vec::new(),
-            map: HashMap::new(),
+            snapshots: Vec::new(),
         }
+    }
+
+    pub fn reset(&mut self, initial: State, key_count: usize, block_count: usize) {
+        self.states.clear();
+        self.states.resize(key_count, initial);
+        self.snapshots.clear();
+        self.snapshots.resize(block_count, None);
     }
 
     pub fn reload_block(&mut self, block: MIRBasicBlockID) {
-        let Some(snapshot) = self.snapshots.get(&block) else {
+        let Some(Some(snapshot)) = self.snapshots.get(block.index()) else {
             unreachable!("No snapshot found for block {:?}", block);
         };
 
-        self.states.clear();
-        self.map.clear();
-
-        for (key, state) in snapshot.iter() {
-            let index = self.states.len();
-            self.states.push((key.clone(), state.clone()));
-            self.map.insert(key.clone(), index);
-        }
+        self.states.clone_from(snapshot);
     }
 
+    /// Joins the current state into the snapshot of `block`, returning whether it changed.
+    /// `join` is only invoked for keys whose states differ.
     pub fn merge_into(
         &mut self,
-        env: &AnalysisEnvironment,
-        other: MIRBasicBlockID,
+        block: MIRBasicBlockID,
+        mut join: impl FnMut(usize, State, State) -> CXMaybeRawResult<State>,
     ) -> CXMaybeRawResult<bool> {
-        let other = self
-            .snapshots
-            .entry(other)
-            .or_insert_with(|| HashMap::new());
+        let snapshot = &mut self.snapshots[block.index()];
+        let Some(snapshot) = snapshot else {
+            *snapshot = Some(self.states.clone());
+            return Ok(true);
+        };
 
         let mut changed = false;
-        for (key, state) in &self.states {
-            let other_state = other.entry(key.clone()).or_insert(LatticeState::Bottom);
-            if let Some(new_state) = other_state.merge(env, state, key.clone())? {
-                *other_state = new_state;
+        for (index, (existing, incoming)) in snapshot.iter_mut().zip(&self.states).enumerate() {
+            if existing == incoming {
+                continue;
+            }
+
+            let joined = join(index, *existing, *incoming)?;
+            if joined != *existing {
+                *existing = joined;
                 changed = true;
             }
         }
         Ok(changed)
     }
 
-    pub fn get(&self, key: &Key) -> Option<&LatticeState<Key, State>> {
-        let index = self.map.get(key)?;
-        self.states.get(*index).map(|(_, state)| state)
+    pub fn get(&self, key: usize) -> Option<State> {
+        self.states.get(key).copied()
     }
 
-    #[allow(dead_code)]
-    pub fn get_mut(&mut self, key: Key) -> &mut LatticeState<Key, State> {
-        let index = self.map.entry(key.clone()).or_insert_with(|| {
-            let index = self.states.len();
-            self.states.push((key, LatticeState::Bottom));
-            index
-        });
-
-        &mut self.states[*index].1
-    }
-
-    pub fn set(&mut self, key: Key, state: LatticeState<Key, State>) {
-        let index = self.map.entry(key.clone()).or_insert_with(|| {
-            let index = self.states.len();
-            self.states.push((key, LatticeState::Bottom));
-            index
-        });
-
-        self.states[*index].1 = state;
+    pub fn set(&mut self, key: usize, state: State) {
+        self.states[key] = state;
     }
 }

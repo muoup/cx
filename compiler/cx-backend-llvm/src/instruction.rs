@@ -8,7 +8,7 @@ use std::cell::Cell;
 
 use crate::log::LLVMResult;
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_lmir::{LMIRInstruction, LMIRInstructionKind};
+use cx_lmir::{LMIRCoercionType, LMIRInstruction, LMIRInstructionKind};
 
 thread_local! {
     // Modules are compiled single-threaded, but multiple modules can be compiled
@@ -89,34 +89,34 @@ pub(crate) fn generate_instruction<'a, 'b>(
             value,
             coercion_type,
         } => match coercion_type {
-            cx_lmir::LMIRCoercionType::BitCast => operations::generate_bit_cast(
+            LMIRCoercionType::BitCast => operations::generate_bit_cast(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::IntToPtr { .. } => {
+            LMIRCoercionType::IntToPtr { .. } => {
                 operations::generate_int_to_ptr(global_state, function_state, value)
             }
-            cx_lmir::LMIRCoercionType::ZExtend => operations::generate_zextend(
+            LMIRCoercionType::ZExtend => operations::generate_zextend(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::SExtend => operations::generate_sextend(
+            LMIRCoercionType::SExtend => operations::generate_sextend(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::Trunc => operations::generate_trunc(
+            LMIRCoercionType::Trunc => operations::generate_trunc(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::IntToFloat { sextend, .. } => {
+            LMIRCoercionType::IntToFloat { sextend, .. } => {
                 operations::generate_int_to_float(
                     global_state,
                     function_state,
@@ -125,7 +125,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     *sextend,
                 )
             }
-            cx_lmir::LMIRCoercionType::FloatToInt { sextend, .. } => {
+            LMIRCoercionType::FloatToInt { sextend, .. } => {
                 operations::generate_float_to_int(
                     global_state,
                     function_state,
@@ -134,13 +134,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     *sextend,
                 )
             }
-            cx_lmir::LMIRCoercionType::PtrToInt => operations::generate_ptr_to_int(
+            LMIRCoercionType::PtrToInt => operations::generate_ptr_to_int(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::FloatCast { .. } => operations::generate_float_cast(
+            LMIRCoercionType::FloatCast { .. } => operations::generate_float_cast(
                 global_state,
                 function_state,
                 value,

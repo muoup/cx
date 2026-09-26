@@ -5,7 +5,7 @@ use cx_namespace::module::NamespacePath;
 use cx_thir::{
     thir::{
         data::{THIRType, THIRTypeKind},
-        expression::{StructInitialization, THIRExpressionKind},
+        expression::{StructInitialization, THIRExpression, THIRExpressionKind},
         r#type::THIRArrayLength,
     },
     type_context::THIRTypeContext,
@@ -171,7 +171,7 @@ fn typecheck_array_initializer(
     namespace: &NamespacePath,
     indices: &[HIRInitIndex],
     inner_type: &THIRType,
-    size: Option<&cx_thir::thir::expression::THIRExpression>,
+    size: Option<&THIRExpression>,
     _to_type: &THIRType,
 ) -> CXResult<TypecheckResult> {
     for index in indices {
@@ -186,10 +186,10 @@ fn typecheck_array_initializer(
 
     let array_size = size.cloned().unwrap_or_else(|| {
         let integer_type = env.get_intrinsic_type("int");
-        cx_thir::thir::expression::THIRExpression {
+        THIRExpression {
             token_range: TokenRange::internal(),
             _type: integer_type,
-            kind: cx_thir::thir::expression::THIRExpressionKind::IntLiteral(indices.len() as i64),
+            kind: THIRExpressionKind::IntLiteral(indices.len() as i64),
         }
     });
     let array_type = THIRType::from(THIRTypeKind::Array {

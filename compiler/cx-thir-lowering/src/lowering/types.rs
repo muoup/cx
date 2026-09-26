@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use cx_log::CXResult;
+use cx_log::catalogue::mir;
 use cx_mir::{
     MIRBitfieldAccess, MIRComptimeContext, MIRComptimeFnParam, MIRComptimeFnPrototype,
     MIRComptimeFnSignature, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType,
@@ -11,6 +12,7 @@ use cx_thir::{
     thir::{
         comptime::THIRComptimeFn,
         data::{THIRComptimeValueType, THIRFnPrototype, THIRFnSignature},
+        expression::THIRExpressionKind,
         r#type::{THIRArrayLength, THIRFloatType, THIRIntType, THIRType, THIRTypeID, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -248,7 +250,7 @@ fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()
                 THIRArrayLength::Known(length)
                     if matches!(
                         length.kind,
-                        cx_thir::thir::expression::THIRExpressionKind::IntLiteral(_)
+                        THIRExpressionKind::IntLiteral(_)
                     ) =>
                 {
                     check_id(*inner_type)
@@ -279,7 +281,7 @@ fn reject_comptime_array(builder: &MIRBuilder<'_>, ty: &THIRType) -> CXResult<()
         return crate::log::log_mir_error(
             &range,
             (
-                &cx_log::catalogue::mir::COMPTIME_INVALID_OPERATION,
+                &mir::COMPTIME_INVALID_OPERATION,
                 "array types in comptime functions".into(),
             ),
         );

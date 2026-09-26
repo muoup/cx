@@ -268,7 +268,7 @@ fn typecheck_expr_inner(
                     then_branch: Box::new(then_result),
                     else_branch: else_result.map(Box::new),
                 },
-                _type: cx_thir::thir::data::THIRType::unit(),
+                _type: THIRType::unit(),
             })
         }
 
@@ -347,7 +347,7 @@ fn typecheck_expr_inner(
                     body: Box::new(body_result),
                     pre_eval: *pre_eval,
                 },
-                _type: cx_thir::thir::data::THIRType::unit(),
+                _type: THIRType::unit(),
             })
         }
 
@@ -386,7 +386,7 @@ fn typecheck_expr_inner(
                     increment: Box::new(increment_result),
                     body: Box::new(body_result),
                 },
-                _type: cx_thir::thir::data::THIRType::unit(),
+                _type: THIRType::unit(),
             })
         }
 

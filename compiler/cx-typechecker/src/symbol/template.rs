@@ -8,7 +8,7 @@ use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 use cx_thir::{
     symbol::MIRSymbol,
     thir::{
-        data::{THIRFunction, THIRTemplateInput, THIRType, TemplateInfo},
+        data::{THIRFunction, THIRTemplateInput, THIRType, THIRTypeKind, TemplateInfo},
         name_mangling::mangle_template_name,
     },
 };
@@ -61,7 +61,7 @@ pub fn apply_template(
                 return Ok(MIRSymbol::Type(*id));
             }
 
-            let mut placeholder = THIRType::from(cx_thir::thir::data::THIRTypeKind::Undefined);
+            let mut placeholder = THIRType::from(THIRTypeKind::Undefined);
             placeholder.lookup_identifier = Some(lookup_name.clone());
             placeholder.strong_identifier = Some(instance_name.clone());
 

@@ -1,9 +1,11 @@
 use cx_hir::ast::expression::{HIRBlockKind, HIRExprKind, HIRExpression};
+use cx_hir::ast::modifiers::LinkageMode;
+use cx_hir::ast::HIRStmt;
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_tokens::{
     keyword, punctuator,
-    token::{IntegerBase, KeywordType, OperatorType, PunctuatorType, TokenKind},
+    token::{IntegerBase, IntegerSuffix, KeywordType, OperatorType, PunctuatorType, TokenKind},
 };
 
 use crate::{
@@ -20,6 +22,7 @@ use crate::{
     },
     peek_next_kind, try_next,
 };
+use cx_util::identifier::CXIdent;
 
 pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
     let start_index = data.tokens.index;
@@ -52,7 +55,7 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpres
             .get(data.tokens.index + 1)
             .map(|token| &token.kind),
     ) {
-        let name = cx_util::identifier::CXIdent::new(name.clone());
+        let name = CXIdent::new(name.clone());
         data.tokens.next();
         data.tokens.next();
         let statement = parse_stmt(data)?;
@@ -279,7 +282,7 @@ pub(crate) fn try_parse_keyword_stmt(
                 HIRExprKind::IntLiteral {
                     magnitude: 1,
                     base: IntegerBase::Decimal,
-                    suffix: cx_tokens::token::IntegerSuffix::default(),
+                    suffix: IntegerSuffix::default(),
                 }
                 .into_expr(
                     data.tokens.index,
@@ -341,11 +344,11 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
         let (name, _type) = parse_base_mods(data, base_type.clone())?;
 
         if let Some(name) = name {
-            if data.c_mode || specifiers.linkage == cx_hir::ast::modifiers::LinkageMode::Extern {
+            if data.c_mode || specifiers.linkage == LinkageMode::Extern {
                 let linkage = if data.c_mode
-                    && specifiers.linkage == cx_hir::ast::modifiers::LinkageMode::Standard
+                    && specifiers.linkage == LinkageMode::Standard
                 {
-                    cx_hir::ast::modifiers::LinkageMode::Extern
+                    LinkageMode::Extern
                 } else {
                     specifiers.linkage
                 };
@@ -357,7 +360,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                     data.symbol_naming,
                     specifiers.attributes,
                 )? {
-                    data.add_stmt(cx_hir::ast::HIRStmt::FunctionDefinition {
+                    data.add_stmt(HIRStmt::FunctionDefinition {
                         prototype: function.prototype,
                         visibility: data.visibility,
                         template_prototype: function.template_prototype,

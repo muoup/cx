@@ -1,21 +1,21 @@
 use cx_log::{CXMaybeRawResult, CXResult, catalogue::analysis};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRTarget,
+    MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRPlaceID, MIRRegisterID,
+    MIRTarget,
     expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
 };
 use cx_tokens::TokenRange;
 
 use crate::{
-    framework::{
-        environment::AnalysisEnvironment,
-        pipeline::AnalysisPass,
-        state::{LatticeState, Mergeable, StateTable},
-    },
+    framework::{environment::AnalysisEnvironment, pipeline::AnalysisPass, state::StateTable},
     log::{complete_analysis_error, log_analysis_error},
 };
 
 pub struct Ownership {
-    table: StateTable<MIRBindable, OwnershipState>,
+    table: StateTable<OwnershipState>,
+
+    // Registers occupy the first `register_count` table slots, places the rest
+    register_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,7 +29,23 @@ impl Ownership {
     pub fn new() -> Self {
         Self {
             table: StateTable::new(),
+            register_count: 0,
         }
+    }
+
+    fn key(&self, bindable: &MIRBindable) -> usize {
+        match bindable {
+            MIRBindable::Register(id) => id.index(),
+            MIRBindable::Place(id) => self.register_count + id.index(),
+        }
+    }
+
+    fn get(&self, bindable: &MIRBindable) -> Option<OwnershipState> {
+        self.table.get(self.key(bindable))
+    }
+
+    fn set(&mut self, bindable: &MIRBindable, state: OwnershipState) {
+        self.table.set(self.key(bindable), state);
     }
 
     fn name(env: &AnalysisEnvironment, bindable: &MIRBindable) -> (String, bool) {
@@ -54,8 +70,8 @@ impl Ownership {
         operation: &str,
         range: &TokenRange,
     ) -> CXResult<()> {
-        let state = self.table.get(bindable);
-        if state == Some(&LatticeState::Known(OwnershipState::Available)) {
+        let state = self.get(bindable);
+        if state == Some(OwnershipState::Available) {
             return Ok(());
         }
 
@@ -67,29 +83,53 @@ impl Ownership {
             discarded,
         );
         match state {
-            Some(LatticeState::Known(OwnershipState::Moved)) => {
-                log_analysis_error(range, (&analysis::AFTER_MOVE, args))
-            }
+            Some(OwnershipState::Moved) => log_analysis_error(range, (&analysis::AFTER_MOVE, args)),
             _ => log_analysis_error(range, (&analysis::BEFORE_INITIALIZATION, args)),
         }
+    }
+
+    fn join(
+        env: &AnalysisEnvironment,
+        bindable: MIRBindable,
+        existing: OwnershipState,
+        incoming: OwnershipState,
+    ) -> CXMaybeRawResult<OwnershipState> {
+        if let MIRBindable::Place(place) = bindable
+            && env
+                .function()
+                .body()
+                .and_then(|body| body.place(place))
+                .is_some_and(|place| place.nodrop)
+            && (existing == OwnershipState::Available || incoming == OwnershipState::Available)
+        {
+            let (name, discarded) = Self::name(env, &bindable);
+            return Err(analysis::PARTIAL_MOVE
+                .bind((
+                    env.function().prototype().display_name().to_string(),
+                    name,
+                    discarded,
+                ))
+                .into());
+        }
+
+        Ok(match (existing, incoming) {
+            (OwnershipState::Uninitialized, _) | (_, OwnershipState::Uninitialized) => {
+                OwnershipState::Uninitialized
+            }
+            _ => OwnershipState::Moved,
+        })
     }
 }
 
 impl AnalysisPass for Ownership {
     fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
         let body = env.function().body().expect("analyzed function has a body");
-        for place in body.places() {
-            self.table.set(
-                MIRBindable::Place(place.id),
-                LatticeState::Known(OwnershipState::Uninitialized),
-            );
-        }
-        for register in body.registers() {
-            self.table.set(
-                MIRBindable::Register(register.id),
-                LatticeState::Known(OwnershipState::Uninitialized),
-            );
-        }
+        self.register_count = body.registers().len();
+        self.table.reset(
+            OwnershipState::Uninitialized,
+            body.registers().len() + body.places().len(),
+            body.blocks().len(),
+        );
         Ok(())
     }
 
@@ -97,10 +137,7 @@ impl AnalysisPass for Ownership {
         let body = env.function().body().expect("analyzed function has a body");
         if let Some(block) = body.block(block) {
             for register in block.params() {
-                self.table.set(
-                    MIRBindable::Register(*register),
-                    LatticeState::Known(OwnershipState::Available),
-                );
+                self.set(&MIRBindable::Register(*register), OwnershipState::Available);
             }
         }
         Ok(())
@@ -113,10 +150,7 @@ impl AnalysisPass for Ownership {
     ) -> CXResult<()> {
         let mut unavailable = None;
         visit_bindable_uses(&instruction.kind, |bindable| {
-            if unavailable.is_none()
-                && self.table.get(&bindable)
-                    != Some(&LatticeState::Known(OwnershipState::Available))
-            {
+            if unavailable.is_none() && self.get(&bindable) != Some(OwnershipState::Available) {
                 unavailable = Some(bindable);
             }
         });
@@ -126,16 +160,11 @@ impl AnalysisPass for Ownership {
 
         match &instruction.kind {
             MIRInstructionKind::Initialize { place } => {
-                self.table.set(
-                    place.clone(),
-                    LatticeState::Known(OwnershipState::Available),
-                );
+                self.set(place, OwnershipState::Available);
             }
             MIRInstructionKind::Invalidate { place, kind } => {
                 if *kind == MIRInvalidationKind::Drop {
-                    if self.table.get(place)
-                        == Some(&LatticeState::Known(OwnershipState::Available))
-                    {
+                    if self.get(place) == Some(OwnershipState::Available) {
                         if let MIRBindable::Place(id) = place {
                             if env
                                 .function()
@@ -160,10 +189,7 @@ impl AnalysisPass for Ownership {
                             }
                         }
                     }
-                    self.table.set(
-                        place.clone(),
-                        LatticeState::Known(OwnershipState::Uninitialized),
-                    );
+                    self.set(place, OwnershipState::Uninitialized);
                 } else {
                     self.require_available(
                         env,
@@ -175,8 +201,7 @@ impl AnalysisPass for Ownership {
                         },
                         &instruction.token_range,
                     )?;
-                    self.table
-                        .set(place.clone(), LatticeState::Known(OwnershipState::Moved));
+                    self.set(place, OwnershipState::Moved);
                 }
             }
             MIRInstructionKind::Lift { out, source } => {
@@ -197,32 +222,20 @@ impl AnalysisPass for Ownership {
                     }
                     MIRTarget::Global(_) => {}
                 }
-                self.table.set(
-                    MIRBindable::Register(*out),
-                    LatticeState::Known(OwnershipState::Available),
-                );
+                self.set(&MIRBindable::Register(*out), OwnershipState::Available);
             }
             MIRInstructionKind::Store {
                 target: MIRTarget::Register(out),
                 ..
             } => {
-                self.table.set(
-                    MIRBindable::Register(*out),
-                    LatticeState::Known(OwnershipState::Available),
-                );
+                self.set(&MIRBindable::Register(*out), OwnershipState::Available);
             }
             MIRInstructionKind::Call { out: Some(out), .. } => {
-                self.table.set(
-                    MIRBindable::Register(*out),
-                    LatticeState::Known(OwnershipState::Available),
-                );
+                self.set(&MIRBindable::Register(*out), OwnershipState::Available);
             }
             MIRInstructionKind::IntrinsicOp(op) => {
                 if let Some(MIRTarget::Register(out)) = op.output_target() {
-                    self.table.set(
-                        MIRBindable::Register(out),
-                        LatticeState::Known(OwnershipState::Available),
-                    );
+                    self.set(&MIRBindable::Register(out), OwnershipState::Available);
                 }
             }
             _ => {}
@@ -236,56 +249,21 @@ impl AnalysisPass for Ownership {
         other: MIRBasicBlockID,
         range: &TokenRange,
     ) -> CXResult<bool> {
-        let mut table = std::mem::replace(&mut self.table, StateTable::new());
-        let result = table
-            .merge_into(env, other)
-            .map_err(|err| complete_analysis_error(range, err));
-        self.table = table;
-        result
+        let register_count = self.register_count;
+        let bindable = |key: usize| match key.checked_sub(register_count) {
+            Some(place) => MIRBindable::Place(MIRPlaceID::new(place)),
+            None => MIRBindable::Register(MIRRegisterID::new(key)),
+        };
+
+        self.table
+            .merge_into(other, |key, existing, incoming| {
+                Self::join(env, bindable(key), existing, incoming)
+            })
+            .map_err(|err| complete_analysis_error(range, err))
     }
 
     fn reload_block(&mut self, _: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
         self.table.reload_block(block);
         Ok(())
-    }
-}
-
-impl Mergeable<MIRBindable> for OwnershipState {
-    fn merge(
-        &self,
-        env: &AnalysisEnvironment,
-        other: &Self,
-        key: MIRBindable,
-    ) -> CXMaybeRawResult<Option<LatticeState<MIRBindable, Self>>> {
-        if self == other {
-            return Ok(None);
-        }
-
-        if let MIRBindable::Place(place) = key {
-            if env
-                .function()
-                .body()
-                .and_then(|body| body.place(place))
-                .is_some_and(|place| place.nodrop)
-                && (self == &OwnershipState::Available || other == &OwnershipState::Available)
-            {
-                let (name, discarded) = Ownership::name(env, &MIRBindable::Place(place));
-                return Err(analysis::PARTIAL_MOVE
-                    .bind((
-                        env.function().prototype().display_name().to_string(),
-                        name,
-                        discarded,
-                    ))
-                    .into());
-            }
-        }
-
-        let joined = match (self, other) {
-            (OwnershipState::Uninitialized, _) | (_, OwnershipState::Uninitialized) => {
-                OwnershipState::Uninitialized
-            }
-            _ => OwnershipState::Moved,
-        };
-        Ok(Some(LatticeState::Known(joined)))
     }
 }

@@ -6,7 +6,9 @@ use std::{
 use cx_log::CXResult;
 use cx_log::catalogue::parse::{READ_FILE, UNCLOSED_SYNTAX};
 use cx_namespace::cx_library_directory;
-use cx_tokens::token::{AttributeType, PunctuatorType, Token, TokenKind};
+use cx_tokens::token::{
+    AttributeType, IntegerLiteral, OperatorType, PunctuatorType, Token, TokenKind,
+};
 
 use crate::{
     lexer::{
@@ -289,7 +291,7 @@ impl LexingContext {
                         .unwrap_or(1);
                     expanded.extend(retarget_tokens(
                         std::iter::once(Token::new_unknown(TokenKind::IntLiteral(
-                            cx_tokens::token::IntegerLiteral::decimal(line as u64),
+                            IntegerLiteral::decimal(line as u64),
                         ))),
                         token,
                     ));
@@ -534,7 +536,7 @@ fn macro_variadic_args(args: &[Vec<Token>], named_count: usize, variadic: bool) 
     for (index, arg) in args[named_count..].iter().enumerate() {
         if index > 0 {
             result.push(Token::new_unknown(TokenKind::Operator(
-                cx_tokens::token::OperatorType::Comma,
+                OperatorType::Comma,
             )));
         }
         result.extend(arg.iter().cloned());
@@ -678,7 +680,7 @@ fn parse_macro_args(tokens: &[Token], open_paren_index: usize) -> Option<(Vec<Ve
                 depth -= 1;
                 current.push(token.clone());
             }
-            TokenKind::Operator(cx_tokens::token::OperatorType::Comma) if depth == 0 => {
+            TokenKind::Operator(OperatorType::Comma) if depth == 0 => {
                 args.push(current);
                 current = Vec::new();
             }

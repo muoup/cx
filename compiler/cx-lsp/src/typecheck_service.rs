@@ -7,6 +7,7 @@ use crate::position::{byte_range, line_range};
 use cx_namespace::module::ModulePath;
 use cx_pipeline::LSPErrors;
 use cx_pipeline_data::config::CXProjectConfig;
+use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilationUnit, CompilerBackend, CompilerConfig,
     GlobalCompilationContext, OptimizationLevel,
@@ -95,7 +96,7 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             native_objects: vec![],
             predefined_macros: vec![],
         },
-        module_db: cx_pipeline_data::db::ModuleData::new(),
+        module_db: ModuleData::new(),
         linking_files: Mutex::new(HashSet::new()),
     };
 

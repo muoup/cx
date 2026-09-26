@@ -132,7 +132,7 @@ pub(crate) fn codegen_instruction(
                             if context.signature.return_type.is_memory_resident()
                                 && matches!(
                                     context.signature.return_abi,
-                                    cx_lmir::LMIRReturnABI::Direct { .. }
+                                    LMIRReturnABI::Direct { .. }
                                 ) =>
                         {
                             let values = load_return_slots(context, value)?;

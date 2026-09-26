@@ -1,3 +1,4 @@
+use cx_log::catalogue::mir;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBlockTarget, MIRConstant, MIRInstruction,
     MIRInstructionKind, MIRIntType, MIRScopeID, MIRTarget, MIRType, MIRTypeKind, MIRValue,
@@ -5,7 +6,7 @@ use cx_mir::{
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
-    expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
+    expression::{THIRBlockKind, THIRExpression, THIRExpressionKind, THIRLocalID},
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
@@ -64,11 +65,11 @@ fn lower_dead_labels<'thir>(
         THIRExpressionKind::Block {
             statements, kind, ..
         } => {
-            if *kind != cx_thir::thir::expression::THIRBlockKind::Sequence {
+            if *kind != THIRBlockKind::Sequence {
                 builder.fun_mut().push_scope(expression.token_range.clone());
             }
             let result = lower_sequence(builder, statements, false);
-            if *kind != cx_thir::thir::expression::THIRBlockKind::Sequence {
+            if *kind != THIRBlockKind::Sequence {
                 auto_pop_scope(builder)?;
             }
             match result {
@@ -520,7 +521,7 @@ pub(super) fn lower_switch<'thir>(
             return log_mir_error(
                 &case.token_range,
                 (
-                    &cx_log::catalogue::mir::ENTITY_REQUIREMENT,
+                    &mir::ENTITY_REQUIREMENT,
                     ("switch case".into(), "an integer constant".into(), None),
                 ),
             )
@@ -676,7 +677,7 @@ pub(super) fn lower_match<'thir>(
                 return log_mir_error(
                     &condition.token_range,
                     (
-                        &cx_log::catalogue::mir::INVALID_CONTEXT,
+                        &mir::INVALID_CONTEXT,
                         ("floating-point patterns".into(), "MIR case branches".into()),
                     ),
                 )

@@ -15,7 +15,7 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         contextual_eq::TypeContextEqual,
-        data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
+        data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput},
         expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
         name_mangling::mangle_template_name,
@@ -141,7 +141,7 @@ pub(crate) fn resolve_symbol_inner(
             let prototype = complete_comptime_prototype(env, &namespace, data.base())?;
             Ok(MIRSymbol::ComptimeFunctionReference {
                 prototype,
-                input: cx_thir::thir::data::THIRTemplateInput { args: Vec::new() },
+                input: THIRTemplateInput { args: Vec::new() },
             })
         }
         HIRSymbolKind::TypeConstructor(data) => resolve_type_constructor(

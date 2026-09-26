@@ -18,7 +18,7 @@ use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_namespace::module::QualifiedName;
 use cx_thir::intrinsic_types::is_intrinsic_type;
-use cx_tokens::token::{AttributeType, PunctuatorType, SpecifierType, TokenKind};
+use cx_tokens::token::{AttributeType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{
     identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,
 };
@@ -52,7 +52,7 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
                     data.tokens.slice.get(pre_idx + 1).map(|token| &token.kind),
                     Some(
                         TokenKind::Assignment(_)
-                            | TokenKind::Operator(cx_tokens::token::OperatorType::Access)
+                            | TokenKind::Operator(OperatorType::Access)
                     )
                 )
         }

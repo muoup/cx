@@ -1,4 +1,5 @@
 use crate::lowering::memory;
+use cx_lmir::types::LMIRType;
 use cx_lmir::{LMIRBasicBlock, LMIRBlockTarget, LMIRInstruction, LMIRInstructionKind};
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
@@ -191,7 +192,7 @@ fn unreachable_target(context: &mut FunctionContext<'_, '_>) -> LMIRBlockTarget 
         params: Vec::new(),
         body: vec![LMIRInstruction {
             kind: LMIRInstructionKind::Unreachable,
-            value_type: cx_lmir::types::LMIRType::unit(),
+            value_type: LMIRType::unit(),
             result: None,
         }],
     });

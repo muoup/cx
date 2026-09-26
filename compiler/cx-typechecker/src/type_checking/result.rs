@@ -16,6 +16,7 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::environment::TypeEnvironment;
+use crate::type_checking::staged_expr::complete_staged_expr;
 
 #[derive(Debug, Clone)]
 pub struct TypecheckedBinding {
@@ -318,7 +319,7 @@ impl TypecheckResult {
     ) -> CXResult<Self> {
         match self {
             Self::NeedsStagedType(deferred) => {
-                crate::type_checking::staged_expr::complete_staged_expr(
+                complete_staged_expr(
                     env, namespace, deferred, value_type,
                 )
                 .map(Self::staged_literal)

@@ -1,4 +1,5 @@
 use crate::lowering::memory;
+use cx_lmir::types::LMIRIntegerType;
 use cx_lmir::{
     LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRInstructionKind, LMIRParameterABI,
     LMIRRegister, LMIRValue,
@@ -101,7 +102,7 @@ fn lower_parameters(context: &mut FunctionContext<'_, '_>) {
                     LMIRInstructionKind::Memcpy {
                         dest: address,
                         src: LMIRValue::ParameterRef(abi_index),
-                        size: context.integer(size as i128, cx_lmir::types::LMIRIntegerType::I64),
+                        size: context.integer(size as i128, LMIRIntegerType::I64),
                         alignment,
                     },
                 );

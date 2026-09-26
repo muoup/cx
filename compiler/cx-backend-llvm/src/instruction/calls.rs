@@ -8,7 +8,10 @@ use cx_lmir::{LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LMIRValue}
 use cx_log::catalogue::backend as catalogue;
 use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, ValueKind};
+use inkwell::values::{
+    AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, CallSiteValue, ValueKind,
+};
+use inkwell::AddressSpace;
 
 pub(super) fn generate_direct_call<'a, 'b>(
     global_state: &GlobalState<'a>,
@@ -76,7 +79,7 @@ pub(super) fn generate_indirect_call<'a, 'b>(
 pub(super) fn codegen_call_return<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     method_sig: &LMIRFunctionSignature,
-    call: &inkwell::values::CallSiteValue<'a>,
+    call: &CallSiteValue<'a>,
 ) -> LLVMResult<CodegenValue<'a>> {
     let basic = match call.try_as_basic_value() {
         ValueKind::Basic(value) => value,
@@ -102,7 +105,7 @@ pub(super) fn codegen_call_return<'a, 'b>(
 
 pub(super) fn apply_call_abi_attributes<'a>(
     global_state: &GlobalState<'a>,
-    call: &inkwell::values::CallSiteValue<'a>,
+    call: &CallSiteValue<'a>,
     method_sig: &LMIRFunctionSignature,
 ) -> LLVMResult<()> {
     if let LMIRReturnABI::IndirectSret { .. } = &method_sig.return_abi {
@@ -138,8 +141,8 @@ pub(super) fn apply_call_abi_attributes<'a>(
 pub(super) fn build_direct_return_from_memory<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    memory: inkwell::values::AnyValueEnum<'a>,
-) -> LLVMResult<inkwell::values::BasicValueEnum<'a>> {
+    memory: AnyValueEnum<'a>,
+) -> LLVMResult<BasicValueEnum<'a>> {
     let LMIRReturnABI::Direct { slots } = &function_state.signature.return_abi else {
         return any_to_basic_val(memory);
     };
@@ -183,7 +186,7 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
                 ptr_int,
                 global_state
                     .context
-                    .ptr_type(inkwell::AddressSpace::from(0)),
+                    .ptr_type(AddressSpace::from(0)),
                 inst_num().as_str(),
             )
             .map_err(LLVMError::from_error)?;

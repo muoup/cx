@@ -4,7 +4,7 @@ use cx_namespace::module::NamespacePath;
 use cx_namespace::module::QualifiedName;
 use cx_thir::{
     thir::{
-        expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRPostcondition},
         r#type::THIRType,
     },
     type_context::THIRTypeContext,
@@ -195,7 +195,7 @@ pub fn typecheck_return(
             THIRType::unit(),
             THIRExpressionKind::Return {
                 value: return_value,
-                postcondition: Some(cx_thir::thir::expression::THIRPostcondition {
+                postcondition: Some(THIRPostcondition {
                     binding: ret_name.clone(),
                     condition: Box::new(postcondition),
                 }),

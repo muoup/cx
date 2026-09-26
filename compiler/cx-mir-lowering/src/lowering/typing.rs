@@ -10,6 +10,7 @@ use cx_mir::{
     MIRField, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID, MIRTypeKind,
 };
 use cx_target::ArchitectureConfig;
+use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
 
 pub(crate) fn convert_prototype(
@@ -85,7 +86,7 @@ fn classify_return(
 
 fn classify_param(
     architecture: &ArchitectureConfig,
-    name: Option<cx_util::identifier::CXIdent>,
+    name: Option<CXIdent>,
     ty: MIRTypeID,
     types: &MIRTypeRegistry,
 ) -> LMIRParameter {

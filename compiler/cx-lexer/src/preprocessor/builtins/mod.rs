@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use cx_tokens::token::{Token, TokenKind};
+use cx_tokens::token::{IntegerLiteral, Token, TokenKind};
 
 use crate::context::{BuiltinMacro, Macro};
 
@@ -91,7 +91,7 @@ fn define_int(macros: &mut HashMap<String, Macro>, name: &str, value: i64) {
     macros.insert(
         name.to_string(),
         Macro::Object(Box::new([Token::new_unknown(TokenKind::IntLiteral(
-            cx_tokens::token::IntegerLiteral::decimal(value as u64),
+            IntegerLiteral::decimal(value as u64),
         ))])),
     );
 }

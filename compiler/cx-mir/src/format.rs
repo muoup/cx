@@ -7,7 +7,7 @@ use crate::{
     expr::{
         body::MIRBody,
         comptime::{MIRComptimeInstruction, MIRComptimeOp},
-        instruction::{MIRBasicBlock, MIRInstructionKind, MIRInvalidationKind},
+        instruction::{MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRInvalidationKind},
         intrinsic::{
             MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
@@ -526,7 +526,7 @@ fn write_instruction<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    instruction: &crate::expr::instruction::MIRInstruction,
+    instruction: &MIRInstruction,
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match &instruction.kind {

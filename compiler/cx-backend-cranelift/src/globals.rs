@@ -1,7 +1,9 @@
 use crate::{routines::convert_linkage, GlobalState};
 use cranelift_module::{DataDescription, DataId, Linkage, Module};
-use cx_lmir::types::{LMIRType, LMIRTypeKind};
-use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue};
+use cx_lmir::types::{LMIRFloatType, LMIRType, LMIRTypeKind};
+use cx_lmir::{
+    LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue, LinkageType,
+};
 use cx_log::CXResult;
 
 pub(crate) fn declare_global(
@@ -25,7 +27,7 @@ pub(crate) fn declare_global(
                 LMIRGlobalState::External => Linkage::Import,
                 LMIRGlobalState::ZeroInitialized | LMIRGlobalState::Initialized(_) => {
                     match variable.linkage {
-                        cx_lmir::LinkageType::External => Linkage::Export,
+                        LinkageType::External => Linkage::Export,
                         linkage => convert_linkage(linkage),
                     }
                 }
@@ -84,16 +86,16 @@ pub(crate) fn define_global(
 
 fn initializer_bytes(
     initializer: &LMIRGlobalInitializer,
-    ty: &cx_lmir::types::LMIRType,
+    ty: &LMIRType,
 ) -> Vec<u8> {
     let bytes = match initializer {
         LMIRGlobalInitializer::Integer { value, .. } => value.to_ne_bytes().to_vec(),
         LMIRGlobalInitializer::Float { value, _type } => match _type {
-            cx_lmir::types::LMIRFloatType::F32 => {
+            LMIRFloatType::F32 => {
                 let value: f32 = value.into();
                 value.to_ne_bytes().to_vec()
             }
-            cx_lmir::types::LMIRFloatType::F64 => {
+            LMIRFloatType::F64 => {
                 let value: f64 = value.into();
                 value.to_ne_bytes().to_vec()
             }

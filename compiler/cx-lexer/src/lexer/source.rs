@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use cx_log::CXResult;
+use cx_log::catalogue::ErrorDefinition;
 use cx_util::char_iter::CharIter;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,7 +130,7 @@ impl<'a> LexCursor<'a> {
     pub(crate) fn log_error<T, A>(
         &self,
         byte_index: usize,
-        definition: &cx_log::catalogue::ErrorDefinition<A>,
+        definition: &ErrorDefinition<A>,
         args: A,
     ) -> CXResult<T> {
         crate::log::point_error(self.file_path, byte_index, definition, args)

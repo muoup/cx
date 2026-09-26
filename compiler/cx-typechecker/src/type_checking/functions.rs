@@ -3,6 +3,7 @@ use crate::{
     symbol::completion::assert_valid_type_component,
     type_checking::control_flow::expr_may_fall_through,
     type_checking::control_flow::r#return::typecheck_return,
+    type_checking::safety::validate_safe_expression,
     type_checking::typechecker::typecheck_expr,
 };
 use cx_hir::ast::function::{HIRFunctionBody, HIRFunctionContract};
@@ -13,7 +14,7 @@ use cx_thir::thir::{
     comptime::THIRComptimeFn,
     data::{
         THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRFunctionBody,
-        THIRParameter,
+        THIRParameter, THIRType,
     },
     expression::{THIRBlockKind, THIRExpression, THIRExpressionKind},
     r#type::THIRTypeKind,
@@ -74,7 +75,7 @@ pub fn typecheck_function(
 
     if prototype.signature().contract.safe {
         let safety_body = sequence_expression(statements.clone(), body.token_range().clone());
-        crate::type_checking::safety::validate_safe_expression(env, &safety_body)?;
+        validate_safe_expression(env, &safety_body)?;
     }
 
     env.pop_scope()
@@ -204,7 +205,7 @@ fn typecheck_function_body(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     body: &HIRFunctionBody,
-    return_type: &cx_thir::thir::data::THIRType,
+    return_type: &THIRType,
 ) -> CXResult<Vec<THIRExpression>> {
     match body {
         HIRFunctionBody::Block { statements, .. } => {
@@ -265,7 +266,7 @@ fn sequence_expression(statements: Vec<THIRExpression>, token_range: TokenRange)
             kind: THIRBlockKind::Sequence,
             yields: false,
         },
-        _type: cx_thir::thir::data::THIRType::unit(),
+        _type: THIRType::unit(),
         token_range,
     }
 }

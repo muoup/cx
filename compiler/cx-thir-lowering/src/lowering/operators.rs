@@ -7,7 +7,7 @@ use cx_mir::{
 };
 use cx_thir::thir::{
     contextual_eq::TypeContextEqual,
-    data::THIRType,
+    data::{THIRType, THIRTypeKind},
     expression::{
         THIRBinOp, THIRCoercion, THIRExpression, THIRExpressionKind, THIRFloatBinOp, THIRIntBinOp,
         THIRPtrBinOp, THIRPtrDiffBinOp, THIRUnOp,
@@ -270,7 +270,7 @@ pub(super) fn lower_binary_op<'thir>(
             let offset_ty = lower_type(builder, rhs_type).map_err(LowerStop::Diagnostic)?;
             let scaled = builder.fun_mut().new_register(offset_ty, None);
             let integer_ty = match &rhs_type.kind {
-                cx_thir::thir::data::THIRTypeKind::Integer { _type, .. } => lower_int_type(*_type),
+                THIRTypeKind::Integer { _type, .. } => lower_int_type(*_type),
                 _ => unreachable!("pointer offset must be an integer"),
             };
             builder.fun_mut().emit_intrinsic(

@@ -2,6 +2,7 @@ use crate::log::{LLVMError, LLVMResult};
 use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRIntBinOp, LMIRPtrBinOp};
 use inkwell::values::{AnyValue, AnyValueEnum, IntValue};
+use inkwell::IntPredicate;
 
 pub(crate) fn generate_ptr_binop<'a, 'b>(
     global_state: &GlobalState<'a>,
@@ -112,7 +113,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
         LMIRPtrBinOp::EQ => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::EQ,
+                IntPredicate::EQ,
                 left_value.into_pointer_value(),
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
@@ -122,7 +123,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
         LMIRPtrBinOp::NE => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::NE,
+                IntPredicate::NE,
                 left_value.into_pointer_value(),
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
@@ -132,7 +133,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
         LMIRPtrBinOp::LT => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::ULT,
+                IntPredicate::ULT,
                 left_value.into_pointer_value(),
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
@@ -142,7 +143,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
         LMIRPtrBinOp::LE => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::ULE,
+                IntPredicate::ULE,
                 left_value.into_pointer_value(),
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
@@ -152,7 +153,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
         LMIRPtrBinOp::GT => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::UGT,
+                IntPredicate::UGT,
                 left_value.into_pointer_value(),
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
@@ -162,7 +163,7 @@ pub(crate) fn generate_ptr_binop<'a, 'b>(
         LMIRPtrBinOp::GE => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::UGE,
+                IntPredicate::UGE,
                 left_value.into_pointer_value(),
                 right_value.into_pointer_value(),
                 crate::instruction::inst_num().as_str(),
@@ -255,7 +256,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::IGT => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::SGT,
+                IntPredicate::SGT,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -265,7 +266,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::UGT => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::UGT,
+                IntPredicate::UGT,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -275,7 +276,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::IGE => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::SGE,
+                IntPredicate::SGE,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -285,7 +286,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::UGE => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::UGE,
+                IntPredicate::UGE,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -295,7 +296,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::ILT => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::SLT,
+                IntPredicate::SLT,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -305,7 +306,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::ULT => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::ULT,
+                IntPredicate::ULT,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -315,7 +316,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::ILE => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::SLE,
+                IntPredicate::SLE,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -384,7 +385,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::LAND => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::NE,
+                IntPredicate::NE,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -394,7 +395,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::LOR => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::NE,
+                IntPredicate::NE,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -404,7 +405,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::EQ => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::EQ,
+                IntPredicate::EQ,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -414,7 +415,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::NE => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::NE,
+                IntPredicate::NE,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),
@@ -424,7 +425,7 @@ pub(crate) fn generate_int_binop<'a, 'b>(
         LMIRIntBinOp::ULE => function_state
             .builder
             .build_int_compare(
-                inkwell::IntPredicate::ULE,
+                IntPredicate::ULE,
                 left_value,
                 right_value,
                 crate::instruction::inst_num().as_str(),

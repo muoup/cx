@@ -1,17 +1,19 @@
 use crate::GlobalState;
 use crate::log::{LLVMError, LLVMResult};
 use crate::typing::{any_to_basic_type, bc_llvm_type, convert_linkage};
+use cx_lmir::types::{LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue, LinkageType};
 use cx_log::catalogue::backend as catalogue;
+use inkwell::AddressSpace;
 use inkwell::module::Linkage;
 use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::ArrayValue;
-use std::sync::atomic::AtomicUsize;
+use inkwell::values::{ArrayValue, BasicValueEnum, GlobalValue};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn string_literal_name() -> String {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-    let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let id = COUNTER.fetch_add(1, Ordering::SeqCst);
     format!(".str_{id}")
 }
 
@@ -113,7 +115,7 @@ fn get_global<'ctx>(
     basic_type: BasicTypeEnum<'ctx>,
     name: &str,
     global_state: &LMIRGlobalState,
-) -> inkwell::values::GlobalValue<'ctx> {
+) -> GlobalValue<'ctx> {
     let Some(existing) = state.module.get_global(name) else {
         return state.module.add_global(basic_type, None, name);
     };
@@ -142,7 +144,7 @@ fn get_global<'ctx>(
 
 fn global_llvm_type<'ctx>(
     state: &GlobalState<'ctx>,
-    _type: &cx_lmir::types::LMIRType,
+    _type: &LMIRType,
     initializers: &[&LMIRGlobalInitializer],
 ) -> LLVMResult<BasicTypeEnum<'ctx>> {
     let base_type = || -> LLVMResult<BasicTypeEnum<'ctx>> {
@@ -158,16 +160,16 @@ fn global_llvm_type<'ctx>(
     }
 
     match &_type.kind {
-        cx_lmir::types::LMIRTypeKind::Opaque { bytes }
+        LMIRTypeKind::Opaque { bytes }
             if *bytes == state.architecture.pointer_size()
                 && usize::from(_type.alignment) == state.architecture.pointer_alignment() =>
         {
             Ok(state
                 .context
-                .ptr_type(inkwell::AddressSpace::from(0))
+                .ptr_type(AddressSpace::from(0))
                 .into())
         }
-        cx_lmir::types::LMIRTypeKind::Array { element, size } => {
+        LMIRTypeKind::Array { element, size } => {
             let element_initializers = initializers
                 .iter()
                 .flat_map(|initializer| match initializer {
@@ -183,7 +185,7 @@ fn global_llvm_type<'ctx>(
                 .array_type(*size as u32)
                 .into())
         }
-        cx_lmir::types::LMIRTypeKind::Struct { fields, .. } => {
+        LMIRTypeKind::Struct { fields, .. } => {
             let field_types = fields
                 .iter()
                 .enumerate()
@@ -208,25 +210,25 @@ fn global_llvm_type<'ctx>(
 }
 
 fn has_function_pointer_initializer(
-    _type: &cx_lmir::types::LMIRType,
+    _type: &LMIRType,
     initializer: &LMIRGlobalInitializer,
 ) -> bool {
     match (&_type.kind, initializer) {
-        (cx_lmir::types::LMIRTypeKind::Opaque { .. }, LMIRGlobalInitializer::Function(_)) => true,
+        (LMIRTypeKind::Opaque { .. }, LMIRGlobalInitializer::Function(_)) => true,
         (
-            cx_lmir::types::LMIRTypeKind::Opaque { .. },
+            LMIRTypeKind::Opaque { .. },
             LMIRGlobalInitializer::Aggregate { fields },
         ) => fields.iter().any(|(index, initializer)| {
             *index == 0 && matches!(initializer, LMIRGlobalInitializer::Function(_))
         }),
         (
-            cx_lmir::types::LMIRTypeKind::Array { element, size },
+            LMIRTypeKind::Array { element, size },
             LMIRGlobalInitializer::Aggregate { fields },
         ) => fields.iter().any(|(index, initializer)| {
             *index < *size && has_function_pointer_initializer(element, initializer)
         }),
         (
-            cx_lmir::types::LMIRTypeKind::Struct { fields, .. },
+            LMIRTypeKind::Struct { fields, .. },
             LMIRGlobalInitializer::Aggregate {
                 fields: initializers,
             },
@@ -241,9 +243,9 @@ fn has_function_pointer_initializer(
 
 fn global_initializer<'ctx>(
     state: &GlobalState<'ctx>,
-    basic_type: inkwell::types::BasicTypeEnum<'ctx>,
+    basic_type: BasicTypeEnum<'ctx>,
     initializer: &LMIRGlobalInitializer,
-) -> LLVMResult<inkwell::values::BasicValueEnum<'ctx>> {
+) -> LLVMResult<BasicValueEnum<'ctx>> {
     match initializer {
         LMIRGlobalInitializer::Integer { value, .. } => Ok(basic_type
             .into_int_type()
@@ -261,7 +263,8 @@ fn global_initializer<'ctx>(
             Ok(global_initializer(state, basic_type, &fields[0].1)?)
         }
         LMIRGlobalInitializer::Aggregate { fields } => match basic_type {
-            inkwell::types::BasicTypeEnum::StructType(struct_type) => {
+            BasicTypeEnum::StructType(struct_type) => {
+                let initializers = initializers_by_index(fields, struct_type.count_fields() as usize);
                 let values = (0..struct_type.count_fields())
                     .map(|index| -> LLVMResult<_> {
                         let field_type =
@@ -271,28 +274,21 @@ fn global_initializer<'ctx>(
                                     ("struct field".into(), format!("{index}")),
                                 )
                             })?;
-                        Ok(fields
-                            .iter()
-                            .find(|(field_index, _)| *field_index == index as usize)
-                            .map(|(_, initializer)| {
-                                global_initializer(state, field_type, initializer)
-                            })
+                        Ok(initializers[index as usize]
+                            .map(|initializer| global_initializer(state, field_type, initializer))
                             .transpose()?
                             .unwrap_or_else(|| field_type.const_zero()))
                     })
                     .collect::<LLVMResult<Vec<_>>>()?;
                 Ok(struct_type.const_named_struct(&values).into())
             }
-            inkwell::types::BasicTypeEnum::ArrayType(array_type) => {
+            BasicTypeEnum::ArrayType(array_type) => {
                 let element_type = array_type.get_element_type();
+                let initializers = initializers_by_index(fields, array_type.len() as usize);
                 let values = (0..array_type.len())
                     .map(|index| -> LLVMResult<_> {
-                        Ok(fields
-                            .iter()
-                            .find(|(field_index, _)| *field_index == index as usize)
-                            .map(|(_, initializer)| {
-                                global_initializer(state, element_type, initializer)
-                            })
+                        Ok(initializers[index as usize]
+                            .map(|initializer| global_initializer(state, element_type, initializer))
                             .transpose()?
                             .unwrap_or_else(|| element_type.const_zero()))
                     })
@@ -356,8 +352,23 @@ fn global_initializer<'ctx>(
                 .into())
         }
         LMIRGlobalInitializer::Null => Ok(match basic_type {
-            inkwell::types::BasicTypeEnum::PointerType(pointer) => pointer.const_null().into(),
+            BasicTypeEnum::PointerType(pointer) => pointer.const_null().into(),
             _ => basic_type.const_zero(),
         }),
     }
+}
+
+/// Positions each field initializer at its index (the first initializer wins for duplicates), so
+/// building a large constant aggregate stays linear in its length
+fn initializers_by_index(
+    fields: &[(usize, LMIRGlobalInitializer)],
+    len: usize,
+) -> Vec<Option<&LMIRGlobalInitializer>> {
+    let mut initializers = vec![None; len];
+    for (index, initializer) in fields {
+        if let Some(slot @ None) = initializers.get_mut(*index) {
+            *slot = Some(initializer);
+        }
+    }
+    initializers
 }

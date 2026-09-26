@@ -6,7 +6,8 @@ use cx_thir::thir::{
     comptime::{THIRStagedExpr, THIRStagedParameter},
     data::{THIRComptimeValueType, THIRType},
     expression::{
-        THIRExpression, THIRExpressionKind, THIRFnContract, THIRLocalID, THIRPostcondition,
+        THIRCoercion, THIRExpression, THIRExpressionKind, THIRFnContract, THIRLocalID,
+        THIRPostcondition,
     },
     pattern::THIRPattern,
 };
@@ -360,7 +361,7 @@ fn collect_expression_locals(
             operand,
             conversion,
         } => {
-            if let cx_thir::thir::expression::THIRCoercion::ReferenceBounding(local_ids) =
+            if let THIRCoercion::ReferenceBounding(local_ids) =
                 conversion
             {
                 references.extend(local_ids.iter().copied());
