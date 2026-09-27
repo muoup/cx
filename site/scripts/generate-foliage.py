@@ -1,4 +1,5 @@
-# Generates the low-poly bush and leaf SVG symbols used behind the site.
+# Generates the low-poly foliage: bush markup, grouped so each tier, clump and leaf can rustle, and the drifting leaf symbol.
+# Parts are <g data-l="level" data-p="pivot">; leaves carry data-parent, the data-id of the clump they grow from.
 import math, random
 from pathlib import Path
 
@@ -6,84 +7,90 @@ def f(x): return str(round(x))
 
 def pts(ps): return " ".join(f"{f(x)},{f(y)}" for x, y in ps)
 
-def poly(rng, cx, cy, r, n, rot=None):
+def polygon(cls, ps): return f'<polygon class="{cls}" points="{pts(ps)}"/>'
+
+def part(level, pivot, body, attrs=""):
+    return f'<g data-l="{level}" data-p="{f(pivot[0])},{f(pivot[1])}"{attrs}>{"".join(body)}</g>'
+
+def poly(rng, cx, cy, r, n, rot=None, jitter=0.22, spread=(0.86, 1.08)):
     rot = rng.uniform(0, 2 * math.pi) if rot is None else rot
     step = 2 * math.pi / n
     out = []
     for i in range(n):
-        a = rot + i * step + rng.uniform(-0.22, 0.22) * step
-        rr = r * rng.uniform(0.86, 1.08)
+        a = rot + i * step + rng.uniform(-jitter, jitter) * step
+        rr = r * rng.uniform(*spread)
         out.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
     return out
 
-def leaf(x, y, ang, L, cls):
-    W = L * rng_leaf.uniform(0.34, 0.46)
-    k = rng_leaf.uniform(0.35, 0.55)
-    local = [(0, 0), (L * k, -W), (L, 0), (L * (k + 0.08), W)]
-    c, s = math.cos(ang), math.sin(ang)
-    ps = [(x + px * c - py * s, y + px * s + py * c) for px, py in local]
-    return f'<polygon class="{cls}" points="{pts(ps)}"/>'
+# Clumps keep their vertices near-even so no corner turns into a spike.
+def clump(rng, cx, cy, r, n): return poly(rng, cx, cy, r, n, jitter=0.12, spread=(0.92, 1.05))
 
-def facets(rng, cx, cy, ps):
-    out = []
-    ox, oy = cx + rng.uniform(-4, 4), cy + rng.uniform(-4, 4)
+def leaf(rng, x, y, ang, L, cls):
+    W = L * rng.uniform(0.32, 0.4)
+    k = rng.uniform(0.4, 0.5)
+    c, s = math.cos(ang), math.sin(ang)
+    local = [(0, 0), (L * k, -W), (L, 0), (L * (k + 0.08), W)]
+    return [polygon(cls, [(x + px * c - py * s, y + px * s + py * c) for px, py in local])]
+
+# A facet spans two edges from near the centre, so it stays broad instead of forming a thin wedge.
+def facets(rng, cx, cy, r, ps, lit):
+    o = (cx + rng.uniform(-0.08, 0.08) * r, cy + rng.uniform(-0.08, 0.08) * r)
     n = len(ps)
     i = rng.randrange(n)
-    out.append(f'<polygon class="fh" points="{pts([(ox, oy), ps[i], ps[(i + 1) % n]])}"/>')
-    j = (i + n // 2) % n
-    out.append(f'<polygon class="fl" points="{pts([(ox, oy), ps[j], ps[(j + 1) % n]])}"/>')
-    return out
+    kite = lambda j: [o, ps[j % n], ps[(j + 1) % n], ps[(j + 2) % n]]
+    return [polygon("fh" if lit else "fl", kite(i))]
 
-def layer(rng, R, lobe, count, cls, leaves, jitter):
-    out = [f'<polygon class="{cls}" points="{pts(poly(rng, 0, 0, R * 0.92, 12, 0))}"/>']
-    tips = []
+# Sizes are in screen pixels and divided by px, the pixels per unit the bush is drawn at, so every bush has the same density.
+def tier(rng, R, lobe, leaf_len, leaf_share, cls, px, ids):
+    lobe, leaf_len = lobe / px, leaf_len / px
+    count = max(3, round(R * math.pi / 2 / (0.7 * lobe)))
+    clumps = []
     for i in range(count):
-        t = (i + 0.5) / count
-        a = t * math.pi / 2 + rng.uniform(-jitter, jitter)
-        r = lobe * rng.uniform(0.7, 1.2)
+        a = (i + 0.5) / count * math.pi / 2 + rng.uniform(-0.05, 0.05)
+        r = lobe * rng.uniform(0.8, 1.12)
         rr = R + rng.uniform(-0.15, 0.1) * lobe
         cx, cy = rr * math.cos(a), rr * math.sin(a)
-        ps = poly(rng, cx, cy, r, rng.randint(5, 6))
-        out.append(f'<polygon class="{cls}" points="{pts(ps)}"/>')
+        clumps.append((cx, cy, r, rr, a, clump(rng, cx, cy, r, rng.randint(6, 7)), next(ids)))
+
+    out = [polygon(cls, poly(rng, 0, 0, R * 0.92, 14, 0))]
+    for i, (cx, cy, r, rr, a, ps, cid) in enumerate(clumps):
+        body = [polygon(cls, ps)] + (facets(rng, cx, cy, r, ps, i % 4 == 1) if i % 2 else [])
         if i % 2 == 0:
-            out += facets(rng, cx, cy, ps)[(i // 2) % 2:][:1]
-        tips.append((cx, cy, r, a))
-    for cx, cy, r, a in list(tips):
-        for _ in range(1):
             b = a + rng.uniform(-0.9, 0.9)
             d = r * rng.uniform(0.72, 0.9)
-            out.append(f'<polygon class="{cls}" points="{pts(poly(rng, cx + d*math.cos(b), cy + d*math.sin(b), r * rng.uniform(0.32, 0.45), 4))}"/>')
-    for _ in range(leaves):
-        cx, cy, r, a = rng.choice(tips)
-        b = a + rng.uniform(-0.8, 0.8)
-        x, y = cx + (r - 9) * math.cos(b), cy + (r - 9) * math.sin(b)
-        out.append(leaf(x, y, b + rng.uniform(-0.35, 0.35), rng.uniform(22, 32), cls))
-    return out, tips
+            body.append(polygon(cls, clump(rng, cx + d * math.cos(b), cy + d * math.sin(b), r * rng.uniform(0.32, 0.45), 5)))
+        base = rr - r * 0.7
+        out.append(part(1, (base * math.cos(a), base * math.sin(a)), body, f' data-id="{cid}"'))
 
-def bush(seed, scale):
-    global rng_leaf
+    for j in range(round(count * leaf_share)):
+        cx, cy, r, _, a, _, cid = clumps[(j * 3) % count]
+        b = a + rng.uniform(-0.75, 0.75)
+        x, y = cx + (r - 8 / px) * math.cos(b), cy + (r - 8 / px) * math.sin(b)
+        L = leaf_len * rng.uniform(0.8, 1.15)
+        out.append(part(2, (x, y), leaf(rng, x, y, b + rng.uniform(-0.35, 0.35), L, cls), f' data-parent="{cid}"'))
+    return out
+
+def bush(seed, scale, px):
     rng = random.Random(seed)
-    rng_leaf = random.Random(seed + 1)
-    parts = []
-    l1, _ = layer(rng, 205 * scale, 70 * scale, 6, "b1", 6, 0.05)
-    l2, t2 = layer(rng, 130 * scale, 54 * scale, 5, "b2", 4, 0.06)
-    l3, _ = layer(rng, 62 * scale, 40 * scale, 3, "b3", 2, 0.08)
-    parts += l1 + l2 + l3
+    ids = iter(range(1000))
+    tiers = [
+        tier(rng, 205 * scale, 80, 36, 0.85, "b1", px, ids),
+        tier(rng, 130 * scale, 62, 30, 0.65, "b2", px, ids),
+        tier(rng, 62 * scale, 46, 22, 0.5, "b3", px, ids),
+    ]
     for a in (0.55, 1.05):
         bx, by = 88 * scale * math.cos(a), 88 * scale * math.sin(a)
-        for dx, dy in ((0, 0), (9, 4), (3, 10)):
-            parts.append(f'<polygon class="berry" points="{pts(poly(rng, bx+dx, by+dy, 4.8, 5))}"/>')
-    return "".join(parts)
+        for dx, dy in ((0, 0), (12, 5), (4, 13)):
+            tiers[2].append(polygon("berry", poly(rng, bx + dx / px, by + dy / px, 6.2 / px, 5)))
+    return "".join(part(0, (0, 0), body) for body in tiers)
 
-rng_leaf = None
-symbols = [
-    f'<symbol id="{sid}" viewBox="0 0 320 320" overflow="visible">{bush(seed, scale)}</symbol>'
-    for seed, scale, sid in ((7, 1.0, "bush-a"), (21, 0.82, "bush-b"))
-]
-symbols.append('<symbol id="drift-leaf" viewBox="-2 -9 26 18"><polygon class="dl" points="0,0 9,-7 24,0 11,7"/><polygon class="fh" points="0,0 9,-7 24,0"/></symbol>')
+# a is drawn up to 560px wide and b up to 430px, both across 320 units.
+bushes = {sid: bush(seed, scale, px) for seed, scale, px, sid in ((7, 1.0, 1.72, "a"), (21, 0.82, 1.3, "b"))}
+leaf_symbol = '<symbol id="drift-leaf" viewBox="-2 -9 26 18"><polygon class="dl" points="0,0 9,-7 24,0 11,7"/><polygon class="fh" points="0,0 9,-7 24,0"/></symbol>'
 
 out = Path(__file__).resolve().parent.parent / "src/components/Foliage/symbols.ts"
 out.write_text(
     "// Generated by scripts/generate-foliage.py\n"
-    f"export const foliageSymbols = `{''.join(symbols)}`;\n"
+    f"export const foliageSymbols = `{leaf_symbol}`;\n\n"
+    "export const bushes = {\n" + "".join(f"    {sid}: `{markup}`,\n" for sid, markup in bushes.items()) + "};\n"
 )

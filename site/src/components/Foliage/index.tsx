@@ -1,6 +1,6 @@
 import {useEffect, useRef, type CSSProperties, type ReactNode} from "react";
 
-import {foliageSymbols} from "./symbols";
+import {bushes, foliageSymbols} from "./symbols";
 import styles from "./styles.module.css";
 
 type Vars = CSSProperties & Record<`--${string}`, string>;
@@ -41,12 +41,8 @@ const nearGusts: {path: string; style: Vars}[] = [
     {path: curl, style: {"--x": "38%", "--y": "76%", "--w": "700px", "--d": "16s", "--delay": "-11s"}},
 ];
 
-function Bush({symbol, className}: {symbol: string; className: string}) {
-    return (
-        <svg className={`${styles.bush} ${className}`}>
-            <use href={`#${symbol}`} />
-        </svg>
-    );
+function Bush({art, className}: {art: keyof typeof bushes; className: string}) {
+    return <svg className={`${styles.bush} ${className}`} viewBox="0 0 320 320" dangerouslySetInnerHTML={{__html: `<g>${bushes[art]}</g>`}} />;
 }
 
 function Wind({leaves, gusts, className}: {leaves: Vars[]; gusts: typeof farGusts; className: string}) {
@@ -68,8 +64,66 @@ function Wind({leaves, gusts, className}: {leaves: Vars[]; gusts: typeof farGust
     );
 }
 
-// Scrolling shakes the bushes: a damped wobble around each one's screen corner, scaled by scroll speed.
-function useRustle() {
+type Spring = {
+    el: SVGGElement;
+    transform: string;
+    parent?: Spring;
+    angle: number;
+    velocity: number;
+    wind: number;
+    stiffness: number;
+    damping: number;
+    reach: number;
+    lag: number;
+    flutter: number;
+    phase: number;
+};
+
+// Per level (tier, clump, leaf): natural frequency range in Hz, damping ratio, and lean in degrees at full wind.
+const levels = [
+    {hz: [0.9, 1.2], ratio: 0.2, reach: 0.4},
+    {hz: [1.5, 2.4], ratio: 0.14, reach: 2.4},
+    {hz: [2.6, 4], ratio: 0.1, reach: 6},
+];
+
+function hash(n: number) {
+    const x = Math.sin(n * 12.9898) * 43758.5453;
+    return x - Math.floor(x);
+}
+
+function springs(bush: Element, leavesOnly: boolean, seed: number): Spring[] {
+    const ids = new Map<string, Spring>();
+    const parts = Array.from(bush.querySelectorAll<SVGGElement>("g[data-l]")).filter((el) => !leavesOnly || el.dataset.l === "2");
+    return parts.map((el, index) => {
+        const level = levels[Number(el.dataset.l)];
+        const [x, y] = el.dataset.p!.split(",").map(Number);
+        const random = (salt: number) => hash(seed + index * 7 + salt);
+        const omega = 2 * Math.PI * (level.hz[0] + (level.hz[1] - level.hz[0]) * random(1));
+        const spring: Spring = {
+            el,
+            transform: ` ${x} ${y})`,
+            parent: el.dataset.parent ? ids.get(el.dataset.parent) : undefined,
+            angle: 0,
+            velocity: 0,
+            wind: 0,
+            stiffness: omega * omega,
+            damping: 2 * level.ratio * omega,
+            reach: level.reach,
+            // Farther from the screen corner catches the scroll later, so the motion ripples outward.
+            lag: 0.04 + (Math.hypot(x, y) / 300) * 0.22 + random(2) * 0.05,
+            flutter: omega * (0.5 + random(3) * 0.2),
+            phase: random(4) * 2 * Math.PI,
+        };
+        if (el.dataset.id) {
+            ids.set(el.dataset.id, spring);
+        }
+        return spring;
+    });
+}
+
+// Scrolling rustles the bushes: every tier, clump and leaf is a damped spring pushed by scroll speed, each with its
+// own frequency and delay so they fall out of step and settle on their own.
+function useRustle(leavesOnly: boolean) {
     const ref = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -78,59 +132,74 @@ function useRustle() {
             return;
         }
 
-        const bushes = Array.from(root.querySelectorAll<SVGSVGElement>(`.${styles.bush}`));
+        const parts = Array.from(root.querySelectorAll(`.${styles.bush}`)).flatMap((bush, index) => springs(bush, leavesOnly, index * 101));
+        let wind = 0;
         let lastY = window.scrollY;
-        let lastTime = performance.now();
-        let shaking = false;
+        let lastScroll = performance.now();
+        let lastFrame = 0;
+        let frame = 0;
+
+        function step(now: number) {
+            const dt = Math.min((now - lastFrame) / 1000, 1 / 30);
+            const t = now / 1000;
+            lastFrame = now;
+            wind *= Math.exp(-dt / 0.18);
+
+            let moving = Math.abs(wind) > 0.01;
+            for (const part of parts) {
+                part.wind += (wind - part.wind) * (1 - Math.exp(-dt / part.lag));
+                const drive = part.wind + Math.abs(part.wind) * 0.5 * Math.sin(t * part.flutter + part.phase);
+                part.velocity += (part.stiffness * (part.reach * drive - part.angle) - part.damping * part.velocity) * dt;
+                part.angle = Math.max(-2 * part.reach, Math.min(part.angle + part.velocity * dt, 2 * part.reach));
+                moving ||= Math.abs(part.angle) > 0.005 || Math.abs(part.velocity) > 0.05;
+            }
+            for (const part of parts) {
+                const own = `rotate(${part.angle.toFixed(3)}${part.transform}`;
+                part.el.setAttribute("transform", part.parent ? `rotate(${part.parent.angle.toFixed(3)}${part.parent.transform} ${own}` : own);
+            }
+
+            frame = moving ? requestAnimationFrame(step) : 0;
+        }
 
         function onScroll() {
             const now = performance.now();
-            const speed = Math.abs(window.scrollY - lastY) / Math.min(Math.max(now - lastTime, 16), 100);
+            const speed = (window.scrollY - lastY) / Math.min(Math.max(now - lastScroll, 16), 100);
             lastY = window.scrollY;
-            lastTime = now;
-
-            if (shaking || speed < 0.25) {
-                return;
+            lastScroll = now;
+            wind += (Math.max(-1, Math.min(speed / 2.5, 1)) - wind) * 0.5;
+            if (!frame) {
+                lastFrame = now;
+                frame = requestAnimationFrame(step);
             }
-
-            shaking = true;
-            const amplitude = Math.min(0.5 + speed * 0.5, 1.8);
-            const animations = bushes.map((bush, index) => {
-                const a = amplitude * (bush.matches(`.${styles.topLeft}, .${styles.bottomLeft}`) ? 1 : -1);
-                return bush.animate(
-                    [0, a, -0.65 * a, 0.35 * a, -0.12 * a, 0].map((deg) => ({rotate: `${deg}deg`})),
-                    {duration: 1100, delay: index * 70, easing: "ease-out"},
-                );
-            });
-            Promise.all(animations.map((animation) => animation.finished)).finally(() => {
-                shaking = false;
-            });
         }
 
         window.addEventListener("scroll", onScroll, {passive: true});
-        return () => window.removeEventListener("scroll", onScroll);
-    }, []);
+        return () => {
+            window.removeEventListener("scroll", onScroll);
+            cancelAnimationFrame(frame);
+        };
+    }, [leavesOnly]);
 
     return ref;
 }
 
 export default function Foliage({full = false}: {full?: boolean}): ReactNode {
-    const ref = useRustle();
+    const ref = useRustle(!full);
 
     return (
         <div className={styles.foliage} aria-hidden="true" ref={ref}>
             <svg className={styles.symbols} dangerouslySetInnerHTML={{__html: foliageSymbols}} />
             {full ? (
                 <>
-                    <Bush symbol="bush-b" className={styles.topLeft} />
-                    <Bush symbol="bush-a" className={styles.topRight} />
-                    <Bush symbol="bush-a" className={styles.bottomLeft} />
-                    <Bush symbol="bush-b" className={styles.bottomRight} />
+                    <Bush art="b" className={styles.topLeft} />
+                    <Bush art="a" className={styles.topRight} />
+                    <Bush art="a" className={styles.bottomLeft} />
+                    <Bush art="b" className={styles.bottomRight} />
                     <Wind leaves={farLeaves} gusts={farGusts} className={styles.far} />
                     <Wind leaves={nearLeaves} gusts={nearGusts} className={styles.near} />
                 </>
             ) : (
-                <Bush symbol="bush-b" className={`${styles.bottomLeft} ${styles.small}`} />
+                <Bush art="b" className={`${styles.bottomLeft} ${styles.small}`} />
             )}
         </div>
     );
