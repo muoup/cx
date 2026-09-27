@@ -1,0 +1,135 @@
+.foliage {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background: var(--ifm-background-color);
+  pointer-events: none;
+}
+
+/* Fine grain so the ground reads as a surface rather than a flat fill */
+.foliage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: 0.22;
+}
+
+.symbols {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* Fills are unscoped since the generated markup uses plain class names. */
+:global(.b1) { fill: var(--cx-bush-1); }
+:global(.b2) { fill: var(--cx-bush-2); }
+:global(.b3) { fill: var(--cx-bush-3); }
+:global(.berry) { fill: var(--cx-berry); }
+:global(.fh) { fill: var(--cx-facet-hi); }
+:global(.fl) { fill: var(--cx-facet-lo); }
+:global(.dl) { fill: var(--cx-bush-3); }
+
+.bush {
+  position: absolute;
+  overflow: visible;
+}
+
+.bush > g { transform-origin: 50% 50%; }
+
+.topLeft { left: -30px; top: -34px; width: clamp(230px, 21vw, 400px); aspect-ratio: 1; }
+.topRight { right: -36px; top: -40px; width: clamp(330px, 30vw, 560px); aspect-ratio: 1; }
+.bottomLeft { left: -36px; bottom: -40px; width: clamp(320px, 29vw, 540px); aspect-ratio: 1; }
+.bottomRight { right: -30px; bottom: -34px; width: clamp(250px, 23vw, 430px); aspect-ratio: 1; }
+.topRight > g { transform: scaleX(-1); }
+.bottomLeft > g { transform: scaleY(-1); }
+.bottomRight > g { transform: scale(-1); }
+.bottomLeft.small { width: 220px; }
+
+.wind {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  --travel: calc(100vw + 120px);
+}
+
+.far {
+  --leaf-opacity: 0.6;
+  --bob: 10px;
+  --gust-h: 28px;
+}
+
+.near {
+  --leaf-opacity: 0.9;
+  --bob: 22px;
+  --gust-h: 56px;
+  --travel: calc(100vw + 200px);
+}
+
+.wind i {
+  position: absolute;
+  left: calc(var(--s) * -2);
+  top: var(--y);
+  opacity: 0;
+  animation: blow var(--d) linear var(--delay) infinite;
+}
+
+.wind i svg {
+  display: block;
+  width: var(--s);
+  height: calc(var(--s) * 0.7);
+  animation: bob var(--sw) ease-in-out var(--delay) infinite alternate;
+}
+
+@keyframes blow {
+  0% { opacity: 0; transform: translate(0, 0); }
+  6%, 90% { opacity: var(--leaf-opacity); }
+  100% { opacity: 0; transform: translate(var(--travel), var(--dy)); }
+}
+
+@keyframes bob {
+  from { transform: translateY(calc(var(--bob) * -1)) rotate(var(--r0)); }
+  to { transform: translateY(var(--bob)) rotate(var(--r1)); }
+}
+
+.gust {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--w);
+  height: var(--gust-h);
+  overflow: visible;
+}
+
+.gust path {
+  fill: none;
+  stroke: var(--cx-bush-3);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 28 200;
+  stroke-dashoffset: 28;
+  opacity: 0;
+  animation: gust var(--d) ease-in-out var(--delay) infinite;
+}
+
+@keyframes gust {
+  0% { stroke-dashoffset: 28; opacity: 0; }
+  6% { opacity: 0.9; }
+  40% { stroke-dashoffset: -100; opacity: 0.9; }
+  46%, 100% { stroke-dashoffset: -100; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wind { display: none; }
+}
+
+@media (max-width: 680px) {
+  .topLeft, .bottomLeft:not(.small) { display: none; }
+  .topRight { width: 200px; }
+  .bottomRight { width: 180px; }
+  .bottomLeft.small { width: 150px; }
+  .near { --bob: 14px; }
+  .near i svg { width: calc(var(--s) * 0.65); height: calc(var(--s) * 0.45); }
+}

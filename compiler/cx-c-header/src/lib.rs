@@ -50,7 +50,7 @@ pub fn generate_header(
             &mut forward_decls,
         );
         for param in &proto.signature.params {
-            collect_types(&param._type, &mut type_defs, &mut forward_decls);
+            collect_types(&param.ty, &mut type_defs, &mut forward_decls);
         }
     }
 
@@ -199,7 +199,7 @@ fn format_function_declaration(proto: &LMIRFunctionPrototype) -> String {
                 .as_ref()
                 .map(CXIdent::as_string)
                 .unwrap_or(format!("arg{i}"));
-            lmir_type_to_c(&param._type, Some(&name))
+            lmir_type_to_c(&param.ty, Some(&name))
         })
         .collect();
 

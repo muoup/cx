@@ -94,7 +94,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<HIRUnO
                 return Ok(None);
             }
 
-            let Some((None, _type, _)) = parse_initializer(data).ok() else {
+            let Some((None, ty, _)) = parse_initializer(data).ok() else {
                 data.tokens.index = pre_index;
                 return Ok(None);
             };
@@ -121,7 +121,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<HIRUnO
                 return Ok(None);
             }
 
-            Some(HIRUnOp::ExplicitCast(_type))
+            Some(HIRUnOp::ExplicitCast(ty))
         }
 
         _ => {

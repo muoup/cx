@@ -1,0 +1,5 @@
+int bad(int condition) safe
+where post(result): (result == 1)
+{
+    return condition ? 0 : 0;
+}

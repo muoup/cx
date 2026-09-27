@@ -1,5 +1,6 @@
 ---
 title: Ownership and Moves
+description: "Owned values and references, regions, type restrictions, and move expressions."
 ---
 
 # Ownership and Moves

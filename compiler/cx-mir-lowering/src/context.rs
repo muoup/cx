@@ -1,153 +1,166 @@
 use std::collections::HashMap;
 
+use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
-    LMIRBasicBlock, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype, LMIRGlobalValue,
-    LMIRInstruction, LMIRValue,
+    LMIRBasicBlock, LMIRBlockTarget, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype,
+    LMIRGlobalType, LMIRGlobalValue, LMIRInstruction, LMIRInstructionKind, LMIRRegister, LMIRUnit,
+    LMIRValue, LinkageType,
 };
+use cx_mir::ty::interface::MTRegistry;
+use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::{
-    ty::registry::MIRTypeRegistry, MIRBasicBlockID, MIRFunction, MIRGlobalID, MIRPlace,
-    MIRRegister, MIRTypeID, MIRUnit,
+    MIRBasicBlockID, MIRBody, MIRFunction, MIRGlobalID, MIRPlaceID, MIRRegister, MIRTypeID, MIRUnit,
 };
+use cx_util::identifier::CXIdent;
 
-#[derive(Clone)]
-pub(crate) enum PlaceBinding {
-    Address {
-        value: LMIRValue,
-        ty: MIRTypeID,
-    },
-    Bitfield {
-        address: LMIRValue,
-        storage_type: MIRTypeID,
-        value_type: MIRTypeID,
-        bit_offset: usize,
-        bit_width: usize,
-    },
+use crate::lowering::memory;
+use crate::lowering::typing::convert_type;
+use crate::lowering::values::lower_rvalue;
+
+pub(crate) struct GlobalContext<'mir> {
+    pub unit: &'mir MIRUnit<'mir>,
+    pub prototypes: LMIRFunctionMap,
+    pub functions: Vec<LMIRFunction>,
+    pub globals: Vec<LMIRGlobalValue>,
+    pub global_indices: HashMap<MIRGlobalID, u32>,
+    strings: HashMap<String, u32>,
 }
 
-pub(crate) struct FunctionLoweringContext<'a> {
-    unit: &'a MIRUnit,
-    function: &'a MIRFunction,
-    types: &'a MIRTypeRegistry,
-    prototypes: &'a LMIRFunctionMap,
-    global_indices: &'a HashMap<MIRGlobalID, u32>,
-    globals: &'a mut Vec<LMIRGlobalValue>,
-    prototype: LMIRFunctionPrototype,
-    blocks: Vec<LMIRBasicBlock>,
-    block_indices: HashMap<MIRBasicBlockID, usize>,
-    places: HashMap<MIRPlace, PlaceBinding>,
-    current: usize,
-    temp: usize,
-}
-
-impl<'a> FunctionLoweringContext<'a> {
-    pub(crate) fn new(
-        unit: &'a MIRUnit,
-        function: &'a MIRFunction,
-        types: &'a MIRTypeRegistry,
-        prototypes: &'a LMIRFunctionMap,
-        global_indices: &'a HashMap<MIRGlobalID, u32>,
-        globals: &'a mut Vec<LMIRGlobalValue>,
-        prototype: LMIRFunctionPrototype,
-        blocks: Vec<LMIRBasicBlock>,
-        block_indices: HashMap<MIRBasicBlockID, usize>,
-    ) -> Self {
+impl<'mir> GlobalContext<'mir> {
+    pub fn new(unit: &'mir MIRUnit<'mir>) -> Self {
         Self {
             unit,
-            function,
-            types,
-            prototypes,
-            global_indices,
-            globals,
-            prototype,
-            blocks,
-            block_indices,
-            places: HashMap::new(),
-            current: 0,
-            temp: 0,
+            prototypes: LMIRFunctionMap::new(),
+            functions: Vec::new(),
+            globals: Vec::new(),
+            global_indices: HashMap::new(),
+            strings: HashMap::new(),
         }
     }
 
-    pub(crate) fn finish(self) -> LMIRFunction {
+    pub fn string(&mut self, text: &str) -> u32 {
+        if let Some(index) = self.strings.get(text) {
+            return *index;
+        }
+        let index = self.globals.len() as u32;
+        self.globals.push(LMIRGlobalValue {
+            name: CXIdent::new(format!(".str.{index}")),
+            ty: LMIRGlobalType::StringLiteral(text.to_owned()),
+            linkage: LinkageType::Static,
+        });
+        self.strings.insert(text.to_owned(), index);
+        index
+    }
+
+    pub fn finish(self) -> LMIRUnit {
+        LMIRUnit {
+            architecture: *self.unit.types().architecture(),
+            fn_map: self.prototypes,
+            fn_defs: self.functions,
+            global_vars: self.globals,
+        }
+    }
+}
+
+pub(crate) struct FunctionContext<'a, 'mir> {
+    pub global: &'a mut GlobalContext<'mir>,
+    pub function: &'mir MIRFunction,
+    pub body: &'mir MIRBody,
+    pub prototype: LMIRFunctionPrototype,
+    pub blocks: Vec<LMIRBasicBlock>,
+    pub block_indices: HashMap<MIRBasicBlockID, usize>,
+    pub current_block: usize,
+    pub next_register: usize,
+    pub places: HashMap<MIRPlaceID, LMIRValue>,
+}
+
+impl<'a, 'mir> FunctionContext<'a, 'mir> {
+    pub fn new(
+        global: &'a mut GlobalContext<'mir>,
+        function: &'mir MIRFunction,
+        body: &'mir MIRBody,
+        prototype: LMIRFunctionPrototype,
+    ) -> Self {
+        Self {
+            global,
+            function,
+            body,
+            prototype,
+            blocks: Vec::new(),
+            block_indices: HashMap::new(),
+            current_block: 0,
+            next_register: 0,
+            places: HashMap::new(),
+        }
+    }
+
+    pub fn types(&self) -> &MIRTypeRegistry {
+        self.global.unit.types()
+    }
+
+    pub fn ty(&self, ty: MIRTypeID) -> LMIRType {
+        convert_type(ty, self.types())
+    }
+
+    pub fn pointer(&self) -> LMIRType {
+        LMIRType::default_pointer(self.types().architecture())
+    }
+
+    pub fn reg(&self, id: MIRRegister) -> LMIRValue {
+        LMIRValue::Register {
+            register: LMIRRegister::new(format!("mir.{}", id.index())),
+            ty: self.ty(self.body.register(id).expect("unknown MIR register").ty),
+        }
+    }
+
+    pub fn emit(&mut self, kind: LMIRInstructionKind, ty: LMIRType, result: Option<LMIRRegister>) {
+        self.blocks[self.current_block].body.push(LMIRInstruction {
+            kind,
+            value_type: ty,
+            result,
+        });
+    }
+
+    pub fn integer(&self, value: i128, ty: LMIRIntegerType) -> LMIRValue {
+        LMIRValue::IntImmediate {
+            ty: LMIRType::with_implicit_abi(self.types().architecture(), LMIRTypeKind::Integer(ty)),
+            val: value as i64,
+        }
+    }
+
+    pub fn target(&mut self, target: &cx_mir::MIRBlockTarget) -> LMIRBlockTarget {
+        let id = self.blocks[self.block_indices[&target.block]].id.clone();
+        let params = self
+            .body
+            .block(target.block)
+            .expect("unknown MIR target block")
+            .params();
+        let args = target
+            .args
+            .iter()
+            .zip(params)
+            .filter_map(|(arg, parameter)| {
+                let ty = self.body.register(*parameter).unwrap().ty;
+                if self.ty(ty).is_void() {
+                    return None;
+                }
+                let value = lower_rvalue(self, arg, ty);
+                if self.ty(ty).is_memory_resident() {
+                    let copy = memory::allocate(self, ty);
+                    memory::store(self, copy.clone(), value, ty);
+                    Some(copy)
+                } else {
+                    Some(value)
+                }
+            })
+            .collect();
+        LMIRBlockTarget::with_args(id, args)
+    }
+
+    pub fn finish(self) -> LMIRFunction {
         LMIRFunction {
             prototype: self.prototype,
             blocks: self.blocks,
         }
-    }
-
-    pub(crate) fn unit(&self) -> &'a MIRUnit {
-        self.unit
-    }
-
-    pub(crate) fn function(&self) -> &'a MIRFunction {
-        self.function
-    }
-
-    pub(crate) fn types(&self) -> &'a MIRTypeRegistry {
-        self.types
-    }
-
-    pub(crate) fn prototypes(&self) -> &'a LMIRFunctionMap {
-        self.prototypes
-    }
-
-    pub(crate) fn prototype(&self) -> &LMIRFunctionPrototype {
-        &self.prototype
-    }
-
-    pub(crate) fn global_indices(&self) -> &'a HashMap<MIRGlobalID, u32> {
-        self.global_indices
-    }
-
-    pub(crate) fn globals(&self) -> &Vec<LMIRGlobalValue> {
-        self.globals
-    }
-
-    pub(crate) fn globals_mut(&mut self) -> &mut Vec<LMIRGlobalValue> {
-        self.globals
-    }
-
-    pub(crate) fn blocks_len(&self) -> usize {
-        self.blocks.len()
-    }
-
-    pub(crate) fn set_current(&mut self, current: usize) {
-        self.current = current;
-    }
-
-    pub(crate) fn current_block_body_mut(&mut self) -> &mut Vec<LMIRInstruction> {
-        &mut self.blocks[self.current].body
-    }
-
-    pub(crate) fn block_index(&self, block: MIRBasicBlockID) -> usize {
-        *self
-            .block_indices
-            .get(&block)
-            .expect("MIR block has no LMIR block index")
-    }
-
-    pub(crate) fn bind_place(&mut self, place: MIRPlace, binding: PlaceBinding) {
-        self.places.insert(place, binding);
-    }
-
-    pub(crate) fn next_temp(&mut self) -> usize {
-        let temp = self.temp;
-        self.temp += 1;
-        temp
-    }
-
-    pub(crate) fn push_block(&mut self, block: LMIRBasicBlock) {
-        self.blocks.push(block);
-    }
-
-    pub(crate) fn place_binding(&self, place: MIRPlace) -> Option<PlaceBinding> {
-        self.places.get(&place).cloned()
-    }
-
-    pub(crate) fn register_type(&self, register: MIRRegister) -> MIRTypeID {
-        self.function
-            .definition()
-            .and_then(|definition| definition.register(register))
-            .expect("invalid register")
-            .ty
     }
 }

@@ -98,7 +98,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
             name,
             visibility,
             template_prototype,
-            _type,
+            ty,
             tag,
         } => {
             let Some(name) = name else {
@@ -106,7 +106,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
             };
 
             let symbol_kind = HIRSymbolKind::Type(HIRSymbolData::new(
-                _type.clone(),
+                ty.clone(),
                 (),
                 template_prototype.clone(),
             ));
@@ -121,7 +121,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
 
             insert_symbol(env, base_namespace, identifier, symbol);
 
-            if let HIRTypeKind::TaggedUnion { variants, .. } = &_type.kind {
+            if let HIRTypeKind::TaggedUnion { variants, .. } = &ty.kind {
                 let union_name = QualifiedName::new(base_namespace.clone(), name.clone());
                 let union_type = HIRTypeKind::Identifier {
                     name: union_name,
@@ -240,7 +240,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
 
             HIRGlobalVariable::Standard {
                 name,
-                _type,
+                ty,
                 symbol_name_scheme: symbol_naming,
                 ..
             } => {
@@ -248,7 +248,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                     *visibility,
                     HIRSymbolKind::AddressableGlobal {
                         name: name.clone(),
-                        _type: _type.clone(),
+                        ty: ty.clone(),
                         symbol_naming: *symbol_naming,
                     },
                 );

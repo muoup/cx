@@ -12,7 +12,7 @@ pub enum HIRGlobalVariable {
 
     Standard {
         name: CXIdent,
-        _type: HIRType,
+        ty: HIRType,
         is_mutable: bool,
         initializer: Option<HIRExpression>,
 

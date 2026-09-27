@@ -2,7 +2,7 @@ use crate::environment::TypeEnvironment;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
+use cx_hir::ast::expression::{HIRBlockKind, HIRExprKind, HIRExpression};
 use cx_log::CXResult;
 use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
@@ -26,7 +26,7 @@ fn case_body_expression(
     HIRExpression {
         kind: HIRExprKind::Block {
             exprs: expressions,
-            creates_scope: false,
+            kind: HIRBlockKind::Sequence,
         },
         range,
     }
@@ -61,7 +61,7 @@ pub fn typecheck_switch(
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
         .and_then(|v| std_rval_promotion(env, v))?;
 
-    let THIRTypeKind::Integer { .. } = condition_value.get_type().kind else {
+    let THIRTypeKind::Integer { .. } = condition_value.ty.kind else {
         return env.log_error(
             &condition_value.token_range,
             &catalogue::TYPE_MISMATCH,
@@ -73,7 +73,7 @@ pub fn typecheck_switch(
         );
     };
 
-    let condition_type = condition_value.get_type().clone();
+    let condition_type = condition_value.ty.clone();
     env.push_scope(true, false, expr.token_range().clone());
 
     let mut arms = Vec::new();

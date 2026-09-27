@@ -8,10 +8,27 @@ use crate::ast::{
     types::HIRType,
 };
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum HIRFunctionBody {
+    Block {
+        statements: Vec<HIRExpression>,
+        range: TokenRange,
+    },
+    Expression(HIRExpression),
+}
+
+impl HIRFunctionBody {
+    pub fn token_range(&self) -> &TokenRange {
+        match self {
+            Self::Block { range, .. } => range,
+            Self::Expression(expression) => &expression.range,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Hash, PartialEq, Eq)]
 pub struct HIRFunctionContract {
     pub safe: bool,
-    pub noreturn: bool,
 
     pub precondition: Option<HIRExpression>,
     pub postcondition: Option<(Option<CXIdent>, HIRExpression)>,
@@ -34,7 +51,7 @@ pub struct HIRFunctionPrototype {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct HIRParameter {
     pub name: Option<CXIdent>,
-    pub _type: HIRType,
+    pub ty: HIRType,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -55,7 +72,7 @@ pub struct HIRComptimeParameter {
 pub struct HIRComptimeValueType {
     pub expr: bool,
     pub params: Vec<HIRType>,
-    pub _type: HIRType,
+    pub ty: HIRType,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

@@ -1,6 +1,7 @@
+use cx_hir::ast::modifiers::HIR_CONST;
 use cx_log::CXResult;
 use cx_thir::{
-    thir::expression::{THIRCoercion, THIRExpression, THIRExpressionKind},
+    thir::expression::{THIRExpression, THIRExpressionKind},
     type_context::THIRTypeContext,
 };
 
@@ -16,7 +17,7 @@ use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResul
 ///
 
 pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResult<CoercionResult> {
-    let Some(mem_inner) = env.symbols.mem_ref_inner(&expr._type).cloned() else {
+    let Some(mem_inner) = env.symbols.mem_ref_inner(&expr.ty).cloned() else {
         return CoercionResult::unapplied(expr);
     };
 
@@ -25,17 +26,16 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
     }
 
     let mut array_inner = env.symbols.array_inner(&mem_inner).unwrap().clone();
-    if mem_inner.get_specifier(cx_hir::ast::modifiers::HIR_CONST) {
-        array_inner = array_inner.with_specifier(cx_hir::ast::modifiers::HIR_CONST);
+    if mem_inner.get_specifier(HIR_CONST) {
+        array_inner = array_inner.with_specifier(HIR_CONST);
     }
     let new_type = env.symbols.pointer_to(array_inner);
 
     let coerced = THIRExpression {
-        _type: new_type,
+        ty: new_type,
         token_range: expr.token_range.clone(),
-        kind: THIRExpressionKind::TypeConversion {
+        kind: THIRExpressionKind::AddressOf {
             operand: Box::new(expr),
-            conversion: THIRCoercion::ReinterpretBits,
         },
     };
 

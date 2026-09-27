@@ -19,7 +19,9 @@ use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
 use crate::parse::types::{is_type_decl, parse_initializer};
-use crate::parse::{parse_block, parse_body, parse_intrinsic, try_parse_identifier};
+use crate::parse::{
+    parse_block, parse_body, parse_expression_block, parse_intrinsic, try_parse_identifier,
+};
 
 fn parse_at_intrinsic_expr(
     data: &mut ParserData,
@@ -243,13 +245,13 @@ fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>)
     let list = parse_expr(data)?;
     data.pop_comma_mode();
     assert_token_matches!(data.tokens, operator!(Comma), "','");
-    let (_, _type, _) = parse_initializer(data)?;
+    let (_, ty, _) = parse_initializer(data)?;
     assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
     expr_stack.push(
         HIRExprKind::VaArg {
             list: Box::new(list),
-            _type,
+            ty,
         }
         .into_expr(
             data.tokens.index.saturating_sub(1),
@@ -410,7 +412,7 @@ pub(crate) fn parse_expr_val(
             }
 
             data.tokens.back();
-            parse_block(data)?.kind
+            parse_expression_block(data)?.kind
         }
 
         TokenKind::Operator(OperatorType::Bar) => {
@@ -591,7 +593,7 @@ pub(crate) fn parse_keyword_expr(
             );
 
             let return_type = if is_type_decl(data)? {
-                let (None, _type, _) = parse_initializer(data)? else {
+                let (None, ty, _) = parse_initializer(data)? else {
                     return parse_point_error(
                         &data.tokens,
                         &EXPECTED_SYNTAX,
@@ -608,8 +610,8 @@ pub(crate) fn parse_keyword_expr(
                 };
 
                 match keyword_type {
-                    KeywordType::Sizeof => HIRExprKind::SizeOfType { _type },
-                    KeywordType::Alignof => HIRExprKind::AlignOfType { _type },
+                    KeywordType::Sizeof => HIRExprKind::SizeOfType { ty },
+                    KeywordType::Alignof => HIRExprKind::AlignOfType { ty },
                     _ => unreachable!(),
                 }
             } else {

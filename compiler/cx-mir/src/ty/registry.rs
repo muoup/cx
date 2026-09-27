@@ -39,15 +39,13 @@ impl MTRegistry for MIRTypeRegistry {
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID> {
         self.definitions
             .iter()
-            .position(|t| t.1 == ty)
-            .map(MIRTypeID::new)
+            .find_map(|(id, definition)| (definition == ty).then_some(*id))
     }
 
     fn find_kind(&self, kind: &super::MIRTypeKind) -> Option<MIRTypeID> {
         self.definitions
             .iter()
-            .position(|t| &t.1.kind == kind)
-            .map(MIRTypeID::new)
+            .find_map(|(id, definition)| (definition.kind() == kind).then_some(*id))
     }
 
     fn debug_name(&self, id: MIRTypeID) -> Option<&str> {

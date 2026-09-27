@@ -2,6 +2,7 @@
 (preprocessor_directive) @keyword
 (string_literal) @string
 (char_literal) @string
+(lifetime_modifier) @type.parameter
 (number_literal) @number
 (builtin_type) @type.builtin
 (keyword) @keyword

@@ -10,7 +10,7 @@ use crate::{
     type_context::THIRTypeContext,
 };
 
-dense_id!(THIRTypeID);
+dense_id!(THIRTypeID, "t");
 
 #[derive(Debug, Clone)]
 pub struct THIRType {
@@ -29,7 +29,6 @@ pub struct THIRType {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct THIRTypeAttributes {
     pub semantics: THIRMoveSemantics,
-    pub minimum_alignment: Option<usize>,
     pub unsafe_move: bool,
 }
 
@@ -93,12 +92,37 @@ impl THIRField {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]
+pub enum THIRReferenceLifetime {
+    Free,
+    Ephemeral,
+    Relative(CXIdent),
+}
+
+/// Marks a reference as addressing a bitfield, identified by its aggregate type and field index.
+/// The reference's inner type is the bitfield's storage type; the field's placement within its
+/// storage unit is a layout concern resolved during MIR generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Readable, Writable)]
 pub struct THIRBitfieldAccess {
-    pub storage_type: THIRTypeID,
-    pub bit_offset: usize,
-    pub bit_width: usize,
-    pub signed: bool,
+    aggregate_type: THIRTypeID,
+    field_index: usize,
+}
+
+impl THIRBitfieldAccess {
+    pub fn new(aggregate_type: THIRTypeID, field_index: usize) -> Self {
+        Self {
+            aggregate_type,
+            field_index,
+        }
+    }
+
+    pub fn aggregate_type(&self) -> THIRTypeID {
+        self.aggregate_type
+    }
+
+    pub fn field_index(&self) -> usize {
+        self.field_index
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -106,11 +130,11 @@ pub enum THIRTypeKind {
     Void,
     Unreachable,
     Integer {
-        _type: THIRIntType,
+        ty: THIRIntType,
         signed: bool,
     },
     Float {
-        _type: THIRFloatType,
+        ty: THIRFloatType,
     },
     Structured {
         fields: Vec<THIRField>,
@@ -129,7 +153,7 @@ pub enum THIRTypeKind {
         bitfield: Option<THIRBitfieldAccess>,
     },
     Array {
-        length: Box<THIRExpression>,
+        length: THIRArrayLength,
         inner_type: THIRTypeID,
     },
     Function {
@@ -141,6 +165,12 @@ pub enum THIRTypeKind {
     },
     Undefined,
     Str,
+}
+
+#[derive(Debug, Clone)]
+pub enum THIRArrayLength {
+    Implicit,
+    Known(Box<THIRExpression>),
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Readable, Writable)]
@@ -262,10 +292,11 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRType {
             (Some(left), Some(right)) => {
                 return left == right
                     && match (&self.template_info, &other.template_info) {
-                        (Some(left), Some(right)) => {
-                            left.template_input
-                                .compare(&right.template_input, definitions, state)
-                        }
+                        (Some(left), Some(right)) => left.template_input().compare(
+                            right.template_input(),
+                            definitions,
+                            state,
+                        ),
                         (None, None) => true,
                         (Some(_), None) | (None, Some(_)) => false,
                     };
@@ -286,7 +317,7 @@ impl THIRType {
     pub fn bool() -> Self {
         THIRType {
             kind: THIRTypeKind::Integer {
-                _type: THIRIntType::I1,
+                ty: THIRIntType::I1,
                 signed: false,
             },
             ..Default::default()
@@ -419,6 +450,17 @@ impl THIRType {
         matches!(self.kind, THIRTypeKind::MemoryReference { .. })
     }
 
+    pub fn bitfield_access(&self) -> Option<&THIRBitfieldAccess> {
+        match &self.kind {
+            THIRTypeKind::MemoryReference { bitfield, .. } => bitfield.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn is_bitfield_reference(&self) -> bool {
+        self.bitfield_access().is_some()
+    }
+
     pub fn strong_identifier(&self) -> Option<&str> {
         self.strong_identifier.as_deref()
     }
@@ -431,7 +473,7 @@ impl THIRType {
         self.lookup_identifier.as_ref().or_else(|| {
             self.template_info
                 .as_ref()
-                .and_then(|info| info.base_name.as_ref())
+                .and_then(|info| info.base_name())
         })
     }
 
@@ -583,18 +625,17 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
             | (THIRTypeKind::Str, THIRTypeKind::Str) => true,
             (
                 THIRTypeKind::Integer {
-                    _type: left_type,
+                    ty: left_type,
                     signed: left_signed,
                 },
                 THIRTypeKind::Integer {
-                    _type: right_type,
+                    ty: right_type,
                     signed: right_signed,
                 },
             ) => left_type == right_type && left_signed == right_signed,
-            (
-                THIRTypeKind::Float { _type: left_type },
-                THIRTypeKind::Float { _type: right_type },
-            ) => left_type == right_type,
+            (THIRTypeKind::Float { ty: left_type }, THIRTypeKind::Float { ty: right_type }) => {
+                left_type == right_type
+            }
             (
                 THIRTypeKind::Structured { fields: left },
                 THIRTypeKind::Structured { fields: right },
@@ -605,8 +646,12 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
                 THIRTypeKind::TaggedUnion { variants: right },
             ) => compare_named_type_fields(left, right, definitions, state),
             (
-                THIRTypeKind::PointerTo { inner_type: left },
-                THIRTypeKind::PointerTo { inner_type: right },
+                THIRTypeKind::PointerTo {
+                    inner_type: left, ..
+                },
+                THIRTypeKind::PointerTo {
+                    inner_type: right, ..
+                },
             ) => left.compare(right, definitions, state),
             (
                 THIRTypeKind::MemoryReference {
@@ -628,12 +673,18 @@ impl<Context: THIRTypeContext + ?Sized> TypeContextEqual<Context> for THIRTypeKi
                     inner_type: right_inner,
                 },
             ) => {
-                let same_length = match (&left_length.kind, &right_length.kind) {
-                    (
-                        THIRExpressionKind::IntLiteral(left_length),
-                        THIRExpressionKind::IntLiteral(right_length),
-                    ) => left_length == right_length,
-                    _ => true,
+                let same_length = match (left_length, right_length) {
+                    (THIRArrayLength::Implicit, THIRArrayLength::Implicit) => true,
+                    (THIRArrayLength::Known(left_length), THIRArrayLength::Known(right_length)) => {
+                        match (&left_length.kind, &right_length.kind) {
+                            (
+                                THIRExpressionKind::IntLiteral(left_length),
+                                THIRExpressionKind::IntLiteral(right_length),
+                            ) => left_length == right_length,
+                            _ => true,
+                        }
+                    }
+                    _ => false,
                 };
 
                 same_length && left_inner.compare(right_inner, definitions, state)

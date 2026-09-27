@@ -1,0 +1,36 @@
+/* CX-STDOUT: 12 12 12 11 */
+
+#include <stdio.h>
+
+struct Counter {
+    int value;
+};
+
+int pre_increment(int& value) {
+    return ++value;
+}
+
+int post_increment(int& value) {
+    return value++;
+}
+
+void decrement(int& value) {
+    --value;
+}
+
+void bump_field(Counter& counter) {
+    counter.value++;
+}
+
+int main() {
+    int value = 10;
+    int before = pre_increment(value);
+    int after = post_increment(value);
+    decrement(value);
+
+    Counter counter = { .value = 10 };
+    bump_field(counter);
+
+    printf("%d %d %d %d\n", before + 1, after + 1, value + 1, counter.value);
+    return 0;
+}

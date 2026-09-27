@@ -8,7 +8,7 @@ use cx_thir::{
 use crate::{environment::TypeEnvironment, type_checking::coercion::CoercionResult};
 
 pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResult<CoercionResult> {
-    if !env.symbols.is_cx_str(&expr._type) {
+    if !env.symbols.is_cx_str(&expr.ty) {
         return CoercionResult::unapplied(expr);
     }
 
@@ -17,8 +17,10 @@ pub fn try_conversion(env: &mut TypeEnvironment, expr: THIRExpression) -> CXResu
 
     let loaded = THIRExpression {
         token_range: expr.token_range.clone(),
-        _type: c_str,
-        kind: THIRExpressionKind::Typechange(Box::new(expr)),
+        ty: c_str,
+        kind: THIRExpressionKind::AddressOf {
+            operand: Box::new(expr),
+        },
     };
 
     CoercionResult::success(loaded)

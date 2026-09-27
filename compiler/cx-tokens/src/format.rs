@@ -13,6 +13,9 @@ impl Display for TokenKind {
             TokenKind::Identifier(name) => write!(f, "{name}"),
             TokenKind::CompilerIdentifier(name) => write!(f, "@{name}"),
             TokenKind::Intrinsic(intrin) => write!(f, "{intrin}"),
+            TokenKind::Attribute(attribute) => {
+                write!(f, "__attribute__(({}))", attribute.as_str())
+            }
             TokenKind::Keyword(keyword) => write!(f, "{}", format!("{keyword:?}").to_lowercase()),
 
             _ => write!(f, "{self:?}"),

@@ -1,4 +1,4 @@
-use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
+use cx_thir::thir::expression::{THIRBlockKind, THIRExpression, THIRExpressionKind};
 
 pub(crate) mod r#match;
 pub(crate) mod r#return;
@@ -6,7 +6,7 @@ pub(crate) mod switch;
 pub(crate) mod r#yield;
 
 pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
-    if expr._type.is_unreachable() {
+    if expr.ty.is_unreachable() {
         return false;
     }
     match &expr.kind {
@@ -18,6 +18,11 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
         THIRExpressionKind::Goto { .. } => true,
         THIRExpressionKind::Label { statement, .. } => expr_may_fall_through(statement),
         THIRExpressionKind::Unsafe { expression, .. } => expr_may_fall_through(expression),
+        THIRExpressionKind::Block {
+            kind: THIRBlockKind::Expression,
+            yields: true,
+            ..
+        } => true,
         THIRExpressionKind::Block { statements, .. } => {
             statements.last().map(expr_may_fall_through).unwrap_or(true)
         }
@@ -41,18 +46,9 @@ pub(crate) fn expr_may_fall_through(expr: &THIRExpression) -> bool {
                     .map(|branch| expr_may_fall_through(branch))
                     .unwrap_or(true)
         }
+        THIRExpressionKind::Match { .. } if !expr.ty.is_void() => true,
         THIRExpressionKind::Match { arms, .. } => {
             arms.iter().any(|(_, branch)| expr_may_fall_through(branch))
-        }
-        THIRExpressionKind::CallFunction {
-            function, contract, ..
-        } => {
-            !contract.noreturn
-                && !matches!(
-                    &function.kind,
-                    THIRExpressionKind::FunctionReference { name, .. }
-                        if name.as_str() == "exit"
-                )
         }
         _ => true,
     }

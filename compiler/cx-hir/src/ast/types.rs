@@ -57,7 +57,7 @@ pub enum HIRMoveSemantics {
 pub enum HIRField {
     Standard {
         name: String,
-        _type: HIRType,
+        ty: HIRType,
     },
     Bitfield {
         name: Option<String>,
@@ -79,6 +79,7 @@ pub enum HIRTypeKind {
 
     MemoryReference {
         inner_type: Box<HIRType>,
+        lifetime: Option<CXIdent>,
     },
     PointerTo {
         inner_type: Box<HIRType>,
@@ -196,8 +197,8 @@ impl HIRTypeKind {
 }
 
 impl HIRField {
-    pub fn standard(name: String, _type: HIRType) -> Self {
-        Self::Standard { name, _type }
+    pub fn standard(name: String, ty: HIRType) -> Self {
+        Self::Standard { name, ty }
     }
 
     pub fn name(&self) -> Option<&str> {
@@ -209,7 +210,7 @@ impl HIRField {
 
     pub fn standard_parts(&self) -> Option<(&String, &HIRType)> {
         match self {
-            HIRField::Standard { name, _type } => Some((name, _type)),
+            HIRField::Standard { name, ty } => Some((name, ty)),
             HIRField::Bitfield { .. } => None,
         }
     }

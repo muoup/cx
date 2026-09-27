@@ -4,7 +4,7 @@ use cx_namespace::module::NamespacePath;
 use cx_namespace::module::QualifiedName;
 use cx_thir::{
     thir::{
-        expression::{THIRExpression, THIRExpressionKind},
+        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRPostcondition},
         r#type::THIRType,
     },
     type_context::THIRTypeContext,
@@ -38,7 +38,7 @@ pub fn typecheck_return(
     }
 
     let return_type = if env.in_staged_context() || env.in_runtime_emit_context() {
-        let Some(return_type) = env.staging_context().return_type else {
+        let Some(return_type) = env.staging_context().return_type().cloned() else {
             return env.log_error(
                 return_range,
                 &catalogue::INVALID_CONTEXT,
@@ -50,7 +50,7 @@ pub fn typecheck_return(
         };
         return_type
     } else {
-        env.current_function().signature().return_type.clone()
+        env.current_function().signature().return_type().clone()
     };
 
     if return_type.is_unreachable() {
@@ -66,7 +66,7 @@ pub fn typecheck_return(
 
     let return_value = match (value, &return_type) {
         (Some(mut some_value), return_type) if !return_type.is_void() => {
-            let mut _ty = some_value._type.clone();
+            let mut _ty = some_value.ty.clone();
 
             // If we are returning a copyable struct T, and we are given a &T, we can inline a bit
             // of the implicit cast behavior here so instead of creating a temporary buffer to copy
@@ -77,9 +77,12 @@ pub fn typecheck_return(
                 && typechange_can_forward_region(&inner)
             {
                 some_value = THIRExpression {
-                    _type: inner,
+                    ty: inner,
                     token_range: some_value.token_range.clone(),
-                    kind: THIRExpressionKind::Typechange(Box::new(some_value)),
+                    kind: THIRExpressionKind::TypeConversion {
+                        operand: Box::new(some_value),
+                        conversion: THIRCoercion::Typechange,
+                    },
                 };
             } else if env.symbols.mem_ref_inner(return_type).is_none() {
                 some_value = std_rval_promotion(env, some_value)?;
@@ -125,7 +128,7 @@ pub fn typecheck_return(
     if let Some((ret_name, ret_contract)) = env
         .current_function()
         .signature()
-        .contract
+        .contract()
         .postcondition
         .clone()
     {
@@ -139,11 +142,13 @@ pub fn typecheck_return(
 
         env.push_scope(false, false, return_range.clone());
 
-        for param in env.current_function().signature().params.clone() {
-            let Some(name) = param.name else {
+        for param in env.current_function().signature().params().to_vec() {
+            let Some(name) = param.name() else {
                 continue;
             };
 
+            // Inside the callee, parameters resolve to their storage rather than to argument values
+            let param_ref_type = env.symbols.mem_ref_to(param.ty().clone());
             env.symbols.insert_local_value(
                 QualifiedName::new_raw(name.clone()),
                 THIRExpression {
@@ -152,7 +157,7 @@ pub fn typecheck_return(
                         force_param: true,
                     },
                     token_range: TokenRange::internal(),
-                    _type: param._type.clone(),
+                    ty: param_ref_type,
                 },
             );
         }
@@ -166,7 +171,7 @@ pub fn typecheck_return(
                         force_param: false,
                     },
                     token_range: TokenRange::internal(),
-                    _type: return_type.clone(),
+                    ty: return_type.clone(),
                 },
             );
         }
@@ -180,7 +185,7 @@ pub fn typecheck_return(
                 condition: Box::new(postcondition),
                 message: "Postcondition Failed!".to_string(),
             },
-            _type: THIRType::unit(),
+            ty: THIRType::unit(),
         };
 
         env.pop_scope()
@@ -190,10 +195,10 @@ pub fn typecheck_return(
             THIRType::unit(),
             THIRExpressionKind::Return {
                 value: return_value,
-                postcondition: Some(cx_thir::thir::expression::THIRPostcondition {
-                    binding: ret_name.clone(),
-                    condition: Box::new(postcondition),
-                }),
+                postcondition: Some(THIRPostcondition::new(
+                    ret_name.clone(),
+                    Box::new(postcondition),
+                )),
             },
         ))
     } else {

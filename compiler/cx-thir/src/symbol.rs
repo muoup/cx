@@ -33,6 +33,7 @@ pub enum MIRSymbol {
         return_type: THIRType,
     },
     Expression(THIRExpression),
+    BorrowedExpression(THIRExpression),
     Template {
         template_prototype: HIRTemplatePrototype,
         name: CXIdent,
@@ -75,7 +76,7 @@ impl MIRSymbol {
         match self {
             MIRSymbol::FunctionReference(prototype) => Ok(THIRExpression {
                 token_range: TokenRange::internal(),
-                _type: THIRTypeKind::Function {
+                ty: THIRTypeKind::Function {
                     signature: Box::new(prototype.signature().clone()),
                 }
                 .into(),
@@ -85,7 +86,9 @@ impl MIRSymbol {
                 },
             }),
 
-            MIRSymbol::Expression(expr) => CXRawResult::Ok(expr.clone()),
+            MIRSymbol::Expression(expr) | MIRSymbol::BorrowedExpression(expr) => {
+                CXRawResult::Ok(expr.clone())
+            }
 
             // FIXME: We should be able to generate function calls to comptime functions in a runtime function's THIR
             MIRSymbol::ComptimeFunctionReference { .. } => {

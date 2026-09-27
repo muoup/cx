@@ -1,56 +1,14 @@
-use std::sync::Arc;
+use std::collections::BTreeMap;
 
-use crate::{MIRBody, MIRPlaceID, MIRRegister, MIRTypeID};
-
-#[derive(Debug, Clone, Copy)]
-pub enum MIRStagedCapture {
-    Register(MIRRegister),
-    Place(MIRPlaceID),
-}
+use crate::value::MIRComptimeValue;
+use cx_thir::thir::{
+    comptime::THIRStagedParameter,
+    expression::{THIRExpression, THIRLocalID},
+};
 
 #[derive(Debug, Clone)]
-pub struct MIRStagedTemplate {
-    body: MIRBody,
-    captures: Arc<[MIRStagedCapture]>,
-    params: Arc<[MIRRegister]>,
-    result_type: MIRTypeID,
-    diverges: bool,
-}
-
-impl MIRStagedTemplate {
-    pub fn new(
-        body: MIRBody,
-        captures: Vec<MIRStagedCapture>,
-        params: Vec<MIRRegister>,
-        result_type: MIRTypeID,
-        diverges: bool,
-    ) -> Self {
-        Self {
-            body,
-            captures: captures.into(),
-            params: params.into(),
-            result_type,
-            diverges,
-        }
-    }
-
-    pub fn body(&self) -> &MIRBody {
-        &self.body
-    }
-
-    pub fn captures(&self) -> &[MIRStagedCapture] {
-        &self.captures
-    }
-
-    pub fn params(&self) -> &[MIRRegister] {
-        &self.params
-    }
-
-    pub fn result_type(&self) -> MIRTypeID {
-        self.result_type
-    }
-
-    pub fn diverges(&self) -> bool {
-        self.diverges
-    }
+pub struct MIRStagedExpression<'thir> {
+    pub expression: &'thir THIRExpression,
+    pub parameters: &'thir [THIRStagedParameter],
+    pub captures: BTreeMap<THIRLocalID, MIRComptimeValue>,
 }

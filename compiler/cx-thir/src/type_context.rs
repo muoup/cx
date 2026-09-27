@@ -55,7 +55,7 @@ pub trait THIRTypeContext {
                 matches!(
                     ty.kind,
                     THIRTypeKind::Integer {
-                        _type: THIRIntType::I8,
+                        ty: THIRIntType::I8,
                         signed: false
                     }
                 )

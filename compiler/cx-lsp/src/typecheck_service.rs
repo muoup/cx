@@ -7,11 +7,12 @@ use crate::position::{byte_range, line_range};
 use cx_namespace::module::ModulePath;
 use cx_pipeline::LSPErrors;
 use cx_pipeline_data::config::CXProjectConfig;
+use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilationUnit, CompilerBackend, CompilerConfig,
     GlobalCompilationContext, OptimizationLevel,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tower_lsp::lsp_types::{
@@ -95,8 +96,8 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             native_objects: vec![],
             predefined_macros: vec![],
         },
-        module_db: cx_pipeline_data::db::ModuleData::new(),
-        linking_files: Mutex::new(HashSet::new()),
+        module_db: ModuleData::new(),
+        linking_files: Mutex::new(BTreeSet::new()),
     };
 
     let check_result = cx_pipeline::typecheck_only_lsp(&context, &unit);

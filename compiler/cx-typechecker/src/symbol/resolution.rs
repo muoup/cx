@@ -15,8 +15,8 @@ use cx_thir::{
     symbol::MIRSymbol,
     thir::{
         contextual_eq::TypeContextEqual,
-        data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter},
-        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRLocalID},
+        data::{THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter, THIRTemplateInput},
+        expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
         global::THIRGlobalVariable,
         name_mangling::mangle_template_name,
     },
@@ -54,7 +54,6 @@ pub fn resolve_symbol(
             symbols,
         );
     }
-    let decay_implicit_array = rest.is_empty();
     let resolved = resolve_symbol_inner(
         env,
         evaluation_namespace,
@@ -62,7 +61,6 @@ pub fn resolve_symbol(
         name,
         first,
         first.tag,
-        decay_implicit_array,
     )?;
 
     for declaration in rest {
@@ -73,7 +71,6 @@ pub fn resolve_symbol(
             name,
             declaration,
             declaration.tag,
-            false,
         )?;
         if !mir_symbols_equivalent(env, &resolved, &candidate) {
             return env.log_error(
@@ -85,11 +82,11 @@ pub fn resolve_symbol(
     }
 
     if let MIRSymbol::FunctionReference(prototype) = &resolved {
-        env.items.push_generated_function(THIRFunction {
-            require_explicit_return: env.require_explicit_return(),
-            prototype: prototype.clone(),
-            body: None,
-        });
+        env.items.push_generated_function(THIRFunction::new(
+            prototype.clone(),
+            None,
+            env.require_explicit_return(),
+        ));
     }
     Ok(resolved)
 }
@@ -102,7 +99,7 @@ fn symbol_range(symbol: &HIRSymbol) -> TokenRange {
         HIRSymbolKind::ComptimeFunction(data) => data.base().range.clone(),
 
         HIRSymbolKind::EnumIdent { .. } => TokenRange::internal(),
-        HIRSymbolKind::AddressableGlobal { _type, .. } => _type.range().clone(),
+        HIRSymbolKind::AddressableGlobal { ty, .. } => ty.range().clone(),
     }
 }
 
@@ -113,7 +110,6 @@ pub(crate) fn resolve_symbol_inner(
     name: &CXIdent,
     symbol: &HIRSymbol,
     tag: Option<HIRTagKind>,
-    decay_implicit_array: bool,
 ) -> CXResult<MIRSymbol> {
     let mut source = symbol.clone();
     let template = match &mut source.kind {
@@ -145,7 +141,7 @@ pub(crate) fn resolve_symbol_inner(
             let prototype = complete_comptime_prototype(env, &namespace, data.base())?;
             Ok(MIRSymbol::ComptimeFunctionReference {
                 prototype,
-                input: cx_thir::thir::data::THIRTemplateInput { args: Vec::new() },
+                input: THIRTemplateInput::new(Vec::new()),
             })
         }
         HIRSymbolKind::TypeConstructor(data) => resolve_type_constructor(
@@ -163,10 +159,10 @@ pub(crate) fn resolve_symbol_inner(
 
         HIRSymbolKind::AddressableGlobal {
             name,
-            _type,
+            ty,
             symbol_naming,
         } => {
-            let ty = complete_type(env, symbol_namespace, _type)?;
+            let ty = complete_type(env, symbol_namespace, ty)?;
             let symbol_name = CXIdent::new(cx_thir::thir::name_mangling::mangle_rootable_name(
                 env.symbols.get_global_registry(),
                 &QualifiedName::new(symbol_namespace.clone(), name.clone()),
@@ -175,14 +171,13 @@ pub(crate) fn resolve_symbol_inner(
 
             if evaluation_namespace != symbol_namespace {
                 env.items.push_generated_global(
-                    THIRGlobalVariable {
-                        name: symbol_name.clone(),
-                        _type: ty.clone(),
-
-                        is_mutable: false,
-                        linkage: LinkageMode::Extern,
-                        initializer: None,
-                    },
+                    THIRGlobalVariable::new(
+                        symbol_name.clone(),
+                        ty.clone(),
+                        None,
+                        LinkageMode::Extern,
+                        false,
+                    ),
                     false,
                 );
             }
@@ -192,24 +187,9 @@ pub(crate) fn resolve_symbol_inner(
                 kind: THIRExpressionKind::GlobalVariable {
                     symbol: symbol_name.clone(),
                 },
-                _type: env.symbols.mem_ref_to(ty.clone()),
+                ty: env.symbols.mem_ref_to(ty.clone()),
             };
-            let expression = if decay_implicit_array
-                && matches!(_type.kind, HIRTypeKind::ImplicitSizedArray(_))
-            {
-                THIRExpression {
-                    token_range: TokenRange::internal(),
-                    kind: THIRExpressionKind::TypeConversion {
-                        operand: Box::new(global),
-                        conversion: THIRCoercion::ReinterpretBits,
-                    },
-                    _type: ty,
-                }
-            } else {
-                global
-            };
-
-            Ok(MIRSymbol::Expression(expression))
+            Ok(MIRSymbol::Expression(global))
         }
     }
 }
@@ -221,7 +201,10 @@ pub(crate) fn resolve_type_symbol<'a>(
 ) -> CXMaybeRawResult<&'a HIRSymbol> {
     let Some(first) = declarations.first() else {
         return env
-            .log_error_base(&catalogue::MISSING_ENTITY, ("declarations".into(), format!("type '{name}'")))
+            .log_error_base(
+                &catalogue::MISSING_ENTITY,
+                ("declarations".into(), format!("type '{name}'")),
+            )
             .map_err(Into::into);
     };
     let mut definition = None;
@@ -230,7 +213,10 @@ pub(crate) fn resolve_type_symbol<'a>(
             (&symbol.kind, &first.kind)
         else {
             return env
-                .log_error_base(&catalogue::UNEXPECTED_SYMBOL, (name.into(), "a type".into()))
+                .log_error_base(
+                    &catalogue::UNEXPECTED_SYMBOL,
+                    (name.into(), "a type".into()),
+                )
                 .map_err(Into::into);
         };
         if symbol.tag != first.tag || !type_template_kinds_equivalent(first_data, data) {
@@ -337,7 +323,7 @@ fn mir_symbols_equivalent(env: &TypeEnvironment, left: &MIRSymbol, right: &MIRSy
         ) => left.lookup_identifier() == right.lookup_identifier(),
 
         (MIRSymbol::Expression(left), MIRSymbol::Expression(right)) => {
-            env.type_eq(&left._type, &right._type)
+            env.type_eq(&left.ty, &right.ty)
                 && match (&left.kind, &right.kind) {
                     (
                         THIRExpressionKind::GlobalVariable { symbol: left },
@@ -368,13 +354,21 @@ fn resolve_type_constructor(
         env.error(
             &range,
             &catalogue::TYPE_REQUIREMENT,
-            ("type constructor target".into(), "a tagged union".into(), None),
+            (
+                "type constructor target".into(),
+                "a tagged union".into(),
+                None,
+            ),
         )
     })?;
     let Some((_, variant_type)) = variants.get(variant_index).cloned() else {
         return crate::log::internal_type_error(
             &catalogue::INDEX_BOUNDS,
-            ("tagged union variant".into(), format!("{variant_index}"), Some(variants.len().to_string())),
+            (
+                "tagged union variant".into(),
+                format!("{variant_index}"),
+                Some(variants.len().to_string()),
+            ),
         );
     };
 
@@ -386,25 +380,25 @@ fn resolve_type_constructor(
             .child(name.clone()),
     );
     if let Some(info) = &union_type.template_info {
-        symbol_name = mangle_template_name(&env.symbols, symbol_name, &info.template_input);
+        symbol_name = mangle_template_name(&env.symbols, symbol_name, info.template_input());
     }
     let prototype = THIRFnPrototype::new(
         symbol_name,
         LinkageMode::Static,
-        THIRFnSignature {
-            return_type: union_type.clone(),
-            params: if variant_type.is_void() {
+        THIRFnSignature::new(
+            union_type.clone(),
+            if variant_type.is_void() {
                 Vec::new()
             } else {
-                vec![THIRParameter {
-                    name: Some(CXIdent::new("value")),
-                    local_id: THIRLocalID::fresh(),
-                    _type: variant_type.clone(),
-                }]
+                vec![THIRParameter::new(
+                    Some(CXIdent::new("value")),
+                    THIRLocalID::fresh(),
+                    variant_type.clone(),
+                )]
             },
-            var_args: false,
-            contract: HIRFunctionContract::default(),
-        },
+            false,
+            HIRFunctionContract::default(),
+        ),
     )
     .with_debug_name(name.clone());
 

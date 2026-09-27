@@ -9,7 +9,7 @@
       "description": "A struct that describes one received UDP datagram.",
       "fields": [
         {"name": "length", "type": "u64", "description": "Number of bytes received."},
-        {"name": "source", "type": "std::net::endpoint", "description": "The sender endpoint."}
+        {"name": "source", "type": "std::net::address::endpoint", "description": "The sender endpoint."}
       ]
     },
     {
@@ -25,48 +25,48 @@
     {
       "name": "open",
       "owner": "udp_socket",
-      "signature": "std::opt<udp_socket> udp_socket::open()",
+      "signature": "std::optional::opt<udp_socket> udp_socket::open()",
       "description": "Creates a UDP socket.",
       "parameters": [],
-      "returnType": "std::opt<udp_socket>",
+      "returnType": "std::optional::opt<udp_socket>",
       "returnDescription": "Some socket on creation success."
     },
     {
       "name": "bind",
       "owner": "udp_socket",
-      "signature": "std::opt<void> udp_socket::bind(udp_socket& this, std::net::endpoint addr)",
+      "signature": "std::optional::opt<void> udp_socket::bind(udp_socket& this, std::net::address::endpoint addr)",
       "description": "Binds a UDP socket to an endpoint.",
       "parameters": [
         {"name": "this", "type": "udp_socket&", "description": "The socket to bind."},
-        {"name": "addr", "type": "std::net::endpoint", "description": "The local endpoint."}
+        {"name": "addr", "type": "std::net::address::endpoint", "description": "The local endpoint."}
       ],
-      "returnType": "std::opt<void>",
+      "returnType": "std::optional::opt<void>",
       "returnDescription": "Some void on success or none on failure."
     },
     {
       "name": "send_to",
       "owner": "udp_socket",
-      "signature": "std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> buffer, std::net::endpoint& remote)",
+      "signature": "std::optional::opt<u64> udp_socket::send_to(udp_socket& this, const std::span::span<const u8> buffer, std::net::address::endpoint& remote)",
       "description": "Sends a byte span to a remote UDP endpoint.",
       "parameters": [
         {"name": "this", "type": "udp_socket&", "description": "The socket to send from."},
-        {"name": "buffer", "type": "const std::span<const u8>", "description": "The bytes to send."},
-        {"name": "remote", "type": "std::net::endpoint&", "description": "The destination endpoint."}
+        {"name": "buffer", "type": "const std::span::span<const u8>", "description": "The bytes to send."},
+        {"name": "remote", "type": "std::net::address::endpoint&", "description": "The destination endpoint."}
       ],
-      "returnType": "std::opt<u64>",
+      "returnType": "std::optional::opt<u64>",
       "returnDescription": "Some number of bytes sent or none on failure."
     },
     {
       "name": "recv_from",
       "owner": "udp_socket",
-      "signature": "std::opt<datagram> udp_socket::recv_from(udp_socket& this, void* buffer, u64 capacity)",
+      "signature": "std::optional::opt<datagram> udp_socket::recv_from(udp_socket& this, void* buffer, u64 capacity)",
       "description": "Receives one UDP datagram into a caller-provided buffer.",
       "parameters": [
         {"name": "this", "type": "udp_socket&", "description": "The socket to receive from."},
         {"name": "buffer", "type": "void*", "description": "The destination buffer."},
         {"name": "capacity", "type": "u64", "description": "The destination capacity."}
       ],
-      "returnType": "std::opt<datagram>",
+      "returnType": "std::optional::opt<datagram>",
       "returnDescription": "Some datagram on success or none on failure."
     },
     {

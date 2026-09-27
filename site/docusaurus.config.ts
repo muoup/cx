@@ -7,7 +7,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'CX Programming Language',
   tagline: 'A C-shaped systems language experiment in linear resources',
-  favicon: 'img/cx-logo.svg',
+  favicon: 'img/favicon.svg',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
@@ -47,6 +47,18 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
+          sidebarCollapsible: false,
+          // A generated directory's index page becomes the parent of the pages beside it
+          async sidebarItemsGenerator({defaultSidebarItemsGenerator, ...args}) {
+            const items = await defaultSidebarItemsGenerator(args);
+            const id = `${args.item.dirName}/index`;
+            const index = args.docs.find((doc) => doc.id === id);
+            if (!index) {
+              return items;
+            }
+            const rest = items.filter((item) => !(item.type === 'doc' && item.id === id));
+            return [{type: 'category', label: index.title, link: {type: 'doc', id}, items: rest}];
+          },
           editUrl:
             'https://github.com/muoup/cx/tree/docs/site/',
         },
@@ -59,16 +71,11 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/cx-social-card.svg',
+    image: 'img/cx-social-card.png',
     colorMode: {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'CX',
-      logo: {
-        alt: 'CX logo',
-        src: 'img/cx-logo.svg',
-      },
       items: [
         {
           type: 'docSidebar',
@@ -96,8 +103,14 @@ const config: Config = {
       ],
     },
     footer: {
-      style: 'dark',
-      copyright: `Copyright © ${new Date().getFullYear()}. Built with Docusaurus.`,
+      style: 'light',
+      links: [
+        {label: 'Guides', to: '/docs/getting-started'},
+        {label: 'Manual', to: '/docs/manual/overview'},
+        {label: 'Standard Library', to: '/docs/stdlib'},
+        {label: 'GitHub', href: 'https://github.com/muoup/cx'},
+      ],
+      copyright: `© ${new Date().getFullYear()} Zachary Verlardi`,
     },
     prism: {
       theme: prismThemes.github,

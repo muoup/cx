@@ -8,7 +8,7 @@ use std::cell::Cell;
 
 use crate::log::LLVMResult;
 use crate::{CodegenValue, FunctionState, GlobalState};
-use cx_lmir::{LMIRInstruction, LMIRInstructionKind};
+use cx_lmir::{LMIRCoercionType, LMIRInstruction, LMIRInstructionKind};
 
 thread_local! {
     // Modules are compiled single-threaded, but multiple modules can be compiled
@@ -38,8 +38,8 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::GetFunctionAddr { func } => {
             calls::generate_get_function_addr(global_state, func)
         }
-        LMIRInstructionKind::Allocate { _type, alignment } => {
-            memory::generate_allocate(function_state, _type, *alignment)
+        LMIRInstructionKind::Allocate { ty, alignment } => {
+            memory::generate_allocate(function_state, ty, *alignment)
         }
         LMIRInstructionKind::StructAccess {
             struct_,
@@ -47,22 +47,20 @@ pub(crate) fn generate_instruction<'a, 'b>(
             struct_type,
             ..
         } => memory::generate_struct_access(function_state, struct_, struct_type, *field_index),
-        LMIRInstructionKind::Store {
-            value,
-            _type,
-            memory,
-        } => memory::generate_store(global_state, function_state, memory, value, _type),
+        LMIRInstructionKind::Store { value, ty, memory } => {
+            memory::generate_store(global_state, function_state, memory, value, ty)
+        }
         LMIRInstructionKind::Memcpy {
             dest,
             src,
             size,
             alignment,
         } => memory::generate_memcpy(function_state, dest, src, size, *alignment),
-        LMIRInstructionKind::Load { memory, _type } => {
-            memory::generate_load(global_state, function_state, memory, _type)
+        LMIRInstructionKind::Load { memory, ty } => {
+            memory::generate_load(global_state, function_state, memory, ty)
         }
-        LMIRInstructionKind::ZeroMemory { memory, _type } => {
-            memory::generate_zero_memory(global_state, function_state, memory, _type)
+        LMIRInstructionKind::ZeroMemory { memory, ty } => {
+            memory::generate_zero_memory(global_state, function_state, memory, ty)
         }
         LMIRInstructionKind::DirectCall {
             func,
@@ -82,41 +80,41 @@ pub(crate) fn generate_instruction<'a, 'b>(
         LMIRInstructionKind::VaEnd { list } => {
             variadic::generate_va_end(global_state, function_state, list)
         }
-        LMIRInstructionKind::VaArg { list, _type } => {
-            variadic::generate_va_arg(global_state, function_state, list, _type)
+        LMIRInstructionKind::VaArg { list, ty } => {
+            variadic::generate_va_arg(global_state, function_state, list, ty)
         }
         LMIRInstructionKind::Coercion {
             value,
             coercion_type,
         } => match coercion_type {
-            cx_lmir::LMIRCoercionType::BitCast => operations::generate_bit_cast(
+            LMIRCoercionType::BitCast => operations::generate_bit_cast(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::IntToPtr { .. } => {
+            LMIRCoercionType::IntToPtr { .. } => {
                 operations::generate_int_to_ptr(global_state, function_state, value)
             }
-            cx_lmir::LMIRCoercionType::ZExtend => operations::generate_zextend(
+            LMIRCoercionType::ZExtend => operations::generate_zextend(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::SExtend => operations::generate_sextend(
+            LMIRCoercionType::SExtend => operations::generate_sextend(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::Trunc => operations::generate_trunc(
+            LMIRCoercionType::Trunc => operations::generate_trunc(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::IntToFloat { sextend, .. } => {
+            LMIRCoercionType::IntToFloat { sextend, .. } => {
                 operations::generate_int_to_float(
                     global_state,
                     function_state,
@@ -125,7 +123,7 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     *sextend,
                 )
             }
-            cx_lmir::LMIRCoercionType::FloatToInt { sextend, .. } => {
+            LMIRCoercionType::FloatToInt { sextend, .. } => {
                 operations::generate_float_to_int(
                     global_state,
                     function_state,
@@ -134,13 +132,13 @@ pub(crate) fn generate_instruction<'a, 'b>(
                     *sextend,
                 )
             }
-            cx_lmir::LMIRCoercionType::PtrToInt => operations::generate_ptr_to_int(
+            LMIRCoercionType::PtrToInt => operations::generate_ptr_to_int(
                 global_state,
                 function_state,
                 value,
                 &instruction.value_type,
             ),
-            cx_lmir::LMIRCoercionType::FloatCast { .. } => operations::generate_float_cast(
+            LMIRCoercionType::FloatCast { .. } => operations::generate_float_cast(
                 global_state,
                 function_state,
                 value,

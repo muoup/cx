@@ -1,271 +1,201 @@
 use cx_log::CXResult;
-use std::sync::Arc;
-
 use cx_mir::{
-    MIRCallKind, MIRConstant, MIRField, MIRFunctionID, MIRFunctionMode, MIRInstrKind,
-    MIRStagedTemplate, MIRValue,
+    MIRComptimeOp, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeType, MIRComptimeValue,
+    MIRConstant, MIRField, MIRInstruction, MIRInstructionKind, MIRInternalIntrinsic, MIRValue,
 };
-use cx_mir_comptime::{
-    MIRComptimeValue, MIRStagedBinding, MIRStagedValue, evaluate_comptime_function,
-};
-use cx_thir::thir::expression::THIRFnContract;
 use cx_thir::thir::{
     data::THIRType,
-    expression::{THIRExpression, THIRExpressionKind},
+    expression::{THIRExpression, THIRFnContract},
     r#type::{THIRField, THIRTypeKind},
 };
 use cx_thir::type_context::THIRTypeContext;
+use cx_tokens::TokenRange;
 
-use crate::lowering::comptime::evaluate_comptime_expr;
-use crate::lowering::control_flow::auto_pop_scope;
-use crate::lowering::lower_expression;
-use crate::lowering::staged::instantiate;
 use crate::{
     builder::MIRBuilder,
-    lowering::types::{lower_type, lower_type_id},
+    lowering::{
+        LowerResult, LowerStop, comptime,
+        control_flow::auto_pop_scope,
+        lower_expression, staged,
+        types::{lower_type, lower_type_id},
+    },
 };
 
-pub(super) fn lower_call(
-    builder: &mut MIRBuilder<'_>,
-    function: &THIRExpression,
-    arguments: &[THIRExpression],
-    contract: &THIRFnContract,
-    result_type: &THIRType,
-) -> CXResult<MIRValue> {
-    if let THIRExpressionKind::Variable { .. } = &function.kind
-        && matches!(function._type.kind, THIRTypeKind::Undefined)
-    {
-        let staged = lower_expression(builder, function)?;
-        let mut args = Vec::with_capacity(arguments.len());
-        for argument in arguments {
-            args.push(lower_expression(builder, argument)?);
-        }
-        let out = if result_type.is_void() || result_type.is_unreachable() {
-            None
-        } else {
-            let ty = lower_type(builder, result_type)?;
-            Some(builder.fun_mut().new_register(ty, None))
-        };
-        let targets = crate::lowering::staged::exits::targets(builder)?;
-        builder.emit(MIRInstrKind::ApplyStaged {
-            out,
-            staged,
-            args,
-            targets,
-        });
-        return Ok(out
-            .map(MIRValue::Register)
-            .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
-    }
-
-    if let THIRExpressionKind::FunctionReference { name, .. } = &function.kind
-        && let Some((id, prototype)) = builder.resolve_function(name.as_str())
-        && prototype.signature.mode == MIRFunctionMode::Comptime
-    {
-        return lower_comptime_call(builder, id, &prototype.signature, arguments, result_type);
-    }
-
+pub(super) fn lower_call<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    function: &'thir THIRExpression,
+    arguments: &'thir [THIRExpression],
+    contract: &'thir THIRFnContract,
+    result_type: &'thir THIRType,
+    range: TokenRange,
+) -> LowerResult<MIRComptimeOperand> {
     let callee = lower_expression(builder, function)?;
+    if let MIRValue::Constant(MIRConstant::Function(id)) = callee
+        && builder.module().comptime_function(id).is_some()
+    {
+        let signature = builder
+            .module()
+            .comptime_function(id)
+            .expect("comptime function disappeared")
+            .prototype()
+            .signature()
+            .clone();
+        let mut args = Vec::with_capacity(arguments.len());
+        for (argument, parameter) in arguments.iter().zip(signature.params()) {
+            if matches!(parameter.ty, MIRComptimeType::StagedExpression { .. }) {
+                args.push(staged::lower_operand(builder, argument)?);
+            } else if builder.fun().body().is_comptime() {
+                args.push(MIRComptimeOperand::Runtime(lower_expression(
+                    builder, argument,
+                )?));
+            } else {
+                args.push(MIRComptimeOperand::Known(MIRComptimeValue::Constant(
+                    comptime::evaluate(builder, argument).map_err(LowerStop::Diagnostic)?,
+                )));
+            }
+        }
+        if builder.fun().body().is_comptime() {
+            let out = if matches!(
+                signature.return_type(),
+                MIRComptimeType::StagedExpression { .. }
+            ) {
+                Some(MIRComptimeOutput::Comptime(
+                    builder
+                        .fun_mut()
+                        .new_comptime_register(signature.return_type().clone(), None),
+                ))
+            } else if result_type.is_void() || result_type.is_unreachable() {
+                None
+            } else {
+                let ty = lower_type(builder, result_type).map_err(LowerStop::Diagnostic)?;
+                Some(MIRComptimeOutput::Runtime(
+                    builder.fun_mut().new_register(ty, None),
+                ))
+            };
+            builder.emit_comptime(
+                MIRComptimeOp::Call {
+                    out: out.clone(),
+                    callee: id,
+                    args,
+                },
+                range,
+            );
+            return Ok(match out {
+                Some(MIRComptimeOutput::Runtime(register)) => {
+                    MIRComptimeOperand::Runtime(MIRValue::Register(register))
+                }
+                Some(MIRComptimeOutput::Comptime(register)) => {
+                    MIRComptimeOperand::Comptime(register)
+                }
+                None => MIRComptimeOperand::Runtime(MIRValue::Constant(MIRConstant::Unit)),
+            });
+        }
+        let args = args
+            .iter()
+            .map(|argument| match argument {
+                MIRComptimeOperand::Known(value) => Ok(value.clone()),
+                MIRComptimeOperand::Runtime(MIRValue::Constant(value)) => {
+                    Ok(MIRComptimeValue::Constant(value.clone()))
+                }
+                MIRComptimeOperand::Runtime(value) => Ok(MIRComptimeValue::Caller(value.clone())),
+                MIRComptimeOperand::Comptime(_) => {
+                    unreachable!("runtime comptime call has a deferred register")
+                }
+            })
+            .collect::<CXResult<Vec<_>>>()
+            .map_err(LowerStop::Diagnostic)?;
+        let result =
+            comptime::evaluate_function(builder, id, &args).map_err(LowerStop::Diagnostic)?;
+        return Ok(MIRComptimeOperand::Known(result));
+    }
     let mut args = Vec::with_capacity(arguments.len());
     for argument in arguments {
         args.push(lower_expression(builder, argument)?);
     }
 
-    if let Some(precondition) = &contract.precondition {
-        builder.fun_mut().push_invisible_scope();
-        let parameter_names = builder
-            .registry()
-            .intern_signature(&function._type)
-            .map(|signature| {
-                signature
-                    .params
-                    .iter()
-                    .map(|parameter| parameter.name.clone())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        for (name, argument) in parameter_names.iter().zip(args.iter().cloned()) {
+    let mut function_type = &function.ty;
+    let signature = loop {
+        match &function_type.kind {
+            THIRTypeKind::PointerTo { inner_type, .. }
+            | THIRTypeKind::MemoryReference { inner_type, .. } => {
+                function_type = builder.registry().resolve_type_id(*inner_type);
+            }
+            _ => break function_type.function_signature(),
+        }
+    };
+    let parameter_names = signature
+        .map(|signature| {
+            signature
+                .params()
+                .iter()
+                .map(|parameter| parameter.name().cloned())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if let Some(precondition) = contract.precondition() {
+        builder
+            .fun_mut()
+            .push_scope(precondition.token_range.clone());
+        for (name, value) in parameter_names.iter().zip(&args) {
             if let Some(name) = name {
-                builder.fun_mut().bind_named_value(name, argument);
+                builder.fun_mut().bind_named_value(name, value.clone());
             }
         }
         lower_expression(builder, precondition)?;
         auto_pop_scope(builder)?;
     }
 
-    let returns_value = !result_type.is_void() && !result_type.is_unreachable();
-    let out = if returns_value {
-        let result_type_id = lower_type(builder, result_type)?;
-        Some(builder.fun_mut().new_register(result_type_id, None))
-    } else {
+    let out = if result_type.is_void() || result_type.is_unreachable() {
         None
+    } else {
+        let type_id = lower_type(builder, result_type).map_err(LowerStop::Diagnostic)?;
+        Some(builder.fun_mut().new_register(type_id, None))
     };
-    builder.emit(MIRInstrKind::Call {
-        out,
-        kind: MIRCallKind::Runtime,
-        callee,
-        args: args.clone(),
-    });
-    let unreachable_return = builder
-        .registry()
-        .intern_signature(&function._type)
-        .is_some_and(|signature| signature.return_type.is_unreachable());
-    if contract.noreturn
-        || unreachable_return
-        || matches!(&function.kind, THIRExpressionKind::FunctionReference { name, .. } if name.as_str() == "exit")
-    {
-        builder.emit(MIRInstrKind::Unreachable);
-    }
-    let value = out
-        .map(MIRValue::Register)
-        .unwrap_or(MIRValue::Constant(MIRConstant::Unit));
 
-    if let Some(postcondition) = &contract.postcondition {
-        builder.fun_mut().push_invisible_scope();
-        let parameter_names = builder
-            .registry()
-            .intern_signature(&function._type)
-            .map(|signature| {
-                signature
-                    .params
-                    .iter()
-                    .map(|parameter| parameter.name.clone())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        for (name, argument) in parameter_names.iter().zip(args) {
+    builder.emit(MIRInstruction::new(
+        MIRInstructionKind::Call {
+            out,
+            callee,
+            args: args.clone(),
+        },
+        range.clone(),
+    ));
+
+    if result_type.is_unreachable() {
+        builder.emit(MIRInstruction::new(MIRInstructionKind::Unreachable, range));
+        return Err(LowerStop::Diverged);
+    }
+
+    if let Some(postcondition) = contract.postcondition() {
+        builder
+            .fun_mut()
+            .push_scope(postcondition.condition().token_range.clone());
+        for (name, value) in parameter_names.iter().zip(&args) {
             if let Some(name) = name {
-                builder.fun_mut().bind_named_value(name, argument);
+                builder.fun_mut().bind_named_value(name, value.clone());
             }
         }
-        if let Some(name) = &postcondition.binding {
-            builder.fun_mut().bind_named_value(name, value.clone());
+        if let (Some(name), Some(out)) = (postcondition.binding(), out) {
+            builder
+                .fun_mut()
+                .bind_named_value(name, MIRValue::Register(out));
         }
-        let condition = super::lower_expression(builder, &postcondition.condition)?;
-        builder.emit(MIRInstrKind::Assume { condition });
+        let condition = lower_expression(builder, postcondition.condition())?;
+        builder.fun_mut().emit_intrinsic(
+            MIRInternalIntrinsic::Assume { condition },
+            postcondition.condition().token_range.clone(),
+        );
         auto_pop_scope(builder)?;
     }
 
-    Ok(value)
+    Ok(MIRComptimeOperand::Runtime(
+        out.map(MIRValue::Register)
+            .unwrap_or(MIRValue::Constant(MIRConstant::Unit)),
+    ))
 }
 
-fn lower_comptime_call(
-    builder: &mut MIRBuilder<'_>,
-    function: MIRFunctionID,
-    signature: &cx_mir::MIRFnSignature,
-    arguments: &[THIRExpression],
-    result_type: &THIRType,
-) -> CXResult<MIRValue> {
-    if builder.is_capturing() || builder.fun().mode() == MIRFunctionMode::Comptime {
-        let mut args = Vec::with_capacity(arguments.len());
-        for (argument, parameter) in arguments.iter().zip(&signature.params) {
-            if parameter.staged_params.is_some() {
-                args.push(lower_staged_argument(
-                    builder,
-                    argument,
-                    parameter.staged_diverges,
-                )?);
-            } else {
-                args.push(lower_expression(builder, argument)?);
-            }
-        }
-        let out = if (result_type.is_void() || result_type.is_unreachable())
-            && signature.return_staged_params.is_none()
-        {
-            None
-        } else {
-            let ty = lower_type(builder, result_type)?;
-            Some(builder.fun_mut().new_register(ty, None))
-        };
-        builder.emit(MIRInstrKind::Call {
-            out,
-            kind: MIRCallKind::Comptime,
-            callee: MIRValue::Constant(MIRConstant::Function(function)),
-            args,
-        });
-        if builder.is_capturing() && signature.return_staged_params.is_some() {
-            if let Some(out) = out {
-                let targets = super::staged::exits::targets(builder)?;
-                builder.emit(MIRInstrKind::StagedUse {
-                    value: MIRValue::Register(out),
-                    targets,
-                });
-            }
-        }
-        return Ok(out
-            .map(MIRValue::Register)
-            .unwrap_or(MIRValue::Constant(MIRConstant::Unit)));
-    }
-
-    let mut args = Vec::with_capacity(arguments.len());
-    for (argument, parameter) in arguments.iter().zip(&signature.params) {
-        if parameter.staged_params.is_some() {
-            let (template, captures) =
-                capture_staged_argument(builder, argument, parameter.staged_diverges)?;
-            let runtime_origin = (!captures.is_empty()).then(|| builder.fun().id());
-            let captures = captures.into_iter().map(MIRStagedBinding::Value).collect();
-            args.push(MIRComptimeValue::Staged(Arc::new(MIRStagedValue::new(
-                template,
-                captures,
-                Vec::new(),
-                runtime_origin,
-            ))));
-        } else {
-            let value = evaluate_comptime_expr(builder, argument)?;
-            
-            args.push(value);
-        }
-    }
-
-    let function = builder
-        .module()
-        .function(function)
-        .expect("resolved comptime function exists");
-
-    match evaluate_comptime_function(builder, function, &args)? {
-        MIRComptimeValue::Constant(value) => Ok(MIRValue::Constant(value)),
-        MIRComptimeValue::Staged(value) => instantiate(builder, &value),
-    }
-}
-
-fn lower_staged_argument(
-    builder: &mut MIRBuilder<'_>,
-    argument: &THIRExpression,
-    diverges: bool,
-) -> CXResult<MIRValue> {
-    let (template, captures) = capture_staged_argument(builder, argument, diverges)?;
-    let out = builder.fun_mut().new_register(template.result_type(), None);
-    builder.emit(MIRInstrKind::MakeStaged {
-        out,
-        template,
-        captures,
-    });
-    Ok(MIRValue::Register(out))
-}
-
-fn capture_staged_argument(
-    builder: &mut MIRBuilder<'_>,
-    argument: &THIRExpression,
-    diverges: bool,
-) -> CXResult<(Arc<MIRStagedTemplate>, Vec<MIRValue>)> {
-    match &argument.kind {
-        THIRExpressionKind::StagedExpression(staged) => {
-            let params = staged
-                .params()
-                .iter()
-                .map(|parameter| (parameter.local_id, &parameter.ty))
-                .collect::<Vec<_>>();
-            builder.capture_staged(staged.expr(), &params, Some(diverges))
-        }
-        THIRExpressionKind::Variable { local_id, .. } => {
-            let _ = builder.local_value(*local_id, &argument._type)?;
-            builder.capture_staged(argument, &[], Some(diverges))
-        }
-        _ => builder.capture_staged(argument, &[], Some(diverges)),
-    }
-}
-
-pub fn lower_field(builder: &mut MIRBuilder, field: &THIRField) -> CXResult<MIRField> {
+pub(crate) fn lower_field(builder: &mut MIRBuilder<'_>, field: &THIRField) -> CXResult<MIRField> {
     match field {
         THIRField::Standard { name, type_id } => Ok(MIRField::named(
             name.clone(),

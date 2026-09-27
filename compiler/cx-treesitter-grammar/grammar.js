@@ -282,7 +282,11 @@ module.exports = grammar({
                 optional($.type_qualifier),
             ),
 
-        reference_modifier: ($) => op($, "&"),
+        reference_modifier: ($) =>
+            seq(optional($.lifetime_modifier), op($, "&")),
+
+        lifetime_modifier: ($) =>
+            seq("'", choice($.identifier, keyword($, "static"))),
 
         array_modifier: ($) => seq("[", optional($.expression), "]"),
 
@@ -508,7 +512,7 @@ module.exports = grammar({
                     field("return_type", $.type),
                     field("declarator", $.function_declarator),
                     optional($.function_contract),
-                    $.compound_statement,
+                    $.function_body,
                 ),
             ),
 
@@ -530,9 +534,14 @@ module.exports = grammar({
                     field("name", $.callable_name),
                     field("parameters", $.comptime_parameter_list),
                     optional($.function_contract),
-                    $.compound_statement,
+                    $.function_body,
                 ),
             ),
+
+        function_body: ($) => choice(
+            $.compound_statement,
+            seq(op($, "=>"), $.expression, ";"),
+        ),
 
         comptime_value_type: ($) =>
             seq(

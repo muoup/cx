@@ -1,248 +1,277 @@
-use cx_log::catalogue::mir as catalogue;
-
-use crate::{log::log_mir_error, lowering::lower_expression};
-use cx_log::CXResult;
+use crate::{
+    builder::MIRBuilder,
+    log::log_mir_error,
+    lowering::{
+        LowerResult, LowerStop, lower_expression, memory,
+        types::{bitfield_access, lower_float_type, lower_int_type, lower_type, lower_type_id},
+    },
+};
+use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRAggregateOp, MIRBinaryOp, MIRConstant, MIRInstrKind, MIRIntBinaryOp, MIRIntType,
-    MIRPlaceAggregateOp, MIRValue, MIRValueAggregateOp,
+    MIRAggregateIntrinsic, MIRBindable, MIRConstant, MIRFloatIntrinsic, MIRInstruction,
+    MIRInstructionKind, MIRIntIntrinsic, MIRIntType, MIRIntrinsic, MIRTarget, MIRType, MIRTypeKind,
+    MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_thir::thir::{
-    data::{THIRIntType, THIRType, THIRTypeKind},
+    data::{THIRType, THIRTypeKind},
     expression::THIRExpression,
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
-use cx_tokens::TokenRange;
 
-use crate::{
-    builder::MIRBuilder,
-    lowering::{memory, types::lower_type},
-};
-
-pub(super) fn lower_pattern_test(
-    builder: &mut MIRBuilder<'_>,
-    lhs: &THIRExpression,
+pub(super) fn lower_pattern_test<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    lhs: &'thir THIRExpression,
     pattern: &THIRPattern,
-    result_type: &THIRType,
-) -> CXResult<MIRValue> {
-    let lhs_value = lower_expression(builder, lhs)?;
-    let (tested, constant) = match pattern {
+    result_type: &'thir THIRType,
+    subject: Option<MIRValue>,
+) -> LowerResult<MIRValue> {
+    let token_range = lhs.token_range.clone();
+    let tested = match pattern {
         THIRPattern::Binding { .. } => {
             return log_mir_error(
                 &lhs.token_range,
                 (
-                    &catalogue::REQUIRED_CONTEXT,
+                    &mir::REQUIRED_CONTEXT,
                     ("binding patterns".into(), "match arms".into()),
                 ),
-            );
+            )
+            .map_err(LowerStop::Diagnostic);
         }
-        THIRPattern::TaggedUnionVariant {
-            sum_type,
-            variant_index,
-            inner_local_id,
-            inner_name,
-        } => {
-            let base = memory::ensure_place(builder, lhs_value.clone(), &lhs._type)?;
-            if let Some(local_id) = inner_local_id {
-                let payload_type = sum_variant_type(builder, sum_type, *variant_index);
-                let payload_type_id = lower_type(builder, &payload_type)?;
-                let payload =
-                    builder
-                        .fun_mut()
-                        .new_place(payload_type_id, inner_name.clone(), false);
-                let sum_type_id = lower_type(builder, sum_type)?;
-
-                builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Place {
-                    out: payload,
-                    op: MIRPlaceAggregateOp::Variant {
-                        base,
-                        variant: *variant_index,
-                        sum_type: sum_type_id,
-                    },
-                }));
-
-                builder
-                    .fun_mut()
-                    .bind_local(*local_id, MIRValue::PlaceRef(payload));
-            }
-            let tag_type = lower_type(
-                builder,
-                &THIRType::from(THIRTypeKind::Integer {
-                    _type: THIRIntType::I8,
-                    signed: false,
-                }),
-            )?;
-            let tag = builder.fun_mut().new_register(tag_type, None);
-            let sum_type_id = lower_type(builder, sum_type)?;
-            builder.emit(MIRInstrKind::AggregateOp(MIRAggregateOp::Value {
-                out: tag,
-                op: MIRValueAggregateOp::Discriminant {
-                    value: lhs_value,
-                    sum_type: sum_type_id,
+        THIRPattern::TaggedUnionVariant { variant_index, .. } => {
+            let sum_type = match &lhs.ty.kind {
+                THIRTypeKind::MemoryReference { inner_type, .. } => {
+                    builder.registry().resolve_type_id(*inner_type)
+                }
+                _ => &lhs.ty,
+            };
+            let sum_type_id = lower_type(builder, sum_type).map_err(LowerStop::Diagnostic)?;
+            let tag_type = builder
+                .types_mut()
+                .intern(MIRType::new(MIRTypeKind::Integer { ty: MIRIntType::I8 }));
+            let out = builder.fun_mut().new_register(tag_type, None);
+            let value = match subject {
+                Some(value) => value,
+                None => lower_expression(builder, lhs)?,
+            };
+            builder.fun_mut().emit_intrinsic(
+                MIRAggregateIntrinsic::SumIndex {
+                    out: MIRTarget::Register(out),
+                    value,
+                    sum_ty: sum_type_id,
                 },
-            }));
+                lhs.token_range.clone(),
+            );
             (
-                MIRValue::Register(tag),
-                MIRConstant::Integer {
+                MIRValue::Register(out),
+                MIRValue::Constant(MIRConstant::Integer {
                     value: *variant_index as i128,
                     ty: MIRIntType::I8,
-                    signed: false,
-                },
+                }),
+                false,
             )
         }
-        THIRPattern::Integer(value) => (
-            lhs_value,
-            MIRConstant::Integer {
-                value: *value as i128,
-                ty: MIRIntType::I64,
-                signed: true,
-            },
-        ),
+        THIRPattern::Integer(value) => {
+            let input = match subject {
+                Some(value) => value,
+                None => lower_expression(builder, lhs)?,
+            };
+            let ty = match lhs.ty.kind {
+                THIRTypeKind::Integer { ty, .. } => lower_int_type(ty),
+                THIRTypeKind::MemoryReference { inner_type, .. } => {
+                    let inner = builder.registry().resolve_type_id(inner_type);
+                    match inner.kind {
+                        THIRTypeKind::Integer { ty, .. } => lower_int_type(ty),
+                        _ => unreachable!("integer pattern has non-integer subject"),
+                    }
+                }
+                _ => unreachable!("integer pattern has non-integer subject"),
+            };
+            let value_type = match &lhs.ty.kind {
+                THIRTypeKind::MemoryReference { inner_type, .. } => {
+                    builder.registry().resolve_type_id(*inner_type)
+                }
+                _ => &lhs.ty,
+            };
+            let input = if lhs.ty.is_memory_reference() {
+                let type_id = lower_type(builder, value_type).map_err(LowerStop::Diagnostic)?;
+                let bitfield = bitfield_access(builder, &lhs.ty).map_err(LowerStop::Diagnostic)?;
+                memory::copy(builder, input, type_id, bitfield, &lhs.token_range)
+            } else {
+                input
+            };
+            (
+                input,
+                MIRValue::Constant(MIRConstant::Integer {
+                    value: *value as i128,
+                    ty,
+                }),
+                false,
+            )
+        }
         THIRPattern::Float(value, ty) => (
-            lhs_value,
-            MIRConstant::Float {
-                value: *value,
-                ty: super::types::lower_float_type(*ty),
+            match subject {
+                Some(value) => value,
+                None => lower_expression(builder, lhs)?,
             },
+            MIRValue::Constant(MIRConstant::Float {
+                value: *value,
+                ty: lower_float_type(*ty),
+            }),
+            true,
         ),
     };
-    let result_type_id = lower_type(builder, result_type)?;
-    let out = builder.fun_mut().new_register(result_type_id, None);
-    builder.emit(MIRInstrKind::BinOp {
-        out,
-        op: MIRBinaryOp::Integer {
-            ty: MIRIntType::I8,
-            signed: false,
-            op: MIRIntBinaryOp::Eq,
-        },
-        lhs: tested,
-        rhs: MIRValue::Constant(constant),
-    });
+
+    let (lhs, rhs, signed) = tested;
+    let result_type = lower_type(builder, result_type).map_err(LowerStop::Diagnostic)?;
+    let out = builder.fun_mut().new_register(result_type, None);
+    let target = MIRTarget::Register(out);
+    let intrinsic: MIRIntrinsic = if signed {
+        MIRFloatIntrinsic::Eq {
+            out: target,
+            lhs,
+            rhs,
+        }
+        .into()
+    } else {
+        MIRIntIntrinsic::Eq {
+            out: target,
+            lhs,
+            rhs,
+        }
+        .into()
+    };
+    builder.fun_mut().emit_intrinsic(intrinsic, token_range);
     Ok(MIRValue::Register(out))
 }
 
-pub(super) fn bind_pattern_payload(
-    builder: &mut MIRBuilder<'_>,
+pub(super) fn bind_pattern_payload<'thir>(
+    builder: &mut MIRBuilder<'thir>,
     pattern: &THIRPattern,
     subject: MIRValue,
-    sum_type: &THIRType,
+    sum_type: &'thir THIRType,
 ) -> CXResult<()> {
-    if let THIRPattern::Binding { name, local_id } = pattern {
-        let place = if sum_type.is_memory_reference() {
-            memory::ensure_place(builder, subject, sum_type)?
-        } else {
-            memory::assign_operand_to_place(builder, subject, sum_type, Some(name.clone()))?
-        };
-        builder
-            .fun_mut()
-            .bind_local(*local_id, MIRValue::PlaceRef(place));
-        builder
-            .fun_mut()
-            .bind_named_value(name, MIRValue::PlaceRef(place));
-        return Ok(());
-    }
-    if let THIRPattern::TaggedUnionVariant {
-        variant_index,
-        inner_local_id: Some(local_id),
-        inner_name,
-        ..
-    } = pattern
-    {
-        let payload_type = sum_variant_type(builder, sum_type, *variant_index);
-        let payload_type_id = lower_type(builder, &payload_type)?;
-        let sum_type_id = lower_type(builder, sum_type)?;
-
-        let (payload, instr) = match subject {
-            MIRValue::Copy(place) | MIRValue::Move(place) | MIRValue::PlaceRef(place) => {
-                let out = builder
-                    .fun_mut()
-                    .new_place(payload_type_id, inner_name.clone(), false);
-
-                (
-                    MIRValue::PlaceRef(out),
-                    MIRAggregateOp::Place {
-                        out: out.clone(),
-                        op: MIRPlaceAggregateOp::Variant {
-                            base: place,
-                            variant: *variant_index,
-                            sum_type: sum_type_id,
-                        },
-                    },
-                )
-            }
-
-            MIRValue::Register(reg) => {
-                let out = builder
-                    .fun_mut()
-                    .new_register(payload_type_id, inner_name.clone());
-
-                (
-                    MIRValue::Register(out),
-                    MIRAggregateOp::Value {
-                        out: out.clone(),
-                        op: MIRValueAggregateOp::ProjectVariant {
-                            value: MIRValue::Register(reg),
-                            variant: *variant_index,
-                            sum_type: sum_type_id,
-                        },
-                    },
-                )
-            }
-
-            _ => unreachable!(),
-        };
-
-        builder.emit(MIRInstrKind::AggregateOp(instr));
-
-        builder.fun_mut().bind_local(*local_id, payload.clone());
-        if let Some(name) = inner_name {
-            builder.fun_mut().bind_named_value(name, payload);
+    match pattern {
+        THIRPattern::Binding { name, local_id } => {
+            let value = if sum_type.is_memory_reference() {
+                subject
+            } else {
+                let place = memory::move_operand_to_place(
+                    builder,
+                    subject,
+                    sum_type,
+                    Some(name.clone()),
+                    &builder.fun().current_scope_range(),
+                )?;
+                MIRValue::PlaceRef(place)
+            };
+            builder.fun_mut().bind_local(*local_id, value.clone());
+            builder.fun_mut().bind_named_value(name, value);
         }
+        THIRPattern::TaggedUnionVariant {
+            variant_index,
+            inner_local_id,
+            inner_name,
+            ..
+        } => {
+            if sum_type.is_memory_reference() && inner_local_id.is_none() {
+                return Ok(());
+            }
+            let union_type = match &sum_type.kind {
+                THIRTypeKind::MemoryReference { inner_type, .. } => {
+                    builder.registry().resolve_type_id(*inner_type)
+                }
+                _ => sum_type,
+            };
+            let payload_type = match &union_type.kind {
+                THIRTypeKind::TaggedUnion { variants } => {
+                    variants.get(*variant_index).map(|field| field.ty())
+                }
+                _ => unreachable!("tagged union pattern has a non-union subject"),
+            };
+            let payload_type_id = match payload_type {
+                Some(type_id) => lower_type_id(builder, type_id)?,
+                None => lower_type(builder, union_type)?,
+            };
+            let sum_type_id = lower_type(builder, union_type)?;
+            let borrowed = sum_type.is_memory_reference();
+            let range = builder.fun().current_scope_range();
+            let value = if borrowed {
+                let result_type_id =
+                    builder
+                        .types_mut()
+                        .intern(MIRType::new(MIRTypeKind::MemoryReference {
+                            inner: payload_type_id,
+                        }));
+                let out = builder
+                    .fun_mut()
+                    .new_register(result_type_id, inner_name.clone());
+                builder.fun_mut().emit_intrinsic(
+                    MIRAggregateIntrinsic::SumVariant {
+                        out: MIRTarget::Register(out),
+                        base: subject,
+                        variant: *variant_index,
+                        sum_ty: sum_type_id,
+                    },
+                    range,
+                );
+                MIRValue::Register(out)
+            } else {
+                let source = memory::move_value(builder, subject, sum_type_id, &range)?;
+                let nodrop = payload_type
+                    .map(|id| builder.registry().resolve_type_id(id).is_nodrop())
+                    .unwrap_or_else(|| union_type.is_nodrop());
+                let out = builder.new_place(payload_type_id, inner_name.clone(), nodrop);
+                builder.fun_mut().emit_intrinsic(
+                    MIRAggregateIntrinsic::SumVariantL {
+                        out,
+                        source: source.clone(),
+                        variant: *variant_index,
+                        sum_ty: sum_type_id,
+                    },
+                    range.clone(),
+                );
+                if let MIRValue::Register(register) = source {
+                    builder.emit(MIRInstruction::new(
+                        MIRInstructionKind::Invalidate {
+                            place: MIRBindable::Register(register),
+                            kind: MIRInvalidationKind::Move,
+                        },
+                        range.clone(),
+                    ));
+                }
+                builder.emit(MIRInstruction::new(
+                    MIRInstructionKind::Initialize {
+                        place: MIRBindable::Place(out),
+                    },
+                    range,
+                ));
+                MIRValue::PlaceRef(out)
+            };
+            if let Some(local_id) = inner_local_id {
+                builder.fun_mut().bind_local(*local_id, value.clone());
+                if let Some(name) = inner_name {
+                    builder.fun_mut().bind_named_value(name, value);
+                }
+            }
+        }
+        _ => {}
     }
     Ok(())
 }
 
-pub(super) fn sum_variant_type(
-    builder: &MIRBuilder<'_>,
-    sum_type: &THIRType,
-    variant_index: usize,
-) -> THIRType {
-    let semantic_sum = builder
-        .registry()
-        .mem_ref_inner(sum_type)
-        .unwrap_or(sum_type);
-    semantic_sum
-        .aggregate_fields(builder.registry())
-        .and_then(|variants| variants.into_iter().nth(variant_index))
-        .map(|(_, variant)| variant)
-        .unwrap_or_else(|| semantic_sum.clone())
-}
-
+#[allow(dead_code)]
 pub(super) fn constant_from_pattern(pattern: &THIRPattern) -> MIRConstant {
     match pattern {
         THIRPattern::Binding { .. } => unreachable!("binding patterns have no case constant"),
         THIRPattern::Integer(value) => MIRConstant::Integer {
             value: *value as i128,
             ty: MIRIntType::I64,
-            signed: true,
         },
-        THIRPattern::Float(value, ty) => MIRConstant::Float {
-            value: *value,
-            ty: super::types::lower_float_type(*ty),
-        },
+        THIRPattern::Float(_, _) => unreachable!("floating patterns cannot form integer cases"),
         THIRPattern::TaggedUnionVariant { variant_index, .. } => MIRConstant::Integer {
             value: *variant_index as i128,
             ty: MIRIntType::I8,
-            signed: false,
         },
-    }
-}
-
-pub fn move_value(value: MIRValue, range: &TokenRange) -> CXResult<MIRValue> {
-    match value {
-        MIRValue::PlaceRef(place) => Ok(MIRValue::Move(place)),
-        MIRValue::Move(place) => Ok(MIRValue::Move(place)),
-        MIRValue::Register(reg) => Ok(MIRValue::Register(reg)),
-        _ => log_mir_error(range, (&catalogue::MOVE_VALUE, format!("{:?}", value))),
     }
 }

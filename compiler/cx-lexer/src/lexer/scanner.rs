@@ -95,7 +95,15 @@ impl<'a> Lexer<'a> {
 
                 match c {
                     '\n' => break,
-                    '"' | '\'' => literal = Some(c),
+                    '"' => literal = Some(c),
+                    '\'' => {
+                        cursor.back();
+                        let is_lifetime = token_rules::starts_lifetime_modifier(cursor);
+                        cursor.next();
+                        if !is_lifetime {
+                            literal = Some(c);
+                        }
+                    }
                     '/' if (cursor.peek() == Some('/') || cursor.peek() == Some('*')) => {
                         cursor.back();
                         break;

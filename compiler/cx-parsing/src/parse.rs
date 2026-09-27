@@ -1,10 +1,10 @@
 use cx_hir::ast::{
-    expression::{HIRExprKind, HIRExpression},
-    function::HIRFunctionPrototype,
+    expression::{HIRBlockKind, HIRExprKind, HIRExpression},
+    function::{HIRFunctionBody, HIRFunctionPrototype},
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
-    types::{HIRTypeKind, HIRTypeLookup},
+    types::{HIRType, HIRTypeKind, HIRTypeLookup},
     HIRStmt,
 };
 use cx_log::catalogue::parse::*;
@@ -18,18 +18,14 @@ use cx_tokens::{
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    assert_token_matches,
-    log::parse_point_error,
-    next_kind,
-    parse::{
+    assert_token_matches, log::parse_point_error, next_kind, parse::{
         expressions::parse_expr,
         functions::try_function_parse,
         parser::ParserData,
         statement::parse_stmt,
         templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
         types::{parse_base_mods, parse_initializer, parse_typedef_initializer},
-    },
-    peek_next_kind, try_next,
+    }, peek_next_kind, try_next,
 };
 
 pub(crate) mod parser;
@@ -122,7 +118,11 @@ fn parse_extern_c_mod(data: &mut ParserData) -> CXResult<()> {
     let abi = abi.clone();
 
     if abi != "C" {
-        return parse_point_error(&data.tokens, &UNSUPPORTED_FEATURE, (format!("extern ABI '{abi}'"), "the parser".into()));
+        return parse_point_error(
+            &data.tokens,
+            &UNSUPPORTED_FEATURE,
+            (format!("extern ABI '{abi}'"), "the parser".into()),
+        );
     }
 
     assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
@@ -151,7 +151,11 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
         }
 
         _ => {
-        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a declaration".into(), Some("in global scope".into()), None));
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("a declaration".into(), Some("in global scope".into()), None),
+            );
         }
     };
 
@@ -165,18 +169,18 @@ fn parse_comptime_fn_merge(data: &mut ParserData) -> CXResult<()> {
 
     let body = if let Some(template_prototype) = func.template_prototype.as_ref() {
         note_templated_types(data, template_prototype)?;
-        let body = parse_body(data);
+        let body = parse_function_body(data);
         unnote_templated_types(data, template_prototype);
         body
     } else {
-        parse_body(data)
+        parse_function_body(data)
     }?;
 
     data.add_stmt(HIRStmt::ComptimeFunctionDefinition {
         prototype: func.prototype,
         visibility: data.visibility,
         template_prototype: func.template_prototype,
-        body: Box::new(body),
+        body,
     });
 
     Ok(())
@@ -192,10 +196,14 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         None
     };
 
-    let (name, _type) = parse_typedef_initializer(data)?;
+    let (name, ty) = parse_typedef_initializer(data)?;
 
     let Some(name) = name else {
-        return parse_point_error(&data.tokens.with_index(start_index), &EXPECTED_SYNTAX, ("a typedef name".into(), None, None));
+        return parse_point_error(
+            &data.tokens.with_index(start_index),
+            &EXPECTED_SYNTAX,
+            ("a typedef name".into(), None, None),
+        );
     };
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
@@ -204,7 +212,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         name: type_name,
         lookup,
         template_input: None,
-    } = &_type.kind
+    } = &ty.kind
     {
         let is_existing_type_alias = *lookup == HIRTypeLookup::Standard
             || data.ast.definition_stmts.iter().any(|definition| {
@@ -220,7 +228,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
             data.add_stmt(HIRStmt::TypeDefinition {
                 name: Some(name),
                 visibility: data.visibility,
-                _type: _type.clone(),
+                ty: ty.clone(),
                 template_prototype: template_prototype.clone(),
                 tag: None,
             });
@@ -231,7 +239,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     data.add_stmt(HIRStmt::TypeDefinition {
         name: Some(name),
         visibility: data.visibility,
-        _type: _type.clone(),
+        ty: ty.clone(),
         template_prototype: template_prototype.clone(),
         tag: None,
     });
@@ -247,7 +255,11 @@ fn parse_fn_merge(
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
         if template_prototype.is_some() {
-        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a function body".into(), None, None));
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("a function body".into(), None, None),
+            );
         }
 
         if inherited_external {
@@ -263,17 +275,17 @@ fn parse_fn_merge(
     } else {
         let body = if let Some(template_prototype) = template_prototype.as_ref() {
             note_templated_types(data, template_prototype)?;
-            let body = parse_body(data);
+            let body = parse_function_body(data);
             unnote_templated_types(data, template_prototype);
             body
         } else {
-            parse_body(data)
+            parse_function_body(data)
         }?;
 
         data.add_stmt(HIRStmt::FunctionDefinition {
             prototype,
             visibility: data.visibility,
-            body: Some(Box::new(body)),
+            body: Some(body),
             template_prototype,
         });
     }
@@ -282,15 +294,8 @@ fn parse_fn_merge(
 }
 
 fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
-    let noreturn = matches!(
-        data.tokens.peek().map(|token| &token.kind),
-        Some(TokenKind::Identifier(name)) if name == "_Noreturn"
-    );
-    if noreturn {
-        data.tokens.next();
-    }
-
-    let (name, return_type, linkage) = parse_initializer(data)?;
+    let (name, return_type, specifiers) = parse_initializer(data)?;
+    let linkage = specifiers.linkage;
     let symbol_naming = if data.c_mode {
         if linkage == LinkageMode::Static {
             HIRSymbolNameScheme::Namespaced
@@ -300,6 +305,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     } else {
         data.symbol_naming
     };
+
     let inherited_external = !data.c_mode
         && symbol_naming == HIRSymbolNameScheme::Unmangled
         && linkage == LinkageMode::Standard;
@@ -312,7 +318,11 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
     };
 
     if !data.tokens.has_next() {
-        return parse_point_error(&data.tokens, &UNEXPECTED_END, Some("global declaration".into()));
+        return parse_point_error(
+            &data.tokens,
+            &UNEXPECTED_END,
+            Some("global declaration".into()),
+        );
     }
 
     if let Some(func) = try_function_parse(
@@ -321,7 +331,7 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         name.clone(),
         linkage,
         symbol_naming,
-        noreturn,
+        specifiers.attributes,
     )? {
         return parse_fn_merge(
             data,
@@ -335,11 +345,12 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         TokenKind::Assignment(_) => {
             let initial_value = parse_expr(data)?;
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+            
             data.add_stmt(HIRStmt::GlobalVariableDefinition {
                 visibility: data.visibility,
                 variable: HIRGlobalVariable::Standard {
                     name: name.clone(),
-                    _type: return_type.clone(),
+                    ty: return_type.clone(),
                     is_mutable: true,
                     linkage,
                     symbol_name_scheme: symbol_naming,
@@ -374,7 +385,15 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             loop {
                 let (next_name, next_type) = parse_base_mods(data, return_type.clone())?;
                 let Some(next_name) = next_name else {
-                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a variable declaration".into(), Some("after ','".into()), None));
+                    return parse_point_error(
+                        &data.tokens,
+                        &EXPECTED_SYNTAX,
+                        (
+                            "a variable declaration".into(),
+                            Some("after ','".into()),
+                            None,
+                        ),
+                    );
                 };
                 let initializer = if try_next!(data.tokens, TokenKind::Assignment(_)) {
                     Some(parse_expr(data)?)
@@ -396,7 +415,11 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
                     TokenKind::Operator(OperatorType::Comma) => {}
                     TokenKind::Punctuator(PunctuatorType::Semicolon) => break,
                     _ => {
-                        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a global separator".into(), None, None));
+                        return parse_point_error(
+                            &data.tokens,
+                            &EXPECTED_SYNTAX,
+                            ("a global separator".into(), None, None),
+                        );
                     }
                 }
             }
@@ -406,7 +429,11 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
-                ("a global declaration".into(), None, data.tokens.peek().map(|token| format!("{token:#?}"))),
+                (
+                    "a global declaration".into(),
+                    None,
+                    data.tokens.peek().map(|token| format!("{token:#?}")),
+                ),
             );
         }
     }
@@ -417,17 +444,17 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
 fn add_global_variable(
     data: &mut ParserData,
     name: CXIdent,
-    _type: cx_hir::ast::types::HIRType,
+    ty: HIRType,
     linkage: LinkageMode,
     symbol_naming: HIRSymbolNameScheme,
     inherited_external: bool,
-    initializer: Option<cx_hir::ast::expression::HIRExpression>,
+    initializer: Option<HIRExpression>,
 ) {
     data.add_stmt(HIRStmt::GlobalVariableDefinition {
         visibility: data.visibility,
         variable: HIRGlobalVariable::Standard {
             name,
-            _type,
+            ty,
             is_mutable: true,
             linkage: if inherited_external {
                 LinkageMode::Extern
@@ -441,6 +468,14 @@ fn add_global_variable(
 }
 
 pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<HIRExpression> {
+    parse_block_kind(data, HIRBlockKind::Statement)
+}
+
+pub(crate) fn parse_expression_block(data: &mut ParserData) -> CXResult<HIRExpression> {
+    parse_block_kind(data, HIRBlockKind::Expression)
+}
+
+fn parse_block_kind(data: &mut ParserData, kind: HIRBlockKind) -> CXResult<HIRExpression> {
     assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
     let start_index = data.tokens.index - 1;
@@ -448,7 +483,7 @@ pub(crate) fn parse_block(data: &mut ParserData) -> CXResult<HIRExpression> {
 
     Ok(HIRExprKind::Block {
         exprs: body,
-        creates_scope: true,
+        kind,
     }
     .into_expr(
         start_index,
@@ -465,10 +500,18 @@ fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<HIRExpression>>
         let then_count = count_then_markers(&statement);
         let capturing_then_count = count_capturing_then_markers(&statement);
         if then_count != capturing_then_count {
-            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a direct body".into(), Some("after 'then'".into()), None));
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("a direct body".into(), Some("after 'then'".into()), None),
+            );
         }
         if then_count > 1 {
-            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("at most one 'then' marker".into(), None, None));
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("at most one 'then' marker".into(), None, None),
+            );
         }
 
         if then_count == 1 {
@@ -477,7 +520,7 @@ fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<HIRExpression>>
 
             let continuation = HIRExprKind::Block {
                 exprs: continuation,
-                creates_scope: false,
+                kind: HIRBlockKind::Sequence,
             }
             .into_expr(
                 continuation_start,
@@ -574,6 +617,33 @@ pub(crate) fn parse_body(data: &mut ParserData) -> CXResult<HIRExpression> {
     }
 }
 
+fn parse_function_body(data: &mut ParserData) -> CXResult<HIRFunctionBody> {
+    let start_index = data.tokens.index;
+    if try_next!(data.tokens, punctuator!(OpenBrace)) {
+        let statements = parse_block_statements(data)?;
+        return Ok(HIRFunctionBody::Block {
+            statements,
+            range: data.token_range(start_index, data.tokens.index),
+        });
+    }
+
+    if try_next!(data.tokens, punctuator!(ThickArrow)) {
+        let expression = parse_expr(data)?;
+        assert_token_matches!(
+            data.tokens,
+            punctuator!(Semicolon),
+            "';' after function expression"
+        );
+        return Ok(HIRFunctionBody::Expression(expression));
+    }
+
+    parse_point_error(
+        &data.tokens,
+        &EXPECTED_SYNTAX,
+        ("a braced or arrow function body".into(), None, None),
+    )
+}
+
 pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     let mut ss = String::new();
 
@@ -584,7 +654,11 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
     }
 
     if ss.is_empty() {
-        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an intrinsic identifier".into(), None, None));
+        return parse_point_error(
+            tokens,
+            &EXPECTED_SYNTAX,
+            ("an intrinsic identifier".into(), None, None),
+        );
     }
 
     ss.pop();

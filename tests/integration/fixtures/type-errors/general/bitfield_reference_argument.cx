@@ -1,0 +1,14 @@
+struct flags {
+    u32 low : 3;
+    u32 high : 5;
+};
+
+u32 read(const u32& source) {
+    return source;
+}
+
+i32 main() {
+    flags value;
+    read(value.high);
+    return 0;
+}

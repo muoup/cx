@@ -3,6 +3,6 @@ struct resource : @nodrop {
 };
 
 int bad() {
-    resource value;
+    resource value = (resource) { .value = 1 };
     return 0;
 }

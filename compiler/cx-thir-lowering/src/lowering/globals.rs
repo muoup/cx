@@ -1,117 +1,60 @@
-use crate::builder::MIRBuilder;
-use crate::lowering::{lower_expression, types::lower_type};
 use cx_log::CXResult;
-use cx_mir::{
-    MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunctionID, MIRFunctionMode,
-    MIRGlobalID, MIRGlobalKind, MIRGlobalState, MIRInstrKind,
-};
-use cx_mir_comptime::evaluate_comptime_function;
+use cx_mir::{MIRGlobalID, MIRGlobalState, MIRGlobalVariable};
 use cx_thir::thir::{expression::THIRExpression, global::THIRGlobalVariable};
-use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
 
-pub struct MIRGlobalInitRequest {
-    global_id: MIRGlobalID,
-    init_id: MIRFunctionID,
-    initializer: THIRExpression,
+use crate::{
+    builder::MIRBuilder,
+    lowering::{comptime, types::lower_type},
+};
+
+pub(crate) struct MIRGlobalInitRequest<'thir> {
+    pub global_id: MIRGlobalID,
+    pub initializer: &'thir THIRExpression,
 }
 
-pub(crate) fn predeclare_global(
-    builder: &mut MIRBuilder<'_>,
-    global: &THIRGlobalVariable,
+pub(crate) fn predeclare_global<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    global: &'thir THIRGlobalVariable,
 ) -> CXResult<MIRGlobalID> {
-    let ty = lower_type(builder, &global._type)?;
-
-    builder.module_mut().declare_global(
-        global.linkage == LinkageMode::Extern,
-        global.name.clone(),
-        global.linkage,
-        MIRGlobalKind::Variable {
+    let ty = lower_type(builder, global.ty())?;
+    let id = builder.module_mut().reserve_global(global.name().as_str());
+    builder.module_mut().define_global(
+        id,
+        MIRGlobalVariable::new(
+            global.name().clone(),
+            global.linkage(),
             ty,
-            state: if global.linkage == LinkageMode::Extern {
+            if global.linkage() == LinkageMode::Extern || global.initializer().is_some() {
                 MIRGlobalState::External
             } else {
                 MIRGlobalState::ZeroInitialized
             },
-            is_mutable: global.is_mutable,
-        },
-        global
-            .initializer
-            .as_ref()
-            .map(|initializer| &initializer.token_range)
-            .unwrap_or(&cx_tokens::TokenRange::internal()),
-    )
+            global.is_mutable(),
+        ),
+    );
+    Ok(id)
 }
 
-pub(crate) fn lower_global(
-    builder: &mut MIRBuilder<'_>,
+pub(crate) fn lower_global<'thir>(
     id: MIRGlobalID,
-    global: &THIRGlobalVariable,
-) -> CXResult<Option<MIRGlobalInitRequest>> {
-    let Some(init) = global.initializer.as_ref() else {
-        return Ok(None);
-    };
-
-    let global_type = lower_type(builder, &global._type)?;
-
-    let signature = MIRFnSignature::new(
-        CXIdent::from(format!("__comptime_{}_init", global.name.as_str())),
-        Some(global.name.clone()),
-        Vec::<MIRFnParam>::new(),
-        global_type,
-        MIRFunctionMode::Comptime,
-        false,
-        true,
-    );
-    let init_id = builder
-        .module_mut()
-        .declare_function(MIRFnPrototype::new(signature, LinkageMode::Static));
-    builder
-        .module_mut()
-        .begin_global_initializer(id, &init.token_range)?;
-
-    Ok(Some(MIRGlobalInitRequest {
-        global_id: id,
-        init_id,
-        initializer: init.clone(),
-    }))
+    global: &'thir THIRGlobalVariable,
+) -> Option<MIRGlobalInitRequest<'thir>> {
+    global
+        .initializer()
+        .map(|initializer| MIRGlobalInitRequest {
+            global_id: id,
+            initializer,
+        })
 }
 
-pub(crate) fn fulfill_init_request(
-    builder: &mut MIRBuilder<'_>,
-    request: &MIRGlobalInitRequest,
+pub(crate) fn execute_request<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    request: &MIRGlobalInitRequest<'thir>,
 ) -> CXResult<()> {
-    builder.start_function(request.init_id);
-
-    let value = lower_expression(builder, &request.initializer)?;
-    if !builder.fun_mut().current_block_terminated() {
-        builder.emit(MIRInstrKind::Return { value: Some(value) });
-    }
-
-    builder.finish_function();
-    builder.module_mut().set_global_state(
-        request.global_id,
-        MIRGlobalState::Initialized(MIRConstant::Undefined),
-    );
-
-    Ok(())
-}
-
-pub(crate) fn execute_request(
-    builder: &mut MIRBuilder<'_>,
-    request: &MIRGlobalInitRequest,
-) -> CXResult<()> {
-    let Some(func) = builder.module().function(request.init_id) else {
-        unreachable!("Function for global init request not found");
-    };
-
-    let result = evaluate_comptime_function(builder, func, &[])?
-        .constant()
-        .ok_or_else(|| todo!("Expected a constant result from global initializer"))?;
-
+    let value = comptime::evaluate(builder, request.initializer)?;
     builder
         .module_mut()
-        .set_global_state(request.global_id, MIRGlobalState::Initialized(result));
-
+        .set_global_state(request.global_id, MIRGlobalState::Initialized(value));
     Ok(())
 }

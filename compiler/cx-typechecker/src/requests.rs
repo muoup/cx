@@ -4,10 +4,10 @@ use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::QualifiedName;
 use cx_thir::thir::{
     data::{
-        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRParameter,
-        THIRTemplateInput,
+        THIRComptimeFnPrototype, THIRFnPrototype, THIRFnSignature, THIRFunction, THIRFunctionBody,
+        THIRParameter, THIRTemplateInput,
     },
-    expression::{THIRExpression, THIRExpressionKind},
+    expression::{THIRExpression, THIRExpressionKind, THIRLocalID},
     r#type::THIRType,
 };
 use cx_tokens::TokenRange;
@@ -68,37 +68,37 @@ fn realize_tagged_union_constructor(
     env.items.mark_request_fulfilled(symbol_name.clone());
 
     let param_name = CXIdent::new("value");
-    let param_local_id = cx_thir::thir::expression::THIRLocalID::fresh();
+    let param_local_id = THIRLocalID::fresh();
     let prototype = THIRFnPrototype::new(
         symbol_name,
         LinkageMode::Static,
-        THIRFnSignature {
-            return_type: union_type.clone(),
-            params: if variant_type.is_void() {
+        THIRFnSignature::new(
+            union_type.clone(),
+            if variant_type.is_void() {
                 Vec::new()
             } else {
-                vec![THIRParameter {
-                    name: Some(param_name.clone()),
-                    local_id: param_local_id,
-                    _type: variant_type.clone(),
-                }]
+                vec![THIRParameter::new(
+                    Some(param_name.clone()),
+                    param_local_id,
+                    variant_type.clone(),
+                )]
             },
-            var_args: false,
-            contract: HIRFunctionContract::default(),
-        },
+            false,
+            HIRFunctionContract::default(),
+        ),
     )
     .with_debug_name(debug_name);
 
     let value = if variant_type.is_void() {
         THIRExpression {
             token_range: TokenRange::internal(),
-            _type: variant_type.clone(),
+            ty: variant_type.clone(),
             kind: THIRExpressionKind::Unit,
         }
     } else {
         THIRExpression {
             token_range: TokenRange::internal(),
-            _type: variant_type.clone(),
+            ty: variant_type.clone(),
             kind: THIRExpressionKind::Move {
                 name: param_name,
                 local_id: param_local_id,
@@ -108,27 +108,19 @@ fn realize_tagged_union_constructor(
 
     let constructed = THIRExpression {
         token_range: TokenRange::internal(),
-        _type: union_type.clone(),
+        ty: union_type.clone(),
         kind: THIRExpressionKind::TaggedUnionInitializer {
             variant_index,
             value: Box::new(value),
             sum_type: union_type,
         },
     };
-    let body = THIRExpression {
-        token_range: TokenRange::internal(),
-        _type: prototype.signature().return_type.clone(),
-        kind: THIRExpressionKind::Return {
-            value: Some(Box::new(constructed)),
-            postcondition: None,
-        },
-    };
 
-    env.items.push_generated_function(THIRFunction {
-        require_explicit_return: env.require_explicit_return(),
+    env.items.push_generated_function(THIRFunction::new(
         prototype,
-        body: Some(body),
-    });
+        Some(THIRFunctionBody::Expression(constructed)),
+        env.require_explicit_return(),
+    ));
 }
 
 fn realize_fn_template(
@@ -215,7 +207,9 @@ fn realize_comptime_function(
     let HIRSymbolKind::ComptimeFunction(data) = &symbol.kind else {
         unreachable!()
     };
+
     let namespace = symbol_lexical_namespace(&name.namespace, symbol);
+
     env.in_definition(|env| {
         if let Some(template) = &data.template_prototype {
             apply_template_input(env, template, input)

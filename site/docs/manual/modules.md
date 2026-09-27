@@ -1,5 +1,6 @@
 ---
 title: Modules and Visibility
+description: "Imports, aliases, visibility sections, and C symbol names."
 ---
 
 # Modules and Visibility

@@ -16,6 +16,7 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::environment::TypeEnvironment;
+use crate::type_checking::staged_expr::complete_staged_expr;
 
 #[derive(Debug, Clone)]
 pub struct TypecheckedBinding {
@@ -133,11 +134,11 @@ impl From<THIRExpression> for TypecheckResult {
 }
 
 impl TypecheckResult {
-    pub fn new(_type: THIRType, kind: THIRExpressionKind) -> Self {
+    pub fn new(ty: THIRType, kind: THIRExpressionKind) -> Self {
         Self::standard(THIRExpression {
             token_range: TokenRange::internal(),
             kind,
-            _type,
+            ty,
         })
     }
 
@@ -293,7 +294,7 @@ impl TypecheckResult {
     }
 
     pub fn ready_type(&self) -> Option<&THIRType> {
-        self.ready_expression().map(|expression| &expression._type)
+        self.ready_expression().map(|expression| &expression.ty)
     }
 
     pub fn apply_expected_type(
@@ -318,7 +319,7 @@ impl TypecheckResult {
     ) -> CXResult<Self> {
         match self {
             Self::NeedsStagedType(deferred) => {
-                crate::type_checking::staged_expr::complete_staged_expr(
+                complete_staged_expr(
                     env, namespace, deferred, value_type,
                 )
                 .map(Self::staged_literal)

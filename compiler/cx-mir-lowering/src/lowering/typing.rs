@@ -1,24 +1,27 @@
+use std::collections::HashMap;
+
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
     LMIRABISlot, LMIRFunctionPrototype, LMIRFunctionSignature, LMIRParameter, LMIRParameterABI,
     LMIRReturnABI, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
-use cx_mir::ty::layout::{self, layout_of};
+use cx_mir::ty::layout::{calculate_field_layouts, calculate_type_layout};
 use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::{
-    MIRField, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID, MIRTypeKind,
-    MIRTypeLayout,
+    MIRField, MIRFieldLayout, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID,
+    MIRTypeKind,
 };
 use cx_target::ArchitectureConfig;
+use cx_util::identifier::CXIdent;
 use cx_util::linkage::LinkageMode;
 
 pub(crate) fn convert_prototype(
     prototype: &MIRFnPrototype,
-    types: &MIRTypeRegistry
+    types: &MIRTypeRegistry,
 ) -> LMIRFunctionPrototype {
     LMIRFunctionPrototype {
-        name: prototype.signature.symbol_name.clone(),
+        name: prototype.symbol_name.clone(),
         linkage: convert_linkage(prototype.linkage),
         signature: classify_signature(&prototype.signature, types),
     }
@@ -26,30 +29,38 @@ pub(crate) fn convert_prototype(
 
 pub(crate) fn classify_signature(
     signature: &MIRFnSignature,
-    types: &MIRTypeRegistry
+    types: &MIRTypeRegistry,
 ) -> LMIRFunctionSignature {
-    let return_type = convert_type(signature.return_type, types);
-    let return_layout = (!return_type.is_void()).then(|| layout(types, signature.return_type));
+    let return_type = convert_type(signature.return_type(), types);
+    let return_layout =
+        (!return_type.is_void()).then(|| calculate_type_layout(types, signature.return_type()));
     let return_abi = match return_layout {
         Some(layout) => classify_return(
             types.architecture(),
             return_type.clone(),
-            layout.alignment as u8,
-            layout.size,
+            layout.alignment() as u8,
+            layout.size(),
         ),
         None => LMIRReturnABI::Void,
     };
     let params = signature
-        .params
+        .params()
         .iter()
-        .map(|param| classify_param(types.architecture(), param.name.clone(), param.ty, types))
+        .map(|param| {
+            classify_param(
+                types.architecture(),
+                param.name().cloned(),
+                param.ty(),
+                types,
+            )
+        })
         .collect();
 
     LMIRFunctionSignature {
         return_type,
         return_abi,
         params,
-        var_args: signature.variadic,
+        var_args: signature.variadic(),
     }
 }
 
@@ -66,7 +77,7 @@ fn classify_return(
         return LMIRReturnABI::Direct {
             slots: vec![LMIRABISlot {
                 offset: 0,
-                _type: return_type,
+                ty: return_type,
             }],
         };
     }
@@ -78,39 +89,42 @@ fn classify_return(
 
 fn classify_param(
     architecture: &ArchitectureConfig,
-    name: Option<cx_util::identifier::CXIdent>,
+    name: Option<CXIdent>,
     ty: MIRTypeID,
-    types: &MIRTypeRegistry
+    types: &MIRTypeRegistry,
 ) -> LMIRParameter {
     let lowered = convert_type(ty, types);
     let aggregate_value = matches!(
-        types.kind(ty).unwrap(),
+        types.definition(ty).unwrap().kind(),
         MIRTypeKind::Structured { .. } | MIRTypeKind::Union { .. }
     );
-    let abi = if !lowered.is_memory_resident() {
+    let abi = if lowered.is_void() {
+        LMIRParameterABI::Direct { slots: Vec::new() }
+    } else if !lowered.is_memory_resident() {
         LMIRParameterABI::Direct {
             slots: vec![LMIRABISlot {
                 offset: 0,
-                _type: lowered.clone(),
+                ty: lowered.clone(),
             }],
         }
     } else {
-        let layout = layout(types, ty);
-        if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size) {
+        let layout = calculate_type_layout(types, ty);
+
+        if let Some(slots) = direct_aggregate_slots(architecture, &lowered, layout.size()) {
             LMIRParameterABI::Direct { slots }
         } else if aggregate_value {
             LMIRParameterABI::ByValue {
-                alignment: layout.alignment as u8,
+                alignment: layout.alignment() as u8,
             }
         } else {
             LMIRParameterABI::Indirect {
-                alignment: layout.alignment as u8,
+                alignment: layout.alignment() as u8,
             }
         }
     };
     LMIRParameter {
         name,
-        _type: lowered,
+        ty: lowered,
         abi,
     }
 }
@@ -146,7 +160,18 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
 
-    let kind = match &definition.kind {
+    if let MIRTypeKind::IncompleteArray { inner } = definition.kind() {
+        let element = convert_type(*inner, types);
+        return LMIRType {
+            alignment: element.alignment,
+            kind: LMIRTypeKind::Array {
+                element: Box::new(element),
+                size: 0,
+            },
+        };
+    }
+
+    let kind = match &definition.kind() {
         MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
         MIRTypeKind::Integer { ty, .. } => LMIRTypeKind::Integer(convert_integer_type(*ty)),
         MIRTypeKind::Float { ty } => LMIRTypeKind::Float(convert_float_type(*ty)),
@@ -174,24 +199,13 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
             element: Box::new(convert_type(*inner, types)),
             size: *length,
         },
+        MIRTypeKind::IncompleteArray { .. } => unreachable!(),
         MIRTypeKind::Structured { fields } => LMIRTypeKind::Struct {
             name: format!("mir_type_{}", ty.index()),
-            fields: fields
-                .iter()
-                .enumerate()
-                .map(|(index, field)| {
-                    (
-                        field
-                            .name()
-                            .map(str::to_owned)
-                            .unwrap_or_else(|| format!("field_{index}")),
-                        convert_type(field.ty(), types),
-                    )
-                })
-                .collect(),
+            fields: struct_members(ty, fields, types).fields,
         },
         MIRTypeKind::Union { .. } => LMIRTypeKind::Opaque {
-            bytes: layout(types, ty).size,
+            bytes: calculate_type_layout(types, ty).size(),
         },
         MIRTypeKind::Void => LMIRTypeKind::Void,
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
@@ -200,31 +214,113 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
 
     LMIRType {
         kind,
-        alignment: layout_of(types, ty)
-            .ok()
-            .map(|layout| layout.alignment as u8)
-            .unwrap_or(1),
+        alignment: calculate_type_layout(types, ty).alignment() as u8,
+    }
+}
+
+/// The LMIR fields of a MIR struct and where each MIR field landed among them. Every byte occupied
+/// by bitfields becomes an `I8` field, and padding keeps each field at its MIR offset.
+pub(crate) struct StructMembers {
+    pub fields: Vec<(String, LMIRType)>,
+    pub members: Vec<Option<StructMember>>,
+    pub bitfield_bytes: HashMap<usize, usize>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum StructMember {
+    Field(usize),
+    Bitfield { bit: usize, width: usize },
+}
+
+pub(crate) fn struct_members(
+    ty: MIRTypeID,
+    fields: &[MIRField],
+    types: &MIRTypeRegistry,
+) -> StructMembers {
+    fn pad(lowered: &mut Vec<(String, LMIRType)>, name: String, bytes: usize) {
+        if bytes != 0 {
+            lowered.push((
+                name,
+                LMIRType::new(LMIRTypeKind::Opaque { bytes }, 1),
+            ));
+        }
+    }
+
+    let layouts = calculate_field_layouts(types, ty).expect("struct has no field layout");
+    let mut lowered: Vec<(String, LMIRType)> = Vec::new();
+    let mut members = Vec::with_capacity(fields.len());
+    let mut bitfield_bytes = HashMap::new();
+    let mut end = 0usize;
+    let mut field_alignment = 1usize;
+
+    for (index, (field, layout)) in fields.iter().zip(layouts).enumerate() {
+        match layout {
+            MIRFieldLayout::Bitfield { bit_width: 0, .. } => members.push(None),
+            MIRFieldLayout::Bitfield {
+                offset,
+                bit_offset,
+                bit_width,
+                ..
+            } => {
+                let bit = offset * 8 + bit_offset;
+                let first = (bit / 8).max(end);
+                let last = (bit + bit_width).div_ceil(8);
+                if first < last {
+                    pad(&mut lowered, format!("padding_{index}"), first - end);
+                    for byte in first..last {
+                        bitfield_bytes.insert(byte, lowered.len());
+                        lowered.push((
+                            format!("bitfield_byte_{byte}"),
+                            LMIRType::new(LMIRTypeKind::Integer(LMIRIntegerType::I8), 1),
+                        ));
+                    }
+                    end = last;
+                }
+                members.push(Some(StructMember::Bitfield {
+                    bit,
+                    width: bit_width,
+                }));
+            }
+            MIRFieldLayout::Standard { offset, ty } => {
+                let lowered_type = convert_type(ty, types);
+                let alignment = usize::from(lowered_type.alignment()).max(1);
+                if end.next_multiple_of(alignment) != offset {
+                    pad(&mut lowered, format!("padding_{index}"), offset - end);
+                }
+                field_alignment = field_alignment.max(alignment);
+                end = offset + usize::from(lowered_type.size());
+                members.push(Some(StructMember::Field(lowered.len())));
+                lowered.push((
+                    field
+                        .name()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| format!("field_{index}")),
+                    lowered_type,
+                ));
+            }
+        }
+    }
+
+    let size = calculate_type_layout(types, ty).size();
+    if end.next_multiple_of(field_alignment) != size {
+        pad(&mut lowered, "padding_tail".to_owned(), size - end);
+    }
+
+    StructMembers {
+        fields: lowered,
+        members,
+        bitfield_bytes,
     }
 }
 
 fn lower_union(variants: &[MIRField], types: &MIRTypeRegistry) -> LMIRType {
     let (size, alignment) = variants
         .iter()
-        .map(|variant| layout(types, variant.ty()))
+        .map(|variant| calculate_type_layout(types, variant.ty()))
         .fold((0, 1), |(size, alignment), layout| {
-            (size.max(layout.size), alignment.max(layout.alignment))
+            (size.max(layout.size()), alignment.max(layout.alignment()))
         });
     LMIRType::new(LMIRTypeKind::Opaque { bytes: size }, alignment as u8)
-}
-
-pub(super) fn layout(types: &MIRTypeRegistry, ty: MIRTypeID) -> MIRTypeLayout {
-    types
-        .layout(ty)
-        .ok()
-        .flatten()
-        .copied()
-        .or_else(|| layout::layout_of(types, ty).ok())
-        .unwrap_or_else(|| panic!("MIR type {ty} has no layout"))
 }
 
 fn integer_slot_type(architecture: &ArchitectureConfig, size: usize) -> Option<LMIRType> {
@@ -247,7 +343,7 @@ fn direct_aggregate_slots(
 ) -> Option<Vec<LMIRABISlot>> {
     if let Some(slot) = direct_sse_aggregate_type(architecture, ty) {
         return Some(vec![LMIRABISlot {
-            _type: slot,
+            ty: slot,
             offset: 0,
         }]);
     }
@@ -263,17 +359,17 @@ fn direct_aggregate_slots(
                 );
                 return Some(if size == 2 {
                     vec![LMIRABISlot {
-                        _type: vector,
+                        ty: vector,
                         offset: 0,
                     }]
                 } else {
                     vec![
                         LMIRABISlot {
-                            _type: vector.clone(),
+                            ty: vector.clone(),
                             offset: 0,
                         },
                         LMIRABISlot {
-                            _type: vector,
+                            ty: vector,
                             offset: 8,
                         },
                     ]
@@ -281,7 +377,7 @@ fn direct_aggregate_slots(
             }
             (1, _) => {
                 return Some(vec![LMIRABISlot {
-                    _type: LMIRType::with_implicit_abi(architecture, LMIRTypeKind::Float(float)),
+                    ty: LMIRType::with_implicit_abi(architecture, LMIRTypeKind::Float(float)),
                     offset: 0,
                 }]);
             }
@@ -291,19 +387,19 @@ fn direct_aggregate_slots(
     match size {
         0 => None,
         size @ 1..=8 => Some(vec![LMIRABISlot {
-            _type: integer_slot_type(architecture, size)?,
+            ty: integer_slot_type(architecture, size)?,
             offset: 0,
         }]),
         size @ 9..=16 => Some(vec![
             LMIRABISlot {
-                _type: LMIRType::with_implicit_abi(
+                ty: LMIRType::with_implicit_abi(
                     architecture,
                     LMIRTypeKind::Integer(LMIRIntegerType::I64),
                 ),
                 offset: 0,
             },
             LMIRABISlot {
-                _type: integer_slot_type(architecture, size - 8)?,
+                ty: integer_slot_type(architecture, size - 8)?,
                 offset: 8,
             },
         ]),

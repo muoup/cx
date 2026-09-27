@@ -13,12 +13,15 @@ use cx_log::CXResult;
 use cx_log::catalogue::backend as catalogue;
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
+use inkwell::AddressSpace;
 use inkwell::attributes::AttributeLoc;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::passes::PassBuilderOptions;
-use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
+use inkwell::targets::{
+    CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
+};
 use inkwell::types::{BasicType, FunctionType, IntType};
 use inkwell::values::{
     AnyValue, AnyValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PhiValue,
@@ -85,8 +88,8 @@ impl<'a> FunctionState<'a, '_> {
                 Ok(CodegenValue::Value(param_val))
             }
 
-            LMIRValue::IntImmediate { val, _type } => {
-                let int_type = bc_llvm_type(self.context, _type)?;
+            LMIRValue::IntImmediate { val, ty } => {
+                let int_type = bc_llvm_type(self.context, ty)?;
                 let int_val = int_type
                     .into_int_type()
                     .const_int(*val as u64, true)
@@ -95,8 +98,8 @@ impl<'a> FunctionState<'a, '_> {
                 Ok(CodegenValue::Value(int_val))
             }
 
-            LMIRValue::FloatImmediate { val, _type } => {
-                let float_type = bc_llvm_type(self.context, _type)?;
+            LMIRValue::FloatImmediate { val, ty } => {
+                let float_type = bc_llvm_type(self.context, ty)?;
                 let float_val = float_type
                     .into_float_type()
                     .const_float(val.into())
@@ -243,7 +246,7 @@ pub fn lmir_aot_codegen(
     let target_data = target_machine.get_target_data();
     let pointer_size = target_data.get_pointer_byte_size(None) as usize;
     let pointer_alignment =
-        target_data.get_abi_alignment(&context.ptr_type(inkwell::AddressSpace::from(0))) as usize;
+        target_data.get_abi_alignment(&context.ptr_type(AddressSpace::from(0))) as usize;
     if bytecode.architecture.pointer_size() != pointer_size
         || bytecode.architecture.pointer_alignment() != pointer_alignment
     {
@@ -318,7 +321,7 @@ pub fn lmir_aot_codegen(
     }
 
     let buff = target_machine
-        .write_to_memory_buffer(&global_state.module, inkwell::targets::FileType::Object)
+        .write_to_memory_buffer(&global_state.module, FileType::Object)
         .map_err(LLVMError::from_error)?;
 
     Ok(buff.as_slice().to_vec())
@@ -381,13 +384,13 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> LLVMRe
 
         let mut params = Vec::with_capacity(block.params.len());
         for parameter in &block.params {
-            let llvm_type = if parameter._type.is_memory_resident() {
+            let llvm_type = if parameter.ty.is_memory_resident() {
                 global_state
                     .context
-                    .ptr_type(inkwell::AddressSpace::from(0))
+                    .ptr_type(AddressSpace::from(0))
                     .as_basic_type_enum()
             } else {
-                any_to_basic_type(bc_llvm_type(global_state.context, &parameter._type)?)?
+                any_to_basic_type(bc_llvm_type(global_state.context, &parameter.ty)?)?
             };
             let phi = function_state
                 .builder
@@ -399,7 +402,7 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> LLVMRe
             function_state.value_map.insert(
                 LMIRValue::Register {
                     register: parameter.register.clone(),
-                    _type: parameter._type.clone(),
+                    ty: parameter.ty.clone(),
                 },
                 CodegenValue::Value(phi.as_basic_value().as_any_value_enum()),
             );
@@ -446,7 +449,7 @@ fn codegen_block<'a, 'b>(
         if let Some(result_reg) = &inst.result {
             let bc_reg = LMIRValue::Register {
                 register: result_reg.clone(),
-                _type: inst.value_type.clone(),
+                ty: inst.value_type.clone(),
             };
 
             function_state.value_map.insert(bc_reg, value.clone());

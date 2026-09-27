@@ -26,8 +26,8 @@ pub(crate) fn attr_alignment(context: &Context, alignment: u8) -> Attribute {
     )
 }
 
-pub fn get_type_attributes(context: &Context, _type: &LMIRType) -> Vec<Attribute> {
-    match _type.kind {
+pub fn get_type_attributes(context: &Context, ty: &LMIRType) -> Vec<Attribute> {
+    match ty.kind {
         LMIRTypeKind::Pointer {
             nullable: false,
             dereferenceable: 0,

@@ -8,7 +8,10 @@ use cx_lmir::{LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LMIRValue}
 use cx_log::catalogue::backend as catalogue;
 use cx_util::identifier::CXIdent;
 use inkwell::attributes::AttributeLoc;
-use inkwell::values::{AnyValue, AnyValueEnum, BasicValue, ValueKind};
+use inkwell::values::{
+    AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, CallSiteValue, ValueKind,
+};
+use inkwell::AddressSpace;
 
 pub(super) fn generate_direct_call<'a, 'b>(
     global_state: &GlobalState<'a>,
@@ -76,7 +79,7 @@ pub(super) fn generate_indirect_call<'a, 'b>(
 pub(super) fn codegen_call_return<'a, 'b>(
     function_state: &FunctionState<'a, 'b>,
     method_sig: &LMIRFunctionSignature,
-    call: &inkwell::values::CallSiteValue<'a>,
+    call: &CallSiteValue<'a>,
 ) -> LLVMResult<CodegenValue<'a>> {
     let basic = match call.try_as_basic_value() {
         ValueKind::Basic(value) => value,
@@ -102,7 +105,7 @@ pub(super) fn codegen_call_return<'a, 'b>(
 
 pub(super) fn apply_call_abi_attributes<'a>(
     global_state: &GlobalState<'a>,
-    call: &inkwell::values::CallSiteValue<'a>,
+    call: &CallSiteValue<'a>,
     method_sig: &LMIRFunctionSignature,
 ) -> LLVMResult<()> {
     if let LMIRReturnABI::IndirectSret { .. } = &method_sig.return_abi {
@@ -119,7 +122,7 @@ pub(super) fn apply_call_abi_attributes<'a>(
             LMIRParameterABI::Direct { slots } => index += slots.len(),
             LMIRParameterABI::Indirect { .. } => index += 1,
             LMIRParameterABI::ByValue { alignment } => {
-                let pointee = bc_llvm_type(global_state.context, &parameter._type)?;
+                let pointee = bc_llvm_type(global_state.context, &parameter.ty)?;
                 call.add_attribute(
                     AttributeLoc::Param(index as u32),
                     attr_byval(global_state.context, pointee),
@@ -138,15 +141,15 @@ pub(super) fn apply_call_abi_attributes<'a>(
 pub(super) fn build_direct_return_from_memory<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,
-    memory: inkwell::values::AnyValueEnum<'a>,
-) -> LLVMResult<inkwell::values::BasicValueEnum<'a>> {
+    memory: AnyValueEnum<'a>,
+) -> LLVMResult<BasicValueEnum<'a>> {
     let LMIRReturnABI::Direct { slots } = &function_state.signature.return_abi else {
         return any_to_basic_val(memory);
     };
 
     let memory = memory.into_pointer_value();
     if slots.len() == 1 {
-        let ty = any_to_basic_type(bc_llvm_type(global_state.context, &slots[0]._type)?)?;
+        let ty = any_to_basic_type(bc_llvm_type(global_state.context, &slots[0].ty)?)?;
         let loaded = function_state
             .builder
             .build_load(ty, memory, inst_num().as_str())
@@ -154,14 +157,14 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
         loaded
             .as_instruction_value()
             .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
-            .set_alignment(slots[0]._type.alignment() as u32)
+            .set_alignment(slots[0].ty.alignment() as u32)
             .map_err(LLVMError::from_error)?;
         return Ok(loaded);
     }
 
     let fields = slots
         .iter()
-        .map(|slot| any_to_basic_type(bc_llvm_type(global_state.context, &slot._type)?))
+        .map(|slot| any_to_basic_type(bc_llvm_type(global_state.context, &slot.ty)?))
         .collect::<LLVMResult<Vec<_>>>()?;
     let struct_type = global_state.context.struct_type(fields.as_slice(), false);
     let mut aggregate = struct_type.const_zero();
@@ -183,11 +186,11 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
                 ptr_int,
                 global_state
                     .context
-                    .ptr_type(inkwell::AddressSpace::from(0)),
+                    .ptr_type(AddressSpace::from(0)),
                 inst_num().as_str(),
             )
             .map_err(LLVMError::from_error)?;
-        let field_ty = any_to_basic_type(bc_llvm_type(global_state.context, &slot._type)?)?;
+        let field_ty = any_to_basic_type(bc_llvm_type(global_state.context, &slot.ty)?)?;
         let field = function_state
             .builder
             .build_load(field_ty, field_ptr, inst_num().as_str())
@@ -195,7 +198,7 @@ pub(super) fn build_direct_return_from_memory<'a, 'b>(
         field
             .as_instruction_value()
             .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
-            .set_alignment(slot._type.alignment() as u32)
+            .set_alignment(slot.ty.alignment() as u32)
             .map_err(LLVMError::from_error)?;
         aggregate = function_state
             .builder

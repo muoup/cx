@@ -9,6 +9,7 @@ use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::thir::data::THIRTypeKind;
 use cx_thir::thir::expression::{THIRExpression, THIRExpressionKind};
+use cx_thir::thir::r#type::THIRBitfieldAccess;
 
 fn resolve_access_base(
     env: &mut TypeEnvironment,
@@ -84,15 +85,21 @@ pub fn typecheck_access(
         );
     };
 
+    let bitfield = struct_field.is_bitfield.then(|| {
+        let aggregate_type = env.symbols.generate_type_id(base.source_type.clone());
+        THIRBitfieldAccess::new(aggregate_type, struct_field.index)
+    });
     let mut result = TypecheckResult::new(
-        env.symbols
-            .mem_ref_to(struct_field.field_type.clone().with_specifier(
+        env.symbols.field_ref_to(
+            struct_field.field_type.clone().with_specifier(
                 if base.source_type.get_specifier(HIR_CONST) {
                     HIR_CONST
                 } else {
                     0
                 },
-            )),
+            ),
+            bitfield,
+        ),
         THIRExpressionKind::MemberAccess {
             base: Box::new(base.source),
             member_index: struct_field.index,

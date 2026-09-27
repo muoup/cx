@@ -42,4 +42,9 @@ define_errors! {
     COMPTIME_UNREACHABLE: () = "M0027" => |()| "Unreachable code executed at compile time".into();
     COMPTIME_GLOBAL_CYCLE: () = "M0028" => |()| "Cyclic dependency between global initializers".into();
     COMPTIME_UNAVAILABLE: String = "M0029" => |entity| format!("{entity} is not available during comptime evaluation");
+    MIR_USE_UNAVAILABLE: String = "M0030" => |entity| format!("Use of unavailable {entity}");
+    MIR_NODROP_DISCARD: String = "M0031" => |entity| format!("Cannot discard live nodrop {entity}");
+    MIR_BLOCK_ARGUMENTS: (usize, usize) = "M0032" => |(given, expected)| format!("Block edge passes {given} values but destination expects {expected}");
+    MIR_UNDEFINED_REGISTER: String = "M0033" => |register| format!("Register {register} is not available in this block");
+    MIR_UNTERMINATED_BLOCK: String = "M0034" => |block| format!("Reachable MIR block {block} has no terminator");
 }

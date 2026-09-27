@@ -44,7 +44,7 @@ fn load_return_slots(
     let mut values = Vec::new();
     for slot in slots.clone() {
         values.push(context.builder.ins().load(
-            get_cranelift_type(&slot._type)?,
+            get_cranelift_type(&slot.ty)?,
             MemFlags::new(),
             target,
             slot.offset as i32,
@@ -60,10 +60,10 @@ pub(crate) fn codegen_instruction(
     Ok(match &instruction.kind {
         LMIRInstructionKind::Alias { value } => context.get_value(value)?,
 
-        LMIRInstructionKind::Allocate { _type, alignment } => {
+        LMIRInstructionKind::Allocate { ty, alignment } => {
             let slot = context.builder.create_sized_stack_slot(StackSlotData::new(
                 StackSlotKind::ExplicitSlot,
-                StackSize::from(usize::from(_type.size()) as u16),
+                StackSize::from(usize::from(ty.size()) as u16),
                 *alignment,
             ));
 
@@ -132,7 +132,7 @@ pub(crate) fn codegen_instruction(
                             if context.signature.return_type.is_memory_resident()
                                 && matches!(
                                     context.signature.return_abi,
-                                    cx_lmir::LMIRReturnABI::Direct { .. }
+                                    LMIRReturnABI::Direct { .. }
                                 ) =>
                         {
                             let values = load_return_slots(context, value)?;
@@ -160,11 +160,11 @@ pub(crate) fn codegen_instruction(
             CodegenValue::Null
         }
 
-        LMIRInstructionKind::Load { memory, _type } => {
+        LMIRInstructionKind::Load { memory, ty } => {
             let target = context.get_value(memory)?.as_value();
 
             CodegenValue::Value(context.builder.ins().load(
-                get_cranelift_type(_type)?,
+                get_cranelift_type(ty)?,
                 MemFlags::new(),
                 target,
                 0,
@@ -205,16 +205,12 @@ pub(crate) fn codegen_instruction(
         }
 
         LMIRInstructionKind::Coercion {
-            coercion_type:
-                LMIRCoercionType::IntToPtr {
-                    from: _type,
-                    sextend,
-                },
+            coercion_type: LMIRCoercionType::IntToPtr { from: ty, sextend },
             value,
         } => {
             let val = context.get_value(value)?;
 
-            if (_type.bytes() as u32) < context.pointer_type.bytes() {
+            if (ty.bytes() as u32) < context.pointer_type.bytes() {
                 let _ty = get_cranelift_type(&instruction.value_type)?;
 
                 if *sextend {
@@ -236,7 +232,7 @@ pub(crate) fn codegen_instruction(
         } => {
             let left = context.get_value(left)?.as_value();
             let right = context.get_value(right)?.as_value();
-            let _type = &instruction.value_type;
+            let _ty = &instruction.value_type;
 
             let inst =
                 match op {
@@ -256,6 +252,17 @@ pub(crate) fn codegen_instruction(
                             .imul_imm(right, usize::from(*type_size) as i64);
 
                         context.builder.ins().isub(left, right_scaled)
+                    }
+
+                    LMIRPtrBinOp::DIFF => {
+                        let byte_difference = context.builder.ins().isub(left, right);
+                        let type_size = usize::from(*type_size) as i64;
+
+                        if type_size > 1 {
+                            context.builder.ins().sdiv_imm(byte_difference, type_size)
+                        } else {
+                            byte_difference
+                        }
                     }
 
                     LMIRPtrBinOp::EQ => {
@@ -428,7 +435,7 @@ pub(crate) fn codegen_instruction(
 
         LMIRInstructionKind::FloatUnOp { value, op } => {
             let val = context.get_value(value)?;
-            let _type = &instruction.value_type;
+            let _ty = &instruction.value_type;
 
             match op {
                 LMIRFloatUnOp::NEG => {
@@ -519,7 +526,7 @@ pub(crate) fn codegen_instruction(
             ..
         } => {
             let ptr = context.get_value(struct_)?.clone();
-            let _type = &instruction.value_type;
+            let _ty = &instruction.value_type;
 
             CodegenValue::Value(
                 context
@@ -532,7 +539,7 @@ pub(crate) fn codegen_instruction(
         LMIRInstructionKind::Store {
             memory,
             value,
-            _type,
+            ty: _,
         } => {
             let target = context.get_value(memory)?.as_value();
             let value = context.get_value(value)?;
@@ -578,13 +585,13 @@ pub(crate) fn codegen_instruction(
             CodegenValue::Null
         }
 
-        LMIRInstructionKind::ZeroMemory { memory, _type } => {
+        LMIRInstructionKind::ZeroMemory { memory, ty } => {
             let target = context.get_value(memory)?.as_value();
             let target_config = context.object_module.target_config();
-            let size_literal = context.builder.ins().iconst(
-                target_config.pointer_type(),
-                usize::from(_type.size()) as i64,
-            );
+            let size_literal = context
+                .builder
+                .ins()
+                .iconst(target_config.pointer_type(), usize::from(ty.size()) as i64);
 
             let zero = context.builder.ins().iconst(ir::Type::int(8).unwrap(), 0);
 
@@ -600,8 +607,8 @@ pub(crate) fn codegen_instruction(
             value,
         } => {
             let val = context.get_value(value)?.as_value();
-            let _type = &instruction.value_type;
-            let cranelift_type = get_cranelift_type(_type)?;
+            let ty = &instruction.value_type;
+            let cranelift_type = get_cranelift_type(ty)?;
 
             let val_type = context.builder.func.dfg.value_type(val);
 
@@ -618,8 +625,8 @@ pub(crate) fn codegen_instruction(
         } => {
             let val = context.get_value(value)?.as_value();
 
-            let _type = &instruction.value_type;
-            let cranelift_type = get_cranelift_type(_type)?;
+            let ty = &instruction.value_type;
+            let cranelift_type = get_cranelift_type(ty)?;
 
             let val_type = context.builder.func.dfg.value_type(val);
 
@@ -635,10 +642,10 @@ pub(crate) fn codegen_instruction(
             value,
         } => {
             let val = context.get_value(value)?;
-            let _type = &instruction.value_type;
+            let ty = &instruction.value_type;
 
             let value = val.as_value();
-            let cranelift_type = get_cranelift_type(_type)?;
+            let cranelift_type = get_cranelift_type(ty)?;
             let value_type = context.builder.func.dfg.value_type(value);
 
             if value_type == cranelift_type {
@@ -656,7 +663,22 @@ pub(crate) fn codegen_instruction(
         LMIRInstructionKind::Coercion {
             coercion_type: LMIRCoercionType::BitCast,
             value,
-        } => context.get_value(value)?,
+        } => {
+            // Pointers and same-width integers share a Cranelift type, so every bitcast the
+            // typechecker produces (pointer -> pointer, integer signedness changes) is a no-op
+            let value = context.get_value(value)?.as_value();
+            let value_type = context.builder.func.dfg.value_type(value);
+            let target_type = get_cranelift_type(&instruction.value_type)?;
+
+            if value_type != target_type {
+                unreachable!(
+                    "bitcast between distinct Cranelift types ({value_type} -> {target_type}); \
+                     integer <-> float bitcasts are never produced by the typechecker"
+                );
+            }
+
+            CodegenValue::Value(value)
+        }
 
         LMIRInstructionKind::Coercion {
             coercion_type: LMIRCoercionType::FloatCast { .. },
@@ -692,11 +714,11 @@ pub(crate) fn codegen_instruction(
             value,
         } => {
             let val = context.get_value(value)?.as_value();
-            let _type = &instruction.value_type;
+            let ty = &instruction.value_type;
 
-            let to_cl_type = get_cranelift_type(_type)?;
+            let to_cl_type = get_cranelift_type(ty)?;
 
-            let LMIRTypeKind::Integer(itype) = &_type.kind else {
+            let LMIRTypeKind::Integer(itype) = &ty.kind else {
                 panic!("Invalid type for float to int conversion")
             };
 
@@ -729,9 +751,9 @@ pub(crate) fn codegen_instruction(
             value,
         } => {
             let val = context.get_value(value)?.as_value();
-            let _type = &instruction.value_type;
+            let ty = &instruction.value_type;
 
-            let to_cl_type = get_cranelift_type(_type)?;
+            let to_cl_type = get_cranelift_type(ty)?;
 
             CodegenValue::Value(if *sextend {
                 context.builder.ins().fcvt_from_sint(to_cl_type, val)

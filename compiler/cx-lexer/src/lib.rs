@@ -1,4 +1,5 @@
 use cx_log::CXResult;
+use cx_log::catalogue::parse::READ_FILE;
 use cx_tokens::token::Token;
 use std::path::{Path, PathBuf};
 
@@ -31,7 +32,7 @@ pub fn lex_with_context(
 pub fn lex_file(source_path: &Path, include_dirs: &[PathBuf]) -> CXResult<Vec<Token>> {
     let source = std::fs::read_to_string(source_path).map_err(|e| {
         crate::log::internal_error(
-            &cx_log::catalogue::parse::READ_FILE,
+            &READ_FILE,
             (
                 "source file".into(),
                 source_path.display().to_string(),

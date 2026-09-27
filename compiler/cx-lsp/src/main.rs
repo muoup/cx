@@ -301,6 +301,7 @@ impl LanguageServer for Backend {
             let token_type = match token.kind {
                 TokenKind::Keyword(_)
                 | TokenKind::Intrinsic(_)
+                | TokenKind::Attribute(_)
                 | TokenKind::CompilerIdentifier(_) => KEYWORD_IDX,
 
                 TokenKind::IntLiteral(_) | TokenKind::FloatLiteral(_) => NUMBER_IDX,

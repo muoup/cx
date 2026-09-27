@@ -4,12 +4,13 @@ use crate::{CodegenValue, FunctionState, GlobalState};
 use cx_lmir::{LMIRValue, types::LMIRType};
 use cx_log::catalogue::backend as catalogue;
 use inkwell::intrinsics::Intrinsic;
-use inkwell::values::AnyValue;
+use inkwell::types::BasicTypeEnum;
+use inkwell::values::{AnyValue, FunctionValue, PointerValue};
 
 fn list_value<'a>(
     state: &FunctionState<'a, '_>,
     list: &LMIRValue,
-) -> LLVMResult<inkwell::values::PointerValue<'a>> {
+) -> LLVMResult<PointerValue<'a>> {
     Ok(state
         .get_value(list)?
         .as_basic_value()?
@@ -19,8 +20,8 @@ fn list_value<'a>(
 fn intrinsic<'a>(
     global: &GlobalState<'a>,
     name: &str,
-    parameter_type: inkwell::types::BasicTypeEnum<'a>,
-) -> LLVMResult<inkwell::values::FunctionValue<'a>> {
+    parameter_type: BasicTypeEnum<'a>,
+) -> LLVMResult<FunctionValue<'a>> {
     let intrinsic = Intrinsic::find(name).ok_or_else(|| {
         LLVMError::new(
             &catalogue::MISSING_ENTITY,

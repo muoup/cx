@@ -1,0 +1,29 @@
+#include <stdio.h>
+
+struct Wide {
+    long first;
+    long second;
+    long third;
+    long fourth;
+    long fifth;
+};
+
+long observe(Wide saved, int ignored) {
+    return saved.first;
+}
+
+int replace(Wide* value, long first) {
+    *value = (Wide){first, 20, 30, 40, 50};
+    return 0;
+}
+
+int main() {
+    Wide value = {1, 2, 3, 4, 5};
+    long copied = observe(value, replace(&value, 9));
+    printf("%ld %ld\n", copied, value.first);
+
+    value = (Wide){2, 3, 4, 5, 6};
+    long moved = observe(move value, (value = (Wide){8, 7, 6, 5, 4}, 0));
+    printf("%ld %ld\n", moved, value.first);
+    return 0;
+}

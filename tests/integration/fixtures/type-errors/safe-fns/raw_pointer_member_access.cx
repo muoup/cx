@@ -1,0 +1,7 @@
+struct Value {
+    int field;
+};
+
+int bad(Value* ptr) safe {
+    return ptr->field;
+}

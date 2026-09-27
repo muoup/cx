@@ -88,11 +88,11 @@ pub(crate) fn parse_template_args(data: &mut ParserData) -> CXResult<HIRTemplate
     let mut inputtype_s = Vec::new();
 
     loop {
-        let (None, _type, _) = parse_initializer(data)? else {
+        let (None, ty, _) = parse_initializer(data)? else {
             return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a template type".into(), None, None));
         };
 
-        inputtype_s.push(_type);
+        inputtype_s.push(ty);
 
         if !try_next!(data.tokens, operator!(Comma)) {
             break;

@@ -1,11 +1,27 @@
-use crate::ty::interface::MTRegistry;
+use std::collections::HashSet;
 
-use super::{MIRField, MIRTypeID, MIRTypeKind};
+use crate::ty::{MIRField, MIRTypeKind, interface::MTRegistry};
+
+use super::MIRTypeID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MIRTypeLayout {
-    pub size: usize,
-    pub alignment: usize,
+    size: usize,
+    alignment: usize,
+}
+
+impl MIRTypeLayout {
+    pub fn new(size: usize, alignment: usize) -> Self {
+        Self { size, alignment }
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn alignment(&self) -> usize {
+        self.alignment
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,375 +38,205 @@ pub enum MIRFieldLayout {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MIRLayoutError {
-    InvalidType(MIRTypeID),
-    DuplicateType(MIRTypeID),
-    RecursiveType(MIRTypeID),
-    InvalidBitfieldWidth { width: usize, storage_bits: usize },
-    InvalidAlignment(usize),
-    InvalidField { ty: MIRTypeID, field: usize },
-    SizeOverflow,
+impl MIRFieldLayout {
+    pub fn offset(&self) -> usize {
+        match self {
+            Self::Standard { offset, .. } | Self::Bitfield { offset, .. } => *offset,
+        }
+    }
+
+    /// The type stored at `offset()`; for a bitfield, its storage unit.
+    pub fn ty(&self) -> MIRTypeID {
+        match self {
+            Self::Standard { ty, .. } => *ty,
+            Self::Bitfield { storage_type, .. } => *storage_type,
+        }
+    }
 }
 
-pub fn layout_of<T: MTRegistry>(
-    registry: &T,
-    id: MIRTypeID,
-) -> Result<MIRTypeLayout, MIRLayoutError> {
-    layout_inner(registry, id)
+pub fn calculate_type_layout<Registry: MTRegistry>(
+    registry: &Registry,
+    ty: MIRTypeID,
+) -> MIRTypeLayout {
+    let mut active = HashSet::new();
+    layout_inner(registry, ty, &mut active)
 }
 
-fn layout_inner<T: MTRegistry>(
-    registry: &T,
-    id: MIRTypeID,
-) -> Result<MIRTypeLayout, MIRLayoutError> {
-    let definition = registry.resolve_type_id(id)?;
+pub fn calculate_field_layouts<Registry: MTRegistry>(
+    registry: &Registry,
+    ty: MIRTypeID,
+) -> Option<Vec<MIRFieldLayout>> {
+    let (fields, is_union) = match registry.definition(ty)?.kind() {
+        MIRTypeKind::Structured { fields } => (fields, false),
+        MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => (variants, true),
+        _ => return None,
+    };
+    let (layouts, _) = layout_fields(
+        fields,
+        is_union,
+        |ty| calculate_type_layout(registry, ty),
+    );
+    Some(layouts)
+}
 
-    let mut layout = match &definition.kind {
-        MIRTypeKind::Void => MIRTypeLayout {
-            size: 0,
-            alignment: 1,
-        },
-        MIRTypeKind::Integer { ty, .. } => scalar_layout(ty.bytes()),
-        MIRTypeKind::Float { ty } => scalar_layout(ty.bytes()),
+pub fn calculate_field_layout<Registry: MTRegistry>(
+    registry: &Registry,
+    ty: MIRTypeID,
+    index: usize,
+) -> Option<MIRFieldLayout> {
+    calculate_field_layouts(registry, ty)?.get(index).copied()
+}
+
+fn layout_inner<Registry: MTRegistry>(
+    registry: &Registry,
+    ty: MIRTypeID,
+    active: &mut HashSet<MIRTypeID>,
+) -> MIRTypeLayout {
+    fn aggregate_layout<Registry: MTRegistry>(
+        registry: &Registry,
+        fields: &[MIRField],
+        is_union: bool,
+        active: &mut HashSet<MIRTypeID>,
+    ) -> MIRTypeLayout {
+        layout_fields(fields, is_union, |ty| layout_inner(registry, ty, active)).1
+    }
+
+    assert!(active.insert(ty), "recursive value type {ty}");
+    let definition = registry.definition(ty).expect("MIR type has no definition");
+    let layout = match definition.kind() {
+        MIRTypeKind::Void => MIRTypeLayout::new(0, 1),
+        MIRTypeKind::Integer { ty, .. } => MIRTypeLayout::new(
+            ty.bytes(),
+            ty.bytes().min(registry.architecture().pointer_size()),
+        ),
+        MIRTypeKind::Float { ty } => MIRTypeLayout::new(
+            ty.bytes(),
+            ty.bytes().min(registry.architecture().pointer_size()),
+        ),
         MIRTypeKind::PointerTo { .. }
         | MIRTypeKind::MemoryReference { .. }
-        | MIRTypeKind::Function { .. } => MIRTypeLayout {
-            size: registry.architecture().pointer_size(),
-            alignment: registry.architecture().pointer_alignment(),
-        },
+        | MIRTypeKind::Function { .. } => MIRTypeLayout::new(
+            registry.architecture().pointer_size(),
+            registry.architecture().pointer_alignment(),
+        ),
         MIRTypeKind::Array { length, inner } => {
-            let inner = layout_inner(registry, *inner)?;
-
-            MIRTypeLayout {
-                size: inner
+            let element = layout_inner(registry, *inner, active);
+            MIRTypeLayout::new(
+                element
                     .size
                     .checked_mul(*length)
-                    .ok_or(MIRLayoutError::SizeOverflow)?,
-                alignment: inner.alignment,
-            }
+                    .expect("array layout overflows"),
+                element.alignment,
+            )
         }
-        MIRTypeKind::Structured { fields } => struct_layout(registry, fields)?,
-        MIRTypeKind::Union { variants } => union_layout(registry, variants)?,
-        MIRTypeKind::TaggedUnion { variants } => tagged_union_layout(registry, variants)?,
-        MIRTypeKind::Opaque { size, alignment } => MIRTypeLayout {
-            size: *size,
-            alignment: *alignment,
-        },
-        MIRTypeKind::Str => MIRTypeLayout {
-            size: 1,
-            alignment: 1,
-        },
-        MIRTypeKind::Undefined => return Err(MIRLayoutError::InvalidType(id)),
-    };
-
-    layout.alignment = layout
-        .alignment
-        .clamp(1, registry.architecture().pointer_size());
-    layout.size = align_to(layout.size, layout.alignment)?;
-    Ok(layout)
-}
-
-pub fn field_layout<T: MTRegistry>(
-    registry: &T,
-    aggregate: MIRTypeID,
-    field_index: usize,
-) -> Result<MIRFieldLayout, MIRLayoutError> {
-    let aggregate_def = registry
-        .definition(aggregate)
-        .ok_or_else(|| MIRLayoutError::InvalidType(aggregate))?;
-
-    let aggregate_type = match aggregate_def.kind {
-        MIRTypeKind::MemoryReference { inner, .. } => registry
-            .definition(inner)
-            .ok_or_else(|| MIRLayoutError::InvalidType(inner))?,
-        _ => aggregate_def,
-    };
-
-    let (fields, is_union) = match &aggregate_type.kind {
-        MIRTypeKind::Structured { fields } => (fields, false),
-        MIRTypeKind::Union { variants } => (variants, true),
-
-        _ => {
-            return Err(MIRLayoutError::InvalidField {
-                ty: aggregate,
-                field: field_index,
-            });
+        MIRTypeKind::IncompleteArray { .. } => panic!("incomplete array has no layout"),
+        MIRTypeKind::Structured { fields } => aggregate_layout(registry, fields, false, active),
+        MIRTypeKind::Union { variants } => aggregate_layout(registry, variants, true, active),
+        MIRTypeKind::TaggedUnion { variants } => {
+            let data = aggregate_layout(registry, variants, true, active);
+            MIRTypeLayout::new(
+                data.size.checked_add(1).expect("sum layout overflows"),
+                data.alignment,
+            )
         }
+        MIRTypeKind::Opaque { size, alignment } => MIRTypeLayout::new(*size, *alignment),
+        MIRTypeKind::Str => MIRTypeLayout::new(1, 1),
+        MIRTypeKind::Undefined => panic!("undefined MIR type {ty} has no layout"),
     };
+    active.remove(&ty);
 
-    aggregate_field_layout(registry, aggregate, &fields, is_union, field_index)
+    let alignment = layout.alignment.max(1);
+    MIRTypeLayout::new(align_to(layout.size, alignment), alignment)
 }
 
-pub fn tagged_union_tag_offset<T: MTRegistry>(registry: &T, sum: MIRTypeID) -> Result<usize, MIRLayoutError> {
-    let sum_def = registry
-        .definition(sum)
-        .ok_or_else(|| MIRLayoutError::InvalidType(sum))?;
-
-    let MIRTypeKind::TaggedUnion { variants } = &sum_def.kind else {
-        return Err(MIRLayoutError::InvalidType(sum));
-    };
-
-    let data = union_layout(registry, &variants)?;
-    align_to(data.size, 1)
-}
-
-fn struct_layout<T: MTRegistry>(
-    registry: &T,
-    fields: &[MIRField],
-) -> Result<MIRTypeLayout, MIRLayoutError> {
-    let mut size = 0;
-    let mut alignment = 1;
-    let mut active = None;
-
-    for field in fields {
-        match field {
-            MIRField::Standard { type_id, .. } => {
-                flush_bitfield(&mut size, &mut active)?;
-                let field_layout = layout_inner(registry, *type_id)?;
-                size = align_to(size, field_layout.alignment)?;
-                size = size
-                    .checked_add(field_layout.size)
-                    .ok_or(MIRLayoutError::SizeOverflow)?;
-                alignment = alignment.max(field_layout.alignment);
-            }
-            MIRField::Bitfield {
-                integer_type_id,
-                width,
-                ..
-            } => {
-                let storage = layout_inner(registry, *integer_type_id)?;
-                validate_bitfield(*width, storage)?;
-                alignment = alignment.max(storage.alignment);
-                if *width == 0 {
-                    flush_bitfield(&mut size, &mut active)?;
-                    size = align_to(size, storage.alignment)?;
-                    continue;
-                }
-
-                let can_share = active.as_ref().is_some_and(|active: &ActiveBitfield| {
-                    active.type_id == *integer_type_id
-                        && active.used_bits + *width <= active.layout.size * 8
-                });
-                if !can_share {
-                    flush_bitfield(&mut size, &mut active)?;
-                    size = align_to(size, storage.alignment)?;
-                    active = Some(ActiveBitfield {
-                        type_id: *integer_type_id,
-                        layout: storage,
-                        used_bits: 0,
-                    });
-                }
-                active
-                    .as_mut()
-                    .expect("active bitfield was initialized")
-                    .used_bits += *width;
-            }
-        }
-    }
-    flush_bitfield(&mut size, &mut active)?;
-    Ok(MIRTypeLayout {
-        size: align_to(size, alignment)?,
-        alignment,
-    })
-}
-
-fn union_layout<T: MTRegistry>(
-    registry: &T,
-    fields: &[MIRField],
-) -> Result<MIRTypeLayout, MIRLayoutError> {
-    let mut size = 0;
-    let mut alignment = 1;
-    for field in fields {
-        let layout = field_storage_layout(registry, field)?;
-        size = size.max(layout.size);
-        alignment = alignment.max(layout.alignment);
-    }
-    Ok(MIRTypeLayout {
-        size: align_to(size, alignment)?,
-        alignment,
-    })
-}
-
-fn tagged_union_layout<T: MTRegistry>(
-    registry: &T, 
-    variants: &[MIRField],
-) -> Result<MIRTypeLayout, MIRLayoutError> {
-    let data = union_layout(registry, variants)?;
-    let tag = scalar_layout(1);
-    let alignment = data.alignment.max(tag.alignment);
-    let size = align_to(data.size, tag.alignment)?
-        .checked_add(tag.size)
-        .ok_or(MIRLayoutError::SizeOverflow)?;
-    Ok(MIRTypeLayout {
-        size: align_to(size, alignment)?,
-        alignment,
-    })
-}
-
-fn field_storage_layout<T: MTRegistry>(
-    registry: &T,
-    field: &MIRField,
-) -> Result<MIRTypeLayout, MIRLayoutError> {
-    match field {
-        MIRField::Standard { type_id, .. } => layout_inner(registry, *type_id),
-        MIRField::Bitfield {
-            integer_type_id,
-            width,
-            ..
-        } => {
-            let layout = layout_inner(registry, *integer_type_id)?;
-            validate_bitfield(*width, layout)?;
-            Ok(if *width == 0 {
-                MIRTypeLayout {
-                    size: 0,
-                    alignment: layout.alignment,
-                }
-            } else {
-                layout
-            })
-        }
-    }
-}
-
-fn aggregate_field_layout<T: MTRegistry>(
-    registry: &T,
-    aggregate: MIRTypeID,
+/// System V bitfield layout: a bitfield takes the next free bit unless it would cross an alignment
+/// boundary of its type, and is accessed as a word of its type at the aligned offset containing it.
+fn layout_fields(
     fields: &[MIRField],
     is_union: bool,
-    field_index: usize,
-) -> Result<MIRFieldLayout, MIRLayoutError> {
-    let mut offset = 0;
-    let mut active: Option<(MIRTypeID, usize, usize, usize)> = None;
-    for (index, field) in fields.iter().enumerate() {
-        match field {
+    mut storage_layout: impl FnMut(MIRTypeID) -> MIRTypeLayout,
+) -> (Vec<MIRFieldLayout>, MIRTypeLayout) {
+    let mut layouts = Vec::with_capacity(fields.len());
+    let mut bits = 0usize;
+    let mut size = 0usize;
+    let mut alignment = 1usize;
+
+    for field in fields {
+        let storage = storage_layout(field.ty());
+
+        let layout = match field {
             MIRField::Standard { type_id, .. } => {
-                if let Some((_, start, size, _)) = active.take() {
-                    offset = start + size;
-                }
-                let ty = layout_inner(registry, *type_id)?;
-                offset = if is_union {
+                alignment = alignment.max(storage.alignment);
+                let offset = if is_union {
                     0
                 } else {
-                    align_to(offset, ty.alignment)?
+                    align_to(bits.div_ceil(8), storage.alignment)
                 };
-                if index == field_index {
-                    return Ok(MIRFieldLayout::Standard {
-                        offset,
-                        ty: *type_id,
-                    });
-                }
-                if !is_union {
-                    offset = offset
-                        .checked_add(ty.size)
-                        .ok_or(MIRLayoutError::SizeOverflow)?;
+                let end = offset
+                    .checked_add(storage.size)
+                    .expect("aggregate layout overflows");
+                bits = end * 8;
+                size = size.max(end);
+                MIRFieldLayout::Standard {
+                    offset,
+                    ty: *type_id,
                 }
             }
             MIRField::Bitfield {
+                name,
                 integer_type_id,
                 width,
-                ..
             } => {
-                let ty = layout_inner(registry, *integer_type_id)?;
-                validate_bitfield(*width, ty)?;
-                if is_union {
-                    if index == field_index {
-                        return Ok(MIRFieldLayout::Bitfield {
-                            offset: 0,
-                            bit_offset: 0,
-                            bit_width: *width,
-                            storage_type: *integer_type_id,
-                        });
-                    }
-                    continue;
-                }
-                if *width == 0 {
-                    active = None;
-                    offset = align_to(offset, ty.alignment)?;
-                    continue;
-                }
-                let (start, bit_offset) = match active.take() {
-                    Some((id, start, _size, used))
-                        if id == *integer_type_id && used + *width <= ty.size * 8 =>
-                    {
-                        (start, used)
-                    }
-                    Some((_, start, size, _)) => {
-                        offset = align_to(start + size, ty.alignment)?;
-                        (offset, 0)
-                    }
-                    None => {
-                        offset = align_to(offset, ty.alignment)?;
-                        (offset, 0)
-                    }
+                let capacity = storage.size * 8;
+                assert!(*width <= capacity, "bitfield exceeds its storage type");
+                let boundary = storage.alignment * 8;
+
+                let start = if is_union {
+                    0
+                } else if *width == 0 || bits % boundary + *width > capacity {
+                    align_to(bits, boundary)
+                } else {
+                    bits
                 };
-                if index == field_index {
-                    return Ok(MIRFieldLayout::Bitfield {
-                        offset: start,
-                        bit_offset,
-                        bit_width: *width,
-                        storage_type: *integer_type_id,
-                    });
+                let offset = start / boundary * storage.alignment;
+                if *width != 0 {
+                    bits = start + *width;
+                    size = size.max(bits.div_ceil(8));
+                    if name.is_some() {
+                        alignment = alignment.max(storage.alignment);
+                        size = size.max(offset + storage.size);
+                    }
+                } else {
+                    bits = start;
                 }
-                active = Some((*integer_type_id, start, ty.size, bit_offset + *width));
+
+                MIRFieldLayout::Bitfield {
+                    offset,
+                    bit_offset: start - offset * 8,
+                    bit_width: *width,
+                    storage_type: *integer_type_id,
+                }
             }
-        }
+        };
+        layouts.push(layout);
     }
-    Err(MIRLayoutError::InvalidField {
-        ty: aggregate,
-        field: field_index,
-    })
+
+    if !is_union {
+        size = size.max(bits.div_ceil(8));
+    }
+    (
+        layouts,
+        MIRTypeLayout::new(align_to(size, alignment), alignment),
+    )
 }
 
-fn validate_bitfield(width: usize, storage: MIRTypeLayout) -> Result<(), MIRLayoutError> {
-    let storage_bits = storage
-        .size
-        .checked_mul(8)
-        .ok_or(MIRLayoutError::SizeOverflow)?;
-    if width > storage_bits {
-        Err(MIRLayoutError::InvalidBitfieldWidth {
-            width,
-            storage_bits,
-        })
-    } else {
-        Ok(())
-    }
-}
-
-fn scalar_layout(size: usize) -> MIRTypeLayout {
-    MIRTypeLayout {
-        size,
-        alignment: size.clamp(1, 8),
-    }
-}
-
-struct ActiveBitfield {
-    type_id: MIRTypeID,
-    layout: MIRTypeLayout,
-    used_bits: usize,
-}
-
-fn flush_bitfield(
-    size: &mut usize,
-    active: &mut Option<ActiveBitfield>,
-) -> Result<(), MIRLayoutError> {
-    if let Some(active) = active.take() {
-        *size = size
-            .checked_add(active.layout.size)
-            .ok_or(MIRLayoutError::SizeOverflow)?;
-    }
-    Ok(())
-}
-
-fn align_to(size: usize, alignment: usize) -> Result<usize, MIRLayoutError> {
-    if alignment == 0 {
-        return Err(MIRLayoutError::InvalidAlignment(alignment));
-    }
+fn align_to(size: usize, alignment: usize) -> usize {
+    assert!(alignment != 0, "type alignment must be nonzero");
     let remainder = size % alignment;
     if remainder == 0 {
-        Ok(size)
+        size
     } else {
         size.checked_add(alignment - remainder)
-            .ok_or(MIRLayoutError::SizeOverflow)
+            .expect("type layout overflows")
     }
 }

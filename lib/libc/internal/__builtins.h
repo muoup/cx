@@ -12,8 +12,6 @@
 #define __USER_LABEL_PREFIX__
 
 #define __extension__
-#define __attribute__(x)
-#define __attribute(x)
 
 #define __const const
 #define __const__ const

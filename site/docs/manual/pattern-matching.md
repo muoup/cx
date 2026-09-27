@@ -1,5 +1,6 @@
 ---
 title: Pattern Matching
+description: "Variant tests, and exhaustive match statements and expressions."
 ---
 
 # Pattern Matching

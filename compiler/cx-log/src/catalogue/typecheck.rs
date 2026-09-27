@@ -75,6 +75,7 @@ define_errors! {
     };
     MISSING_ENTITY: (String, String) = "T0040" => |(entity, context)| format!("Missing {entity} in {context}");
     UNSUPPORTED_FEATURE: String = "T0042" => |feature| format!("{feature} is not currently supported");
+    BITFIELD_REFERENCE: String = "T0043" => |usage| format!("Cannot {usage} a bitfield");
 
     POP_EMPTY_SCOPE: () = "TX001" => |()| "Attempted to pop a scope from an empty scope stack".into();
 }

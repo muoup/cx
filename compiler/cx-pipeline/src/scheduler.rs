@@ -1,6 +1,6 @@
 use crate::backends::{cranelift_compile, llvm_compile};
+use crate::pipeline_error;
 use crate::progress::ProgressReporter;
-use crate::{diagnostics, pipeline_error};
 use cx_log::catalogue::driver as catalogue;
 use cx_log::{CXResult, error::CXError};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
@@ -517,22 +517,14 @@ pub(crate) fn perform_job(
 
         CompilationStep::MIRGen => {
             let thir = context.module_db.thir.get(job.unit.namespace());
-            let mir = generate_mir(thir.as_ref())?;
+            let mir = generate_mir(thir.as_ref())?.into_static_runtime_only();
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir);
             }
 
             if !context.config.unsafe_mode {
-                analyze(
-                    &mir,
-                    MIRAnalysisOptions {
-                        check_assertions: !context.config.unsafe_mode,
-                    },
-                )
-                .map_err(|error| {
-                    diagnostics::mir_diagnostic_error(Some(&mir), error.diagnostic())
-                })?;
+                analyze(&mir, MIRAnalysisOptions::default())?;
             }
 
             context

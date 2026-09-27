@@ -1,56 +1,24 @@
-use crate::types::MIRAnalysisError;
-use cx_log::catalogue::ErrorDefinition;
-use cx_mir::{MIRDiagnostic, MIRDiagnosticLocation, MIRFunction, MIRPlace};
+use cx_log::{
+    CXResult,
+    catalogue::ErrorDefinition,
+    error::{CXError, CXErrorMaybeRaw, context::from_token_range},
+};
+use cx_tokens::TokenRange;
 
-pub(crate) fn error<T>(
-    definition: &ErrorDefinition<T>,
-    args: T,
-    location: MIRDiagnosticLocation,
-) -> MIRDiagnostic {
-    MIRDiagnostic::new(definition, args, location)
+pub fn analysis_error<A>(range: &TokenRange, diagnostic: (&ErrorDefinition<A>, A)) -> CXError {
+    CXError::new(diagnostic.0.bind(diagnostic.1), from_token_range(range))
 }
 
-pub(crate) fn ownership_error<T, F>(
-    function: &MIRFunction,
-    block: cx_mir::MIRBasicBlockID,
-    instruction: usize,
-    scope: Option<cx_mir::MIRScopeID>,
-    place: MIRPlace,
-    definition: &ErrorDefinition<T>,
-    name: String,
-    make_args: F,
-) -> MIRAnalysisError
-where
-    F: FnOnce(String, String, bool) -> T,
-{
-    let discarded = match place {
-        MIRPlace::FunctionLocal(id) => function
-            .definition()
-            .and_then(|definition| definition.place(id))
-            .and_then(|declaration| declaration.debug_name.as_ref())
-            .is_some_and(|name| name.as_str() == "_"),
-        _ => false,
-    };
-    let location = scope
-        .map(|scope| MIRDiagnosticLocation::Scope {
-            function: function.id(),
-            scope,
-        })
-        .unwrap_or(MIRDiagnosticLocation::Instruction {
-            function: function.id(),
-            block,
-            instruction,
-        });
-    MIRAnalysisError::OwnershipViolation {
-        place,
-        diagnostic: error(
-            definition,
-            make_args(
-                function.prototype().signature.display_name().to_string(),
-                name,
-                discarded,
-            ),
-            location,
-        ),
+pub fn complete_analysis_error(range: &TokenRange, error: CXErrorMaybeRaw) -> CXError {
+    match error {
+        CXErrorMaybeRaw::Raw(error) => CXError::new(error, from_token_range(range)),
+        CXErrorMaybeRaw::Complete(error) => error,
     }
+}
+
+pub fn log_analysis_error<T, A>(
+    range: &TokenRange,
+    diagnostic: (&ErrorDefinition<A>, A),
+) -> CXResult<T> {
+    Err(analysis_error(range, diagnostic))
 }

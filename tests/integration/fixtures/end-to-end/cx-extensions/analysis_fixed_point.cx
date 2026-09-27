@@ -1,0 +1,21 @@
+int choose(int condition) safe
+where post(result): (result == 1)
+{
+    return condition ? 0 : 1;
+}
+
+int count() safe
+where post(result): (result == 100)
+{
+    int index = 0;
+    while (index < 100) {
+        index += 1;
+    }
+    return index;
+}
+
+int main() {
+    if (choose(0) != 1) { return 1; }
+    if (count() != 100) { return 2; }
+    return 0;
+}

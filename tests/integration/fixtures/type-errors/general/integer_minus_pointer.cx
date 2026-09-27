@@ -1,0 +1,6 @@
+int main() {
+    int value = 0;
+    int* pointer = &value;
+    int* invalid = 1 - pointer;
+    return 0;
+}

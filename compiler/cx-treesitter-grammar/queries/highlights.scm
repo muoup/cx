@@ -7,6 +7,7 @@
 (keyword) @keyword
 (compiler_identifier) @keyword
 (operator) @operator
+(lifetime_modifier) @type.parameter
 
 (type (qualified_name) @type)
 (type (templated_name) @type)

@@ -32,7 +32,7 @@ pub fn try_conversion(
     expr: THIRExpression,
     allow_arrays: bool,
 ) -> CXResult<CoercionResult> {
-    let Some(mem_inner) = env.symbols.mem_ref_inner(&expr._type).cloned() else {
+    let Some(mem_inner) = env.symbols.mem_ref_inner(&expr.ty).cloned() else {
         return CoercionResult::unapplied(expr);
     };
 
@@ -48,7 +48,7 @@ pub fn try_conversion(
     let result_type = mem_inner.without_specifier(HIR_CONST);
     let loaded = THIRExpression {
         token_range,
-        _type: result_type.clone(),
+        ty: result_type.clone(),
         kind: THIRExpressionKind::Copy {
             source: Box::new(expr),
         },

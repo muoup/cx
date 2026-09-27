@@ -88,14 +88,11 @@ impl ItemRegistry {
     }
 
     pub fn push_generated_function(&mut self, function: THIRFunction) {
-        if let Some(existing) = self
-            .generated_functions
-            .iter_mut()
-            .find(|existing| existing.prototype.symbol_name() == function.prototype.symbol_name())
-        {
-            if existing.body.is_none() {
-                existing.prototype = function.prototype;
-                existing.body = function.body;
+        if let Some(existing) = self.generated_functions.iter_mut().find(|existing| {
+            existing.prototype().symbol_name() == function.prototype().symbol_name()
+        }) {
+            if existing.body().is_none() {
+                existing.take_definition(function);
             }
             return;
         }
@@ -109,9 +106,9 @@ impl ItemRegistry {
 
     pub fn push_generated_global(&mut self, global: THIRGlobalVariable, replace_external: bool) {
         if replace_external
-            && global.linkage != LinkageMode::Extern
+            && global.linkage() != LinkageMode::Extern
             && let Some(existing) = self.generated_globals.iter_mut().find(|existing| {
-                existing.name == global.name && existing.linkage == LinkageMode::Extern
+                existing.name() == global.name() && existing.linkage() == LinkageMode::Extern
             })
         {
             *existing = global;
@@ -123,6 +120,6 @@ impl ItemRegistry {
     pub fn generated_global(&self, name: &str) -> Option<&THIRGlobalVariable> {
         self.generated_globals
             .iter()
-            .find(|global| global.name.as_str() == name)
+            .find(|global| global.name().as_str() == name)
     }
 }

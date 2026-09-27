@@ -28,7 +28,7 @@ impl Display for THIRPattern {
         match self {
             THIRPattern::Binding { name, .. } => write!(f, "{name}"),
             THIRPattern::Integer(value) => write!(f, "{value}"),
-            THIRPattern::Float(value, _type) => write!(f, "{_type} {value}"),
+            THIRPattern::Float(value, ty) => write!(f, "{ty} {value}"),
             THIRPattern::TaggedUnionVariant {
                 variant_index,
                 inner_name,

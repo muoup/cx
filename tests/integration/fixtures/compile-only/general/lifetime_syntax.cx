@@ -1,0 +1,30 @@
+const int 'a& identity(const int 'a& value) {
+    return value;
+}
+
+typedef const int 'a& (*identity_callback)(const int 'a& value);
+
+const int '_& identity_inferred(const int '_& value) {
+    return value;
+}
+
+const int 'a
+& identity_split(const int 'a& value) {
+    return value;
+}
+
+const int 'a /*split*/ & identity_comment(const int 'a& value) {
+    return value;
+}
+
+static int static_value = 4;
+
+void accepts_static(const int 'static& value) {
+}
+
+int main() {
+    int value = 4;
+    accepts_static(static_value);
+    return identity(value) + identity_inferred(value) + identity_split(value)
+        + identity_comment(value) - 16;
+}

@@ -1,0 +1,18 @@
+/* CX-STDOUT: comptime 5167 */
+#include <stdio.h>
+
+struct flags {
+    u32 low : 3;
+    u32 high : 5;
+    i32 delta : 4;
+};
+
+comptime i32 unpack(i32 low, i32 high, i32 delta) {
+    flags value = { .low = low, .high = high, .delta = delta };
+    return value.low * 1000 + value.high * 10 + value.delta;
+}
+
+int main() {
+    printf("comptime %d\n", unpack(13, 17, -3));
+    return 0;
+}

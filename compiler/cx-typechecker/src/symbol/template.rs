@@ -8,7 +8,7 @@ use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 use cx_thir::{
     symbol::MIRSymbol,
     thir::{
-        data::{THIRFunction, THIRTemplateInput, THIRType, TemplateInfo},
+        data::{THIRFunction, THIRTemplateInput, THIRType, THIRTypeKind, TemplateInfo},
         name_mangling::mangle_template_name,
     },
 };
@@ -32,11 +32,16 @@ pub fn apply_template(
         return Ok(None);
     };
 
-    if input.types.len() != template_input.args.len() {
+    if input.types.len() != template_input.args().len() {
         return env
             .log_error_base(
                 &catalogue::ARGUMENT_COUNT,
-                (format!("template '{name}'"), template_input.args.len(), input.types.len(), false),
+                (
+                    format!("template '{name}'"),
+                    template_input.args().len(),
+                    input.types.len(),
+                    false,
+                ),
             )
             .map_err(CXErrorMaybeRaw::from);
     }
@@ -56,7 +61,7 @@ pub fn apply_template(
                 return Ok(MIRSymbol::Type(*id));
             }
 
-            let mut placeholder = THIRType::from(cx_thir::thir::data::THIRTypeKind::Undefined);
+            let mut placeholder = THIRType::from(THIRTypeKind::Undefined);
             placeholder.lookup_identifier = Some(lookup_name.clone());
             placeholder.strong_identifier = Some(instance_name.clone());
 
@@ -66,10 +71,10 @@ pub fn apply_template(
             match complete_type_inner(env, namespace, data.base()) {
                 Ok(mut ty) => {
                     if tag.is_some() || ty.template_info.is_none() {
-                        ty.template_info = Some(Box::new(TemplateInfo {
-                            base_name: Some(lookup_name),
-                            template_input: template_input.clone(),
-                        }));
+                        ty.template_info = Some(Box::new(TemplateInfo::new(
+                            Some(lookup_name),
+                            template_input.clone(),
+                        )));
                     }
                     if tag.is_some() {
                         ty.strong_identifier = Some(instance_name);
@@ -84,8 +89,7 @@ pub fn apply_template(
                 }
             }
         }
-        resolve_symbol_inner(env, namespace, namespace, name, source, *tag, true)
-            .map_err(Into::into)
+        resolve_symbol_inner(env, namespace, namespace, name, source, *tag).map_err(Into::into)
     })?;
 
     if matches!(symbol, MIRSymbol::Type(_)) {
@@ -110,11 +114,11 @@ pub fn apply_template(
     if let MIRSymbol::FunctionReference(prototype) = &symbol
         && let Some(name) = prototype.lookup_identifier().cloned()
     {
-        env.items.push_generated_function(THIRFunction {
-            require_explicit_return: env.require_explicit_return(),
-            prototype: prototype.clone(),
-            body: None,
-        });
+        env.items.push_generated_function(THIRFunction::new(
+            prototype.clone(),
+            None,
+            env.require_explicit_return(),
+        ));
         env.items.push_request(THIRFunctionGenRequest::Template {
             name,
             prototype: prototype.clone(),
@@ -130,7 +134,7 @@ pub fn apply_template_input(
     prototype: &HIRTemplatePrototype,
     input: &THIRTemplateInput,
 ) -> CXRawResult<()> {
-    for (param, arg) in prototype.types.iter().zip(input.args.iter()) {
+    for (param, arg) in prototype.types.iter().zip(input.args().iter()) {
         env.symbols.insert_local_type_id(param.as_string(), *arg)?;
     }
 

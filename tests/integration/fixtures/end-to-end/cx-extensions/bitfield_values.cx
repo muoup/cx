@@ -1,0 +1,20 @@
+/* CX-STDOUT: 5 18 -3 */
+/* CX-STDOUT-NEXT: 3 */
+import std::io as std;
+
+struct flags {
+    u32 low : 3;
+    u32 high : 5;
+    i32 delta : 4;
+};
+
+i32 main() {
+    flags value = { .low = 13, .high = 17, .delta = -3 };
+    value.high += 1;
+    @unsafe { std::printf("%d %d %d\n", value.low, value.high, value.delta); };
+
+    flags copy = value;
+    copy.low = copy.low - 2;
+    @unsafe { std::printf("%d\n", copy.low); };
+    return 0;
+}

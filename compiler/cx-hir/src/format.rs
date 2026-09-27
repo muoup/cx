@@ -2,9 +2,10 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
-    expression::{HIRBinOp, HIRExprKind, HIRExpression, HIRInitIndex},
+    expression::{HIRBinOp, HIRBlockKind, HIRExprKind, HIRExpression, HIRInitIndex},
     function::{
-        HIRComptimeFnPrototype, HIRComptimeValueType, HIRFunctionKind, HIRFunctionPrototype,
+        HIRComptimeFnPrototype, HIRComptimeValueType, HIRFunctionBody, HIRFunctionKind,
+        HIRFunctionPrototype,
     },
     global_var::{HIREnumVariant, HIRGlobalVariable},
     pattern::HIRPattern,
@@ -74,7 +75,7 @@ impl Display for HIRGlobalVariable {
             HIRGlobalVariable::EnumDefinition(variant) => variant.fmt(f),
 
             HIRGlobalVariable::Standard {
-                _type,
+                ty,
                 is_mutable,
                 initializer,
                 ..
@@ -83,7 +84,7 @@ impl Display for HIRGlobalVariable {
                     f,
                     "global variable {} {}",
                     if *is_mutable { "mut" } else { "const" },
-                    _type
+                    ty
                 )?;
 
                 if let Some(initializer) = initializer {
@@ -102,6 +103,24 @@ impl Display for HIRDefinition {
     }
 }
 
+impl Display for HIRFunctionBody {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            Self::Block { statements, .. } => {
+                writeln!(f, "Function Body {{")?;
+                for statement in statements {
+                    HIRExprFormatter::new(statement, 1).fmt(f)?;
+                }
+                writeln!(f, "}}")
+            }
+            Self::Expression(expression) => {
+                writeln!(f, "Function Expression Body =>")?;
+                HIRExprFormatter::new(expression, 1).fmt(f)
+            }
+        }
+    }
+}
+
 impl Display for HIRStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
@@ -109,7 +128,7 @@ impl Display for HIRStmt {
                 name,
                 visibility,
                 template_prototype,
-                _type,
+                ty,
                 tag: _,
             } => {
                 write!(f, "{visibility:?} ")?;
@@ -124,8 +143,8 @@ impl Display for HIRStmt {
                 }
 
                 match name {
-                    Some(name) => write!(f, "type {name} = {_type};"),
-                    None => write!(f, "type {_type};"),
+                    Some(name) => write!(f, "type {name} = {ty};"),
+                    None => write!(f, "type {ty};"),
                 }
             }
 
@@ -193,13 +212,17 @@ impl<'a> Display for HIRExprFormatter<'a> {
             HIRExprKind::Taken => writeln!(f, "Taken"),
             HIRExprKind::Block {
                 exprs,
-                creates_scope,
+                kind,
             } => {
-                if *creates_scope {
-                    writeln!(f, "Scoped Block {{ ")?;
-                } else {
-                    writeln!(f, "Block {{ ")?;
-                }
+                writeln!(
+                    f,
+                    "{} {{",
+                    match kind {
+                        HIRBlockKind::Sequence => "Sequence",
+                        HIRBlockKind::Statement => "Statement Block",
+                        HIRBlockKind::Expression => "Expression Block",
+                    }
+                )?;
                 for stmt in exprs {
                     HIRExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
                 }
@@ -243,11 +266,11 @@ impl<'a> Display for HIRExprFormatter<'a> {
             }
             HIRExprKind::VarDeclaration {
                 name,
-                _type,
+                ty,
                 initial_value,
                 ..
             } => {
-                writeln!(f, "VarDeclaration {name}: {_type}")?;
+                writeln!(f, "VarDeclaration {name}: {ty}")?;
 
                 self.indent_plus_one(f)?;
 
@@ -374,15 +397,15 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 writeln!(f, "SizeOf")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-            HIRExprKind::SizeOfType { _type } => {
-                writeln!(f, "SizeOfType ({_type})")
+            HIRExprKind::SizeOfType { ty } => {
+                writeln!(f, "SizeOfType ({ty})")
             }
             HIRExprKind::AlignOfExpr { expr } => {
                 writeln!(f, "AlignOf")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-            HIRExprKind::AlignOfType { _type } => {
-                writeln!(f, "AlignOfType ({_type})")
+            HIRExprKind::AlignOfType { ty } => {
+                writeln!(f, "AlignOfType ({ty})")
             }
             HIRExprKind::Void => writeln!(f, "Unit"),
             HIRExprKind::Match { condition, arms } => {
@@ -526,7 +549,18 @@ impl Display for HIRTypeKind {
             }
             HIRTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             HIRTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
-            HIRTypeKind::MemoryReference { inner_type } => write!(f, "&{inner_type}"),
+            HIRTypeKind::MemoryReference {
+                inner_type,
+                lifetime,
+            } => {
+                write!(f, "{inner_type}")?;
+
+                if let Some(lifetime) = lifetime {
+                    write!(f, " '{lifetime}&")
+                } else {
+                    write!(f, "&")
+                }
+            },
             HIRTypeKind::PointerTo { inner_type } => {
                 write!(f, "*{}", inner_type)
             }
@@ -539,7 +573,7 @@ impl Display for HIRTypeKind {
                 let fields_str = fields
                     .iter()
                     .map(|field| match field {
-                        HIRField::Standard { _type, .. } => format!("{_type}"),
+                        HIRField::Standard { ty, .. } => format!("{ty}"),
                         HIRField::Bitfield {
                             name,
                             integer_type,
@@ -583,7 +617,7 @@ impl Display for HIRTypeKind {
                 let fields_str = fields
                     .iter()
                     .map(|field| match field {
-                        HIRField::Standard { _type, .. } => format!("{_type}"),
+                        HIRField::Standard { ty, .. } => format!("{ty}"),
                         HIRField::Bitfield {
                             name,
                             integer_type,
@@ -614,8 +648,8 @@ impl Display for HIRTypeKind {
                 let variants_str = variants
                     .iter()
                     .map(|field| match field {
-                        HIRField::Standard { name, _type } => {
-                            format!("{name}: {_type}")
+                        HIRField::Standard { name, ty } => {
+                            format!("{name}: {ty}")
                         }
                         HIRField::Bitfield { .. } => "<invalid bitfield variant>".to_string(),
                     })
@@ -655,7 +689,7 @@ impl Display for HIRFunctionPrototype {
             format!(
                 "{}: {}",
                 param.name.as_ref().unwrap_or(&CXIdent::new("_")),
-                param._type
+                param.ty
             )
         }));
 
@@ -680,7 +714,7 @@ impl Display for HIRComptimeValueType {
             }
         }
 
-        write!(f, "{}", self._type)
+        write!(f, "{}", self.ty)
     }
 }
 
