@@ -29,6 +29,7 @@
   --cx-clay-tint: #f1e2cf;
   --cx-error: #a12d27;
   --cx-error-bg: #f4dbd3;
+  --cx-band-lift: color-mix(in srgb, var(--cx-band) 65%, var(--cx-sheet));
   --cx-bush-1: #bdd0a8;
   --cx-bush-2: #adc497;
   --cx-bush-3: #9db883;
@@ -107,6 +108,7 @@
   --cx-clay-tint: #433321;
   --cx-error: #ff9d91;
   --cx-error-bg: #4a2b27;
+  --cx-band-lift: color-mix(in srgb, var(--cx-band) 20%, var(--cx-sheet));
   --cx-bush-1: #23402d;
   --cx-bush-2: #2a4d36;
   --cx-bush-3: #325a40;
@@ -424,7 +426,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 }
 
 .menu__list .menu__list :where(.menu__list-item-collapsible, .menu__list) {
-  background: color-mix(in srgb, var(--cx-band) 65%, var(--cx-sheet));
+  background: var(--cx-band-lift);
 }
 
 .menu__list .menu__list {
@@ -443,6 +445,10 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 .menu__list-item-collapsible:hover,
 .menu__list .menu__list .menu__link:hover:not([aria-current="page"]) {
   background: color-mix(in srgb, var(--cx-band) 40%, var(--cx-sheet));
+}
+
+.menu__list .menu__list .menu__list .menu__link:hover:not([aria-current="page"]) {
+  background: color-mix(in srgb, var(--cx-band-lift), var(--cx-sheet));
 }
 
 /* The theme keeps category links transparent, so a category's own page highlights its row */
@@ -893,9 +899,30 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   color: var(--cx-code-ty);
 }
 
-.cx-stdlib-page .cx-stdlib-type-name code,
-.cx-stdlib-page .cx-stdlib-function-name code {
+.cx-stdlib-page .cx-stdlib-type-name code {
   color: inherit;
+}
+
+/* A function's heading is its signature with the name picked out, wrapping with a hanging indent */
+.cx-stdlib-page h3:has(.cx-stdlib-function-name) {
+  padding-left: 2ch;
+  text-indent: -2ch;
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+
+.cx-stdlib-page .cx-stdlib-signature {
+  color: var(--cx-muted);
+  font-weight: 400;
+}
+
+.cx-stdlib-segment {
+  display: inline-block;
+  text-indent: 0;
+}
+
+.table-of-contents .cx-stdlib-signature {
+  display: none;
 }
 
 .cx-stdlib-page h4 {
@@ -904,11 +931,6 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   font: 600 12.5px var(--ifm-font-family-base);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-.cx-stdlib-signature .cx-code-block-container {
-  border-left: 2px solid var(--cx-moss);
-  border-radius: 0 6px 6px 0;
 }
 
 .cx-stdlib-meta {
@@ -923,8 +945,4 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 
 .cx-stdlib-meta code {
   font-size: 0.95em;
-}
-
-.cx-stdlib-page table {
-  font-size: 14.5px;
 }

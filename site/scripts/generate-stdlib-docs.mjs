@@ -42,18 +42,6 @@ function sourceLink(record) {
     return `[${inlineCode(sourcePath(record))}](https://github.com/muoup/cx/blob/main/${sourcePath(record)})`;
 }
 
-function tableCell(value) {
-    return String(value ?? "").replaceAll("|", "\\|").replaceAll("\n", " ");
-}
-
-function renderTable(headers, rows) {
-    return [
-        `| ${headers.join(" | ")} |`,
-        `| ${headers.map(() => "---").join(" | ")} |`,
-        ...rows.map((row) => `| ${row.map(tableCell).join(" | ")} |`),
-    ].join("\n");
-}
-
 function yamlString(value) {
     return JSON.stringify(String(value ?? ""));
 }
@@ -71,15 +59,14 @@ function htmlText(value) {
         .replaceAll("'", "&#39;");
 }
 
-function renderParameters(parameters = []) {
-    if (parameters.length === 0) {
-        return "No parameters.";
-    }
+// Text inside MDX markup is still parsed as markdown and expressions, so those characters become references too.
+function mdxText(value) {
+    return htmlText(value).replace(/[{}*_`[\]\\]/g, (character) => `&#${character.charCodeAt(0)};`);
+}
 
-    return renderTable(
-        ["Name", "Type", "Description"],
-        parameters.map((parameter) => [inlineCode(parameter.name), inlineCode(parameter.type), parameter.description]),
-    );
+// A qualified name may break after its ::, never inside a word; lines can wrap between inline blocks.
+function qualifiedName(name) {
+    return name.split(/(?<=::)/).map((part) => `<span className="cx-stdlib-segment">${mdxText(part)}</span>`).join("");
 }
 
 function fieldDeclaration({name, type}) {
@@ -116,48 +103,23 @@ function renderType(type) {
     ].join("\n");
 }
 
+// The signature is the heading, with the qualified name picked out; the contents list shows only the name.
 function renderFunction(functionRecord) {
-    const metadata = functionRecord.stage && functionRecord.stage !== "runtime"
-        ? `Stage: ${inlineCode(functionRecord.stage)}`
-        : "";
-    const owner = functionRecord.owner ? `${functionRecord.owner}::` : "";
-    const parameters = renderParameters(functionRecord.parameters);
-    const returnType = functionRecord.returnType ?? "void";
-    const returns = returnType === "void"
-        ? []
+    const name = `${functionRecord.owner ? `${functionRecord.owner}::` : ""}${functionRecord.name}`;
+    const {signature} = functionRecord;
+    const at = signature.indexOf(name);
+    const heading = at < 0
+        ? `<span className="cx-stdlib-function-name">${qualifiedName(name)}</span>`
         : [
-            "#### Returns",
-            "",
-            `${inlineCode(returnType)} — ${functionRecord.returnDescription ?? "The documented return value."}`,
-        ];
-    const metadataBlock = metadata ? [`<div className="cx-stdlib-meta">`, "", metadata, "", "</div>", ""] : [];
-    const examples = (functionRecord.examples ?? [])
-        .map((example, index) => {
-            const heading = example.title ?? `Example ${index + 1}`;
-            const language = example.language ?? "cx";
-            return [`#### ${heading}`, "", `~~~${language}`, example.code, "~~~"].join("\n");
-        })
-        .join("\n\n");
+            `<span className="cx-stdlib-signature">${mdxText(signature.slice(0, at))}</span>`,
+            `<span className="cx-stdlib-function-name">${qualifiedName(name)}</span>`,
+            `<span className="cx-stdlib-signature">${mdxText(signature.slice(at + name.length))}</span>`,
+        ].join("");
+    const examples = (functionRecord.examples ?? []).map((example, index) =>
+        [`#### ${example.title ?? `Example ${index + 1}`}`, "", `~~~${example.language ?? "cx"}`, example.code, "~~~"].join("\n"),
+    );
 
-    return [
-        `### <span className="cx-stdlib-function-name"><code>${htmlText(`${owner}${functionRecord.name}`)}</code></span>`,
-        "",
-        functionRecord.description,
-        "",
-        `<div className="cx-stdlib-signature">`,
-        "",
-        `~~~cx\n${functionRecord.signature}\n~~~`,
-        "",
-        "</div>",
-        "",
-        ...metadataBlock,
-        "#### Parameters",
-        "",
-        parameters,
-        "",
-        ...returns,
-        examples ? `\n${examples}` : "",
-    ].join("\n");
+    return [`### <code>${heading}</code> \\{#${name.replaceAll("::", "-").toLowerCase()}}`, "", functionRecord.description, ...examples.flatMap((example) => ["", example])].join("\n");
 }
 
 function renderModule(record) {
@@ -232,6 +194,12 @@ function writeRecord(record) {
     const outputPath = path.join(outputDirectory, `${slug}.md`);
     fs.mkdirSync(path.dirname(outputPath), {recursive: true});
     fs.writeFileSync(outputPath, renderModule(record));
+
+    const group = path.dirname(slug);
+    if (group !== ".") {
+        const label = `std::${group.replaceAll("/", "::")}`;
+        fs.writeFileSync(path.join(outputDirectory, group, "_category_.json"), JSON.stringify({label}));
+    }
 }
 
 const records = readModuleRecords(dataDirectory).sort((left, right) => {
