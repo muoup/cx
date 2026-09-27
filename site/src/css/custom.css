@@ -92,24 +92,24 @@
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --cx-ground: #0e1a13;
-  --cx-band: #15251b;
-  --cx-sheet: #1a2d22;
-  --cx-inset: #122219;
-  --cx-rule: #2c4234;
+  --cx-ground: #15281c;
+  --cx-band: #1c3224;
+  --cx-sheet: #223a2a;
+  --cx-inset: #192e21;
+  --cx-rule: #34503d;
   --cx-ink: #e8eee2;
   --cx-muted: #b4c2b4;
   --cx-faint: #93a596;
   --cx-moss: #a3d48e;
-  --cx-moss-tint: #213d2b;
+  --cx-moss-tint: #2c4e36;
   --cx-on-moss: #0c1610;
   --cx-clay: #e3ab76;
-  --cx-clay-tint: #35291c;
+  --cx-clay-tint: #433321;
   --cx-error: #ff9d91;
-  --cx-error-bg: #3a2320;
-  --cx-bush-1: #1b3024;
-  --cx-bush-2: #223c2c;
-  --cx-bush-3: #2a4835;
+  --cx-error-bg: #4a2b27;
+  --cx-bush-1: #23402d;
+  --cx-bush-2: #2a4d36;
+  --cx-bush-3: #325a40;
   --cx-berry: #9c5238;
   --cx-facet-hi: rgb(200 240 190 / 0.05);
   --cx-facet-lo: rgb(0 0 0 / 0.14);
@@ -272,27 +272,57 @@ body:has(.landing-page) .footer > .container {
 }
 
 /* Docs */
-main[class*='docMainContainer'] > .container {
-  max-width: 1120px;
-}
-
-/* The article is a sheet laid on the ground; sidebar and contents stay on the ground */
-:is([class*='docItemContainer'], [class*='generatedIndexPage']) {
-  min-height: calc(100vh - var(--ifm-navbar-height) - 3rem);
-  padding: 2.25rem 2.75rem 2.5rem;
-  border-radius: 14px;
+/* The content is a lighter section between the sidebar and the contents list, which stay on the ground */
+main[class*='docMainContainer'] {
   background: var(--cx-sheet);
 }
 
+main[class*='docMainContainer'] > .container {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+main[class*='docMainContainer'] :is(.container, .cx-chapter) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* Theme padding and the 75% article cap are layered !important, so they are worked around rather than overridden */
+main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row {
+  flex: 1;
+  flex-wrap: nowrap;
+  margin: -1rem 0 -2rem;
+}
+
+main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col:first-child {
+  flex: 3 1 0;
+  padding: 2.5rem clamp(1.25rem, 4vw, 3.5rem) 3rem;
+}
+
+:is([class*='docItemContainer'], [class*='generatedIndexPage']) {
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
+  flex: 1 1 0;
+  min-width: 240px;
+  max-width: none;
+  padding: 1rem 0.75rem;
+  border-left: 1px solid var(--cx-rule);
+  background: var(--cx-ground);
+}
+
 @media (max-width: 996px) {
-  :is([class*='docItemContainer'], [class*='generatedIndexPage']) {
-    min-height: 0;
-    padding: 1.5rem 1.25rem 1.75rem;
+  main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col:first-child {
+    padding: 1.5rem 1rem 2rem;
   }
 }
 
 .markdown :is(p, ul, ol, blockquote, dl) {
-  max-width: 72ch;
+  max-width: 78ch;
 }
 
 .markdown h1,
@@ -372,10 +402,6 @@ main[class*='docMainContainer'] > .container {
 }
 
 /* Sidebar */
-.theme-doc-sidebar-container {
-  border-right: 0 !important;
-}
-
 .theme-doc-sidebar-menu {
   padding-top: 12px;
 }

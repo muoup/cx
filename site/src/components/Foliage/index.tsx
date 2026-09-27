@@ -1,4 +1,4 @@
-import type {CSSProperties, ReactNode} from "react";
+import {useEffect, useRef, type CSSProperties, type ReactNode} from "react";
 
 import {foliageSymbols} from "./symbols";
 import styles from "./styles.module.css";
@@ -68,9 +68,57 @@ function Wind({leaves, gusts, className}: {leaves: Vars[]; gusts: typeof farGust
     );
 }
 
+// Scrolling shakes the bushes: a damped wobble around each one's screen corner, scaled by scroll speed.
+function useRustle() {
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const root = ref.current;
+        if (!root || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            return;
+        }
+
+        const bushes = Array.from(root.querySelectorAll<SVGSVGElement>(`.${styles.bush}`));
+        let lastY = window.scrollY;
+        let lastTime = performance.now();
+        let shaking = false;
+
+        function onScroll() {
+            const now = performance.now();
+            const speed = Math.abs(window.scrollY - lastY) / Math.min(Math.max(now - lastTime, 16), 100);
+            lastY = window.scrollY;
+            lastTime = now;
+
+            if (shaking || speed < 0.25) {
+                return;
+            }
+
+            shaking = true;
+            const amplitude = Math.min(0.5 + speed * 0.5, 1.8);
+            const animations = bushes.map((bush, index) => {
+                const a = amplitude * (bush.matches(`.${styles.topLeft}, .${styles.bottomLeft}`) ? 1 : -1);
+                return bush.animate(
+                    [0, a, -0.65 * a, 0.35 * a, -0.12 * a, 0].map((deg) => ({rotate: `${deg}deg`})),
+                    {duration: 1100, delay: index * 70, easing: "ease-out"},
+                );
+            });
+            Promise.all(animations.map((animation) => animation.finished)).finally(() => {
+                shaking = false;
+            });
+        }
+
+        window.addEventListener("scroll", onScroll, {passive: true});
+        return () => window.removeEventListener("scroll", onScroll);
+    }, []);
+
+    return ref;
+}
+
 export default function Foliage({full = false}: {full?: boolean}): ReactNode {
+    const ref = useRustle();
+
     return (
-        <div className={styles.foliage} aria-hidden="true">
+        <div className={styles.foliage} aria-hidden="true" ref={ref}>
             <svg className={styles.symbols} dangerouslySetInnerHTML={{__html: foliageSymbols}} />
             {full ? (
                 <>

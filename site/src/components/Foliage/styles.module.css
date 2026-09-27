@@ -37,10 +37,16 @@
   overflow: visible;
 }
 
-.topLeft { left: -30px; top: -34px; width: clamp(230px, 21vw, 400px); aspect-ratio: 1; }
-.topRight { right: -36px; top: -40px; width: clamp(330px, 30vw, 560px); aspect-ratio: 1; transform: scaleX(-1); }
-.bottomLeft { left: -36px; bottom: -40px; width: clamp(320px, 29vw, 540px); aspect-ratio: 1; transform: scaleY(-1); }
-.bottomRight { right: -30px; bottom: -34px; width: clamp(250px, 23vw, 430px); aspect-ratio: 1; transform: scale(-1); }
+/* Flips live on the <use> so the outer svg can rustle around its screen corner. */
+.bush use { transform-origin: 50% 50%; }
+
+.topLeft { left: -30px; top: -34px; width: clamp(230px, 21vw, 400px); aspect-ratio: 1; transform-origin: 0 0; }
+.topRight { right: -36px; top: -40px; width: clamp(330px, 30vw, 560px); aspect-ratio: 1; transform-origin: 100% 0; }
+.bottomLeft { left: -36px; bottom: -40px; width: clamp(320px, 29vw, 540px); aspect-ratio: 1; transform-origin: 0 100%; }
+.bottomRight { right: -30px; bottom: -34px; width: clamp(250px, 23vw, 430px); aspect-ratio: 1; transform-origin: 100% 100%; }
+.topRight use { transform: scaleX(-1); }
+.bottomLeft use { transform: scaleY(-1); }
+.bottomRight use { transform: scale(-1); }
 .bottomLeft.small { width: 220px; }
 
 .wind {
