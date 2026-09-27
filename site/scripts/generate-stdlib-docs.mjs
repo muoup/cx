@@ -101,6 +101,10 @@ function highlighted(code, start, end, from) {
     return pieces.join("") + tokens(code, cursor, end);
 }
 
+function span(className, content) {
+    return `<span className="${className}">${content}</span>`;
+}
+
 // A qualified name may break after its ::, never inside a word; lines can wrap between inline blocks.
 function qualifiedName(name) {
     return name.split(/(?<=::)/).map((part) => `<span className="cx-stdlib-segment">${mdxText(part)}</span>`).join("");
@@ -111,8 +115,15 @@ function fieldDeclaration({name, type}) {
     return array ? `${array[1]} ${name}${array[2]}` : `${type} ${name}`;
 }
 
-// Types are shown as their CX declaration, with each member's description as a trailing comment.
-function renderDeclaration(type) {
+// The name of a named type, which is also its heading id.
+function typeId(type) {
+    const words = type.name.replace(/<.*$/, "").trim().split(/\s+/);
+    return words.length > 1 ? words.at(-1) : undefined;
+}
+
+// A type's heading is its declaration, with each member's description as a trailing comment.
+function renderType(type, from) {
+    const id = typeId(type);
     const attributes = type.attributes?.length ? ` : ${type.attributes.join(", ")}` : "";
     const variants = type.variants ?? [];
     const members = [
@@ -122,29 +133,21 @@ function renderDeclaration(type) {
             variant.description,
         ]),
     ];
-    const width = Math.max(0, ...members.map(([code]) => code.length));
+    const width = Math.max(0, ...members.map(([code]) => code.length)) + 2;
     const body = members.map(([code, description]) =>
-        description ? `    ${code.padEnd(width)}  // ${description}` : `    ${code}`,
+        span("cx-stdlib-member", [
+            `<span className="cx-stdlib-member-code" style={{width: "${width}ch"}}>${highlighted(code, 0, code.length, from)}</span>`,
+            description ? span("cx-token-comment", `// ${mdxText(description)}`) : "",
+        ].join("")),
     );
+    const heading = renderSignature(`${type.name}${attributes} {`, id ?? type.name, from, false) + span("cx-stdlib-signature", `${body.join("")}};`);
 
-    return ["~~~cx", `${type.name}${attributes} {`, ...body, "};", "~~~"].join("\n");
+    return renderItem(`### <code>${heading}</code>${id ? ` \\{#${id}}` : ""}`, [type.description]);
 }
 
-// The name of a named type, which is also its heading id.
-function typeId(type) {
-    const words = type.name.replace(/<.*$/, "").trim().split(/\s+/);
-    return words.length > 1 ? words.at(-1) : undefined;
-}
-
-function renderType(type) {
-    const id = typeId(type);
-    return [
-        `### <span className="cx-stdlib-type-name"><code>${htmlText(type.name)}</code></span>${id ? ` \\{#${id}}` : ""}`,
-        "",
-        type.description,
-        "",
-        renderDeclaration(type),
-    ].join("\n");
+// An item's description and examples sit indented below its heading.
+function renderItem(heading, body) {
+    return [heading, "", `<div className="cx-stdlib-item">`, "", ...body.flatMap((block) => [block, ""]), "</div>"].join("\n");
 }
 
 // Longer signatures put one parameter per line, as rustdoc does.
@@ -173,18 +176,17 @@ function parameterRanges(signature, open, close) {
     return ranges;
 }
 
-// The signature is the heading, with the qualified name picked out; the contents list shows only the name.
-function renderSignature(signature, name, from) {
-    const span = (className, content) => `<span className="${className}">${content}</span>`;
+// The signature is the heading, with the name picked out; the contents list shows only the name.
+function renderSignature(signature, name, from, split = true) {
     const at = signature.indexOf(name);
     if (at < 0) {
-        return span("cx-stdlib-function-name", qualifiedName(name));
+        return span("cx-stdlib-name", qualifiedName(name));
     }
 
     const end = at + name.length;
     const open = signature.indexOf("(", end);
     const close = signature.lastIndexOf(")");
-    const parameters = open < 0 || signature.length <= signatureWidth ? [] : parameterRanges(signature, open, close);
+    const parameters = !split || open < 0 || signature.length <= signatureWidth ? [] : parameterRanges(signature, open, close);
     const rest = parameters.length === 0
         ? highlighted(signature, end, signature.length, from)
         : [
@@ -197,7 +199,7 @@ function renderSignature(signature, name, from) {
 
     return [
         span("cx-stdlib-signature", highlighted(signature, 0, at, from)),
-        span("cx-stdlib-function-name", qualifiedName(name)),
+        span("cx-stdlib-name", qualifiedName(name)),
         span("cx-stdlib-signature", rest),
     ].join("");
 }
@@ -209,12 +211,13 @@ function renderFunction(functionRecord, from) {
         [`#### ${example.title ?? `Example ${index + 1}`}`, "", `~~~${example.language ?? "cx"}`, example.code, "~~~"].join("\n"),
     );
 
-    return [`### <code>${heading}</code> \\{#${name.replaceAll("::", "-").toLowerCase()}}`, "", functionRecord.description, ...examples.flatMap((example) => ["", example])].join("\n");
+    return renderItem(`### <code>${heading}</code> \\{#${name.replaceAll("::", "-").toLowerCase()}}`, [functionRecord.description, ...examples]);
 }
 
 function renderModule(record) {
-    const types = (record.types ?? []).map(renderType).join("\n\n");
-    const functions = (record.functions ?? []).map((functionRecord) => renderFunction(functionRecord, moduleSlug(record.module))).join("\n\n");
+    const from = moduleSlug(record.module);
+    const types = (record.types ?? []).map((type) => renderType(type, from)).join("\n\n");
+    const functions = (record.functions ?? []).map((functionRecord) => renderFunction(functionRecord, from)).join("\n\n");
     const sections = [];
 
     if (types) {

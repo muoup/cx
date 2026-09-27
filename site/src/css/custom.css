@@ -876,10 +876,14 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   }
 }
 
-/* Standard library reference */
+/* Standard library reference: denser than the prose pages */
+.cx-stdlib-page h2 {
+  margin: 2rem 0 0.75rem;
+}
+
 .cx-stdlib-page h3 {
-  margin-top: 2.5rem;
-  padding-top: 1.75rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
   border-top: 1px solid var(--cx-rule);
   font-size: 1.15rem;
 }
@@ -895,20 +899,28 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   font-size: 1em;
 }
 
-.cx-stdlib-page .cx-stdlib-type-name {
-  color: var(--cx-code-ty);
+.cx-stdlib-page .hash-link {
+  display: none;
 }
 
-.cx-stdlib-page .cx-stdlib-type-name code {
-  color: inherit;
+/* The reference sits closer to the sidebar: half the usual gap, including any centring slack */
+@media (min-width: 997px) {
+  main[class*='docMainContainer'] .row > .col:first-child:has(.cx-stdlib-page) {
+    padding-left: clamp(0.625rem, 2vw, 1.75rem);
+  }
+
+  [class*='docItemContainer']:has(.cx-stdlib-page) {
+    margin-left: max(0px, (100% - 880px) / 4);
+  }
 }
 
-/* A function's heading is its signature with the name picked out, wrapping with a hanging indent */
-.cx-stdlib-page h3:has(.cx-stdlib-function-name) {
+/* An item's heading is its declaration with the name picked out, wrapping with a hanging indent */
+.cx-stdlib-page h3:has(.cx-stdlib-name) {
+  margin-bottom: 0;
   padding-left: 2ch;
   text-indent: -2ch;
-  font-size: 15.5px;
-  line-height: 1.6;
+  font-size: 16.5px;
+  line-height: 1.55;
 }
 
 .cx-stdlib-page .cx-stdlib-signature {
@@ -941,8 +953,8 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   text-underline-offset: 3px;
 }
 
-/* A long signature puts each parameter on its own line, indented, and wraps within it with a hanging indent */
-.cx-stdlib-page h3:has(.cx-stdlib-parameter) {
+/* Parameters and members each take their own indented line */
+.cx-stdlib-page h3:is(:has(.cx-stdlib-parameter), :has(.cx-stdlib-member)) {
   padding-left: 0;
   text-indent: 0;
 }
@@ -953,12 +965,40 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   text-indent: -2ch;
 }
 
+/* A member's comment sits in a column beside it, dropping below when there is no room */
+.cx-stdlib-member {
+  display: flex;
+  flex-wrap: wrap;
+  padding-left: 4ch;
+}
+
+.cx-stdlib-member-code {
+  flex: none;
+  max-width: 100%;
+}
+
+.cx-stdlib-member .cx-token-comment {
+  flex: 1 1 24ch;
+  padding-left: 3ch;
+  text-indent: -3ch;
+}
+
 .table-of-contents .cx-stdlib-signature {
   display: none;
 }
 
+.cx-stdlib-item {
+  margin-top: 0.6rem;
+  padding-left: 2rem;
+  font-size: 16.5px;
+}
+
+.cx-stdlib-item > :last-child {
+  margin-bottom: 0;
+}
+
 .cx-stdlib-page h4 {
-  margin: 1.5rem 0 0.5rem;
+  margin: 1rem 0 0.25rem;
   color: var(--cx-muted);
   font: 600 12.5px var(--ifm-font-family-base);
   letter-spacing: 0.06em;
