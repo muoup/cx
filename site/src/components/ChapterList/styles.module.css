@@ -25,7 +25,7 @@
 }
 
 .chapter:hover {
-  background: var(--cx-band);
+  background: var(--cx-inset);
   color: var(--cx-ink);
 }
 

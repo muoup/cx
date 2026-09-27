@@ -12,12 +12,13 @@
 @import "@fontsource/ibm-plex-serif/500.css";
 @import "@fontsource/ibm-plex-serif/600.css";
 
-/* Green page, cream code; bushes sit darker than the page in light mode, lighter in dark mode */
+/* Reading surfaces are lighter than the ground in both modes; code on a sheet sits slightly inset */
 :root {
-  --cx-paper: #dde8d0;
-  --cx-band: #e8efdd;
-  --cx-surface: #f6f8ef;
-  --cx-rule: #bccbae;
+  --cx-ground: #d2dfc3;
+  --cx-band: #dce7cf;
+  --cx-sheet: #f5f8ef;
+  --cx-inset: #e9efe0;
+  --cx-rule: #b8c8a8;
   --cx-ink: #15201a;
   --cx-muted: #42513f;
   --cx-faint: #52624f;
@@ -28,9 +29,9 @@
   --cx-clay-tint: #f1e2cf;
   --cx-error: #a12d27;
   --cx-error-bg: #f4dbd3;
-  --cx-bush-1: #ccdbbc;
-  --cx-bush-2: #bdd0aa;
-  --cx-bush-3: #afc59a;
+  --cx-bush-1: #bdd0a8;
+  --cx-bush-2: #adc497;
+  --cx-bush-3: #9db883;
   --cx-berry: #c07252;
   --cx-facet-hi: rgb(255 255 240 / 0.28);
   --cx-facet-lo: rgb(40 70 30 / 0.07);
@@ -54,9 +55,9 @@
   --ifm-code-font-size: 88%;
   --ifm-line-height-base: 1.6;
 
-  --ifm-background-color: var(--cx-paper);
-  --ifm-background-surface-color: var(--cx-band);
-  --ifm-navbar-background-color: var(--cx-paper);
+  --ifm-background-color: var(--cx-ground);
+  --ifm-background-surface-color: var(--cx-sheet);
+  --ifm-navbar-background-color: var(--cx-ground);
   --ifm-footer-background-color: transparent;
   --ifm-font-color-base: var(--cx-ink);
   --ifm-heading-color: var(--cx-ink);
@@ -72,7 +73,7 @@
   --ifm-table-stripe-background: transparent;
   --ifm-menu-color: var(--cx-muted);
   --ifm-menu-color-active: var(--cx-ink);
-  --ifm-menu-color-background-active: var(--cx-moss-tint);
+  --ifm-menu-color-background-active: var(--cx-sheet);
   --ifm-menu-color-background-hover: var(--cx-band);
   --ifm-navbar-link-color: var(--cx-muted);
   --ifm-navbar-link-hover-color: var(--cx-ink);
@@ -82,18 +83,19 @@
 
   --ifm-global-radius: 8px;
   --ifm-code-border-radius: 4px;
-  --ifm-code-background: color-mix(in srgb, var(--cx-surface) 70%, transparent);
-  --ifm-pre-background: var(--cx-surface);
+  --ifm-code-background: var(--cx-inset);
+  --ifm-pre-background: var(--cx-inset);
 
-  --docusaurus-highlighted-code-line-bg: color-mix(in srgb, var(--cx-moss-tint) 60%, var(--cx-surface));
+  --docusaurus-highlighted-code-line-bg: color-mix(in srgb, var(--cx-moss) 12%, transparent);
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --cx-paper: #13231a;
-  --cx-band: #1a2e22;
-  --cx-surface: #0c1610;
+  --cx-ground: #0e1a13;
+  --cx-band: #15251b;
+  --cx-sheet: #1a2d22;
+  --cx-inset: #122219;
   --cx-rule: #2c4234;
   --cx-ink: #e8eee2;
   --cx-muted: #b4c2b4;
@@ -136,7 +138,7 @@ kbd {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--cx-clay) 28%, var(--cx-paper));
+  background: color-mix(in srgb, var(--cx-clay) 28%, var(--cx-sheet));
   color: var(--cx-ink);
 }
 
@@ -174,7 +176,7 @@ kbd {
 .cx-tag {
   padding: 2px 9px;
   border-radius: 999px;
-  background: var(--cx-moss-tint);
+  background: var(--cx-sheet);
   color: var(--cx-moss);
   font-size: 12px;
   font-weight: 500;
@@ -274,6 +276,21 @@ main[class*='docMainContainer'] > .container {
   max-width: 1120px;
 }
 
+/* The article is a sheet laid on the ground; sidebar and contents stay on the ground */
+:is([class*='docItemContainer'], [class*='generatedIndexPage']) {
+  min-height: calc(100vh - var(--ifm-navbar-height) - 3rem);
+  padding: 2.25rem 2.75rem 2.5rem;
+  border-radius: 14px;
+  background: var(--cx-sheet);
+}
+
+@media (max-width: 996px) {
+  :is([class*='docItemContainer'], [class*='generatedIndexPage']) {
+    min-height: 0;
+    padding: 1.5rem 1.25rem 1.75rem;
+  }
+}
+
 .markdown :is(p, ul, ol, blockquote, dl) {
   max-width: 72ch;
 }
@@ -357,7 +374,6 @@ main[class*='docMainContainer'] > .container {
 /* Sidebar */
 .theme-doc-sidebar-container {
   border-right: 0 !important;
-  background: var(--cx-band);
 }
 
 .theme-doc-sidebar-menu {
@@ -374,7 +390,7 @@ main[class*='docMainContainer'] > .container {
 }
 
 .menu__link--active:not(.menu__link--sublist) {
-  background: var(--cx-paper);
+  background: var(--cx-sheet);
   box-shadow: inset 2px 0 0 var(--cx-moss);
   border-radius: 0 6px 6px 0;
   font-weight: 500;
@@ -396,7 +412,18 @@ main[class*='docMainContainer'] > .container {
 }
 
 /* TOC */
+.theme-doc-toc-desktop::before {
+  content: "On this page";
+  display: block;
+  margin: 0.5rem 0 0.5rem calc(var(--ifm-toc-padding-horizontal) + 8px);
+  color: var(--cx-faint);
+  font: 600 11.5px/1.6 var(--ifm-font-family-monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .table-of-contents {
+  padding-top: 0;
   font-size: 13.5px;
 }
 
@@ -407,16 +434,19 @@ main[class*='docMainContainer'] > .container {
 .table-of-contents__link {
   display: block;
   padding: 3px 8px;
-  border-radius: 6px;
+  border-radius: 0 6px 6px 0;
   color: var(--cx-muted);
 }
 
 .table-of-contents__link:hover {
+  background: var(--cx-band);
   color: var(--cx-ink);
 }
 
-.table-of-contents__link--active {
-  background: var(--cx-band);
+.table-of-contents__link--active,
+.table-of-contents__link--active:hover {
+  background: var(--cx-sheet);
+  box-shadow: inset 2px 0 0 var(--cx-moss);
   color: var(--cx-ink);
   font-weight: 500;
 }
@@ -487,12 +517,12 @@ main[class*='docMainContainer'] > .container {
 .pagination-nav__link {
   padding: 12px 16px;
   border: 0;
-  background: var(--cx-band);
+  background: var(--cx-inset);
   transition: background var(--ifm-transition-fast);
 }
 
 .pagination-nav__link:hover {
-  background: var(--cx-surface);
+  background: color-mix(in srgb, var(--cx-moss) 9%, var(--cx-inset));
 }
 
 .pagination-nav__sublabel {
@@ -556,7 +586,7 @@ main[class*='docMainContainer'] > .container {
   box-shadow: none;
   padding: 12px 16px;
   color: var(--cx-ink);
-  --ifm-alert-background-color: var(--cx-band);
+  --ifm-alert-background-color: var(--cx-inset);
   --ifm-alert-foreground-color: var(--cx-ink);
   --cx-alert-accent: var(--cx-moss);
 }
@@ -597,14 +627,14 @@ main[class*='docMainContainer'] > .container {
 .theme-code-block {
   overflow: hidden;
   border-radius: var(--ifm-global-radius);
-  background: var(--cx-surface);
+  background: var(--cx-inset);
   box-shadow: none;
   scrollbar-color: var(--cx-rule) transparent;
 }
 
 .theme-code-block pre.prism-code,
 .theme-code-block [class*='codeBlockTitle'] {
-  background: var(--cx-surface) !important;
+  background: var(--cx-inset) !important;
   color: var(--cx-ink) !important;
 }
 
@@ -687,7 +717,7 @@ main[class*='docMainContainer'] > .container {
   margin: 0;
   padding: 8px 0 14px;
   border-radius: 0;
-  background: var(--cx-surface);
+  background: var(--cx-inset);
   color: var(--cx-ink);
   font-family: var(--ifm-font-family-monospace);
   font-size: 13px;
@@ -733,14 +763,14 @@ main[class*='docMainContainer'] > .container {
 }
 
 .cx-line.cx-line-error {
-  background: color-mix(in srgb, var(--cx-error-bg) 75%, var(--cx-surface));
+  background: color-mix(in srgb, var(--cx-error) 12%, transparent);
 }
 
 .cx-code-block-container {
   overflow: hidden;
   margin-bottom: var(--ifm-leading);
   border-radius: var(--ifm-global-radius);
-  background: var(--cx-surface);
+  background: var(--cx-inset);
 }
 
 .cx-code-block-content {
@@ -753,7 +783,7 @@ main[class*='docMainContainer'] > .container {
   right: 8px;
   padding: 3px 10px;
   border-radius: 6px;
-  background: var(--cx-paper);
+  background: var(--cx-sheet);
   color: var(--cx-muted);
   font-size: 12px;
   font-weight: 500;

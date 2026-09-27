@@ -3,7 +3,18 @@
   inset: 0;
   z-index: -1;
   overflow: hidden;
+  background: var(--ifm-background-color);
   pointer-events: none;
+}
+
+/* Fine grain so the ground reads as a surface rather than a flat fill */
+.foliage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  opacity: 0.22;
 }
 
 .symbols {
@@ -26,11 +37,11 @@
   overflow: visible;
 }
 
-.topLeft { left: -30px; top: -34px; width: 230px; height: 230px; }
-.topRight { right: -36px; top: -40px; width: 330px; height: 330px; transform: scaleX(-1); }
-.bottomLeft { left: -36px; bottom: -40px; width: 320px; height: 320px; transform: scaleY(-1); }
-.bottomRight { right: -30px; bottom: -34px; width: 230px; height: 230px; transform: scale(-1); }
-.bottomRight.small { width: 200px; height: 200px; }
+.topLeft { left: -30px; top: -34px; width: clamp(230px, 21vw, 400px); aspect-ratio: 1; }
+.topRight { right: -36px; top: -40px; width: clamp(330px, 30vw, 560px); aspect-ratio: 1; transform: scaleX(-1); }
+.bottomLeft { left: -36px; bottom: -40px; width: clamp(320px, 29vw, 540px); aspect-ratio: 1; transform: scaleY(-1); }
+.bottomRight { right: -30px; bottom: -34px; width: clamp(250px, 23vw, 430px); aspect-ratio: 1; transform: scale(-1); }
+.bottomLeft.small { width: 220px; }
 
 .wind {
   position: absolute;
@@ -39,9 +50,22 @@
   --travel: calc(100vw + 120px);
 }
 
+.far {
+  --leaf-opacity: 0.6;
+  --bob: 10px;
+  --gust-h: 28px;
+}
+
+.near {
+  --leaf-opacity: 0.9;
+  --bob: 22px;
+  --gust-h: 56px;
+  --travel: calc(100vw + 200px);
+}
+
 .wind i {
   position: absolute;
-  left: -60px;
+  left: calc(var(--s) * -2);
   top: var(--y);
   opacity: 0;
   animation: blow var(--d) linear var(--delay) infinite;
@@ -56,13 +80,13 @@
 
 @keyframes blow {
   0% { opacity: 0; transform: translate(0, 0); }
-  6%, 90% { opacity: 0.7; }
+  6%, 90% { opacity: var(--leaf-opacity); }
   100% { opacity: 0; transform: translate(var(--travel), var(--dy)); }
 }
 
 @keyframes bob {
-  from { transform: translateY(-10px) rotate(var(--r0)); }
-  to { transform: translateY(10px) rotate(var(--r1)); }
+  from { transform: translateY(calc(var(--bob) * -1)) rotate(var(--r0)); }
+  to { transform: translateY(var(--bob)) rotate(var(--r1)); }
 }
 
 .gust {
@@ -70,7 +94,7 @@
   left: var(--x);
   top: var(--y);
   width: var(--w);
-  height: 28px;
+  height: var(--gust-h);
   overflow: visible;
 }
 
@@ -97,7 +121,10 @@
 }
 
 @media (max-width: 680px) {
-  .topLeft, .bottomLeft { display: none; }
-  .topRight { width: 170px; height: 170px; }
-  .bottomRight.small { width: 150px; height: 150px; }
+  .topLeft, .bottomLeft:not(.small) { display: none; }
+  .topRight { width: 200px; }
+  .bottomRight { width: 180px; }
+  .bottomLeft.small { width: 150px; }
+  .near { --bob: 14px; }
+  .near i svg { width: calc(var(--s) * 0.65); height: calc(var(--s) * 0.45); }
 }

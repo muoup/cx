@@ -5,7 +5,7 @@ import styles from "./styles.module.css";
 
 type Vars = CSSProperties & Record<`--${string}`, string>;
 
-const leaves: Vars[] = [
+const farLeaves: Vars[] = [
     {"--y": "11%", "--d": "29s", "--delay": "-14s", "--dy": "40px", "--s": "23px", "--sw": "2.9s", "--r0": "11deg", "--r1": "115deg"},
     {"--y": "23%", "--d": "30s", "--delay": "-3s", "--dy": "-13px", "--s": "22px", "--sw": "2.7s", "--r0": "20deg", "--r1": "109deg"},
     {"--y": "38%", "--d": "34s", "--delay": "-33s", "--dy": "77px", "--s": "22px", "--sw": "3.6s", "--r0": "-55deg", "--r1": "33deg"},
@@ -15,16 +15,30 @@ const leaves: Vars[] = [
     {"--y": "83%", "--d": "27s", "--delay": "-21s", "--dy": "12px", "--s": "21px", "--sw": "4.0s", "--r0": "-24deg", "--r1": "27deg"},
 ];
 
+const nearLeaves: Vars[] = [
+    {"--y": "17%", "--d": "19s", "--delay": "-4s", "--dy": "90px", "--s": "52px", "--sw": "3.4s", "--r0": "-30deg", "--r1": "80deg"},
+    {"--y": "34%", "--d": "22s", "--delay": "-16s", "--dy": "-60px", "--s": "46px", "--sw": "3.9s", "--r0": "10deg", "--r1": "130deg"},
+    {"--y": "52%", "--d": "17s", "--delay": "-9s", "--dy": "120px", "--s": "58px", "--sw": "3.1s", "--r0": "-60deg", "--r1": "20deg"},
+    {"--y": "69%", "--d": "21s", "--delay": "-13s", "--dy": "-40px", "--s": "48px", "--sw": "4.2s", "--r0": "25deg", "--r1": "110deg"},
+    {"--y": "88%", "--d": "18s", "--delay": "-1s", "--dy": "-110px", "--s": "54px", "--sw": "3.6s", "--r0": "-15deg", "--r1": "70deg"},
+];
+
 const sweep = "M2 16 C 70 8, 140 22, 210 14 S 300 6, 330 12";
 const curl = "M2 14 C 60 6, 120 20, 190 12 S 262 2, 276 10 C 284 16, 272 24, 264 16";
 
-const gusts: {path: string; style: Vars}[] = [
+const farGusts: {path: string; style: Vars}[] = [
     {path: sweep, style: {"--x": "60%", "--y": "13%", "--w": "260px", "--d": "11s", "--delay": "-2.4s"}},
     {path: curl, style: {"--x": "7%", "--y": "24%", "--w": "350px", "--d": "15s", "--delay": "-5.8s"}},
     {path: "M2 12 C 90 20, 170 4, 250 12 S 350 18, 390 10", style: {"--x": "41%", "--y": "42%", "--w": "294px", "--d": "9s", "--delay": "-3.2s"}},
     {path: "M2 18 C 50 10, 110 22, 170 14 S 228 4, 240 12 C 248 18, 236 26, 228 18", style: {"--x": "5%", "--y": "54%", "--w": "378px", "--d": "11s", "--delay": "-1.3s"}},
     {path: sweep, style: {"--x": "10%", "--y": "66%", "--w": "362px", "--d": "10s", "--delay": "-5.1s"}},
     {path: curl, style: {"--x": "15%", "--y": "85%", "--w": "353px", "--d": "13s", "--delay": "-10.1s"}},
+];
+
+const nearGusts: {path: string; style: Vars}[] = [
+    {path: curl, style: {"--x": "52%", "--y": "20%", "--w": "720px", "--d": "14s", "--delay": "-6.5s"}},
+    {path: sweep, style: {"--x": "-4%", "--y": "47%", "--w": "760px", "--d": "12s", "--delay": "-0.8s"}},
+    {path: curl, style: {"--x": "38%", "--y": "76%", "--w": "700px", "--d": "16s", "--delay": "-11s"}},
 ];
 
 function Bush({symbol, className}: {symbol: string; className: string}) {
@@ -35,9 +49,9 @@ function Bush({symbol, className}: {symbol: string; className: string}) {
     );
 }
 
-function Wind() {
+function Wind({leaves, gusts, className}: {leaves: Vars[]; gusts: typeof farGusts; className: string}) {
     return (
-        <div className={styles.wind}>
+        <div className={`${styles.wind} ${className}`}>
             {leaves.map((style, index) => (
                 <i key={index} style={style}>
                     <svg>
@@ -64,10 +78,11 @@ export default function Foliage({full = false}: {full?: boolean}): ReactNode {
                     <Bush symbol="bush-a" className={styles.topRight} />
                     <Bush symbol="bush-a" className={styles.bottomLeft} />
                     <Bush symbol="bush-b" className={styles.bottomRight} />
-                    <Wind />
+                    <Wind leaves={farLeaves} gusts={farGusts} className={styles.far} />
+                    <Wind leaves={nearLeaves} gusts={nearGusts} className={styles.near} />
                 </>
             ) : (
-                <Bush symbol="bush-b" className={`${styles.bottomRight} ${styles.small}`} />
+                <Bush symbol="bush-b" className={`${styles.bottomLeft} ${styles.small}`} />
             )}
         </div>
     );

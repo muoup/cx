@@ -379,12 +379,17 @@ function Principles() {
 
 function Standing() {
     return (
-        <section className={styles.section} id="status">
-            <Eyebrow>Where it stands</Eyebrow>
-            <p className={styles.standingLede}>
-                CX is a research preview. The compiler builds working programs, but the language and standard
-                library are still changing.
-            </p>
+        <section className={clsx(styles.section, styles.standingSection)} id="status">
+            <div className={styles.standingIntro}>
+                <Eyebrow>Where it stands</Eyebrow>
+                <p>
+                    CX is a research preview. The compiler builds working programs, but the language and
+                    standard library are still changing.
+                </p>
+                <Link className={styles.more} to="/docs/getting-started/status">
+                    Full project status →
+                </Link>
+            </div>
             <div className={styles.standing}>
                 {standing.map(({title, items}) => (
                     <div key={title}>
@@ -397,9 +402,6 @@ function Standing() {
                     </div>
                 ))}
             </div>
-            <Link className={styles.more} to="/docs/getting-started/status">
-                Full project status →
-            </Link>
         </section>
     );
 }
@@ -414,8 +416,10 @@ export default function Home(): ReactNode {
             <Foliage full />
             <main className={styles.page}>
                 <Hero />
-                <Principles />
-                <Standing />
+                <div className={styles.sheet}>
+                    <Principles />
+                    <Standing />
+                </div>
             </main>
         </Layout>
     );

@@ -14,6 +14,15 @@
   padding-block: 32px 96px;
 }
 
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: -64px -14% 0;
+  z-index: -1;
+  background: radial-gradient(ellipse 58% 52% at 50% 46%, color-mix(in srgb, var(--cx-sheet) 55%, transparent), transparent 72%);
+  pointer-events: none;
+}
+
 .heroGrid {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
@@ -39,7 +48,7 @@
 
 .install {
   border-radius: var(--ifm-global-radius);
-  background: var(--cx-surface);
+  background: var(--cx-sheet);
 }
 
 .installHead {
@@ -69,7 +78,7 @@
   padding: 3px 10px;
   border: 0;
   border-radius: 6px;
-  background: var(--cx-paper);
+  background: var(--cx-inset);
   color: var(--cx-muted);
   font: 500 12px var(--ifm-font-family-base);
   cursor: pointer;
@@ -125,7 +134,11 @@
   min-width: 0;
   overflow: hidden;
   border-radius: var(--ifm-global-radius);
-  background: var(--cx-surface);
+  background: var(--cx-sheet);
+}
+
+.frame .code {
+  background: transparent;
 }
 
 .frameHead {
@@ -144,7 +157,7 @@
   gap: 2px;
   padding: 3px;
   border-radius: 999px;
-  background: var(--cx-band);
+  background: var(--cx-inset);
 }
 
 .pills button {
@@ -158,7 +171,8 @@
 }
 
 .pills button[aria-pressed='true'] {
-  background: var(--cx-surface);
+  background: var(--cx-sheet);
+  box-shadow: 0 0 0 1px var(--cx-rule);
   color: var(--cx-ink);
 }
 
@@ -171,8 +185,9 @@
 .diagnostic {
   overflow-x: auto;
   padding: 12px 16px;
-  border-radius: var(--ifm-global-radius);
-  background: color-mix(in srgb, var(--cx-error-bg) 70%, var(--cx-surface));
+  border-left: 3px solid var(--cx-error);
+  border-radius: 0 var(--ifm-global-radius) var(--ifm-global-radius) 0;
+  background: var(--cx-sheet);
   color: var(--cx-ink);
   font: 12.5px/1.6 var(--ifm-font-family-monospace);
   font-variant-ligatures: none;
@@ -180,7 +195,7 @@
 }
 
 .diagnostic.ok {
-  background: color-mix(in srgb, var(--cx-moss-tint) 60%, var(--cx-surface));
+  border-left-color: var(--cx-moss);
 }
 
 .error {
@@ -230,6 +245,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .scrollPipe { animation: none; }
+}
+
+/* Everything past the hero sits on one sheet */
+.sheet {
+  margin-bottom: 72px;
+  padding: 8px 48px;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--cx-sheet) 94%, transparent);
 }
 
 /* Sections */
@@ -297,8 +320,12 @@
   padding: 1px 5px;
   border: 0;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--cx-surface) 70%, transparent);
+  background: var(--cx-inset);
   font-size: 0.86em;
+}
+
+.principleCode .frame {
+  background: var(--cx-inset);
 }
 
 .principleCode {
@@ -314,29 +341,47 @@
   border-radius: var(--ifm-global-radius);
 }
 
-.standingLede {
-  max-width: 40em;
-  margin: 0 0 24px;
+.standingSection {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 56px;
+  align-items: start;
+  padding-block: 48px;
+  border-top: 1px solid var(--cx-rule);
+}
+
+.standingIntro p {
+  max-width: 34em;
+  margin: 0 0 14px;
   color: var(--cx-muted);
-  font-size: 17px;
+  font-size: 16px;
+  line-height: 1.65;
 }
 
 .standing {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
 }
 
 .standing > div {
-  padding: 22px 26px;
-  border-radius: 12px;
-  background: var(--cx-band);
+  padding-right: 32px;
+}
+
+.standing > div + div {
+  padding: 0 0 0 32px;
+  border-left: 1px solid var(--cx-rule);
 }
 
 .standing h3 {
-  margin: 0 0 12px;
-  font-size: 1.15rem;
+  margin: 6px 0 10px;
+  color: var(--cx-moss);
+  font: 600 12px/1.6 var(--ifm-font-family-monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.standing > div + div h3 {
+  color: var(--cx-clay);
 }
 
 .standing ul {
@@ -363,7 +408,7 @@
   background: var(--cx-moss);
 }
 
-.standing > div:last-child li::before {
+.standing > div + div li::before {
   border: 1.5px solid var(--cx-clay);
   background: transparent;
 }
@@ -376,9 +421,14 @@
 
   .heroGrid,
   .principle,
-  .principle:nth-of-type(even) {
+  .principle:nth-of-type(even),
+  .standingSection {
     grid-template-columns: minmax(0, 1fr);
     gap: 28px;
+  }
+
+  .sheet {
+    padding-inline: 28px;
   }
 
   .principle:nth-of-type(even) .principleText {
@@ -399,7 +449,19 @@
     padding-block: 24px 48px;
   }
 
+  .sheet {
+    margin-inline: -8px;
+    padding-inline: 18px;
+  }
+
   .standing {
     grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+
+  .standing > div,
+  .standing > div + div {
+    padding: 0;
+    border: 0;
   }
 }
