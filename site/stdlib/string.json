@@ -50,10 +50,10 @@
     {
       "name": "from_span",
       "owner": "string",
-      "signature": "string string::from_span(const std::span<const char>& s)",
+      "signature": "string string::from_span(const std::span::span<const char>& s)",
       "description": "Creates an owned string from a character span.",
       "parameters": [
-        {"name": "s", "type": "const std::span<const char>&", "description": "The source character span."}
+        {"name": "s", "type": "const std::span::span<const char>&", "description": "The source character span."}
       ],
       "returnType": "string",
       "returnDescription": "A new owned string."

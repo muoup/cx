@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
+import {tokenizeCx} from "../src/lib/cx-syntax.mjs";
+
 const siteDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDirectory = path.join(siteDirectory, "stdlib");
 const outputDirectory = path.join(siteDirectory, "docs", "stdlib");
@@ -64,6 +66,41 @@ function mdxText(value) {
     return htmlText(value).replace(/[{}*_`[\]\\]/g, (character) => `&#${character.charCodeAt(0)};`);
 }
 
+// Highlights code[start, end), tokenizing all of code so the slice keeps its context.
+function tokens(code, start, end) {
+    let offset = 0;
+    return tokenizeCx(code)
+        .map(({text, kind}) => {
+            const part = text.slice(Math.max(start - offset, 0), Math.max(end - offset, 0));
+            offset += text.length;
+            return part && kind ? `<span className="cx-token-${kind}">${mdxText(part)}</span>` : mdxText(part);
+        })
+        .join("");
+}
+
+// A documented type links to its docs.
+function reference(qualified, {slug, id}, from) {
+    const parts = qualified.split("::");
+    const name = parts.pop();
+    const target = `${path.posix.relative(path.posix.dirname(from), slug)}.md#${id}`;
+    const href = target.startsWith(".") ? target : `./${target}`;
+    return `[<span className="cx-stdlib-ref">${parts.map(mdxText).join("::")}::<span className="cx-token-type">${mdxText(name)}</span></span>](${href})`;
+}
+
+function highlighted(code, start, end, from) {
+    const pieces = [];
+    let cursor = start;
+    for (const match of code.slice(start, end).matchAll(/\bstd(?:::\w+)+/g)) {
+        const target = typeIndex.get(match[0]);
+        if (target) {
+            const at = start + match.index;
+            pieces.push(tokens(code, cursor, at), reference(match[0], target, from));
+            cursor = at + match[0].length;
+        }
+    }
+    return pieces.join("") + tokens(code, cursor, end);
+}
+
 // A qualified name may break after its ::, never inside a word; lines can wrap between inline blocks.
 function qualifiedName(name) {
     return name.split(/(?<=::)/).map((part) => `<span className="cx-stdlib-segment">${mdxText(part)}</span>`).join("");
@@ -93,9 +130,16 @@ function renderDeclaration(type) {
     return ["~~~cx", `${type.name}${attributes} {`, ...body, "};", "~~~"].join("\n");
 }
 
+// The name of a named type, which is also its heading id.
+function typeId(type) {
+    const words = type.name.replace(/<.*$/, "").trim().split(/\s+/);
+    return words.length > 1 ? words.at(-1) : undefined;
+}
+
 function renderType(type) {
+    const id = typeId(type);
     return [
-        `### <span className="cx-stdlib-type-name"><code>${htmlText(type.name)}</code></span>`,
+        `### <span className="cx-stdlib-type-name"><code>${htmlText(type.name)}</code></span>${id ? ` \\{#${id}}` : ""}`,
         "",
         type.description,
         "",
@@ -103,18 +147,64 @@ function renderType(type) {
     ].join("\n");
 }
 
+// Longer signatures put one parameter per line, as rustdoc does.
+const signatureWidth = 64;
+
+// The [start, end) ranges of the parameters between the parentheses at open and close, split at top-level commas.
+function parameterRanges(signature, open, close) {
+    const ranges = [];
+    let depth = 0;
+    let start = open + 1;
+    for (let index = start; index <= close; index++) {
+        const character = signature[index];
+        if ("(<".includes(character)) {
+            depth++;
+        } else if (")>".includes(character) && index < close) {
+            depth--;
+        } else if ((character === "," && depth === 0) || index === close) {
+            const text = signature.slice(start, index);
+            const leading = text.length - text.trimStart().length;
+            if (text.trim()) {
+                ranges.push([start + leading, index]);
+            }
+            start = index + 1;
+        }
+    }
+    return ranges;
+}
+
 // The signature is the heading, with the qualified name picked out; the contents list shows only the name.
-function renderFunction(functionRecord) {
-    const name = `${functionRecord.owner ? `${functionRecord.owner}::` : ""}${functionRecord.name}`;
-    const {signature} = functionRecord;
+function renderSignature(signature, name, from) {
+    const span = (className, content) => `<span className="${className}">${content}</span>`;
     const at = signature.indexOf(name);
-    const heading = at < 0
-        ? `<span className="cx-stdlib-function-name">${qualifiedName(name)}</span>`
+    if (at < 0) {
+        return span("cx-stdlib-function-name", qualifiedName(name));
+    }
+
+    const end = at + name.length;
+    const open = signature.indexOf("(", end);
+    const close = signature.lastIndexOf(")");
+    const parameters = open < 0 || signature.length <= signatureWidth ? [] : parameterRanges(signature, open, close);
+    const rest = parameters.length === 0
+        ? highlighted(signature, end, signature.length, from)
         : [
-            `<span className="cx-stdlib-signature">${mdxText(signature.slice(0, at))}</span>`,
-            `<span className="cx-stdlib-function-name">${qualifiedName(name)}</span>`,
-            `<span className="cx-stdlib-signature">${mdxText(signature.slice(at + name.length))}</span>`,
+            highlighted(signature, end, open + 1, from),
+            ...parameters.map(([start, stop], index) =>
+                span("cx-stdlib-parameter", highlighted(signature, start, stop, from) + (index < parameters.length - 1 ? "," : "")),
+            ),
+            highlighted(signature, close, signature.length, from),
         ].join("");
+
+    return [
+        span("cx-stdlib-signature", highlighted(signature, 0, at, from)),
+        span("cx-stdlib-function-name", qualifiedName(name)),
+        span("cx-stdlib-signature", rest),
+    ].join("");
+}
+
+function renderFunction(functionRecord, from) {
+    const name = `${functionRecord.owner ? `${functionRecord.owner}::` : ""}${functionRecord.name}`;
+    const heading = renderSignature(functionRecord.signature, name, from);
     const examples = (functionRecord.examples ?? []).map((example, index) =>
         [`#### ${example.title ?? `Example ${index + 1}`}`, "", `~~~${example.language ?? "cx"}`, example.code, "~~~"].join("\n"),
     );
@@ -124,7 +214,7 @@ function renderFunction(functionRecord) {
 
 function renderModule(record) {
     const types = (record.types ?? []).map(renderType).join("\n\n");
-    const functions = (record.functions ?? []).map(renderFunction).join("\n\n");
+    const functions = (record.functions ?? []).map((functionRecord) => renderFunction(functionRecord, moduleSlug(record.module))).join("\n\n");
     const sections = [];
 
     if (types) {
@@ -211,6 +301,16 @@ const records = readModuleRecords(dataDirectory).sort((left, right) => {
 if (records.length === 0) {
     throw new Error(`No standard-library records found in ${dataDirectory}`);
 }
+
+// Documented types by fully qualified name, so signatures can link to them.
+const typeIndex = new Map(
+    records.flatMap((record) =>
+        (record.types ?? []).flatMap((type) => {
+            const id = typeId(type);
+            return id ? [[`${record.module}::${id}`, {slug: moduleSlug(record.module), id}]] : [];
+        }),
+    ),
+);
 
 fs.rmSync(outputDirectory, {recursive: true, force: true});
 fs.mkdirSync(outputDirectory, {recursive: true});

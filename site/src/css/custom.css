@@ -916,9 +916,41 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   font-weight: 400;
 }
 
+/* Only the name is bold, so the highlighted parts of the signature stay lighter */
+.cx-stdlib-signature [class^="cx-token-"] {
+  font-weight: inherit;
+}
+
 .cx-stdlib-segment {
   display: inline-block;
   text-indent: 0;
+}
+
+/* A referenced type links to its docs */
+.markdown .cx-stdlib-signature a[href] {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cx-stdlib-ref {
+  white-space: nowrap;
+}
+
+.cx-stdlib-signature a:hover .cx-stdlib-ref {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+/* A long signature puts each parameter on its own line, indented, and wraps within it with a hanging indent */
+.cx-stdlib-page h3:has(.cx-stdlib-parameter) {
+  padding-left: 0;
+  text-indent: 0;
+}
+
+.cx-stdlib-parameter {
+  display: block;
+  padding-left: 6ch;
+  text-indent: -2ch;
 }
 
 .table-of-contents .cx-stdlib-signature {

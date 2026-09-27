@@ -25,45 +25,45 @@
     {
       "name": "open",
       "owner": "tcp_listener",
-      "signature": "std::opt<tcp_listener> tcp_listener::open()",
+      "signature": "std::optional::opt<tcp_listener> tcp_listener::open()",
       "description": "Creates a TCP listening socket.",
       "parameters": [],
-      "returnType": "std::opt<tcp_listener>",
+      "returnType": "std::optional::opt<tcp_listener>",
       "returnDescription": "Some listener on socket creation success."
     },
     {
       "name": "bind",
       "owner": "tcp_listener",
-      "signature": "std::opt<void> tcp_listener::bind(tcp_listener& this, std::net::endpoint addr)",
+      "signature": "std::optional::opt<void> tcp_listener::bind(tcp_listener& this, std::net::address::endpoint addr)",
       "description": "Binds a listener to an endpoint.",
       "parameters": [
         {"name": "this", "type": "tcp_listener&", "description": "The listener to bind."},
-        {"name": "addr", "type": "std::net::endpoint", "description": "The local endpoint."}
+        {"name": "addr", "type": "std::net::address::endpoint", "description": "The local endpoint."}
       ],
-      "returnType": "std::opt<void>",
+      "returnType": "std::optional::opt<void>",
       "returnDescription": "Some void on success or none on failure."
     },
     {
       "name": "listen",
       "owner": "tcp_listener",
-      "signature": "std::opt<void> tcp_listener::listen(tcp_listener& this, int backlog)",
+      "signature": "std::optional::opt<void> tcp_listener::listen(tcp_listener& this, int backlog)",
       "description": "Starts accepting connections on a bound listener.",
       "parameters": [
         {"name": "this", "type": "tcp_listener&", "description": "The listener to activate."},
         {"name": "backlog", "type": "int", "description": "The pending-connection backlog."}
       ],
-      "returnType": "std::opt<void>",
+      "returnType": "std::optional::opt<void>",
       "returnDescription": "Some void on success or none on failure."
     },
     {
       "name": "accept",
       "owner": "tcp_listener",
-      "signature": "std::opt<tcp_stream> tcp_listener::accept(tcp_listener& this)",
+      "signature": "std::optional::opt<tcp_stream> tcp_listener::accept(tcp_listener& this)",
       "description": "Accepts one pending TCP connection.",
       "parameters": [
         {"name": "this", "type": "tcp_listener&", "description": "The listener receiving the connection."}
       ],
-      "returnType": "std::opt<tcp_stream>",
+      "returnType": "std::optional::opt<tcp_stream>",
       "returnDescription": "Some stream when a connection is accepted."
     },
     {
@@ -79,26 +79,26 @@
     {
       "name": "read",
       "owner": "tcp_stream",
-      "signature": "std::opt<u64> tcp_stream::read(tcp_stream& this, void* buffer, u64 capacity)",
+      "signature": "std::optional::opt<u64> tcp_stream::read(tcp_stream& this, void* buffer, u64 capacity)",
       "description": "Reads bytes from a TCP stream.",
       "parameters": [
         {"name": "this", "type": "tcp_stream&", "description": "The stream to read from."},
         {"name": "buffer", "type": "void*", "description": "The destination buffer."},
         {"name": "capacity", "type": "u64", "description": "The destination capacity."}
       ],
-      "returnType": "std::opt<u64>",
+      "returnType": "std::optional::opt<u64>",
       "returnDescription": "Some number of bytes read or none on failure."
     },
     {
       "name": "write",
       "owner": "tcp_stream",
-      "signature": "std::opt<u64> tcp_stream::write(tcp_stream& this, const std::span<const u8> buffer)",
+      "signature": "std::optional::opt<u64> tcp_stream::write(tcp_stream& this, const std::span::span<const u8> buffer)",
       "description": "Writes a byte span to a TCP stream.",
       "parameters": [
         {"name": "this", "type": "tcp_stream&", "description": "The stream to write to."},
-        {"name": "buffer", "type": "const std::span<const u8>", "description": "The bytes to send."}
+        {"name": "buffer", "type": "const std::span::span<const u8>", "description": "The bytes to send."}
       ],
-      "returnType": "std::opt<u64>",
+      "returnType": "std::optional::opt<u64>",
       "returnDescription": "Some number of bytes written or none on failure."
     },
     {
