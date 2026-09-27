@@ -59,13 +59,10 @@ const principles: Principle[] = [
         body: (
             <>
                 <p>
-                    CX has no destructors and no garbage collector. A type marked <code>@nodrop</code> cannot
-                    quietly fall out of scope: each value must be moved somewhere else or handed to a function
-                    that releases it.
+                    CX gives the tools to write safe code with no hidden behavior, no destructors, no garbage collector, everything is manually handled but rules are well-enforced. 
                 </p>
                 <p>
-                    Cleanup is an ordinary call you can read in the source, and the compiler rejects any path
-                    that skips it, including early returns and error branches.
+                    Use `@nodrop` to define a resource that must be cleaned up before they are dropped, requiring an explicit leak. All cleanup is done through standard explicit methods, and the compiler enforced that resources are never leaked unexpectedly. 
                 </p>
             </>
         ),
@@ -96,13 +93,10 @@ void use_string(string s) {
         body: (
             <>
                 <p>
-                    Tagged unions are declared with <code>enum union</code> and taken apart with
-                    exhaustive <code>match</code> statements, so adding a variant surfaces every place that
-                    needs to handle it.
+                    CX takes a modest set of modern language syntax including templates, modules, tagged unions, and pattern matching to enable safe and expressive programming with a smaller language core in favor of a larger standard library.
                 </p>
                 <p>
-                    Templates cover generic functions and types under a one-symbol, one-definition rule. There
-                    is no partial specialization, so a call always resolves to one definition you can find.
+                    Features like member functions, operator overloading, and template specialization are intentionally excluded, every symbol corresponds to a single well-defined meaning, and hidden behavior is avoided in favor of explicit and readable idioms. 
                 </p>
             </>
         ),
@@ -126,31 +120,29 @@ float get_area(shape& s) {
         ],
         link: {to: "/docs/manual/tagged-unions", label: "Chapter 4: Tagged Unions"},
     },
+    // {
+    //     title: "Safe subset",
+    //     body: (
+    //         <>
+    //             <p>
+    //                 Placeholder: what marking a function <code>safe</code> rules out, and how the compiler
+    //                 checks it.
+    //             </p>
+    //             <p>Placeholder: when code steps outside the safe subset, and how that is made visible.</p>
+    //         </>
+    //     ),
+    //     files: [{name: "safe.cx", code: "// Placeholder: a short safe function example."}],
+    //     placeholder: true,
+    // },
     {
-        title: "Safe subset",
+        title: "C Compatibility",
         body: (
             <>
                 <p>
-                    Placeholder: what marking a function <code>safe</code> rules out, and how the compiler
-                    checks it.
-                </p>
-                <p>Placeholder: when code steps outside the safe subset, and how that is made visible.</p>
-            </>
-        ),
-        files: [{name: "safe.cx", code: "// Placeholder: a short safe function example."}],
-        placeholder: true,
-    },
-    {
-        title: "C interop",
-        body: (
-            <>
-                <p>
-                    Most C code compiles as CX with the same semantics, so an existing codebase can move over
-                    one file at a time.
+                    The CX compiler is an in-progress drop-in replacement for compilers like gcc and clang, and due to the backward compatibility of the language, any CX file can directly include a C header and call C functions without any wrappers or bindings.
                 </p>
                 <p>
-                    Going the other way, a <code>.cxh</code> entry file builds into an object file and a
-                    generated C header. C programs link against CX code with no bindings layer.
+                    The build system of the compiler is also design with first-class support for C interopability. Use '.cxh' files to have the compiler automatically generate C header artifacts that allow for C code to call into CX code.
                 </p>
             </>
         ),
@@ -189,8 +181,8 @@ const standing: {title: string; items: ReactNode[]}[] = [
         title: "Not there yet",
         items: [
             "Full C99 coverage",
-            "Safe functions and contracts, both in progress",
-            "Stable template syntax; type bounds are planned",
+            "Safe functions and contracts",
+            "Lifetime tracking",
             "Stability guarantees between releases",
         ],
     },
@@ -314,9 +306,7 @@ function Hero() {
                         Low-level control for safe, traceable, and performant systems.
                     </Heading>
                     <p className={styles.lede}>
-                        CX is an experimental systems language built as a superset of C. There are no
-                        implicit destructors and no hidden control flow: every resource you acquire is
-                        released in code you can read, and the compiler checks that you did.
+                        CX is an experimental systems language taking an alternative approach to modernizing C. All code is explicit, every reference is easily traced to its definition, and the compiler provides safety measures you can gradually adopt to ensure your codebase does what you expect.
                     </p>
                     <Install />
                     <div className={styles.actions}>
@@ -386,9 +376,6 @@ function Standing() {
                     CX is a research preview. The compiler builds working programs, but the language and
                     standard library are still changing.
                 </p>
-                <Link className={styles.more} to="/docs/getting-started/status">
-                    Full project status →
-                </Link>
             </div>
             <div className={styles.standing}>
                 {standing.map(({title, items}) => (
