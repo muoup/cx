@@ -1,5 +1,6 @@
 ---
 title: Comptime and Staged Expressions
+description: "Compile-time functions and staged expressions that emit typed runtime code."
 ---
 
 # Comptime and Staged Expressions

@@ -13,19 +13,26 @@ const cxKeywordWords = [
     "expr",
     "extern",
     "for",
+    "goto",
     "if",
     "import",
+    "is",
     "match",
     "move",
     "public",
     "return",
     "safe",
+    "sizeof",
     "static",
     "struct",
     "switch",
+    "then",
+    "typedef",
     "union",
     "unsafe",
+    "where",
     "while",
+    "yield",
 ];
 
 const cxKeywords = new Set(cxKeywordWords);
@@ -36,8 +43,6 @@ const cxTypeWords = [
     "char",
     "f32",
     "f64",
-    "fd",
-    "file",
     "i8",
     "i16",
     "i32",
@@ -54,9 +59,7 @@ const cxTypeWords = [
     "void",
 ];
 
-const cxTypes = new Set(cxTypeWords);
-
-const cxConstants = new Set(["AF_INET", "SOCK_STREAM"]);
+const cxConstantWords = ["false", "true", "NULL"];
 
 function regexAlternatives(values) {
     return values
@@ -64,19 +67,26 @@ function regexAlternatives(values) {
         .join("|");
 }
 
+const identifier = String.raw`[A-Za-z_][A-Za-z0-9_]*`;
+const keywordPattern = String.raw`\b(?:${regexAlternatives(cxKeywordWords)})\b`;
+
 const cxTokenPattern = new RegExp(
     [
         String.raw`//[^\r\n]*`,
         String.raw`/\*[\s\S]*?\*/`,
         String.raw`"(?:\\.|[^"\\])*"`,
         String.raw`'(?:\\.|[^'\\])*'`,
-        String.raw`@[A-Za-z_][A-Za-z0-9_]*`,
-        String.raw`\b(?:${regexAlternatives(cxKeywordWords)})\b`,
+        String.raw`@${identifier}`,
+        String.raw`\|>|<\|`,
+        keywordPattern,
         String.raw`\b(?:${regexAlternatives(cxTypeWords)})\b`,
-        String.raw`\b(?:std::[A-Za-z_][A-Za-z0-9_:]*|AF_INET|SOCK_STREAM)\b`,
+        String.raw`\b(?:${regexAlternatives(cxConstantWords)})\b`,
         String.raw`\b(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)\b`,
+        String.raw`\b[A-Z][A-Z0-9_]+\b`,
         String.raw`\b[A-Z][A-Za-z0-9_]*\b`,
-        String.raw`[A-Za-z_][A-Za-z0-9_]*(?=\s*(?:<[^>\r\n]*>)?\s*\()`,
+        // The name after struct/enum/union, or one followed by a declared name: `tcp_stream client`, `span<u8> buf`, `char* data`.
+        String.raw`(?<=\b(?:struct|enum|union)\s+)${identifier}`,
+        String.raw`\b${identifier}(?=(?:<[^;(){}=\r\n]*>)?[*&]*[ \t]+(?!${keywordPattern})[A-Za-z_])`,
     ].join("|"),
     "g",
 );
@@ -94,19 +104,19 @@ function cxTokenKind(token) {
         return "number";
     }
 
+    if (token === "|>" || token === "<|") {
+        return "operator";
+    }
+
     if (token.startsWith("@") || cxKeywords.has(token)) {
         return "keyword";
     }
 
-    if (cxTypes.has(token) || /^[A-Z][A-Za-z0-9_]*$/.test(token)) {
-        return "type";
-    }
-
-    if (token.startsWith("std::") || cxConstants.has(token)) {
+    if (cxConstantWords.includes(token) || /^[A-Z][A-Z0-9_]+$/.test(token)) {
         return "constant";
     }
 
-    return "function";
+    return "type";
 }
 
 export function tokenizeCx(source) {

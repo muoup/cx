@@ -50,13 +50,13 @@
     {
       "name": "get",
       "owner": "span",
-      "signature": "std::opt<T&> span::get<T>(span<T>& this, usize index)",
+      "signature": "std::optional::opt<T&> span::get<T>(span<T>& this, usize index)",
       "description": "Returns an optional reference to an in-range element.",
       "parameters": [
         {"name": "this", "type": "span<T>&", "description": "The span to index."},
         {"name": "index", "type": "usize", "description": "The element index."}
       ],
-      "returnType": "std::opt<T&>",
+      "returnType": "std::optional::opt<T&>",
       "returnDescription": "Some element reference when the index is valid."
     },
     {
@@ -74,23 +74,23 @@
     {
       "name": "first",
       "owner": "span",
-      "signature": "std::opt<T&> span::first<T>(span<T>& this)",
+      "signature": "std::optional::opt<T&> span::first<T>(span<T>& this)",
       "description": "Returns an optional reference to the first element.",
       "parameters": [
         {"name": "this", "type": "span<T>&", "description": "The span to inspect."}
       ],
-      "returnType": "std::opt<T&>",
+      "returnType": "std::optional::opt<T&>",
       "returnDescription": "Some first element reference when the span is non-empty."
     },
     {
       "name": "last",
       "owner": "span",
-      "signature": "std::opt<T&> span::last<T>(span<T>& this)",
+      "signature": "std::optional::opt<T&> span::last<T>(span<T>& this)",
       "description": "Returns an optional reference to the last element.",
       "parameters": [
         {"name": "this", "type": "span<T>&", "description": "The span to inspect."}
       ],
-      "returnType": "std::opt<T&>",
+      "returnType": "std::optional::opt<T&>",
       "returnDescription": "Some last element reference when the span is non-empty."
     }
   ]

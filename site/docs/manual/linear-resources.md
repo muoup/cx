@@ -1,5 +1,6 @@
 ---
 title: Linear Resources
+description: "@nodrop types, deferred cleanup, and consuming values exactly once."
 ---
 
 # Linear Resources
@@ -52,7 +53,7 @@ void string::drop(string this) {
 }
 
 void use_string(string s) {
-    puts(s.data);
+    std::print(s |> std::string::as_str());
     move s |> string::drop();
 }
 ```

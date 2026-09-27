@@ -41,13 +41,13 @@
     {
       "name": "ipv4",
       "owner": "endpoint",
-      "signature": "std::opt<endpoint> endpoint::ipv4(const _str& address, u16 port)",
+      "signature": "std::optional::opt<endpoint> endpoint::ipv4(const _str& address, u16 port)",
       "description": "Builds an IPv4 endpoint from a dotted address and port.",
       "parameters": [
         {"name": "address", "type": "const _str&", "description": "The dotted IPv4 address."},
         {"name": "port", "type": "u16", "description": "The socket port."}
       ],
-      "returnType": "std::opt<endpoint>",
+      "returnType": "std::optional::opt<endpoint>",
       "returnDescription": "Some endpoint when the address is valid."
     }
   ]
