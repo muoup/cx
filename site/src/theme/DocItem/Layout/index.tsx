@@ -4,7 +4,7 @@ import type LayoutType from "@theme/DocItem/Layout";
 import type {WrapperProps} from "@docusaurus/types";
 import {useDoc, useDocsSidebar} from "@docusaurus/plugin-content-docs/client";
 
-import {chapterLabel} from "../../../lib/chapters";
+import {chapterLabel, sidebarLinks} from "../../../lib/chapters";
 import {DocDescriptionContext} from "../../../lib/doc-description";
 
 type Props = WrapperProps<typeof LayoutType>;
@@ -13,10 +13,8 @@ type Props = WrapperProps<typeof LayoutType>;
 function useChapter() {
     const {metadata} = useDoc();
     const sidebar = useDocsSidebar();
-    const item = sidebar?.items.find(
-        (entry) => entry.type === "link" && entry.docId === metadata.id,
-    );
-    return item?.type === "link" ? chapterLabel(item.label)?.number : undefined;
+    const item = sidebarLinks(sidebar?.items ?? []).find((entry) => entry.docId === metadata.id);
+    return item && chapterLabel(item.label)?.number;
 }
 
 export default function LayoutWrapper(props: Props): ReactNode {

@@ -402,8 +402,9 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 }
 
 /* Sidebar */
+/* The theme leaves the right side to the scrollbar gutter, which is empty with overlay scrollbars */
 .theme-doc-sidebar-menu {
-  padding-top: 12px;
+  padding: 12px 0.5rem 0 0;
 }
 
 .menu {
@@ -415,11 +416,48 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   line-height: 1.4;
 }
 
-.menu__link--active:not(.menu__link--sublist) {
+/* The sidebar is narrow, so a category and its items share one square band instead of indenting; a second level
+   lifts further toward the page */
+.menu__list-item-collapsible,
+.menu__list .menu__list {
+  background: var(--cx-band);
+}
+
+.menu__list .menu__list :where(.menu__list-item-collapsible, .menu__list) {
+  background: color-mix(in srgb, var(--cx-band) 65%, var(--cx-sheet));
+}
+
+.menu__list .menu__list {
+  margin-top: 0;
+  padding: 0 0 4px;
+}
+
+.menu__list .menu__list .menu__link {
+  padding-left: 20px;
+}
+
+.menu__list .menu__list .menu__list .menu__link {
+  padding-left: 28px;
+}
+
+.menu__list-item-collapsible:hover,
+.menu__list .menu__list .menu__link:hover:not([aria-current="page"]) {
+  background: color-mix(in srgb, var(--cx-band) 40%, var(--cx-sheet));
+}
+
+/* The theme keeps category links transparent, so a category's own page highlights its row */
+.menu__link[aria-current="page"],
+.menu .menu__list-item-collapsible--active,
+.menu .menu__list-item-collapsible--active:hover {
   background: var(--cx-sheet);
   box-shadow: inset 2px 0 0 var(--cx-moss);
   border-radius: 0 6px 6px 0;
   font-weight: 500;
+}
+
+.menu__list-item-collapsible,
+.menu__list .menu__list .menu__link {
+  border-radius: 0;
 }
 
 .menu__link[data-chapter] {
@@ -433,7 +471,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   font: 500 12.5px/1.65 var(--ifm-font-family-monospace);
 }
 
-.menu__link--active[data-chapter]::before {
+.menu__link[aria-current="page"][data-chapter]::before {
   color: var(--cx-moss);
 }
 
@@ -488,8 +526,9 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   padding-left: 0.75rem;
 }
 
-/* Breadcrumbs only earn their space in nested sections */
-.theme-doc-breadcrumbs:not(:has(.breadcrumbs__item:nth-child(3))) {
+/* Breadcrumbs only earn their space in nested sections, and a chapter already names itself */
+.theme-doc-breadcrumbs:not(:has(.breadcrumbs__item:nth-child(3))),
+.cx-chapter .theme-doc-breadcrumbs {
   display: none;
 }
 

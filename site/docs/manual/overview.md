@@ -1,6 +1,5 @@
 ---
 title: Language Overview
-description: "How the manual is organized, and what to know about C before reading it."
 ---
 
 import ChapterList from "@site/src/components/ChapterList";

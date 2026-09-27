@@ -82,47 +82,37 @@ function renderParameters(parameters = []) {
     );
 }
 
-function renderFields(fields = []) {
-    if (fields.length === 0) {
-        return "No public fields are listed.";
-    }
-
-    return renderTable(
-        ["Name", "Type", "Description"],
-        fields.map((field) => [inlineCode(field.name), inlineCode(field.type), field.description]),
-    );
+function fieldDeclaration({name, type}) {
+    const array = type.match(/^(.*?)(\[\d*\])$/);
+    return array ? `${array[1]} ${name}${array[2]}` : `${type} ${name}`;
 }
 
-function renderVariants(variants = []) {
-    if (variants.length === 0) {
-        return "No variants are listed.";
-    }
-
-    return renderTable(
-        ["Variant", "Payload", "Description"],
-        variants.map((variant) => [
-            inlineCode(variant.name),
-            variant.payloadType ? inlineCode(variant.payloadType) : "",
+// Types are shown as their CX declaration, with each member's description as a trailing comment.
+function renderDeclaration(type) {
+    const attributes = type.attributes?.length ? ` : ${type.attributes.join(", ")}` : "";
+    const variants = type.variants ?? [];
+    const members = [
+        ...(type.fields ?? []).map((field) => [`${fieldDeclaration(field)};`, field.description]),
+        ...variants.map((variant, index) => [
+            `${variant.name}${variant.payloadType ? ` :: ${variant.payloadType}` : ""}${index < variants.length - 1 ? "," : ""}`,
             variant.description,
         ]),
+    ];
+    const width = Math.max(0, ...members.map(([code]) => code.length));
+    const body = members.map(([code, description]) =>
+        description ? `    ${code.padEnd(width)}  // ${description}` : `    ${code}`,
     );
+
+    return ["~~~cx", `${type.name}${attributes} {`, ...body, "};", "~~~"].join("\n");
 }
 
 function renderType(type) {
-    const attributes = type.attributes?.length
-        ? `\n\nAttributes: ${type.attributes.map(inlineCode).join(", ")}.`
-        : "";
-    const fields = type.fields?.length
-        ? `\n\n#### Fields\n\n${renderFields(type.fields)}`
-        : "";
-    const variants = type.variants?.length
-        ? `\n\n#### Variants\n\n${renderVariants(type.variants)}`
-        : "";
-
     return [
         `### <span className="cx-stdlib-type-name"><code>${htmlText(type.name)}</code></span>`,
         "",
-        `${type.description}${attributes}${fields}${variants}`,
+        type.description,
+        "",
+        renderDeclaration(type),
     ].join("\n");
 }
 

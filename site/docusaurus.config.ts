@@ -47,6 +47,18 @@ const config: Config = {
       {
         docs: {
           sidebarPath: './sidebars.ts',
+          sidebarCollapsible: false,
+          // A generated directory's index page becomes the parent of the pages beside it
+          async sidebarItemsGenerator({defaultSidebarItemsGenerator, ...args}) {
+            const items = await defaultSidebarItemsGenerator(args);
+            const id = `${args.item.dirName}/index`;
+            const index = args.docs.find((doc) => doc.id === id);
+            if (!index) {
+              return items;
+            }
+            const rest = items.filter((item) => !(item.type === 'doc' && item.id === id));
+            return [{type: 'category', label: index.title, link: {type: 'doc', id}, items: rest}];
+          },
           editUrl:
             'https://github.com/muoup/cx/tree/docs/site/',
         },
