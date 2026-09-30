@@ -1,12 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    constant::HMIRConstant,
     def::HMIRDefRef,
-    ids::{HMIRNominalID, HMIRTypeID},
+    expr::HMIRConstant,
     ty::{
-        desc::HMIRTypeDesc,
-        nominal::{HMIRAggregateKind, HMIRMoveSemantics, HMIRNominalDesc},
+        desc::{HMIRTypeDesc, HMIRTypeID},
+        nominal::{HMIRAggregateKind, HMIRMoveSemantics, HMIRNominalDesc, HMIRNominalID},
     },
 };
 

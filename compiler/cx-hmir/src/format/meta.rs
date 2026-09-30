@@ -1,8 +1,8 @@
 use std::fmt::{self, Formatter};
 
-use crate::{
-    expr::{meta::HMIRMetaKind, type_op::HMIRTypeOp},
-    ids::HMIRMetaID,
+use crate::expr::{
+    meta::{HMIRMetaID, HMIRMetaKind},
+    type_op::HMIRTypeOp,
 };
 
 use super::{
@@ -18,11 +18,7 @@ impl BodyPrinter<'_> {
             HMIRMetaKind::Def(def) => write_def_ref(f, self.unit(), def),
             HMIRMetaKind::Hole(hole) => write!(f, "{hole}"),
 
-            HMIRMetaKind::Intrinsic(intrinsic) => {
-                self.intrinsic(f, intrinsic, depth, |printer, f, value, depth| {
-                    printer.meta(f, *value, depth)
-                })
-            }
+            HMIRMetaKind::Intrinsic(intrinsic) => self.meta_intrinsic(f, intrinsic, depth),
             HMIRMetaKind::TypeOp(op) => self.type_op(f, op, depth),
             HMIRMetaKind::Binary { op, lhs, rhs } => {
                 write!(f, "{}(", op.path())?;
@@ -98,8 +94,6 @@ impl BodyPrinter<'_> {
                 f.write_str(") ")?;
                 self.meta(f, *body, depth)
             }
-            HMIRMetaKind::Break => f.write_str("break"),
-            HMIRMetaKind::Continue => f.write_str("continue"),
             HMIRMetaKind::Return(value) => {
                 f.write_str("return")?;
                 if let Some(value) = value {
@@ -121,21 +115,22 @@ impl BodyPrinter<'_> {
                 f.write_str(" ")?;
                 self.obj(f, *body, depth)
             }
-            HMIRMetaKind::CompileError(message) => {
-                f.write_str("@compile_error(")?;
-                self.meta(f, *message, depth)?;
-                f.write_str(")")
-            }
 
             HMIRMetaKind::Error => f.write_str("<error>"),
         }
     }
 
-    fn is_structured_meta(&self, id: HMIRMetaID) -> bool {
-        matches!(
-            self.body().meta(id).kind(),
-            HMIRMetaKind::Block { .. } | HMIRMetaKind::If { .. } | HMIRMetaKind::While { .. }
-        )
+    pub(super) fn is_structured_meta(&self, id: HMIRMetaID) -> bool {
+        match self.body().meta(id).kind() {
+            HMIRMetaKind::Block { .. } => true,
+            HMIRMetaKind::If {
+                then_branch,
+                else_branch,
+                ..
+            } => self.is_structured_meta(else_branch.unwrap_or(*then_branch)),
+            HMIRMetaKind::While { body, .. } => self.is_structured_meta(*body),
+            _ => false,
+        }
     }
 
     fn type_op(&self, f: &mut Formatter<'_>, op: &HMIRTypeOp, depth: usize) -> fmt::Result {
@@ -181,12 +176,12 @@ impl BodyPrinter<'_> {
             | HMIRTypeOp::IsFloat(ty)
             | HMIRTypeOp::IsPointer(ty)
             | HMIRTypeOp::IsSigned(ty) => {
-                write!(f, "@{}(", op.path())?;
+                write!(f, "{}(", op.path())?;
                 self.meta(f, *ty, depth)?;
                 f.write_str(")")
             }
             HMIRTypeOp::Equal(lhs, rhs) => {
-                write!(f, "@{}(", op.path())?;
+                write!(f, "{}(", op.path())?;
                 self.list(f, &[*lhs, *rhs], depth, Self::meta)?;
                 f.write_str(")")
             }

@@ -1,4 +1,4 @@
-use crate::ids::HMIRMetaID;
+use crate::expr::meta::HMIRMetaID;
 
 #[derive(Debug, Clone)]
 pub enum HMIRTypeOp {

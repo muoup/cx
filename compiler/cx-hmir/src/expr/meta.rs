@@ -1,15 +1,19 @@
 use cx_tokens::TokenRange;
+use cx_util::dense_id;
 
 use crate::{
-    HMIRMetaIntrinsic,
-    constant::HMIRConstant,
+    binding::{HMIRHoleID, HMIRMetaLocalID, HMIRObjLocalID},
     def::HMIRDefRef,
     expr::{
+        HMIRConstant,
+        intrinsic::HMIRMetaIntrinsic,
+        obj::HMIRObjID,
         operator::{HMIRBinaryOp, HMIRCoerceMode, HMIRUnaryOp},
         type_op::HMIRTypeOp,
     },
-    ids::{HMIRHoleID, HMIRMetaID, HMIRMetaLocalID, HMIRObjID, HMIRObjLocalID},
 };
+
+dense_id!(HMIRMetaID, "m");
 
 #[derive(Debug, Clone)]
 pub enum HMIRMetaKind {
@@ -63,16 +67,12 @@ pub enum HMIRMetaKind {
         condition: HMIRMetaID,
         body: HMIRMetaID,
     },
-    Break,
-    Continue,
     Return(Option<HMIRMetaID>),
 
     Quote {
         params: Vec<HMIRObjLocalID>,
         body: HMIRObjID,
     },
-    CompileError(HMIRMetaID),
-
     Error,
 }
 

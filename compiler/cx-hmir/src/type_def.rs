@@ -1,8 +1,9 @@
 use cx_util::identifier::CXIdent;
 
 use crate::{
+    binding::HMIRMetaLocalID,
     body::HMIRBody,
-    ids::{HMIRMetaID, HMIRMetaLocalID},
+    expr::meta::HMIRMetaID,
     ty::nominal::{HMIRAggregateKind, HMIRMoveSemantics},
 };
 

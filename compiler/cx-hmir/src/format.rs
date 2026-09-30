@@ -1,4 +1,5 @@
 mod body;
+mod intrinsic;
 mod meta;
 mod obj;
 mod ty;
@@ -8,11 +9,10 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    def::{HMIRDef, HMIRDefKind},
+    def::{HMIRDef, HMIRDefKind, HMIRGlobal},
     function::{HMIRFunction, HMIRFunctionRoot, HMIRParam},
-    global::HMIRGlobal,
-    type_def::{HMIRTypeDef, HMIRTypeDefKind},
     ty::nominal::{HMIRAggregateKind, HMIRMoveSemantics},
+    type_def::{HMIRTypeDef, HMIRTypeDefKind},
     unit::HMIRUnit,
 };
 
@@ -69,7 +69,11 @@ fn write_function(
         }
     }
     if signature.is_variadic() {
-        f.write_str(if signature.params().is_empty() { "..." } else { ", ..." })?;
+        f.write_str(if signature.params().is_empty() {
+            "..."
+        } else {
+            ", ..."
+        })?;
     }
     f.write_str(") -> ")?;
     printer.meta(f, signature.return_type(), 0)?;
@@ -118,7 +122,11 @@ fn write_global(
     let printer = BodyPrinter::new(unit, global.body());
 
     write_linkage(f, global.linkage())?;
-    f.write_str(if global.is_mutable() { "global mut" } else { "global" })?;
+    f.write_str(if global.is_mutable() {
+        "global mut"
+    } else {
+        "global"
+    })?;
     write!(f, " @{}: ", def.name())?;
     printer.meta(f, global.ty(), 0)?;
     if let Some(initializer) = global.initializer() {

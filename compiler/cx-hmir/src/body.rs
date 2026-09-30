@@ -1,7 +1,9 @@
 use crate::{
-    binding::{HMIRHole, HMIRLocal},
-    expr::{meta::HMIRMetaExpr, obj::HMIRObjExpr},
-    ids::{HMIRHoleID, HMIRMetaID, HMIRMetaLocalID, HMIRObjID, HMIRObjLocalID},
+    binding::{HMIRHole, HMIRHoleID, HMIRLocal, HMIRMetaLocalID, HMIRObjLocalID},
+    expr::{
+        meta::{HMIRMetaExpr, HMIRMetaID},
+        obj::{HMIRObjExpr, HMIRObjID},
+    },
 };
 
 #[derive(Debug, Clone, Default)]

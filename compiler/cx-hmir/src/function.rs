@@ -1,8 +1,9 @@
 use cx_util::linkage::LinkageMode;
 
 use crate::{
+    binding::{HMIRMetaLocalID, HMIRObjLocalID},
     body::HMIRBody,
-    ids::{HMIRMetaID, HMIRMetaLocalID, HMIRObjID, HMIRObjLocalID},
+    expr::{meta::HMIRMetaID, obj::HMIRObjID},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

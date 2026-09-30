@@ -1,10 +1,9 @@
 use std::fmt::{self, Formatter};
 
-use cx_intrinsics::{Intrinsic, IntrinsicArg};
-
 use crate::{
+    binding::{HMIRMetaLocalID, HMIRObjLocalID},
     body::HMIRBody,
-    ids::{HMIRMetaID, HMIRMetaLocalID, HMIRObjLocalID},
+    expr::HMIRExprID,
     unit::HMIRUnit,
 };
 
@@ -106,25 +105,18 @@ impl<'a> BodyPrinter<'a> {
         f.write_str("}")
     }
 
-    pub(super) fn intrinsic<V>(
+    pub(super) fn staged(
         &self,
         f: &mut Formatter<'_>,
-        intrinsic: &Intrinsic<V, HMIRMetaID>,
+        id: HMIRExprID,
         depth: usize,
-        value: impl Fn(&Self, &mut Formatter<'_>, &V, usize) -> fmt::Result,
     ) -> fmt::Result {
-        write!(f, "@intrinsic.{}(", intrinsic.path())?;
-        for (index, arg) in intrinsic.args().into_iter().enumerate() {
-            if index != 0 {
-                f.write_str(", ")?;
+        match id {
+            HMIRExprID::Meta(meta) => {
+                f.write_str("static ")?;
+                self.meta(f, meta, depth)
             }
-            match arg {
-                IntrinsicArg::Value(operand) => value(self, f, operand, depth)?,
-                IntrinsicArg::Type(ty) => self.meta(f, *ty, depth)?,
-                IntrinsicArg::Flag(flag) => write!(f, "{flag}")?,
-                IntrinsicArg::Message(message) => write!(f, "{message:?}")?,
-            }
+            HMIRExprID::Obj(obj) => self.obj(f, obj, depth),
         }
-        f.write_str(")")
     }
 }

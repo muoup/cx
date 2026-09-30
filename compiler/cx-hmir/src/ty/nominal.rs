@@ -1,6 +1,8 @@
-use cx_util::identifier::CXIdent;
+use cx_util::{dense_id, identifier::CXIdent};
 
-use crate::{constant::HMIRConstant, def::HMIRDefRef, ids::HMIRTypeID};
+use crate::{def::HMIRDefRef, expr::HMIRConstant, ty::desc::HMIRTypeID};
+
+dense_id!(HMIRNominalID, "n");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HMIRAggregateKind {

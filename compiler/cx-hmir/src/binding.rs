@@ -1,7 +1,11 @@
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
+use cx_util::{dense_id, identifier::CXIdent};
 
-use crate::ids::HMIRMetaID;
+use crate::expr::meta::HMIRMetaID;
+
+dense_id!(HMIRMetaLocalID, "$");
+dense_id!(HMIRObjLocalID, "%");
+dense_id!(HMIRHoleID, "?");
 
 #[derive(Debug, Clone)]
 pub struct HMIRLocal {

@@ -28,6 +28,10 @@ pub enum HMIRUnaryOp {
     Neg,
     LNot,
     BNot,
+    PreIncrement,
+    PreDecrement,
+    PostIncrement,
+    PostDecrement,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,6 +73,10 @@ impl HMIRUnaryOp {
             Self::Neg => "op.neg",
             Self::LNot => "op.l_not",
             Self::BNot => "op.b_not",
+            Self::PreIncrement => "op.pre_inc",
+            Self::PreDecrement => "op.pre_dec",
+            Self::PostIncrement => "op.post_inc",
+            Self::PostDecrement => "op.post_dec",
         }
     }
 }

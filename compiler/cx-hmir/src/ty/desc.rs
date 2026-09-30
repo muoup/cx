@@ -1,4 +1,8 @@
-use crate::ids::{HMIRNominalID, HMIRTypeID};
+use cx_util::dense_id;
+
+use crate::ty::nominal::HMIRNominalID;
+
+dense_id!(HMIRTypeID, "t");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum HMIRIntWidth {

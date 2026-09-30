@@ -1,10 +1,9 @@
 use std::fmt::{self, Formatter};
 
 use crate::{
-    constant::HMIRConstant,
     def::HMIRDefRef,
-    ids::HMIRTypeID,
-    ty::desc::HMIRTypeDesc,
+    expr::HMIRConstant,
+    ty::desc::{HMIRTypeDesc, HMIRTypeID},
     unit::HMIRUnit,
 };
 
@@ -73,7 +72,11 @@ pub(super) fn write_type(f: &mut Formatter<'_>, unit: &HMIRUnit, id: HMIRTypeID)
             f.write_str("fn(")?;
             write_type_list(f, unit, signature.params())?;
             if signature.is_variadic() {
-                f.write_str(if signature.params().is_empty() { "..." } else { ", ..." })?;
+                f.write_str(if signature.params().is_empty() {
+                    "..."
+                } else {
+                    ", ..."
+                })?;
             }
             f.write_str(") -> ")?;
             write_type(f, unit, signature.ret())

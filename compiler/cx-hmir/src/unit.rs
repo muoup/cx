@@ -1,6 +1,9 @@
 use cx_namespace::module::NamespacePath;
 
-use crate::{def::HMIRDef, ids::HMIRDefID, ty::interner::HMIRTypeInterner};
+use crate::{
+    def::{HMIRDef, HMIRDefID},
+    ty::interner::HMIRTypeInterner,
+};
 
 #[derive(Debug, Clone)]
 pub struct HMIRUnit {

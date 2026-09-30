@@ -1,17 +1,19 @@
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
+use cx_util::{dense_id, identifier::CXIdent};
 
 use crate::{
-    HMIRObjIntrinsic,
-    constant::HMIRConstant,
+    binding::HMIRObjLocalID,
     def::HMIRDefRef,
     expr::{
-        aggregate::HMIRInitializer,
+        HMIRConstant, HMIRExprID,
+        aggregate::{HMIRInitializer, HMIRPattern},
+        intrinsic::HMIRObjIntrinsic,
+        meta::HMIRMetaID,
         operator::{HMIRBinaryOp, HMIRCoerceMode, HMIRUnaryOp},
-        pattern::HMIRPattern,
     },
-    ids::{HMIRMetaID, HMIRMetaLocalID, HMIRObjID, HMIRObjLocalID},
 };
+
+dense_id!(HMIRObjID, "o");
 
 #[derive(Debug, Clone)]
 pub enum HMIRObjKind {
@@ -38,11 +40,6 @@ pub enum HMIRObjKind {
         op: HMIRUnaryOp,
         operand: HMIRObjID,
     },
-    Increment {
-        target: HMIRObjID,
-        amount: i8,
-        postfix: bool,
-    },
     Coerce {
         mode: HMIRCoerceMode,
         from: HMIRMetaID,
@@ -62,54 +59,10 @@ pub enum HMIRObjKind {
         local: HMIRObjLocalID,
         value: HMIRObjID,
     },
-    StaticLet {
-        local: HMIRMetaLocalID,
-        initializer: HMIRMetaID,
-    },
-    Load(HMIRObjID),
     Move(HMIRObjLocalID),
-    Assign {
-        target: HMIRObjID,
-        value: HMIRObjID,
-    },
-    AddressOf(HMIRObjID),
-    Dereference(HMIRObjID),
-
-    Member {
-        base: HMIRObjID,
-        name: CXIdent,
-    },
-    Field {
-        base: HMIRObjID,
-        index: usize,
-        aggregate: HMIRMetaID,
-    },
-    Index {
-        base: HMIRObjID,
-        index: HMIRObjID,
-        element: HMIRMetaID,
-    },
     Initialize {
         ty: HMIRMetaID,
         initializer: HMIRInitializer,
-    },
-    Tag {
-        value: HMIRObjID,
-        sum: HMIRMetaID,
-    },
-    SetVariant {
-        target: HMIRObjID,
-        index: usize,
-        value: HMIRObjID,
-        sum: HMIRMetaID,
-    },
-    Is {
-        value: HMIRObjID,
-        pattern: HMIRPattern,
-    },
-    Unpack {
-        value: HMIRObjID,
-        bindings: Vec<(usize, HMIRObjLocalID)>,
     },
 
     Call {
@@ -123,54 +76,41 @@ pub enum HMIRObjKind {
     },
 
     Block {
-        statements: Vec<HMIRObjID>,
+        statements: Vec<HMIRExprID>,
         tail: Option<HMIRObjID>,
     },
     If {
-        condition: HMIRObjID,
-        then_branch: HMIRObjID,
-        else_branch: Option<HMIRObjID>,
-    },
-    StaticIf {
-        condition: HMIRMetaID,
+        condition: HMIRExprID,
         then_branch: HMIRObjID,
         else_branch: Option<HMIRObjID>,
     },
     While {
-        condition: HMIRObjID,
+        condition: HMIRExprID,
         body: HMIRObjID,
         pre_eval: bool,
     },
     For {
-        init: HMIRObjID,
-        condition: HMIRObjID,
-        increment: HMIRObjID,
+        init: HMIRExprID,
+        condition: HMIRExprID,
+        increment: HMIRExprID,
         body: HMIRObjID,
     },
     Switch {
-        condition: HMIRObjID,
+        condition: HMIRExprID,
         cases: Vec<(HMIRMetaID, HMIRObjID)>,
         default: Option<HMIRObjID>,
     },
     Match {
-        scrutinee: HMIRObjID,
+        scrutinee: HMIRExprID,
         subject: HMIRObjLocalID,
         arms: Vec<(HMIRPattern, HMIRObjID)>,
     },
-    Break,
-    Continue,
-    Goto(CXIdent),
     Label {
         name: CXIdent,
         body: HMIRObjID,
     },
     Return(Option<HMIRObjID>),
     Yield(Option<HMIRObjID>),
-    Unreachable,
-
-    Defer(HMIRObjID),
-    Leak(HMIRObjID),
-    Unsafe(HMIRObjID),
 
     Error,
 }
