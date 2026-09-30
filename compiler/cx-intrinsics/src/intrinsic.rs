@@ -1,12 +1,10 @@
-use crate::{
-    arg::IntrinsicArg,
-    float::FloatIntrinsic,
-    int::IntIntrinsic,
-    internal::InternalIntrinsic,
-    mapper::{ClosureMapper, IntrinsicMapper},
-    pointer::PointerIntrinsic,
-    va::VAIntrinsic,
-};
+use crate::{intrinsic::{float::FloatIntrinsic, int::IntIntrinsic, internal::InternalIntrinsic, pointer::PointerIntrinsic, va::VAIntrinsic}, mapper::{ClosureMapper, IntrinsicMapper}};
+
+pub mod float;
+pub mod int;
+pub mod internal;
+pub mod pointer;
+pub mod va;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Intrinsic<V, T> {
@@ -15,6 +13,14 @@ pub enum Intrinsic<V, T> {
     Pointer(PointerIntrinsic<V, T>),
     Internal(InternalIntrinsic<V, T>),
     VA(VAIntrinsic<V, T>),
+}
+
+#[derive(Debug)]
+pub enum IntrinsicArg<'a, V, T> {
+    Value(&'a V),
+    Type(&'a T),
+    Bool(bool),
+    String(&'a str),
 }
 
 impl<V, T> Intrinsic<V, T> {

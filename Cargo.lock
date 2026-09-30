@@ -362,6 +362,9 @@ dependencies = [
 [[package]]
 name = "cx-intrinsics"
 version = "0.1.0"
+dependencies = [
+ "cx-util",
+]
 
 [[package]]
 name = "cx-lexer"

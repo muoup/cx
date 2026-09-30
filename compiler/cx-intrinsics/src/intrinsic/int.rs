@@ -146,7 +146,7 @@ impl<V, T> IntIntrinsic<V, T> {
             } => vec![
                 IntrinsicArg::Value(value),
                 IntrinsicArg::Type(target),
-                IntrinsicArg::Flag(*sign_extend),
+                IntrinsicArg::Bool(*sign_extend),
             ],
         }
     }

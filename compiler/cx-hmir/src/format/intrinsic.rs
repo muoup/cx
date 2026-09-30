@@ -8,7 +8,7 @@ use crate::{
     expr::{
         aggregate::HMIRPattern,
         intrinsic::{
-            HMIRAccessIntrinsic, HMIRControlIntrinsic, HMIRMemoryIntrinsic, HMIRMetaIntrinsic,
+            HMIRControlIntrinsic, HMIRMemoryIntrinsic, HMIRMetaIntrinsic,
             HMIRObjIntrinsic, HMIRVariantIntrinsic,
         },
         meta::HMIRMetaID,
@@ -37,56 +37,8 @@ impl BodyPrinter<'_> {
         depth: usize,
     ) -> fmt::Result {
         let args = match intrinsic {
-            HMIRObjIntrinsic::Native(native) => native_args(native, |value| Arg::Obj(*value)),
-            HMIRObjIntrinsic::Memory(memory) => match memory {
-                HMIRMemoryIntrinsic::Load(place) => vec![Arg::Obj(*place)],
-                HMIRMemoryIntrinsic::Store { target, value } => {
-                    vec![Arg::Obj(*target), Arg::Obj(*value)]
-                }
-            },
-            HMIRObjIntrinsic::Access(access) => match access {
-                HMIRAccessIntrinsic::Member { base, name } => {
-                    vec![Arg::Obj(*base), Arg::Name(name)]
-                }
-                HMIRAccessIntrinsic::Field {
-                    base,
-                    index,
-                    aggregate,
-                } => vec![Arg::Obj(*base), Arg::Index(*index), Arg::Meta(*aggregate)],
-                HMIRAccessIntrinsic::Index {
-                    base,
-                    index,
-                    element,
-                } => vec![Arg::Obj(*base), Arg::Obj(*index), Arg::Meta(*element)],
-                HMIRAccessIntrinsic::Unpack { value, bindings } => {
-                    std::iter::once(Arg::Obj(*value))
-                        .chain(
-                            bindings
-                                .iter()
-                                .map(|(field, local)| Arg::Binding(*field, *local)),
-                        )
-                        .collect()
-                }
-            },
-            HMIRObjIntrinsic::Variant(variant) => match variant {
-                HMIRVariantIntrinsic::Tag { value, sum } => vec![Arg::Obj(*value), Arg::Meta(*sum)],
-                HMIRVariantIntrinsic::Set {
-                    target,
-                    index,
-                    value,
-                    sum,
-                } => vec![
-                    Arg::Obj(*target),
-                    Arg::Index(*index),
-                    Arg::Obj(*value),
-                    Arg::Meta(*sum),
-                ],
-                HMIRVariantIntrinsic::Is { value, pattern } => {
-                    vec![Arg::Obj(*value), Arg::Pattern(pattern)]
-                }
-            },
+            HMIRObjIntrinsic::TypedOp(native) => native_args(native, |value| Arg::Obj(*value)),
             HMIRObjIntrinsic::Control(control) => match control {
-                HMIRControlIntrinsic::Branch(target) => vec![Arg::Meta(*target)],
                 HMIRControlIntrinsic::Defer(body)
                 | HMIRControlIntrinsic::Leak(body)
                 | HMIRControlIntrinsic::Unsafe(body) => vec![Arg::Obj(*body)],
@@ -156,8 +108,8 @@ fn native_args<'a, V>(
         .map(|arg| match arg {
             IntrinsicArg::Value(operand) => value(operand),
             IntrinsicArg::Type(ty) => Arg::Meta(*ty),
-            IntrinsicArg::Flag(flag) => Arg::Flag(flag),
-            IntrinsicArg::Message(message) => Arg::Message(message),
+            IntrinsicArg::Bool(flag) => Arg::Flag(flag),
+            IntrinsicArg::String(message) => Arg::Message(message),
         })
         .collect()
 }

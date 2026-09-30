@@ -1,8 +1,6 @@
 pub mod binding;
 pub mod body;
-pub mod def;
 pub mod expr;
-pub mod function;
 pub mod ty;
 pub mod type_def;
 pub mod unit;
@@ -13,13 +11,10 @@ pub use binding::{HMIRHole, HMIRHoleID, HMIRLocal, HMIRMetaLocalID, HMIRObjLocal
 pub use body::HMIRBody;
 pub use def::{HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRGlobal};
 pub use expr::aggregate::{HMIRInitializer, HMIRPattern};
-pub use expr::intrinsic::{
-    HMIRAccessIntrinsic, HMIRControlIntrinsic, HMIRMemoryIntrinsic, HMIRMetaIntrinsic,
-    HMIRObjIntrinsic, HMIRVariantIntrinsic,
-};
+pub use expr::intrinsic::{HMIRControlIntrinsic, HMIRObjIntrinsic};
 pub use expr::meta::{HMIRMetaExpr, HMIRMetaID, HMIRMetaKind};
+pub use expr::native_op::{HMIRBinaryOp, HMIRCoerceMode, HMIRUnaryOp};
 pub use expr::obj::{HMIRObjExpr, HMIRObjID, HMIRObjKind};
-pub use expr::operator::{HMIRBinaryOp, HMIRCoerceMode, HMIRUnaryOp};
 pub use expr::type_op::HMIRTypeOp;
 pub use expr::{HMIRConstant, HMIRExprID};
 pub use function::{HMIRContract, HMIRFunction, HMIRFunctionRoot, HMIRParam, HMIRSignature};

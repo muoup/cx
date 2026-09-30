@@ -1,65 +1,36 @@
+use cx_intrinsics::Intrinsic;
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
 use crate::{
-    binding::HMIRObjLocalID,
-    def::HMIRDefRef,
-    expr::{
-        HMIRConstant, HMIRExprID,
-        aggregate::{HMIRInitializer, HMIRPattern},
-        intrinsic::HMIRObjIntrinsic,
-        meta::HMIRMetaID,
-        operator::{HMIRBinaryOp, HMIRCoerceMode, HMIRUnaryOp},
+    binding::HMIRObjLocalID, def::HMIRDefRef, expr::{
+        HMIRConstant, HMIRExprID, aggregate::{HMIRInitializer, HMIRPattern}, intrinsic::HMIRObjIntrinsic, meta::HMIRMetaID, native_op::HMIRNativeOp
     },
 };
 
 dense_id!(HMIRObjID, "o");
+
+pub type HMIRIntrinsic = Intrinsic<HMIRExprID, HMIRMetaID>;
 
 #[derive(Debug, Clone)]
 pub enum HMIRObjKind {
     Constant(HMIRConstant),
     Local(HMIRObjLocalID),
     Global(HMIRDefRef),
-    FunctionAddress {
-        function: HMIRMetaID,
-        statics: Vec<HMIRMetaID>,
-    },
+
+    Intrinsic(HMIRIntrinsic),
+    Native(HMIRNativeOp),
+    
     Lift(HMIRMetaID),
     Splice {
         quote: HMIRMetaID,
         args: Vec<HMIRObjID>,
     },
 
-    Intrinsic(HMIRObjIntrinsic),
-    Binary {
-        op: HMIRBinaryOp,
-        lhs: HMIRObjID,
-        rhs: HMIRObjID,
-    },
-    Unary {
-        op: HMIRUnaryOp,
-        operand: HMIRObjID,
-    },
-    Coerce {
-        mode: HMIRCoerceMode,
-        from: HMIRMetaID,
-        to: HMIRMetaID,
-        value: HMIRObjID,
-    },
-    Retype {
-        value: HMIRObjID,
-        to: HMIRMetaID,
-    },
-
     Let {
         local: HMIRObjLocalID,
         initializer: Option<HMIRObjID>,
     },
-    Adopt {
-        local: HMIRObjLocalID,
-        value: HMIRObjID,
-    },
-    Move(HMIRObjLocalID),
     Initialize {
         ty: HMIRMetaID,
         initializer: HMIRInitializer,
@@ -79,6 +50,7 @@ pub enum HMIRObjKind {
         statements: Vec<HMIRExprID>,
         tail: Option<HMIRObjID>,
     },
+    
     If {
         condition: HMIRExprID,
         then_branch: HMIRObjID,
@@ -105,14 +77,16 @@ pub enum HMIRObjKind {
         subject: HMIRObjLocalID,
         arms: Vec<(HMIRPattern, HMIRObjID)>,
     },
+    
     Label {
         name: CXIdent,
         body: HMIRObjID,
     },
+    
     Return(Option<HMIRObjID>),
     Yield(Option<HMIRObjID>),
-
-    Error,
+    Break,
+    Continue
 }
 
 #[derive(Debug, Clone)]

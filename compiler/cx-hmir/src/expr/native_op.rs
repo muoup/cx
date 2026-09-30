@@ -1,3 +1,25 @@
+#[derive(Debug, Clone)]
+pub enum HMIRNativeOp {
+    BinOp {
+        op: HMIRBinaryOp,
+        lhs: HMIRObjID,
+        rhs: HMIRObjID,
+    },
+    UnOp {
+        op: HMIRUnaryOp,
+        operand: HMIRObjID,
+    },
+    Coerce {
+        mode: HMIRCoerceMode,
+        value: HMIRObjID,
+        target: HMIRMetaID,
+    },
+
+    Control(HMIRControlOp),
+    OwnershipOp(HMIROwnershipOp),
+    CompletionOp(HMIRCompletionOp)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HMIRBinaryOp {
     Add,
@@ -40,6 +62,29 @@ pub enum HMIRCoerceMode {
     Convert,
     CCast,
     Truthy,
+}
+
+#[derive(Debug, Clone)]
+pub enum HMIRControlOp {
+    Defer(HMIRObjID),
+    Unsafe(HMIRObjID),
+    Unreachable,
+}
+
+#[derive(Debug, Clone)]
+pub enum HMIROwnershipOp {
+    Allocate {
+        
+    },
+    
+    Adopt(HMIRObjID),
+    Leak(HMIRObjID),
+    Move(HMIRObjID),
+}
+
+#[derive(Debug, Clone)]
+pub enum HMIRCompletionOp {
+    TypeInitializer { _todo: () },
 }
 
 impl HMIRBinaryOp {

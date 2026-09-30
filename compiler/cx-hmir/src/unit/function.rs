@@ -12,12 +12,6 @@ pub enum HMIRParam {
     Runtime(HMIRObjLocalID),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HMIRFunctionRoot {
-    Meta(HMIRMetaID),
-    Obj(HMIRObjID),
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct HMIRContract {
     safe: bool,

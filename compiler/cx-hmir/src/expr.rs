@@ -1,8 +1,5 @@
-pub mod aggregate;
-pub mod intrinsic;
-pub mod meta;
 pub mod obj;
-pub mod operator;
+pub mod native_op;
 pub mod type_op;
 
 use cx_util::unsafe_float::FloatWrapper;

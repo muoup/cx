@@ -1,7 +1,11 @@
+use cx_util::identifier::CXIdent;
+
 use crate::{arg::IntrinsicArg, mapper::IntrinsicMapper};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum InternalIntrinsic<V, T> {
+    GetFunctionAddr(CXIdent),
+
     Bitcast {
         value: V,
         target: T,
@@ -19,13 +23,19 @@ impl<V, T> InternalIntrinsic<V, T> {
     pub fn path(&self) -> &'static str {
         match self {
             Self::Bitcast { .. } => "internal.bitcast",
+            Self::GetFunctionAddr(_) => "internal.fn_addr",
+
             Self::Assert { .. } => "internal.assert",
             Self::Assume { .. } => "internal.assume",
         }
     }
 
     pub fn has_result(&self) -> bool {
-        matches!(self, Self::Bitcast { .. })
+        match self {
+            Self::Bitcast { .. } | Self::GetFunctionAddr(_) => true,
+
+            _ => false,
+        }
     }
 
     pub fn args(&self) -> Vec<IntrinsicArg<'_, V, T>> {
@@ -33,10 +43,11 @@ impl<V, T> InternalIntrinsic<V, T> {
             Self::Bitcast { value, target } => {
                 vec![IntrinsicArg::Value(value), IntrinsicArg::Type(target)]
             }
+            Self::GetFunctionAddr(name) => vec![IntrinsicArg::String(name)],
             Self::Assert { condition, message } => {
                 let mut args = vec![IntrinsicArg::Value(condition)];
                 if let Some(message) = message {
-                    args.push(IntrinsicArg::Message(message));
+                    args.push(IntrinsicArg::String(message));
                 }
                 args
             }
@@ -53,6 +64,7 @@ impl<V, T> InternalIntrinsic<V, T> {
                 value: mapper.value(value)?,
                 target: mapper.ty(target)?,
             },
+            Self::GetFunctionAddr(name) => InternalIntrinsic::GetFunctionAddr(name.clone()),
             Self::Assert { condition, message } => InternalIntrinsic::Assert {
                 condition: mapper.value(condition)?,
                 message: message.clone(),

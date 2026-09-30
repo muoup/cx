@@ -1,5 +1,9 @@
 use cx_namespace::module::NamespacePath;
 
+pub mod def;
+pub mod function;
+pub mod global;
+
 use crate::{
     def::{HMIRDef, HMIRDefID},
     ty::interner::HMIRTypeInterner,
