@@ -349,6 +349,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-hmir"
+version = "0.1.0"
+dependencies = [
+ "cx-intrinsics",
+ "cx-namespace",
+ "cx-tokens",
+ "cx-util",
+ "speedy",
+]
+
+[[package]]
+name = "cx-intrinsics"
+version = "0.1.0"
+
+[[package]]
 name = "cx-lexer"
 version = "0.0.0"
 dependencies = [
