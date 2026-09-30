@@ -33,6 +33,16 @@ impl BodyPrinter<'_> {
                 self.expr(f, *value, depth)?;
                 f.write_str(")")
             }
+            HMIRNativeOp::Assign { target, op, value } => {
+                f.write_str("op.assign")?;
+                if let Some(op) = op {
+                    write!(f, "<{}>", op.path())?;
+                }
+                f.write_str("(")?;
+                self.list(f, &[*target, *value], depth, Self::expr)?;
+                f.write_str(")")
+            }
+            HMIRNativeOp::AddressOf(operand) => self.call(f, "op.address_of", &[*operand], depth),
             HMIRNativeOp::Type(op) => self.type_op(f, op, depth),
             HMIRNativeOp::Control(op) => self.control(f, op, depth),
             HMIRNativeOp::OwnershipOp(op) => self.ownership(f, op, depth),
@@ -73,15 +83,8 @@ impl BodyPrinter<'_> {
 
     fn ownership(&self, f: &mut Formatter<'_>, op: &HMIROwnershipOp, depth: usize) -> fmt::Result {
         match op {
-            HMIROwnershipOp::Allocate { ty, semantics } => {
-                write!(f, "{}(", op.path())?;
-                self.expr(f, *ty, depth)?;
-                if let Some(semantics) = semantics_keyword(*semantics) {
-                    write!(f, ", {semantics}")?;
-                }
-                f.write_str(")")
-            }
-            HMIROwnershipOp::Adopt(operand)
+            HMIROwnershipOp::Allocate(operand)
+            | HMIROwnershipOp::Adopt(operand)
             | HMIROwnershipOp::Leak(operand)
             | HMIROwnershipOp::Move(operand) => self.call(f, op.path(), &[*operand], depth),
         }

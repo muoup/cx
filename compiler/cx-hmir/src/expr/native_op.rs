@@ -1,9 +1,6 @@
 use cx_util::identifier::CXIdent;
 
-use crate::{
-    expr::{aggregate::HMIRAggregateOp, kind::HMIRExprID, type_op::HMIRTypeOp},
-    ty::nominal::HMIRMoveSemantics,
-};
+use crate::expr::{aggregate::HMIRAggregateOp, kind::HMIRExprID, type_op::HMIRTypeOp};
 
 #[derive(Debug, Clone)]
 pub enum HMIRNativeOp {
@@ -21,6 +18,12 @@ pub enum HMIRNativeOp {
         value: HMIRExprID,
         target: HMIRExprID,
     },
+    Assign {
+        target: HMIRExprID,
+        op: Option<HMIRBinaryOp>,
+        value: HMIRExprID,
+    },
+    AddressOf(HMIRExprID),
 
     Type(HMIRTypeOp),
     Control(HMIRControlOp),
@@ -87,10 +90,7 @@ pub enum HMIRControlOp {
 
 #[derive(Debug, Clone)]
 pub enum HMIROwnershipOp {
-    Allocate {
-        ty: HMIRExprID,
-        semantics: HMIRMoveSemantics,
-    },
+    Allocate(HMIRExprID),
     Adopt(HMIRExprID),
     Leak(HMIRExprID),
     Move(HMIRExprID),
@@ -164,7 +164,7 @@ impl HMIRControlOp {
 impl HMIROwnershipOp {
     pub fn path(&self) -> &'static str {
         match self {
-            Self::Allocate { .. } => "allocate",
+            Self::Allocate(_) => "allocate",
             Self::Adopt(_) => "adopt",
             Self::Leak(_) => "leak",
             Self::Move(_) => "move",

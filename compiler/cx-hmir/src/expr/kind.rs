@@ -18,6 +18,7 @@ pub enum HMIRExprKind {
     Local(HMIRLocalID),
     Def(HMIRDefRef),
     Hole(HMIRHoleID),
+    Error,
 
     Comptime(HMIRExprID),
     Quote {
