@@ -1,0 +1,57 @@
+// NOTE: Not currently used, pseudo-code for native operations that will be implemented into true comptime intrinsics in the future.
+
+comptime @type add_result(
+    A: @type,
+    B: @type
+) {
+    if (@type::is_int(A) && @type::is_int(B)) {
+        if (A == B) {
+            return A;
+        } 
+
+        if (sizeof(A) > sizeof(B)) {
+            return A;
+        } else {
+            return B;
+        }
+    }
+
+    if (@type::is_float(A) && @type::is_float(B)) {
+        if (A == B) {
+            return A;
+        } 
+
+        if (sizeof(A) > sizeof(B)) {
+            return A;
+        } else {
+            return B;
+        }
+    }
+
+    // TODO
+}
+
+comptime @expr(add_result(A, B)) add(
+    A: @type,
+    B: @type,
+    x: @expr(A),
+    y: @expr(B)
+) {
+    @type result_type = add_result(A, B);
+
+    if (@type.is_int(result_type)) {
+        return @intrinsic.int.add(
+            @intrinsic.int.cast(x, result_type), 
+            @intrinsic.int.cast(y, result_type)
+        );
+    }
+
+    if (@type.is_float(result_type)) {
+        return @intrinsic.float.add(
+            @intrinsic.float.cast(x, result_type), 
+            @intrinsic.float.cast(y, result_type)
+        );
+    }
+
+    // etc.
+}
