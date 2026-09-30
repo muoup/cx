@@ -1,6 +1,7 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
+use cx_hir_lowering::generate_hmir;
 use cx_log::catalogue::driver as catalogue;
 use cx_log::{CXResult, error::CXError};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
@@ -485,6 +486,15 @@ pub(crate) fn perform_job(
         CompilationStep::Typechecking => {
             let self_ast = context.module_db.hir.get(&job.unit.namespace());
             let namespace = job.unit.namespace().clone();
+
+            if !job.unit.is_std_lib() || context.config.verbose {
+                dump_data(&generate_hmir(
+                    &self_ast,
+                    namespace.clone(),
+                    &context.module_db.symbol_registry,
+                    context.config.architecture,
+                ));
+            }
 
             let require_explicit_return =
                 context.config.require_explicit_return.unwrap_or_else(|| {

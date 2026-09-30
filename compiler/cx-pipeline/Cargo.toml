@@ -26,6 +26,7 @@ cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-tokens = { path = "../cx-tokens" }
 cx-preparse-data = { path = "../cx-preparse-data" }
 cx-hir = { path = "../cx-hir" }
+cx-hir-lowering = { path = "../cx-hir-lowering" }
 cx-thir = { path = "../cx-thir" }
 cx-lmir = { path = "../cx-lmir" }
 cx-c-header = { path = "../cx-c-header" }

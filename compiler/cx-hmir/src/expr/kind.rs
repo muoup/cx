@@ -43,6 +43,7 @@ pub enum HMIRExprKind {
     },
 
     Block {
+        kind: HMIRBlockKind,
         statements: Vec<HMIRExprID>,
         tail: Option<HMIRExprID>,
     },
@@ -76,6 +77,13 @@ pub enum HMIRExprKind {
         name: CXIdent,
         body: HMIRExprID,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HMIRBlockKind {
+    Sequence,
+    Scope,
+    Yield,
 }
 
 #[derive(Debug, Clone)]

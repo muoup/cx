@@ -1,0 +1,36 @@
+mod body;
+mod def;
+mod expr;
+mod plan;
+mod resolve;
+mod ty;
+
+use cx_hir::{ast::HIR, registry::GlobalSymbolRegistry};
+use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit};
+use cx_namespace::module::NamespacePath;
+use cx_target::ArchitectureConfig;
+
+use crate::{body::BodyLowering, plan::plan_defs, resolve::Resolver};
+
+pub fn generate_hmir(
+    hir: &HIR,
+    namespace: NamespacePath,
+    registry: &GlobalSymbolRegistry,
+    architecture: ArchitectureConfig,
+) -> HMIRUnit {
+    let plans = plan_defs(hir, &namespace);
+
+    let mut resolver = Resolver::new(registry, architecture);
+    for (index, plan) in plans.iter().enumerate() {
+        resolver.declare_def(plan.name().clone(), HMIRDefID::new(index));
+    }
+
+    let mut unit = HMIRUnit::new(namespace);
+    for plan in &plans {
+        let lowering =
+            BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false);
+        let kind = lowering.lower_def(plan);
+        unit.push_def(HMIRDef::new(plan.name().clone(), plan.span().clone(), kind));
+    }
+    unit
+}

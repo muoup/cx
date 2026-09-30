@@ -70,7 +70,11 @@ impl BodyPrinter<'_> {
                 f.write_str(")")
             }
 
-            HMIRExprKind::Block { statements, tail } => self.block(f, statements, *tail, depth),
+            HMIRExprKind::Block {
+                kind,
+                statements,
+                tail,
+            } => self.block(f, *kind, statements, *tail, depth),
             HMIRExprKind::If {
                 condition,
                 then_branch,
