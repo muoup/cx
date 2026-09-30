@@ -1,4 +1,4 @@
-use crate::{arg::IntrinsicArg, mapper::IntrinsicMapper};
+use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IntUnaryOp {
@@ -122,8 +122,7 @@ impl<V, T> IntIntrinsic<V, T> {
                 sign_extend: true, ..
             } => "int.to_ptr.signed",
             Self::ToPtr {
-                sign_extend: false,
-                ..
+                sign_extend: false, ..
             } => "int.to_ptr.unsigned",
         }
     }

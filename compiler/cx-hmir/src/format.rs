@@ -1,7 +1,6 @@
 mod body;
-mod intrinsic;
-mod meta;
-mod obj;
+mod expr;
+mod native;
 mod ty;
 
 use std::fmt::{self, Display, Formatter};
@@ -9,11 +8,13 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    def::{HMIRDef, HMIRDefKind, HMIRGlobal},
-    function::{HMIRFunction, HMIRFunctionRoot, HMIRParam},
-    ty::nominal::{HMIRAggregateKind, HMIRMoveSemantics},
-    type_def::{HMIRTypeDef, HMIRTypeDefKind},
-    unit::HMIRUnit,
+    ty::desc::HMIRTypeID,
+    unit::{
+        HMIRUnit,
+        def::{HMIRDef, HMIRDefKind},
+        function::HMIRFunction,
+        global::HMIRGlobal,
+    },
 };
 
 use body::BodyPrinter;
@@ -34,7 +35,7 @@ fn write_def(f: &mut Formatter<'_>, unit: &HMIRUnit, def: &HMIRDef) -> fmt::Resu
     match def.kind() {
         HMIRDefKind::Function(function) => write_function(f, unit, def, function),
         HMIRDefKind::Global(global) => write_global(f, unit, def, global),
-        HMIRDefKind::Type(type_def) => write_type_def(f, unit, def, type_def),
+        HMIRDefKind::Type(ty) => write_type_def(f, unit, def, *ty),
     }
 }
 
@@ -60,13 +61,7 @@ fn write_function(
         if index != 0 {
             f.write_str(", ")?;
         }
-        match param {
-            HMIRParam::Static(local) => {
-                f.write_str("static ")?;
-                printer.meta_local_decl(f, *local)?;
-            }
-            HMIRParam::Runtime(local) => printer.obj_local_decl(f, *local)?,
-        }
+        printer.param_decl(f, *param)?;
     }
     if signature.is_variadic() {
         f.write_str(if signature.params().is_empty() {
@@ -76,7 +71,7 @@ fn write_function(
         })?;
     }
     f.write_str(") -> ")?;
-    printer.meta(f, signature.return_type(), 0)?;
+    printer.expr(f, signature.return_type(), 0)?;
 
     let contract = signature.contract();
     if !contract.is_empty() {
@@ -86,29 +81,25 @@ fn write_function(
         }
         if let Some(precondition) = contract.precondition() {
             f.write_str(" pre(")?;
-            printer.obj(f, precondition, 0)?;
+            printer.expr(f, precondition, 0)?;
             f.write_str(")")?;
         }
         if let Some((binding, postcondition)) = contract.postcondition() {
             f.write_str(" post(")?;
             if let Some(binding) = binding {
-                printer.obj_local(f, binding)?;
+                printer.local(f, binding)?;
                 f.write_str(" => ")?;
             }
-            printer.obj(f, postcondition, 0)?;
+            printer.expr(f, postcondition, 0)?;
             f.write_str(")")?;
         }
     }
 
     match function.root() {
         None => f.write_str(";"),
-        Some(HMIRFunctionRoot::Meta(root)) => {
+        Some(root) => {
             f.write_str(" ")?;
-            printer.meta(f, root, 0)
-        }
-        Some(HMIRFunctionRoot::Obj(root)) => {
-            f.write_str(" ")?;
-            printer.obj(f, root, 0)
+            printer.expr(f, root, 0)
         }
     }
 }
@@ -128,10 +119,10 @@ fn write_global(
         "global"
     })?;
     write!(f, " @{}: ", def.name())?;
-    printer.meta(f, global.ty(), 0)?;
+    printer.expr(f, global.ty(), 0)?;
     if let Some(initializer) = global.initializer() {
         f.write_str(" = ")?;
-        printer.obj(f, initializer, 0)?;
+        printer.expr(f, initializer, 0)?;
     }
     f.write_str(";")
 }
@@ -140,54 +131,9 @@ fn write_type_def(
     f: &mut Formatter<'_>,
     unit: &HMIRUnit,
     def: &HMIRDef,
-    type_def: &HMIRTypeDef,
+    ty: HMIRTypeID,
 ) -> fmt::Result {
-    let printer = BodyPrinter::new(unit, type_def.body());
-
-    write!(f, "type @{}", def.name())?;
-    if !type_def.params().is_empty() {
-        f.write_str("(")?;
-        for (index, param) in type_def.params().iter().enumerate() {
-            if index != 0 {
-                f.write_str(", ")?;
-            }
-            printer.meta_local_decl(f, *param)?;
-        }
-        f.write_str(")")?;
-    }
-    f.write_str(" = ")?;
-
-    match type_def.kind() {
-        HMIRTypeDefKind::Alias(ty) => printer.meta(f, *ty, 0),
-        HMIRTypeDefKind::Aggregate {
-            kind,
-            semantics,
-            fields,
-        } => {
-            f.write_str(match kind {
-                HMIRAggregateKind::Struct => "struct",
-                HMIRAggregateKind::Union => "union",
-                HMIRAggregateKind::TaggedUnion => "tagged_union",
-            })?;
-            match semantics {
-                HMIRMoveSemantics::POD => {}
-                HMIRMoveSemantics::Nocopy => f.write_str(" nocopy")?,
-                HMIRMoveSemantics::Nodrop => f.write_str(" nodrop")?,
-            }
-            f.write_str(" {\n")?;
-            for field in fields {
-                body::indent(f, 1)?;
-                match field.name() {
-                    Some(name) => write!(f, "{name}: ")?,
-                    None => f.write_str("_: ")?,
-                }
-                printer.meta(f, field.ty(), 1)?;
-                if let Some(width) = field.bit_width() {
-                    write!(f, " : {width}")?;
-                }
-                f.write_str(",\n")?;
-            }
-            f.write_str("}")
-        }
-    }
+    write!(f, "type @{} = ", def.name())?;
+    ty::write_type(f, unit, ty)?;
+    f.write_str(";")
 }

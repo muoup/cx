@@ -1,4 +1,4 @@
-use crate::{arg::IntrinsicArg, mapper::IntrinsicMapper};
+use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FloatBinaryOp {
@@ -17,23 +17,10 @@ pub enum FloatBinaryOp {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum FloatIntrinsic<V, T> {
-    Neg {
-        value: V,
-    },
-    Binary {
-        op: FloatBinaryOp,
-        lhs: V,
-        rhs: V,
-    },
-    ToInt {
-        value: V,
-        target: T,
-        signed: bool,
-    },
-    Cast {
-        value: V,
-        target: T,
-    },
+    Neg { value: V },
+    Binary { op: FloatBinaryOp, lhs: V, rhs: V },
+    ToInt { value: V, target: T, signed: bool },
+    Cast { value: V, target: T },
 }
 
 impl FloatBinaryOp {

@@ -1,23 +1,31 @@
+use cx_util::identifier::CXIdent;
+
+use crate::{
+    expr::{aggregate::HMIRAggregateOp, kind::HMIRExprID, type_op::HMIRTypeOp},
+    ty::nominal::HMIRMoveSemantics,
+};
+
 #[derive(Debug, Clone)]
 pub enum HMIRNativeOp {
     BinOp {
         op: HMIRBinaryOp,
-        lhs: HMIRObjID,
-        rhs: HMIRObjID,
+        lhs: HMIRExprID,
+        rhs: HMIRExprID,
     },
     UnOp {
         op: HMIRUnaryOp,
-        operand: HMIRObjID,
+        operand: HMIRExprID,
     },
     Coerce {
         mode: HMIRCoerceMode,
-        value: HMIRObjID,
-        target: HMIRMetaID,
+        value: HMIRExprID,
+        target: HMIRExprID,
     },
 
+    Type(HMIRTypeOp),
     Control(HMIRControlOp),
     OwnershipOp(HMIROwnershipOp),
-    CompletionOp(HMIRCompletionOp)
+    AggregateOp(HMIRAggregateOp),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -66,25 +74,26 @@ pub enum HMIRCoerceMode {
 
 #[derive(Debug, Clone)]
 pub enum HMIRControlOp {
-    Defer(HMIRObjID),
-    Unsafe(HMIRObjID),
+    Return(Option<HMIRExprID>),
+    Yield(Option<HMIRExprID>),
+    Break,
+    Continue,
+    Goto(CXIdent),
+
+    Defer(HMIRExprID),
+    Unsafe(HMIRExprID),
     Unreachable,
 }
 
 #[derive(Debug, Clone)]
 pub enum HMIROwnershipOp {
     Allocate {
-        
+        ty: HMIRExprID,
+        semantics: HMIRMoveSemantics,
     },
-    
-    Adopt(HMIRObjID),
-    Leak(HMIRObjID),
-    Move(HMIRObjID),
-}
-
-#[derive(Debug, Clone)]
-pub enum HMIRCompletionOp {
-    TypeInitializer { _todo: () },
+    Adopt(HMIRExprID),
+    Leak(HMIRExprID),
+    Move(HMIRExprID),
 }
 
 impl HMIRBinaryOp {
@@ -133,6 +142,32 @@ impl HMIRCoerceMode {
             Self::Convert => "op.convert",
             Self::CCast => "op.c_cast",
             Self::Truthy => "op.truthy",
+        }
+    }
+}
+
+impl HMIRControlOp {
+    pub fn path(&self) -> &'static str {
+        match self {
+            Self::Return(_) => "return",
+            Self::Yield(_) => "yield",
+            Self::Break => "break",
+            Self::Continue => "continue",
+            Self::Goto(_) => "goto",
+            Self::Defer(_) => "defer",
+            Self::Unsafe(_) => "unsafe",
+            Self::Unreachable => "unreachable",
+        }
+    }
+}
+
+impl HMIROwnershipOp {
+    pub fn path(&self) -> &'static str {
+        match self {
+            Self::Allocate { .. } => "allocate",
+            Self::Adopt(_) => "adopt",
+            Self::Leak(_) => "leak",
+            Self::Move(_) => "move",
         }
     }
 }

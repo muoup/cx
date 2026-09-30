@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
 use crate::{
-    def::HMIRDefRef,
     expr::HMIRConstant,
     ty::{
         desc::{HMIRTypeDesc, HMIRTypeID},
         nominal::{HMIRAggregateKind, HMIRMoveSemantics, HMIRNominalDesc, HMIRNominalID},
     },
+    unit::def::HMIRDefRef,
 };
 
 #[derive(Debug, Clone, Default)]

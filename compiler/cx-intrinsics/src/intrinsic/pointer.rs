@@ -1,4 +1,4 @@
-use crate::{arg::IntrinsicArg, mapper::IntrinsicMapper};
+use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PointerOffsetOp {

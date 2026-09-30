@@ -1,9 +1,9 @@
 use std::fmt::{self, Formatter};
 
 use crate::{
-    binding::{HMIRMetaLocalID, HMIRObjLocalID},
+    binding::HMIRLocalID,
     body::HMIRBody,
-    expr::HMIRExprID,
+    expr::kind::{HMIRExprID, HMIRExprKind},
     unit::HMIRUnit,
 };
 
@@ -32,34 +32,26 @@ impl<'a> BodyPrinter<'a> {
         self.body
     }
 
-    pub(super) fn meta_local(&self, f: &mut Formatter<'_>, id: HMIRMetaLocalID) -> fmt::Result {
-        match self.body.meta_local(id).name() {
-            Some(name) => write!(f, "${name}"),
-            None => write!(f, "{id}"),
+    pub(super) fn local(&self, f: &mut Formatter<'_>, id: HMIRLocalID) -> fmt::Result {
+        let local = self.body.local(id);
+        f.write_str(if local.is_comptime() { "$" } else { "%" })?;
+        match local.name() {
+            Some(name) => write!(f, "{name}"),
+            None => write!(f, "{}", id.index()),
         }
     }
 
-    pub(super) fn obj_local(&self, f: &mut Formatter<'_>, id: HMIRObjLocalID) -> fmt::Result {
-        match self.body.obj_local(id).name() {
-            Some(name) => write!(f, "%{name}"),
-            None => write!(f, "{id}"),
+    pub(super) fn local_decl(&self, f: &mut Formatter<'_>, id: HMIRLocalID) -> fmt::Result {
+        self.local(f, id)?;
+        f.write_str(": ")?;
+        self.expr(f, self.body.local(id).ty(), 0)
+    }
+
+    pub(super) fn param_decl(&self, f: &mut Formatter<'_>, id: HMIRLocalID) -> fmt::Result {
+        if self.body.local(id).is_comptime() {
+            f.write_str("comptime ")?;
         }
-    }
-
-    pub(super) fn meta_local_decl(
-        &self,
-        f: &mut Formatter<'_>,
-        id: HMIRMetaLocalID,
-    ) -> fmt::Result {
-        self.meta_local(f, id)?;
-        f.write_str(": ")?;
-        self.meta(f, self.body.meta_local(id).ty(), 0)
-    }
-
-    pub(super) fn obj_local_decl(&self, f: &mut Formatter<'_>, id: HMIRObjLocalID) -> fmt::Result {
-        self.obj_local(f, id)?;
-        f.write_str(": ")?;
-        self.meta(f, self.body.obj_local(id).ty(), 0)
+        self.local_decl(f, id)
     }
 
     pub(super) fn list<I: Copy>(
@@ -78,45 +70,63 @@ impl<'a> BodyPrinter<'a> {
         Ok(())
     }
 
-    pub(super) fn block<I: Copy>(
+    pub(super) fn block(
         &self,
         f: &mut Formatter<'_>,
-        statements: &[I],
-        tail: Option<I>,
+        statements: &[HMIRExprID],
+        tail: Option<HMIRExprID>,
         depth: usize,
-        write: impl Fn(&Self, &mut Formatter<'_>, I, usize) -> fmt::Result,
-        is_structured: impl Fn(&Self, I) -> bool,
     ) -> fmt::Result {
         f.write_str("{\n")?;
         for statement in statements {
             indent(f, depth + 1)?;
-            write(self, f, *statement, depth + 1)?;
-            if !is_structured(self, *statement) {
+            self.statement(f, *statement, depth + 1)?;
+            if !self.is_structured(*statement) {
                 f.write_str(";")?;
             }
             f.write_str("\n")?;
         }
         if let Some(tail) = tail {
             indent(f, depth + 1)?;
-            write(self, f, tail, depth + 1)?;
+            self.statement(f, tail, depth + 1)?;
             f.write_str("\n")?;
         }
         indent(f, depth)?;
         f.write_str("}")
     }
 
-    pub(super) fn staged(
+    pub(super) fn statement(
         &self,
         f: &mut Formatter<'_>,
         id: HMIRExprID,
         depth: usize,
     ) -> fmt::Result {
-        match id {
-            HMIRExprID::Meta(meta) => {
-                f.write_str("static ")?;
-                self.meta(f, meta, depth)
+        match self.body.expr(id).kind() {
+            HMIRExprKind::Comptime(inner) => {
+                f.write_str("comptime ")?;
+                self.expr(f, *inner, depth)
             }
-            HMIRExprID::Obj(obj) => self.obj(f, obj, depth),
+            _ => self.expr(f, id, depth),
         }
+    }
+
+    pub(super) fn condition(
+        &self,
+        f: &mut Formatter<'_>,
+        keyword: &str,
+        condition: HMIRExprID,
+        depth: usize,
+    ) -> fmt::Result {
+        match self.body.expr(condition).kind() {
+            HMIRExprKind::Comptime(inner) => {
+                write!(f, "comptime {keyword} (")?;
+                self.expr(f, *inner, depth)?;
+            }
+            _ => {
+                write!(f, "{keyword} (")?;
+                self.expr(f, condition, depth)?;
+            }
+        }
+        f.write_str(") ")
     }
 }

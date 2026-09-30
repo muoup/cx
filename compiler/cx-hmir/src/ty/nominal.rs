@@ -1,6 +1,6 @@
 use cx_util::{dense_id, identifier::CXIdent};
 
-use crate::{def::HMIRDefRef, expr::HMIRConstant, ty::desc::HMIRTypeID};
+use crate::{expr::HMIRConstant, ty::desc::HMIRTypeID, unit::def::HMIRDefRef};
 
 dense_id!(HMIRNominalID, "n");
 

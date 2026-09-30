@@ -1,10 +1,9 @@
 use std::fmt::{self, Formatter};
 
 use crate::{
-    def::HMIRDefRef,
     expr::HMIRConstant,
     ty::desc::{HMIRTypeDesc, HMIRTypeID},
-    unit::HMIRUnit,
+    unit::{HMIRUnit, def::HMIRDefRef},
 };
 
 pub(super) fn write_def_ref(

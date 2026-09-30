@@ -1,16 +1,24 @@
-use crate::{intrinsic::{float::FloatIntrinsic, int::IntIntrinsic, internal::InternalIntrinsic, pointer::PointerIntrinsic, va::VAIntrinsic}, mapper::{ClosureMapper, IntrinsicMapper}};
-
+pub mod aggregate;
 pub mod float;
 pub mod int;
 pub mod internal;
 pub mod pointer;
 pub mod va;
 
+use crate::{
+    intrinsic::{
+        aggregate::AggregateIntrinsic, float::FloatIntrinsic, int::IntIntrinsic,
+        internal::InternalIntrinsic, pointer::PointerIntrinsic, va::VAIntrinsic,
+    },
+    mapper::{ClosureMapper, IntrinsicMapper},
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Intrinsic<V, T> {
     Int(IntIntrinsic<V, T>),
     Float(FloatIntrinsic<V, T>),
     Pointer(PointerIntrinsic<V, T>),
+    Aggregate(AggregateIntrinsic<V, T>),
     Internal(InternalIntrinsic<V, T>),
     VA(VAIntrinsic<V, T>),
 }
@@ -19,6 +27,7 @@ pub enum Intrinsic<V, T> {
 pub enum IntrinsicArg<'a, V, T> {
     Value(&'a V),
     Type(&'a T),
+    Index(usize),
     Bool(bool),
     String(&'a str),
 }
@@ -29,6 +38,7 @@ impl<V, T> Intrinsic<V, T> {
             Self::Int(op) => op.path(),
             Self::Float(op) => op.path(),
             Self::Pointer(op) => op.path(),
+            Self::Aggregate(op) => op.path(),
             Self::Internal(op) => op.path(),
             Self::VA(op) => op.path(),
         }
@@ -36,7 +46,7 @@ impl<V, T> Intrinsic<V, T> {
 
     pub fn has_result(&self) -> bool {
         match self {
-            Self::Int(_) | Self::Float(_) | Self::Pointer(_) => true,
+            Self::Int(_) | Self::Float(_) | Self::Pointer(_) | Self::Aggregate(_) => true,
             Self::Internal(op) => op.has_result(),
             Self::VA(op) => op.has_result(),
         }
@@ -47,6 +57,7 @@ impl<V, T> Intrinsic<V, T> {
             Self::Int(op) => op.args(),
             Self::Float(op) => op.args(),
             Self::Pointer(op) => op.args(),
+            Self::Aggregate(op) => op.args(),
             Self::Internal(op) => op.args(),
             Self::VA(op) => op.args(),
         }
@@ -69,6 +80,7 @@ impl<V, T> Intrinsic<V, T> {
             Self::Int(op) => Intrinsic::Int(op.try_map(mapper)?),
             Self::Float(op) => Intrinsic::Float(op.try_map(mapper)?),
             Self::Pointer(op) => Intrinsic::Pointer(op.try_map(mapper)?),
+            Self::Aggregate(op) => Intrinsic::Aggregate(op.try_map(mapper)?),
             Self::Internal(op) => Intrinsic::Internal(op.try_map(mapper)?),
             Self::VA(op) => Intrinsic::VA(op.try_map(mapper)?),
         })
@@ -90,6 +102,12 @@ impl<V, T> From<FloatIntrinsic<V, T>> for Intrinsic<V, T> {
 impl<V, T> From<PointerIntrinsic<V, T>> for Intrinsic<V, T> {
     fn from(value: PointerIntrinsic<V, T>) -> Self {
         Self::Pointer(value)
+    }
+}
+
+impl<V, T> From<AggregateIntrinsic<V, T>> for Intrinsic<V, T> {
+    fn from(value: AggregateIntrinsic<V, T>) -> Self {
+        Self::Aggregate(value)
     }
 }
 

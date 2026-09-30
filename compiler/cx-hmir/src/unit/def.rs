@@ -1,13 +1,10 @@
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
-use cx_util::{dense_id, linkage::LinkageMode};
+use cx_util::dense_id;
 
 use crate::{
-    HMIRTypeID,
-    body::HMIRBody,
-    expr::{meta::HMIRMetaID, obj::HMIRObjID},
-    function::HMIRFunction,
-    type_def::HMIRTypeDef,
+    ty::desc::HMIRTypeID,
+    unit::{function::HMIRFunction, global::HMIRGlobal},
 };
 
 dense_id!(HMIRDefID, "def");
@@ -23,7 +20,7 @@ pub struct HMIRDef {
 pub enum HMIRDefKind {
     Function(Box<HMIRFunction>),
     Global(Box<HMIRGlobal>),
-    Type(Box<HMIRTypeID>),
+    Type(HMIRTypeID),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -1,30 +1,41 @@
-use crate::expr::meta::HMIRMetaID;
+use crate::{
+    expr::kind::HMIRExprID,
+    ty::{
+        field::HMIRFieldDef,
+        nominal::{HMIRAggregateKind, HMIRMoveSemantics},
+    },
+};
 
 #[derive(Debug, Clone)]
 pub enum HMIRTypeOp {
-    Pointer(HMIRMetaID),
-    Reference(HMIRMetaID),
+    Pointer(HMIRExprID),
+    Reference(HMIRExprID),
     Array {
-        element: HMIRMetaID,
-        length: Option<HMIRMetaID>,
+        element: HMIRExprID,
+        length: Option<HMIRExprID>,
     },
     Function {
-        params: Vec<HMIRMetaID>,
-        ret: HMIRMetaID,
+        params: Vec<HMIRExprID>,
+        ret: HMIRExprID,
         variadic: bool,
     },
     Expr {
-        params: Vec<HMIRMetaID>,
-        result: HMIRMetaID,
+        params: Vec<HMIRExprID>,
+        result: HMIRExprID,
+    },
+    Aggregate {
+        kind: HMIRAggregateKind,
+        semantics: HMIRMoveSemantics,
+        fields: Vec<HMIRFieldDef>,
     },
 
-    SizeOf(HMIRMetaID),
-    AlignOf(HMIRMetaID),
-    IsInt(HMIRMetaID),
-    IsFloat(HMIRMetaID),
-    IsPointer(HMIRMetaID),
-    IsSigned(HMIRMetaID),
-    Equal(HMIRMetaID, HMIRMetaID),
+    SizeOf(HMIRExprID),
+    AlignOf(HMIRExprID),
+    IsInt(HMIRExprID),
+    IsFloat(HMIRExprID),
+    IsPointer(HMIRExprID),
+    IsSigned(HMIRExprID),
+    Equal(HMIRExprID, HMIRExprID),
 }
 
 impl HMIRTypeOp {
@@ -35,6 +46,7 @@ impl HMIRTypeOp {
             Self::Array { .. } => "type.array",
             Self::Function { .. } => "type.function",
             Self::Expr { .. } => "type.expr",
+            Self::Aggregate { .. } => "type.aggregate",
             Self::SizeOf(_) => "type.size_of",
             Self::AlignOf(_) => "type.align_of",
             Self::IsInt(_) => "type.is_int",

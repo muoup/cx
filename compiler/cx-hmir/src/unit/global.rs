@@ -1,8 +1,12 @@
+use cx_util::linkage::LinkageMode;
+
+use crate::{body::HMIRBody, expr::kind::HMIRExprID};
+
 #[derive(Debug, Clone)]
 pub struct HMIRGlobal {
     body: HMIRBody,
-    ty: HMIRMetaID,
-    initializer: Option<HMIRObjID>,
+    ty: HMIRExprID,
+    initializer: Option<HMIRExprID>,
     mutable: bool,
     linkage: LinkageMode,
 }
@@ -10,8 +14,8 @@ pub struct HMIRGlobal {
 impl HMIRGlobal {
     pub fn new(
         body: HMIRBody,
-        ty: HMIRMetaID,
-        initializer: Option<HMIRObjID>,
+        ty: HMIRExprID,
+        initializer: Option<HMIRExprID>,
         mutable: bool,
         linkage: LinkageMode,
     ) -> Self {
@@ -28,11 +32,11 @@ impl HMIRGlobal {
         &self.body
     }
 
-    pub fn ty(&self) -> HMIRMetaID {
+    pub fn ty(&self) -> HMIRExprID {
         self.ty
     }
 
-    pub fn initializer(&self) -> Option<HMIRObjID> {
+    pub fn initializer(&self) -> Option<HMIRExprID> {
         self.initializer
     }
 

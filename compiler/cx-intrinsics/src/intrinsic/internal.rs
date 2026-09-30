@@ -1,6 +1,6 @@
 use cx_util::identifier::CXIdent;
 
-use crate::{arg::IntrinsicArg, mapper::IntrinsicMapper};
+use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum InternalIntrinsic<V, T> {
@@ -31,11 +31,7 @@ impl<V, T> InternalIntrinsic<V, T> {
     }
 
     pub fn has_result(&self) -> bool {
-        match self {
-            Self::Bitcast { .. } | Self::GetFunctionAddr(_) => true,
-
-            _ => false,
-        }
+        matches!(self, Self::Bitcast { .. } | Self::GetFunctionAddr(_))
     }
 
     pub fn args(&self) -> Vec<IntrinsicArg<'_, V, T>> {
@@ -43,7 +39,7 @@ impl<V, T> InternalIntrinsic<V, T> {
             Self::Bitcast { value, target } => {
                 vec![IntrinsicArg::Value(value), IntrinsicArg::Type(target)]
             }
-            Self::GetFunctionAddr(name) => vec![IntrinsicArg::String(name)],
+            Self::GetFunctionAddr(name) => vec![IntrinsicArg::String(name.as_str())],
             Self::Assert { condition, message } => {
                 let mut args = vec![IntrinsicArg::Value(condition)];
                 if let Some(message) = message {

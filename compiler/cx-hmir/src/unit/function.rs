@@ -1,28 +1,18 @@
 use cx_util::linkage::LinkageMode;
 
-use crate::{
-    binding::{HMIRMetaLocalID, HMIRObjLocalID},
-    body::HMIRBody,
-    expr::{meta::HMIRMetaID, obj::HMIRObjID},
-};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HMIRParam {
-    Static(HMIRMetaLocalID),
-    Runtime(HMIRObjLocalID),
-}
+use crate::{binding::HMIRLocalID, body::HMIRBody, expr::kind::HMIRExprID};
 
 #[derive(Debug, Clone, Default)]
 pub struct HMIRContract {
     safe: bool,
-    precondition: Option<HMIRObjID>,
-    postcondition: Option<(Option<HMIRObjLocalID>, HMIRObjID)>,
+    precondition: Option<HMIRExprID>,
+    postcondition: Option<(Option<HMIRLocalID>, HMIRExprID)>,
 }
 
 #[derive(Debug, Clone)]
 pub struct HMIRSignature {
-    params: Vec<HMIRParam>,
-    return_type: HMIRMetaID,
+    params: Vec<HMIRLocalID>,
+    return_type: HMIRExprID,
     variadic: bool,
     linkage: LinkageMode,
     contract: HMIRContract,
@@ -32,14 +22,14 @@ pub struct HMIRSignature {
 pub struct HMIRFunction {
     body: HMIRBody,
     signature: HMIRSignature,
-    root: Option<HMIRFunctionRoot>,
+    root: Option<HMIRExprID>,
 }
 
 impl HMIRContract {
     pub fn new(
         safe: bool,
-        precondition: Option<HMIRObjID>,
-        postcondition: Option<(Option<HMIRObjLocalID>, HMIRObjID)>,
+        precondition: Option<HMIRExprID>,
+        postcondition: Option<(Option<HMIRLocalID>, HMIRExprID)>,
     ) -> Self {
         Self {
             safe,
@@ -52,11 +42,11 @@ impl HMIRContract {
         self.safe
     }
 
-    pub fn precondition(&self) -> Option<HMIRObjID> {
+    pub fn precondition(&self) -> Option<HMIRExprID> {
         self.precondition
     }
 
-    pub fn postcondition(&self) -> Option<(Option<HMIRObjLocalID>, HMIRObjID)> {
+    pub fn postcondition(&self) -> Option<(Option<HMIRLocalID>, HMIRExprID)> {
         self.postcondition
     }
 
@@ -67,8 +57,8 @@ impl HMIRContract {
 
 impl HMIRSignature {
     pub fn new(
-        params: Vec<HMIRParam>,
-        return_type: HMIRMetaID,
+        params: Vec<HMIRLocalID>,
+        return_type: HMIRExprID,
         variadic: bool,
         linkage: LinkageMode,
         contract: HMIRContract,
@@ -82,11 +72,11 @@ impl HMIRSignature {
         }
     }
 
-    pub fn params(&self) -> &[HMIRParam] {
+    pub fn params(&self) -> &[HMIRLocalID] {
         &self.params
     }
 
-    pub fn return_type(&self) -> HMIRMetaID {
+    pub fn return_type(&self) -> HMIRExprID {
         self.return_type
     }
 
@@ -104,7 +94,7 @@ impl HMIRSignature {
 }
 
 impl HMIRFunction {
-    pub fn new(body: HMIRBody, signature: HMIRSignature, root: Option<HMIRFunctionRoot>) -> Self {
+    pub fn new(body: HMIRBody, signature: HMIRSignature, root: Option<HMIRExprID>) -> Self {
         Self {
             body,
             signature,
@@ -124,14 +114,14 @@ impl HMIRFunction {
         &self.signature
     }
 
-    pub fn root(&self) -> Option<HMIRFunctionRoot> {
+    pub fn root(&self) -> Option<HMIRExprID> {
         self.root
     }
 
-    pub fn is_static(&self) -> bool {
+    pub fn has_comptime_params(&self) -> bool {
         self.signature
             .params
             .iter()
-            .any(|param| matches!(param, HMIRParam::Static(_)))
+            .any(|param| self.body.local(*param).is_comptime())
     }
 }

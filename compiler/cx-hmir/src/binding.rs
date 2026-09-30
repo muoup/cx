@@ -1,16 +1,16 @@
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
-use crate::expr::meta::HMIRMetaID;
+use crate::expr::kind::HMIRExprID;
 
-dense_id!(HMIRMetaLocalID, "$");
-dense_id!(HMIRObjLocalID, "%");
+dense_id!(HMIRLocalID, "%");
 dense_id!(HMIRHoleID, "?");
 
 #[derive(Debug, Clone)]
 pub struct HMIRLocal {
     name: Option<CXIdent>,
-    ty: HMIRMetaID,
+    ty: HMIRExprID,
+    comptime: bool,
     span: TokenRange,
 }
 
@@ -20,20 +20,29 @@ pub struct HMIRHole {
 }
 
 impl HMIRLocal {
-    pub fn new(name: Option<CXIdent>, ty: HMIRMetaID, span: TokenRange) -> Self {
-        Self { name, ty, span }
+    pub fn new(name: Option<CXIdent>, ty: HMIRExprID, comptime: bool, span: TokenRange) -> Self {
+        Self {
+            name,
+            ty,
+            comptime,
+            span,
+        }
     }
 
     pub fn name(&self) -> Option<&CXIdent> {
         self.name.as_ref()
     }
 
-    pub fn ty(&self) -> HMIRMetaID {
+    pub fn ty(&self) -> HMIRExprID {
         self.ty
     }
 
-    pub fn set_ty(&mut self, ty: HMIRMetaID) {
+    pub fn set_ty(&mut self, ty: HMIRExprID) {
         self.ty = ty;
+    }
+
+    pub fn is_comptime(&self) -> bool {
+        self.comptime
     }
 
     pub fn span(&self) -> &TokenRange {

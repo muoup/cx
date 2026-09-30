@@ -1,12 +1,16 @@
+use cx_util::identifier::CXIdent;
+
+use crate::expr::kind::HMIRExprID;
+
 #[derive(Debug, Clone)]
 pub struct HMIRFieldDef {
     name: Option<CXIdent>,
-    ty: HMIRMetaID,
+    ty: HMIRExprID,
     bit_width: Option<usize>,
 }
 
 impl HMIRFieldDef {
-    pub fn new(name: Option<CXIdent>, ty: HMIRMetaID, bit_width: Option<usize>) -> Self {
+    pub fn new(name: Option<CXIdent>, ty: HMIRExprID, bit_width: Option<usize>) -> Self {
         Self {
             name,
             ty,
@@ -18,7 +22,7 @@ impl HMIRFieldDef {
         self.name.as_ref()
     }
 
-    pub fn ty(&self) -> HMIRMetaID {
+    pub fn ty(&self) -> HMIRExprID {
         self.ty
     }
 

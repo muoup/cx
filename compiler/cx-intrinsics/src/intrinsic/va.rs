@@ -1,4 +1,4 @@
-use crate::{arg::IntrinsicArg, mapper::IntrinsicMapper};
+use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum VAIntrinsic<V, T> {

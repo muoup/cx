@@ -1,12 +1,12 @@
-use cx_namespace::module::NamespacePath;
-
 pub mod def;
 pub mod function;
 pub mod global;
 
+use cx_namespace::module::NamespacePath;
+
 use crate::{
-    def::{HMIRDef, HMIRDefID},
     ty::interner::HMIRTypeInterner,
+    unit::def::{HMIRDef, HMIRDefID},
 };
 
 #[derive(Debug, Clone)]

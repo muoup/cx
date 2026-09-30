@@ -1,17 +1,12 @@
 use crate::{
-    binding::{HMIRHole, HMIRHoleID, HMIRLocal, HMIRMetaLocalID, HMIRObjLocalID},
-    expr::{
-        meta::{HMIRMetaExpr, HMIRMetaID},
-        obj::{HMIRObjExpr, HMIRObjID},
-    },
+    binding::{HMIRHole, HMIRHoleID, HMIRLocal, HMIRLocalID},
+    expr::kind::{HMIRExpr, HMIRExprID},
 };
 
 #[derive(Debug, Clone, Default)]
 pub struct HMIRBody {
-    meta: Vec<HMIRMetaExpr>,
-    obj: Vec<HMIRObjExpr>,
-    meta_locals: Vec<HMIRLocal>,
-    obj_locals: Vec<HMIRLocal>,
+    exprs: Vec<HMIRExpr>,
+    locals: Vec<HMIRLocal>,
     holes: Vec<HMIRHole>,
 }
 
@@ -20,24 +15,14 @@ impl HMIRBody {
         Self::default()
     }
 
-    pub fn push_meta(&mut self, expr: HMIRMetaExpr) -> HMIRMetaID {
-        self.meta.push(expr);
-        HMIRMetaID::new(self.meta.len() - 1)
+    pub fn push_expr(&mut self, expr: HMIRExpr) -> HMIRExprID {
+        self.exprs.push(expr);
+        HMIRExprID::new(self.exprs.len() - 1)
     }
 
-    pub fn push_obj(&mut self, expr: HMIRObjExpr) -> HMIRObjID {
-        self.obj.push(expr);
-        HMIRObjID::new(self.obj.len() - 1)
-    }
-
-    pub fn declare_meta_local(&mut self, local: HMIRLocal) -> HMIRMetaLocalID {
-        self.meta_locals.push(local);
-        HMIRMetaLocalID::new(self.meta_locals.len() - 1)
-    }
-
-    pub fn declare_obj_local(&mut self, local: HMIRLocal) -> HMIRObjLocalID {
-        self.obj_locals.push(local);
-        HMIRObjLocalID::new(self.obj_locals.len() - 1)
+    pub fn declare_local(&mut self, local: HMIRLocal) -> HMIRLocalID {
+        self.locals.push(local);
+        HMIRLocalID::new(self.locals.len() - 1)
     }
 
     pub fn declare_hole(&mut self, hole: HMIRHole) -> HMIRHoleID {
@@ -45,36 +30,20 @@ impl HMIRBody {
         HMIRHoleID::new(self.holes.len() - 1)
     }
 
-    pub fn meta(&self, id: HMIRMetaID) -> &HMIRMetaExpr {
-        &self.meta[id.index()]
+    pub fn expr(&self, id: HMIRExprID) -> &HMIRExpr {
+        &self.exprs[id.index()]
     }
 
-    pub fn meta_mut(&mut self, id: HMIRMetaID) -> &mut HMIRMetaExpr {
-        &mut self.meta[id.index()]
+    pub fn expr_mut(&mut self, id: HMIRExprID) -> &mut HMIRExpr {
+        &mut self.exprs[id.index()]
     }
 
-    pub fn obj(&self, id: HMIRObjID) -> &HMIRObjExpr {
-        &self.obj[id.index()]
+    pub fn local(&self, id: HMIRLocalID) -> &HMIRLocal {
+        &self.locals[id.index()]
     }
 
-    pub fn obj_mut(&mut self, id: HMIRObjID) -> &mut HMIRObjExpr {
-        &mut self.obj[id.index()]
-    }
-
-    pub fn meta_local(&self, id: HMIRMetaLocalID) -> &HMIRLocal {
-        &self.meta_locals[id.index()]
-    }
-
-    pub fn meta_local_mut(&mut self, id: HMIRMetaLocalID) -> &mut HMIRLocal {
-        &mut self.meta_locals[id.index()]
-    }
-
-    pub fn obj_local(&self, id: HMIRObjLocalID) -> &HMIRLocal {
-        &self.obj_locals[id.index()]
-    }
-
-    pub fn obj_local_mut(&mut self, id: HMIRObjLocalID) -> &mut HMIRLocal {
-        &mut self.obj_locals[id.index()]
+    pub fn local_mut(&mut self, id: HMIRLocalID) -> &mut HMIRLocal {
+        &mut self.locals[id.index()]
     }
 
     pub fn hole(&self, id: HMIRHoleID) -> &HMIRHole {

@@ -1,19 +1,11 @@
-pub mod obj;
+pub mod aggregate;
+pub mod kind;
 pub mod native_op;
 pub mod type_op;
 
 use cx_util::unsafe_float::FloatWrapper;
 
-use crate::{
-    expr::{meta::HMIRMetaID, obj::HMIRObjID},
-    ty::desc::HMIRTypeID,
-};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum HMIRExprID {
-    Meta(HMIRMetaID),
-    Obj(HMIRObjID),
-}
+use crate::ty::desc::HMIRTypeID;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HMIRConstant {
