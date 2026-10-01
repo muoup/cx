@@ -8,9 +8,9 @@ use cx_hir::ast::{
     types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBlockKind, HMIRComptimeGlobal, HMIRConstant, HMIRContract, HMIRControlOp, HMIRDefKind,
-    HMIRExprID, HMIRExprKind, HMIRFunction, HMIRGlobal, HMIRIntWidth, HMIRLocalID,
-    HMIRNativeOp, HMIRSignature, HMIRTypeDesc,
+    HMIRBinaryOp, HMIRBlockKind, HMIRComptimeGlobal, HMIRConstant, HMIRContract, HMIRControlOp,
+    HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal,
+    HMIRIntWidth, HMIRLocalID, HMIRNativeOp, HMIRSignature, HMIRTypeDesc,
 };
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
@@ -101,6 +101,7 @@ impl BodyLowering<'_> {
             HMIRContract::default(),
         );
         HMIRDefKind::Function(Box::new(HMIRFunction::new(
+            HMIRFunctionStage::Comptime,
             self.finish(),
             signature,
             Some(root),
@@ -134,7 +135,12 @@ impl BodyLowering<'_> {
             self.resolver().link_name(name, prototype.symbol_naming),
             contract,
         );
-        HMIRDefKind::Function(Box::new(HMIRFunction::new(self.finish(), signature, root)))
+        HMIRDefKind::Function(Box::new(HMIRFunction::new(
+            HMIRFunctionStage::Runtime,
+            self.finish(),
+            signature,
+            root,
+        )))
     }
 
     fn is_void(&self, ty: &HIRType) -> bool {
@@ -183,6 +189,7 @@ impl BodyLowering<'_> {
             HMIRContract::default(),
         );
         HMIRDefKind::Function(Box::new(HMIRFunction::new(
+            HMIRFunctionStage::Comptime,
             self.finish(),
             signature,
             Some(root),

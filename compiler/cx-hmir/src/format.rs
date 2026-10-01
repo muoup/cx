@@ -12,7 +12,7 @@ use crate::{
     unit::{
         HMIRUnit,
         def::{HMIRDef, HMIRDefKind},
-        function::HMIRFunction,
+        function::{HMIRFunction, HMIRFunctionStage},
         global::{HMIRComptimeGlobal, HMIRGlobal},
     },
 };
@@ -64,7 +64,11 @@ fn write_function(
     let signature = function.signature();
 
     write_linkage(f, signature.linkage())?;
-    write!(f, "fn @{}(", def.name())?;
+    let stage = match function.stage() {
+        HMIRFunctionStage::Runtime => "runtime",
+        HMIRFunctionStage::Comptime => "comptime",
+    };
+    write!(f, "{stage} fn @{}(", def.name())?;
     for (index, param) in signature.params().iter().enumerate() {
         if index != 0 {
             f.write_str(", ")?;

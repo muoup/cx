@@ -6,6 +6,9 @@ mod program;
 mod ty;
 mod value;
 
+#[cfg(test)]
+mod stage_tests;
+
 use cx_hmir::HMIRUnit;
 use cx_log::{
     CXResult,

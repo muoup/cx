@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use cx_hmir::HMIRDefKind;
+use cx_hmir::{HMIRDefKind, HMIRFunctionStage};
 use cx_log::CXResult;
 use cx_mir::{
     MIRBody, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
@@ -104,6 +104,7 @@ impl Program<'_> {
             match def.kind() {
                 HMIRDefKind::Function(function)
                     if function.root().is_some()
+                        && function.stage() == HMIRFunctionStage::Runtime
                         && !function.has_comptime_params()
                         && function.signature().linkage() != LinkageMode::Static =>
                 {
@@ -157,6 +158,19 @@ impl Program<'_> {
         instance: &Instance,
         span: &TokenRange,
     ) -> CXResult<MIRFunctionID> {
+        let unit = self.unit(instance.0.unit());
+        let def = unit.def(instance.0.def());
+        if let HMIRDefKind::Function(function) = def.kind()
+            && function.stage() == HMIRFunctionStage::Comptime
+        {
+            return Err(staging_error(
+                span,
+                format!(
+                    "comptime function '{}' cannot be emitted into runtime MIR",
+                    def.name()
+                ),
+            ));
+        }
         if let Some(id) = self.module().instances.get(instance) {
             return Ok(*id);
         }

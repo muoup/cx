@@ -21,9 +21,16 @@ pub struct HMIRSignature {
 
 #[derive(Debug, Clone)]
 pub struct HMIRFunction {
+    stage: HMIRFunctionStage,
     body: HMIRBody,
     signature: HMIRSignature,
     root: Option<HMIRExprID>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HMIRFunctionStage {
+    Runtime,
+    Comptime,
 }
 
 impl HMIRContract {
@@ -101,12 +108,22 @@ impl HMIRSignature {
 }
 
 impl HMIRFunction {
-    pub fn new(body: HMIRBody, signature: HMIRSignature, root: Option<HMIRExprID>) -> Self {
+    pub fn new(
+        stage: HMIRFunctionStage,
+        body: HMIRBody,
+        signature: HMIRSignature,
+        root: Option<HMIRExprID>,
+    ) -> Self {
         Self {
+            stage,
             body,
             signature,
             root,
         }
+    }
+
+    pub fn stage(&self) -> HMIRFunctionStage {
+        self.stage
     }
 
     pub fn body(&self) -> &HMIRBody {
