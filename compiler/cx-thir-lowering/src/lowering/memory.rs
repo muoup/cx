@@ -149,7 +149,8 @@ pub(crate) fn move_value(
             builder.emit(MIRInstruction::new(
                 MIRInstructionKind::Lift {
                     out,
-                    source: MIRTarget::Place(place),
+                    source: MIRBindable::Place(place),
+                    origin: MIRBindable::Place(place),
                 },
                 range.clone(),
             ));

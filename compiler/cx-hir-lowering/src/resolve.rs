@@ -1,11 +1,13 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use cx_hir::{
-    ast::{function::HIRComptimeFnPrototype, types::HIRTagKind},
+    ast::{
+        function::HIRComptimeFnPrototype, modifiers::HIRSymbolNameScheme, types::HIRTagKind,
+    },
     registry::GlobalSymbolRegistry,
     symbols::{HIRSymbol, HIRSymbolKind, TypeConstructorData},
 };
-use cx_hmir::{HMIRDefID, HMIRDefRef, HMIRFloatWidth, HMIRIntWidth, HMIRTypeDesc};
+use cx_hmir::{HMIRDef, HMIRDefID, HMIRDefRef, HMIRFloatWidth, HMIRIntWidth, HMIRTypeDesc};
 use cx_namespace::{
     lookup::{QualifiedLookup, QualifiedLookupResult},
     module::{NamespacePath, QualifiedName},
@@ -13,7 +15,10 @@ use cx_namespace::{
 use cx_target::ArchitectureConfig;
 use cx_thir::{
     intrinsic_types::INTRINSIC_TYPES,
-    thir::data::{THIRFloatType, THIRIntType, THIRTypeKind},
+    thir::{
+        data::{THIRFloatType, THIRIntType, THIRTypeKind},
+        name_mangling::mangle_rootable_name,
+    },
 };
 use cx_util::identifier::CXIdent;
 
@@ -21,6 +26,9 @@ pub(crate) struct Resolver<'a> {
     registry: &'a GlobalSymbolRegistry,
     architecture: ArchitectureConfig,
     defs: HashMap<QualifiedName, HMIRDefID>,
+    // Function-level statics become defs placed after the planned ones
+    planned: usize,
+    statics: RefCell<Vec<HMIRDef>>,
 }
 
 pub(crate) enum GlobalSymbol {
@@ -77,16 +85,38 @@ pub(crate) fn def_name(name: QualifiedName, tag: Option<HIRTagKind>) -> Qualifie
 }
 
 impl<'a> Resolver<'a> {
-    pub(crate) fn new(registry: &'a GlobalSymbolRegistry, architecture: ArchitectureConfig) -> Self {
+    pub(crate) fn new(
+        registry: &'a GlobalSymbolRegistry,
+        architecture: ArchitectureConfig,
+        planned: usize,
+    ) -> Self {
         Self {
             registry,
             architecture,
             defs: HashMap::new(),
+            planned,
+            statics: RefCell::new(Vec::new()),
         }
+    }
+
+    pub(crate) fn next_static(&self) -> HMIRDefID {
+        HMIRDefID::new(self.planned + self.statics.borrow().len())
+    }
+
+    pub(crate) fn push_static(&self, def: HMIRDef) {
+        self.statics.borrow_mut().push(def);
+    }
+
+    pub(crate) fn take_statics(&self) -> Vec<HMIRDef> {
+        self.statics.take()
     }
 
     pub(crate) fn declare_def(&mut self, name: QualifiedName, id: HMIRDefID) {
         self.defs.entry(name).or_insert(id);
+    }
+
+    pub(crate) fn link_name(&self, name: &QualifiedName, scheme: HIRSymbolNameScheme) -> CXIdent {
+        CXIdent::new(mangle_rootable_name(self.registry, name, scheme))
     }
 
     pub(crate) fn def_ref(&self, name: QualifiedName) -> HMIRDefRef {

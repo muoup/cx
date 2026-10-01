@@ -47,4 +47,5 @@ define_errors! {
     MIR_BLOCK_ARGUMENTS: (usize, usize) = "M0032" => |(given, expected)| format!("Block edge passes {given} values but destination expects {expected}");
     MIR_UNDEFINED_REGISTER: String = "M0033" => |register| format!("Register {register} is not available in this block");
     MIR_UNTERMINATED_BLOCK: String = "M0034" => |block| format!("Reachable MIR block {block} has no terminator");
+    HMIR_STAGING: String = "M0035" => |message| format!("HMIR staging: {message}");
 }

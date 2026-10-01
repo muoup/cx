@@ -326,12 +326,6 @@ pub enum MIRAggregateIntrinsic {
         variant: usize,
         sum_ty: MIRTypeID,
     },
-    SumVariantL {
-        out: MIRPlaceID,
-        source: MIRValue,
-        variant: usize,
-        sum_ty: MIRTypeID,
-    },
 
     AggregateInit {
         out: MIRTarget,
@@ -515,7 +509,6 @@ impl MIRIntrinsic {
                 | MIRPtrIntrinsic::Geq { out, .. } => *out,
             }),
             Self::Aggregate(op) => match op {
-                MIRAggregateIntrinsic::SumVariantL { .. } => None,
                 MIRAggregateIntrinsic::SumIndex { out, .. }
                 | MIRAggregateIntrinsic::SumVariant { out, .. }
                 | MIRAggregateIntrinsic::AggregateInit { out, .. }

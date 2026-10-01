@@ -90,6 +90,7 @@ pub fn build_project(args: BuildArgs, topic: Topic) -> CXResult<Vec<PathBuf>> {
         unsafe_mode: args.unsafe_mode,
         verbose: args.verbose,
         dump: args.dump,
+        hmir_pipeline: args.hmir,
         working_directory: project_root.clone(),
         compilation_mode: CompilationMode::Executable,
         module_mode: true,

@@ -1,0 +1,15 @@
+[package]
+name = "cx-hmir-lowering"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+cx-hmir = { path = "../cx-hmir" }
+cx-intrinsics = { path = "../cx-intrinsics" }
+cx-log = { path = "../cx-log" }
+cx-mir = { path = "../cx-mir" }
+cx-namespace = { path = "../cx-namespace" }
+cx-target = { path = "../cx-target" }
+cx-tokens = { path = "../cx-tokens" }
+cx-util = { path = "../cx-util" }
+speedy = "0.8.7"

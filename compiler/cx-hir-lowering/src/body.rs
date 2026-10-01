@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 
 use cx_hir::ast::types::HIRTagKind;
+use cx_hir::ast::{expression::HIRExpression, types::HIRType};
 use cx_hmir::{
-    HMIRBlockKind, HMIRBody, HMIRConstant, HMIRExpr, HMIRExprID, HMIRExprKind, HMIRHole,
-    HMIRLocal, HMIRLocalID, HMIRNativeOp, HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner,
+    HMIRBlockKind, HMIRBody, HMIRConstant, HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRExpr,
+    HMIRExprID, HMIRExprKind, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIRNativeOp,
+    HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner,
 };
+use cx_util::linkage::LinkageMode;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -17,6 +20,12 @@ pub(crate) struct Binding {
     quoted: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ScopeEntry {
+    Local(Binding),
+    Static(HMIRDefID),
+}
+
 pub(crate) enum Symbol {
     Local(Binding),
     Global(GlobalSymbol),
@@ -27,7 +36,7 @@ pub(crate) struct BodyLowering<'a> {
     types: &'a mut HMIRTypeInterner,
     namespace: NamespacePath,
     body: HMIRBody,
-    scopes: Vec<HashMap<CXIdent, Binding>>,
+    scopes: Vec<HashMap<CXIdent, ScopeEntry>>,
     comptime: bool,
 }
 
@@ -56,6 +65,10 @@ impl<'a> BodyLowering<'a> {
             scopes: vec![HashMap::new()],
             comptime,
         }
+    }
+
+    pub(crate) fn resolver(&self) -> &'a Resolver<'a> {
+        self.resolver
     }
 
     pub(crate) fn finish(self) -> HMIRBody {
@@ -142,9 +155,43 @@ impl<'a> BodyLowering<'a> {
             self.scopes
                 .last_mut()
                 .expect("body lowering always has a root scope")
-                .insert(name.clone(), Binding { local, quoted });
+                .insert(name.clone(), ScopeEntry::Local(Binding { local, quoted }));
         }
         local
+    }
+
+    // Lowers a function-level static into its own global def visible from this scope
+    pub(crate) fn declare_static(
+        &mut self,
+        name: &CXIdent,
+        ty: &HIRType,
+        initializer: Option<&HIRExpression>,
+        span: &TokenRange,
+    ) {
+        let id = self.resolver.next_static();
+        let mut lowering =
+            BodyLowering::new(self.resolver, self.types, self.namespace.clone(), false);
+        let global_ty = lowering.lower_type(ty);
+        let initializer =
+            initializer.map(|initializer| lowering.lower_initial_value(ty, initializer));
+        let global = HMIRGlobal::new(
+            lowering.finish(),
+            global_ty,
+            initializer,
+            true,
+            LinkageMode::Static,
+            CXIdent::from(format!("{name}.{}", id.index()).as_str()),
+        );
+        let qualified = QualifiedName::new(self.namespace.clone(), name.clone());
+        self.resolver.push_static(HMIRDef::new(
+            qualified,
+            span.clone(),
+            HMIRDefKind::Global(Box::new(global)),
+        ));
+        self.scopes
+            .last_mut()
+            .expect("body lowering always has a root scope")
+            .insert(name.clone(), ScopeEntry::Static(id));
     }
 
     pub(crate) fn declare_local(
@@ -159,9 +206,12 @@ impl<'a> BodyLowering<'a> {
     pub(crate) fn lookup(&self, name: &QualifiedName, tag: Option<HIRTagKind>) -> Symbol {
         if tag.is_none()
             && let Some(root) = name.root_name_ref()
-            && let Some(binding) = self.scopes.iter().rev().find_map(|scope| scope.get(root))
+            && let Some(entry) = self.scopes.iter().rev().find_map(|scope| scope.get(root))
         {
-            return Symbol::Local(*binding);
+            return match *entry {
+                ScopeEntry::Local(binding) => Symbol::Local(binding),
+                ScopeEntry::Static(def) => Symbol::Global(GlobalSymbol::Def(HMIRDefRef::Local(def))),
+            };
         }
         Symbol::Global(self.resolver.resolve(&self.namespace, name, tag))
     }

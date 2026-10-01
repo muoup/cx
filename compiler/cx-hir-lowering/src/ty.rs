@@ -88,10 +88,7 @@ impl BodyLowering<'_> {
                 variants,
                 span,
             ),
-            HIRTypeKind::FunctionPointer { prototype } => {
-                let function = self.function_type(prototype);
-                self.type_op(HMIRTypeOp::Pointer(function), span)
-            }
+            HIRTypeKind::FunctionPointer { prototype } => self.function_type(prototype),
         }
     }
 

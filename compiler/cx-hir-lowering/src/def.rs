@@ -3,11 +3,12 @@ use cx_hir::ast::{
         HIRComptimeFnPrototype, HIRFunctionBody, HIRFunctionContract, HIRFunctionPrototype,
     },
     global_var::HIREnumVariant,
+    modifiers::HIRSymbolNameScheme,
     template::HIRTemplatePrototype,
-    types::HIRType,
+    types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBlockKind, HMIRConstant, HMIRContract, HMIRControlOp, HMIRDefKind,
+    HMIRBinaryOp, HMIRBlockKind, HMIRComptimeGlobal, HMIRConstant, HMIRContract, HMIRControlOp, HMIRDefKind,
     HMIRExprID, HMIRExprKind, HMIRFunction, HMIRGlobal, HMIRIntWidth, HMIRLocalID,
     HMIRNativeOp, HMIRSignature, HMIRTypeDesc,
 };
@@ -16,7 +17,8 @@ use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    body::BodyLowering,
+    body::{BodyLowering, Symbol},
+    resolve::GlobalSymbol,
     plan::{DefSource, PlannedDef},
 };
 
@@ -24,55 +26,51 @@ impl BodyLowering<'_> {
     pub(crate) fn lower_def(mut self, plan: &PlannedDef) -> HMIRDefKind {
         let span = plan.span();
         match plan.source() {
-            DefSource::OpaqueType => {
-                let ty_of = self.type_of_types(span);
-                HMIRDefKind::Global(Box::new(HMIRGlobal::new(
-                    self.finish(),
-                    ty_of,
-                    None,
-                    false,
-                    LinkageMode::Standard,
-                )))
-            }
+            DefSource::OpaqueType => HMIRDefKind::Type(self.intern(HMIRTypeDesc::Opaque {
+                size: 0,
+                alignment: 1,
+            })),
             DefSource::Type { template: None, ty } => {
                 let ty_of = self.type_of_types(span);
                 let initializer = self.lower_type(ty);
-                HMIRDefKind::Global(Box::new(HMIRGlobal::new(
+                HMIRDefKind::ComptimeGlobal(Box::new(HMIRComptimeGlobal::new(
                     self.finish(),
                     ty_of,
-                    Some(initializer),
-                    false,
-                    LinkageMode::Standard,
+                    initializer,
                 )))
             }
             DefSource::Type {
                 template: Some(template),
                 ty,
-            } => self.lower_type_generator(template, ty, span),
+            } => self.lower_type_generator(plan.name(), template, ty, span),
             DefSource::Function {
                 prototype,
                 template,
                 body,
-            } => self.lower_function(prototype, *template, *body),
+            } => self.lower_function(plan.name(), prototype, *template, *body),
             DefSource::ComptimeFunction {
                 prototype,
                 template,
                 body,
-            } => self.lower_comptime_function(prototype, *template, body),
+            } => self.lower_comptime_function(plan.name(), prototype, *template, body),
             DefSource::Global {
                 ty,
                 mutable,
                 initializer,
                 linkage,
+                naming,
             } => {
-                let ty = self.lower_type(ty);
-                let initializer = initializer.map(|initializer| self.lower_expr(initializer));
+                let link_name = self.resolver().link_name(plan.name(), *naming);
+                let global_ty = self.lower_type(ty);
+                let initializer =
+                    initializer.map(|initializer| self.lower_initial_value(ty, initializer));
                 HMIRDefKind::Global(Box::new(HMIRGlobal::new(
                     self.finish(),
-                    ty,
+                    global_ty,
                     initializer,
                     *mutable,
                     *linkage,
+                    link_name,
                 )))
             }
             DefSource::EnumVariant { variants, index } => {
@@ -83,6 +81,7 @@ impl BodyLowering<'_> {
 
     fn lower_type_generator(
         mut self,
+        name: &QualifiedName,
         template: &HIRTemplatePrototype,
         ty: &HIRType,
         span: &TokenRange,
@@ -98,6 +97,7 @@ impl BodyLowering<'_> {
             return_type,
             false,
             LinkageMode::Standard,
+            self.resolver().link_name(name, HIRSymbolNameScheme::Namespaced),
             HMIRContract::default(),
         );
         HMIRDefKind::Function(Box::new(HMIRFunction::new(
@@ -109,12 +109,17 @@ impl BodyLowering<'_> {
 
     fn lower_function(
         mut self,
+        name: &QualifiedName,
         prototype: &HIRFunctionPrototype,
         template: Option<&HIRTemplatePrototype>,
         body: Option<&HIRFunctionBody>,
     ) -> HMIRDefKind {
         let mut params = self.template_params(template, &prototype.range);
-        for param in &prototype.params {
+        let declared = match prototype.params.as_slice() {
+            [param] if param.name.is_none() && self.is_void(&param.ty) => &[],
+            params => params,
+        };
+        for param in declared {
             let ty = self.lower_type(&param.ty);
             params.push(self.declare(param.name.as_ref(), ty, false, false, &param.ty.range));
         }
@@ -126,13 +131,30 @@ impl BodyLowering<'_> {
             return_type,
             prototype.var_args,
             prototype.linkage,
+            self.resolver().link_name(name, prototype.symbol_naming),
             contract,
         );
         HMIRDefKind::Function(Box::new(HMIRFunction::new(self.finish(), signature, root)))
     }
 
+    fn is_void(&self, ty: &HIRType) -> bool {
+        let HIRTypeKind::Identifier {
+            name,
+            lookup: HIRTypeLookup::Standard,
+            template_input: None,
+        } = &ty.kind
+        else {
+            return false;
+        };
+        matches!(
+            self.lookup(name, None),
+            Symbol::Global(GlobalSymbol::Primitive(HMIRTypeDesc::Void))
+        )
+    }
+
     fn lower_comptime_function(
         mut self,
+        name: &QualifiedName,
         prototype: &HIRComptimeFnPrototype,
         template: Option<&HIRTemplatePrototype>,
         body: &HIRFunctionBody,
@@ -157,6 +179,7 @@ impl BodyLowering<'_> {
             return_type,
             false,
             LinkageMode::Standard,
+            self.resolver().link_name(name, HIRSymbolNameScheme::Namespaced),
             HMIRContract::default(),
         );
         HMIRDefKind::Function(Box::new(HMIRFunction::new(
@@ -198,12 +221,10 @@ impl BodyLowering<'_> {
                 )
             }
         };
-        HMIRDefKind::Global(Box::new(HMIRGlobal::new(
+        HMIRDefKind::ComptimeGlobal(Box::new(HMIRComptimeGlobal::new(
             self.finish(),
             ty,
-            Some(initializer),
-            false,
-            LinkageMode::Standard,
+            initializer,
         )))
     }
 

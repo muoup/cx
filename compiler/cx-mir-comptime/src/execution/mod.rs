@@ -50,8 +50,12 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
                 }
             }
         }
-        MIRInstructionKind::Lift { out, source } => {
-            let value = memory::read_target(engine, frame, body, *source, range)?;
+        MIRInstructionKind::Lift { out, source, .. } => {
+            let source = match source {
+                MIRBindable::Place(place) => MIRTarget::Place(*place),
+                MIRBindable::Register(register) => MIRTarget::Indirect(*register),
+            };
+            let value = memory::read_target(engine, frame, body, source, range)?;
             engine.write(frame, &MIRTarget::Register(*out), value)?;
         }
         MIRInstructionKind::Store {

@@ -4,7 +4,10 @@ use cx_util::dense_id;
 
 use crate::{
     ty::desc::HMIRTypeID,
-    unit::{function::HMIRFunction, global::HMIRGlobal},
+    unit::{
+        function::HMIRFunction,
+        global::{HMIRComptimeGlobal, HMIRGlobal},
+    },
 };
 
 dense_id!(HMIRDefID, "def");
@@ -20,6 +23,7 @@ pub struct HMIRDef {
 pub enum HMIRDefKind {
     Function(Box<HMIRFunction>),
     Global(Box<HMIRGlobal>),
+    ComptimeGlobal(Box<HMIRComptimeGlobal>),
     Type(HMIRTypeID),
 }
 

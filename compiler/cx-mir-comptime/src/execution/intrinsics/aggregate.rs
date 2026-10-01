@@ -177,21 +177,6 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             engine.write(frame, out, value)?;
             mark_inline_projection(engine, frame, body, *out, inline_base, range)
         }
-        A::SumVariantL {
-            out,
-            source,
-            variant,
-            sum_ty,
-        } => {
-            let base = engine.read(frame, body, source, range)?;
-            let payload = memory::aggregate_field(&base, *variant).unwrap_or_else(|| {
-                let ty = field_byte_offset(engine.context().types(), *sum_ty, *variant)
-                    .map(|(_, ty)| ty);
-                ty.map(|ty| memory::zero_value(engine.context().types(), ty))
-                    .unwrap_or(MIRConstant::Undefined)
-            });
-            engine.write(frame, &MIRTarget::Place(*out), payload)
-        }
     }
 }
 

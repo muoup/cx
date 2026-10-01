@@ -374,6 +374,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-hmir-lowering"
+version = "0.0.0"
+dependencies = [
+ "cx-hmir",
+ "cx-intrinsics",
+ "cx-log",
+ "cx-mir",
+ "cx-namespace",
+ "cx-target",
+ "cx-tokens",
+ "cx-util",
+ "speedy",
+]
+
+[[package]]
 name = "cx-intrinsics"
 version = "0.1.0"
 
@@ -499,6 +514,7 @@ dependencies = [
  "cx-c-header",
  "cx-hir",
  "cx-hir-lowering",
+ "cx-hmir-lowering",
  "cx-lexer",
  "cx-lmir",
  "cx-log",

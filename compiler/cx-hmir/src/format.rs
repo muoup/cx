@@ -5,7 +5,7 @@ mod ty;
 
 use std::fmt::{self, Display, Formatter};
 
-use cx_util::linkage::LinkageMode;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     ty::desc::HMIRTypeID,
@@ -13,7 +13,7 @@ use crate::{
         HMIRUnit,
         def::{HMIRDef, HMIRDefKind},
         function::HMIRFunction,
-        global::HMIRGlobal,
+        global::{HMIRComptimeGlobal, HMIRGlobal},
     },
 };
 
@@ -35,6 +35,7 @@ fn write_def(f: &mut Formatter<'_>, unit: &HMIRUnit, def: &HMIRDef) -> fmt::Resu
     match def.kind() {
         HMIRDefKind::Function(function) => write_function(f, unit, def, function),
         HMIRDefKind::Global(global) => write_global(f, unit, def, global),
+        HMIRDefKind::ComptimeGlobal(global) => write_comptime_global(f, unit, def, global),
         HMIRDefKind::Type(ty) => write_type_def(f, unit, def, *ty),
     }
 }
@@ -44,6 +45,13 @@ fn write_linkage(f: &mut Formatter<'_>, linkage: LinkageMode) -> fmt::Result {
         LinkageMode::Standard => Ok(()),
         other => write!(f, "{other} "),
     }
+}
+
+fn write_link_name(f: &mut Formatter<'_>, def: &HMIRDef, link_name: &CXIdent) -> fmt::Result {
+    if *link_name == def.name().name {
+        return Ok(());
+    }
+    write!(f, " link \"{link_name}\"")
 }
 
 fn write_function(
@@ -72,6 +80,7 @@ fn write_function(
     }
     f.write_str(") -> ")?;
     printer.expr(f, signature.return_type(), 0)?;
+    write_link_name(f, def, signature.link_name())?;
 
     let contract = signature.contract();
     if !contract.is_empty() {
@@ -120,10 +129,25 @@ fn write_global(
     })?;
     write!(f, " @{}: ", def.name())?;
     printer.expr(f, global.ty(), 0)?;
+    write_link_name(f, def, global.link_name())?;
     if let Some(initializer) = global.initializer() {
         f.write_str(" = ")?;
         printer.expr(f, initializer, 0)?;
     }
+    f.write_str(";")
+}
+
+fn write_comptime_global(
+    f: &mut Formatter<'_>,
+    unit: &HMIRUnit,
+    def: &HMIRDef,
+    global: &HMIRComptimeGlobal,
+) -> fmt::Result {
+    let printer = BodyPrinter::new(unit, global.body());
+    write!(f, "comptime global @{}: ", def.name())?;
+    printer.expr(f, global.ty(), 0)?;
+    f.write_str(" = ")?;
+    printer.expr(f, global.initializer(), 0)?;
     f.write_str(";")
 }
 

@@ -110,10 +110,12 @@ pub enum MIRInstructionKind {
         kind: MIRInvalidationKind,
     },
 
-    // Produces the value held at an addressable source; the source is expected to be moved or not reused
+    // Produces the value addressed by 'source' (a place, or a reference register read through),
+    // consuming the liveness of 'origin', the binding that owns that storage
     Lift {
         out: MIRRegisterID,
-        source: MIRTarget,
+        source: MIRBindable,
+        origin: MIRBindable,
     },
     // Declares that 'bind' is a view whose validity depends on 'bind_to' remaining live
     BindLifetime {

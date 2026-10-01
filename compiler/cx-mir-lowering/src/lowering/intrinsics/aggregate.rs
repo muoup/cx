@@ -115,18 +115,6 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
             let as_value = target_type(context, *out) == payload;
             write_projection(context, *out, address, payload, as_value);
         }
-        A::SumVariantL {
-            out,
-            source,
-            variant,
-            sum_ty,
-        } => {
-            let address = lower_read(context, source);
-            let payload = variant_type(context, *sum_ty, *variant);
-            let value = memory::load(context, address, payload);
-            let destination = context.places[out].clone();
-            memory::store(context, destination, value, payload);
-        }
     }
 }
 

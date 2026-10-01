@@ -15,7 +15,7 @@ use cx_hmir::{
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     body::{BodyLowering, Symbol},
@@ -34,8 +34,10 @@ impl BodyLowering<'_> {
                 template_input,
             } => self.identifier(name, template_input.as_ref(), span),
             HIRExprKind::IntLiteral {
-                magnitude, suffix, ..
-            } => self.int_literal(*magnitude, *suffix, span),
+                magnitude,
+                base,
+                suffix,
+            } => self.int_literal(*magnitude, *base, *suffix, span),
             HIRExprKind::BoolLiteral(value) => {
                 self.push(HMIRExprKind::Constant(HMIRConstant::Bool(*value)), span)
             }
@@ -90,6 +92,15 @@ impl BodyLowering<'_> {
                 self.native(HMIRNativeOp::Type(HMIRTypeOp::AlignOf(ty)), span)
             }
 
+            HIRExprKind::VarDeclaration {
+                ty,
+                name,
+                initial_value,
+                linkage: LinkageMode::Static,
+            } if !self.is_comptime() => {
+                self.declare_static(name, ty, initial_value.as_deref(), span);
+                self.push(HMIRExprKind::Constant(HMIRConstant::Unit), span)
+            }
             HIRExprKind::VarDeclaration {
                 ty,
                 name,
@@ -236,14 +247,18 @@ impl BodyLowering<'_> {
         span: &TokenRange,
     ) -> HMIRExprID {
         let local_ty = self.lower_type(ty);
-        let initializer = initial_value.map(|value| match &value.kind {
+        let initializer = initial_value.map(|value| self.lower_initial_value(ty, value));
+        let local = self.declare_local(Some(name), local_ty, span);
+        self.push(HMIRExprKind::Let { local, initializer }, span)
+    }
+
+    pub(crate) fn lower_initial_value(&mut self, ty: &HIRType, value: &HIRExpression) -> HMIRExprID {
+        match &value.kind {
             HIRExprKind::InitializerList { indices } => {
                 self.lower_initializer(Some(ty), indices, &value.range)
             }
             _ => self.lower_expr(value),
-        });
-        let local = self.declare_local(Some(name), local_ty, span);
-        self.push(HMIRExprKind::Let { local, initializer }, span)
+        }
     }
 
     fn lower_initializer(

@@ -1,4 +1,4 @@
-use cx_util::linkage::LinkageMode;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{binding::HMIRLocalID, body::HMIRBody, expr::kind::HMIRExprID};
 
@@ -15,6 +15,7 @@ pub struct HMIRSignature {
     return_type: HMIRExprID,
     variadic: bool,
     linkage: LinkageMode,
+    link_name: CXIdent,
     contract: HMIRContract,
 }
 
@@ -61,6 +62,7 @@ impl HMIRSignature {
         return_type: HMIRExprID,
         variadic: bool,
         linkage: LinkageMode,
+        link_name: CXIdent,
         contract: HMIRContract,
     ) -> Self {
         Self {
@@ -68,6 +70,7 @@ impl HMIRSignature {
             return_type,
             variadic,
             linkage,
+            link_name,
             contract,
         }
     }
@@ -86,6 +89,10 @@ impl HMIRSignature {
 
     pub fn linkage(&self) -> LinkageMode {
         self.linkage
+    }
+
+    pub fn link_name(&self) -> &CXIdent {
+        &self.link_name
     }
 
     pub fn contract(&self) -> &HMIRContract {

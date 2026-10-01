@@ -9,8 +9,8 @@ use crate::{
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRConstant, MIRFloatIntrinsic, MIRInstruction,
-    MIRInstructionKind, MIRIntIntrinsic, MIRIntType, MIRIntrinsic, MIRTarget, MIRType, MIRTypeKind,
-    MIRValue, expr::instruction::MIRInvalidationKind,
+    MIRInstructionKind, MIRIntIntrinsic, MIRIntType, MIRIntrinsic, MIRTarget, MIRType, MIRTypeID,
+    MIRTypeKind, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
@@ -18,6 +18,7 @@ use cx_thir::thir::{
     pattern::THIRPattern,
 };
 use cx_thir::type_context::THIRTypeContext;
+use cx_tokens::TokenRange;
 
 pub(super) fn lower_pattern_test<'thir>(
     builder: &mut MIRBuilder<'thir>,
@@ -217,21 +218,28 @@ pub(super) fn bind_pattern_payload<'thir>(
                 );
                 MIRValue::Register(out)
             } else {
-                let source = memory::move_value(builder, subject, sum_type_id, &range)?;
+                let payload = lift_variant(
+                    builder,
+                    subject,
+                    payload_type_id,
+                    *variant_index,
+                    sum_type_id,
+                    &range,
+                );
                 let nodrop = payload_type
                     .map(|id| builder.registry().resolve_type_id(id).is_nodrop())
                     .unwrap_or_else(|| union_type.is_nodrop());
                 let out = builder.new_place(payload_type_id, inner_name.clone(), nodrop);
-                builder.fun_mut().emit_intrinsic(
-                    MIRAggregateIntrinsic::SumVariantL {
-                        out,
-                        source: source.clone(),
-                        variant: *variant_index,
-                        sum_ty: sum_type_id,
+                builder.emit(MIRInstruction::new(
+                    MIRInstructionKind::Store {
+                        target: MIRTarget::Place(out),
+                        value: payload.clone(),
+                        ty: payload_type_id,
+                        bitfield: None,
                     },
                     range.clone(),
-                );
-                if let MIRValue::Register(register) = source {
+                ));
+                if let MIRValue::Register(register) = payload {
                     builder.emit(MIRInstruction::new(
                         MIRInstructionKind::Invalidate {
                             place: MIRBindable::Register(register),
@@ -258,6 +266,63 @@ pub(super) fn bind_pattern_payload<'thir>(
         _ => {}
     }
     Ok(())
+}
+
+fn lift_variant(
+    builder: &mut MIRBuilder<'_>,
+    subject: MIRValue,
+    payload_ty: MIRTypeID,
+    variant: usize,
+    sum_ty: MIRTypeID,
+    range: &TokenRange,
+) -> MIRValue {
+    let origin = match &subject {
+        MIRValue::Register(register) => MIRBindable::Register(*register),
+        MIRValue::PlaceRef(place) => MIRBindable::Place(*place),
+        MIRValue::Constant(_) => {
+            let out = builder.fun_mut().new_register(payload_ty, None);
+            builder.fun_mut().emit_intrinsic(
+                MIRAggregateIntrinsic::SumVariant {
+                    out: MIRTarget::Register(out),
+                    base: subject,
+                    variant,
+                    sum_ty,
+                },
+                range.clone(),
+            );
+            return MIRValue::Register(out);
+        }
+    };
+    let reference_ty = builder
+        .types_mut()
+        .intern(MIRType::new(MIRTypeKind::MemoryReference { inner: payload_ty }));
+    let reference = builder.fun_mut().new_register(reference_ty, None);
+    builder.fun_mut().emit_intrinsic(
+        MIRAggregateIntrinsic::SumVariant {
+            out: MIRTarget::Register(reference),
+            base: subject,
+            variant,
+            sum_ty,
+        },
+        range.clone(),
+    );
+    let out = builder.fun_mut().new_register(payload_ty, None);
+    builder.emit(MIRInstruction::new(
+        MIRInstructionKind::Lift {
+            out,
+            source: MIRBindable::Register(reference),
+            origin: origin.clone(),
+        },
+        range.clone(),
+    ));
+    builder.emit(MIRInstruction::new(
+        MIRInstructionKind::Invalidate {
+            place: origin,
+            kind: MIRInvalidationKind::Move,
+        },
+        range.clone(),
+    ));
+    MIRValue::Register(out)
 }
 
 #[allow(dead_code)]

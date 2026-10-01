@@ -538,10 +538,16 @@ fn write_instruction<T: MTRegistry>(
             }
             write_bindable(f, unit, function, place)
         }
-        MIRInstructionKind::Lift { out, source } => {
+        MIRInstructionKind::Lift {
+            out,
+            source,
+            origin,
+        } => {
             write_register_name(f, function, *out)?;
             f.write_str(" = lift ")?;
-            write_target(f, unit, function, *source)
+            write_bindable(f, unit, function, source)?;
+            f.write_str(" from ")?;
+            write_bindable(f, unit, function, origin)
         }
         MIRInstructionKind::BindLifetime { bind, bind_to: to } => {
             f.write_str("bind ")?;
@@ -1362,24 +1368,6 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             "aggregate.sum_variant",
             |f, unit, function, types| {
                 write_value(f, unit, function, base)?;
-                write!(f, ", {variant}, ")?;
-                types.write(f, *sum_ty)
-            },
-        ),
-        MIRAggregateIntrinsic::SumVariantL {
-            out,
-            source,
-            variant,
-            sum_ty,
-        } => write_intrinsic_call(
-            f,
-            unit,
-            function,
-            types,
-            Some(IntrinsicOutput::Place(*out)),
-            "aggregate.sum_variant_l",
-            |f, unit, function, types| {
-                write_value(f, unit, function, source)?;
                 write!(f, ", {variant}, ")?;
                 types.write(f, *sum_ty)
             },

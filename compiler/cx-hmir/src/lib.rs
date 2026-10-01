@@ -24,4 +24,4 @@ pub use ty::nominal::{
 pub use unit::HMIRUnit;
 pub use unit::def::{HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef};
 pub use unit::function::{HMIRContract, HMIRFunction, HMIRSignature};
-pub use unit::global::HMIRGlobal;
+pub use unit::global::{HMIRComptimeGlobal, HMIRGlobal};

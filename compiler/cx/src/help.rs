@@ -118,6 +118,7 @@ fn print_common_options() {
     println!("  -Ofast               Allow fast, but imprecise floating-point optimizations.");
     println!("  --unsafe             Skip all safety checks for faster builds (use with caution).");
     println!("  --dump               Write intermediate compiler representations to .internal.");
+    println!("  --hmir               Generate MIR through HMIR staging (experimental).");
     println!("  --allow-implicit-return  Permit missing returns in non-void functions.");
     println!("  --require-explicit-return  Require explicit returns in non-void functions.");
     println!("  --verbose            Print each compilation step on its own line.");

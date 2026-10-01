@@ -1,7 +1,8 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
-use cx_hir_lowering::generate_hmir;
+use cx_hir_lowering::{generate_external_hmir, generate_hmir};
+use cx_hmir_lowering::generate_mir as stage_hmir;
 use cx_log::catalogue::driver as catalogue;
 use cx_log::{CXResult, error::CXError};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
@@ -487,7 +488,7 @@ pub(crate) fn perform_job(
             let self_ast = context.module_db.hir.get(&job.unit.namespace());
             let namespace = job.unit.namespace().clone();
 
-            if !job.unit.is_std_lib() || context.config.verbose {
+            if dumps_enabled() && (!job.unit.is_std_lib() || context.config.verbose) {
                 dump_data(&generate_hmir(
                     &self_ast,
                     namespace.clone(),
@@ -526,8 +527,20 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::MIRGen => {
-            let thir = context.module_db.thir.get(job.unit.namespace());
-            let mir = generate_mir(thir.as_ref())?.into_static_runtime_only();
+            let mir = if context.config.hmir_pipeline {
+                let hir = context.module_db.hir.get(job.unit.namespace());
+                let registry = &context.module_db.symbol_registry;
+                let architecture = context.config.architecture;
+                let hmir = generate_hmir(&hir, job.unit.namespace().clone(), registry, architecture);
+                stage_hmir(
+                    hmir,
+                    |name| generate_external_hmir(registry, architecture, name),
+                    architecture,
+                )?
+            } else {
+                let thir = context.module_db.thir.get(job.unit.namespace());
+                generate_mir(thir.as_ref())?.into_static_runtime_only()
+            };
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir);

@@ -3,7 +3,7 @@ use cx_lmir::types::LMIRType;
 use cx_lmir::{LMIRBasicBlock, LMIRBlockTarget, LMIRInstruction, LMIRInstructionKind};
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntType, MIRStoreBitfield, MIRTarget,
+    MIRBindable, MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntType, MIRStoreBitfield, MIRTarget,
     MIRTypeKind, MIRValue,
 };
 use cx_util::identifier::CXIdent;
@@ -20,13 +20,15 @@ pub(super) fn lower_instruction(
         MIRInstructionKind::Initialize { .. }
         | MIRInstructionKind::Invalidate { .. }
         | MIRInstructionKind::BindLifetime { .. } => {}
-        MIRInstructionKind::Lift { out, source } => {
-            let ty = values::target_type(context, *source);
+        MIRInstructionKind::Lift { out, source, .. } => {
+            let target = match source {
+                MIRBindable::Place(place) => MIRTarget::Place(*place),
+                MIRBindable::Register(register) => MIRTarget::Indirect(*register),
+            };
+            let ty = values::target_type(context, target);
             let source = match source {
-                MIRTarget::Place(place) => context.places[place].clone(),
-                MIRTarget::Global(reference) => values::global_address(context, *reference),
-                MIRTarget::Indirect(register) => context.reg(*register),
-                MIRTarget::Register(_) => unreachable!("lift source must be addressable"),
+                MIRBindable::Place(place) => context.places[place].clone(),
+                MIRBindable::Register(register) => context.reg(*register),
             };
             if context.ty(ty).is_void() {
                 memory::assign(

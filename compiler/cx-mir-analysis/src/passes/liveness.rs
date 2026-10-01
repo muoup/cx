@@ -172,24 +172,8 @@ impl AnalysisPass for Liveness {
                     self.set(place, MIRLivenessState::Moved);
                 }
             }
-            MIRInstructionKind::Lift { out, source } => {
-                match source {
-                    MIRTarget::Place(place) => self.require_available(
-                        env,
-                        &MIRBindable::Place(*place),
-                        "was read",
-                        &instruction.token_range,
-                    )?,
-                    MIRTarget::Indirect(register) | MIRTarget::Register(register) => {
-                        self.require_available(
-                            env,
-                            &MIRBindable::Register(*register),
-                            "was read",
-                            &instruction.token_range,
-                        )?
-                    }
-                    MIRTarget::Global(_) => {}
-                }
+            MIRInstructionKind::Lift { out, origin, .. } => {
+                self.require_available(env, origin, "was read", &instruction.token_range)?;
                 self.set(&MIRBindable::Register(*out), MIRLivenessState::Available);
             }
             MIRInstructionKind::Store {

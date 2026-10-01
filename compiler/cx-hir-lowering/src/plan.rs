@@ -5,7 +5,7 @@ use cx_hir::ast::{
     expression::HIRExpression,
     function::{HIRComptimeFnPrototype, HIRFunctionBody, HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
-    modifiers::LinkageMode,
+    modifiers::{HIRSymbolNameScheme, LinkageMode},
     template::HIRTemplatePrototype,
     types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
@@ -36,6 +36,7 @@ pub(crate) enum DefSource<'h> {
         mutable: bool,
         initializer: Option<&'h HIRExpression>,
         linkage: LinkageMode,
+        naming: HIRSymbolNameScheme,
     },
     EnumVariant {
         variants: &'h [HIREnumVariant],
@@ -51,6 +52,20 @@ pub(crate) struct PlannedDef<'h> {
 }
 
 impl<'h> PlannedDef<'h> {
+    pub(crate) fn new(
+        name: QualifiedName,
+        namespace: NamespacePath,
+        span: TokenRange,
+        source: DefSource<'h>,
+    ) -> Self {
+        Self {
+            name,
+            namespace,
+            span,
+            source,
+        }
+    }
+
     pub(crate) fn name(&self) -> &QualifiedName {
         &self.name
     }
@@ -73,7 +88,7 @@ fn function_name(base: &NamespacePath, kind: &HIRFunctionKind) -> QualifiedName 
     QualifiedName::new(base.clone().join(key.namespace), key.name)
 }
 
-fn is_forward_declaration(name: &CXIdent, tag: Option<HIRTagKind>, ty: &HIRType) -> bool {
+pub(crate) fn is_forward_declaration(name: &CXIdent, tag: Option<HIRTagKind>, ty: &HIRType) -> bool {
     matches!(
         &ty.kind,
         HIRTypeKind::Identifier {
@@ -203,7 +218,7 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                     is_mutable,
                     initializer,
                     linkage,
-                    ..
+                    symbol_name_scheme,
                 } => plan(
                     QualifiedName::new(base.clone(), name.clone()),
                     &ty.range,
@@ -212,6 +227,7 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                         mutable: *is_mutable,
                         initializer: initializer.as_ref(),
                         linkage: *linkage,
+                        naming: *symbol_name_scheme,
                     },
                 ),
                 HIRGlobalVariable::EnumDefinition(enumeration) => {

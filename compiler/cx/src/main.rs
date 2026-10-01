@@ -89,6 +89,7 @@ fn compiler_config_with_dirs(
         unsafe_mode: args.unsafe_mode,
         verbose: args.verbose,
         dump: args.dump,
+        hmir_pipeline: args.hmir,
         working_directory,
         internal_directory,
         compilation_mode: mode,
