@@ -43,6 +43,9 @@ impl BodyPrinter<'_> {
                 f.write_str(")")
             }
             HMIRNativeOp::AddressOf(operand) => self.call(f, "op.address_of", &[*operand], depth),
+            HMIRNativeOp::Dereference(operand) => {
+                self.call(f, "op.dereference", &[*operand], depth)
+            }
             HMIRNativeOp::Type(op) => self.type_op(f, op, depth),
             HMIRNativeOp::Control(op) => self.control(f, op, depth),
             HMIRNativeOp::OwnershipOp(op) => self.ownership(f, op, depth),

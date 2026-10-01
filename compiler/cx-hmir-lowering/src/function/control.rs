@@ -201,7 +201,8 @@ impl FunctionLowering<'_, '_> {
         let condition = self.truthy(condition, span)?;
         let bindings = self.pattern_bindings.split_off(mark);
 
-        if bindings.is_empty()
+        if !self.unevaluated
+            && bindings.is_empty()
             && let Some(taken) = condition.as_static().and_then(|value| value.is_truthy())
         {
             let (chosen, skipped) = match taken {

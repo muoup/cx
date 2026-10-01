@@ -3,8 +3,9 @@ use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    eval::EvalFrame,
-    program::{Program, untagged_name},
+    eval::{EvalFrame, type_relations::exec_relation},
+    function::inspect::inspect,
+    program::{Instance, Program, untagged_name},
     staging_error,
     ty::{Field, FunctionType, NominalKey, TypeKind},
     value::StaticValue,
@@ -23,11 +24,9 @@ pub(super) fn exec_type_op(
             .collect::<CXResult<Vec<_>>>()
     };
     Ok(match op {
-        HMIRTypeOp::TypeOf(operand) => {
-            StaticValue::Type(super::type_of::type_of(program, frame, *operand)?)
-        }
+        HMIRTypeOp::TypeOf(operand) => StaticValue::Type(inspect(program, frame, *operand)?),
         HMIRTypeOp::PointerInner(_) | HMIRTypeOp::ReferenceInner(_) | HMIRTypeOp::Decay(_) => {
-            return super::type_relations::exec_relation(program, frame, op, span);
+            return exec_relation(program, frame, op, span);
         }
         HMIRTypeOp::Pointer(inner) => {
             let inner = program.eval_type(frame, *inner)?;
@@ -84,7 +83,7 @@ pub(super) fn exec_type_op(
         }
         HMIRTypeOp::Aggregate { .. } => unreachable!("aggregate types are evaluated with their id"),
         HMIRTypeOp::SizeOf(operand) | HMIRTypeOp::AlignOf(operand) => {
-            let ty = super::type_of::type_of(program, frame, *operand)?;
+            let ty = inspect(program, frame, *operand)?;
             let ty = match program.types().kind(ty) {
                 TypeKind::Type => program.eval_type(frame, *operand)?,
                 _ => ty,
@@ -156,7 +155,7 @@ impl Program<'_> {
         Ok(StaticValue::Type(ty))
     }
 
-    fn nominal_name(&mut self, owner: &crate::program::Instance) -> String {
+    fn nominal_name(&mut self, owner: &Instance) -> String {
         let name = self.def_name(owner.0);
         let base = untagged_name(&name.name).to_string();
         if owner.1.is_empty() {

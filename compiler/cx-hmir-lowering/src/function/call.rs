@@ -10,7 +10,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     eval::EvalFrame,
-    function::{Expect, FunctionLowering, Lower, Operand, Stop},
+    function::{Expect, FunctionLowering, Lower, Operand, Stop, inspect},
     program::DefKey,
     ty::{TypeID, TypeKind},
     value::StaticValue,
@@ -216,8 +216,13 @@ impl FunctionLowering<'_, '_> {
         }
 
         let instance = (def, instance_args);
-        let id = self.program.declare_function(&instance, span)?;
-        self.program.module_mut().use_function(id);
+        let callee = if self.unevaluated {
+            MIRValue::Constant(MIRConstant::Unit)
+        } else {
+            let id = self.program.declare_function(&instance, span)?;
+            self.program.module_mut().use_function(id);
+            MIRValue::Constant(MIRConstant::Function(id))
+        };
         let signature = self.program.signature(&instance, span)?;
         let mut values = Vec::with_capacity(rest.len());
         for (index, arg) in rest.into_iter().enumerate() {
@@ -247,12 +252,7 @@ impl FunctionLowering<'_, '_> {
                 }
             }
         }
-        self.emit_call(
-            MIRValue::Constant(MIRConstant::Function(id)),
-            values,
-            signature.ret(),
-            span,
-        )
+        self.emit_call(callee, values, signature.ret(), span)
     }
 
     // A receiver lvalue is passed by address to a method taking a pointer
@@ -341,6 +341,9 @@ impl FunctionLowering<'_, '_> {
     ) -> Lower<Operand> {
         let types = self.program.types();
         let unreachable = types.is_unreachable(ret);
+        if self.unevaluated && matches!(types.kind(ret), TypeKind::Expr { .. } | TypeKind::Type) {
+            return Ok(inspect::binding(self, ret, span)?);
+        }
         let out = if types.is_void(ret) || unreachable {
             None
         } else {

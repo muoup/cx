@@ -1,6 +1,7 @@
 mod deduce;
 mod eval;
 mod function;
+mod lower;
 mod module;
 mod program;
 mod ty;

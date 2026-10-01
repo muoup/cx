@@ -24,6 +24,7 @@ pub enum HMIRNativeOp {
         value: HMIRExprID,
     },
     AddressOf(HMIRExprID),
+    Dereference(HMIRExprID),
 
     Type(HMIRTypeOp),
     Control(HMIRControlOp),

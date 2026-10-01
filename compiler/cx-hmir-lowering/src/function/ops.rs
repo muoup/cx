@@ -7,7 +7,8 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    function::{Expect, FunctionLowering, Lower, Operand},
+    eval::ops::fold_unary,
+    function::{Expect, FunctionLowering, Lower, Operand, Stop},
     ty::{TypeID, TypeKind, TypeTable},
     value::{arithmetic_type, is_comparison, is_logical},
 };
@@ -36,7 +37,8 @@ impl FunctionLowering<'_, '_> {
         rhs: Operand,
         span: &TokenRange,
     ) -> Lower<Operand> {
-        if let (Some(left), Some(right)) = (lhs.as_static(), rhs.as_static())
+        if (!self.unevaluated || matches!(self.program.types().kind(lhs.ty()), TypeKind::Type))
+            && let (Some(left), Some(right)) = (lhs.as_static(), rhs.as_static())
             && let Ok(value) = self
                 .program
                 .fold_binary(op, left.clone(), right.clone(), span)
@@ -305,7 +307,7 @@ impl FunctionLowering<'_, '_> {
             .and_then(|right| self.value(right, span));
         match right {
             Ok(right) => self.jump(merge, vec![right], span),
-            Err(super::Stop::Diverged) => {}
+            Err(Stop::Diverged) => {}
             Err(error) => return Err(error),
         }
         self.set_block(merge);
@@ -315,7 +317,6 @@ impl FunctionLowering<'_, '_> {
     pub(crate) fn unary(
         &mut self,
         frame: usize,
-        id: HMIRExprID,
         op: HMIRUnaryOp,
         operand: HMIRExprID,
         span: &TokenRange,
@@ -328,8 +329,10 @@ impl FunctionLowering<'_, '_> {
             _ => {}
         }
         let value = self.expr(frame, operand, Expect::Any)?;
-        if value.as_static().is_some() {
-            let folded = self.eval(frame, id, Expect::Any)?;
+        if !self.unevaluated
+            && let Some(value) = value.as_static()
+        {
+            let folded = fold_unary(self.program, op, value.clone(), span)?;
             return self.static_operand(folded, span);
         }
         if op == HMIRUnaryOp::LNot {

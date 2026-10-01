@@ -11,7 +11,10 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    function::{Expect, Frame, FunctionLowering, Lower, Operand, OperandKind},
+    function::{
+        Expect, Frame, FunctionLowering, Lower, Operand, OperandKind, coerce::coerce, inspect,
+    },
+    lower::{Context, Output, lower},
     program::DefKey,
     ty::{TypeID, TypeKind},
     value::StaticValue,
@@ -19,69 +22,10 @@ use crate::{
 
 impl FunctionLowering<'_, '_> {
     pub(crate) fn expr(&mut self, frame: usize, id: HMIRExprID, expect: Expect) -> Lower<Operand> {
-        let span = self.span(frame, id);
-        match self.kind(frame, id) {
-            HMIRExprKind::Constant(constant) => {
-                let unit = self.frames[frame].def.unit();
-                let value = self.program.import_constant(unit, &constant, &span)?;
-                self.static_operand(value, &span)
-            }
-            HMIRExprKind::Local(local) => self.local(frame, local, &span),
-            HMIRExprKind::Def(def) => {
-                let unit = self.frames[frame].def.unit();
-                let key = self.program.resolve(unit, &def, &span)?;
-                let value = self.program.def_value(key, &span)?;
-                self.static_operand(value, &span)
-            }
-            HMIRExprKind::Hole(_) => self.error(&span, "unresolved hole in runtime code"),
-            HMIRExprKind::Error => self.error(&span, "erroneous expression"),
-            HMIRExprKind::Comptime(_) | HMIRExprKind::Quote { .. } => {
-                let value = self.eval(frame, id, expect)?;
-                self.static_operand(value, &span)
-            }
-            HMIRExprKind::Splice { quote, args } => self.splice(frame, quote, &args, expect, &span),
-            HMIRExprKind::Intrinsic(intrinsic) => self.intrinsic_expr(frame, intrinsic, &span),
-            HMIRExprKind::Native(op) => self.native(frame, id, op, expect, &span),
-            HMIRExprKind::Let { local, initializer } => {
-                self.lower_let(frame, local, initializer, &span)?;
-                Ok(Operand::unit(self.program.types_mut()))
-            }
-            HMIRExprKind::Call { callee, args } => self.call(frame, callee, &args, expect, &span),
-            HMIRExprKind::Block {
-                kind,
-                statements,
-                tail,
-            } => self.block(frame, kind, &statements, tail, expect, &span),
-            HMIRExprKind::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => self.lower_if(frame, condition, then_branch, else_branch, expect, &span),
-            HMIRExprKind::While {
-                condition,
-                body,
-                pre_eval,
-            } => self.lower_while(frame, condition, body, pre_eval, &span),
-            HMIRExprKind::For {
-                init,
-                condition,
-                increment,
-                body,
-            } => self.lower_for(frame, init, condition, increment, body, &span),
-            HMIRExprKind::Switch {
-                condition,
-                cases,
-                default,
-            } => self.lower_switch(frame, condition, &cases, default, &span),
-            HMIRExprKind::Match {
-                scrutinee,
-                subject,
-                arms,
-            } => self.lower_match(frame, scrutinee, subject, &arms, expect, &span),
-            HMIRExprKind::Label { name, body } => {
-                self.lower_label(frame, name, body, expect, &span)
-            }
-        }
+        let Output::Runtime(value) = lower(Context::Runtime(self, frame), id, expect)? else {
+            unreachable!()
+        };
+        Ok(value)
     }
 
     pub(crate) fn static_operand(
@@ -97,14 +41,38 @@ impl FunctionLowering<'_, '_> {
     }
 
     fn global_operand(&mut self, def: DefKey, span: &TokenRange) -> Lower<Operand> {
-        let global = self.program.global_ref(def, span)?;
         let ty = self.program.global_type(def, span)?;
+        if self.unevaluated {
+            return Ok(inspect::binding(self, ty, span)?);
+        }
+        let global = self.program.global_ref(def, span)?;
         Ok(Operand::new(OperandKind::Global(global), ty))
     }
 
-    fn local(&mut self, frame: usize, local: HMIRLocalID, span: &TokenRange) -> Lower<Operand> {
+    pub(crate) fn local(
+        &mut self,
+        frame: usize,
+        local: HMIRLocalID,
+        span: &TokenRange,
+    ) -> Lower<Operand> {
         if let Some(value) = self.static_binding(frame, local) {
+            if self.unevaluated
+                && !matches!(
+                    value,
+                    StaticValue::Type(_) | StaticValue::Function { .. } | StaticValue::Quote(_)
+                )
+            {
+                let ty = self.program.static_type(&value, span)?;
+                let operand = inspect::binding(self, ty, span)?;
+                return self.auto_deref(operand, span);
+            }
             return self.static_operand(value, span);
+        }
+        if self.unevaluated && self.binding(frame, local).is_none() {
+            let ty = self.frames[frame].body().local(local).ty();
+            let ty = self.eval_type(frame, ty)?;
+            let operand = inspect::binding(self, ty, span)?;
+            self.bind(frame, local, operand);
         }
         let Some(operand) = self.binding(frame, local) else {
             let name = self.frames[frame]
@@ -118,7 +86,7 @@ impl FunctionLowering<'_, '_> {
         self.auto_deref(operand, span)
     }
 
-    fn lower_let(
+    pub(crate) fn lower_let(
         &mut self,
         frame: usize,
         local: HMIRLocalID,
@@ -247,7 +215,7 @@ impl FunctionLowering<'_, '_> {
         }
     }
 
-    fn native(
+    pub(crate) fn native(
         &mut self,
         frame: usize,
         id: HMIRExprID,
@@ -257,16 +225,27 @@ impl FunctionLowering<'_, '_> {
     ) -> Lower<Operand> {
         match op {
             HMIRNativeOp::BinOp { op, lhs, rhs } => self.binary(frame, op, lhs, rhs, span),
-            HMIRNativeOp::UnOp { op, operand } => self.unary(frame, id, op, operand, span),
+            HMIRNativeOp::UnOp { op, operand } => self.unary(frame, op, operand, span),
             HMIRNativeOp::Coerce {
                 mode,
                 value,
                 target,
-            } => super::coerce::coerce(self, frame, mode, value, target, span),
+            } => coerce(self, frame, mode, value, target, span),
             HMIRNativeOp::Assign { target, op, value } => {
                 self.assign(frame, target, op, value, span)
             }
             HMIRNativeOp::AddressOf(inner) => self.address_of(frame, inner, expect, span),
+            HMIRNativeOp::Dereference(inner) => {
+                let operand = self.expr(frame, inner, Expect::Any)?;
+                let operand = self.decay(operand, span)?;
+                let Some(inner) = self.program.types().pointee(operand.ty()) else {
+                    return self.error(span, "dereferenced a non-pointer");
+                };
+                if matches!(self.program.types().kind(inner), TypeKind::Function(_)) {
+                    return Ok(operand);
+                }
+                self.deref_pointer(operand, span)
+            }
             HMIRNativeOp::Type(_) => {
                 let value = self.eval(frame, id, expect)?;
                 self.static_operand(value, span)
@@ -313,7 +292,7 @@ impl FunctionLowering<'_, '_> {
         }
     }
 
-    fn splice(
+    pub(crate) fn splice(
         &mut self,
         frame: usize,
         quote: HMIRExprID,
@@ -321,8 +300,34 @@ impl FunctionLowering<'_, '_> {
         expect: Expect,
         span: &TokenRange,
     ) -> Lower<Operand> {
-        let StaticValue::Quote(quote) = self.eval(frame, quote, Expect::Any)? else {
-            return self.error(span, "spliced a value that is not a quote");
+        let quote = if self.unevaluated {
+            let operand = self.expr(frame, quote, Expect::Any)?;
+            match operand.as_static() {
+                Some(StaticValue::Quote(quote)) => quote.clone(),
+                _ => {
+                    let TypeKind::Expr { params, result } =
+                        self.program.types().kind(operand.ty()).clone()
+                    else {
+                        return self.error(span, "spliced a value that is not a quote");
+                    };
+                    if params.len() != args.len() {
+                        return self.error(
+                            span,
+                            "expression argument count does not match its parameters",
+                        );
+                    }
+                    for (arg, param) in args.iter().zip(params) {
+                        let arg = self.expr(frame, *arg, Expect::Type(param))?;
+                        self.convert(arg, param, span)?;
+                    }
+                    return Ok(inspect::binding(self, result, span)?);
+                }
+            }
+        } else {
+            let StaticValue::Quote(quote) = self.eval(frame, quote, Expect::Any)? else {
+                return self.error(span, "spliced a value that is not a quote");
+            };
+            quote
         };
         let quote = quote.get();
         if quote.params().len() != args.len() {
@@ -350,6 +355,13 @@ impl FunctionLowering<'_, '_> {
             .map(|origin| origin.frame());
         self.frames.push(spliced);
         let index = self.frames.len() - 1;
+        if self.unevaluated {
+            self.frames[index].origin = None;
+            for (local, ty) in quote.runtime_types() {
+                let operand = inspect::binding(self, *ty, span)?;
+                self.bind(index, *local, operand);
+            }
+        }
         for (param, operand) in quote.params().iter().zip(operands) {
             let operand = match operand.kind() {
                 OperandKind::Static(value) => {
@@ -363,7 +375,7 @@ impl FunctionLowering<'_, '_> {
         self.expr(index, quote.body(), expect)
     }
 
-    fn intrinsic_expr(
+    pub(crate) fn intrinsic_expr(
         &mut self,
         frame: usize,
         intrinsic: HMIRIntrinsic,

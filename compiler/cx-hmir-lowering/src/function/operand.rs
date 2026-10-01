@@ -215,6 +215,9 @@ impl FunctionLowering<'_, '_> {
         ty: TypeID,
         span: &TokenRange,
     ) -> Lower<MIRValue> {
+        if self.unevaluated {
+            return Ok(MIRValue::Constant(MIRConstant::Unit));
+        }
         match value {
             StaticValue::Str(string) => {
                 let ty = match self.program.types().kind(ty) {
@@ -640,6 +643,10 @@ impl FunctionLowering<'_, '_> {
             }
             TypeKind::Function(_) => {
                 let ty = self.program.types_mut().pointer(operand.ty);
+                if self.unevaluated {
+                    let out = self.register(ty, span)?;
+                    return Ok(Operand::register(out, ty));
+                }
                 match operand.kind {
                     OperandKind::Static(StaticValue::Function { def, args }) => {
                         let id = self.program.declare_function(&(def, args), span)?;

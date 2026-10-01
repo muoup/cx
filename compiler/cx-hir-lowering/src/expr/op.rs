@@ -1,7 +1,7 @@
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression, HIRUnOp};
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRCoerceMode, HMIRExprID, HMIRExprKind,
-    HMIRNativeOp, HMIROwnershipOp, HMIRTypeOp, HMIRUnaryOp,
+    HMIRNativeOp, HMIROwnershipOp, HMIRUnaryOp,
 };
 use cx_tokens::TokenRange;
 
@@ -101,13 +101,7 @@ impl BodyLowering<'_> {
         let value = self.lower_expr(operand);
         let unary = |this: &mut Self, op| this.native(HMIRNativeOp::UnOp { op, operand: value }, span);
         match op {
-            HIRUnOp::Dereference => {
-                let source = self.type_op(HMIRTypeOp::TypeOf(value), span);
-                let source = self.type_op(HMIRTypeOp::Decay(source), span);
-                let pointee = self.type_op(HMIRTypeOp::PointerInner(source), span);
-                let target = self.type_op(HMIRTypeOp::Reference(pointee), span);
-                self.coerce(HMIRCoerceMode::Implicit, value, target, span)
-            }
+            HIRUnOp::Dereference => self.native(HMIRNativeOp::Dereference(value), span),
             HIRUnOp::AddressOf => self.native(HMIRNativeOp::AddressOf(value), span),
             HIRUnOp::Negative => unary(self, HMIRUnaryOp::Neg),
             HIRUnOp::BNot => unary(self, HMIRUnaryOp::BNot),

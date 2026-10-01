@@ -154,35 +154,9 @@ impl Program<'_> {
         span: &TokenRange,
     ) -> CXResult<StaticValue> {
         match op {
-            HMIRUnaryOp::Neg | HMIRUnaryOp::BNot => {
+            HMIRUnaryOp::Neg | HMIRUnaryOp::BNot | HMIRUnaryOp::LNot => {
                 let value = self.eval(frame, operand)?;
-                match value {
-                    StaticValue::Int { value, ty } => {
-                        let ty = arithmetic_type(self.types_mut(), ty, ty).unwrap_or(ty);
-                        let result = if op == HMIRUnaryOp::Neg {
-                            -value
-                        } else {
-                            !value
-                        };
-                        Ok(StaticValue::int(
-                            normalize_int(result, ty, self.types()),
-                            ty,
-                        ))
-                    }
-                    StaticValue::Float { value, ty } if op == HMIRUnaryOp::Neg => {
-                        Ok(float_value(-f64::from(&value), ty))
-                    }
-                    other => Err(staging_error(
-                        span,
-                        format!("cannot apply '{}' to {other:?} at compile time", op.path()),
-                    )),
-                }
-            }
-            HMIRUnaryOp::LNot => {
-                let truthy = self.eval(frame, operand)?.is_truthy().ok_or_else(|| {
-                    staging_error(span, "value has no compile-time truthiness".into())
-                })?;
-                Ok(StaticValue::bool(!truthy, self.types_mut()))
+                fold_unary(self, op, value, span)
             }
             HMIRUnaryOp::PreIncrement
             | HMIRUnaryOp::PreDecrement
@@ -298,5 +272,40 @@ fn as_f64(value: &StaticValue) -> Option<f64> {
         StaticValue::Int { value, .. } => Some(*value as f64),
         StaticValue::Float { value, .. } => Some(f64::from(value)),
         _ => None,
+    }
+}
+
+pub(crate) fn fold_unary(
+    program: &mut Program<'_>,
+    op: HMIRUnaryOp,
+    value: StaticValue,
+    span: &TokenRange,
+) -> CXResult<StaticValue> {
+    if op == HMIRUnaryOp::LNot {
+        let truthy = value
+            .is_truthy()
+            .ok_or_else(|| staging_error(span, "value has no compile-time truthiness".into()))?;
+        return Ok(StaticValue::bool(!truthy, program.types_mut()));
+    }
+    match value {
+        StaticValue::Int { value, ty } if matches!(op, HMIRUnaryOp::Neg | HMIRUnaryOp::BNot) => {
+            let ty = arithmetic_type(program.types_mut(), ty, ty).unwrap_or(ty);
+            let result = if op == HMIRUnaryOp::Neg {
+                -value
+            } else {
+                !value
+            };
+            Ok(StaticValue::int(
+                normalize_int(result, ty, program.types()),
+                ty,
+            ))
+        }
+        StaticValue::Float { value, ty } if op == HMIRUnaryOp::Neg => {
+            Ok(float_value(-f64::from(&value), ty))
+        }
+        other => Err(staging_error(
+            span,
+            format!("cannot apply '{}' to {other:?} at compile time", op.path()),
+        )),
     }
 }

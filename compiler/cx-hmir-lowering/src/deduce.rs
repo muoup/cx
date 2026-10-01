@@ -161,6 +161,9 @@ impl Program<'_> {
                     let char = self.types_mut().int(cx_hmir::HMIRIntWidth::I8, true);
                     self.unify(frame, *inner, char, template)
                 }
+                (HMIRTypeOp::Expr { result: inner, .. }, TypeKind::Expr { result, .. }) => {
+                    self.unify(frame, *inner, result, template)
+                }
                 (HMIRTypeOp::Reference(inner), _) | (HMIRTypeOp::Expr { result: inner, .. }, _) => {
                     self.unify(frame, *inner, actual, template)
                 }

@@ -3,6 +3,7 @@ mod call;
 mod coerce;
 mod control;
 mod expr;
+pub(crate) mod inspect;
 mod operand;
 mod ops;
 
@@ -51,7 +52,7 @@ pub(crate) enum Expect {
 // A lexical instantiation of some def's body; quotes spliced at runtime get their own frame
 pub(crate) struct Frame {
     unit: Rc<HMIRUnit>,
-    def: DefKey,
+    pub(crate) def: DefKey,
     owner: Rc<Instance>,
     statics: HashMap<HMIRLocalID, StaticValue>,
     // Frame whose runtime bindings a spliced quote refers to
@@ -106,11 +107,11 @@ pub(crate) struct PatternBinding {
 }
 
 pub(crate) struct FunctionLowering<'p, 'l> {
-    program: &'p mut Program<'l>,
+    pub(crate) program: &'p mut Program<'l>,
     serial: u64,
     body: MIRBody,
     current: MIRBasicBlockID,
-    frames: Vec<Frame>,
+    pub(crate) frames: Vec<Frame>,
     bindings: HashMap<(usize, HMIRLocalID), Operand>,
     scopes: Vec<Scope>,
     controls: Vec<Control>,
@@ -118,6 +119,7 @@ pub(crate) struct FunctionLowering<'p, 'l> {
     labels: HashMap<String, MIRBasicBlockID>,
     pattern_bindings: Vec<PatternBinding>,
     ret: TypeID,
+    pub(crate) unevaluated: bool,
 }
 
 impl Expect {
@@ -128,7 +130,7 @@ impl Expect {
         }
     }
 
-    fn of(ty: Option<TypeID>) -> Self {
+    pub(crate) fn of(ty: Option<TypeID>) -> Self {
         ty.map(Expect::Type).unwrap_or(Expect::Any)
     }
 }
@@ -213,6 +215,7 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
             labels: HashMap::new(),
             pattern_bindings: Vec::new(),
             ret,
+            unevaluated: false,
         }
     }
 
@@ -356,7 +359,7 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
     }
 
     // An evaluator frame seeing this frame's comptime bindings and its runtime bindings' types
-    fn eval_frame(&self, frame: usize) -> EvalFrame {
+    pub(crate) fn eval_frame(&self, frame: usize) -> EvalFrame {
         let current = &self.frames[frame];
         let mut types = HashMap::new();
         let mut chain = Some(frame);
