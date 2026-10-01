@@ -18,7 +18,7 @@ use cx_namespace::module::QualifiedName;
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 
-use crate::program::Program;
+use crate::{module::lower_roots, program::Program};
 
 // Stages an HMIR unit into MIR; 'load' supplies single-def units for names the unit imports
 pub fn generate_mir<'l>(
@@ -27,8 +27,9 @@ pub fn generate_mir<'l>(
     architecture: ArchitectureConfig,
 ) -> CXResult<MIRUnit<'static>> {
     let mut program = Program::new(unit, Box::new(load), architecture);
-    program.lower_roots()?;
-    Ok(program.finish())
+    lower_roots(&mut program)?;
+    let (types, module) = program.into_parts();
+    Ok(module.finish(types.finish()))
 }
 
 pub(crate) fn staging_error(span: &TokenRange, message: String) -> CXError {

@@ -11,6 +11,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     body::BodyLowering,
+    def::lower_def,
     plan::{DefSource, PlannedDef, is_forward_declaration},
     resolve::Resolver,
 };
@@ -92,8 +93,8 @@ pub fn generate_external_hmir(
     let plan = PlannedDef::new(name.clone(), namespace.clone(), span.clone(), source);
     let resolver = Resolver::new(registry, architecture, 1);
     let mut unit = HMIRUnit::new(namespace);
-    let lowering = BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false);
-    let kind = lowering.lower_def(&plan);
+    let cx = BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false);
+    let kind = lower_def(cx, &plan);
     unit.push_def(HMIRDef::new(name.clone(), span, kind));
     for def in resolver.take_statics() {
         unit.push_def(def);

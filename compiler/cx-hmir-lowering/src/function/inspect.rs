@@ -5,7 +5,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     eval::EvalFrame,
-    function::{Expect, Frame, FunctionLowering, Operand, Stop},
+    function::{Expect, Frame, FunctionLowering, Operand, Stop, expr::lower_expr},
     program::Program,
     ty::{TypeID, TypeKind},
 };
@@ -27,7 +27,7 @@ pub(crate) fn inspect(
         let operand = binding(&mut lowering, ty, &span)?;
         lowering.bind(0, local, operand);
     }
-    match lowering.expr(0, id, Expect::Any) {
+    match lower_expr(&mut lowering, 0, id, Expect::Any) {
         Ok(value) => Ok(value.ty()),
         Err(Stop::Diverged) => Ok(lowering.program.types_mut().intern(TypeKind::Unreachable)),
         Err(Stop::Error(error)) => Err(error),

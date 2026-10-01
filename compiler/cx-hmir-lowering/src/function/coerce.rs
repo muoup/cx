@@ -2,44 +2,42 @@ use cx_hmir::{HMIRCoerceMode, HMIRExprID};
 use cx_mir::{MIRInternalIntrinsic, MIRTarget};
 use cx_tokens::TokenRange;
 
-use crate::{
-    function::{Expect, FunctionLowering, Lower, Operand},
-    ty::TypeKind,
+use crate::function::{
+    Expect, FunctionLowering, LowerResult, Operand,
+    expr::lower_expr,
+    lower_eval_type,
+    operand::{lower_auto_deref, lower_convert, lower_truthy, lower_value},
 };
 
-pub(super) fn coerce(
-    lowering: &mut FunctionLowering<'_, '_>,
+pub(super) fn lower_coerce(
+    cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
     mode: HMIRCoerceMode,
     value: HMIRExprID,
     target: HMIRExprID,
     span: &TokenRange,
-) -> Lower<Operand> {
+) -> LowerResult<Operand> {
     if mode == HMIRCoerceMode::Truthy {
-        let value = lowering.expr(frame, value, Expect::Any)?;
-        return lowering.truthy(value, span);
+        let value = lower_expr(cx, frame, value, Expect::Any)?;
+        return lower_truthy(cx, value, span);
     }
-    let ty = lowering.eval_type(frame, target)?;
-    let reference = match lowering.program.types().kind(ty) {
-        TypeKind::Reference(inner) => Some(*inner),
-        _ => None,
-    };
+    let ty = lower_eval_type(cx, frame, target)?;
+    let types = cx.program.types();
+    let reference = types.reference_inner(ty);
     let expect = if reference.is_some() {
         Expect::Any
     } else {
         Expect::Type(ty)
     };
-    let value = lowering.expr(frame, value, expect)?;
+    let value = lower_expr(cx, frame, value, expect)?;
     let value = if mode == HMIRCoerceMode::CCast
         && reference.is_some_and(|inner| inner != value.ty())
-        && matches!(
-            lowering.program.types().kind(value.ty()),
-            TypeKind::Pointer(_)
-        ) {
-        let value = lowering.value(value, span)?;
-        let out = lowering.register(ty, span)?;
-        let target_ty = lowering.mir(ty, span)?;
-        lowering.intrinsic(
+        && cx.program.types().is_pointer(value.ty())
+    {
+        let value = lower_value(cx, value, span)?;
+        let out = cx.register(ty, span)?;
+        let target_ty = cx.mir(ty, span)?;
+        cx.intrinsic(
             MIRInternalIntrinsic::Bitcast {
                 out: MIRTarget::Register(out),
                 value,
@@ -49,14 +47,14 @@ pub(super) fn coerce(
         );
         Operand::register(out, ty)
     } else {
-        lowering.convert(value, ty, span)?
+        lower_convert(cx, value, ty, span)?
     };
     if let Some(inner) = reference {
-        if matches!(lowering.program.types().kind(inner), TypeKind::Function(_)) {
-            let pointer = lowering.program.types_mut().pointer(inner);
+        if cx.program.types().is_function(inner) {
+            let pointer = cx.program.types_mut().pointer_to(inner);
             return Ok(value.with_type(pointer));
         }
-        return lowering.auto_deref(value, span);
+        return lower_auto_deref(cx, value, span);
     }
     Ok(value)
 }

@@ -11,6 +11,8 @@ use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit};
 use cx_namespace::module::NamespacePath;
 use cx_target::ArchitectureConfig;
 
+use crate::def::lower_def;
+
 use crate::{body::BodyLowering, plan::plan_defs, resolve::Resolver};
 
 pub use external::generate_external_hmir;
@@ -30,9 +32,8 @@ pub fn generate_hmir(
 
     let mut unit = HMIRUnit::new(namespace);
     for plan in &plans {
-        let lowering =
-            BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false);
-        let kind = lowering.lower_def(plan);
+        let cx = BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false);
+        let kind = lower_def(cx, plan);
         unit.push_def(HMIRDef::new(plan.name().clone(), plan.span().clone(), kind));
     }
     for def in resolver.take_statics() {

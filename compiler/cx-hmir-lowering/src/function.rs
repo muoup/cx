@@ -1,15 +1,17 @@
 mod aggregate;
-mod call;
+pub(crate) mod call;
 mod coerce;
-mod control;
-mod expr;
+pub(crate) mod control;
+pub(crate) mod expr;
 pub(crate) mod inspect;
 mod operand;
 mod ops;
 
 use std::{collections::HashMap, rc::Rc};
 
-use cx_hmir::{HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRLocalID, HMIRPattern, HMIRUnit};
+use cx_hmir::{
+    HMIRBody, HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRLocalID, HMIRPattern, HMIRUnit,
+};
 use cx_log::{CXResult, error::CXError};
 use cx_mir::{
     MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRBody, MIRConstant, MIRFunctionID,
@@ -20,7 +22,14 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    eval::{EvalFrame, RuntimeView},
+    eval::{
+        EvalFrame, RuntimeView, eval, eval_frame_for, eval_signature, eval_type, eval_type_hint,
+        type_hint,
+    },
+    function::{
+        expr::lower_expr,
+        operand::{lower_convert, lower_value},
+    },
     program::{DefKey, Instance, Program, def_body},
     staging_error,
     ty::TypeID,
@@ -34,7 +43,7 @@ pub(crate) enum Stop {
     Error(CXError),
 }
 
-pub(crate) type Lower<T> = Result<T, Stop>;
+pub(crate) type LowerResult<T> = Result<T, Stop>;
 
 impl From<CXError> for Stop {
     fn from(error: CXError) -> Self {
@@ -146,61 +155,104 @@ impl Frame {
         }
     }
 
-    fn body(&self) -> &cx_hmir::HMIRBody {
+    fn body(&self) -> &HMIRBody {
         def_body(self.unit.def(self.def.def())).expect("lowered def has a body")
     }
 }
 
-impl Program<'_> {
-    pub(crate) fn lower_function(
-        &mut self,
-        instance: &Instance,
-        id: MIRFunctionID,
-    ) -> CXResult<MIRBody> {
-        let unit = self.unit(instance.0.unit());
-        let def = unit.def(instance.0.def());
-        let span = def.span().clone();
-        let HMIRDefKind::Function(function) = def.kind() else {
-            return Err(staging_error(&span, "lowered a non-function".into()));
-        };
-        let root = function.root().expect("queued functions have a body");
-        let signature = self.signature(instance, &span)?;
-        let prototype = self.module().function(id).prototype().clone();
-        let main = prototype.symbol_name.as_str() == "main";
-        let statics = self.frame_for(instance).locals().clone();
-        let serial = self.next_serial();
+pub(crate) fn lower_function(
+    cx: &mut Program<'_>,
+    instance: &Instance,
+    id: MIRFunctionID,
+) -> CXResult<MIRBody> {
+    let unit = cx.unit(instance.0.unit());
+    let def = unit.def(instance.0.def());
+    let span = def.span().clone();
+    let HMIRDefKind::Function(function) = def.kind() else {
+        return Err(staging_error(&span, "lowered a non-function".into()));
+    };
+    let root = function.root().expect("queued functions have a body");
+    let signature = eval_signature(cx, instance, &span)?;
+    let prototype = cx.module().function(id).prototype().clone();
+    let main = prototype.symbol_name.as_str() == "main";
+    let statics = eval_frame_for(cx, instance).locals().clone();
+    let serial = cx.next_serial();
 
-        let mut lowering = FunctionLowering::new(self, serial, signature.ret(), &span);
-        let mut frame = Frame::new(unit.clone(), instance.0, Rc::new(instance.clone()));
-        frame.statics = statics;
-        lowering.frames.push(frame);
+    let mut cx = FunctionLowering::new(cx, serial, signature.ret(), &span);
+    let mut frame = Frame::new(unit.clone(), instance.0, Rc::new(instance.clone()));
+    frame.statics = statics;
+    cx.frames.push(frame);
 
-        let root_scope = lowering.scopes[0].id;
-        for (index, local) in signature.runtime().iter().enumerate() {
-            let param = &prototype.signature.params()[index];
-            let place = lowering.body.add_parameter(param, root_scope);
-            lowering.emit(
-                MIRInstructionKind::Initialize {
-                    place: MIRBindable::Place(place),
-                },
-                &span,
-            );
-            let ty = signature.params()[index].1;
-            lowering.bind(0, *local, Operand::place(place, ty));
+    let root_scope = cx.scopes[0].id;
+    for (index, local) in signature.runtime().iter().enumerate() {
+        let param = &prototype.signature.params()[index];
+        let place = cx.body.add_parameter(param, root_scope);
+        cx.emit(
+            MIRInstructionKind::Initialize {
+                place: MIRBindable::Place(place),
+            },
+            &span,
+        );
+        let ty = signature.params()[index].1;
+        cx.bind(0, *local, Operand::place(place, ty));
+    }
+
+    lower_root(&mut cx, root, main)?;
+    Ok(cx.body)
+}
+
+fn lower_root(cx: &mut FunctionLowering<'_, '_>, root: HMIRExprID, main: bool) -> CXResult<()> {
+    let span = cx.span(0, root);
+    let is_block = matches!(
+        cx.frames[0].body().expr(root).kind(),
+        HMIRExprKind::Block { .. }
+    );
+    let result = if is_block {
+        lower_expr(cx, 0, root, Expect::Discard).map(|_| None)
+    } else {
+        lower_expr(cx, 0, root, Expect::Type(cx.ret)).map(Some)
+    };
+    let value = match result {
+        Ok(value) => value,
+        Err(Stop::Diverged) => return Ok(()),
+        Err(Stop::Error(error)) => return Err(error),
+    };
+    if cx.terminated() {
+        return Ok(());
+    }
+    let outcome = (|| -> LowerResult<()> {
+        if let Some(value) = value {
+            return lower_return(cx, Some(value), &span);
         }
-
-        lowering.lower_root(root, main)?;
-        Ok(lowering.body)
+        if cx.program.types().is_void(cx.ret) {
+            return lower_return(cx, None, &span);
+        }
+        if main {
+            let zero = Operand::value(
+                MIRValue::Constant(MIRConstant::Integer {
+                    ty: MIRIntType::I32,
+                    value: 0,
+                }),
+                cx.ret,
+            );
+            return lower_return(cx, Some(zero), &span);
+        }
+        cx.emit(MIRInstructionKind::Unreachable, &span);
+        Ok(())
+    })();
+    match outcome {
+        Ok(()) | Err(Stop::Diverged) => Ok(()),
+        Err(Stop::Error(error)) => Err(error),
     }
 }
 
 impl<'p, 'l> FunctionLowering<'p, 'l> {
-    fn new(program: &'p mut Program<'l>, serial: u64, ret: TypeID, span: &TokenRange) -> Self {
+    fn new(cx: &'p mut Program<'l>, serial: u64, ret: TypeID, span: &TokenRange) -> Self {
         let mut body = MIRBody::new();
         let entry = body.add_block();
         let root = body.add_scope(span.clone());
         Self {
-            program,
+            program: cx,
             serial,
             body,
             current: entry,
@@ -219,51 +271,6 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         }
     }
 
-    fn lower_root(&mut self, root: HMIRExprID, main: bool) -> CXResult<()> {
-        let span = self.span(0, root);
-        let is_block = matches!(
-            self.frames[0].body().expr(root).kind(),
-            HMIRExprKind::Block { .. }
-        );
-        let result = if is_block {
-            self.expr(0, root, Expect::Discard).map(|_| None)
-        } else {
-            self.expr(0, root, Expect::Type(self.ret)).map(Some)
-        };
-        let value = match result {
-            Ok(value) => value,
-            Err(Stop::Diverged) => return Ok(()),
-            Err(Stop::Error(error)) => return Err(error),
-        };
-        if self.terminated() {
-            return Ok(());
-        }
-        let outcome = (|| -> Lower<()> {
-            if let Some(value) = value {
-                return self.emit_return(Some(value), &span);
-            }
-            if self.program.types().is_void(self.ret) {
-                return self.emit_return(None, &span);
-            }
-            if main {
-                let zero = Operand::value(
-                    MIRValue::Constant(MIRConstant::Integer {
-                        ty: MIRIntType::I32,
-                        value: 0,
-                    }),
-                    self.ret,
-                );
-                return self.emit_return(Some(zero), &span);
-            }
-            self.emit(MIRInstructionKind::Unreachable, &span);
-            Ok(())
-        })();
-        match outcome {
-            Ok(()) | Err(Stop::Diverged) => Ok(()),
-            Err(Stop::Error(error)) => Err(error),
-        }
-    }
-
     pub(crate) fn span(&self, frame: usize, id: HMIRExprID) -> TokenRange {
         self.frames[frame].body().expr(id).span().clone()
     }
@@ -272,7 +279,7 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         self.frames[frame].body().expr(id).kind().clone()
     }
 
-    fn error<T>(&self, span: &TokenRange, message: impl Into<String>) -> Lower<T> {
+    fn error<T>(&self, span: &TokenRange, message: impl Into<String>) -> LowerResult<T> {
         Err(Stop::Error(staging_error(span, message.into())))
     }
 
@@ -311,11 +318,11 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         self.current = block;
     }
 
-    pub(crate) fn mir(&mut self, ty: TypeID, span: &TokenRange) -> Lower<MIRTypeID> {
+    pub(crate) fn mir(&mut self, ty: TypeID, span: &TokenRange) -> LowerResult<MIRTypeID> {
         Ok(self.program.types_mut().mir(ty, span)?)
     }
 
-    pub(crate) fn register(&mut self, ty: TypeID, span: &TokenRange) -> Lower<MIRRegisterID> {
+    pub(crate) fn register(&mut self, ty: TypeID, span: &TokenRange) -> LowerResult<MIRRegisterID> {
         let mir = self.mir(ty, span)?;
         Ok(self.body.add_register(mir, None))
     }
@@ -325,7 +332,7 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         ty: TypeID,
         name: Option<CXIdent>,
         span: &TokenRange,
-    ) -> Lower<MIRPlaceID> {
+    ) -> LowerResult<MIRPlaceID> {
         let mir = self.mir(ty, span)?;
         let nodrop = self.program.types().is_nodrop(ty);
         let scope = self.scopes.last().expect("function has a scope").id;
@@ -336,88 +343,18 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         self.bindings.insert((frame, local), operand);
     }
 
+    fn frame_chain(&self, frame: usize) -> impl Iterator<Item = usize> + '_ {
+        std::iter::successors(Some(frame), |index| self.frames[*index].origin)
+    }
+
     pub(crate) fn binding(&self, frame: usize, local: HMIRLocalID) -> Option<Operand> {
-        let mut current = Some(frame);
-        while let Some(index) = current {
-            if let Some(operand) = self.bindings.get(&(index, local)) {
-                return Some(operand.clone());
-            }
-            current = self.frames[index].origin;
-        }
-        None
+        self.frame_chain(frame)
+            .find_map(|index| self.bindings.get(&(index, local)).cloned())
     }
 
     pub(crate) fn static_binding(&self, frame: usize, local: HMIRLocalID) -> Option<StaticValue> {
-        let mut current = Some(frame);
-        while let Some(index) = current {
-            if let Some(value) = self.frames[index].statics.get(&local) {
-                return Some(value.clone());
-            }
-            current = self.frames[index].origin;
-        }
-        None
-    }
-
-    // An evaluator frame seeing this frame's comptime bindings and its runtime bindings' types
-    pub(crate) fn eval_frame(&self, frame: usize) -> EvalFrame {
-        let current = &self.frames[frame];
-        let mut types = HashMap::new();
-        let mut chain = Some(frame);
-        while let Some(index) = chain {
-            for ((owner, local), operand) in &self.bindings {
-                if *owner == index {
-                    types.entry(*local).or_insert(operand.ty());
-                }
-            }
-            chain = self.frames[index].origin;
-        }
-        let mut eval =
-            EvalFrame::new(current.unit.clone(), current.def, current.owner.clone()).with_runtime(
-                RuntimeView::new(Some(FrameRef::new(self.serial, frame)), types),
-            );
-        let mut chain = Some(frame);
-        let mut frames = Vec::new();
-        while let Some(index) = chain {
-            frames.push(index);
-            chain = self.frames[index].origin;
-        }
-        for index in frames.into_iter().rev() {
-            for (local, value) in &self.frames[index].statics {
-                eval.bind(*local, value.clone());
-            }
-        }
-        eval
-    }
-
-    pub(crate) fn eval(
-        &mut self,
-        frame: usize,
-        id: HMIRExprID,
-        expect: Expect,
-    ) -> Lower<StaticValue> {
-        let mut eval = self.eval_frame(frame);
-        let value = self.program.eval_expecting(&mut eval, id, expect.ty())?;
-        for (local, value) in eval.locals() {
-            if self.frames[frame].statics.contains_key(local) {
-                self.frames[frame].statics.insert(*local, value.clone());
-            }
-        }
-        Ok(value)
-    }
-
-    pub(crate) fn eval_type(&mut self, frame: usize, id: HMIRExprID) -> Lower<TypeID> {
-        let mut eval = self.eval_frame(frame);
-        Ok(self.program.eval_type(&mut eval, id)?)
-    }
-
-    pub(crate) fn eval_type_hint(&mut self, frame: usize, id: HMIRExprID) -> Lower<Option<TypeID>> {
-        let mut eval = self.eval_frame(frame);
-        Ok(self.program.eval_type_hint(&mut eval, id)?)
-    }
-
-    pub(crate) fn type_hint(&mut self, frame: usize, id: HMIRExprID) -> Option<TypeID> {
-        let mut eval = self.eval_frame(frame);
-        self.program.type_hint(&mut eval, id)
+        self.frame_chain(frame)
+            .find_map(|index| self.frames[index].statics.get(&local).cloned())
     }
 
     pub(crate) fn push_scope(&mut self, span: &TokenRange) {
@@ -429,12 +366,12 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
     }
 
     // Runs the innermost scope's defers and drops its places, then leaves it
-    pub(crate) fn pop_scope(&mut self, span: &TokenRange) -> Lower<()> {
+    pub(crate) fn pop_scope(&mut self, span: &TokenRange) -> LowerResult<()> {
         let result = if self.terminated() {
             Ok(())
         } else {
             let index = self.scopes.len() - 1;
-            self.cleanup_scope(index, span)
+            lower_cleanup_scope(self, index, span)
         };
         self.scopes.pop();
         result
@@ -443,74 +380,148 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
     pub(crate) fn current_scope(&self) -> MIRScopeID {
         self.scopes.last().expect("function has a scope").id
     }
+}
 
-    // Cleans up every scope inside 'boundary', and 'boundary' itself when 'inclusive'
-    pub(crate) fn cleanup_to(
-        &mut self,
-        boundary: MIRScopeID,
-        inclusive: bool,
-        span: &TokenRange,
-    ) -> Lower<()> {
-        for index in (0..self.scopes.len()).rev() {
-            let id = self.scopes[index].id;
-            if id == boundary && !inclusive {
-                break;
-            }
-            self.cleanup_scope(index, span)?;
-            if id == boundary {
-                break;
+pub(crate) fn lower_eval(
+    cx: &mut FunctionLowering<'_, '_>,
+    frame: usize,
+    id: HMIRExprID,
+    expect: Expect,
+) -> LowerResult<StaticValue> {
+    let mut eval_frame = lower_eval_frame(cx, frame);
+    let value = eval(cx.program, &mut eval_frame, id, expect.ty())?;
+    for (local, value) in eval_frame.locals() {
+        if cx.frames[frame].statics.contains_key(local) {
+            cx.frames[frame].statics.insert(*local, value.clone());
+        }
+    }
+    Ok(value)
+}
+
+// An evaluator frame seeing this frame's comptime bindings and its runtime bindings' types
+pub(crate) fn lower_eval_frame(cx: &FunctionLowering<'_, '_>, frame: usize) -> EvalFrame {
+    let current = &cx.frames[frame];
+    let mut types = HashMap::new();
+    for index in cx.frame_chain(frame) {
+        for ((owner, local), operand) in &cx.bindings {
+            if *owner == index {
+                types.entry(*local).or_insert(operand.ty());
             }
         }
-        Ok(())
     }
-
-    fn cleanup_scope(&mut self, index: usize, span: &TokenRange) -> Lower<()> {
-        let defers = self.scopes[index].defers.clone();
-        let saved = self.scopes.split_off(index + 1);
-        let mut result = Ok(());
-        for (frame, expr) in defers.into_iter().rev() {
-            self.push_scope(span);
-            let lowered = self.expr(frame, expr, Expect::Discard).map(|_| ());
-            let popped = self.pop_scope(span);
-            result = lowered.and(popped);
-            if result.is_err() {
-                break;
-            }
+    let mut eval =
+        EvalFrame::new(current.unit.clone(), current.def, current.owner.clone()).with_runtime(
+            RuntimeView::new(Some(FrameRef::new(cx.serial, frame)), types),
+        );
+    for index in cx.frame_chain(frame).collect::<Vec<_>>().into_iter().rev() {
+        for (local, value) in &cx.frames[index].statics {
+            eval.bind(*local, value.clone());
         }
-        self.scopes.extend(saved);
-        result?;
-        let id = self.scopes[index].id;
-        let places = self
-            .body
-            .places()
-            .iter()
-            .filter(|place| place.scope == id)
-            .rev()
-            .map(|place| place.id)
-            .collect::<Vec<_>>();
-        for place in places {
-            self.emit(
-                MIRInstructionKind::Invalidate {
-                    place: MIRBindable::Place(place),
-                    kind: MIRInvalidationKind::Drop,
-                },
-                span,
-            );
-        }
-        Ok(())
     }
+    eval
+}
 
-    pub(crate) fn emit_return(&mut self, value: Option<Operand>, span: &TokenRange) -> Lower<()> {
-        let value = match value {
-            Some(value) if !self.program.types().is_void(self.ret) => {
-                let value = self.convert(value, self.ret, span)?;
-                Some(self.value(value, span)?)
-            }
-            _ => None,
-        };
-        let root = self.scopes[0].id;
-        self.cleanup_to(root, true, span)?;
-        self.emit(MIRInstructionKind::Return { value }, span);
-        Err(Stop::Diverged)
+// Cleans up every scope inside 'boundary', and 'boundary' itself when 'inclusive'
+pub(crate) fn lower_cleanup_to(
+    cx: &mut FunctionLowering<'_, '_>,
+    boundary: MIRScopeID,
+    inclusive: bool,
+    span: &TokenRange,
+) -> LowerResult<()> {
+    for index in (0..cx.scopes.len()).rev() {
+        let id = cx.scopes[index].id;
+        if id == boundary && !inclusive {
+            break;
+        }
+        lower_cleanup_scope(cx, index, span)?;
+        if id == boundary {
+            break;
+        }
     }
+    Ok(())
+}
+
+fn lower_cleanup_scope(
+    cx: &mut FunctionLowering<'_, '_>,
+    index: usize,
+    span: &TokenRange,
+) -> LowerResult<()> {
+    let defers = cx.scopes[index].defers.clone();
+    let saved = cx.scopes.split_off(index + 1);
+    let mut result = Ok(());
+    for (frame, expr) in defers.into_iter().rev() {
+        cx.push_scope(span);
+        let lowered = lower_expr(cx, frame, expr, Expect::Discard).map(|_| ());
+        let popped = cx.pop_scope(span);
+        result = lowered.and(popped);
+        if result.is_err() {
+            break;
+        }
+    }
+    cx.scopes.extend(saved);
+    result?;
+    let id = cx.scopes[index].id;
+    let places = cx
+        .body
+        .places()
+        .iter()
+        .filter(|place| place.scope == id)
+        .rev()
+        .map(|place| place.id)
+        .collect::<Vec<_>>();
+    for place in places {
+        cx.emit(
+            MIRInstructionKind::Invalidate {
+                place: MIRBindable::Place(place),
+                kind: MIRInvalidationKind::Drop,
+            },
+            span,
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn lower_return(
+    cx: &mut FunctionLowering<'_, '_>,
+    value: Option<Operand>,
+    span: &TokenRange,
+) -> LowerResult<()> {
+    let value = match value {
+        Some(value) if !cx.program.types().is_void(cx.ret) => {
+            let value = lower_convert(cx, value, cx.ret, span)?;
+            Some(lower_value(cx, value, span)?)
+        }
+        _ => None,
+    };
+    let root = cx.scopes[0].id;
+    lower_cleanup_to(cx, root, true, span)?;
+    cx.emit(MIRInstructionKind::Return { value }, span);
+    Err(Stop::Diverged)
+}
+
+pub(crate) fn lower_eval_type(
+    cx: &mut FunctionLowering<'_, '_>,
+    frame: usize,
+    id: HMIRExprID,
+) -> LowerResult<TypeID> {
+    let mut eval_frame = lower_eval_frame(cx, frame);
+    Ok(eval_type(cx.program, &mut eval_frame, id)?)
+}
+
+pub(crate) fn lower_eval_type_hint(
+    cx: &mut FunctionLowering<'_, '_>,
+    frame: usize,
+    id: HMIRExprID,
+) -> LowerResult<Option<TypeID>> {
+    let mut eval_frame = lower_eval_frame(cx, frame);
+    Ok(eval_type_hint(cx.program, &mut eval_frame, id)?)
+}
+
+pub(crate) fn lower_type_hint(
+    cx: &mut FunctionLowering<'_, '_>,
+    frame: usize,
+    id: HMIRExprID,
+) -> Option<TypeID> {
+    let mut eval_frame = lower_eval_frame(cx, frame);
+    type_hint(cx.program, &mut eval_frame, id)
 }

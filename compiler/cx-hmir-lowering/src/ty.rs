@@ -1,19 +1,21 @@
+mod lower;
 mod mir;
+
+use lower::lower_type;
 
 use std::collections::HashMap;
 
 use cx_hmir::{HMIRAggregateKind, HMIRExprID, HMIRFloatWidth, HMIRIntWidth, HMIRMoveSemantics};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRField, MIRFloatType, MIRFnParam, MIRFnSignature, MIRIntType, MIRType, MIRTypeID,
-    MIRTypeKind,
+    MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind,
     ty::{layout::calculate_type_layout, registry::MIRTypeRegistry},
 };
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
-use crate::{program::DefKey, staging_error, value::StaticValue};
+use crate::{program::DefKey, value::StaticValue};
 
 pub(crate) use mir::MIRTypes;
 
@@ -227,17 +229,65 @@ impl TypeTable {
         self.int(HMIRIntWidth::I64, false)
     }
 
-    pub(crate) fn pointer(&mut self, inner: TypeID) -> TypeID {
+    pub(crate) fn pointer_to(&mut self, inner: TypeID) -> TypeID {
         self.intern(TypeKind::Pointer(inner))
     }
 
-    pub(crate) fn reference(&mut self, inner: TypeID) -> TypeID {
+    pub(crate) fn reference_to(&mut self, inner: TypeID) -> TypeID {
         self.intern(TypeKind::Reference(inner))
+    }
+
+    pub(crate) fn array_of(&mut self, element: TypeID, length: Option<u64>) -> TypeID {
+        self.intern(TypeKind::Array { element, length })
+    }
+
+    pub(crate) fn pointer_inner(&self, id: TypeID) -> Option<TypeID> {
+        match self.kind(id) {
+            TypeKind::Pointer(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn reference_inner(&self, id: TypeID) -> Option<TypeID> {
+        match self.kind(id) {
+            TypeKind::Reference(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn array_inner(&self, id: TypeID) -> Option<TypeID> {
+        match self.kind(id) {
+            TypeKind::Array { element, .. } => Some(*element),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn function_type(&self, id: TypeID) -> Option<&FunctionType> {
+        match self.kind(id) {
+            TypeKind::Function(function) => Some(function),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_pointer(&self, id: TypeID) -> bool {
+        self.pointer_inner(id).is_some()
+    }
+
+    pub(crate) fn is_reference(&self, id: TypeID) -> bool {
+        self.reference_inner(id).is_some()
+    }
+
+    pub(crate) fn is_array(&self, id: TypeID) -> bool {
+        self.array_inner(id).is_some()
+    }
+
+    pub(crate) fn is_function(&self, id: TypeID) -> bool {
+        self.function_type(id).is_some()
     }
 
     pub(crate) fn char_pointer(&mut self) -> TypeID {
         let char = self.int(HMIRIntWidth::I8, true);
-        self.pointer(char)
+        self.pointer_to(char)
     }
 
     pub(crate) fn is_void(&self, id: TypeID) -> bool {
@@ -257,13 +307,6 @@ impl TypeTable {
 
     pub(crate) fn is_signed(&self, id: TypeID) -> bool {
         self.int_info(id).is_some_and(|(_, signed)| signed)
-    }
-
-    pub(crate) fn pointee(&self, id: TypeID) -> Option<TypeID> {
-        match self.kind(id) {
-            TypeKind::Pointer(inner) => Some(*inner),
-            _ => None,
-        }
     }
 
     pub(crate) fn nominal(&self, id: NominalID) -> &Nominal {
@@ -321,6 +364,11 @@ impl TypeTable {
             .is_some_and(|nominal| nominal.semantics() == HMIRMoveSemantics::Nodrop)
     }
 
+    pub(crate) fn is_pod(&self, ty: TypeID) -> bool {
+        self.nominal_of(ty)
+            .is_none_or(|nominal| nominal.semantics() == HMIRMoveSemantics::POD)
+    }
+
     pub(crate) fn size_of(&mut self, ty: TypeID, span: &TokenRange) -> CXResult<u64> {
         let mir = self.mir(ty, span)?;
         Ok(calculate_type_layout(&self.mir, mir).size() as u64)
@@ -358,117 +406,7 @@ impl TypeTable {
     }
 
     pub(crate) fn mir(&mut self, ty: TypeID, span: &TokenRange) -> CXResult<MIRTypeID> {
-        if let Some(id) = self.lowered.get(&ty) {
-            return Ok(*id);
-        }
-        let kind = match self.kind(ty).clone() {
-            TypeKind::Void | TypeKind::Unreachable => MIRTypeKind::Void,
-            TypeKind::Type | TypeKind::Expr { .. } => {
-                return Err(staging_error(
-                    span,
-                    format!("comptime-only type '{}' used at runtime", self.display(ty)),
-                ));
-            }
-            TypeKind::Str => {
-                let pointer = self.char_pointer();
-                return self.mir(pointer, span);
-            }
-            TypeKind::Int { width, .. } => MIRTypeKind::Integer {
-                ty: Self::mir_int(width),
-            },
-            TypeKind::Float { width } => MIRTypeKind::Float {
-                ty: Self::mir_float(width),
-            },
-            TypeKind::Pointer(inner) => MIRTypeKind::PointerTo {
-                inner: self.mir(inner, span)?,
-            },
-            TypeKind::Reference(inner) => MIRTypeKind::MemoryReference {
-                inner: self.mir(inner, span)?,
-            },
-            TypeKind::Array {
-                element,
-                length: Some(length),
-            } => MIRTypeKind::Array {
-                length: length as usize,
-                inner: self.mir(element, span)?,
-            },
-            TypeKind::Array {
-                element,
-                length: None,
-            } => MIRTypeKind::IncompleteArray {
-                inner: self.mir(element, span)?,
-            },
-            TypeKind::Function(function) => MIRTypeKind::Function {
-                signature: self.mir_signature(&function, span)?,
-            },
-            TypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
-            TypeKind::Nominal(nominal) => return self.mir_nominal(ty, nominal, span),
-        };
-        let id = self.mir.intern(MIRType::new(kind));
-        self.lowered.insert(ty, id);
-        Ok(id)
-    }
-
-    pub(crate) fn mir_signature(
-        &mut self,
-        function: &FunctionType,
-        span: &TokenRange,
-    ) -> CXResult<MIRFnSignature> {
-        let params = function
-            .params()
-            .iter()
-            .map(|param| Ok(MIRFnParam::new(None, self.mir(*param, span)?, false)))
-            .collect::<CXResult<Vec<_>>>()?;
-        let ret = self.mir(function.ret(), span)?;
-        Ok(MIRFnSignature::new(
-            params,
-            ret,
-            function.is_variadic(),
-            false,
-        ))
-    }
-
-    fn mir_nominal(
-        &mut self,
-        ty: TypeID,
-        nominal: NominalID,
-        span: &TokenRange,
-    ) -> CXResult<MIRTypeID> {
-        let nominal = self.nominal(nominal).clone();
-        let Some(fields) = nominal.fields else {
-            let id = self.mir.intern(MIRType::new(MIRTypeKind::Opaque {
-                size: 0,
-                alignment: 1,
-            }));
-            self.lowered.insert(ty, id);
-            return Ok(id);
-        };
-
-        let id = self.mir.reserve();
-        self.lowered.insert(ty, id);
-        let fields = fields
-            .iter()
-            .map(|field| {
-                let name = field.name().map(CXIdent::as_string);
-                let ty = self.mir(field.ty(), span)?;
-                Ok(match field.bit_width() {
-                    Some(width) => MIRField::Bitfield {
-                        name,
-                        integer_type_id: ty,
-                        width,
-                    },
-                    None => MIRField::Standard { name, type_id: ty },
-                })
-            })
-            .collect::<CXResult<Vec<_>>>()?;
-        let kind = match nominal.kind {
-            HMIRAggregateKind::Struct => MIRTypeKind::Structured { fields },
-            HMIRAggregateKind::Union => MIRTypeKind::Union { variants: fields },
-            HMIRAggregateKind::TaggedUnion => MIRTypeKind::TaggedUnion { variants: fields },
-        };
-        self.mir.define(id, MIRType::new(kind));
-        self.mir.set_debug_name(id, nominal.name);
-        Ok(id)
+        lower_type(self, ty, span)
     }
 
     pub(crate) fn display(&self, ty: TypeID) -> String {

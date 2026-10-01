@@ -3,268 +3,254 @@ use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    eval::EvalFrame,
+    eval::{EvalFrame, eval, eval_global_type},
     program::{Program, def_body},
     staging_error,
-    ty::TypeKind,
+    ty::{TypeID, TypeKind},
     value::{
         FloatResult, StaticValue, arithmetic_type, float_value, fold_float, fold_int,
         is_comparison, is_logical, normalize_int,
     },
 };
 
-impl Program<'_> {
-    pub(crate) fn fold_binary(
-        &mut self,
-        op: HMIRBinaryOp,
-        lhs: StaticValue,
-        rhs: StaticValue,
-        span: &TokenRange,
-    ) -> CXResult<StaticValue> {
-        let unsupported = |lhs: &StaticValue, rhs: &StaticValue| {
-            staging_error(
-                span,
-                format!(
-                    "cannot evaluate '{}' on {lhs:?} and {rhs:?} at compile time",
-                    op.path()
-                ),
-            )
-        };
-        match (&lhs, &rhs) {
-            (
-                StaticValue::Int {
-                    value: left,
-                    ty: left_ty,
-                },
-                StaticValue::Int {
-                    value: right,
-                    ty: right_ty,
-                },
-            ) => {
-                if is_logical(op) {
-                    let result = fold_int(op, *left, *right, false).unwrap_or_default();
-                    return Ok(StaticValue::bool(result != 0, self.types_mut()));
-                }
-                let ty = match op {
-                    HMIRBinaryOp::LShift | HMIRBinaryOp::RShift => {
-                        arithmetic_type(self.types_mut(), *left_ty, *left_ty)
-                    }
-                    _ => arithmetic_type(self.types_mut(), *left_ty, *right_ty),
-                }
-                .unwrap_or(*left_ty);
-                let signed = self.types().is_signed(ty);
-                let left = normalize_int(*left, ty, self.types());
-                let right = normalize_int(*right, ty, self.types());
-                let result = fold_int(op, left, right, signed)
-                    .ok_or_else(|| staging_error(span, "invalid compile-time arithmetic".into()))?;
-                if is_comparison(op) {
-                    return Ok(StaticValue::bool(result != 0, self.types_mut()));
-                }
-                Ok(StaticValue::int(
-                    normalize_int(result, ty, self.types()),
-                    ty,
-                ))
+pub(crate) fn fold_binary(
+    cx: &mut Program<'_>,
+    op: HMIRBinaryOp,
+    lhs: StaticValue,
+    rhs: StaticValue,
+    span: &TokenRange,
+) -> CXResult<StaticValue> {
+    let unsupported = |lhs: &StaticValue, rhs: &StaticValue| {
+        staging_error(
+            span,
+            format!(
+                "cannot evaluate '{}' on {lhs:?} and {rhs:?} at compile time",
+                op.path()
+            ),
+        )
+    };
+    match (&lhs, &rhs) {
+        (
+            StaticValue::Int {
+                value: left,
+                ty: left_ty,
+            },
+            StaticValue::Int {
+                value: right,
+                ty: right_ty,
+            },
+        ) => {
+            if is_logical(op) {
+                let result = fold_int(op, *left, *right, false).unwrap_or_default();
+                return Ok(StaticValue::bool(result != 0, cx.types_mut()));
             }
-            (StaticValue::Float { .. } | StaticValue::Int { .. }, StaticValue::Float { .. })
-            | (StaticValue::Float { .. }, StaticValue::Int { .. }) => {
-                let left_ty = lhs.simple_type(self.types_mut()).expect("numeric");
-                let right_ty = rhs.simple_type(self.types_mut()).expect("numeric");
-                let ty = arithmetic_type(self.types_mut(), left_ty, right_ty)
-                    .ok_or_else(|| unsupported(&lhs, &rhs))?;
-                let (Some(left), Some(right)) = (as_f64(&lhs), as_f64(&rhs)) else {
-                    return Err(unsupported(&lhs, &rhs));
-                };
-                match fold_float(op, left, right) {
-                    Some(FloatResult::Float(value)) => Ok(float_value(value, ty)),
-                    Some(FloatResult::Bool(value)) => {
-                        Ok(StaticValue::bool(value, self.types_mut()))
-                    }
-                    None => Err(unsupported(&lhs, &rhs)),
+            let ty = match op {
+                HMIRBinaryOp::LShift | HMIRBinaryOp::RShift => {
+                    arithmetic_type(cx.types_mut(), *left_ty, *left_ty)
                 }
+                _ => arithmetic_type(cx.types_mut(), *left_ty, *right_ty),
             }
-            (StaticValue::Type(left), StaticValue::Type(right))
-                if matches!(op, HMIRBinaryOp::Eq | HMIRBinaryOp::Neq) =>
+            .unwrap_or(*left_ty);
+            let signed = cx.types().is_signed(ty);
+            let left = normalize_int(*left, ty, cx.types());
+            let right = normalize_int(*right, ty, cx.types());
+            let result = fold_int(op, left, right, signed)
+                .ok_or_else(|| staging_error(span, "invalid compile-time arithmetic".into()))?;
+            if is_comparison(op) {
+                return Ok(StaticValue::bool(result != 0, cx.types_mut()));
+            }
+            Ok(StaticValue::int(normalize_int(result, ty, cx.types()), ty))
+        }
+        (StaticValue::Float { .. } | StaticValue::Int { .. }, StaticValue::Float { .. })
+        | (StaticValue::Float { .. }, StaticValue::Int { .. }) => {
+            let left_ty = lhs.simple_type(cx.types_mut()).expect("numeric");
+            let right_ty = rhs.simple_type(cx.types_mut()).expect("numeric");
+            let ty = arithmetic_type(cx.types_mut(), left_ty, right_ty)
+                .ok_or_else(|| unsupported(&lhs, &rhs))?;
+            let (Some(left), Some(right)) = (as_f64(&lhs), as_f64(&rhs)) else {
+                return Err(unsupported(&lhs, &rhs));
+            };
+            match fold_float(op, left, right) {
+                Some(FloatResult::Float(value)) => Ok(float_value(value, ty)),
+                Some(FloatResult::Bool(value)) => Ok(StaticValue::bool(value, cx.types_mut())),
+                None => Err(unsupported(&lhs, &rhs)),
+            }
+        }
+        (StaticValue::Type(left), StaticValue::Type(right))
+            if matches!(op, HMIRBinaryOp::Eq | HMIRBinaryOp::Neq) =>
+        {
+            let equal = left == right;
+            Ok(StaticValue::bool(
+                equal == (op == HMIRBinaryOp::Eq),
+                cx.types_mut(),
+            ))
+        }
+        (StaticValue::GlobalAddress { def, offset, ty }, StaticValue::Int { value, .. })
+            if matches!(op, HMIRBinaryOp::Add | HMIRBinaryOp::Sub) =>
+        {
+            let element = cx
+                .types()
+                .pointer_inner(*ty)
+                .ok_or_else(|| unsupported(&lhs, &rhs))?;
+            let size = cx.types_mut().size_of(element, span)? as i64;
+            let delta = size * *value as i64;
+            Ok(StaticValue::GlobalAddress {
+                def: *def,
+                offset: if op == HMIRBinaryOp::Add {
+                    offset + delta
+                } else {
+                    offset - delta
+                },
+                ty: *ty,
+            })
+        }
+        (
+            StaticValue::GlobalAddress {
+                def: left_def,
+                offset: left,
+                ty,
+            },
+            StaticValue::GlobalAddress {
+                def: right_def,
+                offset: right,
+                ..
+            },
+        ) if op == HMIRBinaryOp::Sub && left_def == right_def => {
+            let element = cx
+                .types()
+                .pointer_inner(*ty)
+                .ok_or_else(|| unsupported(&lhs, &rhs))?;
+            let size = cx.types_mut().size_of(element, span)?.max(1) as i64;
+            let ty = cx.types_mut().int(HMIRIntWidth::I64, true);
+            Ok(StaticValue::int(((left - right) / size) as i128, ty))
+        }
+        _ => match (lhs.is_truthy(), rhs.is_truthy(), op) {
+            (Some(left), Some(right), HMIRBinaryOp::Eq | HMIRBinaryOp::Neq)
+                if (matches!(lhs, StaticValue::Null(_)) || matches!(rhs, StaticValue::Null(_))) =>
             {
                 let equal = left == right;
                 Ok(StaticValue::bool(
                     equal == (op == HMIRBinaryOp::Eq),
-                    self.types_mut(),
+                    cx.types_mut(),
                 ))
             }
-            (StaticValue::GlobalAddress { def, offset, ty }, StaticValue::Int { value, .. })
-                if matches!(op, HMIRBinaryOp::Add | HMIRBinaryOp::Sub) =>
-            {
-                let element = self
-                    .types()
-                    .pointee(*ty)
-                    .ok_or_else(|| unsupported(&lhs, &rhs))?;
-                let size = self.types_mut().size_of(element, span)? as i64;
-                let delta = size * *value as i64;
-                Ok(StaticValue::GlobalAddress {
-                    def: *def,
-                    offset: if op == HMIRBinaryOp::Add {
-                        offset + delta
-                    } else {
-                        offset - delta
-                    },
-                    ty: *ty,
-                })
-            }
-            (
-                StaticValue::GlobalAddress {
-                    def: left_def,
-                    offset: left,
-                    ty,
-                },
-                StaticValue::GlobalAddress {
-                    def: right_def,
-                    offset: right,
-                    ..
-                },
-            ) if op == HMIRBinaryOp::Sub && left_def == right_def => {
-                let element = self
-                    .types()
-                    .pointee(*ty)
-                    .ok_or_else(|| unsupported(&lhs, &rhs))?;
-                let size = self.types_mut().size_of(element, span)?.max(1) as i64;
-                let ty = self.types_mut().int(HMIRIntWidth::I64, true);
-                Ok(StaticValue::int(((left - right) / size) as i128, ty))
-            }
-            _ => match (lhs.is_truthy(), rhs.is_truthy(), op) {
-                (Some(left), Some(right), HMIRBinaryOp::Eq | HMIRBinaryOp::Neq)
-                    if (matches!(lhs, StaticValue::Null(_))
-                        || matches!(rhs, StaticValue::Null(_))) =>
-                {
-                    let equal = left == right;
-                    Ok(StaticValue::bool(
-                        equal == (op == HMIRBinaryOp::Eq),
-                        self.types_mut(),
-                    ))
-                }
-                _ => Err(unsupported(&lhs, &rhs)),
-            },
-        }
+            _ => Err(unsupported(&lhs, &rhs)),
+        },
     }
+}
 
-    pub(super) fn exec_unary(
-        &mut self,
-        frame: &mut EvalFrame,
-        op: HMIRUnaryOp,
-        operand: HMIRExprID,
-        span: &TokenRange,
-    ) -> CXResult<StaticValue> {
-        match op {
-            HMIRUnaryOp::Neg | HMIRUnaryOp::BNot | HMIRUnaryOp::LNot => {
-                let value = self.eval(frame, operand)?;
-                fold_unary(self, op, value, span)
-            }
-            HMIRUnaryOp::PreIncrement
-            | HMIRUnaryOp::PreDecrement
-            | HMIRUnaryOp::PostIncrement
-            | HMIRUnaryOp::PostDecrement => {
-                let unit = frame.unit().clone();
-                let body = def_body(unit.def(frame.def().def())).expect("evaluated def has a body");
-                let HMIRExprKind::Local(local) = body.expr(operand).kind() else {
-                    return Err(staging_error(
-                        span,
-                        "comptime increment of a non-local".into(),
-                    ));
-                };
-                let Some(StaticValue::Int { value, ty }) = frame.local(*local).cloned() else {
-                    return Err(staging_error(
-                        span,
-                        "comptime increment of a non-integer".into(),
-                    ));
-                };
-                let delta = match op {
-                    HMIRUnaryOp::PreIncrement | HMIRUnaryOp::PostIncrement => 1,
-                    _ => -1,
-                };
-                let updated = StaticValue::int(normalize_int(value + delta, ty, self.types()), ty);
-                frame.bind(*local, updated.clone());
-                Ok(match op {
-                    HMIRUnaryOp::PreIncrement | HMIRUnaryOp::PreDecrement => updated,
-                    _ => StaticValue::int(value, ty),
-                })
-            }
+pub(crate) fn exec_unary(
+    cx: &mut Program<'_>,
+    frame: &mut EvalFrame,
+    op: HMIRUnaryOp,
+    operand: HMIRExprID,
+    span: &TokenRange,
+) -> CXResult<StaticValue> {
+    match op {
+        HMIRUnaryOp::Neg | HMIRUnaryOp::BNot | HMIRUnaryOp::LNot => {
+            let value = eval(cx, frame, operand, None)?;
+            fold_unary(cx, op, value, span)
         }
-    }
-
-    pub(crate) fn coerce_static(
-        &mut self,
-        value: StaticValue,
-        ty: crate::ty::TypeID,
-        span: &TokenRange,
-    ) -> CXResult<StaticValue> {
-        let kind = self.types().kind(ty).clone();
-        Ok(match (value, kind) {
-            (value, TypeKind::Type | TypeKind::Expr { .. }) => value,
-            (_, TypeKind::Void) => StaticValue::Unit,
-            (StaticValue::Int { value, .. }, TypeKind::Int { width, .. }) => {
-                if width == HMIRIntWidth::I1 {
-                    StaticValue::int((value != 0) as i128, ty)
-                } else {
-                    StaticValue::int(normalize_int(value, ty, self.types()), ty)
-                }
-            }
-            (StaticValue::Int { value, .. }, TypeKind::Float { .. }) => {
-                float_value(value as f64, ty)
-            }
-            (StaticValue::Float { value, .. }, TypeKind::Int { width, .. }) => {
-                let value = f64::from(&value);
-                if width == HMIRIntWidth::I1 {
-                    StaticValue::int((value != 0.0) as i128, ty)
-                } else {
-                    StaticValue::int(normalize_int(value as i128, ty, self.types()), ty)
-                }
-            }
-            (StaticValue::Float { value, .. }, TypeKind::Float { .. }) => {
-                StaticValue::Float { value, ty }
-            }
-            (StaticValue::Int { value: 0, .. } | StaticValue::Null(_), TypeKind::Pointer(_)) => {
-                StaticValue::Null(ty)
-            }
-            (
-                StaticValue::GlobalAddress { def, offset, .. },
-                TypeKind::Pointer(_) | TypeKind::Reference(_),
-            ) => StaticValue::GlobalAddress { def, offset, ty },
-            (StaticValue::Global(def), TypeKind::Pointer(element)) => {
-                let global = self.global_type(def, span)?;
-                match self.types().kind(global) {
-                    TypeKind::Array { .. } => StaticValue::GlobalAddress { def, offset: 0, ty },
-                    _ if global == element => StaticValue::GlobalAddress { def, offset: 0, ty },
-                    _ => {
-                        return Err(staging_error(
-                            span,
-                            format!("cannot convert a global to '{}'", self.types().display(ty)),
-                        ));
-                    }
-                }
-            }
-            (
-                value @ StaticValue::Str(_),
-                TypeKind::Pointer(_) | TypeKind::Str | TypeKind::Array { .. },
-            ) => value,
-            (
-                value @ StaticValue::Function { .. },
-                TypeKind::Pointer(_) | TypeKind::Function(_),
-            ) => value,
-            (
-                value @ StaticValue::Aggregate { .. },
-                TypeKind::Nominal(_) | TypeKind::Array { .. },
-            ) => value,
-            (value, _) if value.simple_type(self.types_mut()) == Some(ty) => value,
-            (value, _) => {
+        HMIRUnaryOp::PreIncrement
+        | HMIRUnaryOp::PreDecrement
+        | HMIRUnaryOp::PostIncrement
+        | HMIRUnaryOp::PostDecrement => {
+            let unit = frame.unit().clone();
+            let body = def_body(unit.def(frame.def().def())).expect("evaluated def has a body");
+            let HMIRExprKind::Local(local) = body.expr(operand).kind() else {
                 return Err(staging_error(
                     span,
-                    format!(
-                        "cannot convert {value:?} to '{}' at compile time",
-                        self.types().display(ty)
-                    ),
+                    "comptime increment of a non-local".into(),
+                ));
+            };
+            let Some(StaticValue::Int { value, ty }) = frame.local(*local).cloned() else {
+                return Err(staging_error(
+                    span,
+                    "comptime increment of a non-integer".into(),
+                ));
+            };
+            let delta = match op {
+                HMIRUnaryOp::PreIncrement | HMIRUnaryOp::PostIncrement => 1,
+                _ => -1,
+            };
+            let updated = StaticValue::int(normalize_int(value + delta, ty, cx.types()), ty);
+            frame.bind(*local, updated.clone());
+            Ok(match op {
+                HMIRUnaryOp::PreIncrement | HMIRUnaryOp::PreDecrement => updated,
+                _ => StaticValue::int(value, ty),
+            })
+        }
+    }
+}
+
+pub(crate) fn coerce_static(
+    cx: &mut Program<'_>,
+    value: StaticValue,
+    ty: TypeID,
+    span: &TokenRange,
+) -> CXResult<StaticValue> {
+    let kind = cx.types().kind(ty).clone();
+    Ok(match (value, kind) {
+        (value, TypeKind::Type | TypeKind::Expr { .. }) => value,
+        (_, TypeKind::Void) => StaticValue::Unit,
+        (StaticValue::Int { value, .. }, TypeKind::Int { width, .. }) => {
+            if width == HMIRIntWidth::I1 {
+                StaticValue::int((value != 0) as i128, ty)
+            } else {
+                StaticValue::int(normalize_int(value, ty, cx.types()), ty)
+            }
+        }
+        (StaticValue::Int { value, .. }, TypeKind::Float { .. }) => float_value(value as f64, ty),
+        (StaticValue::Float { value, .. }, TypeKind::Int { width, .. }) => {
+            let value = f64::from(&value);
+            if width == HMIRIntWidth::I1 {
+                StaticValue::int((value != 0.0) as i128, ty)
+            } else {
+                StaticValue::int(normalize_int(value as i128, ty, cx.types()), ty)
+            }
+        }
+        (StaticValue::Float { value, .. }, TypeKind::Float { .. }) => {
+            StaticValue::Float { value, ty }
+        }
+        (StaticValue::Int { value: 0, .. } | StaticValue::Null(_), TypeKind::Pointer(_)) => {
+            StaticValue::Null(ty)
+        }
+        (
+            StaticValue::GlobalAddress { def, offset, .. },
+            TypeKind::Pointer(_) | TypeKind::Reference(_),
+        ) => StaticValue::GlobalAddress { def, offset, ty },
+        (StaticValue::Global(def), TypeKind::Pointer(element)) => {
+            let global = eval_global_type(cx, def, span)?;
+            if cx.types().is_array(global) || global == element {
+                StaticValue::GlobalAddress { def, offset: 0, ty }
+            } else {
+                return Err(staging_error(
+                    span,
+                    format!("cannot convert a global to '{}'", cx.types().display(ty)),
                 ));
             }
-        })
-    }
+        }
+        (
+            value @ StaticValue::Str(_),
+            TypeKind::Pointer(_) | TypeKind::Str | TypeKind::Array { .. },
+        ) => value,
+        (value @ StaticValue::Function { .. }, TypeKind::Pointer(_) | TypeKind::Function(_)) => {
+            value
+        }
+        (value @ StaticValue::Aggregate { .. }, TypeKind::Nominal(_) | TypeKind::Array { .. }) => {
+            value
+        }
+        (value, _) if value.simple_type(cx.types_mut()) == Some(ty) => value,
+        (value, _) => {
+            return Err(staging_error(
+                span,
+                format!(
+                    "cannot convert {value:?} to '{}' at compile time",
+                    cx.types().display(ty)
+                ),
+            ));
+        }
+    })
 }
 
 fn as_f64(value: &StaticValue) -> Option<f64> {
@@ -276,7 +262,7 @@ fn as_f64(value: &StaticValue) -> Option<f64> {
 }
 
 pub(crate) fn fold_unary(
-    program: &mut Program<'_>,
+    cx: &mut Program<'_>,
     op: HMIRUnaryOp,
     value: StaticValue,
     span: &TokenRange,
@@ -285,20 +271,17 @@ pub(crate) fn fold_unary(
         let truthy = value
             .is_truthy()
             .ok_or_else(|| staging_error(span, "value has no compile-time truthiness".into()))?;
-        return Ok(StaticValue::bool(!truthy, program.types_mut()));
+        return Ok(StaticValue::bool(!truthy, cx.types_mut()));
     }
     match value {
         StaticValue::Int { value, ty } if matches!(op, HMIRUnaryOp::Neg | HMIRUnaryOp::BNot) => {
-            let ty = arithmetic_type(program.types_mut(), ty, ty).unwrap_or(ty);
+            let ty = arithmetic_type(cx.types_mut(), ty, ty).unwrap_or(ty);
             let result = if op == HMIRUnaryOp::Neg {
                 -value
             } else {
                 !value
             };
-            Ok(StaticValue::int(
-                normalize_int(result, ty, program.types()),
-                ty,
-            ))
+            Ok(StaticValue::int(normalize_int(result, ty, cx.types()), ty))
         }
         StaticValue::Float { value, ty } if op == HMIRUnaryOp::Neg => {
             Ok(float_value(-f64::from(&value), ty))

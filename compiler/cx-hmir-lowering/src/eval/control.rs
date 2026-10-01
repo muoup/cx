@@ -3,7 +3,7 @@ use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    eval::{EvalFrame, Flow, LOOP_LIMIT},
+    eval::{EvalFrame, Flow, LOOP_LIMIT, eval, exec, static_condition},
     program::Program,
     staging_error,
     ty::TypeID,
@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub(crate) fn block(
-    program: &mut Program<'_>,
+    cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     kind: HMIRBlockKind,
     statements: &[HMIRExprID],
@@ -19,7 +19,7 @@ pub(crate) fn block(
 ) -> CXResult<Flow> {
     let mut last = StaticValue::Unit;
     for statement in statements.iter().copied().chain(tail) {
-        match program.exec(frame, statement, None)? {
+        match exec(cx, frame, statement, None)? {
             Flow::Normal(value) => last = value,
             Flow::Yield(value) if kind == HMIRBlockKind::Yield => return Ok(Flow::Normal(value)),
             flow => return Ok(flow),
@@ -33,7 +33,7 @@ pub(crate) fn block(
 }
 
 pub(crate) fn conditional(
-    program: &mut Program<'_>,
+    cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     condition: HMIRExprID,
     then_branch: HMIRExprID,
@@ -41,16 +41,16 @@ pub(crate) fn conditional(
     expect: Option<TypeID>,
     span: &TokenRange,
 ) -> CXResult<Flow> {
-    let taken = program.static_condition(frame, condition, span)?;
+    let taken = static_condition(cx, frame, condition, span)?;
     match (taken, else_branch) {
-        (true, _) => program.exec(frame, then_branch, expect),
-        (false, Some(branch)) => program.exec(frame, branch, expect),
+        (true, _) => exec(cx, frame, then_branch, expect),
+        (false, Some(branch)) => exec(cx, frame, branch, expect),
         (false, None) => Ok(Flow::Normal(StaticValue::Unit)),
     }
 }
 
 pub(crate) fn while_loop(
-    program: &mut Program<'_>,
+    cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     condition: HMIRExprID,
     body: HMIRExprID,
@@ -59,11 +59,11 @@ pub(crate) fn while_loop(
 ) -> CXResult<Flow> {
     let mut first = !pre_eval;
     for _ in 0..LOOP_LIMIT {
-        if !first && !program.static_condition(frame, condition, span)? {
+        if !first && !static_condition(cx, frame, condition, span)? {
             return Ok(Flow::Normal(StaticValue::Unit));
         }
         first = false;
-        match program.exec(frame, body, None)? {
+        match exec(cx, frame, body, None)? {
             Flow::Break => return Ok(Flow::Normal(StaticValue::Unit)),
             Flow::Normal(_) | Flow::Continue => {}
             flow => return Ok(flow),
@@ -73,7 +73,7 @@ pub(crate) fn while_loop(
 }
 
 pub(crate) fn for_loop(
-    program: &mut Program<'_>,
+    cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     init: HMIRExprID,
     condition: HMIRExprID,
@@ -81,17 +81,17 @@ pub(crate) fn for_loop(
     body: HMIRExprID,
     span: &TokenRange,
 ) -> CXResult<Flow> {
-    program.eval(frame, init)?;
+    eval(cx, frame, init, None)?;
     for _ in 0..LOOP_LIMIT {
-        if !program.static_condition(frame, condition, span)? {
+        if !static_condition(cx, frame, condition, span)? {
             return Ok(Flow::Normal(StaticValue::Unit));
         }
-        match program.exec(frame, body, None)? {
+        match exec(cx, frame, body, None)? {
             Flow::Break => return Ok(Flow::Normal(StaticValue::Unit)),
             Flow::Normal(_) | Flow::Continue => {}
             flow => return Ok(flow),
         }
-        program.eval(frame, increment)?;
+        eval(cx, frame, increment, None)?;
     }
     Err(staging_error(span, "comptime loop limit exceeded".into()))
 }

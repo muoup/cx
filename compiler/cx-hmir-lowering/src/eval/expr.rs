@@ -3,26 +3,28 @@ use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    eval::{EvalFrame, Flow, type_relations::decay},
+    eval::{
+        EvalFrame, Flow, call_static, eval, eval_static_type, eval_type_hint, ops::coerce_static,
+        types::decay,
+    },
     program::Program,
     staging_error,
-    ty::TypeKind,
     value::StaticValue,
 };
 
 pub(crate) fn bind(
-    program: &mut Program<'_>,
+    cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     local: HMIRLocalID,
     initializer: Option<HMIRExprID>,
     span: &TokenRange,
 ) -> CXResult<Flow> {
-    let declared = program.eval_type_hint(frame, frame.body().local(local).ty())?;
+    let declared = eval_type_hint(cx, frame, frame.body().local(local).ty())?;
     let value = match initializer {
         Some(initializer) => {
-            let value = program.eval_expecting(frame, initializer, declared)?;
+            let value = eval(cx, frame, initializer, declared)?;
             match declared {
-                Some(ty) => program.coerce_static(value, ty, span)?,
+                Some(ty) => coerce_static(cx, value, ty, span)?,
                 None => value,
             }
         }
@@ -33,36 +35,36 @@ pub(crate) fn bind(
 }
 
 pub(crate) fn call(
-    program: &mut Program<'_>,
+    cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     callee: HMIRExprID,
     args: &[HMIRExprID],
     span: &TokenRange,
 ) -> CXResult<Flow> {
-    let callee = program.eval(frame, callee)?;
+    let callee = eval(cx, frame, callee, None)?;
     let mut values = Vec::with_capacity(args.len());
     for arg in args {
-        values.push(program.eval(frame, *arg)?);
+        values.push(eval(cx, frame, *arg, None)?);
     }
-    Ok(Flow::Normal(program.call_static(callee, values, span)?))
+    Ok(Flow::Normal(call_static(cx, callee, values, span)?))
 }
 
 pub(crate) fn dereference(
-    program: &mut Program<'_>,
+    cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     operand: HMIRExprID,
     span: &TokenRange,
 ) -> CXResult<StaticValue> {
-    let value = program.eval(frame, operand)?;
-    let ty = program.static_type(&value, span)?;
-    let ty = decay(program.types_mut(), ty);
-    let inner = program
+    let value = eval(cx, frame, operand, None)?;
+    let ty = eval_static_type(cx, &value, span)?;
+    let ty = decay(cx.types_mut(), ty);
+    let inner = cx
         .types()
-        .pointee(ty)
+        .pointer_inner(ty)
         .ok_or_else(|| staging_error(span, "dereferenced a non-pointer".into()))?;
-    if matches!(program.types().kind(inner), TypeKind::Function(_)) {
+    if cx.types().is_function(inner) {
         return Ok(value);
     }
-    let target = program.types_mut().reference(inner);
-    program.coerce_static(value, target, span)
+    let target = cx.types_mut().reference_to(inner);
+    coerce_static(cx, value, target, span)
 }

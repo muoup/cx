@@ -1,18 +1,24 @@
 use std::collections::HashMap;
 
-use cx_hir::ast::types::HIRTagKind;
-use cx_hir::ast::{expression::HIRExpression, types::HIRType};
+use cx_hir::ast::{
+    expression::HIRExpression,
+    types::{HIRTagKind, HIRType},
+};
 use cx_hmir::{
-    HMIRBlockKind, HMIRBody, HMIRConstant, HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRExpr,
-    HMIRExprID, HMIRExprKind, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIRNativeOp,
-    HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner,
+    HMIRAggregateOp, HMIRBlockKind, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRControlOp, HMIRDef,
+    HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRExpr, HMIRExprID, HMIRExprKind, HMIRGlobal, HMIRHole,
+    HMIRLocal, HMIRLocalID, HMIRNativeOp, HMIROwnershipOp, HMIRTypeDesc, HMIRTypeID,
+    HMIRTypeInterner, HMIRTypeOp,
 };
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
-use cx_util::linkage::LinkageMode;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use crate::resolve::{GlobalSymbol, Resolver};
+use crate::{
+    expr::lower_initial_value,
+    resolve::{GlobalSymbol, Resolver},
+    ty::lower_type,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Binding {
@@ -148,9 +154,9 @@ impl<'a> BodyLowering<'a> {
         quoted: bool,
         span: &TokenRange,
     ) -> HMIRLocalID {
-        let local = self
-            .body
-            .declare_local(HMIRLocal::new(name.cloned(), ty, comptime, span.clone()));
+        let local =
+            self.body
+                .declare_local(HMIRLocal::new(name.cloned(), ty, comptime, span.clone()));
         if let Some(name) = name {
             self.scopes
                 .last_mut()
@@ -158,40 +164,6 @@ impl<'a> BodyLowering<'a> {
                 .insert(name.clone(), ScopeEntry::Local(Binding { local, quoted }));
         }
         local
-    }
-
-    // Lowers a function-level static into its own global def visible from this scope
-    pub(crate) fn declare_static(
-        &mut self,
-        name: &CXIdent,
-        ty: &HIRType,
-        initializer: Option<&HIRExpression>,
-        span: &TokenRange,
-    ) {
-        let id = self.resolver.next_static();
-        let mut lowering =
-            BodyLowering::new(self.resolver, self.types, self.namespace.clone(), false);
-        let global_ty = lowering.lower_type(ty);
-        let initializer =
-            initializer.map(|initializer| lowering.lower_initial_value(ty, initializer));
-        let global = HMIRGlobal::new(
-            lowering.finish(),
-            global_ty,
-            initializer,
-            true,
-            LinkageMode::Static,
-            CXIdent::from(format!("{name}.{}", id.index()).as_str()),
-        );
-        let qualified = QualifiedName::new(self.namespace.clone(), name.clone());
-        self.resolver.push_static(HMIRDef::new(
-            qualified,
-            span.clone(),
-            HMIRDefKind::Global(Box::new(global)),
-        ));
-        self.scopes
-            .last_mut()
-            .expect("body lowering always has a root scope")
-            .insert(name.clone(), ScopeEntry::Static(id));
     }
 
     pub(crate) fn declare_local(
@@ -217,4 +189,84 @@ impl<'a> BodyLowering<'a> {
         }
         Symbol::Global(self.resolver.resolve(&self.namespace, name, tag))
     }
+    pub(crate) fn returning_block(&mut self, value: HMIRExprID, span: &TokenRange) -> HMIRExprID {
+        let ret = self.control(HMIRControlOp::Return(Some(value)), span);
+        self.block(HMIRBlockKind::Scope, vec![ret], span)
+    }
+    pub(crate) fn int_constant(
+        &mut self,
+        desc: HMIRTypeDesc,
+        value: i128,
+        span: &TokenRange,
+    ) -> HMIRExprID {
+        let ty = self.intern(desc);
+        self.push(
+            HMIRExprKind::Constant(HMIRConstant::Int { value, ty }),
+            span,
+        )
+    }
+    pub(crate) fn control(&mut self, op: HMIRControlOp, span: &TokenRange) -> HMIRExprID {
+        self.native(HMIRNativeOp::Control(op), span)
+    }
+    pub(crate) fn ownership(&mut self, op: HMIROwnershipOp, span: &TokenRange) -> HMIRExprID {
+        self.native(HMIRNativeOp::OwnershipOp(op), span)
+    }
+    pub(crate) fn aggregate_op(&mut self, op: HMIRAggregateOp, span: &TokenRange) -> HMIRExprID {
+        self.native(HMIRNativeOp::AggregateOp(op), span)
+    }
+    pub(crate) fn type_of_types(&mut self, span: &TokenRange) -> HMIRExprID {
+        self.type_constant(HMIRTypeDesc::Type, span)
+    }
+    pub(crate) fn type_op(&mut self, op: HMIRTypeOp, span: &TokenRange) -> HMIRExprID {
+        self.native(HMIRNativeOp::Type(op), span)
+    }
+    pub(crate) fn coerce(
+        &mut self,
+        mode: HMIRCoerceMode,
+        value: HMIRExprID,
+        target: HMIRExprID,
+        span: &TokenRange,
+    ) -> HMIRExprID {
+        self.native(
+            HMIRNativeOp::Coerce {
+                mode,
+                value,
+                target,
+            },
+            span,
+        )
+    }
+}
+
+// Lowers a function-level static into its own global def visible from this scope
+pub(crate) fn lower_static(
+    cx: &mut BodyLowering<'_>,
+    name: &CXIdent,
+    ty: &HIRType,
+    initializer: Option<&HIRExpression>,
+    span: &TokenRange,
+) {
+    let id = cx.resolver.next_static();
+    let mut global_cx = BodyLowering::new(cx.resolver, cx.types, cx.namespace.clone(), false);
+    let global_ty = lower_type(&mut global_cx, ty);
+    let initializer =
+        initializer.map(|initializer| lower_initial_value(&mut global_cx, ty, initializer));
+    let global = HMIRGlobal::new(
+        global_cx.finish(),
+        global_ty,
+        initializer,
+        true,
+        LinkageMode::Static,
+        CXIdent::from(format!("{name}.{}", id.index()).as_str()),
+    );
+    let qualified = QualifiedName::new(cx.namespace.clone(), name.clone());
+    cx.resolver.push_static(HMIRDef::new(
+        qualified,
+        span.clone(),
+        HMIRDefKind::Global(Box::new(global)),
+    ));
+    cx.scopes
+        .last_mut()
+        .expect("body lowering always has a root scope")
+        .insert(name.clone(), ScopeEntry::Static(id));
 }
