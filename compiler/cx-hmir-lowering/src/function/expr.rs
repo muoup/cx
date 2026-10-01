@@ -262,7 +262,7 @@ impl FunctionLowering<'_, '_> {
                 mode,
                 value,
                 target,
-            } => self.coerce(frame, mode, value, target, span),
+            } => super::coerce::coerce(self, frame, mode, value, target, span),
             HMIRNativeOp::Assign { target, op, value } => {
                 self.assign(frame, target, op, value, span)
             }

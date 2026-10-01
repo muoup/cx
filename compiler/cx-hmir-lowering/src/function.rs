@@ -1,5 +1,6 @@
 mod aggregate;
 mod call;
+mod coerce;
 mod control;
 mod expr;
 mod operand;

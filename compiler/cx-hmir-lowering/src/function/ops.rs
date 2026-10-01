@@ -1,7 +1,4 @@
-use cx_hmir::{
-    HMIRBinaryOp, HMIRCoerceMode, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRNativeOp,
-    HMIRTypeOp, HMIRUnaryOp,
-};
+use cx_hmir::{HMIRBinaryOp, HMIRExprID, HMIRIntWidth, HMIRUnaryOp};
 use cx_mir::{
     MIRBindable, MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstructionKind,
     MIRIntIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRStoreBitfield, MIRTarget, MIRValue,
@@ -500,55 +497,5 @@ impl FunctionLowering<'_, '_> {
         let bitfield = lhs.bitfield().map(MIRStoreBitfield::Target);
         self.store(destination, value, ty, bitfield, span)?;
         Ok(lhs)
-    }
-
-    pub(crate) fn coerce(
-        &mut self,
-        frame: usize,
-        mode: HMIRCoerceMode,
-        value: HMIRExprID,
-        target: HMIRExprID,
-        span: &TokenRange,
-    ) -> Lower<Operand> {
-        if mode == HMIRCoerceMode::Truthy {
-            let value = self.expr(frame, value, Expect::Any)?;
-            return self.truthy(value, span);
-        }
-        if self.is_dereference(frame, target) {
-            let value = self.expr(frame, value, Expect::Any)?;
-            return self.dereference(value, span);
-        }
-        let ty = self.eval_type(frame, target)?;
-        let value = self.expr(frame, value, Expect::Type(ty))?;
-        self.convert(value, ty, span)
-    }
-
-    // A coercion to '?&' reads through a pointer
-    fn is_dereference(&self, frame: usize, target: HMIRExprID) -> bool {
-        let HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Reference(inner))) =
-            self.kind(frame, target)
-        else {
-            return false;
-        };
-        matches!(self.kind(frame, inner), HMIRExprKind::Hole(_))
-    }
-
-    fn dereference(&mut self, operand: Operand, span: &TokenRange) -> Lower<Operand> {
-        let operand = self.decay(operand, span)?;
-        match self.program.types().kind(operand.ty()).clone() {
-            TypeKind::Pointer(inner)
-                if matches!(self.program.types().kind(inner), TypeKind::Function(_)) =>
-            {
-                Ok(operand)
-            }
-            TypeKind::Pointer(_) => self.deref_pointer(operand, span),
-            _ => self.error(
-                span,
-                format!(
-                    "cannot dereference '{}'",
-                    self.program.types().display(operand.ty())
-                ),
-            ),
-        }
     }
 }

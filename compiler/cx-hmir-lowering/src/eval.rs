@@ -1,4 +1,6 @@
 mod ops;
+mod type_of;
+mod type_relations;
 mod types;
 
 use std::{collections::HashMap, rc::Rc};
@@ -974,73 +976,7 @@ impl Program<'_> {
     }
 
     pub(crate) fn type_hint(&mut self, frame: &mut EvalFrame, id: HMIRExprID) -> Option<TypeID> {
-        let unit = frame.unit.clone();
-        let body = def_body(unit.def(frame.def.def()))?;
-        let expr = body.expr(id);
-        match expr.kind() {
-            HMIRExprKind::Local(local) => match frame.locals.get(local).cloned() {
-                Some(StaticValue::Quote(inner)) => self.quote_type(inner.get()),
-                Some(value) => self.static_type(&value, expr.span()).ok(),
-                None => frame.runtime_type(*local),
-            },
-            HMIRExprKind::Splice { quote, .. } => match self.eval(frame, *quote).ok()? {
-                StaticValue::Quote(inner) => self.quote_type(inner.get()),
-                _ => None,
-            },
-            HMIRExprKind::Comptime(_) | HMIRExprKind::Constant(_) | HMIRExprKind::Def(_) => {
-                let value = self.eval(frame, id).ok()?;
-                self.static_type(&value, expr.span()).ok()
-            }
-            HMIRExprKind::Call { callee, args } => {
-                let StaticValue::Function { def, args: bound } = self.eval(frame, *callee).ok()?
-                else {
-                    return None;
-                };
-                let template = self.template_params(def).len();
-                let rest = self.param_count(def) - template;
-                let explicit = (bound.len() + args.len()).checked_sub(rest)?;
-                if explicit != template {
-                    return None;
-                }
-                let mut instance_args = bound;
-                for arg in &args[..template - instance_args.len().min(template)] {
-                    instance_args.push(self.eval(frame, *arg).ok()?);
-                }
-                let signature = self.signature(&(def, instance_args), expr.span()).ok()?;
-                Some(signature.ret())
-            }
-            HMIRExprKind::Native(HMIRNativeOp::Coerce { mode, target, .. }) => match mode {
-                cx_hmir::HMIRCoerceMode::Truthy => Some(self.types_mut().bool()),
-                _ => self.eval_type_hint(frame, *target).ok().flatten(),
-            },
-            HMIRExprKind::Native(HMIRNativeOp::AggregateOp(HMIRAggregateOp::Initialize {
-                ty,
-                ..
-            })) => self.eval_type_hint(frame, *ty).ok().flatten(),
-            HMIRExprKind::Native(HMIRNativeOp::BinOp { op, lhs, rhs }) => {
-                if crate::value::is_comparison(*op) || crate::value::is_logical(*op) {
-                    return Some(self.types_mut().bool());
-                }
-                let lhs = self.type_hint(frame, *lhs)?;
-                match self.type_hint(frame, *rhs) {
-                    Some(rhs) => {
-                        crate::value::arithmetic_type(self.types_mut(), lhs, rhs).or(Some(lhs))
-                    }
-                    None => Some(lhs),
-                }
-            }
-            HMIRExprKind::Native(HMIRNativeOp::AddressOf(inner)) => {
-                let inner = self.type_hint(frame, *inner)?;
-                Some(self.types_mut().pointer(inner))
-            }
-            HMIRExprKind::Native(HMIRNativeOp::OwnershipOp(
-                HMIROwnershipOp::Move(inner) | HMIROwnershipOp::Leak(inner),
-            )) => self.type_hint(frame, *inner),
-            HMIRExprKind::Block {
-                tail: Some(tail), ..
-            } => self.type_hint(frame, *tail),
-            _ => None,
-        }
+        type_of::type_of(self, frame, id).ok()
     }
 
     pub(crate) fn static_type(

@@ -102,8 +102,10 @@ impl BodyLowering<'_> {
         let unary = |this: &mut Self, op| this.native(HMIRNativeOp::UnOp { op, operand: value }, span);
         match op {
             HIRUnOp::Dereference => {
-                let pointee = self.hole(span);
-                let target = self.native(HMIRNativeOp::Type(HMIRTypeOp::Reference(pointee)), span);
+                let source = self.type_op(HMIRTypeOp::TypeOf(value), span);
+                let source = self.type_op(HMIRTypeOp::Decay(source), span);
+                let pointee = self.type_op(HMIRTypeOp::PointerInner(source), span);
+                let target = self.type_op(HMIRTypeOp::Reference(pointee), span);
                 self.coerce(HMIRCoerceMode::Implicit, value, target, span)
             }
             HIRUnOp::AddressOf => self.native(HMIRNativeOp::AddressOf(value), span),

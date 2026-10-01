@@ -208,7 +208,7 @@ impl BodyLowering<'_> {
         )
     }
 
-    fn type_op(&mut self, op: HMIRTypeOp, span: &TokenRange) -> HMIRExprID {
+    pub(crate) fn type_op(&mut self, op: HMIRTypeOp, span: &TokenRange) -> HMIRExprID {
         self.native(cx_hmir::HMIRNativeOp::Type(op), span)
     }
 }

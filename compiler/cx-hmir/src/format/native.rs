@@ -188,7 +188,11 @@ impl BodyPrinter<'_> {
                 indent(f, depth)?;
                 f.write_str("}")
             }
-            HMIRTypeOp::SizeOf(ty)
+            HMIRTypeOp::PointerInner(ty)
+            | HMIRTypeOp::ReferenceInner(ty)
+            | HMIRTypeOp::TypeOf(ty)
+            | HMIRTypeOp::Decay(ty)
+            | HMIRTypeOp::SizeOf(ty)
             | HMIRTypeOp::AlignOf(ty)
             | HMIRTypeOp::IsInt(ty)
             | HMIRTypeOp::IsFloat(ty)

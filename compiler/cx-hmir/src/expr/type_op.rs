@@ -10,6 +10,10 @@ use crate::{
 pub enum HMIRTypeOp {
     Pointer(HMIRExprID),
     Reference(HMIRExprID),
+    PointerInner(HMIRExprID),
+    ReferenceInner(HMIRExprID),
+    TypeOf(HMIRExprID),
+    Decay(HMIRExprID),
     Array {
         element: HMIRExprID,
         length: Option<HMIRExprID>,
@@ -43,6 +47,10 @@ impl HMIRTypeOp {
         match self {
             Self::Pointer(_) => "type.pointer",
             Self::Reference(_) => "type.reference",
+            Self::PointerInner(_) => "type.pointer_inner",
+            Self::ReferenceInner(_) => "type.reference_inner",
+            Self::TypeOf(_) => "type.type_of",
+            Self::Decay(_) => "type.decay",
             Self::Array { .. } => "type.array",
             Self::Function { .. } => "type.function",
             Self::Expr { .. } => "type.expr",

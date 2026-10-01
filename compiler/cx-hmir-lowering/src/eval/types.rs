@@ -1,15 +1,12 @@
-use cx_hmir::{
-    HMIRAggregateKind, HMIRExprID, HMIRExprKind, HMIRFieldDef, HMIRMoveSemantics, HMIRNativeOp,
-    HMIRTypeOp,
-};
+use cx_hmir::{HMIRAggregateKind, HMIRExprID, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeOp};
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
     eval::EvalFrame,
-    program::{Program, def_body, untagged_name},
+    program::{Program, untagged_name},
     staging_error,
-    ty::{Field, FunctionType, NominalKey, TypeID, TypeKind},
+    ty::{Field, FunctionType, NominalKey, TypeKind},
     value::StaticValue,
 };
 
@@ -26,6 +23,12 @@ pub(super) fn exec_type_op(
             .collect::<CXResult<Vec<_>>>()
     };
     Ok(match op {
+        HMIRTypeOp::TypeOf(operand) => {
+            StaticValue::Type(super::type_of::type_of(program, frame, *operand)?)
+        }
+        HMIRTypeOp::PointerInner(_) | HMIRTypeOp::ReferenceInner(_) | HMIRTypeOp::Decay(_) => {
+            return super::type_relations::exec_relation(program, frame, op, span);
+        }
         HMIRTypeOp::Pointer(inner) => {
             let inner = program.eval_type(frame, *inner)?;
             StaticValue::Type(program.types_mut().pointer(inner))
@@ -81,7 +84,11 @@ pub(super) fn exec_type_op(
         }
         HMIRTypeOp::Aggregate { .. } => unreachable!("aggregate types are evaluated with their id"),
         HMIRTypeOp::SizeOf(operand) | HMIRTypeOp::AlignOf(operand) => {
-            let ty = program.static_operand_type(frame, *operand, span)?;
+            let ty = super::type_of::type_of(program, frame, *operand)?;
+            let ty = match program.types().kind(ty) {
+                TypeKind::Type => program.eval_type(frame, *operand)?,
+                _ => ty,
+            };
             let size = if matches!(op, HMIRTypeOp::SizeOf(_)) {
                 program.types_mut().size_of(ty, span)?
             } else {
@@ -113,42 +120,6 @@ pub(super) fn exec_type_op(
 }
 
 impl Program<'_> {
-    // The type an operand of sizeof/alignof designates: a type, or the type of a value
-    fn static_operand_type(
-        &mut self,
-        frame: &mut EvalFrame,
-        operand: HMIRExprID,
-        span: &TokenRange,
-    ) -> CXResult<TypeID> {
-        let unit = frame.unit().clone();
-        let body = def_body(unit.def(frame.def().def())).expect("evaluated def has a body");
-        if let HMIRExprKind::Local(local) = body.expr(operand).kind()
-            && frame.local(*local).is_none()
-            && let Some(ty) = frame.runtime_type(*local)
-        {
-            return Ok(ty);
-        }
-        if let HMIRExprKind::Native(HMIRNativeOp::Coerce { value, target, .. }) =
-            body.expr(operand).kind()
-            && let HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Reference(inner))) =
-                body.expr(*target).kind()
-            && matches!(body.expr(*inner).kind(), HMIRExprKind::Hole(_))
-        {
-            let pointer = self.static_operand_type(frame, *value, span)?;
-            return match self.types().kind(pointer) {
-                TypeKind::Pointer(inner) | TypeKind::Array { element: inner, .. } => Ok(*inner),
-                _ => Err(staging_error(
-                    span,
-                    format!("cannot dereference '{}'", self.types().display(pointer)),
-                )),
-            };
-        }
-        match self.eval(frame, operand)? {
-            StaticValue::Type(ty) => Ok(ty),
-            value => self.static_type(&value, span),
-        }
-    }
-
     pub(super) fn eval_aggregate_type(
         &mut self,
         frame: &mut EvalFrame,

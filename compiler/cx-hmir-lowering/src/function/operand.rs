@@ -413,10 +413,28 @@ impl FunctionLowering<'_, '_> {
                 let operand = self.auto_deref(operand, span)?;
                 return Ok(operand);
             }
-            (_, TypeKind::Reference(inner)) if *inner == source || operand.is_lvalue() => {
+            (_, TypeKind::Reference(inner)) if *inner == source => {
                 let operand = self.spill(operand, span)?;
                 let address = operand.address().expect("spilled operand is addressable");
                 return Ok(Operand::value(address, target));
+            }
+            (_, TypeKind::Reference(inner)) => {
+                let operand = self.decay(operand, span)?;
+                if self.program.types().pointee(operand.ty()) == Some(*inner) {
+                    let operand = self.deref_pointer(operand, span)?;
+                    let address = operand
+                        .address()
+                        .expect("dereferenced pointer is addressable");
+                    return Ok(Operand::value(address, target));
+                }
+                return self.error(
+                    span,
+                    format!(
+                        "cannot convert '{}' to '{}'",
+                        self.program.types().display(source),
+                        self.program.types().display(target)
+                    ),
+                );
             }
             (
                 TypeKind::Int {

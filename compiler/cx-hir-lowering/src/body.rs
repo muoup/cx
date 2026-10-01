@@ -7,10 +7,10 @@ use cx_hmir::{
     HMIRExprID, HMIRExprKind, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIRNativeOp,
     HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner,
 };
-use cx_util::linkage::LinkageMode;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
+use cx_util::linkage::LinkageMode;
 
 use crate::resolve::{GlobalSymbol, Resolver};
 
@@ -210,7 +210,9 @@ impl<'a> BodyLowering<'a> {
         {
             return match *entry {
                 ScopeEntry::Local(binding) => Symbol::Local(binding),
-                ScopeEntry::Static(def) => Symbol::Global(GlobalSymbol::Def(HMIRDefRef::Local(def))),
+                ScopeEntry::Static(def) => {
+                    Symbol::Global(GlobalSymbol::Def(HMIRDefRef::Local(def)))
+                }
             };
         }
         Symbol::Global(self.resolver.resolve(&self.namespace, name, tag))
