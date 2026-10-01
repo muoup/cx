@@ -14,6 +14,7 @@ pub(crate) fn inspect(
     program: &mut Program<'_>,
     frame: &EvalFrame,
     id: HMIRExprID,
+    expect: Option<TypeID>,
 ) -> CXResult<TypeID> {
     let span = frame.body().expr(id).span().clone();
     let ret = program.types_mut().void();
@@ -27,7 +28,7 @@ pub(crate) fn inspect(
         let operand = binding(&mut lowering, ty, &span)?;
         lowering.bind(0, local, operand);
     }
-    match lower_expr(&mut lowering, 0, id, Expect::Any) {
+    match lower_expr(&mut lowering, 0, id, Expect::of(expect)) {
         Ok(value) => Ok(value.ty()),
         Err(Stop::Diverged) => Ok(lowering.program.types_mut().intern(TypeKind::Unreachable)),
         Err(Stop::Error(error)) => Err(error),

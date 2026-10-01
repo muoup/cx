@@ -24,7 +24,7 @@ pub(super) fn exec_type_op(
             .collect::<CXResult<Vec<_>>>()
     };
     Ok(match op {
-        HMIRTypeOp::TypeOf(operand) => StaticValue::Type(inspect(cx, frame, *operand)?),
+        HMIRTypeOp::TypeOf(operand) => StaticValue::Type(inspect(cx, frame, *operand, None)?),
         HMIRTypeOp::PointerInner(operand) | HMIRTypeOp::ReferenceInner(operand) => {
             let ty = eval_type(cx, frame, *operand)?;
             let inner = match op {
@@ -87,7 +87,7 @@ pub(super) fn exec_type_op(
         }
         HMIRTypeOp::Aggregate { .. } => unreachable!("aggregate types are evaluated with their id"),
         HMIRTypeOp::SizeOf(operand) | HMIRTypeOp::AlignOf(operand) => {
-            let ty = inspect(cx, frame, *operand)?;
+            let ty = inspect(cx, frame, *operand, None)?;
             let ty = match cx.types().kind(ty) {
                 TypeKind::Type => eval_type(cx, frame, *operand)?,
                 _ => ty,

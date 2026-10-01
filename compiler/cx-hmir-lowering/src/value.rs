@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use cx_hmir::{HMIRBinaryOp, HMIRDefID, HMIRExprID, HMIRLocalID};
+use cx_hmir::{HMIRBinaryOp, HMIRDefID, HMIRExprID, HMIRIntWidth, HMIRLocalID};
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
@@ -283,8 +283,17 @@ pub(crate) fn is_logical(op: HMIRBinaryOp) -> bool {
     matches!(op, HMIRBinaryOp::LAnd | HMIRBinaryOp::LOr)
 }
 
+pub(crate) fn promote_integer_type(types: &mut TypeTable, ty: TypeID) -> TypeID {
+    match types.int_info(ty) {
+        Some((width, _)) if width < HMIRIntWidth::I32 => types.int(HMIRIntWidth::I32, true),
+        _ => ty,
+    }
+}
+
 // C integer promotion followed by the usual arithmetic conversions
 pub(crate) fn arithmetic_type(types: &mut TypeTable, lhs: TypeID, rhs: TypeID) -> Option<TypeID> {
+    let lhs = promote_integer_type(types, lhs);
+    let rhs = promote_integer_type(types, rhs);
     match (types.kind(lhs).clone(), types.kind(rhs).clone()) {
         (TypeKind::Float { width: left }, TypeKind::Float { width: right }) => {
             Some(types.intern(TypeKind::Float {
@@ -303,15 +312,6 @@ pub(crate) fn arithmetic_type(types: &mut TypeTable, lhs: TypeID, rhs: TypeID) -
                 signed: right_signed,
             },
         ) => {
-            let promote = |width: cx_hmir::HMIRIntWidth, signed: bool| {
-                if width < cx_hmir::HMIRIntWidth::I32 {
-                    (cx_hmir::HMIRIntWidth::I32, true)
-                } else {
-                    (width, signed)
-                }
-            };
-            let (left, left_signed) = promote(left, left_signed);
-            let (right, right_signed) = promote(right, right_signed);
             let (width, signed) = if left == right {
                 (left, left_signed && right_signed)
             } else if left > right {

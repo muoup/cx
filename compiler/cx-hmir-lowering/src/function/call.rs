@@ -15,7 +15,7 @@ use crate::{
         Expect, FunctionLowering, LowerResult, Operand, Stop,
         aggregate::{lower_address_of_operand, lower_deref_pointer, lower_member},
         expr::{lower_expr, lower_static_operand},
-        inspect, lower_eval,
+        inspect, lower_eval, lower_eval_frame,
         operand::{lower_convert, lower_decay, lower_value},
     },
     module::declare_function,
@@ -26,7 +26,8 @@ use crate::{
 
 enum CallArg {
     Static(StaticValue),
-    Runtime(Operand),
+    Expr(HMIRExprID),
+    Receiver(Operand),
 }
 
 pub(crate) fn lower_call(
@@ -183,54 +184,56 @@ fn lower_static_call(
         }
     }
 
-    let mut hints = EvalFrame::new(unit.clone(), def, Rc::new((def, Vec::new())));
-    for (param, value) in template.iter().zip(&explicit) {
-        if let Some(value) = value {
-            hints.bind(*param, value.clone());
-        }
-    }
     let mut rest = bound.map(CallArg::Static).collect::<Vec<_>>();
-    let receiver_index = receiver.as_ref().map(|_| rest.len());
-    rest.extend(receiver.map(CallArg::Runtime));
+    rest.extend(receiver.map(CallArg::Receiver));
     for arg in args {
         let param = params.get(template.len() + rest.len()).copied();
-        let hint = param.and_then(|param| {
-            let ty = body.local(param).ty();
-            eval_type(cx.program, &mut hints, ty).ok()
-        });
         let comptime = param.is_some_and(|param| body.local(param).is_comptime());
         rest.push(if comptime {
             CallArg::Static(lower_eval(cx, frame, arg, Expect::Any)?)
         } else {
-            CallArg::Runtime(lower_expr(cx, frame, arg, Expect::of(hint))?)
+            CallArg::Expr(arg)
         });
     }
 
-    let mut actual = Vec::with_capacity(rest_len);
-    for arg in rest.iter().take(rest_len) {
-        actual.push(match arg {
-            CallArg::Static(value) => eval_static_type(cx.program, value, span).ok(),
-            CallArg::Runtime(operand) => Some(operand.ty()),
-        });
-    }
     let mut instance_args = if template.is_empty() {
         Vec::new()
     } else {
+        let mut actual = Vec::new();
+        if explicit.len() < template.len() || explicit.iter().any(Option::is_none) {
+            let mut hints = EvalFrame::new(unit.clone(), def, Rc::new((def, Vec::new())));
+            for (param, value) in template.iter().zip(&explicit) {
+                if let Some(value) = value {
+                    hints.bind(*param, value.clone());
+                }
+            }
+            let source = lower_eval_frame(cx, frame);
+            for (param, arg) in params[template.len()..].iter().zip(&rest) {
+                actual.push(match arg {
+                    CallArg::Static(value) => eval_static_type(cx.program, value, span).ok(),
+                    CallArg::Receiver(operand) => Some(operand.ty()),
+                    CallArg::Expr(arg) => {
+                        let hint = eval_type(cx.program, &mut hints, body.local(*param).ty()).ok();
+                        Some(inspect::inspect(cx.program, &source, *arg, hint)?)
+                    }
+                });
+            }
+        }
         deduce_template(cx.program, def, explicit, &actual, span)?
     };
     for (param, arg) in params[template.len()..].iter().zip(&rest) {
         if !body.local(*param).is_comptime() {
             continue;
         }
-        match arg {
-            CallArg::Static(value) => instance_args.push(value.clone()),
-            CallArg::Runtime(operand) => match operand.as_static() {
-                Some(value) => instance_args.push(value.clone()),
-                None => {
-                    return cx.error(span, "comptime argument is not known at compile time");
-                }
-            },
-        }
+        let value = match arg {
+            CallArg::Static(value) => Some(value),
+            CallArg::Receiver(operand) => operand.as_static(),
+            CallArg::Expr(_) => None,
+        };
+        let Some(value) = value else {
+            return cx.error(span, "comptime argument is not known at compile time");
+        };
+        instance_args.push(value.clone());
     }
 
     let instance = (def, instance_args);
@@ -244,30 +247,25 @@ fn lower_static_call(
     let signature = eval_signature(cx.program, &instance, span)?;
     let mut values = Vec::with_capacity(rest.len());
     for (index, arg) in rest.into_iter().enumerate() {
-        let operand = match arg {
-            CallArg::Static(value) => lower_static_operand(cx, value, span),
-            CallArg::Runtime(operand) => Ok(operand),
-        };
-        match params.get(template.len() + index) {
-            Some(param) if body.local(*param).is_comptime() => continue,
-            Some(param) => {
-                let Some(position) = signature.runtime().iter().position(|local| local == param)
-                else {
-                    continue;
-                };
-                let ty = signature.params()[position].1;
-                let mut operand = operand?;
-                if receiver_index == Some(index) {
-                    operand = lower_receiver(cx, operand, ty, span)?;
-                }
-                let operand = lower_convert(cx, operand, ty, span)?;
-                values.push(lower_value(cx, operand, span)?);
-            }
-            None => {
-                let value = lower_variadic_value(cx, operand?, span)?;
-                values.push(value);
-            }
+        let param = params.get(template.len() + index);
+        if param.is_some_and(|param| body.local(*param).is_comptime()) {
+            continue;
         }
+        let ty = param
+            .and_then(|param| signature.runtime().iter().position(|local| local == param))
+            .map(|position| signature.params()[position].1);
+        let operand = match arg {
+            CallArg::Static(value) => lower_static_operand(cx, value, span)?,
+            CallArg::Expr(arg) => lower_expr(cx, frame, arg, Expect::of(ty))?,
+            CallArg::Receiver(operand) => match ty {
+                Some(ty) => lower_receiver(cx, operand, ty, span)?,
+                None => operand,
+            },
+        };
+        if param.is_some() && ty.is_none() {
+            continue;
+        }
+        values.push(lower_argument(cx, operand, ty, span)?);
     }
     lower_emit_call(cx, callee, values, signature.ret(), span)
 }
@@ -320,23 +318,21 @@ fn lower_indirect_call(
     for (index, arg) in args.iter().enumerate() {
         let param = function.params().get(index).copied();
         let operand = lower_expr(cx, frame, *arg, Expect::of(param))?;
-        values.push(match param {
-            Some(param) => {
-                let operand = lower_convert(cx, operand, param, span)?;
-                lower_value(cx, operand, span)?
-            }
-            None => lower_variadic_value(cx, operand, span)?,
-        });
+        values.push(lower_argument(cx, operand, param, span)?);
     }
     lower_emit_call(cx, callee, values, function.ret(), span)
 }
 
-// C's default argument promotions
-fn lower_variadic_value(
+fn lower_argument(
     cx: &mut FunctionLowering<'_, '_>,
     operand: Operand,
+    param: Option<TypeID>,
     span: &TokenRange,
 ) -> LowerResult<MIRValue> {
+    if let Some(param) = param {
+        let operand = lower_convert(cx, operand, param, span)?;
+        return lower_value(cx, operand, span);
+    }
     let operand = lower_decay(cx, operand, span)?;
     let promoted = match cx.program.types().kind(operand.ty()).clone() {
         TypeKind::Int { width, signed } if width < HMIRIntWidth::I32 => Some(

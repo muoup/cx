@@ -840,7 +840,7 @@ pub(crate) fn type_hint(
     frame: &mut EvalFrame,
     id: HMIRExprID,
 ) -> Option<TypeID> {
-    inspect(cx, frame, id).ok()
+    inspect(cx, frame, id, None).ok()
 }
 
 pub(crate) fn eval_static_type(

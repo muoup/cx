@@ -10,10 +10,10 @@ use crate::{
     eval::ops::{fold_binary, fold_unary},
     function::{
         Expect, FunctionLowering, LowerResult, Operand, Stop,
+        coerce::lower_algebraic_coercion,
         expr::{lower_expr, lower_static_operand},
         operand::{
-            lower_convert, lower_copy, lower_decay, lower_int_constant, lower_store, lower_truthy,
-            lower_value,
+            lower_convert, lower_copy, lower_int_constant, lower_store, lower_truthy, lower_value,
         },
     },
     ty::{TypeID, TypeKind, TypeTable},
@@ -32,7 +32,9 @@ pub(super) fn lower_binary(
         return lower_short_circuit(cx, frame, op, lhs, rhs, span);
     }
     let lhs = lower_expr(cx, frame, lhs, Expect::Any)?;
+    let lhs = lower_algebraic_coercion(cx, lhs, span)?;
     let rhs = lower_expr(cx, frame, rhs, Expect::Any)?;
+    let rhs = lower_algebraic_coercion(cx, rhs, span)?;
     lower_binary_operands(cx, op, lhs, rhs, span)
 }
 
@@ -49,8 +51,6 @@ fn lower_binary_operands(
     {
         return lower_static_operand(cx, value, span);
     }
-    let lhs = lower_decay(cx, lhs, span)?;
-    let rhs = lower_decay(cx, rhs, span)?;
     let left = cx.program.types().kind(lhs.ty()).clone();
     let right = cx.program.types().kind(rhs.ty()).clone();
     match (&left, &right) {
@@ -475,8 +475,9 @@ pub(super) fn lower_assign(
     let ty = lhs.ty();
     let value = match op {
         Some(op) => {
-            let current = Operand::value(lower_copy(cx, &lhs, span)?, ty);
+            let current = lower_algebraic_coercion(cx, lhs.clone(), span)?;
             let rhs = lower_expr(cx, frame, value, Expect::Any)?;
+            let rhs = lower_algebraic_coercion(cx, rhs, span)?;
             lower_binary_operands(cx, op, current, rhs, span)?
         }
         None => lower_expr(cx, frame, value, Expect::Type(ty))?,
