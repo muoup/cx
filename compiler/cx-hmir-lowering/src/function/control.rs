@@ -10,7 +10,7 @@ use crate::{
     function::{
         Control, ControlKind, Expect, FunctionLowering, LowerResult, Merge, MergeParam, Operand,
         PatternBinding, Stop,
-        aggregate::{lower_bind_pattern, lower_sum_index},
+        aggregate::{lower_bind_pattern, lower_pattern_subject, lower_sum_index},
         expr::{lower_expr, lower_inferred_type},
         lower_cleanup_to, lower_eval, lower_return, lower_type_hint,
         operand::{lower_convert, lower_copy, lower_read, lower_spill, lower_truthy, lower_value},
@@ -513,6 +513,7 @@ pub(crate) fn lower_match(
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let value = lower_expr(cx, frame, scrutinee, Expect::Any)?;
+    let value = lower_pattern_subject(cx, value, span)?;
     let owned = !value.is_lvalue();
     let value = lower_spill(cx, value, span)?;
     cx.bind(frame, subject, value.clone());

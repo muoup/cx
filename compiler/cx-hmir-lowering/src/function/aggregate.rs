@@ -15,10 +15,12 @@ use cx_util::identifier::CXIdent;
 use crate::{
     function::{
         Expect, FunctionLowering, LowerResult, Operand, OperandKind, PatternBinding,
+        coerce::{lower_algebraic_coercion, lower_nonnull_pointer},
         expr::lower_expr,
         lower_eval,
         operand::{
-            lower_convert, lower_decay, lower_int_constant, lower_spill, lower_store, lower_value,
+            lower_auto_deref, lower_convert, lower_decay, lower_int_constant, lower_spill,
+            lower_store, lower_value,
         },
         ops::lower_pointer_offset,
     },
@@ -41,7 +43,9 @@ pub(super) fn lower_aggregate(
         }
         HMIRAggregateOp::Index { base, index } => {
             let base = lower_expr(cx, frame, base, Expect::Any)?;
+            let base = lower_algebraic_coercion(cx, base, span)?;
             let index = lower_expr(cx, frame, index, Expect::Any)?;
+            let index = lower_algebraic_coercion(cx, index, span)?;
             lower_index(cx, base, index, span)
         }
         HMIRAggregateOp::Initialize { ty, fields } => {
@@ -60,7 +64,8 @@ pub(super) fn lower_deref_pointer(
     let Some(inner) = cx.program.types().pointer_inner(operand.ty()) else {
         return Ok(operand);
     };
-    let pointer = lower_value(cx, operand, span)?;
+    let origin = operand.pointee_origin();
+    let pointer = lower_nonnull_pointer(cx, operand, span)?;
     let ty = cx.program.types_mut().reference_to(inner);
     let out = cx.register(ty, span)?;
     let target_ty = cx.mir(ty, span)?;
@@ -72,7 +77,7 @@ pub(super) fn lower_deref_pointer(
         },
         span,
     );
-    Ok(Operand::reference(out, inner, None))
+    Ok(Operand::reference(out, inner, origin))
 }
 
 pub(super) fn lower_member(
@@ -139,29 +144,17 @@ fn lower_index(
     index: Operand,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
-    let origin = base.origin();
-    let (pointer, element) = match cx.program.types().kind(base.ty()).clone() {
-        TypeKind::Array { element, .. } => (lower_decay(cx, base, span)?, element),
-        TypeKind::Pointer(element) => (base, element),
-        TypeKind::Str => {
-            let pointer = lower_decay(cx, base, span)?;
-            let element = cx
-                .program
-                .types()
-                .pointer_inner(pointer.ty())
-                .expect("decayed string");
-            (pointer, element)
-        }
+    let types = cx.program.types();
+    let (pointer, index, element) = match (types.kind(base.ty()), types.kind(index.ty())) {
+        (TypeKind::Pointer(element), TypeKind::Int { .. }) => (base, index, *element),
+        (TypeKind::Int { .. }, TypeKind::Pointer(element)) => (index, base, *element),
         _ => {
-            return cx.error(
-                span,
-                format!("cannot index '{}'", cx.program.types().display(base.ty())),
-            );
+            return cx.error(span, "indexing requires a pointer and an integer");
         }
     };
-    let reference = cx.program.types_mut().reference_to(element);
-    let address = lower_pointer_offset(cx, pointer, index, element, false, reference, span)?;
-    Ok(Operand::reference(register_of(&address), element, origin))
+    let ty = pointer.ty();
+    let address = lower_pointer_offset(cx, pointer, index, element, false, ty, span)?;
+    lower_deref_pointer(cx, address, span)
 }
 
 fn lower_initialize(
@@ -311,6 +304,7 @@ fn lower_is(
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let subject = lower_expr(cx, frame, value, Expect::Any)?;
+    let subject = lower_pattern_subject(cx, subject, span)?;
     let binds = match &pattern {
         HMIRPattern::Binding(_) => true,
         HMIRPattern::Variant { inner, .. } => inner.is_some(),
@@ -385,6 +379,21 @@ fn lower_is(
         });
     }
     Ok(Operand::register(out, bool))
+}
+
+pub(super) fn lower_pattern_subject(
+    cx: &mut FunctionLowering<'_, '_>,
+    subject: Operand,
+    span: &TokenRange,
+) -> LowerResult<Operand> {
+    let subject = lower_auto_deref(cx, subject, span)?;
+    if cx.program.types().is_pointer(subject.ty()) {
+        return cx.error(
+            span,
+            "pattern subject is a pointer; dereference it explicitly",
+        );
+    }
+    Ok(subject)
 }
 
 pub(super) fn lower_sum_index(
@@ -544,10 +553,12 @@ pub(super) fn lower_address_of_operand(
     let out = cx.register(ty, span)?;
     let target = MIRTarget::Register(out);
     let intrinsic = match operand.kind() {
-        OperandKind::Place(place) => MIRInternalIntrinsic::PlaceAddress {
-            out: target,
-            place: *place,
-        },
+        OperandKind::Place(place) | OperandKind::AdoptedPlace(place) => {
+            MIRInternalIntrinsic::PlaceAddress {
+                out: target,
+                place: *place,
+            }
+        }
         OperandKind::Global(global) => MIRInternalIntrinsic::GlobalAddress {
             out: target,
             global: *global,
@@ -560,11 +571,4 @@ pub(super) fn lower_address_of_operand(
     };
     cx.intrinsic(intrinsic, span);
     Ok(Operand::register(out, ty))
-}
-
-pub(crate) fn register_of(operand: &Operand) -> MIRRegisterID {
-    match operand.kind() {
-        OperandKind::Value(MIRValue::Register(register)) => *register,
-        _ => unreachable!("operand was produced into a register"),
-    }
 }

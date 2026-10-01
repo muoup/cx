@@ -226,6 +226,7 @@ pub(super) fn lower_pointer_offset(
     result: TypeID,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
+    let origin = pointer.pointee_origin();
     let size = if cx.program.types().is_void(element) {
         1
     } else {
@@ -267,7 +268,7 @@ pub(super) fn lower_pointer_offset(
             span,
         );
     }
-    Ok(Operand::register(out, result))
+    Ok(Operand::register(out, result).with_pointee_origin(origin))
 }
 
 fn lower_short_circuit(

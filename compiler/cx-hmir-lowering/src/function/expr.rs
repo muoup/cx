@@ -9,13 +9,14 @@ use cx_mir::{
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::{
     eval::{eval_global_type, eval_static_type, ops::coerce_static},
     function::{
         Expect, Frame, FunctionLowering, LowerResult, Operand, OperandKind,
         aggregate::{lower_address_of, lower_aggregate, lower_deref_pointer},
-        coerce::lower_coerce,
+        coerce::{lower_coerce, lower_nonnull_pointer},
         control::lower_control,
         inspect, lower_eval, lower_eval_type, lower_eval_type_hint,
         operand::{
@@ -133,9 +134,8 @@ pub(crate) fn lower_let(
     let declared = lower_eval_type_hint(cx, frame, decl.ty())?;
     let name = decl.name().cloned();
     if let Some(initializer) = initializer
-        && let HMIRExprKind::Native(HMIRNativeOp::OwnershipOp(
-            op @ (HMIROwnershipOp::Adopt(_) | HMIROwnershipOp::Allocate(_)),
-        )) = cx.kind(frame, initializer)
+        && let HMIRExprKind::Native(HMIRNativeOp::OwnershipOp(op @ HMIROwnershipOp::Allocate(_))) =
+            cx.kind(frame, initializer)
     {
         let place = lower_place_op(cx, frame, &op, declared, name, span)?;
         cx.bind(frame, local, place);
@@ -145,6 +145,19 @@ pub(crate) fn lower_let(
     let init = initializer
         .map(|initializer| lower_expr(cx, frame, initializer, Expect::of(declared)))
         .transpose()?;
+    if let Some(init) = &init
+        && let OperandKind::AdoptedPlace(place) = init.kind()
+    {
+        if declared.is_some_and(|ty| ty != init.ty()) {
+            return cx.error(span, "adopted storage does not match the declared type");
+        }
+        cx.body
+            .place_mut(*place)
+            .expect("adopted place exists")
+            .debug_name = name;
+        cx.bind(frame, local, Operand::place(*place, init.ty()));
+        return Ok(());
+    }
     let ty = match (declared, &init) {
         (Some(ty), Some(init)) => match cx.program.types().kind(ty) {
             TypeKind::Array { length: None, .. } => {
@@ -196,7 +209,7 @@ fn lower_place_op(
     frame: usize,
     op: &HMIROwnershipOp,
     declared: Option<TypeID>,
-    name: Option<cx_util::identifier::CXIdent>,
+    name: Option<CXIdent>,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     match op {
@@ -208,16 +221,22 @@ fn lower_place_op(
             let place = cx.place(ty, name, span)?;
             Ok(Operand::place(place, ty))
         }
-        HMIROwnershipOp::Adopt(pointer) => {
-            let pointer = lower_expr(cx, frame, *pointer, Expect::Any)?;
-            let pointer = lower_decay(cx, pointer, span)?;
-            let ty = match declared.or_else(|| cx.program.types().pointer_inner(pointer.ty())) {
-                Some(ty) => ty,
-                None => return cx.error(span, "adopted a non-pointer"),
+        HMIROwnershipOp::Adopt(reference) => {
+            let reference = lower_expr(cx, frame, *reference, Expect::Any)?;
+            let reference = lower_auto_deref(cx, reference, span)?;
+            if matches!(
+                reference.kind(),
+                OperandKind::Place(_) | OperandKind::AdoptedPlace(_)
+            ) {
+                return cx.error(span, "cannot adopt a local place; use a move instead");
+            }
+            if reference.bitfield().is_some() {
+                return cx.error(span, "cannot adopt bitfield storage");
+            }
+            let Some(address) = reference.address() else {
+                return cx.error(span, "adoption requires referenced storage");
             };
-            let pointer_ty = cx.program.types_mut().pointer_to(ty);
-            let pointer = lower_convert(cx, pointer, pointer_ty, span)?;
-            let address = lower_value(cx, pointer, span)?;
+            let ty = reference.ty();
             let place = cx.place(ty, name, span)?;
             cx.body.mark_adopted(place);
             cx.intrinsic(MIRInternalIntrinsic::AdoptPlace { place, address }, span);
@@ -227,7 +246,7 @@ fn lower_place_op(
                 },
                 span,
             );
-            Ok(Operand::place(place, ty))
+            Ok(Operand::new(OperandKind::AdoptedPlace(place), ty))
         }
         _ => unreachable!("only allocate and adopt create places"),
     }
@@ -260,7 +279,9 @@ pub(crate) fn lower_native(
                 return cx.error(span, "dereferenced a non-pointer");
             };
             if matches!(cx.program.types().kind(inner), TypeKind::Function(_)) {
-                return Ok(operand);
+                let ty = operand.ty();
+                let pointer = lower_nonnull_pointer(cx, operand, span)?;
+                return Ok(Operand::value(pointer, ty));
             }
             lower_deref_pointer(cx, operand, span)
         }

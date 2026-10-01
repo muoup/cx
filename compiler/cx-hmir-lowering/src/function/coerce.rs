@@ -1,5 +1,5 @@
 use cx_hmir::{HMIRCoerceMode, HMIRExprID};
-use cx_mir::{MIRInternalIntrinsic, MIRTarget};
+use cx_mir::{MIRConstant, MIRInternalIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRValue};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -19,6 +19,7 @@ pub(super) fn lower_algebraic_coercion(
     operand: Operand,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
+    let operand = lower_auto_deref(cx, operand, span)?;
     let operand = lower_decay(cx, operand, span)?;
     let operand = if operand.is_lvalue() {
         if !cx.program.types().is_pod(operand.ty()) {
@@ -33,6 +34,34 @@ pub(super) fn lower_algebraic_coercion(
     };
     let ty = promote_integer_type(cx.program.types_mut(), operand.ty());
     lower_convert(cx, operand, ty, span)
+}
+
+pub(super) fn lower_nonnull_pointer(
+    cx: &mut FunctionLowering<'_, '_>,
+    operand: Operand,
+    span: &TokenRange,
+) -> LowerResult<MIRValue> {
+    let ty = operand.ty();
+    let pointer = lower_value(cx, operand, span)?;
+    let bool = cx.program.types_mut().bool();
+    let condition = cx.register(bool, span)?;
+    let null_ty = cx.mir(ty, span)?;
+    cx.intrinsic(
+        MIRPtrIntrinsic::Neq {
+            out: MIRTarget::Register(condition),
+            lhs: pointer.clone(),
+            rhs: MIRValue::Constant(MIRConstant::Nullptr { ty: null_ty }),
+        },
+        span,
+    );
+    cx.intrinsic(
+        MIRInternalIntrinsic::Assert {
+            condition: MIRValue::Register(condition),
+            message: Some("dereferenced a null pointer".into()),
+        },
+        span,
+    );
+    Ok(pointer)
 }
 
 pub(super) fn lower_coerce(
@@ -60,7 +89,7 @@ pub(super) fn lower_coerce(
         && reference.is_some_and(|inner| inner != value.ty())
         && cx.program.types().is_pointer(value.ty())
     {
-        let value = lower_value(cx, value, span)?;
+        let value = lower_nonnull_pointer(cx, value, span)?;
         let out = cx.register(ty, span)?;
         let target_ty = cx.mir(ty, span)?;
         cx.intrinsic(

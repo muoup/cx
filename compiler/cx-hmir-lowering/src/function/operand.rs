@@ -19,11 +19,13 @@ use crate::{
 pub(crate) struct Operand {
     kind: OperandKind,
     ty: TypeID,
+    pointee_origin: Option<MIRPlaceID>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum OperandKind {
     Place(MIRPlaceID),
+    AdoptedPlace(MIRPlaceID),
     // A reference register; 'origin' is the place whose storage it views, when known
     Ref {
         reg: MIRRegisterID,
@@ -37,7 +39,11 @@ pub(crate) enum OperandKind {
 
 impl Operand {
     pub(crate) fn new(kind: OperandKind, ty: TypeID) -> Self {
-        Self { kind, ty }
+        Self {
+            kind,
+            ty,
+            pointee_origin: None,
+        }
     }
 
     pub(crate) fn place(place: MIRPlaceID, ty: TypeID) -> Self {
@@ -80,10 +86,22 @@ impl Operand {
         self
     }
 
+    pub(crate) fn pointee_origin(&self) -> Option<MIRPlaceID> {
+        self.pointee_origin
+    }
+
+    pub(crate) fn with_pointee_origin(mut self, origin: Option<MIRPlaceID>) -> Self {
+        self.pointee_origin = origin;
+        self
+    }
+
     pub(crate) fn is_lvalue(&self) -> bool {
         matches!(
             self.kind,
-            OperandKind::Place(_) | OperandKind::Ref { .. } | OperandKind::Global(_)
+            OperandKind::Place(_)
+                | OperandKind::AdoptedPlace(_)
+                | OperandKind::Ref { .. }
+                | OperandKind::Global(_)
         )
     }
 
@@ -97,7 +115,9 @@ impl Operand {
     // The value naming this lvalue's storage
     pub(crate) fn address(&self) -> Option<MIRValue> {
         Some(match &self.kind {
-            OperandKind::Place(place) => MIRValue::PlaceRef(*place),
+            OperandKind::Place(place) | OperandKind::AdoptedPlace(place) => {
+                MIRValue::PlaceRef(*place)
+            }
             OperandKind::Ref { reg, .. } => MIRValue::Register(*reg),
             OperandKind::Global(global) => MIRValue::Constant(MIRConstant::GlobalRef(*global)),
             _ => return None,
@@ -106,7 +126,9 @@ impl Operand {
 
     pub(crate) fn target(&self) -> Option<MIRTarget> {
         Some(match &self.kind {
-            OperandKind::Place(place) => MIRTarget::Place(*place),
+            OperandKind::Place(place) | OperandKind::AdoptedPlace(place) => {
+                MIRTarget::Place(*place)
+            }
             OperandKind::Ref { reg, .. } => MIRTarget::Indirect(*reg),
             OperandKind::Global(global) => MIRTarget::Global(*global),
             _ => return None,
@@ -123,7 +145,7 @@ impl Operand {
     // The place owning this lvalue's storage
     pub(crate) fn origin(&self) -> Option<MIRPlaceID> {
         match &self.kind {
-            OperandKind::Place(place) => Some(*place),
+            OperandKind::Place(place) | OperandKind::AdoptedPlace(place) => Some(*place),
             OperandKind::Ref { origin, .. } => *origin,
             _ => None,
         }
@@ -662,7 +684,7 @@ pub(super) fn lower_decay(
                 },
                 span,
             );
-            Ok(Operand::register(out, ty))
+            Ok(Operand::register(out, ty).with_pointee_origin(operand.origin()))
         }
         TypeKind::Str => {
             let ty = cx.program.types_mut().char_pointer();

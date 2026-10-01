@@ -717,6 +717,13 @@ fn exec_aggregate(
         }
         HMIRAggregateOp::Is { value, pattern } => {
             let value = eval(cx, frame, *value, None)?;
+            let ty = eval_static_type(cx, &value, span)?;
+            if cx.types().is_pointer(ty) {
+                return Err(staging_error(
+                    span,
+                    "pattern subject is a pointer; dereference it explicitly".into(),
+                ));
+            }
             let matched = match (pattern, &value) {
                 (HMIRPattern::Integer(expected), StaticValue::Int { value, .. }) => {
                     *value == *expected as i128

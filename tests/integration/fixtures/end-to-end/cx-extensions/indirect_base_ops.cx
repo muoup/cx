@@ -34,14 +34,14 @@ int match_point_ref(MaybePoint& value) {
 }
 
 int match_point_ptr(MaybePoint* value) {
-    return match (value) {
+    return match (*value) {
         MaybePoint::some(point) => yield point.x + point.y;
         MaybePoint::none() => yield -1;
     };
 }
 
 int is_point_ptr(MaybePoint* value) {
-    if (value is MaybePoint::some(point)) {
+    if (*value is MaybePoint::some(point)) {
         return point.x;
     }
 
