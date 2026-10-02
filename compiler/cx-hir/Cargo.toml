@@ -8,6 +8,7 @@ autotests = false
 cx-namespace = { path = "../cx-namespace" }
 cx-util = { path = "../cx-util" }
 cx-tokens = { path = "../cx-tokens" }
+cx-target = { path = "../cx-target" }
 cx-preparse-data = { path = "../cx-preparse-data" }
 
 uuid = { version = "1.16.0", features = ["v4"] }

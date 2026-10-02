@@ -26,7 +26,7 @@ pub fn generate_mir<'l>(
     load: impl FnMut(&QualifiedName) -> Option<HMIRUnit> + 'l,
     architecture: ArchitectureConfig,
     require_explicit_return: bool,
-) -> CXResult<MIRUnit<'static>> {
+) -> CXResult<MIRUnit> {
     let mut program = Program::new(unit, Box::new(load), architecture, require_explicit_return);
     lower_roots(&mut program)?;
     let (types, module) = program.into_parts();

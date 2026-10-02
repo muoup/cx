@@ -76,7 +76,6 @@ pub fn compiler_config(
         compilation_mode,
         verbose: false,
         dump: false,
-        hmir_pipeline: std::env::var_os("CX_HMIR_PIPELINE").is_some(),
         working_directory: working_directory.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
         module_mode: true,

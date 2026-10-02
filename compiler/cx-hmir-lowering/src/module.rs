@@ -5,7 +5,7 @@ use cx_log::CXResult;
 use cx_mir::{
     MIRBody, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
     MIRGlobalID, MIRGlobalRef, MIRGlobalState, MIRGlobalVariable, MIRIntType, MIRUnit,
-    constant::MIRStagedExprPool, ty::registry::MIRTypeRegistry,
+    ty::registry::MIRTypeRegistry,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -62,7 +62,7 @@ impl Module {
         self.used_globals.insert(id);
     }
 
-    pub(crate) fn finish(self, types: MIRTypeRegistry) -> MIRUnit<'static> {
+    pub(crate) fn finish(self, types: MIRTypeRegistry) -> MIRUnit {
         let used_functions = self.used_functions;
         let functions = self
             .functions
@@ -89,8 +89,6 @@ impl Module {
         MIRUnit::new(
             types,
             functions,
-            BTreeMap::new(),
-            MIRStagedExprPool::new(),
             globals,
             global_order,
         )

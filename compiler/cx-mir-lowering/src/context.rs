@@ -18,7 +18,7 @@ use crate::lowering::typing::convert_type;
 use crate::lowering::values::lower_rvalue;
 
 pub(crate) struct GlobalContext<'mir> {
-    pub unit: &'mir MIRUnit<'mir>,
+    pub unit: &'mir MIRUnit,
     pub prototypes: LMIRFunctionMap,
     pub functions: Vec<LMIRFunction>,
     pub globals: Vec<LMIRGlobalValue>,
@@ -27,7 +27,7 @@ pub(crate) struct GlobalContext<'mir> {
 }
 
 impl<'mir> GlobalContext<'mir> {
-    pub fn new(unit: &'mir MIRUnit<'mir>) -> Self {
+    pub fn new(unit: &'mir MIRUnit) -> Self {
         Self {
             unit,
             prototypes: LMIRFunctionMap::new(),

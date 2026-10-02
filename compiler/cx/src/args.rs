@@ -36,7 +36,6 @@ pub struct FileArgs {
     pub unsafe_mode: bool,
     pub verbose: bool,
     pub dump: bool,
-    pub hmir: bool,
     pub require_explicit_return: Option<bool>,
 }
 
@@ -48,7 +47,6 @@ pub struct BuildArgs {
     pub unsafe_mode: bool,
     pub verbose: bool,
     pub dump: bool,
-    pub hmir: bool,
     pub require_explicit_return: Option<bool>,
 }
 
@@ -65,7 +63,6 @@ struct CommonArgs {
     unsafe_mode: bool,
     verbose: bool,
     dump: bool,
-    hmir: bool,
     require_explicit_return: Option<bool>,
 }
 
@@ -129,7 +126,6 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArg
             "--unsafe" => common.unsafe_mode = true,
             "--verbose" => common.verbose = true,
             "--dump" => common.dump = true,
-            "--hmir" => common.hmir = true,
             "--allow-implicit-return" => common.require_explicit_return = Some(false),
             "--require-explicit-return" => common.require_explicit_return = Some(true),
             _ => rest.push(arg),
@@ -222,7 +218,6 @@ fn parse_build_args(args: impl IntoIterator<Item = String>, topic: Topic) -> CXR
         unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
         dump: common.dump,
-        hmir: common.hmir,
         require_explicit_return: common.require_explicit_return,
     })
 }
@@ -272,7 +267,6 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> 
         unsafe_mode: common.unsafe_mode,
         verbose: common.verbose,
         dump: common.dump,
-        hmir: common.hmir,
         require_explicit_return: common.require_explicit_return,
     }))
 }

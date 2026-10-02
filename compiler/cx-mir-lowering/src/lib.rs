@@ -7,6 +7,6 @@ use crate::lowering::lower_unit;
 mod context;
 mod lowering;
 
-pub fn generate_lmir(mir: &MIRUnit<'_>) -> CXResult<LMIRUnit> {
+pub fn generate_lmir(mir: &MIRUnit) -> CXResult<LMIRUnit> {
     lower_unit(mir)
 }

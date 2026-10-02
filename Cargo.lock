@@ -342,6 +342,7 @@ version = "0.0.0"
 dependencies = [
  "cx-namespace",
  "cx-preparse-data",
+ "cx-target",
  "cx-tokens",
  "cx-util",
  "speedy",
@@ -357,7 +358,6 @@ dependencies = [
  "cx-intrinsics",
  "cx-namespace",
  "cx-target",
- "cx-thir",
  "cx-tokens",
  "cx-util",
 ]
@@ -430,7 +430,6 @@ dependencies = [
  "cx-pipeline",
  "cx-pipeline-data",
  "cx-tokens",
- "cx-typechecker",
  "dashmap",
  "tokio",
  "tower-lsp",
@@ -443,7 +442,6 @@ dependencies = [
  "cx-hir",
  "cx-log",
  "cx-target",
- "cx-thir",
  "cx-tokens",
  "cx-util",
  "speedy",
@@ -456,17 +454,6 @@ dependencies = [
  "cx-hir",
  "cx-log",
  "cx-mir",
- "cx-tokens",
- "cx-util",
-]
-
-[[package]]
-name = "cx-mir-comptime"
-version = "0.0.0"
-dependencies = [
- "cx-log",
- "cx-mir",
- "cx-target",
  "cx-tokens",
  "cx-util",
 ]
@@ -500,7 +487,6 @@ dependencies = [
  "cx-namespace",
  "cx-pipeline-data",
  "cx-preparse-data",
- "cx-thir",
  "cx-tokens",
  "cx-util",
 ]
@@ -525,10 +511,7 @@ dependencies = [
  "cx-parsing",
  "cx-pipeline-data",
  "cx-preparse-data",
- "cx-thir",
- "cx-thir-lowering",
  "cx-tokens",
- "cx-typechecker",
  "cx-util",
  "fs2",
  "speedy",
@@ -545,7 +528,6 @@ dependencies = [
  "cx-namespace",
  "cx-preparse-data",
  "cx-target",
- "cx-thir",
  "cx-tokens",
  "cx-util",
  "serde",
@@ -575,53 +557,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "cx-thir"
-version = "0.0.0"
-dependencies = [
- "cx-hir",
- "cx-log",
- "cx-namespace",
- "cx-target",
- "cx-tokens",
- "cx-util",
- "speedy",
- "uuid",
-]
-
-[[package]]
-name = "cx-thir-lowering"
-version = "0.0.0"
-dependencies = [
- "cx-hir",
- "cx-log",
- "cx-mir",
- "cx-mir-comptime",
- "cx-target",
- "cx-thir",
- "cx-tokens",
- "cx-util",
-]
-
-[[package]]
 name = "cx-tokens"
 version = "0.0.0"
 dependencies = [
  "cx-util",
  "speedy",
-]
-
-[[package]]
-name = "cx-typechecker"
-version = "0.0.0"
-dependencies = [
- "cx-hir",
- "cx-log",
- "cx-namespace",
- "cx-pipeline-data",
- "cx-target",
- "cx-thir",
- "cx-tokens",
- "cx-util",
 ]
 
 [[package]]

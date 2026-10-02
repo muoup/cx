@@ -6,22 +6,17 @@ use cx_hir::{
         template::HIRTemplatePrototype,
         types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
     },
-    registry::GlobalSymbolRegistry,
+    intrinsic_types::{HIRIntrinsicType, INTRINSIC_TYPES},
+    registry::{ExportNameMode, GlobalSymbolRegistry},
     symbols::{HIRSymbol, HIRSymbolKind, TypeConstructorData},
 };
 use cx_hmir::{HMIRDef, HMIRDefID, HMIRDefRef, HMIRFloatWidth, HMIRIntWidth, HMIRTypeDesc};
 use cx_namespace::{
     lookup::{QualifiedLookup, QualifiedLookupResult},
+    mangling::mangle_namespace_symbol,
     module::{NamespacePath, QualifiedName},
 };
 use cx_target::ArchitectureConfig;
-use cx_thir::{
-    intrinsic_types::INTRINSIC_TYPES,
-    thir::{
-        data::{THIRFloatType, THIRIntType, THIRTypeKind},
-        name_mangling::mangle_rootable_name,
-    },
-};
 use cx_util::identifier::CXIdent;
 
 pub(crate) struct Resolver<'a> {
@@ -120,7 +115,13 @@ impl<'a> Resolver<'a> {
     }
 
     pub(crate) fn link_name(&self, name: &QualifiedName, scheme: HIRSymbolNameScheme) -> CXIdent {
-        CXIdent::new(mangle_rootable_name(self.registry, name, scheme))
+        if scheme == HIRSymbolNameScheme::Unmangled
+            || name.namespace.is_root()
+            || self.registry.export_name_mode(&name.namespace) == ExportNameMode::Root
+        {
+            return name.name.clone();
+        }
+        CXIdent::new(mangle_namespace_symbol(name))
     }
 
     pub(crate) fn def_ref(&self, name: QualifiedName) -> HMIRDefRef {
@@ -186,21 +187,29 @@ impl<'a> Resolver<'a> {
             .find(|(intrinsic, _)| *intrinsic == name)?;
 
         Some(match kind(&self.architecture)? {
-            THIRTypeKind::Void => HMIRTypeDesc::Void,
-            THIRTypeKind::Unreachable => HMIRTypeDesc::Unreachable,
-            THIRTypeKind::Str => HMIRTypeDesc::Str,
-            THIRTypeKind::Integer { signed, ty } => HMIRTypeDesc::Int {
-                width: int_width(ty),
+            HIRIntrinsicType::Void => HMIRTypeDesc::Void,
+            HIRIntrinsicType::Unreachable => HMIRTypeDesc::Unreachable,
+            HIRIntrinsicType::Str => HMIRTypeDesc::Str,
+            HIRIntrinsicType::Bool => HMIRTypeDesc::Int {
+                width: HMIRIntWidth::I1,
+                signed: false,
+            },
+            HIRIntrinsicType::Integer { signed, bytes } => HMIRTypeDesc::Int {
+                width: match bytes {
+                    1 => HMIRIntWidth::I8,
+                    2 => HMIRIntWidth::I16,
+                    4 => HMIRIntWidth::I32,
+                    _ => HMIRIntWidth::I64,
+                },
                 signed,
             },
-            THIRTypeKind::Float { ty } => HMIRTypeDesc::Float {
-                width: match ty {
-                    THIRFloatType::F32 => HMIRFloatWidth::F32,
-                    THIRFloatType::F64 => HMIRFloatWidth::F64,
+            HIRIntrinsicType::Float { bytes } => HMIRTypeDesc::Float {
+                width: match bytes {
+                    4 => HMIRFloatWidth::F32,
+                    _ => HMIRFloatWidth::F64,
                 },
             },
-            THIRTypeKind::Opaque { size, alignment } => HMIRTypeDesc::Opaque { size, alignment },
-            _ => return None,
+            HIRIntrinsicType::Opaque { size, alignment } => HMIRTypeDesc::Opaque { size, alignment },
         })
     }
 }
@@ -231,15 +240,4 @@ pub(crate) fn constructor_payload(
 
 fn template_arity(template: Option<&HIRTemplatePrototype>) -> usize {
     template.map_or(0, |template| template.types.len())
-}
-
-fn int_width(ty: THIRIntType) -> HMIRIntWidth {
-    match ty {
-        THIRIntType::I1 => HMIRIntWidth::I1,
-        THIRIntType::I8 => HMIRIntWidth::I8,
-        THIRIntType::I16 => HMIRIntWidth::I16,
-        THIRIntType::I32 => HMIRIntWidth::I32,
-        THIRIntType::I64 => HMIRIntWidth::I64,
-        THIRIntType::I128 => HMIRIntWidth::I128,
-    }
 }

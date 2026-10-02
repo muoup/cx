@@ -86,7 +86,6 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             unsafe_mode: false,
             verbose: false,
             dump: false,
-            hmir_pipeline: false,
 
             project_config: config,
             include_dirs,

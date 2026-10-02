@@ -14,8 +14,6 @@ fs2 = { version = "0.4.3" }
 
 cx-lexer = { path = "../cx-lexer", default-features = false }
 cx-parsing = { path = "../cx-parsing" }
-cx-typechecker = { path = "../cx-typechecker" }
-cx-thir-lowering = { path = "../cx-thir-lowering" }
 cx-mir = { path = "../cx-mir" }
 cx-mir-analysis = { path = "../cx-mir-analysis" }
 cx-mir-lowering = { path = "../cx-mir-lowering" }
@@ -28,7 +26,6 @@ cx-preparse-data = { path = "../cx-preparse-data" }
 cx-hir = { path = "../cx-hir" }
 cx-hir-lowering = { path = "../cx-hir-lowering" }
 cx-hmir-lowering = { path = "../cx-hmir-lowering" }
-cx-thir = { path = "../cx-thir" }
 cx-lmir = { path = "../cx-lmir" }
 cx-c-header = { path = "../cx-c-header" }
 cx-util = { path = "../cx-util" }

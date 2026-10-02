@@ -1,8 +1,9 @@
 use crate::backends::{cranelift_compile, llvm_compile};
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
+use cx_hir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_hir_lowering::{generate_external_hmir, generate_hmir};
-use cx_hmir_lowering::generate_mir as stage_hmir;
+use cx_hmir_lowering::generate_mir;
 use cx_log::catalogue::driver as catalogue;
 use cx_log::{CXResult, error::CXError};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
@@ -20,11 +21,7 @@ use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext,
 };
 use cx_preparse_data::Import;
-use cx_thir::intrinsic_types::INTRINSIC_IMPORTS;
-use cx_thir_lowering::generate_mir;
 use cx_tokens::TokenIter;
-use cx_typechecker::environment::TypeEnvironment;
-use cx_typechecker::typecheck;
 use cx_util::format::{dump_data, dumps_enabled, with_dump_file};
 use cx_util::identifier::CXIdent;
 use fs2::FileExt;
@@ -105,7 +102,6 @@ pub(crate) fn scheduling_loop_many(
         let step_name = match job.step {
             CompilationStep::PreParse => "Lexing",
             CompilationStep::Parse => "Parsing",
-            CompilationStep::Typechecking => "Typechecking",
             CompilationStep::MIRGen => "MIR generation",
             CompilationStep::LMIRGen => "Lowering",
             CompilationStep::Codegen => "Compiling",
@@ -284,8 +280,7 @@ pub(crate) fn handle_job(
 
             Ok(new_jobs.into())
         }
-        CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::Typechecking, false),
-        CompilationStep::Typechecking => map_reqs_new_stage(job, CompilationStep::MIRGen, true),
+        CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::MIRGen, false),
         CompilationStep::MIRGen => map_reqs_new_stage(job, CompilationStep::LMIRGen, true),
         CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen, true),
         CompilationStep::Codegen => Ok([].into()),
@@ -494,57 +489,22 @@ pub(crate) fn perform_job(
                 .insert(job.unit.namespace().clone(), parsed_ast);
         }
 
-        CompilationStep::Typechecking => {
-            let self_ast = context.module_db.hir.get(&job.unit.namespace());
-            let namespace = job.unit.namespace().clone();
-
-            if dumps_enabled() && (!job.unit.is_std_lib() || context.config.verbose) {
-                dump_data(&generate_hmir(
-                    &self_ast,
-                    namespace.clone(),
-                    &context.module_db.symbol_registry,
-                    context.config.architecture,
-                ));
-            }
-
-            let require_explicit_return = require_explicit_return(context, &job.unit);
-            let mut env = TypeEnvironment::new(
-                &context.module_db,
-                context.config.architecture,
-                require_explicit_return,
-            );
-
-            typecheck(&mut env, &self_ast)?;
-
-            let thir = env.finish_thir_unit(namespace)?;
+        CompilationStep::MIRGen => {
+            let hir = context.module_db.hir.get(job.unit.namespace());
+            let registry = &context.module_db.symbol_registry;
+            let architecture = context.config.architecture;
+            let hmir = generate_hmir(&hir, job.unit.namespace().clone(), registry, architecture);
 
             if !job.unit.is_std_lib() || context.config.verbose {
-                dump_data(&thir.display_pretty());
+                dump_data(&hmir);
             }
 
-            context
-                .module_db
-                .thir
-                .insert(job.unit.namespace().clone(), thir);
-        }
-
-        CompilationStep::MIRGen => {
-            let mir = if context.config.hmir_pipeline {
-                let hir = context.module_db.hir.get(job.unit.namespace());
-                let registry = &context.module_db.symbol_registry;
-                let architecture = context.config.architecture;
-                let hmir =
-                    generate_hmir(&hir, job.unit.namespace().clone(), registry, architecture);
-                stage_hmir(
-                    hmir,
-                    |name| generate_external_hmir(registry, architecture, name),
-                    architecture,
-                    require_explicit_return(context, &job.unit),
-                )?
-            } else {
-                let thir = context.module_db.thir.get(job.unit.namespace());
-                generate_mir(thir.as_ref())?.into_static_runtime_only()
-            };
+            let mir = generate_mir(
+                hmir,
+                |name| generate_external_hmir(registry, architecture, name),
+                architecture,
+                require_explicit_return(context, &job.unit),
+            )?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir);
@@ -653,7 +613,7 @@ pub enum LSPErrors {
 ///
 /// This is similar to `scheduling_loop` but:
 /// 1. Collects LSPErrors (both type errors and fatal errors) instead of panicking
-/// 2. Stops after Typechecking (no MIRGen, LMIRGen, or Codegen)
+/// 2. Stops after MIRGen (no LMIRGen or Codegen)
 /// 3. Stops after the first failed stage so dependents cannot observe missing data
 pub(crate) fn scheduling_loop_collect_errors(
     context: &GlobalCompilationContext,
@@ -676,10 +636,10 @@ pub(crate) fn scheduling_loop_collect_errors(
             continue;
         }
 
-        // Stop after Typechecking for LSP
+        // Stop after MIRGen for LSP
         if matches!(
             job.step,
-            CompilationStep::MIRGen | CompilationStep::LMIRGen | CompilationStep::Codegen
+            CompilationStep::LMIRGen | CompilationStep::Codegen
         ) {
             continue;
         }
@@ -798,14 +758,11 @@ fn handle_job_collect_errors(
         }
 
         CompilationStep::Parse => Some(HandleJobResult::Success(map_reqs_new_stage(
-            CompilationStep::Typechecking,
+            CompilationStep::MIRGen,
             false,
         ))),
 
-        CompilationStep::Typechecking => {
-            // Stop here for LSP - no need for IR generation or codegen
-            Some(HandleJobResult::Success([].into()))
-        }
+        // Stop here for LSP - no need for lowering or codegen
         CompilationStep::MIRGen | CompilationStep::LMIRGen | CompilationStep::Codegen => {
             Some(HandleJobResult::Success([].into()))
         }

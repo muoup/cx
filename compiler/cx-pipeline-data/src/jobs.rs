@@ -61,20 +61,6 @@ pub enum CompilationStep {
     Parse = 1 << 1,
 
     /**
-     *  Typechecks all indirectly implemented functions and types to a type-checked
-     *  AST. This for the most part consists of realizing templated functions, however in the future other
-     *  use-cases may arise related to the implementation of dependent types or other advanced type system features.
-     *  As well, in the future, these steps being separated could allow for the pipeline to make better decisions
-     *  regarding duplicate template instantiations across multiple compilation units.
-     *
-     *  Requires: A directly type-checked AST, along with its requests, and the directly type-checked ASTs of
-     *  the compilation units where the declaration referenced by the requests were defined.
-     *
-     *  Outputs:  A fully type-checked AST.
-     */
-    Typechecking = 1 << 2,
-
-    /**
      *
      *  Requires: A fully type-checked AST.
      *
@@ -164,7 +150,6 @@ impl JobQueue {
         for step in [
             CompilationStep::PreParse,
             CompilationStep::Parse,
-            CompilationStep::Typechecking,
             CompilationStep::MIRGen,
             CompilationStep::LMIRGen,
             CompilationStep::Codegen,

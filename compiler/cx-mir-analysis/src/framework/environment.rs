@@ -5,7 +5,7 @@ use crate::{MIRAnalysisOptions, Pipeline};
 
 pub struct AnalysisEnvironment<'mir> {
     #[allow(dead_code)]
-    unit: &'mir MIRUnit<'mir>,
+    unit: &'mir MIRUnit,
     function: &'mir MIRFunction,
     body: &'mir MIRBody,
 
@@ -41,7 +41,7 @@ impl<'mir> AnalysisEnvironment<'mir> {
     }
 
     #[allow(dead_code)]
-    pub fn unit(&self) -> &MIRUnit<'_> {
+    pub fn unit(&self) -> &MIRUnit {
         self.unit
     }
 

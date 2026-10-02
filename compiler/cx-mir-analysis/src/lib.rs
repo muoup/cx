@@ -23,7 +23,7 @@ impl Default for MIRAnalysisOptions {
     }
 }
 
-pub fn analyze<'mir>(unit: &MIRUnit<'mir>, options: MIRAnalysisOptions) -> CXResult<()> {
+pub fn analyze(unit: &MIRUnit, options: MIRAnalysisOptions) -> CXResult<()> {
     for (_, function) in unit.functions() {
         let Some(body) = function.body() else {
             continue;

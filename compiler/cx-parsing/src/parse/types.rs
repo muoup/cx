@@ -17,7 +17,7 @@ use cx_hir::ast::{
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_namespace::module::QualifiedName;
-use cx_thir::intrinsic_types::is_intrinsic_type;
+use cx_hir::intrinsic_types::is_intrinsic_type;
 use cx_tokens::token::{AttributeType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
 use cx_tokens::{
     identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,

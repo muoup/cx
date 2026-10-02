@@ -6,6 +6,12 @@ extern "C":
 
 public:
 
+comptime @type opt(@type T) =>
+    enum union : @copy_traits(T) {
+        none :: void,
+        some :: T
+    };
+
 enum union opt<T> : @copy_traits(T) {
     none :: void,
     some :: T

@@ -6,7 +6,6 @@ use crate::{
     MIRInstructionLike,
     expr::{
         body::MIRBody,
-        comptime::{MIRComptimeInstruction, MIRComptimeOp},
         instruction::{
             MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRInvalidationKind,
             MIRStoreBitfield,
@@ -154,7 +153,7 @@ impl Display for MIRGlobalState {
     }
 }
 
-impl Display for MIRUnit<'_> {
+impl Display for MIRUnit {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.display_pretty(), f)
     }
@@ -170,17 +169,17 @@ fn write_plain_values(f: &mut Formatter<'_>, values: &[MIRValue]) -> fmt::Result
     Ok(())
 }
 
-pub struct MIRDisplay<'a, 'thir> {
-    unit: &'a MIRUnit<'thir>,
+pub struct MIRDisplay<'a> {
+    unit: &'a MIRUnit,
 }
 
-impl<'thir> MIRUnit<'thir> {
-    pub fn display_pretty(&self) -> MIRDisplay<'_, 'thir> {
+impl MIRUnit {
+    pub fn display_pretty(&self) -> MIRDisplay<'_> {
         MIRDisplay { unit: self }
     }
 }
 
-impl Display for MIRDisplay<'_, '_> {
+impl Display for MIRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut types = TypePrinter::new(self.unit.types());
 
@@ -635,97 +634,6 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(" }")
         }
         MIRInstructionKind::Unreachable => f.write_str("unreachable"),
-    }
-}
-
-#[allow(dead_code)]
-fn write_comptime_instruction<T: MTRegistry>(
-    f: &mut Formatter<'_>,
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    instruction: &MIRComptimeInstruction,
-    types: &mut TypePrinter<'_, T>,
-) -> fmt::Result {
-    match instruction {
-        MIRComptimeInstruction::Runtime(instr) => {
-            write_instruction(f, unit, function, instr, types)
-        }
-        MIRComptimeInstruction::Comptime { op: operation, .. } => {
-            f.write_str("comptime ")?;
-            match operation {
-                MIRComptimeOp::Call { out, callee, args } => {
-                    if let Some(out) = out {
-                        write_comptime_output(f, function, *out)?;
-                        f.write_str(" = ")?;
-                    }
-                    f.write_str("call ")?;
-                    write!(f, "{callee}")?;
-                    f.write_str("(")?;
-                    write_comptime_operands(f, unit, function, args)?;
-                    f.write_str(")")
-                }
-                MIRComptimeOp::Emit { out, captures, .. } => {
-                    Display::fmt(out, f)?;
-                    f.write_str(" = staged.emit(")?;
-                    let mut first = true;
-                    for capture in captures.values() {
-                        if !first {
-                            f.write_str(", ")?;
-                        }
-                        first = false;
-                        write_comptime_operand(f, unit, function, capture)?;
-                    }
-                    f.write_str(")")
-                }
-                MIRComptimeOp::Return { value } => {
-                    f.write_str("return")?;
-                    if let Some(value) = value {
-                        f.write_str(" ")?;
-                        write_comptime_operand(f, unit, function, value)?;
-                    }
-                    Ok(())
-                }
-            }
-        }
-    }
-}
-
-fn write_comptime_output(
-    f: &mut Formatter<'_>,
-    function: &MIRFunction,
-    output: MIRComptimeOutput,
-) -> fmt::Result {
-    match output {
-        MIRComptimeOutput::Runtime(register) => write_register_name(f, function, register),
-        MIRComptimeOutput::Comptime(register) => Display::fmt(&register, f),
-    }
-}
-
-fn write_comptime_operands(
-    f: &mut Formatter<'_>,
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    values: &[MIRComptimeOperand],
-) -> fmt::Result {
-    for (index, value) in values.iter().enumerate() {
-        if index != 0 {
-            f.write_str(", ")?;
-        }
-        write_comptime_operand(f, unit, function, value)?;
-    }
-    Ok(())
-}
-
-fn write_comptime_operand(
-    f: &mut Formatter<'_>,
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    value: &MIRComptimeOperand,
-) -> fmt::Result {
-    match value {
-        MIRComptimeOperand::Runtime(value) => write_value(f, unit, function, value),
-        MIRComptimeOperand::Comptime(register) => Display::fmt(register, f),
-        MIRComptimeOperand::Known(value) => Display::fmt(value, f),
     }
 }
 

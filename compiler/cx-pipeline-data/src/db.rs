@@ -6,7 +6,6 @@ use cx_mir::MIRUnit;
 use cx_namespace::module::NamespacePath;
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
-use cx_thir::THIRUnit;
 use cx_tokens::token::Token;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -27,8 +26,7 @@ pub struct ModuleData {
     pub hir: ModuleMap<HIR>,
     pub base_mappings: ModuleMap<NamespacePath>,
 
-    pub thir: ModuleMap<THIRUnit>,
-    pub mir: ModuleMap<MIRUnit<'static>>,
+    pub mir: ModuleMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
 }
 
@@ -45,7 +43,6 @@ impl ModuleData {
             hir: ModuleMap::new(".cx-hir"),
 
             base_mappings: ModuleMap::new(".cx-structure-data"),
-            thir: ModuleMap::new(".cx-thir"),
             mir: ModuleMap::new(".cx-mir"),
             lmir: ModuleMap::new(".cx-lmir"),
         }
