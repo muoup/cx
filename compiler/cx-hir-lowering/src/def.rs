@@ -188,14 +188,19 @@ fn lower_enum_variant(
         signed: true,
     };
     let ty = cx.type_constant(int.clone(), &span);
-    let initializer = match (&variants[index].value, index) {
+    // Implicit values count from the nearest explicit one rather than the previous variant, so
+    // evaluating a long enum does not recurse through every variant before it
+    let explicit = variants[..index]
+        .iter()
+        .rposition(|variant| variant.value.is_some());
+    let initializer = match (&variants[index].value, explicit) {
         (Some(value), _) => lower_expr(&mut cx, value),
-        (None, 0) => cx.int_constant(int, 0, &span),
-        (None, _) => {
-            let previous =
-                QualifiedName::new(name.namespace.clone(), variants[index - 1].name.clone());
-            let lhs = cx.def_expr(previous, &span);
-            let rhs = cx.int_constant(int, 1, &span);
+        (None, None) => cx.int_constant(int, index as i128, &span),
+        (None, Some(explicit)) => {
+            let base =
+                QualifiedName::new(name.namespace.clone(), variants[explicit].name.clone());
+            let lhs = cx.def_expr(base, &span);
+            let rhs = cx.int_constant(int, (index - explicit) as i128, &span);
             cx.native(
                 HMIRNativeOp::BinOp {
                     op: HMIRBinaryOp::Add,

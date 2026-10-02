@@ -532,7 +532,11 @@ pub(crate) fn def_value(
             if let Some(value) = cx.generated_mut().get(&instance) {
                 return Ok(value.clone());
             }
-            if !cx.active_mut().insert(instance.clone()) {
+            // A global reached again during its own evaluation (a typedef used inside the struct
+            // it names) is evaluated once more against the aggregates already published; reaching
+            // it a third time is a true cycle
+            let reentry = !cx.active_mut().insert(instance.clone());
+            if reentry && !cx.reentered_mut().insert(instance.clone()) {
                 return Err(staging_error(
                     span,
                     format!("'{}' depends on itself", def.name()),
@@ -551,6 +555,10 @@ pub(crate) fn def_value(
                     _ => Ok(value),
                 }
             })();
+            if reentry {
+                cx.reentered_mut().remove(&instance);
+                return result;
+            }
             cx.active_mut().remove(&instance);
             let value = result?;
             cx.generated_mut().insert(instance, value.clone());

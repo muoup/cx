@@ -42,6 +42,7 @@ pub(crate) struct Program<'l> {
     module: Module,
     generated: HashMap<Instance, StaticValue>,
     active: HashSet<Instance>,
+    reentered: HashSet<Instance>,
     signatures: HashMap<Instance, Rc<Signature>>,
     global_types: HashMap<DefKey, TypeID>,
     imported: HashMap<(UnitID, HMIRTypeID), TypeID>,
@@ -96,6 +97,7 @@ impl<'l> Program<'l> {
             module: Module::new(),
             generated: HashMap::new(),
             active: HashSet::new(),
+            reentered: HashSet::new(),
             signatures: HashMap::new(),
             global_types: HashMap::new(),
             imported: HashMap::new(),
@@ -154,6 +156,10 @@ impl<'l> Program<'l> {
 
     pub(crate) fn active_mut(&mut self) -> &mut HashSet<Instance> {
         &mut self.active
+    }
+
+    pub(crate) fn reentered_mut(&mut self) -> &mut HashSet<Instance> {
+        &mut self.reentered
     }
 
     pub(crate) fn signatures_mut(&mut self) -> &mut HashMap<Instance, Rc<Signature>> {

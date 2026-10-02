@@ -3,7 +3,7 @@
 #define NULL (void*)0
 
 typedef unsigned long size_t;
-typedef size_t time_t;
+typedef long time_t;
 
 typedef struct {
     int quot;

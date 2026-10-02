@@ -185,7 +185,7 @@ pub(super) fn eval_aggregate_type(
                 .map(ToString::to_string)
                 .unwrap_or_else(|| "<anonymous>".into());
             return Err(staging_error(
-                span,
+                frame.body().expr(field.ty()).span(),
                 format!("field '{name}' has an incomplete or recursive type"),
             ));
         }
