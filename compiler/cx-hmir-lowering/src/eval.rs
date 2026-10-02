@@ -706,6 +706,27 @@ fn exec_aggregate(
             };
             static_initializer(cx, frame, ty, fields, span)
         }
+        HMIRAggregateOp::Unpack { value, bindings } => {
+            let StaticValue::Aggregate { ty, fields } = eval(cx, frame, *value, None)? else {
+                return Err(staging_error(
+                    span,
+                    "@unpack takes an owned structure".into(),
+                ));
+            };
+            for (name, local) in bindings {
+                let (index, _) = cx
+                    .types()
+                    .field(ty, name.as_str())
+                    .ok_or_else(|| staging_error(span, format!("no member '{name}'")))?;
+                let value = fields
+                    .iter()
+                    .find(|(field, _)| *field == index)
+                    .map(|(_, value)| value.clone())
+                    .ok_or_else(|| staging_error(span, format!("member '{name}' is not set")))?;
+                frame.bind(*local, value);
+            }
+            Ok(StaticValue::Unit)
+        }
         HMIRAggregateOp::Member { base, name } => {
             let base = eval(cx, frame, *base, None)?;
             let StaticValue::Aggregate { ty, fields } = read_global(cx, base, span)? else {

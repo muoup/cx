@@ -18,7 +18,9 @@ use crate::{
         coerce::{lower_convert, lower_nonnull_pointer},
         expr::lower_expr,
         lower_eval,
-        operand::{lower_auto_deref, lower_int_constant, lower_spill, lower_store, lower_value},
+        operand::{
+            lower_auto_deref, lower_copy, lower_int_constant, lower_spill, lower_store, lower_value,
+        },
         ops::lower_pointer_offset,
         promote::{lower_decay, lower_promote},
     },
@@ -50,7 +52,70 @@ pub(super) fn lower_aggregate(
             lower_initialize(cx, frame, ty, &fields, expect, span)
         }
         HMIRAggregateOp::Is { value, pattern } => lower_is(cx, frame, value, pattern, span),
+        HMIRAggregateOp::Unpack { value, bindings } => {
+            lower_unpack(cx, frame, value, &bindings, span)
+        }
     }
+}
+
+fn lower_unpack(
+    cx: &mut FunctionLowering<'_, '_>,
+    frame: usize,
+    value: HMIRExprID,
+    bindings: &[(CXIdent, HMIRLocalID)],
+    span: &TokenRange,
+) -> LowerResult<Operand> {
+    let operand = lower_expr(cx, frame, value, Expect::Any)?;
+    let ty = operand.ty();
+    let types = cx.program.types();
+    let fields = match types.nominal_of(ty) {
+        Some(nominal) if !operand.is_lvalue() && !types.is_reference(ty) => nominal.fields(),
+        _ => {
+            return cx.error(
+                span,
+                format!(
+                    "@unpack takes an owned structure, found '{}'; move the value into it",
+                    types.display(ty)
+                ),
+            );
+        }
+    };
+    let unbound = fields.iter().find(|field| {
+        types.is_nodrop(field.ty())
+            && !bindings
+                .iter()
+                .any(|(name, _)| field.name().is_some_and(|field| field == name))
+    });
+    if let Some(field) = unbound {
+        return cx.error(
+            span,
+            format!(
+                "@unpack of '{}' must bind @nodrop field '{}'",
+                types.display(ty),
+                field.name().map(CXIdent::as_str).unwrap_or("_")
+            ),
+        );
+    }
+
+    let shell = cx.place(ty, None, span)?;
+    let value = lower_value(cx, operand, span)?;
+    lower_store(cx, MIRTarget::Place(shell), value, ty, None, span)?;
+    cx.initialize(shell, span);
+    let mut fields = Vec::with_capacity(bindings.len());
+    for (name, local) in bindings {
+        let field = lower_member(cx, Operand::place(shell, ty), name, span)?;
+        let value = lower_copy(cx, &field, span)?;
+        fields.push((*local, value, field.ty()));
+    }
+    cx.invalidate(MIRBindable::Place(shell), MIRInvalidationKind::Move, span);
+    for (local, value, ty) in fields {
+        let name = cx.frames[frame].body().local(local).name().cloned();
+        let place = cx.place(ty, name, span)?;
+        lower_store(cx, MIRTarget::Place(place), value, ty, None, span)?;
+        cx.initialize(place, span);
+        cx.bind(frame, local, Operand::place(place, ty));
+    }
+    Ok(Operand::unit(cx.program.types_mut()))
 }
 
 // A pointer used as an aggregate is read through

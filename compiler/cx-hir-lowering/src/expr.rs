@@ -287,37 +287,15 @@ fn lower_unpack(
     span: &TokenRange,
 ) -> HMIRExprID {
     let value = lower_expr(cx, inner);
-    let source_ty = cx.hole(span);
-    let source = cx.declare_local(None, source_ty, span);
-    let mut statements = vec![cx.push(
-        HMIRExprKind::Let {
-            local: source,
-            initializer: Some(value),
-        },
-        span,
-    )];
-    for binding in bindings {
-        let base = cx.push(HMIRExprKind::Local(source), span);
-        let field = cx.aggregate_op(
-            HMIRAggregateOp::Member {
-                base,
-                name: binding.field.clone(),
-            },
-            span,
-        );
-        let ty = cx.hole(span);
-        let local = cx.declare_local(Some(&binding.binding), ty, span);
-        statements.push(cx.push(
-            HMIRExprKind::Let {
-                local,
-                initializer: Some(field),
-            },
-            span,
-        ));
-    }
-    let shell = cx.push(HMIRExprKind::Local(source), span);
-    statements.push(cx.ownership(HMIROwnershipOp::Leak(shell), span));
-    cx.block(HMIRBlockKind::Sequence, statements, span)
+    let bindings = bindings
+        .iter()
+        .map(|binding| {
+            let ty = cx.hole(span);
+            let local = cx.declare_local(Some(&binding.binding), ty, span);
+            (binding.field.clone(), local)
+        })
+        .collect();
+    cx.aggregate_op(HMIRAggregateOp::Unpack { value, bindings }, span)
 }
 
 pub(crate) fn lower_quote(

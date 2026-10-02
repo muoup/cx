@@ -3,13 +3,12 @@ use cx_tokens::TokenRange;
 
 use crate::{
     function::{
-        FunctionLowering, LowerResult, Operand, OperandKind,
+        FunctionLowering, LowerResult, Operand,
         coerce::lower_convert,
         operand::{lower_auto_deref, lower_copy, lower_spill, lower_value},
     },
-    module::declare_function,
     ty::{TypeID, TypeKind},
-    value::{StaticValue, promote_integer_type},
+    value::promote_integer_type,
 };
 
 // The value an operator works on: references are read through, storage decays, lvalues are
@@ -105,19 +104,6 @@ fn lower_function_to_pointer(
         let out = cx.register(ty, span)?;
         return Ok(Operand::register(out, ty));
     }
-    let OperandKind::Static(StaticValue::Function { def, args }) = operand.kind() else {
-        let value = lower_value(cx, operand, span)?;
-        return Ok(Operand::value(value, ty));
-    };
-    let id = declare_function(cx.program, &(*def, args.clone()), span)?;
-    cx.program.module_mut().use_function(id);
-    let out = cx.register(ty, span)?;
-    cx.intrinsic(
-        MIRInternalIntrinsic::GetFnPtr {
-            out: MIRTarget::Register(out),
-            fn_id: id,
-        },
-        span,
-    );
-    Ok(Operand::register(out, ty))
+    let value = lower_value(cx, operand, span)?;
+    Ok(Operand::value(value, ty))
 }

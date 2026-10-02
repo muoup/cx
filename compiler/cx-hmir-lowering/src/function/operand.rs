@@ -269,7 +269,16 @@ fn lower_static_value(
         StaticValue::Function { def, args } => {
             let id = declare_function(cx.program, &(def, args), span)?;
             cx.program.module_mut().use_function(id);
-            Ok(MIRValue::Constant(MIRConstant::Function(id)))
+            let ty = cx.program.types_mut().decayed(ty);
+            let out = cx.register(ty, span)?;
+            cx.intrinsic(
+                MIRInternalIntrinsic::GetFnPtr {
+                    out: MIRTarget::Register(out),
+                    fn_id: id,
+                },
+                span,
+            );
+            Ok(MIRValue::Register(out))
         }
         StaticValue::Global(def) => {
             let global = global_ref(cx.program, def, span)?;

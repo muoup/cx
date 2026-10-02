@@ -122,6 +122,15 @@ impl BodyPrinter<'_> {
                 self.pattern(f, pattern, depth)?;
                 f.write_str(")")
             }
+            HMIRAggregateOp::Unpack { value, bindings } => {
+                write!(f, "{}(", op.path())?;
+                self.expr(f, *value, depth)?;
+                for (field, local) in bindings {
+                    write!(f, ", .{field} = ")?;
+                    self.local_decl(f, *local)?;
+                }
+                f.write_str(")")
+            }
         }
     }
 

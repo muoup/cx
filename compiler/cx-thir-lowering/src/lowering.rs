@@ -504,12 +504,7 @@ pub(crate) fn lower_expression<'thir>(
         } => {
             let lowered_value = lower_expression(builder, value)?;
 
-            let source_type = match &value.ty.kind {
-                THIRTypeKind::MemoryReference { inner_type, .. } => {
-                    builder.registry().resolve_type_id(*inner_type)
-                }
-                _ => &value.ty,
-            };
+            let source_type = &value.ty;
             let struct_type_id = lower_type(builder, source_type).map_err(LowerStop::Diagnostic)?;
             let moved =
                 memory::move_value(builder, lowered_value, struct_type_id, &expr.token_range)

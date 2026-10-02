@@ -1,0 +1,36 @@
+/* CX-STDOUT: unpack 1 2 7 */
+#include <stdio.h>
+
+struct Token : @nodrop {
+    int id;
+};
+
+struct Tokens : @nodrop {
+    Token left;
+    Token right;
+    int tag;
+};
+
+int Token::release(Token this) {
+    @unpack(move this) {
+        id: id
+    };
+    return id;
+}
+
+int main() {
+    Tokens tokens = (Tokens) {
+        .left = (Token) { .id = 1 },
+        .right = (Token) { .id = 2 },
+        .tag = 7
+    };
+    @unpack(move tokens) {
+        left: left,
+        right: right,
+        tag: tag
+    };
+    int first = move left |> Token::release();
+    int second = move right |> Token::release();
+    printf("unpack %d %d %d\n", first, second, tag);
+    return 0;
+}

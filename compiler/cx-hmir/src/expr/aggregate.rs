@@ -20,6 +20,11 @@ pub enum HMIRAggregateOp {
         value: HMIRExprID,
         pattern: HMIRPattern,
     },
+    // Consumes an owned aggregate, moving each named field into its local
+    Unpack {
+        value: HMIRExprID,
+        bindings: Vec<(CXIdent, HMIRLocalID)>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +46,7 @@ impl HMIRAggregateOp {
             Self::Index { .. } => "op.index",
             Self::Initialize { .. } => "op.initialize",
             Self::Is { .. } => "op.is",
+            Self::Unpack { .. } => "op.unpack",
         }
     }
 }
