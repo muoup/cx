@@ -180,6 +180,23 @@ impl Hash for QuoteRef {
 }
 
 impl StaticValue {
+    // How diagnostics name a value that turned up where another kind was needed
+    pub(crate) fn describe(&self) -> &'static str {
+        match self {
+            Self::Unit => "a unit value",
+            Self::Int { .. } => "an integer",
+            Self::Float { .. } => "a float",
+            Self::Str(_) => "a string",
+            Self::Null(_) => "a null pointer",
+            Self::Type(_) => "a type",
+            Self::Function { .. } => "a function",
+            Self::Quote(_) => "a quote",
+            Self::Aggregate { .. } => "an aggregate",
+            Self::Global(_) => "a global",
+            Self::GlobalAddress { .. } => "a global address",
+        }
+    }
+
     pub(crate) fn int(value: i128, ty: TypeID) -> Self {
         Self::Int { value, ty }
     }

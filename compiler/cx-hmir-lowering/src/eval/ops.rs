@@ -1,10 +1,10 @@
-use cx_hmir::{HMIRBinaryOp, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRUnaryOp};
+use cx_hmir::{HMIRBinaryOp, HMIRExprID, HMIRIntWidth, HMIRUnaryOp};
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
     eval::{EvalFrame, eval, eval_global_type},
-    program::{Program, def_body},
+    program::Program,
     staging_error,
     ty::{TypeID, TypeKind},
     value::{
@@ -155,15 +155,13 @@ pub(crate) fn exec_unary(
         | HMIRUnaryOp::PreDecrement
         | HMIRUnaryOp::PostIncrement
         | HMIRUnaryOp::PostDecrement => {
-            let unit = frame.unit().clone();
-            let body = def_body(unit.def(frame.def().def())).expect("evaluated def has a body");
-            let HMIRExprKind::Local(local) = body.expr(operand).kind() else {
+            let Some(local) = frame.as_local(operand) else {
                 return Err(staging_error(
                     span,
                     "comptime increment of a non-local".into(),
                 ));
             };
-            let Some(StaticValue::Int { value, ty }) = frame.local(*local).cloned() else {
+            let Some(StaticValue::Int { value, ty }) = frame.local(local).cloned() else {
                 return Err(staging_error(
                     span,
                     "comptime increment of a non-integer".into(),
@@ -174,7 +172,7 @@ pub(crate) fn exec_unary(
                 _ => -1,
             };
             let updated = StaticValue::int(normalize_int(value + delta, ty, cx.types()), ty);
-            frame.bind(*local, updated.clone());
+            frame.bind(local, updated.clone());
             Ok(match op {
                 HMIRUnaryOp::PreIncrement | HMIRUnaryOp::PreDecrement => updated,
                 _ => StaticValue::int(value, ty),
@@ -293,7 +291,11 @@ pub(crate) fn fold_unary(
         }
         other => Err(staging_error(
             span,
-            format!("cannot apply '{}' to {other:?} at compile time", op.path()),
+            format!(
+                "cannot apply '{}' to {} at compile time",
+                op.path(),
+                other.describe()
+            ),
         )),
     }
 }

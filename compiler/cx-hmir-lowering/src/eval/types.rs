@@ -124,16 +124,7 @@ pub(super) fn exec_type_op(
 
 pub(super) fn decay(types: &mut TypeTable, ty: TypeID) -> TypeID {
     let ty = types.reference_inner(ty).unwrap_or(ty);
-    if let Some(element) = types.array_inner(ty) {
-        return types.pointer_to(element);
-    }
-    if types.is_function(ty) {
-        return types.pointer_to(ty);
-    }
-    if matches!(types.kind(ty), TypeKind::Str) {
-        return types.char_pointer();
-    }
-    ty
+    types.decayed(ty)
 }
 
 pub(super) fn eval_aggregate_type(

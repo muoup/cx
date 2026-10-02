@@ -7,6 +7,7 @@ pub(crate) mod expr;
 pub(crate) mod inspect;
 mod operand;
 mod ops;
+mod promote;
 
 use std::{collections::HashMap, rc::Rc};
 
@@ -32,10 +33,7 @@ use crate::{
         EvalFrame, RuntimeView, eval, eval_frame_for, eval_signature, eval_type, eval_type_hint,
         type_hint,
     },
-    function::{
-        expr::lower_expr,
-        operand::{lower_convert, lower_value},
-    },
+    function::{coerce::lower_convert, expr::lower_expr, operand::lower_value},
     program::{DefKey, Instance, Program, def_body},
     staging_error,
     ty::TypeID,
@@ -192,12 +190,7 @@ pub(crate) fn lower_function(
     for (index, local) in signature.runtime().iter().enumerate() {
         let param = &prototype.signature.params()[index];
         let place = cx.body.add_parameter(param, root_scope);
-        cx.emit(
-            MIRInstructionKind::Initialize {
-                place: MIRBindable::Place(place),
-            },
-            &span,
-        );
+        cx.initialize(place, &span);
         let ty = signature.params()[index].1;
         cx.bind(0, *local, Operand::place(place, ty));
     }
@@ -306,6 +299,24 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
             self.body
                 .push_instr_at(self.current, MIRInstruction::new(kind, span.clone()));
         }
+    }
+
+    pub(crate) fn initialize(&mut self, place: MIRPlaceID, span: &TokenRange) {
+        self.emit(
+            MIRInstructionKind::Initialize {
+                place: MIRBindable::Place(place),
+            },
+            span,
+        );
+    }
+
+    pub(crate) fn invalidate(
+        &mut self,
+        place: MIRBindable,
+        kind: MIRInvalidationKind,
+        span: &TokenRange,
+    ) {
+        self.emit(MIRInstructionKind::Invalidate { place, kind }, span);
     }
 
     pub(crate) fn intrinsic(&mut self, intrinsic: impl Into<MIRIntrinsic>, span: &TokenRange) {
@@ -513,13 +524,7 @@ fn lower_cleanup_scope(
         .map(|place| place.id)
         .collect::<Vec<_>>();
     for place in places {
-        cx.emit(
-            MIRInstructionKind::Invalidate {
-                place: MIRBindable::Place(place),
-                kind: MIRInvalidationKind::Drop,
-            },
-            span,
-        );
+        cx.invalidate(MIRBindable::Place(place), MIRInvalidationKind::Drop, span);
     }
     Ok(())
 }

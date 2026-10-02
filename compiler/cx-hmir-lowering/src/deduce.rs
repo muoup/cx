@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
 use cx_hmir::{
-    HMIRConstant, HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRLocalID, HMIRNativeOp,
-    HMIRTypeDesc, HMIRTypeOp,
+    HMIRConstant, HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRLocalID, HMIRNativeOp, HMIRTypeDesc,
+    HMIRTypeOp,
 };
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
@@ -146,7 +146,7 @@ fn unify(
                 if let Some(actual) = inner_ty {
                     unify(cx, frame, *inner, actual, template);
                 } else if matches!(cx.types().kind(actual), TypeKind::Str) {
-                    let char = cx.types_mut().int(HMIRIntWidth::I8, true);
+                    let char = cx.types_mut().char();
                     unify(cx, frame, *inner, char, template);
                 }
             }

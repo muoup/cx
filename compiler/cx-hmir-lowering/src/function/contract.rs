@@ -6,10 +6,8 @@ use cx_mir::{MIRInternalIntrinsic, MIRValue};
 use crate::{
     eval::{Signature, eval_frame_for},
     function::{
-        Expect, Frame, FunctionLowering, LowerResult, Operand,
-        control::lower_scope,
-        expr::lower_expr,
-        operand::{lower_truthy, lower_value},
+        Expect, Frame, FunctionLowering, LowerResult, Operand, coerce::lower_truthy,
+        control::lower_scope, expr::lower_expr, operand::lower_value,
     },
     program::Instance,
 };

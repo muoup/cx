@@ -1,9 +1,13 @@
 pub(crate) mod control;
 pub(crate) mod expr;
+pub(crate) mod liveness;
 pub(crate) mod ops;
 mod types;
 
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRControlOp,
@@ -46,6 +50,7 @@ pub(crate) struct EvalFrame {
     locals: HashMap<HMIRLocalID, StaticValue>,
     runtime: Option<RuntimeView>,
     ret: Option<TypeID>,
+    moved: HashSet<HMIRLocalID>,
 }
 
 pub(crate) enum Flow {
@@ -81,6 +86,7 @@ impl EvalFrame {
             locals: HashMap::new(),
             runtime: None,
             ret: None,
+            moved: HashSet::new(),
         }
     }
 
@@ -90,6 +96,7 @@ impl EvalFrame {
     }
 
     pub(crate) fn bind(&mut self, local: HMIRLocalID, value: StaticValue) {
+        self.moved.remove(&local);
         self.locals.insert(local, value);
     }
 
@@ -138,6 +145,13 @@ impl EvalFrame {
 
     pub(crate) fn body(&self) -> &HMIRBody {
         def_body(self.unit.def(self.def.def())).expect("evaluated def has a body")
+    }
+
+    pub(crate) fn as_local(&self, id: HMIRExprID) -> Option<HMIRLocalID> {
+        match self.body().expr(id).kind() {
+            HMIRExprKind::Local(local) => Some(*local),
+            _ => None,
+        }
     }
 }
 
@@ -463,7 +477,10 @@ pub(crate) fn call_static(
         cx.active_mut().remove(&instance);
     }
     let value = match result? {
-        Flow::Normal(value) | Flow::Return(value) => value,
+        Flow::Normal(value) | Flow::Return(value) => {
+            liveness::require_consumed(cx, &frame)?;
+            value
+        }
         _ => {
             return Err(staging_error(
                 span,
@@ -514,7 +531,7 @@ pub(crate) fn eval_type(
             let span = frame.body().expr(id).span().clone();
             Err(staging_error(
                 &span,
-                format!("expected a type, found {other:?}"),
+                format!("expected a type, found {}", other.describe()),
             ))
         }
     }
@@ -603,16 +620,14 @@ pub(crate) fn exec_native(
             }
         }
         HMIRNativeOp::Assign { target, op, value } => {
-            let unit = frame.unit.clone();
-            let body = def_body(unit.def(frame.def.def())).expect("evaluated def has a body");
-            let HMIRExprKind::Local(local) = body.expr(*target).kind() else {
+            let Some(local) = frame.as_local(*target) else {
                 return Err(staging_error(
                     span,
                     "comptime assignment to a non-local".into(),
                 ));
             };
             let mut value = eval(cx, frame, *value, None)?;
-            let current = frame.locals.get(local).cloned();
+            let current = frame.locals.get(&local).cloned();
             if let Some(op) = op {
                 let current = current.clone().ok_or_else(|| {
                     staging_error(span, "compound assignment to an unset local".into())
@@ -624,7 +639,7 @@ pub(crate) fn exec_native(
             {
                 value = coerce_static(cx, value, ty, span)?;
             }
-            frame.bind(*local, value.clone());
+            frame.bind(local, value.clone());
             value
         }
         HMIRNativeOp::AddressOf(inner) => static_address(cx, frame, *inner, span)?,
@@ -658,7 +673,9 @@ pub(crate) fn exec_native(
         }
         HMIRNativeOp::OwnershipOp(op) => match op {
             HMIROwnershipOp::Move(inner) | HMIROwnershipOp::Leak(inner) => {
-                return exec(cx, frame, *inner, expect);
+                let flow = exec(cx, frame, *inner, expect)?;
+                liveness::consume(frame, *inner);
+                return Ok(flow);
             }
             HMIROwnershipOp::Allocate(_) | HMIROwnershipOp::Adopt(_) => {
                 return Err(staging_error(

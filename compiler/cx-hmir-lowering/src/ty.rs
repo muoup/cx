@@ -285,9 +285,23 @@ impl TypeTable {
         self.function_type(id).is_some()
     }
 
+    pub(crate) fn char(&mut self) -> TypeID {
+        self.int(HMIRIntWidth::I8, false)
+    }
+
     pub(crate) fn char_pointer(&mut self) -> TypeID {
-        let char = self.int(HMIRIntWidth::I8, true);
+        let char = self.char();
         self.pointer_to(char)
+    }
+
+    // The pointer type an array, string or function takes when used as a value
+    pub(crate) fn decayed(&mut self, id: TypeID) -> TypeID {
+        match self.kind(id).clone() {
+            TypeKind::Array { element, .. } => self.pointer_to(element),
+            TypeKind::Str => self.char_pointer(),
+            TypeKind::Function(_) => self.pointer_to(id),
+            _ => id,
+        }
     }
 
     pub(crate) fn is_void(&self, id: TypeID) -> bool {

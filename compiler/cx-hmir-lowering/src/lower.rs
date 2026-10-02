@@ -2,7 +2,7 @@ use cx_hmir::{HMIRExprID, HMIRExprKind};
 use cx_tokens::TokenRange;
 
 use crate::{
-    eval::{EvalFrame, Flow, control, def_value, exec, exec_native, expr},
+    eval::{EvalFrame, Flow, control, def_value, exec, exec_native, expr, liveness},
     function::{
         Expect, FunctionLowering, LowerResult, Operand, Stop,
         call::lower_call,
@@ -71,6 +71,7 @@ pub(crate) fn lower(
                 lower_local(lowering, frame, local, &span).map(LowerOutput::Runtime)
             }
             LowerContext::Comptime(_, frame) => {
+                liveness::require_live(frame, local, &span)?;
                 let value = frame.local(local).cloned().ok_or_else(|| {
                     let name = frame
                         .body()
@@ -152,7 +153,7 @@ pub(crate) fn lower(
         },
         HMIRExprKind::Call { callee, args } => match cx {
             LowerContext::Runtime(lowering, frame) => {
-                lower_call(lowering, frame, callee, &args, expect, &span).map(LowerOutput::Runtime)
+                lower_call(lowering, frame, callee, &args, &span).map(LowerOutput::Runtime)
             }
             LowerContext::Comptime(program, frame) => {
                 expr::call(program, frame, callee, &args, &span)

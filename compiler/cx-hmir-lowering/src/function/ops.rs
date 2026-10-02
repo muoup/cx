@@ -10,11 +10,10 @@ use crate::{
     eval::ops::{fold_binary, fold_unary},
     function::{
         Expect, FunctionLowering, LowerResult, Operand, Stop,
-        coerce::lower_algebraic_coercion,
+        coerce::{lower_convert, lower_truthy},
         expr::{lower_expr, lower_static_operand},
-        operand::{
-            lower_convert, lower_copy, lower_int_constant, lower_store, lower_truthy, lower_value,
-        },
+        operand::{lower_copy, lower_int_constant, lower_store, lower_value},
+        promote::lower_promote,
     },
     ty::{TypeID, TypeKind, TypeTable},
     value::{arithmetic_type, is_comparison, is_logical},
@@ -32,9 +31,9 @@ pub(super) fn lower_binary(
         return lower_short_circuit(cx, frame, op, lhs, rhs, span);
     }
     let lhs = lower_expr(cx, frame, lhs, Expect::Any)?;
-    let lhs = lower_algebraic_coercion(cx, lhs, span)?;
+    let lhs = lower_promote(cx, lhs, span)?;
     let rhs = lower_expr(cx, frame, rhs, Expect::Any)?;
-    let rhs = lower_algebraic_coercion(cx, rhs, span)?;
+    let rhs = lower_promote(cx, rhs, span)?;
     lower_binary_operands(cx, op, lhs, rhs, span)
 }
 
@@ -476,9 +475,9 @@ pub(super) fn lower_assign(
     let ty = lhs.ty();
     let value = match op {
         Some(op) => {
-            let current = lower_algebraic_coercion(cx, lhs.clone(), span)?;
+            let current = lower_promote(cx, lhs.clone(), span)?;
             let rhs = lower_expr(cx, frame, value, Expect::Any)?;
-            let rhs = lower_algebraic_coercion(cx, rhs, span)?;
+            let rhs = lower_promote(cx, rhs, span)?;
             lower_binary_operands(cx, op, current, rhs, span)?
         }
         None => lower_expr(cx, frame, value, Expect::Type(ty))?,
@@ -486,19 +485,8 @@ pub(super) fn lower_assign(
     let value = lower_convert(cx, value, ty, span)?;
     let value = lower_value(cx, value, span)?;
     if let MIRTarget::Place(place) = destination {
-        cx.emit(
-            MIRInstructionKind::Invalidate {
-                place: MIRBindable::Place(place),
-                kind: MIRInvalidationKind::Drop,
-            },
-            span,
-        );
-        cx.emit(
-            MIRInstructionKind::Initialize {
-                place: MIRBindable::Place(place),
-            },
-            span,
-        );
+        cx.invalidate(MIRBindable::Place(place), MIRInvalidationKind::Drop, span);
+        cx.initialize(place, span);
     }
     let bitfield = lhs.bitfield().map(MIRStoreBitfield::Target);
     lower_store(cx, destination, value, ty, bitfield, span)?;

@@ -14,10 +14,12 @@ use crate::{
     function::{
         Expect, FunctionLowering, LowerResult, Operand, Stop,
         aggregate::{lower_address_of_operand, lower_deref_pointer, lower_member},
+        coerce::lower_convert,
         contract::{lower_call_postcondition, lower_call_precondition},
         expr::{lower_expr, lower_static_operand},
         inspect, lower_eval, lower_eval_frame,
-        operand::{lower_convert, lower_decay, lower_value},
+        operand::lower_value,
+        promote::lower_decay,
     },
     module::declare_function,
     program::DefKey,
@@ -36,18 +38,17 @@ pub(crate) fn lower_call(
     frame: usize,
     callee: HMIRExprID,
     args: &[HMIRExprID],
-    expect: Expect,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     if let HMIRExprKind::Native(HMIRNativeOp::AggregateOp(HMIRAggregateOp::Member { base, name })) =
         cx.kind(frame, callee)
     {
         let receiver = lower_expr(cx, frame, base, Expect::Any)?;
-        return lower_method_call(cx, frame, receiver, &name, args, expect, span);
+        return lower_method_call(cx, frame, receiver, &name, args, span);
     }
     let callee = match lower_static_callee(cx, frame, callee)? {
         Some(StaticValue::Function { def, args: bound }) => {
-            return lower_static_call(cx, frame, def, bound, None, args, expect, span);
+            return lower_static_call(cx, frame, def, bound, None, args, span);
         }
         Some(value) => lower_static_operand(cx, value, span)?,
         None => lower_expr(cx, frame, callee, Expect::Any)?,
@@ -55,7 +56,7 @@ pub(crate) fn lower_call(
     match callee.as_static() {
         Some(StaticValue::Function { def, args: bound }) => {
             let (def, bound) = (*def, bound.clone());
-            lower_static_call(cx, frame, def, bound, None, args, expect, span)
+            lower_static_call(cx, frame, def, bound, None, args, span)
         }
         _ => lower_indirect_call(cx, frame, callee, args, span),
     }
@@ -86,7 +87,6 @@ fn lower_method_call(
     receiver: Operand,
     name: &CXIdent,
     args: &[HMIRExprID],
-    expect: Expect,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let object = match cx.program.types().kind(receiver.ty()) {
@@ -97,21 +97,13 @@ fn lower_method_call(
         let member = lower_member(cx, receiver, name, span)?;
         return lower_indirect_call(cx, frame, member, args, span);
     }
-    let Some(owner) = cx
+    let method = cx
         .program
         .types()
         .nominal_of(object)
         .map(|nominal| nominal.key().owner())
-    else {
-        return cx.error(
-            span,
-            format!(
-                "'{}' has no method '{name}'",
-                cx.program.types().display(object)
-            ),
-        );
-    };
-    let Some(def) = cx.program.associated(owner, name) else {
+        .and_then(|owner| cx.program.associated(owner, name));
+    let Some(def) = method else {
         return cx.error(
             span,
             format!(
@@ -121,19 +113,9 @@ fn lower_method_call(
         );
     };
     let receiver = lower_deref_pointer(cx, receiver, span)?;
-    lower_static_call(
-        cx,
-        frame,
-        def,
-        Vec::new(),
-        Some(receiver),
-        args,
-        expect,
-        span,
-    )
+    lower_static_call(cx, frame, def, Vec::new(), Some(receiver), args, span)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn lower_static_call(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
@@ -141,7 +123,6 @@ fn lower_static_call(
     bound: Vec<StaticValue>,
     receiver: Option<Operand>,
     args: &[HMIRExprID],
-    _expect: Expect,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let unit = cx.program.unit(def.unit());

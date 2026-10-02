@@ -6,7 +6,7 @@ use cx_hmir::{
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
 use cx_mir::{
-    MIRBindable, MIRInstructionKind, MIRInternalIntrinsic, MIRTarget, MIRVAIntrinsic, MIRValue,
+    MIRBindable, MIRInternalIntrinsic, MIRTarget, MIRVAIntrinsic, MIRValue,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
@@ -17,13 +17,12 @@ use crate::{
     function::{
         Expect, Frame, FunctionLowering, LowerResult, Operand, OperandKind,
         aggregate::{lower_address_of, lower_aggregate, lower_deref_pointer},
-        coerce::{lower_coerce, lower_nonnull_pointer},
+        coerce::{lower_coerce, lower_convert, lower_nonnull_pointer},
         control::{lower_block, lower_control},
         inspect, lower_eval, lower_eval_type, lower_eval_type_hint,
-        operand::{
-            lower_auto_deref, lower_convert, lower_decay, lower_lift, lower_store, lower_value,
-        },
+        operand::{lower_auto_deref, lower_lift, lower_store, lower_value},
         ops::{lower_assign, lower_binary, lower_unary},
+        promote::lower_decay,
     },
     lower::{LowerContext, LowerOutput, lower},
     module::global_ref,
@@ -183,12 +182,7 @@ pub(crate) fn lower_let(
         let value = lower_value(cx, init, span)?;
         lower_store(cx, MIRTarget::Place(place), value, ty, None, span)?;
     }
-    cx.emit(
-        MIRInstructionKind::Initialize {
-            place: MIRBindable::Place(place),
-        },
-        span,
-    );
+    cx.initialize(place, span);
     cx.bind(frame, local, Operand::place(place, ty));
     Ok(())
 }
@@ -197,10 +191,9 @@ pub(crate) fn lower_let(
 pub(super) fn lower_inferred_type(cx: &mut FunctionLowering<'_, '_>, ty: TypeID) -> TypeID {
     let types = cx.program.types_mut();
     match types.kind(ty).clone() {
-        TypeKind::Str => types.char_pointer(),
-        TypeKind::Function(_) => types.pointer_to(ty),
+        TypeKind::Array { .. } => ty,
         TypeKind::Reference(inner) => inner,
-        _ => ty,
+        _ => types.decayed(ty),
     }
 }
 
@@ -241,12 +234,7 @@ fn lower_place_op(
             let place = cx.place(ty, name, span)?;
             cx.body.mark_adopted(place);
             cx.intrinsic(MIRInternalIntrinsic::AdoptPlace { place, address }, span);
-            cx.emit(
-                MIRInstructionKind::Initialize {
-                    place: MIRBindable::Place(place),
-                },
-                span,
-            );
+            cx.initialize(place, span);
             Ok(Operand::new(OperandKind::AdoptedPlace(place), ty))
         }
         _ => unreachable!("only allocate and adopt create places"),
@@ -327,13 +315,7 @@ fn lower_ownership(
             if let OperandKind::Place(place) = operand.kind()
                 && cx.program.types().is_nodrop(operand.ty())
             {
-                cx.emit(
-                    MIRInstructionKind::Invalidate {
-                        place: MIRBindable::Place(*place),
-                        kind: MIRInvalidationKind::Leak,
-                    },
-                    span,
-                );
+                cx.invalidate(MIRBindable::Place(*place), MIRInvalidationKind::Leak, span);
             }
             Ok(operand)
         }

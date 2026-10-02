@@ -15,14 +15,12 @@ use cx_util::identifier::CXIdent;
 use crate::{
     function::{
         Expect, FunctionLowering, LowerResult, Operand, OperandKind, PatternBinding,
-        coerce::{lower_algebraic_coercion, lower_nonnull_pointer},
+        coerce::{lower_convert, lower_nonnull_pointer},
         expr::lower_expr,
         lower_eval,
-        operand::{
-            lower_auto_deref, lower_convert, lower_decay, lower_int_constant, lower_spill,
-            lower_store, lower_value,
-        },
+        operand::{lower_auto_deref, lower_int_constant, lower_spill, lower_store, lower_value},
         ops::lower_pointer_offset,
+        promote::{lower_decay, lower_promote},
     },
     module::member_type,
     ty::{TypeID, TypeKind, TypeTable},
@@ -43,9 +41,9 @@ pub(super) fn lower_aggregate(
         }
         HMIRAggregateOp::Index { base, index } => {
             let base = lower_expr(cx, frame, base, Expect::Any)?;
-            let base = lower_algebraic_coercion(cx, base, span)?;
+            let base = lower_promote(cx, base, span)?;
             let index = lower_expr(cx, frame, index, Expect::Any)?;
-            let index = lower_algebraic_coercion(cx, index, span)?;
+            let index = lower_promote(cx, index, span)?;
             lower_index(cx, base, index, span)
         }
         HMIRAggregateOp::Initialize { ty, fields } => {
@@ -291,7 +289,7 @@ fn lower_initializer_type(
         }
         other => cx.error(
             span,
-            format!("expected a type to initialize, found {other:?}"),
+            format!("expected a type to initialize, found {}", other.describe()),
         ),
     }
 }
@@ -484,13 +482,7 @@ fn lower_consume_subject(
     span: &TokenRange,
 ) {
     if let Some(origin) = subject.origin().filter(|_| owned) {
-        cx.emit(
-            MIRInstructionKind::Invalidate {
-                place: MIRBindable::Place(origin),
-                kind: MIRInvalidationKind::Move,
-            },
-            span,
-        );
+        cx.invalidate(MIRBindable::Place(origin), MIRInvalidationKind::Move, span);
     }
 }
 
@@ -512,13 +504,7 @@ fn lower_lift_payload(
         },
         span,
     );
-    cx.emit(
-        MIRInstructionKind::Invalidate {
-            place: MIRBindable::Place(origin),
-            kind: MIRInvalidationKind::Move,
-        },
-        span,
-    );
+    cx.invalidate(MIRBindable::Place(origin), MIRInvalidationKind::Move, span);
     let name = cx.frames[frame].body().local(local).name().cloned();
     let place = cx.place(payload, name, span)?;
     lower_store(
@@ -529,19 +515,8 @@ fn lower_lift_payload(
         None,
         span,
     )?;
-    cx.emit(
-        MIRInstructionKind::Invalidate {
-            place: MIRBindable::Register(out),
-            kind: MIRInvalidationKind::Move,
-        },
-        span,
-    );
-    cx.emit(
-        MIRInstructionKind::Initialize {
-            place: MIRBindable::Place(place),
-        },
-        span,
-    );
+    cx.invalidate(MIRBindable::Register(out), MIRInvalidationKind::Move, span);
+    cx.initialize(place, span);
     Ok(Operand::place(place, payload))
 }
 

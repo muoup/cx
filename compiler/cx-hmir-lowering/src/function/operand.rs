@@ -1,15 +1,14 @@
 use cx_hmir::HMIRIntWidth;
 use cx_mir::{
-    MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRConstant, MIRFloatIntrinsic,
-    MIRGlobalRef, MIRInstructionKind, MIRIntIntrinsic, MIRInternalIntrinsic, MIRPlaceID,
-    MIRPtrIntrinsic, MIRRegisterID, MIRStoreBitfield, MIRTarget, MIRValue,
+    MIRBindable, MIRBitfieldAccess, MIRConstant, MIRGlobalRef, MIRInstructionKind,
+    MIRInternalIntrinsic, MIRPlaceID, MIRRegisterID, MIRStoreBitfield, MIRTarget, MIRValue,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 
 use crate::{
-    eval::{eval_global_type, ops::coerce_static},
-    function::{FunctionLowering, LowerResult, aggregate::lower_deref_pointer},
+    eval::eval_global_type,
+    function::{FunctionLowering, LowerResult},
     module::{declare_function, global_ref, to_constant},
     ty::{TypeID, TypeKind, TypeTable},
     value::StaticValue,
@@ -215,13 +214,7 @@ pub(super) fn lower_lift(
         },
         span,
     );
-    cx.emit(
-        MIRInstructionKind::Invalidate {
-            place: MIRBindable::Place(origin),
-            kind: MIRInvalidationKind::Move,
-        },
-        span,
-    );
+    cx.invalidate(MIRBindable::Place(origin), MIRInvalidationKind::Move, span);
     Ok(MIRValue::Register(out))
 }
 
@@ -260,7 +253,7 @@ fn lower_static_value(
     match value {
         StaticValue::Str(string) => {
             let ty = match cx.program.types().kind(ty) {
-                TypeKind::Pointer(_) => ty,
+                TypeKind::Pointer(_) | TypeKind::Reference(_) => ty,
                 _ => cx.program.types_mut().char_pointer(),
             };
             let out = cx.register(ty, span)?;
@@ -310,20 +303,13 @@ pub(super) fn lower_spill(
     if let MIRValue::Register(register) = value
         && !cx.program.types().is_pod(ty)
     {
-        cx.emit(
-            MIRInstructionKind::Invalidate {
-                place: MIRBindable::Register(register),
-                kind: MIRInvalidationKind::Move,
-            },
+        cx.invalidate(
+            MIRBindable::Register(register),
+            MIRInvalidationKind::Move,
             span,
         );
     }
-    cx.emit(
-        MIRInstructionKind::Initialize {
-            place: MIRBindable::Place(place),
-        },
-        span,
-    );
+    cx.initialize(place, span);
     Ok(Operand::place(place, ty))
 }
 
@@ -361,421 +347,4 @@ pub(super) fn lower_int_constant(
         ty: TypeTable::mir_int(width),
         value,
     })
-}
-
-pub(super) fn lower_truthy(
-    cx: &mut FunctionLowering<'_, '_>,
-    operand: Operand,
-    span: &TokenRange,
-) -> LowerResult<Operand> {
-    let bool = cx.program.types_mut().bool();
-    if operand.ty == bool {
-        return lower_read(cx, operand, span);
-    }
-    if let Some(value) = operand.as_static().and_then(StaticValue::is_truthy) {
-        return Ok(Operand::new(
-            OperandKind::Static(StaticValue::bool(value, cx.program.types_mut())),
-            bool,
-        ));
-    }
-    let operand = lower_decay(cx, operand, span)?;
-    let kind = cx.program.types().kind(operand.ty).clone();
-    let source_ty = operand.ty;
-    let value = lower_value(cx, operand, span)?;
-    let out = cx.register(bool, span)?;
-    let target = MIRTarget::Register(out);
-    match kind {
-        TypeKind::Int { .. } => {
-            let zero = lower_int_constant(cx, 0, source_ty);
-            cx.intrinsic(
-                MIRIntIntrinsic::Neq {
-                    out: target,
-                    lhs: value,
-                    rhs: zero,
-                },
-                span,
-            );
-        }
-        TypeKind::Float { width } => {
-            let zero = MIRValue::Constant(MIRConstant::Float {
-                value: 0.0f64.into(),
-                ty: TypeTable::mir_float(width),
-            });
-            cx.intrinsic(
-                MIRFloatIntrinsic::Neq {
-                    out: target,
-                    lhs: value,
-                    rhs: zero,
-                },
-                span,
-            );
-        }
-        TypeKind::Pointer(_) | TypeKind::Str | TypeKind::Function(_) => {
-            let null = MIRValue::Constant(MIRConstant::Nullptr {
-                ty: cx.mir(source_ty, span)?,
-            });
-            cx.intrinsic(
-                MIRPtrIntrinsic::Neq {
-                    out: target,
-                    lhs: value,
-                    rhs: null,
-                },
-                span,
-            );
-        }
-        _ => {
-            return cx.error(
-                span,
-                format!(
-                    "'{}' has no truth value",
-                    cx.program.types().display(source_ty)
-                ),
-            );
-        }
-    }
-    Ok(Operand::register(out, bool))
-}
-
-// Converts between value types; covers C's implicit conversions and explicit casts
-pub(crate) fn lower_convert(
-    cx: &mut FunctionLowering<'_, '_>,
-    operand: Operand,
-    target: TypeID,
-    span: &TokenRange,
-) -> LowerResult<Operand> {
-    let source = operand.ty;
-    if source == target {
-        return Ok(operand);
-    }
-    let types = cx.program.types();
-    let source_kind = types.kind(source).clone();
-    let target_kind = types.kind(target).clone();
-
-    if let OperandKind::Static(value) = &operand.kind
-        && !cx.program.types().is_reference(target)
-        && !(matches!(value, StaticValue::Str(_)) && cx.program.types().is_array(target))
-        && let Ok(value) = coerce_static(cx.program, value.clone(), target, span)
-    {
-        return Ok(Operand::new(OperandKind::Static(value), target));
-    }
-
-    match (&source_kind, &target_kind) {
-        (_, TypeKind::Void) => return Ok(Operand::unit(cx.program.types_mut())),
-        (TypeKind::Reference(inner), _) if *inner == target => {
-            let operand = lower_auto_deref(cx, operand, span)?;
-            return Ok(operand);
-        }
-        (_, TypeKind::Reference(inner)) if *inner == source => {
-            let operand = lower_spill(cx, operand, span)?;
-            let address = operand.address().expect("spilled operand is addressable");
-            return Ok(Operand::value(address, target));
-        }
-        (_, TypeKind::Reference(inner)) => {
-            let operand = lower_decay(cx, operand, span)?;
-            if cx.program.types().pointer_inner(operand.ty()) == Some(*inner) {
-                let operand = lower_deref_pointer(cx, operand, span)?;
-                let address = operand
-                    .address()
-                    .expect("dereferenced pointer is addressable");
-                return Ok(Operand::value(address, target));
-            }
-            return cx.error(
-                span,
-                format!(
-                    "cannot convert '{}' to '{}'",
-                    cx.program.types().display(source),
-                    cx.program.types().display(target)
-                ),
-            );
-        }
-        (
-            TypeKind::Int {
-                width: from,
-                signed,
-            },
-            TypeKind::Int { width: to, .. },
-        ) => {
-            let (from, signed, to) = (*from, *signed, *to);
-            let value = lower_value(cx, operand, span)?;
-            if from == to {
-                return Ok(Operand::value(value, target));
-            }
-            let out = cx.register(target, span)?;
-            if to == HMIRIntWidth::I1 {
-                let zero = lower_int_constant(cx, 0, source);
-                cx.intrinsic(
-                    MIRIntIntrinsic::Neq {
-                        out: MIRTarget::Register(out),
-                        lhs: value,
-                        rhs: zero,
-                    },
-                    span,
-                );
-            } else {
-                cx.intrinsic(
-                    MIRIntIntrinsic::IntCast {
-                        out: MIRTarget::Register(out),
-                        value,
-                        target: TypeTable::mir_int(to),
-                        sign_extend: signed && from != HMIRIntWidth::I1,
-                    },
-                    span,
-                );
-            }
-            return Ok(Operand::register(out, target));
-        }
-        (TypeKind::Int { signed, .. }, TypeKind::Float { width }) => {
-            let (signed, width) = (*signed, *width);
-            let value = lower_value(cx, operand, span)?;
-            let out = cx.register(target, span)?;
-            cx.intrinsic(
-                MIRIntIntrinsic::ToFloat {
-                    out: MIRTarget::Register(out),
-                    value,
-                    target: TypeTable::mir_float(width),
-                    signed,
-                },
-                span,
-            );
-            return Ok(Operand::register(out, target));
-        }
-        (TypeKind::Float { .. }, TypeKind::Int { width, signed }) => {
-            if *width == HMIRIntWidth::I1 {
-                return lower_truthy(cx, operand, span);
-            }
-            let signed = *signed;
-            let value = lower_value(cx, operand, span)?;
-            let out = cx.register(target, span)?;
-            let target_ty = cx.mir(target, span)?;
-            cx.intrinsic(
-                MIRFloatIntrinsic::ToInt {
-                    out: MIRTarget::Register(out),
-                    value,
-                    target_ty,
-                    signed,
-                },
-                span,
-            );
-            return Ok(Operand::register(out, target));
-        }
-        (TypeKind::Float { width: from }, TypeKind::Float { width: to }) => {
-            let value = lower_value(cx, operand, span)?;
-            if from == to {
-                return Ok(Operand::value(value, target));
-            }
-            let width = *to;
-            let out = cx.register(target, span)?;
-            cx.intrinsic(
-                MIRFloatIntrinsic::FloatCast {
-                    out: MIRTarget::Register(out),
-                    value,
-                    float_ty: TypeTable::mir_float(width),
-                },
-                span,
-            );
-            return Ok(Operand::register(out, target));
-        }
-        (
-            TypeKind::Pointer(_) | TypeKind::Str | TypeKind::Function(_),
-            TypeKind::Int { width, .. },
-        ) => {
-            if *width == HMIRIntWidth::I1 {
-                return lower_truthy(cx, operand, span);
-            }
-            let operand = lower_decay(cx, operand, span)?;
-            let value = lower_value(cx, operand, span)?;
-            let out = cx.register(target, span)?;
-            let target_ty = cx.mir(target, span)?;
-            cx.intrinsic(
-                MIRPtrIntrinsic::ToInt {
-                    out: MIRTarget::Register(out),
-                    ptr: value,
-                    target_ty,
-                },
-                span,
-            );
-            return Ok(Operand::register(out, target));
-        }
-        (TypeKind::Int { signed, .. }, TypeKind::Pointer(_)) => {
-            let signed = *signed;
-            let value = lower_value(cx, operand, span)?;
-            let out = cx.register(target, span)?;
-            cx.intrinsic(
-                MIRIntIntrinsic::ToPtr {
-                    out: MIRTarget::Register(out),
-                    value,
-                    sign_extend: signed,
-                },
-                span,
-            );
-            return Ok(Operand::register(out, target));
-        }
-        (TypeKind::Str, TypeKind::Array { length, .. }) => {
-            let length = *length;
-            return lower_string_array(cx, operand, target, length, span);
-        }
-        (TypeKind::Array { .. } | TypeKind::Str | TypeKind::Function(_), TypeKind::Pointer(_)) => {
-            let operand = lower_decay(cx, operand, span)?;
-            return lower_convert(cx, operand, target, span);
-        }
-        (TypeKind::Pointer(_), TypeKind::Pointer(_)) => {
-            let source_mir = cx.mir(source, span)?;
-            let target_mir = cx.mir(target, span)?;
-            let value = lower_value(cx, operand, span)?;
-            if source_mir == target_mir {
-                return Ok(Operand::value(value, target));
-            }
-            let out = cx.register(target, span)?;
-            cx.intrinsic(
-                MIRInternalIntrinsic::Bitcast {
-                    out: MIRTarget::Register(out),
-                    value,
-                    target_ty: target_mir,
-                },
-                span,
-            );
-            return Ok(Operand::register(out, target));
-        }
-        (
-            TypeKind::Array { element: from, .. },
-            TypeKind::Array {
-                element: to,
-                length: None,
-            },
-        ) if from == to => {
-            return Ok(operand.with_type(source));
-        }
-        (TypeKind::Unreachable, _) => return Ok(operand.with_type(target)),
-        _ => {}
-    }
-
-    let source_mir = cx.mir(source, span)?;
-    let target_mir = cx.mir(target, span)?;
-    if source_mir == target_mir {
-        return Ok(operand.with_type(target));
-    }
-    cx.error(
-        span,
-        format!(
-            "cannot convert '{}' to '{}'",
-            cx.program.types().display(source),
-            cx.program.types().display(target)
-        ),
-    )
-}
-
-// Arrays, strings and functions used as values become pointers to their first element
-pub(super) fn lower_decay(
-    cx: &mut FunctionLowering<'_, '_>,
-    operand: Operand,
-    span: &TokenRange,
-) -> LowerResult<Operand> {
-    let kind = cx.program.types().kind(operand.ty).clone();
-    match kind {
-        TypeKind::Array { element, .. } => {
-            let operand = lower_spill(cx, operand, span)?;
-            let ty = cx.program.types_mut().pointer_to(element);
-            let out = cx.register(ty, span)?;
-            let array = operand.address().expect("spilled operand is addressable");
-            cx.intrinsic(
-                MIRInternalIntrinsic::ArrayAddress {
-                    out: MIRTarget::Register(out),
-                    array,
-                },
-                span,
-            );
-            Ok(Operand::register(out, ty).with_pointee_origin(operand.origin()))
-        }
-        TypeKind::Str => {
-            let ty = cx.program.types_mut().char_pointer();
-            let value = lower_value(cx, operand, span)?;
-            Ok(Operand::value(value, ty))
-        }
-        TypeKind::Function(_) => {
-            let ty = cx.program.types_mut().pointer_to(operand.ty);
-            if cx.unevaluated {
-                let out = cx.register(ty, span)?;
-                return Ok(Operand::register(out, ty));
-            }
-            match operand.kind {
-                OperandKind::Static(StaticValue::Function { def, args }) => {
-                    let id = declare_function(cx.program, &(def, args), span)?;
-                    cx.program.module_mut().use_function(id);
-                    let out = cx.register(ty, span)?;
-                    cx.intrinsic(
-                        MIRInternalIntrinsic::GetFnPtr {
-                            out: MIRTarget::Register(out),
-                            fn_id: id,
-                        },
-                        span,
-                    );
-                    Ok(Operand::register(out, ty))
-                }
-                _ => {
-                    let value = lower_value(cx, operand, span)?;
-                    Ok(Operand::value(value, ty))
-                }
-            }
-        }
-        _ => Ok(operand),
-    }
-}
-
-fn lower_string_array(
-    cx: &mut FunctionLowering<'_, '_>,
-    operand: Operand,
-    target: TypeID,
-    length: Option<u64>,
-    span: &TokenRange,
-) -> LowerResult<Operand> {
-    let Some(StaticValue::Str(string)) = operand.as_static().cloned() else {
-        return cx.error(span, "array initialized from a non-constant string");
-    };
-    let length = length.unwrap_or(string.len() as u64 + 1) as usize;
-    if string.len() > length {
-        return cx.error(span, "string is longer than its array");
-    }
-    let mut fields = string
-        .bytes()
-        .enumerate()
-        .map(|(index, byte)| {
-            (
-                index,
-                MIRValue::Constant(MIRConstant::Integer {
-                    ty: cx_mir::MIRIntType::I8,
-                    value: byte as i128,
-                }),
-            )
-        })
-        .collect::<Vec<_>>();
-    if string.len() < length {
-        fields.push((
-            string.len(),
-            MIRValue::Constant(MIRConstant::Integer {
-                ty: cx_mir::MIRIntType::I8,
-                value: 0,
-            }),
-        ));
-    }
-    let target = match cx.program.types().kind(target).clone() {
-        TypeKind::Array {
-            element,
-            length: None,
-        } => cx.program.types_mut().intern(TypeKind::Array {
-            element,
-            length: Some(length as u64),
-        }),
-        _ => target,
-    };
-    let out = cx.register(target, span)?;
-    let ty = cx.mir(target, span)?;
-    cx.intrinsic(
-        MIRAggregateIntrinsic::AggregateInit {
-            out: MIRTarget::Register(out),
-            ty,
-            fields,
-        },
-        span,
-    );
-    Ok(Operand::register(out, target))
 }

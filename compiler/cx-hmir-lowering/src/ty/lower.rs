@@ -25,10 +25,7 @@ pub(super) fn lower_type(
                 format!("comptime-only type '{}' used at runtime", types.display(ty)),
             ));
         }
-        TypeKind::Str => {
-            let pointer = types.char_pointer();
-            return lower_type(types, pointer, span);
-        }
+        TypeKind::Str => MIRTypeKind::Str,
         TypeKind::Int { width, .. } => MIRTypeKind::Integer {
             ty: TypeTable::mir_int(width),
         },
