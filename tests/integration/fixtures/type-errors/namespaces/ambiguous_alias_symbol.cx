@@ -1,0 +1,6 @@
+import _ambiguous_a as lib;
+import _ambiguous_b as lib;
+
+int main() {
+    return lib::helper();
+}

@@ -538,10 +538,37 @@ pub(crate) fn lower_match(
         matches!(pattern, HMIRPattern::Binding(_)).then_some(*block)
     });
     let default = binding_block.unwrap_or_else(|| cx.new_block("match.unreachable"));
-    let mut cases = Vec::with_capacity(arms.len());
+    let variant_names = cx
+        .program
+        .types()
+        .nominal_of(value.ty())
+        .filter(|_| variants)
+        .map(|nominal| {
+            nominal
+                .fields()
+                .iter()
+                .map(|field| field.name().cloned())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let covered = |cases: &[(i128, MIRBlockTarget)]| {
+        variants
+            && (0..variant_names.len())
+                .all(|index| cases.iter().any(|(case, _)| *case == index as i128))
+    };
+    const UNREACHABLE_ARM: &str =
+        "unreachable match arm: this pattern is already covered by a previous arm";
+    let mut cases: Vec<(i128, MIRBlockTarget)> = Vec::with_capacity(arms.len());
+    let mut caught = false;
     for ((pattern, _), block) in arms.iter().zip(&blocks) {
+        if caught || covered(&cases) {
+            return cx.error(span, UNREACHABLE_ARM);
+        }
         let case = match pattern {
-            HMIRPattern::Binding(_) => continue,
+            HMIRPattern::Binding(_) => {
+                caught = true;
+                continue;
+            }
             HMIRPattern::Integer(value) if !variants => *value as i128,
             HMIRPattern::Value(expected) if !variants => {
                 let expected = lower_eval(cx, frame, *expected, Expect::Type(value.ty()))?;
@@ -561,7 +588,30 @@ pub(crate) fn lower_match(
             }
             _ => return cx.error(span, "pattern does not fit the matched value"),
         };
+        if cases.iter().any(|(existing, _)| *existing == case) {
+            return cx.error(span, UNREACHABLE_ARM);
+        }
         cases.push((case, MIRBlockTarget::new(*block)));
+    }
+    if !caught && !covered(&cases) {
+        let missing = variant_names
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !cases.iter().any(|(case, _)| *case == *index as i128))
+            .filter_map(|(_, name)| name.as_ref().map(ToString::to_string))
+            .collect::<Vec<_>>();
+        let missing = if missing.is_empty() {
+            String::new()
+        } else {
+            format!("; missing variants: {}", missing.join(", "))
+        };
+        return cx.error(
+            span,
+            format!(
+                "match must be exhaustive{missing}; add the missing arms or a catch-all \
+                 binding such as '_ => ...'"
+            ),
+        );
     }
     cx.emit(
         MIRInstructionKind::CaseBranch {
@@ -645,7 +695,10 @@ pub(super) fn lower_control(
                     if let Expect::Type(expected) = expect {
                         let found = lower_inferred_type(cx, value.ty());
                         let promoted = promote_integer_type(cx.program.types_mut(), found);
-                        if found != expected && promoted != expected {
+                        let types = cx.program.types_mut();
+                        if !types.same_unqualified(found, expected)
+                            && !types.same_unqualified(promoted, expected)
+                        {
                             let types = cx.program.types();
                             return cx.error(
                                 span,
@@ -700,7 +753,12 @@ pub(super) fn lower_control(
                 .push((frame, body));
             Ok(Operand::unit(cx.program.types_mut()))
         }
-        HMIRControlOp::Unsafe(body) => lower_expr(cx, frame, body, expect),
+        HMIRControlOp::Unsafe(body) => {
+            cx.unsafe_depth += 1;
+            let result = lower_expr(cx, frame, body, expect);
+            cx.unsafe_depth -= 1;
+            result
+        }
         HMIRControlOp::Unreachable => {
             cx.emit(MIRInstructionKind::Unreachable, span);
             Err(Stop::Diverged)

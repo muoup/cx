@@ -64,6 +64,8 @@ pub(crate) struct Quote {
     origin: Option<FrameRef>,
     // A void quote's yields target the context it is spliced into
     external_yield: bool,
+    // The result type declared where the quote was passed as a staged expression
+    result: Option<TypeID>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,11 +107,16 @@ impl Quote {
             runtime_types,
             origin,
             external_yield: false,
+            result: None,
         }
     }
 
     pub(crate) fn external_yield(&self) -> bool {
         self.external_yield
+    }
+
+    pub(crate) fn result(&self) -> Option<TypeID> {
+        self.result
     }
 
     pub(crate) fn unit(&self) -> UnitID {
@@ -154,12 +161,13 @@ impl QuoteRef {
         &self.0
     }
 
-    pub(crate) fn with_external_yield(&self) -> Self {
-        if self.0.external_yield {
+    pub(crate) fn with_result(&self, result: TypeID, external_yield: bool) -> Self {
+        if self.0.result == Some(result) && (self.0.external_yield || !external_yield) {
             return self.clone();
         }
         Self::new(Quote {
-            external_yield: true,
+            external_yield: self.0.external_yield || external_yield,
+            result: Some(result),
             ..(*self.0).clone()
         })
     }

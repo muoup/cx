@@ -144,6 +144,10 @@ impl BodyPrinter<'_> {
                 self.expr(f, *inner, depth)?;
                 f.write_str("&")
             }
+            HMIRTypeOp::Const(inner) => {
+                f.write_str("const ")?;
+                self.expr(f, *inner, depth)
+            }
             HMIRTypeOp::Member { ty, name } => {
                 write!(f, "{}(", op.path())?;
                 self.expr(f, *ty, depth)?;
@@ -179,6 +183,8 @@ impl BodyPrinter<'_> {
             HMIRTypeOp::Aggregate {
                 kind,
                 semantics,
+                unsafe_move,
+                traits_of,
                 fields,
             } => {
                 f.write_str(match kind {
@@ -188,6 +194,14 @@ impl BodyPrinter<'_> {
                 })?;
                 if let Some(semantics) = semantics_keyword(*semantics) {
                     write!(f, " {semantics}")?;
+                }
+                if *unsafe_move {
+                    f.write_str(" unsafe_move")?;
+                }
+                if let Some(traits_of) = traits_of {
+                    f.write_str(" copy_traits(")?;
+                    self.expr(f, *traits_of, depth)?;
+                    f.write_str(")")?;
                 }
                 f.write_str(" {\n")?;
                 for field in fields {

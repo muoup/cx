@@ -1,0 +1,1 @@
+int main() { int y = 1; int* const p = &y; p = 0; return y; }

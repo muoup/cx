@@ -1,21 +1,32 @@
 use cx_hir::ast::{
     function::HIRFunctionPrototype,
-    types::{HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
+    modifiers::HIR_CONST,
+    types::{HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
 };
 use cx_hmir::{
     HMIRAggregateKind, HMIRDefRef, HMIRExprID, HMIRExprKind, HMIRFieldDef, HMIRMoveSemantics,
     HMIRTypeOp,
 };
+use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
     body::{BodyLowering, Symbol},
-    expr::lower_expr,
+    expr::{lower_expr, lower_identifier},
     resolve::GlobalSymbol,
 };
 
 pub(crate) fn lower_type(cx: &mut BodyLowering<'_>, ty: &HIRType) -> HMIRExprID {
+    let lowered = lower_unqualified_type(cx, ty);
+    // The type 'auto' stands for brings its own qualifiers
+    if ty.specifiers & HIR_CONST == 0 || matches!(ty.kind, HIRTypeKind::Auto) {
+        return lowered;
+    }
+    cx.type_op(HMIRTypeOp::Const(lowered), &ty.range)
+}
+
+fn lower_unqualified_type(cx: &mut BodyLowering<'_>, ty: &HIRType) -> HMIRExprID {
     let span = &ty.range;
     if let Some((params, result)) = staged_signature(ty) {
         return lower_staged_type(cx, params, result, span);
@@ -32,6 +43,7 @@ pub(crate) fn lower_type(cx: &mut BodyLowering<'_>, ty: &HIRType) -> HMIRExprID 
                     | GlobalSymbol::ComptimeFunction(def, ..),
                 ) => cx.push(HMIRExprKind::Def(def), span),
                 Symbol::Global(GlobalSymbol::Constructor(..)) => cx.error(span),
+                Symbol::Global(GlobalSymbol::Invalid(message)) => cx.error_message(message, span),
             };
             let Some(args) = args else {
                 return callee;
@@ -77,14 +89,14 @@ pub(crate) fn lower_type(cx: &mut BodyLowering<'_>, ty: &HIRType) -> HMIRExprID 
         } => lower_aggregate_type(
             cx,
             HMIRAggregateKind::Struct,
-            &attributes.semantics,
+            attributes,
             fields,
             span,
         ),
         HIRTypeKind::Union { fields, .. } => lower_aggregate_type(
             cx,
             HMIRAggregateKind::Union,
-            &HIRMoveSemantics::POD,
+            &HIRAggregateAttributes::default(),
             fields,
             span,
         ),
@@ -95,7 +107,7 @@ pub(crate) fn lower_type(cx: &mut BodyLowering<'_>, ty: &HIRType) -> HMIRExprID 
         } => lower_aggregate_type(
             cx,
             HMIRAggregateKind::TaggedUnion,
-            &attributes.semantics,
+            attributes,
             variants,
             span,
         ),
@@ -178,7 +190,7 @@ fn lower_function_type(cx: &mut BodyLowering<'_>, prototype: &HIRFunctionPrototy
 fn lower_aggregate_type(
     cx: &mut BodyLowering<'_>,
     kind: HMIRAggregateKind,
-    semantics: &HIRMoveSemantics,
+    attributes: &HIRAggregateAttributes,
     fields: &[HIRField],
     span: &TokenRange,
 ) -> HMIRExprID {
@@ -199,7 +211,10 @@ fn lower_aggregate_type(
             ),
         })
         .collect();
-    let semantics = match semantics {
+    let traits_of = attributes.copy_traits.as_deref().map(|name| {
+        lower_identifier(cx, &QualifiedName::new_raw(CXIdent::from(name)), span)
+    });
+    let semantics = match attributes.semantics {
         HIRMoveSemantics::POD => HMIRMoveSemantics::POD,
         HIRMoveSemantics::Nocopy => HMIRMoveSemantics::Nocopy,
         HIRMoveSemantics::Nodrop => HMIRMoveSemantics::Nodrop,
@@ -208,6 +223,8 @@ fn lower_aggregate_type(
         HMIRTypeOp::Aggregate {
             kind,
             semantics,
+            unsafe_move: attributes.unsafe_move,
+            traits_of,
             fields,
         },
         span,

@@ -1,0 +1,9 @@
+/* CX-STDOUT: equivalent declarations */
+
+import _equivalent_decl_a as ffi;
+import _equivalent_decl_b as ffi;
+
+int main() {
+    ffi::puts("equivalent declarations");
+    return 0;
+}

@@ -1,0 +1,41 @@
+/* CX-STDOUT: 10 6 9 15 6 text abc global 5 9 10 */
+
+#include <stdio.h>
+
+struct Pair { int left; int right; };
+
+int takes(const int x);
+int takes(int x) { return x + 1; }
+
+const int limit = 3;
+const char* name = "global";
+
+int sum(const int* values, int count) {
+    int total = 0;
+    for (int i = 0; i < count; i++) total += values[i];
+    return total;
+}
+
+T first(@type T, const T& a, const T& b) { return a; }
+
+int read(const Pair& pair) { return pair.left + pair.right; }
+
+int main() {
+    const int x = 5;
+    int y = x;
+    y += x;
+    const int values[] = { 1, 2, 3 };
+    const Pair pair = { 4, 5 };
+    Pair copy = pair;
+    copy.left = 10;
+    const int* p = &x;
+    p = &y;
+    const char* text = "text";
+    char buffer[8] = "abc";
+    const char* view = buffer;
+    int z = first(_, x, y);
+    auto w = x;
+    w = 9;
+    printf("%d %d %d %d %d %s %s %s %d %d %d\n", y, sum(values, limit), read(pair), read(copy), takes(x), text, view, name, z, w, *p);
+    return 0;
+}

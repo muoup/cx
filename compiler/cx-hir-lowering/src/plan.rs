@@ -124,19 +124,22 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
         .collect::<HashSet<_>>();
 
     let mut plans = Vec::new();
+    // Declarations of a function defined in this unit go last, so that its name finds the definition
+    let mut redeclarations = Vec::new();
     for definition in &hir.definition_stmts {
         let base = if definition.namespace.is_root() {
             &definition.namespace
         } else {
             namespace
         };
+        let planned = |name: QualifiedName, span: &TokenRange, source: DefSource<'h>| PlannedDef {
+            name,
+            namespace: definition.namespace.clone(),
+            span: span.clone(),
+            source,
+        };
         let mut plan = |name: QualifiedName, span: &TokenRange, source: DefSource<'h>| {
-            plans.push(PlannedDef {
-                name,
-                namespace: definition.namespace.clone(),
-                span: span.clone(),
-                source,
-            })
+            plans.push(planned(name, span, source))
         };
 
         match &definition.stmt {
@@ -171,15 +174,18 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
             } => {
                 let declaration_only =
                     body.is_none() && defined_functions.contains(&prototype.kind.into_key());
-                if !declaration_only {
-                    plan(
-                        function_name(base, &prototype.kind),
-                        &prototype.range,
-                        DefSource::Function {
-                            prototype,
-                            body: body.as_ref(),
-                        },
-                    );
+                let def = planned(
+                    function_name(base, &prototype.kind),
+                    &prototype.range,
+                    DefSource::Function {
+                        prototype,
+                        body: body.as_ref(),
+                    },
+                );
+                if declaration_only {
+                    redeclarations.push(def);
+                } else {
+                    plans.push(def);
                 }
             }
 
@@ -217,5 +223,6 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
             },
         }
     }
+    plans.extend(redeclarations);
     plans
 }

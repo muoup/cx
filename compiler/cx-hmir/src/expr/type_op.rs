@@ -12,6 +12,7 @@ use crate::{
 pub enum HMIRTypeOp {
     Pointer(HMIRExprID),
     Reference(HMIRExprID),
+    Const(HMIRExprID),
     PointerInner(HMIRExprID),
     ReferenceInner(HMIRExprID),
     Member {
@@ -36,6 +37,9 @@ pub enum HMIRTypeOp {
     Aggregate {
         kind: HMIRAggregateKind,
         semantics: HMIRMoveSemantics,
+        unsafe_move: bool,
+        // A type whose move semantics the aggregate takes on top of its own
+        traits_of: Option<HMIRExprID>,
         fields: Vec<HMIRFieldDef>,
     },
 
@@ -53,6 +57,7 @@ impl HMIRTypeOp {
         match self {
             Self::Pointer(_) => "type.pointer",
             Self::Reference(_) => "type.reference",
+            Self::Const(_) => "type.const",
             Self::PointerInner(_) => "type.pointer_inner",
             Self::ReferenceInner(_) => "type.reference_inner",
             Self::Member { .. } => "type.member",

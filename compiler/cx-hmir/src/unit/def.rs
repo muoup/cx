@@ -31,6 +31,8 @@ pub enum HMIRDefKind {
 pub enum HMIRDefRef {
     Local(HMIRDefID),
     External(QualifiedName),
+    // Several names a reference may mean; staging accepts them only when they are equivalent
+    Candidates(Vec<HMIRDefRef>),
 }
 
 impl HMIRDef {

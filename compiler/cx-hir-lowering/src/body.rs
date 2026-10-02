@@ -91,7 +91,11 @@ impl<'a> BodyLowering<'a> {
     }
 
     pub(crate) fn error(&mut self, span: &TokenRange) -> HMIRExprID {
-        self.push(HMIRExprKind::Error, span)
+        self.push(HMIRExprKind::Error(None), span)
+    }
+
+    pub(crate) fn error_message(&mut self, message: String, span: &TokenRange) -> HMIRExprID {
+        self.push(HMIRExprKind::Error(Some(message)), span)
     }
 
     pub(crate) fn hole(&mut self, span: &TokenRange) -> HMIRExprID {
@@ -379,6 +383,7 @@ pub(crate) fn lower_static(
     name: &CXIdent,
     ty: &HIRType,
     initializer: Option<&HIRExpression>,
+    linkage: LinkageMode,
     span: &TokenRange,
 ) {
     let id = cx.resolver.next_static();
@@ -391,8 +396,11 @@ pub(crate) fn lower_static(
         global_ty,
         initializer,
         true,
-        LinkageMode::Static,
-        CXIdent::from(format!("{name}.{}", id.index()).as_str()),
+        linkage,
+        match linkage {
+            LinkageMode::Extern => name.clone(),
+            _ => CXIdent::from(format!("{name}.{}", id.index()).as_str()),
+        },
     );
     let qualified = QualifiedName::new(cx.namespace.clone(), name.clone());
     cx.resolver.push_static(HMIRDef::new(

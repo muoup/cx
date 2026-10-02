@@ -31,7 +31,8 @@ pub(super) fn lower_promote(
     } else {
         operand
     };
-    let ty = promote_integer_type(cx.program.types_mut(), operand.ty());
+    let ty = cx.program.types_mut().unqualified(operand.ty());
+    let ty = promote_integer_type(cx.program.types_mut(), ty);
     lower_convert(cx, operand, ty, span)
 }
 

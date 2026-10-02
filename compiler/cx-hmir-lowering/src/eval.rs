@@ -11,8 +11,8 @@ use std::{
 
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRControlOp,
-    HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRLocalID, HMIRNativeOp,
-    HMIROwnershipOp, HMIRPattern, HMIRTypeOp, HMIRUnit,
+    HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRIntWidth,
+    HMIRLocalID, HMIRNativeOp, HMIROwnershipOp, HMIRPattern, HMIRTypeOp, HMIRUnit,
 };
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
@@ -27,7 +27,7 @@ use crate::{
     function::{Expect, Stop, inspect::inspect},
     lower::{LowerContext, LowerOutput, lower},
     module::{member_type, variant_index},
-    program::{DefKey, Instance, Program, UnitID, def_body},
+    program::{DefKey, Instance, Program, UnitID, def_body, untagged_name},
     staging_error,
     ty::{FunctionType, TypeID, TypeKind},
     value::{FrameRef, Quote, QuoteRef, StaticValue, truncate_int},
@@ -355,6 +355,164 @@ fn read_global(
     }
 }
 
+#[derive(PartialEq)]
+enum Declaration {
+    Function(Vec<TypeID>, TypeID, bool, CXIdent),
+    Global(TypeID, CXIdent),
+    Value(StaticValue),
+}
+
+fn declaration(
+    cx: &mut Program<'_>,
+    key: DefKey,
+    span: &TokenRange,
+) -> CXResult<(Declaration, bool)> {
+    let unit = cx.unit(key.unit());
+    Ok(match unit.def(key.def()).kind() {
+        HMIRDefKind::Function(function)
+            if function.stage() == HMIRFunctionStage::Runtime
+                && !function.has_comptime_params() =>
+        {
+            let signature = eval_signature(cx, &(key, Vec::new()), span)?;
+            // A parameter's own qualifier is not part of the function's type
+            let params = signature
+                .params()
+                .iter()
+                .map(|(_, ty)| cx.types_mut().unqualified(*ty))
+                .collect();
+            // A function may be redeclared with or without '_Noreturn'
+            let ret = match cx.types().kind(signature.ret()) {
+                TypeKind::Unreachable => cx.types_mut().intern(TypeKind::Void),
+                _ => signature.ret(),
+            };
+            (
+                Declaration::Function(
+                    params,
+                    ret,
+                    signature.is_variadic(),
+                    signature.link_name().clone(),
+                ),
+                function.root().is_some(),
+            )
+        }
+        HMIRDefKind::Global(global) => (
+            Declaration::Global(eval_global_type(cx, key, span)?, global.link_name().clone()),
+            global.linkage() != LinkageMode::Extern,
+        ),
+        _ => (Declaration::Value(def_value(cx, key, span)?), false),
+    })
+}
+
+fn compatible_objects(cx: &Program<'_>, left: TypeID, right: TypeID) -> bool {
+    match (cx.types().kind(left), cx.types().kind(right)) {
+        (
+            TypeKind::Array {
+                element: left,
+                length: left_length,
+            },
+            TypeKind::Array {
+                element: right,
+                length: right_length,
+            },
+        ) => {
+            left == right
+                && (left_length == right_length || left_length.and(*right_length).is_none())
+        }
+        _ => left == right,
+    }
+}
+
+// Checks a later def of a name the unit has already declared
+pub(crate) fn check_redeclaration(
+    cx: &mut Program<'_>,
+    first: DefKey,
+    other: DefKey,
+    span: &TokenRange,
+) -> CXResult<()> {
+    let unit = cx.unit(first.unit());
+    let name = unit.def(first.def()).name();
+    let incompatible = || staging_error(span, format!("incompatible declarations for '{name}'"));
+    let duplicate = || staging_error(span, format!("duplicate definition of '{name}'"));
+    match (unit.def(first.def()).kind(), unit.def(other.def()).kind()) {
+        (HMIRDefKind::Function(left), HMIRDefKind::Function(right)) => {
+            if left.root().is_some() && right.root().is_some() {
+                return Err(duplicate());
+            }
+            let staged = |function: &HMIRFunction| {
+                function.stage() == HMIRFunctionStage::Comptime || function.has_comptime_params()
+            };
+            if staged(left) != staged(right) {
+                return Err(incompatible());
+            }
+            if !staged(left) && declaration(cx, first, span)?.0 != declaration(cx, other, span)?.0 {
+                return Err(incompatible());
+            }
+        }
+        (HMIRDefKind::Global(left), HMIRDefKind::Global(right)) => {
+            // Function-level statics share a name but never a symbol
+            if left.link_name() != right.link_name() {
+                return Ok(());
+            }
+            let left_ty = eval_global_type(cx, first, span)?;
+            let right_ty = eval_global_type(cx, other, span)?;
+            if !compatible_objects(cx, left_ty, right_ty) {
+                return Err(incompatible());
+            }
+            if left.initializer().is_some() && right.initializer().is_some() {
+                return Err(duplicate());
+            }
+        }
+        (
+            HMIRDefKind::Type(_) | HMIRDefKind::ComptimeGlobal(_),
+            HMIRDefKind::Type(_) | HMIRDefKind::ComptimeGlobal(_),
+        ) => {
+            let tagged = untagged_name(&name.name) != name.name.as_str();
+            let defined =
+                |key: DefKey| matches!(unit.def(key.def()).kind(), HMIRDefKind::ComptimeGlobal(_));
+            if tagged {
+                if defined(first) && defined(other) {
+                    return Err(duplicate());
+                }
+            } else if def_value(cx, first, span)? != def_value(cx, other, span)? {
+                return Err(incompatible());
+            }
+        }
+        _ => return Err(incompatible()),
+    }
+    Ok(())
+}
+
+// Declarations reached under one name stand for a single symbol when they agree and at most
+// one of them defines it
+pub(crate) fn equivalent_def(
+    cx: &mut Program<'_>,
+    keys: &[DefKey],
+    span: &TokenRange,
+) -> CXResult<DefKey> {
+    let (first, defines) = declaration(cx, keys[0], span)?;
+    let mut definition = defines.then_some(keys[0]);
+    let mut equivalent = true;
+    for key in &keys[1..] {
+        let (other, defines) = declaration(cx, *key, span)?;
+        equivalent &= other == first && !(defines && definition.is_some());
+        if defines {
+            definition = Some(*key);
+        }
+    }
+    if !equivalent {
+        let candidates = keys
+            .iter()
+            .map(|key| cx.def_name(*key).to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(staging_error(
+            span,
+            format!("ambiguous symbol reference, candidates: {candidates}"),
+        ));
+    }
+    Ok(definition.unwrap_or(keys[0]))
+}
+
 pub(crate) fn def_value(
     cx: &mut Program<'_>,
     key: DefKey,
@@ -659,8 +817,13 @@ pub(crate) fn exec_native(
         HMIRNativeOp::Type(HMIRTypeOp::Aggregate {
             kind,
             semantics,
+            unsafe_move,
+            traits_of,
             fields,
-        }) => eval_aggregate_type(cx, frame, id, *kind, *semantics, fields, span)?,
+        }) => {
+            let traits = (*semantics, *unsafe_move);
+            eval_aggregate_type(cx, frame, id, *kind, traits, *traits_of, fields, span)?
+        }
         HMIRNativeOp::Type(op) => types::exec_type_op(cx, frame, op, span)?,
         HMIRNativeOp::Control(control) => {
             return Ok(match control {

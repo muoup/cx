@@ -90,7 +90,11 @@ pub(crate) fn lower(
             )),
             _ => Err(staging_error(&span, "cannot infer this type".into()).into()),
         },
-        HMIRExprKind::Error => Err(staging_error(&span, "erroneous expression".into()).into()),
+        HMIRExprKind::Error(message) => Err(staging_error(
+            &span,
+            message.unwrap_or_else(|| "erroneous expression".into()),
+        )
+        .into()),
         HMIRExprKind::Comptime(inner) => match cx {
             LowerContext::Runtime(lowering, frame) => {
                 if lowering.unevaluated {

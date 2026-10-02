@@ -14,7 +14,7 @@ use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
 use crate::{
-    eval::Signature,
+    eval::{Signature, equivalent_def},
     module::Module,
     staging_error,
     ty::{FunctionType, TypeID, TypeKind, TypeTable},
@@ -184,6 +184,16 @@ impl<'l> Program<'l> {
             HMIRDefRef::External(name) => self
                 .external(name)
                 .ok_or_else(|| staging_error(span, format!("unresolved symbol '{name}'"))),
+            HMIRDefRef::Candidates(candidates) => {
+                let mut keys = Vec::new();
+                for candidate in candidates {
+                    let key = self.resolve(unit, candidate, span)?;
+                    if !keys.contains(&key) {
+                        keys.push(key);
+                    }
+                }
+                equivalent_def(self, &keys, span)
+            }
         }
     }
 

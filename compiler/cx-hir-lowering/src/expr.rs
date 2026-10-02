@@ -105,9 +105,9 @@ pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMI
             ty,
             name,
             initial_value,
-            linkage: LinkageMode::Static,
+            linkage: linkage @ (LinkageMode::Static | LinkageMode::Extern),
         } if !cx.is_comptime() => {
-            lower_static(cx, name, ty, initial_value.as_deref(), span);
+            lower_static(cx, name, ty, initial_value.as_deref(), *linkage, span);
             cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span)
         }
         HIRExprKind::VarDeclaration {
@@ -228,6 +228,7 @@ pub(crate) fn lower_identifier(
             | GlobalSymbol::Function(def)
             | GlobalSymbol::ComptimeFunction(def, ..),
         ) => cx.push(HMIRExprKind::Def(def), span),
+        Symbol::Global(GlobalSymbol::Invalid(message)) => cx.error_message(message, span),
         Symbol::Global(GlobalSymbol::Constructor(data, variant, def)) => {
             let payload = cx.resolver().constructor_payload(&data);
             if payload.is_none_or(|payload| is_void(cx, &payload)) {

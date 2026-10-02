@@ -11,7 +11,7 @@ pub enum HMIRAggregateKind {
     TaggedUnion,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum HMIRMoveSemantics {
     #[default]
     POD,

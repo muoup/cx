@@ -67,7 +67,7 @@ f64 find_local(std::span(binding) locals, _str& name) {
 lisp_node* interpreter::find_function(interpreter& this, _str& name) {
     for (usize i = 0; i < this.program_length; i++) {
         lisp_node* node = &this.program_body[i];
-        match (node) {
+        match (*node) {
             FnDef(auto& fn_def) => {
                 if (std::str::equals(fn_def.name |> std::string::as_str(), name)) {
                     return node;
@@ -88,7 +88,7 @@ f64 interpreter::call_function(interpreter& this, _str& name, std::span(lisp_nod
     }
 
     f64 result = 0.0;
-    match (fn_node) {
+    match (*fn_node) {
         FnDef(auto& fn_def) => {
             std::vector(binding) call_locals = std::vector::with_capacity(binding, fn_def.params.length);
 
@@ -134,7 +134,7 @@ f64 interpreter::eval(interpreter& this, lisp_node& node, std::span(binding) loc
 
             return result;
         }
-        Number(auto num) => return num;
+        Number(auto& num) => return num;
         Symbol(auto& name) => return find_local(locals, name |> std::string::as_str());
         FnDef(_) => return 0.0;
         FnCall(auto& fn_call) => {

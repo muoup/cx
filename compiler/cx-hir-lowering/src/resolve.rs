@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use cx_hir::{
     ast::{
-        modifiers::HIRSymbolNameScheme,
+        modifiers::{HIRSymbolNameScheme, VisibilityMode},
         types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
     },
     intrinsic_types::{HIRIntrinsicType, INTRINSIC_TYPES},
@@ -35,6 +35,7 @@ pub(crate) enum GlobalSymbol {
     ComptimeFunction(HMIRDefRef, bool, Vec<bool>),
     Constructor(TypeConstructorData, CXIdent, HMIRDefRef),
     Primitive(HMIRTypeDesc),
+    Invalid(String),
 }
 
 struct RegistryLookup<'a> {
@@ -47,21 +48,49 @@ impl QualifiedLookup for RegistryLookup<'_> {
 
     fn lookup_exact(
         &self,
-        _: &NamespacePath,
+        lexical_namespace: &NamespacePath,
         name: &QualifiedName,
     ) -> Option<Self::Output> {
+        let visible = |symbols: &Vec<HIRSymbol>| {
+            symbols.iter().any(|symbol| {
+                symbol.visibility == VisibilityMode::Public
+                    || name.namespace == *lexical_namespace
+                    || self
+                        .registry
+                        .namespaces_are_friends(lexical_namespace, &name.namespace)
+                    || (symbol.visibility == VisibilityMode::Package
+                        && name
+                            .namespace
+                            .clone()
+                            .strip_prefix(lexical_namespace)
+                            .is_some())
+            })
+        };
         if self.tag.is_none()
-            && let Some(symbols) = self.registry.resolve(name, false)
+            && let Some(symbols) = self.registry.resolve(name, false).filter(visible)
         {
             return Some(symbols);
         }
-        let symbols = self
-            .registry
-            .resolve(name, true)?
-            .into_iter()
-            .filter(|symbol| self.tag.is_none() || symbol.tag == self.tag)
-            .collect::<Vec<_>>();
-        (!symbols.is_empty()).then_some(symbols)
+        self.registry.resolve(name, true).filter(visible)
+    }
+
+    fn priority(
+        &self,
+        lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+        symbols: &Self::Output,
+    ) -> (u8, bool) {
+        (
+            if name.namespace == *lexical_namespace {
+                2
+            } else {
+                u8::from(
+                    self.registry
+                        .namespaces_are_friends(lexical_namespace, &name.namespace),
+                )
+            },
+            symbols.iter().any(|symbol| symbol.tag == self.tag),
+        )
     }
 
     fn resolve_aliases(
@@ -141,20 +170,70 @@ impl<'a> Resolver<'a> {
             registry: self.registry,
             tag,
         };
-        let QualifiedLookupResult::Found {
-            resolved_name,
-            value,
-        } = lookup.qualified_lookup(namespace, name)
-        else {
-            if tag.is_none()
-                && name.namespace.is_root()
-                && let Some(primitive) = self.primitive(name.name.as_str())
-            {
-                return GlobalSymbol::Primitive(primitive);
+        match lookup.qualified_lookup(namespace, name) {
+            QualifiedLookupResult::Found {
+                resolved_name,
+                value,
+            } => {
+                if let Some(tag) = tag
+                    && value.iter().any(|symbol| symbol.tag != Some(tag))
+                {
+                    return GlobalSymbol::Invalid(format!(
+                        "incompatible tag declarations for '{resolved_name}'"
+                    ));
+                }
+                self.symbol(resolved_name, value)
             }
-            return GlobalSymbol::Def(self.def_ref(def_name(name.clone(), tag)));
-        };
+            QualifiedLookupResult::NotFound => {
+                if tag.is_none()
+                    && name.namespace.is_root()
+                    && let Some(primitive) = self.primitive(name.name.as_str())
+                {
+                    return GlobalSymbol::Primitive(primitive);
+                }
+                GlobalSymbol::Def(self.def_ref(def_name(name.clone(), tag)))
+            }
+            QualifiedLookupResult::Ambiguous { candidates } => {
+                let symbols = candidates
+                    .iter()
+                    .filter_map(|candidate| {
+                        let value = lookup.lookup_exact(namespace, candidate)?;
+                        Some(self.symbol(candidate.clone(), value))
+                    })
+                    .collect::<Vec<_>>();
+                let defs = symbols.iter().map(|symbol| match symbol {
+                    GlobalSymbol::Def(def) | GlobalSymbol::Function(def) => Some(def.clone()),
+                    _ => None,
+                });
+                match defs.collect::<Option<Vec<_>>>() {
+                    Some(defs)
+                        if symbols
+                            .iter()
+                            .all(|symbol| matches!(symbol, GlobalSymbol::Function(_))) =>
+                    {
+                        GlobalSymbol::Function(HMIRDefRef::Candidates(defs))
+                    }
+                    Some(defs)
+                        if symbols
+                            .iter()
+                            .all(|symbol| matches!(symbol, GlobalSymbol::Def(_))) =>
+                    {
+                        GlobalSymbol::Def(HMIRDefRef::Candidates(defs))
+                    }
+                    _ => GlobalSymbol::Invalid(format!(
+                        "ambiguous symbol reference, candidates: {}",
+                        candidates
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )),
+                }
+            }
+        }
+    }
 
+    fn symbol(&self, resolved_name: QualifiedName, value: Vec<HIRSymbol>) -> GlobalSymbol {
         let Some(symbol) = value.into_iter().next() else {
             return GlobalSymbol::Def(self.def_ref(resolved_name));
         };

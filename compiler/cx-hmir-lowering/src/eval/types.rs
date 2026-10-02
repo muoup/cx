@@ -56,11 +56,18 @@ pub(super) fn exec_type_op(
         }
         HMIRTypeOp::Pointer(inner) => {
             let inner = eval_type(cx, frame, *inner)?;
+            if cx.types().is_unreachable(inner) {
+                return Err(staging_error(span, "pointer to 'unreachable'".into()));
+            }
             StaticValue::Type(cx.types_mut().pointer_to(inner))
         }
         HMIRTypeOp::Reference(inner) => {
             let inner = eval_type(cx, frame, *inner)?;
             StaticValue::Type(cx.types_mut().reference_to(inner))
+        }
+        HMIRTypeOp::Const(inner) => {
+            let inner = eval_type(cx, frame, *inner)?;
+            StaticValue::Type(cx.types_mut().const_of(inner))
         }
         HMIRTypeOp::Array { element, length } => {
             let element = eval_type(cx, frame, *element)?;
@@ -142,14 +149,23 @@ pub(super) fn eval_aggregate_type(
     frame: &mut EvalFrame,
     id: HMIRExprID,
     kind: HMIRAggregateKind,
-    semantics: HMIRMoveSemantics,
+    (mut semantics, mut unsafe_move): (HMIRMoveSemantics, bool),
+    traits_of: Option<HMIRExprID>,
     fields: &[HMIRFieldDef],
     span: &TokenRange,
 ) -> CXResult<StaticValue> {
     let owner = frame.owner().clone();
     let key = NominalKey::new(owner.0, owner.1.clone(), id);
     let name = nominal_name(cx, &owner);
-    let (ty, pending) = cx.types_mut().intern_nominal(key, name, kind, semantics);
+    if let Some(traits_of) = traits_of {
+        let source = eval_type(cx, frame, traits_of)?;
+        let (inherited, inherited_unsafe_move) = cx.types().owned_traits(source);
+        semantics = semantics.max(inherited);
+        unsafe_move |= inherited_unsafe_move;
+    }
+    let (ty, pending) = cx
+        .types_mut()
+        .intern_nominal(key, name, kind, semantics, unsafe_move);
     if !pending {
         return Ok(StaticValue::Type(ty));
     }
@@ -162,6 +178,39 @@ pub(super) fn eval_aggregate_type(
         let field_ty = eval_type(cx, frame, field.ty())?;
         if cx.types().is_void(field_ty) && kind != HMIRAggregateKind::TaggedUnion {
             return Err(staging_error(span, "aggregate field of type void".into()));
+        }
+        if cx.types().object_problem(field_ty).is_some() {
+            let name = field
+                .name()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "<anonymous>".into());
+            return Err(staging_error(
+                span,
+                format!("field '{name}' has an incomplete or recursive type"),
+            ));
+        }
+        let (field_semantics, field_unsafe_move) = cx.types().owned_traits(field_ty);
+        let required = if field_semantics > semantics {
+            Some(match field_semantics {
+                HMIRMoveSemantics::Nodrop => "@nodrop",
+                _ => "@nocopy",
+            })
+        } else if field_unsafe_move && !unsafe_move {
+            Some("@unsafe_move")
+        } else {
+            None
+        };
+        if let Some(required) = required {
+            let name = field
+                .name()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "<anonymous>".into());
+            return Err(staging_error(
+                span,
+                format!(
+                    "aggregate containing {required} field '{name}' must also be marked as {required}"
+                ),
+            ));
         }
         defined.push(Field::new(
             field.name().cloned(),

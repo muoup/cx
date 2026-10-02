@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque, hash_map::Entry};
 
 use cx_hmir::{HMIRAggregateKind, HMIRDefKind, HMIRFunctionStage};
 use cx_log::CXResult;
@@ -11,7 +11,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    eval::{eval_global_initializer, eval_global_type, eval_signature, ops::coerce_static},
+    eval::{check_redeclaration, eval_global_initializer, eval_global_type, eval_signature, ops::coerce_static},
     function::lower_function,
     program::{DefKey, Instance, Program},
     staging_error,
@@ -98,6 +98,17 @@ impl Module {
 pub(crate) fn lower_roots(cx: &mut Program<'_>) -> CXResult<()> {
     let main = cx.main_unit();
     let unit = cx.unit(main);
+    let mut declared = HashMap::new();
+    for (id, def) in unit.defs() {
+        match declared.entry(def.name()) {
+            Entry::Vacant(entry) => {
+                entry.insert(id);
+            }
+            Entry::Occupied(entry) => {
+                check_redeclaration(cx, DefKey::new(main, *entry.get()), DefKey::new(main, id), def.span())?;
+            }
+        }
+    }
     for (id, def) in unit.defs() {
         let key = DefKey::new(main, id);
         match def.kind() {
@@ -236,6 +247,14 @@ pub(crate) fn declare_global(
         ));
     };
     let ty = eval_global_type(cx, key, span)?;
+    if global.linkage() != LinkageMode::Extern
+        && let Some(problem) = cx.types().object_problem(ty)
+    {
+        return Err(staging_error(
+            span,
+            format!("'{}' has {problem}", def.name()),
+        ));
+    }
     let mir = cx.types_mut().mir(ty, span)?;
     let symbol = global.link_name().as_string();
 

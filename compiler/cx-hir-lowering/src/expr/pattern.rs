@@ -70,8 +70,10 @@ fn lower_binding_type(
     let hole = cx.hole(span);
     match mode {
         HIRBindingMode::Owned => hole,
-        HIRBindingMode::Reference | HIRBindingMode::ConstReference => {
-            cx.type_op(HMIRTypeOp::Reference(hole), span)
+        HIRBindingMode::Reference => cx.type_op(HMIRTypeOp::Reference(hole), span),
+        HIRBindingMode::ConstReference => {
+            let inner = cx.type_op(HMIRTypeOp::Const(hole), span);
+            cx.type_op(HMIRTypeOp::Reference(inner), span)
         }
     }
 }

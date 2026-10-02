@@ -190,11 +190,12 @@ pub(crate) fn lower_let(
 // The type a local takes from its initializer when it declares none
 pub(super) fn lower_inferred_type(cx: &mut FunctionLowering<'_, '_>, ty: TypeID) -> TypeID {
     let types = cx.program.types_mut();
-    match types.kind(ty).clone() {
+    let ty = match types.kind(ty).clone() {
         TypeKind::Array { .. } => ty,
         TypeKind::Reference(inner) => inner,
         _ => types.decayed(ty),
-    }
+    };
+    types.unqualified(ty)
 }
 
 // 'allocate' and 'adopt' create places rather than values
@@ -216,6 +217,7 @@ fn lower_place_op(
             Ok(Operand::place(place, ty))
         }
         HMIROwnershipOp::Adopt(reference) => {
+            cx.require_unsafe("@adopt", span)?;
             let reference = lower_expr(cx, frame, *reference, Expect::Any)?;
             let reference = lower_auto_deref(cx, reference, span)?;
             if matches!(
@@ -230,6 +232,7 @@ fn lower_place_op(
             let Some(address) = reference.address() else {
                 return cx.error(span, "adoption requires referenced storage");
             };
+            cx.require_mutable(reference.ty(), "adopt", span)?;
             let ty = reference.ty();
             let place = cx.place(ty, name, span)?;
             cx.body.mark_adopted(place);
@@ -299,18 +302,26 @@ fn lower_ownership(
                 && binding.origin().is_some()
                 && cx.program.types().is_reference(binding.ty())
             {
+                if let Some(referent) = cx.program.types().reference_inner(binding.ty()) {
+                    cx.require_mutable(referent, "move out of", span)?;
+                }
                 let reference = lower_lift(cx, &binding, span)?;
                 return lower_auto_deref(cx, Operand::value(reference, binding.ty()), span);
             }
             let operand = lower_expr(cx, frame, inner, expect)?;
+            if cx.program.types().is_unsafe_move(operand.ty()) {
+                cx.require_unsafe("move of a type declared as @unsafe_move", span)?;
+            }
             if !operand.is_lvalue() {
                 return Ok(operand);
             }
+            cx.require_mutable(operand.ty(), "move out of", span)?;
             let ty = operand.ty();
             let value = lower_lift(cx, &operand, span)?;
             Ok(Operand::value(value, ty))
         }
         HMIROwnershipOp::Leak(inner) => {
+            cx.require_unsafe("@leak", span)?;
             let operand = lower_expr(cx, frame, inner, expect)?;
             if let OperandKind::Place(place) = operand.kind()
                 && cx.program.types().is_nodrop(operand.ty())
@@ -420,7 +431,28 @@ pub(crate) fn lower_splice(
             span,
         );
     }
-    lower_expr(cx, index, quote.body(), expect)
+    // Code declared to produce a value is lowered for that value even where it is discarded
+    let produces = quote
+        .result()
+        .is_some_and(|result| !cx.program.types().is_void(result));
+    let expect = match expect {
+        Expect::Discard if produces => Expect::Any,
+        expect => expect,
+    };
+    let value = lower_expr(cx, index, quote.body(), expect)?;
+    if let Some(result) = quote.result()
+        && !cx.program.types().is_void(result)
+        && cx.program.types().is_void(value.ty())
+    {
+        return cx.error(
+            span,
+            format!(
+                "staged expression produces no value where '{}' is expected",
+                cx.program.types().display(result)
+            ),
+        );
+    }
+    Ok(value)
 }
 
 pub(crate) fn lower_intrinsic_expr(

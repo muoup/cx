@@ -21,19 +21,24 @@ pub(crate) fn lower_int_literal(
         _ => HMIRIntWidth::I64,
     };
     let decimal = base == IntegerBase::Decimal;
-    let (width, signed) = [HMIRIntWidth::I32, HMIRIntWidth::I64]
+    let candidate = [HMIRIntWidth::I32, HMIRIntWidth::I64]
         .into_iter()
         .filter(|width| *width >= start)
         .flat_map(|width| [(width, true), (width, false)])
-        .filter(|(width, signed)| match signed {
+        .filter(|(_, signed)| match signed {
             true => !suffix.unsigned,
-            false => suffix.unsigned || !decimal || *width == HMIRIntWidth::I64,
+            false => suffix.unsigned || !decimal,
         })
         .find(|(width, signed)| {
             let bits = if *width == HMIRIntWidth::I32 { 32 } else { 64 } - *signed as u32;
             bits == 64 || magnitude < 1u64 << bits
-        })
-        .unwrap_or((HMIRIntWidth::I64, false));
+        });
+    let Some((width, signed)) = candidate else {
+        return cx.error_message(
+            "integer literal does not fit any permitted type".into(),
+            span,
+        );
+    };
     cx.int_constant(HMIRTypeDesc::Int { width, signed }, magnitude as i128, span)
 }
 
@@ -45,7 +50,10 @@ pub(crate) fn lower_float_literal(
 ) -> HMIRExprID {
     let width = match suffix {
         FloatSuffix::Float => HMIRFloatWidth::F32,
-        FloatSuffix::Default | FloatSuffix::LongDouble => HMIRFloatWidth::F64,
+        FloatSuffix::Default => HMIRFloatWidth::F64,
+        FloatSuffix::LongDouble => {
+            return cx.error_message("long double literals are not supported".into(), span);
+        }
     };
     let ty = cx.intern(HMIRTypeDesc::Float { width });
     cx.push(

@@ -127,6 +127,7 @@ pub(super) fn lower_deref_pointer(
     let Some(inner) = cx.program.types().pointer_inner(operand.ty()) else {
         return Ok(operand);
     };
+    cx.require_unsafe("Dereferencing a pointer", span)?;
     let origin = operand.pointee_origin();
     let pointer = lower_nonnull_pointer(cx, operand, span)?;
     let ty = cx.program.types_mut().reference_to(inner);
@@ -166,6 +167,11 @@ pub(super) fn lower_member(
         );
     };
     let field_ty = field.ty();
+    let field_ty = if cx.program.types().is_const(base.ty()) {
+        cx.program.types_mut().const_of(field_ty)
+    } else {
+        field_ty
+    };
     let struct_ty = cx.mir(base.ty(), span)?;
     let bitfield = match calculate_field_layout(cx.program.types().mir_types(), struct_ty, index) {
         Some(MIRFieldLayout::Bitfield {
@@ -523,13 +529,15 @@ pub(super) fn lower_bind_pattern(
         pattern,
     } = binding;
     let span = span.clone();
+    let through_reference = matches!(subject.kind(), OperandKind::Ref { .. });
     match pattern {
         HMIRPattern::Binding(local) => {
             let bound = if owned || binds_by_reference(cx, frame, local) {
                 subject
             } else {
-                lower_copy_binding(cx, &subject, frame, local, &span)?
+                lower_copy_binding(cx, &subject, through_reference, frame, local, &span)?
             };
+            let bound = pattern_binding(cx, frame, local, bound);
             cx.bind(frame, local, bound);
         }
         HMIRPattern::Variant {
@@ -563,8 +571,9 @@ pub(super) fn lower_bind_pattern(
                     lower_lift_payload(cx, reference, origin, payload, frame, local, &span)?
                 }
                 None if owned || binds_by_reference(cx, frame, local) => borrowed,
-                None => lower_copy_binding(cx, &borrowed, frame, local, &span)?,
+                None => lower_copy_binding(cx, &borrowed, through_reference, frame, local, &span)?,
             };
+            let bound = pattern_binding(cx, frame, local, bound);
             cx.bind(frame, local, bound);
         }
         HMIRPattern::Variant {
@@ -589,19 +598,53 @@ fn binds_by_reference(cx: &FunctionLowering<'_, '_>, frame: usize, local: HMIRLo
     )
 }
 
-// 'auto x' on a subject that stays in use copies the matched value; one that cannot be copied
-// has to be borrowed or matched on a moved subject
+// What a pattern local stands for: 'const auto&' views the matched storage as const
+fn pattern_binding(
+    cx: &mut FunctionLowering<'_, '_>,
+    frame: usize,
+    local: HMIRLocalID,
+    bound: Operand,
+) -> Operand {
+    let ty = cx.frames[frame].body().local(local).ty();
+    let HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Reference(inner))) = cx.kind(frame, ty)
+    else {
+        return bound;
+    };
+    if !matches!(
+        cx.kind(frame, inner),
+        HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Const(_)))
+    ) {
+        return bound;
+    }
+    let ty = cx.program.types_mut().const_of(bound.ty());
+    bound.with_type(ty)
+}
+
+// 'auto x' copies the matched value out of a subject that stays in use; a value behind a
+// reference can only be borrowed, and one that cannot be copied needs a moved subject
 fn lower_copy_binding(
     cx: &mut FunctionLowering<'_, '_>,
     source: &Operand,
+    borrowed: bool,
     frame: usize,
     local: HMIRLocalID,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let ty = source.ty();
     let name = cx.frames[frame].body().local(local).name().cloned();
+    let binding = name
+        .as_ref()
+        .map_or_else(|| "auto".to_string(), |name| format!("auto {name}"));
+    if borrowed {
+        return cx.error(
+            span,
+            format!(
+                "'{binding}' binds by value, but the matched value is behind a reference; \
+                 bind it with 'auto&'"
+            ),
+        );
+    }
     if !cx.program.types().is_pod(ty) {
-        let binding = name.map_or_else(|| "auto".to_string(), |name| format!("auto {name}"));
         return cx.error(
             span,
             format!(
@@ -677,7 +720,7 @@ pub(super) fn lower_address_of(
         TypeKind::Array { element, .. } => expect
             .ty()
             .and_then(|expected| cx.program.types().pointer_inner(expected))
-            .is_some_and(|pointee| pointee == element),
+            .is_some_and(|pointee| cx.program.types_mut().same_unqualified(pointee, element)),
         _ => false,
     };
     if decays {

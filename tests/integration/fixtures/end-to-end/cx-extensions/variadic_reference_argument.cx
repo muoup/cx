@@ -1,0 +1,20 @@
+/* CX-STDOUT: text 7 2.500000 */
+
+import std::string as std;
+
+#include <stdio.h>
+
+int& pick(int& value) {
+    return value;
+}
+
+int main() {
+    std::string text = std::string::from_str("text");
+    int count = 7;
+    float half = 2.5f;
+    float& half_ref = half;
+
+    printf("%s %d %f\n", text |> std::string::as_str(), pick(count), half_ref);
+    move text |> std::string::drop();
+    return 0;
+}

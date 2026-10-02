@@ -14,6 +14,7 @@ pub(super) fn lower_type(
     ty: TypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
+    let ty = types.unqualified(ty);
     if let Some(id) = types.lowered.get(&ty) {
         return Ok(*id);
     }
@@ -53,6 +54,7 @@ pub(super) fn lower_type(
         },
         TypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
         TypeKind::Nominal(nominal) => return lower_nominal_type(types, ty, nominal, span),
+        TypeKind::Const(_) => unreachable!("'kind' looks through qualifiers"),
     };
     let id = types.mir.intern(MIRType::new(kind));
     types.lowered.insert(ty, id);

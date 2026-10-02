@@ -1,0 +1,3 @@
+struct Pair { int left; int right; };
+void set(const Pair& pair) { pair.right = 3; }
+int main() { return 0; }

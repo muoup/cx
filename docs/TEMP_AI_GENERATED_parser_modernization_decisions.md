@@ -252,7 +252,6 @@ Not implemented:
 
 - `@reify` signature deduction (`_`, or from the expected type), and `@reify` inside a
   generic function when the signature mentions its comptime parameters.
-- `const` is not enforced on `const auto&` bindings.
 - A closure body must be `emit ...` or `then`; the comptime-scratch form is rejected.
 - The escaping-local check for spliced code.
 - A payload-free variant of a generated type named as a value (`opt(int)::none` without a
@@ -262,15 +261,53 @@ Not implemented:
 - `site/docs`, `site/stdlib/*.json`, the README and the vendored copy under
   `compiler/cx-zed-extension/grammars/cx` still show the old syntax.
 
-Suite: 313 of 367 pass. The 54 failures are `type-errors` fixtures whose checks have not
-been ported to HMIR lowering; the same 54 fail on HEAD once its `optional.cx` sketch is
-removed.
+Suite: 377 of 377 pass after the type-error port below.
 
 Found along the way, present before this pass:
 
-- `std::printf` is unresolved when `std::io` and `std::string` or `std::span` are both
-  imported `as std`: the lookup is ambiguous and is treated as not found.
 - Several `stdlib.h` functions are unresolved (`qsort`, `bsearch`, `getenv`, `labs`,
   `atexit`, `mblen`).
-- `examples/lisp-interpreter` does not build (the ambiguity above, and two pattern subjects
-  that are pointers, `interpreter.cx` lines 70 and 91) and segfaults when patched.
+
+## Type-error port (2026-10-02)
+
+Ported into the HMIR pipeline (HIR lowering reports through `HMIRExprKind::Error(message)`,
+staging reports as M0035):
+
+- Symbol lookup: the THIR visibility filter and priority (same namespace, then friends, then
+  tag match). A lookup that is still ambiguous becomes `HMIRDefRef::Candidates`; staging
+  accepts it when the declarations are equivalent and at most one has a definition, and
+  otherwise reports "ambiguous symbol reference, candidates: ...". Bodies are never compared.
+- Redeclarations: "incompatible declarations for 'x'" and "duplicate definition of 'x'".
+- Safety: `@adopt`, `@leak`, pointer dereference, pointer to reference, pointer and integer
+  conversions, moving an `@unsafe_move` type, calling a non-safe function and every indirect
+  call need `@unsafe` inside a safe function.
+- Aggregates: `@copy_traits`, field traits may not exceed the aggregate's, incomplete or
+  recursive by-value fields, pointer to `unreachable`, `sizeof` of an unsized type, objects of
+  function or incomplete type.
+- `match`: exhaustiveness, duplicate and unreachable arms. Defer bodies must be void.
+- Literals that fit no permitted type, `long double` literals, references to bitfields,
+  conflicting comptime deductions, staged expression arity and void results.
+
+Fixed alongside: a reference returned by a call and passed to a variadic function was not
+read through before decaying (`printf("%s", s |> std::string::as_str())` passed one `char`
+instead of the pointer); variadic arguments are now read through first. `examples/lisp-interpreter` builds and runs.
+
+Decided afterwards (suite: 377 of 377):
+
+- `const` is a type qualifier, not a place property: `(*p) = value` has no path to hang a
+  flag on. HIR lowering emits `type.const` (`HMIRTypeOp::Const`); staging interns
+  `TypeKind::Const(T)`, which `TypeTable::kind` looks through. Arrays are qualified through
+  their elements; references and function types take no qualifier. A field of a const
+  aggregate is const, and `const auto&` views the matched storage as const.
+  Rejected: assigning to, incrementing, moving out of or adopting a const value.
+  Not diagnosed (as in THIR): a conversion that drops a qualifier, such as `const T*` to `T*`
+  or `const T&` to `T&`; types are compared up to qualification (`same_unqualified`).
+  `const auto x` drops the qualifier.
+- A subject behind a reference only gives reference bindings: `auto x` is rejected there even
+  for a copyable payload ("bind it with 'auto&'"). A by-value local subject still copies.
+- A function-typed parameter is adjusted to a pointer as in C; the fixture moved to
+  `compile-only/c-semantics/function_typedef_parameter.c`.
+- Code declared to produce a value (`expr(int)`) is lowered for that value even in statement
+  position, so a void closure there is rejected whether or not the result is used.
+
+Deferred: the escaping-local check (left to MIR analysis).

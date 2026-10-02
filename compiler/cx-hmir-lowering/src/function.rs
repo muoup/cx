@@ -133,6 +133,9 @@ pub(crate) struct FunctionLowering<'p, 'l> {
     pattern_bindings: Vec<PatternBinding>,
     ret: TypeID,
     pub(crate) unevaluated: bool,
+    // A safe function may only perform unsafe operations inside '@unsafe'
+    safe: bool,
+    unsafe_depth: usize,
 }
 
 impl Expect {
@@ -182,6 +185,7 @@ pub(crate) fn lower_function(
     let serial = cx.next_serial();
 
     let mut cx = FunctionLowering::new(cx, serial, signature.ret(), &span);
+    cx.safe = function.signature().contract().is_safe();
     let mut frame = Frame::new(unit.clone(), instance.0, Rc::new(instance.clone()));
     frame.statics = statics;
     cx.frames.push(frame);
@@ -279,6 +283,8 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
             pattern_bindings: Vec::new(),
             ret,
             unevaluated: false,
+            safe: false,
+            unsafe_depth: 0,
         }
     }
 
@@ -292,6 +298,35 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
 
     fn error<T>(&self, span: &TokenRange, message: impl Into<String>) -> LowerResult<T> {
         Err(Stop::Error(staging_error(span, message.into())))
+    }
+
+    pub(crate) fn require_mutable(
+        &self,
+        ty: TypeID,
+        action: &str,
+        span: &TokenRange,
+    ) -> LowerResult<()> {
+        let types = self.program.types();
+        if types.is_const(ty) {
+            return self.error(
+                span,
+                format!("cannot {action} a value of type '{}'", types.display(ty)),
+            );
+        }
+        Ok(())
+    }
+
+    pub(crate) fn require_unsafe(&self, operation: &str, span: &TokenRange) -> LowerResult<()> {
+        if !self.safe || self.unsafe_depth > 0 {
+            return Ok(());
+        }
+        self.error(
+            span,
+            format!(
+                "{operation} is unsafe and so cannot be used in safe contexts, wrap this \
+                 expression in an `@unsafe` block to bypass this restriction"
+            ),
+        )
     }
 
     pub(crate) fn emit(&mut self, kind: MIRInstructionKind, span: &TokenRange) {
@@ -387,6 +422,9 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         name: Option<CXIdent>,
         span: &TokenRange,
     ) -> LowerResult<MIRPlaceID> {
+        if let Some(problem) = self.program.types().object_problem(ty) {
+            return self.error(span, format!("variable has {problem}"));
+        }
         let mir = self.mir(ty, span)?;
         let nodrop = self.program.types().is_nodrop(ty);
         let scope = self.scopes.last().expect("function has a scope").id;
@@ -505,7 +543,18 @@ fn lower_cleanup_scope(
     let mut result = Ok(());
     for (frame, expr) in defers.into_iter().rev() {
         cx.push_scope(span);
-        let lowered = lower_expr(cx, frame, expr, Expect::Discard).map(|_| ());
+        let lowered = lower_expr(cx, frame, expr, Expect::Discard).and_then(|value| {
+            let types = cx.program.types();
+            if types.is_void(value.ty()) || types.is_unreachable(value.ty()) {
+                return Ok(());
+            }
+            let found = types.display(value.ty());
+            let span = cx.span(frame, expr);
+            cx.error(
+                &span,
+                format!("defer requires a void expression, found '{found}'"),
+            )
+        });
         let popped = cx.pop_scope(span);
         result = lowered.and(popped);
         if result.is_err() {

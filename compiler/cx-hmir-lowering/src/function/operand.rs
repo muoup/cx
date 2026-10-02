@@ -237,7 +237,7 @@ pub(super) fn lower_read(
     operand: Operand,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
-    let ty = operand.ty;
+    let ty = cx.program.types_mut().unqualified(operand.ty);
     Ok(Operand::value(lower_value(cx, operand, span)?, ty))
 }
 

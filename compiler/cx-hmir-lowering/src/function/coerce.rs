@@ -69,9 +69,10 @@ pub(super) fn lower_coerce(
     };
     let value = lower_expr(cx, frame, value, expect)?;
     let value = if mode == HMIRCoerceMode::CCast
-        && reference.is_some_and(|inner| inner != value.ty())
+        && reference.is_some_and(|inner| !same(cx, inner, value.ty()))
         && cx.program.types().is_pointer(value.ty())
     {
+        cx.require_unsafe("Dereferencing a pointer", span)?;
         let value = lower_nonnull_pointer(cx, value, span)?;
         let out = cx.register(ty, span)?;
         let target_ty = cx.mir(ty, span)?;
@@ -186,6 +187,10 @@ fn discards_nodrop_result(types: &TypeTable, source: TypeID, target: TypeID) -> 
     }
 }
 
+fn same(cx: &mut FunctionLowering<'_, '_>, lhs: TypeID, rhs: TypeID) -> bool {
+    cx.program.types_mut().same_unqualified(lhs, rhs)
+}
+
 // Converts between value types; covers C's implicit conversions and explicit casts
 pub(crate) fn lower_convert(
     cx: &mut FunctionLowering<'_, '_>,
@@ -196,6 +201,9 @@ pub(crate) fn lower_convert(
     let source = operand.ty();
     if source == target {
         return Ok(operand);
+    }
+    if same(cx, source, target) {
+        return Ok(operand.with_type(target));
     }
     let types = cx.program.types();
     let source_kind = types.kind(source).clone();
@@ -219,26 +227,39 @@ pub(crate) fn lower_convert(
         return Ok(Operand::new(OperandKind::Static(value), target));
     }
 
+    if matches!(
+        (&source_kind, &target_kind),
+        (TypeKind::Pointer(_), TypeKind::Int { width, .. })
+        | (TypeKind::Int { width, .. }, TypeKind::Pointer(_)) if *width != HMIRIntWidth::I1
+    ) {
+        cx.require_unsafe("Unsafe type conversion", span)?;
+    }
+
     match (&source_kind, &target_kind) {
         (_, TypeKind::Void) => return Ok(Operand::unit(cx.program.types_mut())),
-        (TypeKind::Reference(inner), _) if *inner == target => {
+        (TypeKind::Reference(inner), _) if same(cx, *inner, target) => {
             let operand = lower_auto_deref(cx, operand, span)?;
             return Ok(operand);
         }
         (TypeKind::Str, TypeKind::Reference(inner))
-            if *inner == source && operand.as_static().is_some() =>
+            if same(cx, *inner, source) && operand.as_static().is_some() =>
         {
             let value = lower_value(cx, operand.with_type(target), span)?;
             return Ok(Operand::value(value, target));
         }
-        (_, TypeKind::Reference(inner)) if *inner == source => {
+        (_, TypeKind::Reference(inner)) if same(cx, *inner, source) => {
+            if operand.bitfield().is_some() {
+                return cx.error(span, "cannot bind a reference to a bitfield");
+            }
             let operand = lower_spill(cx, operand, span)?;
             let address = operand.address().expect("spilled operand is addressable");
             return Ok(Operand::value(address, target));
         }
         (_, TypeKind::Reference(inner)) => {
             let operand = lower_decay(cx, operand, span)?;
-            if cx.program.types().pointer_inner(operand.ty()) == Some(*inner) {
+            if let Some(pointee) = cx.program.types().pointer_inner(operand.ty())
+                && same(cx, pointee, *inner)
+            {
                 let operand = lower_deref_pointer(cx, operand, span)?;
                 let address = operand
                     .address()
@@ -408,7 +429,7 @@ pub(crate) fn lower_convert(
                 element: to,
                 length: None,
             },
-        ) if from == to => {
+        ) if same(cx, *from, *to) => {
             return Ok(operand.with_type(source));
         }
         (TypeKind::Reference(_), _) => {

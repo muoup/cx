@@ -14,6 +14,15 @@ pub(super) fn write_def_ref(
     match def {
         HMIRDefRef::Local(id) => write!(f, "@{}", unit.def(*id).name()),
         HMIRDefRef::External(name) => write!(f, "@{name}"),
+        HMIRDefRef::Candidates(candidates) => {
+            for (index, candidate) in candidates.iter().enumerate() {
+                if index > 0 {
+                    f.write_str(" | ")?;
+                }
+                write_def_ref(f, unit, candidate)?;
+            }
+            Ok(())
+        }
     }
 }
 

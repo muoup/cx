@@ -20,7 +20,7 @@ impl BodyPrinter<'_> {
             HMIRExprKind::Local(local) => self.local(f, *local),
             HMIRExprKind::Def(def) => write_def_ref(f, self.unit(), def),
             HMIRExprKind::Hole(hole) => write!(f, "{hole}"),
-            HMIRExprKind::Error => f.write_str("<error>"),
+            HMIRExprKind::Error(_) => f.write_str("<error>"),
 
             HMIRExprKind::Comptime(inner) => {
                 f.write_str("comptime(")?;

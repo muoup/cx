@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
-use cx_hmir::{HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRFloatWidth, HMIRIntWidth};
+use cx_hmir::{
+    HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRFloatWidth, HMIRFunctionStage, HMIRIntWidth,
+};
 use cx_mir::{MIRConstant, MIRInstructionKind, MIRValue};
 use cx_tokens::TokenRange;
 
@@ -13,7 +15,7 @@ use crate::{
         contract::{lower_call_postcondition, lower_call_precondition},
         expr::{lower_expr, lower_static_operand},
         inspect, lower_eval, lower_eval_frame,
-        operand::lower_value,
+        operand::{lower_auto_deref, lower_value},
         promote::lower_decay,
     },
     module::declare_function,
@@ -83,6 +85,13 @@ fn lower_static_call(
             format!("'{}' is not a function", unit.def(def.def()).name()),
         );
     };
+    if function.stage() == HMIRFunctionStage::Runtime && !function.signature().contract().is_safe()
+    {
+        cx.require_unsafe(
+            &format!("call to non-safe function '{}'", unit.def(def.def()).name()),
+            span,
+        )?;
+    }
     let params = function.signature().params().to_vec();
     let variadic = function.signature().is_variadic();
     let body = function.body();
@@ -241,6 +250,7 @@ fn lower_indirect_call(
     args: &[HMIRExprID],
     span: &TokenRange,
 ) -> LowerResult<Operand> {
+    cx.require_unsafe("Non-safe function call", span)?;
     let function = match cx.program.types().kind(callee.ty()) {
         TypeKind::Pointer(inner) => cx.program.types().kind(*inner).clone(),
         kind => kind.clone(),
@@ -282,6 +292,7 @@ fn lower_argument(
         let operand = lower_convert(cx, operand, param, span)?;
         return lower_value(cx, operand, span);
     }
+    let operand = lower_auto_deref(cx, operand, span)?;
     let operand = lower_decay(cx, operand, span)?;
     let promoted = match cx.program.types().kind(operand.ty()).clone() {
         TypeKind::Int { width, signed } if width < HMIRIntWidth::I32 => Some(

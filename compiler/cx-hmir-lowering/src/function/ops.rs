@@ -389,6 +389,7 @@ fn lower_increment(
     let Some(destination) = target.target() else {
         return cx.error(span, "incremented a value that is not addressable");
     };
+    cx.require_mutable(target.ty(), "modify", span)?;
     let ty = target.ty();
     let current = lower_copy(cx, &target, span)?;
     let out = cx.register(ty, span)?;
@@ -472,6 +473,7 @@ pub(super) fn lower_assign(
     let Some(destination) = lhs.target() else {
         return cx.error(span, "assigned to a value that is not addressable");
     };
+    cx.require_mutable(lhs.ty(), "assign to", span)?;
     let ty = lhs.ty();
     let value = match op {
         Some(op) => {

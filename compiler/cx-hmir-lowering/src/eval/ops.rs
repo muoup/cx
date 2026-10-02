@@ -189,10 +189,18 @@ pub(crate) fn coerce_static(
 ) -> CXResult<StaticValue> {
     let kind = cx.types().kind(ty).clone();
     Ok(match (value, kind) {
-        (StaticValue::Quote(quote), TypeKind::Expr { result, .. })
-            if cx.types().is_void(result) =>
-        {
-            StaticValue::Quote(quote.with_external_yield())
+        (StaticValue::Quote(quote), TypeKind::Expr { params, result }) => {
+            let given = quote.get().params().len();
+            if given != params.len() {
+                return Err(staging_error(
+                    span,
+                    format!(
+                        "staged expression takes {given} parameters where {} are expected",
+                        params.len()
+                    ),
+                ));
+            }
+            StaticValue::Quote(quote.with_result(result, cx.types().is_void(result)))
         }
         (value, TypeKind::Type | TypeKind::Expr { .. }) => value,
         (_, TypeKind::Void) => StaticValue::Unit,

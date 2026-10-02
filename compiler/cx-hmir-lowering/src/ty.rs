@@ -15,7 +15,7 @@ use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
-use crate::{program::DefKey, value::StaticValue};
+use crate::{program::DefKey, staging_error, value::StaticValue};
 
 pub(crate) use mir::MIRTypes;
 
@@ -37,6 +37,8 @@ pub(crate) enum TypeKind {
     },
     Pointer(TypeID),
     Reference(TypeID),
+    // Only ever wraps an unqualified type that is not a reference, array or function
+    Const(TypeID),
     Array {
         element: TypeID,
         length: Option<u64>,
@@ -81,6 +83,7 @@ pub(crate) struct Nominal {
     name: String,
     kind: HMIRAggregateKind,
     semantics: HMIRMoveSemantics,
+    unsafe_move: bool,
     fields: Option<Vec<Field>>,
 }
 
@@ -201,8 +204,81 @@ impl TypeTable {
         id
     }
 
+    // The type's shape, looking through a 'const' qualifier
     pub(crate) fn kind(&self, id: TypeID) -> &TypeKind {
-        &self.kinds[id.index()]
+        match &self.kinds[id.index()] {
+            TypeKind::Const(inner) => &self.kinds[inner.index()],
+            kind => kind,
+        }
+    }
+
+    // Arrays are qualified through their elements; references and functions cannot be
+    pub(crate) fn const_of(&mut self, id: TypeID) -> TypeID {
+        match self.kinds[id.index()].clone() {
+            TypeKind::Const(_) | TypeKind::Reference(_) | TypeKind::Function(_) => id,
+            TypeKind::Array { element, length } => {
+                let element = self.const_of(element);
+                self.array_of(element, length)
+            }
+            _ => self.intern(TypeKind::Const(id)),
+        }
+    }
+
+    pub(crate) fn is_const(&self, id: TypeID) -> bool {
+        match &self.kinds[id.index()] {
+            TypeKind::Const(_) => true,
+            TypeKind::Array { element, .. } => self.is_const(*element),
+            _ => false,
+        }
+    }
+
+    // The type without its own qualifier; what it points at or refers to keeps its own
+    pub(crate) fn unqualified(&mut self, id: TypeID) -> TypeID {
+        match self.kinds[id.index()].clone() {
+            TypeKind::Const(inner) => inner,
+            TypeKind::Array { element, length } if self.is_const(element) => {
+                let element = self.unqualified(element);
+                self.array_of(element, length)
+            }
+            _ => id,
+        }
+    }
+
+    // The type with every qualifier removed, for comparing types up to qualification
+    pub(crate) fn erased(&mut self, id: TypeID) -> TypeID {
+        match self.kinds[id.index()].clone() {
+            TypeKind::Const(inner) => self.erased(inner),
+            TypeKind::Pointer(inner) => {
+                let inner = self.erased(inner);
+                self.pointer_to(inner)
+            }
+            TypeKind::Reference(inner) => {
+                let inner = self.erased(inner);
+                self.reference_to(inner)
+            }
+            TypeKind::Array { element, length } => {
+                let element = self.erased(element);
+                self.array_of(element, length)
+            }
+            TypeKind::Function(function) => {
+                let params = function
+                    .params
+                    .iter()
+                    .map(|param| self.erased(*param))
+                    .collect();
+                let ret = self.erased(function.ret);
+                self.intern(TypeKind::Function(FunctionType::new(
+                    params,
+                    ret,
+                    function.variadic,
+                )))
+            }
+            _ => id,
+        }
+    }
+
+    pub(crate) fn same_unqualified(&mut self, lhs: TypeID, rhs: TypeID) -> bool {
+        lhs == rhs || self.erased(lhs) == self.erased(rhs)
     }
 
     pub(crate) fn void(&mut self) -> TypeID {
@@ -341,6 +417,7 @@ impl TypeTable {
         name: String,
         kind: HMIRAggregateKind,
         semantics: HMIRMoveSemantics,
+        unsafe_move: bool,
     ) -> (TypeID, bool) {
         if let Some(id) = self.nominal_ids.get(&key) {
             let pending = !self.nominals[id.index()].is_complete();
@@ -352,6 +429,7 @@ impl TypeTable {
             name,
             kind,
             semantics,
+            unsafe_move,
             fields: None,
         });
         self.nominal_ids.insert(key, id);
@@ -373,6 +451,22 @@ impl TypeTable {
             .find(|(_, field)| field.name().is_some_and(|field| field.as_str() == name))
     }
 
+    // The move semantics a value of this type has where it is held by value
+    pub(crate) fn owned_traits(&self, ty: TypeID) -> (HMIRMoveSemantics, bool) {
+        match self.kind(ty) {
+            TypeKind::Array { element, .. } => self.owned_traits(*element),
+            TypeKind::Nominal(nominal) => {
+                let nominal = self.nominal(*nominal);
+                (nominal.semantics, nominal.unsafe_move)
+            }
+            _ => (HMIRMoveSemantics::POD, false),
+        }
+    }
+
+    pub(crate) fn is_unsafe_move(&self, ty: TypeID) -> bool {
+        self.owned_traits(ty).1
+    }
+
     pub(crate) fn is_nodrop(&self, ty: TypeID) -> bool {
         self.nominal_of(ty)
             .is_some_and(|nominal| nominal.semantics() == HMIRMoveSemantics::Nodrop)
@@ -383,12 +477,41 @@ impl TypeTable {
             .is_none_or(|nominal| nominal.semantics() == HMIRMoveSemantics::POD)
     }
 
+    // Why no object of this type can exist, if none can
+    pub(crate) fn object_problem(&self, ty: TypeID) -> Option<&'static str> {
+        match self.kind(ty) {
+            TypeKind::Function(_) => Some("a function type"),
+            TypeKind::Opaque { size: 0, .. } => Some("an incomplete type"),
+            TypeKind::Nominal(nominal) if !self.nominal(*nominal).is_complete() => {
+                Some("an incomplete type")
+            }
+            TypeKind::Array { element, .. } => self.object_problem(*element),
+            _ => None,
+        }
+    }
+
+    fn require_sized(&self, ty: TypeID, span: &TokenRange) -> CXResult<()> {
+        let incomplete = matches!(self.kind(ty), TypeKind::Array { length: None, .. })
+            || self
+                .object_problem(ty)
+                .is_some_and(|problem| problem == "an incomplete type");
+        if incomplete {
+            return Err(staging_error(
+                span,
+                format!("'{}' has an incomplete type", self.display(ty)),
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn size_of(&mut self, ty: TypeID, span: &TokenRange) -> CXResult<u64> {
+        self.require_sized(ty, span)?;
         let mir = self.mir(ty, span)?;
         Ok(calculate_type_layout(&self.mir, mir).size() as u64)
     }
 
     pub(crate) fn align_of(&mut self, ty: TypeID, span: &TokenRange) -> CXResult<u64> {
+        self.require_sized(ty, span)?;
         let mir = self.mir(ty, span)?;
         Ok(calculate_type_layout(&self.mir, mir).alignment() as u64)
     }
@@ -424,6 +547,12 @@ impl TypeTable {
     }
 
     pub(crate) fn display(&self, ty: TypeID) -> String {
+        if let TypeKind::Const(inner) = &self.kinds[ty.index()] {
+            return match self.kind(*inner) {
+                TypeKind::Pointer(_) => format!("{} const", self.display(*inner)),
+                _ => format!("const {}", self.display(*inner)),
+            };
+        }
         match self.kind(ty) {
             TypeKind::Void => "void".into(),
             TypeKind::Unreachable => "unreachable".into(),
@@ -451,11 +580,15 @@ impl TypeTable {
             TypeKind::Expr { result, .. } => format!("expr {}", self.display(*result)),
             TypeKind::Nominal(nominal) => self.nominal(*nominal).name().to_string(),
             TypeKind::Opaque { size, alignment } => format!("opaque({size}, {alignment})"),
+            TypeKind::Const(_) => unreachable!("'kind' looks through qualifiers"),
         }
     }
 
     // Matches THIR's template-argument mangling closely enough to keep instance symbols readable
     pub(crate) fn mangle(&self, ty: TypeID) -> String {
+        if let TypeKind::Const(inner) = &self.kinds[ty.index()] {
+            return format!("K{}", self.mangle(*inner));
+        }
         match self.kind(ty) {
             TypeKind::Pointer(inner) => format!("P{}", self.mangle(*inner)),
             TypeKind::Reference(inner) => format!("R{}", self.mangle(*inner)),
