@@ -11,7 +11,7 @@ void leave_generated(int value) {
     printf("leave %d\n", value);
 }
 
-comptime expr void with_generated_local(expr int initial, expr(int&) void proc) {
+comptime expr(void) with_generated_local(expr(int) initial, @fn proc(expr(int&)) -> expr(void)) {
     return emit .{
         int staged_value = initial;
         printf("enter %d\n", staged_value);
@@ -21,8 +21,8 @@ comptime expr void with_generated_local(expr int initial, expr(int&) void proc) 
 }
 
 int nested_generated_locals() {
-    with_generated_local(20) <| |left|
-    with_generated_local(22) <| |right| then
+    with_generated_local(emit 20) <| |left| emit
+    with_generated_local(emit 22) <| |right| then
 
     printf("sum %d\n", left + right);
     return left + right;

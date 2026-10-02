@@ -1,7 +1,6 @@
 use cx_hir::{
     ast::{
         global_var::HIRGlobalVariable,
-        template::{HIRTemplateInput, HIRTemplatePrototype},
         HIRDefinition, HIRStmt,
     },
     symbols::{
@@ -10,7 +9,7 @@ use cx_hir::{
     },
 };
 
-use cx_hir::ast::types::{HIRType, HIRTypeKind, HIRTypeLookup};
+use cx_hir::ast::types::{HIRTypeKind, HIRTypeLookup};
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_preparse_data::NamespaceAliases;
 
@@ -97,7 +96,6 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
         HIRStmt::TypeDefinition {
             name,
             visibility,
-            template_prototype,
             ty,
             tag,
         } => {
@@ -105,11 +103,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 return;
             };
 
-            let symbol_kind = HIRSymbolKind::Type(HIRSymbolData::new(
-                ty.clone(),
-                (),
-                template_prototype.clone(),
-            ));
+            let symbol_kind = HIRSymbolKind::Type(HIRSymbolData::new(ty.clone(), ()));
             let symbol = HIRSymbol::new(*visibility, symbol_kind);
             let identifier = match tag {
                 Some(kind) => SymbolIdentifier::Tag {
@@ -126,9 +120,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                 let union_type = HIRTypeKind::Identifier {
                     name: union_name,
                     lookup: tag.map_or(HIRTypeLookup::Standard, HIRTypeLookup::Tag),
-                    template_input: template_prototype
-                        .clone()
-                        .map(convert_template_proto_to_args),
+                    args: None,
                 }
                 .to_type();
                 let variant_namespace = base_namespace.clone().child(name.clone());
@@ -143,7 +135,6 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
                         HIRSymbolKind::TypeConstructor(HIRTypeConstructorSymbol::new(
                             TypeConstructorData { union_type: union_type.clone(), variant_index },
                             (),
-                            template_prototype.clone(),
                         )),
                     );
 
@@ -160,36 +151,6 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
         HIRStmt::FunctionDefinition {
             prototype,
             visibility,
-            template_prototype,
-            body,
-        } => {
-            let QualifiedName {
-                name,
-                namespace: q_namespace,
-            } = prototype.kind.into_key();
-            let namespace = base_namespace.clone().join(q_namespace);
-            if template_prototype.is_some() && body.is_none() {
-                return;
-            }
-            let symbol = HIRSymbol::new(
-                *visibility,
-                HIRSymbolKind::Function(HIRFunctionSymbol::new(
-                    prototype.clone(), body.clone(), template_prototype.clone(),
-                )),
-            );
-
-            insert_symbol(
-                env,
-                &namespace,
-                SymbolIdentifier::Standard(name.to_string()),
-                symbol,
-            );
-        }
-
-        HIRStmt::ComptimeFunctionDefinition {
-            prototype,
-            visibility,
-            template_prototype,
             body,
         } => {
             let QualifiedName {
@@ -199,9 +160,7 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
             let namespace = base_namespace.clone().join(q_namespace);
             let symbol = HIRSymbol::new(
                 *visibility,
-                HIRSymbolKind::ComptimeFunction(HIRSymbolData::new(
-                    prototype.clone(), body.clone(), template_prototype.clone(),
-                )),
+                HIRSymbolKind::Function(HIRFunctionSymbol::new(prototype.clone(), body.clone())),
             );
 
             insert_symbol(
@@ -262,21 +221,4 @@ fn extract_from_stmt(env: &mut ExtractionEnv, definition: &HIRDefinition) {
             }
         },
     };
-}
-
-fn convert_template_proto_to_args(prototype: HIRTemplatePrototype) -> HIRTemplateInput {
-    let params = prototype
-        .types
-        .into_iter()
-        .map(|name| {
-            HIRTypeKind::Identifier {
-                name: QualifiedName::new_raw(name),
-                lookup: HIRTypeLookup::Standard,
-                template_input: None,
-            }
-            .to_type()
-        })
-        .collect::<Vec<HIRType>>();
-
-    HIRTemplateInput { params }
 }

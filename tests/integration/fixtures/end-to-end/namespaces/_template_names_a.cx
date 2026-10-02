@@ -1,17 +1,18 @@
 public:
 
-T value<T>(T input) {
+T value(@type T, T input) {
     return input + 1;
 }
 
-comptime expr T staged<T>(expr T input) {
+comptime expr(T) staged(@type T, expr(T) input) {
     return emit input;
 }
 
-struct Box<T> {
-    T value;
-};
+comptime @type Box(@type T) =>
+    struct {
+        T value;
+    };
 
-T Box::read<T>(Box<T>& this) {
+T Box::read(@type T, Box(T)& this) {
     return this.value;
 }

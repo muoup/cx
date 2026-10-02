@@ -2,10 +2,10 @@
 
 import std::io as std;
 
-void test<T, U>(T a, U b) {
+void test(@type T, @type U, T a, U b) {
     std::printf("result: %.2f\n", (U) a + b);
 }
 
 int main() {
-    test<int, float>(5, 3.14);
+    test(int, float, 5, 3.14);
 }

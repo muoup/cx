@@ -5,23 +5,23 @@
 
 import std::optional as std;
 
-std::opt<int> maybe_add_one(std::opt<int> value) {
-    int inner = value |> std::opt::try();
+std::opt(int) maybe_add_one(std::opt(int) value) {
+    int inner = value |>(1) std::opt::try(_);
 
-    return std::opt::some<int>(inner + 1);
+    return std::opt(int)::some(inner + 1);
 }
 
 int main() {
-    std::opt<int> some = maybe_add_one(std::opt::some<int>(41));
-    std::opt<int> none = maybe_add_one(std::opt::none<int>());
+    std::opt(int) some = maybe_add_one(std::opt(int)::some(41));
+    std::opt(int) none = maybe_add_one(std::opt(int)::none());
 
     match (some) {
-        std::opt::some<int>(value) => printf("some %d\n", value);
-        std::opt::none<int>() => printf("unexpected none\n");
+        some(auto value) => printf("some %d\n", value);
+        none() => printf("unexpected none\n");
     }
 
     match (none) {
-        std::opt::some<int>(value) => printf("unexpected some %d\n", value);
-        std::opt::none<int>() => printf("none\n");
+        some(auto value) => printf("unexpected some %d\n", value);
+        none() => printf("none\n");
     }
 }

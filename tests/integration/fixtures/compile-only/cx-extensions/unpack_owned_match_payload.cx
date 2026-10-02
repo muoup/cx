@@ -12,7 +12,7 @@ void discard(int value) {}
 
 void consume(MaybePair value) {
     match (move value) {
-        MaybePair::some(payload) => {
+        some(auto payload) => {
             @unpack(move payload) {
                 left: left,
                 right: right
@@ -21,7 +21,7 @@ void consume(MaybePair value) {
             discard(move left);
             discard(move right);
         }
-        MaybePair::none() => {}
+        none() => {}
     }
 }
 

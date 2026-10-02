@@ -170,6 +170,22 @@ pub(super) fn lower_truthy(
     Ok(Operand::register(out, bool))
 }
 
+// A function may stand in for one returning nothing unless its result has to be consumed
+fn discards_nodrop_result(types: &TypeTable, source: TypeID, target: TypeID) -> bool {
+    let function = |ty: TypeID| match types.kind(ty) {
+        TypeKind::Pointer(inner) => match types.kind(*inner) {
+            TypeKind::Function(function) => Some(function.ret()),
+            _ => None,
+        },
+        TypeKind::Function(function) => Some(function.ret()),
+        _ => None,
+    };
+    match (function(source), function(target)) {
+        (Some(from), Some(to)) => types.is_void(to) && types.is_nodrop(from),
+        _ => false,
+    }
+}
+
 // Converts between value types; covers C's implicit conversions and explicit casts
 pub(crate) fn lower_convert(
     cx: &mut FunctionLowering<'_, '_>,
@@ -184,6 +200,16 @@ pub(crate) fn lower_convert(
     let types = cx.program.types();
     let source_kind = types.kind(source).clone();
     let target_kind = types.kind(target).clone();
+    if discards_nodrop_result(types, source, target) {
+        return cx.error(
+            span,
+            format!(
+                "cannot convert '{}' to '{}': the @nodrop result would be discarded",
+                types.display(source),
+                types.display(target)
+            ),
+        );
+    }
 
     if let OperandKind::Static(value) = operand.kind()
         && !cx.program.types().is_reference(target)

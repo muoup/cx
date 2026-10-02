@@ -206,9 +206,13 @@ impl BodyPrinter<'_> {
             HMIRPattern::Binding(local) => self.local_decl(f, *local),
             HMIRPattern::Integer(value) => write!(f, "{value}"),
             HMIRPattern::Float(value) => write!(f, "{value}"),
-            HMIRPattern::Variant { sum, index, inner } => {
-                self.expr(f, *sum, depth)?;
-                write!(f, "::variant {index}")?;
+            HMIRPattern::Value(value) => self.expr(f, *value, depth),
+            HMIRPattern::Variant { sum, name, inner } => {
+                if let Some(sum) = sum {
+                    self.expr(f, *sum, depth)?;
+                    f.write_str("::")?;
+                }
+                write!(f, "{name}")?;
                 if let Some(inner) = inner {
                     f.write_str("(")?;
                     self.local_decl(f, *inner)?;

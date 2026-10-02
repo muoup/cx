@@ -30,11 +30,11 @@ Output generate_output(int i) {
 
 void print_output(Output out) {
     match (out) {
-        Output::integer(i) => printf("Integer: %d\n", i);
-        Output::fp(d) => printf("Float: %f\n", d);
-        Output::string(s) => printf("String: %s\n", s);
-        Output::data(data) => printf("Data: a=%d, b=%f, c=%c\n", data.a, data.b, data.c);
-        Output::error() => printf("Unknown type\n");
+        integer(auto i) => printf("Integer: %d\n", i);
+        fp(auto d) => printf("Float: %f\n", d);
+        string(auto s) => printf("String: %s\n", s);
+        data(auto data) => printf("Data: a=%d, b=%f, c=%c\n", data.a, data.b, data.c);
+        error() => printf("Unknown type\n");
     }
 }
 
@@ -44,13 +44,13 @@ int main() {
     Output out3 = generate_output(2);
     Output out4 = generate_output(3);
 
-    if (out3 is Output::string(s)) {
+    if (out3 is string(auto s)) {
         printf("Extracted string: %s\n", s);
     } else {
         printf("Not a string\n");
     }
 
-    if (out2 is Output::string(s)) {
+    if (out2 is string(auto s)) {
         printf("Extracted string: %s\n", s);
     } else {
         printf("Not a string\n");

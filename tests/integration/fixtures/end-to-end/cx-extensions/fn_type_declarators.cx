@@ -1,0 +1,25 @@
+/* CX-STDOUT: 6 9 12 7 */
+
+#include <stdio.h>
+
+int add_one(int x) { return x + 1; }
+int triple(int x) { return x * 3; }
+
+struct vtable { @fn op(int) -> int; };
+
+@fn(int) -> int pick(int which) {
+    if (which == 0) return add_one;
+    return triple;
+}
+
+int apply(@fn f(int) -> int, int x) { return f(x); }
+
+int main() {
+    @fn cb(int) -> int = add_one;
+    @fn table[2](int) -> int = { add_one, triple };
+    @fn *pp(int) -> int = &cb;
+    vtable v = { .op = triple };
+    int (*old)(int) = cb;
+    printf("%d %d %d %d\n", cb(5), table[1](3), v.op(4), (*pp)(old(5)));
+    return apply(pick(1), 0);
+}

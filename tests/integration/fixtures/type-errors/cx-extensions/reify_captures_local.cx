@@ -1,0 +1,5 @@
+int main() {
+    int offset = 4;
+    @fn shifted(int) -> int = @reify(@fn(int) -> int, |value| emit value + offset);
+    return shifted(1);
+}

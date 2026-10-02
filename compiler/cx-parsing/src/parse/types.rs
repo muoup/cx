@@ -11,7 +11,6 @@ use cx_hir::ast::{
     modifiers::{
         HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode, HIR_CONST, HIR_RESTRICT, HIR_VOLATILE,
     },
-    template::HIRTemplatePrototype,
     types::{HIRAggregateAttributes, HIRField, HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_log::catalogue::parse::*;
@@ -25,8 +24,7 @@ use cx_tokens::{
 use cx_util::identifier::CXIdent;
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
-use crate::parse::templates::{note_templated_types, try_parse_template, unnote_templated_types};
-use crate::parse::{parse_intrinsic, try_parse_qualified_name, try_parse_type_identifier};
+use crate::parse::{parse_intrinsic, try_parse_qualified_name};
 
 pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
     let tok = data.tokens.peek().map(|tok| tok.kind.clone());
@@ -38,6 +36,15 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
     Ok(match &tok.unwrap() {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum, Register) => true,
 
+        TokenKind::CompilerIdentifier(name) => matches!(name.as_str(), "type" | "fn"),
+        keyword!(Expr) => matches!(
+            data.tokens
+                .slice
+                .get(data.tokens.index + 1)
+                .map(|token| &token.kind),
+            Some(punctuator!(OpenParen))
+        ),
+
         identifier!(name) if is_intrinsic_type(name) => true,
 
         TokenKind::Identifier(_) => {
@@ -45,16 +52,25 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
             let Some(ident) = try_parse_qualified_name(&mut data.tokens)? else {
                 unreachable!()
             };
+            let end_idx = data.tokens.index;
             data.tokens.index = pre_idx;
 
-            data.is_type_ident(&ident)?
-                && !matches!(
-                    data.tokens.slice.get(pre_idx + 1).map(|token| &token.kind),
-                    Some(
-                        TokenKind::Assignment(_)
-                            | TokenKind::Operator(OperatorType::Access)
-                    )
+            if data.is_generator(&ident)? {
+                // A generator names a type only once it is applied
+                matches!(
+                    data.tokens.slice.get(end_idx).map(|token| &token.kind),
+                    Some(punctuator!(OpenParen))
                 )
+            } else {
+                data.is_type_ident(&ident)?
+                    && !matches!(
+                        data.tokens.slice.get(pre_idx + 1).map(|token| &token.kind),
+                        Some(
+                            TokenKind::Assignment(_)
+                                | TokenKind::Operator(OperatorType::Access | OperatorType::Arrow)
+                        )
+                    )
+            }
         }
 
         _ => false,
@@ -165,7 +181,6 @@ fn predeclaration_type(
     data: &mut ParserData,
     name: Option<QualifiedName>,
     predeclaration: HIRTagKind,
-    template_prototype: Option<HIRTemplatePrototype>,
 ) -> CXResult<HIRType> {
     let Some(name) = name else {
         return parse_point_error(
@@ -184,7 +199,7 @@ fn predeclaration_type(
     let ty = HIRTypeKind::Identifier {
         name,
         lookup: HIRTypeLookup::Tag(predeclaration),
-        template_input: None,
+        args: None,
     }
     .to_type();
 
@@ -198,7 +213,6 @@ fn predeclaration_type(
         data.add_stmt(HIRStmt::TypeDefinition {
             name: Some(definition_name),
             visibility: data.visibility,
-            template_prototype,
             ty: ty.clone(),
             tag: Some(predeclaration),
         });
@@ -211,7 +225,6 @@ fn defined_type(
     data: &mut ParserData,
     name: Option<CXIdent>,
     ty: HIRType,
-    template_prototype: Option<HIRTemplatePrototype>,
     predeclaration: HIRTagKind,
 ) -> CXResult<HIRType> {
     if let Some(name) = name {
@@ -221,7 +234,6 @@ fn defined_type(
         data.add_stmt(HIRStmt::TypeDefinition {
             name: Some(name.clone()),
             visibility: data.visibility,
-            template_prototype,
             ty,
             tag: Some(predeclaration),
         });
@@ -229,7 +241,7 @@ fn defined_type(
         Ok(HIRTypeKind::Identifier {
             name: QualifiedName::new_raw(name),
             lookup: HIRTypeLookup::Tag(predeclaration),
-            template_input: None,
+            args: None,
         }
         .to_type())
     } else {
@@ -244,15 +256,10 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<HIRType> {
     assert_token_matches!(data.tokens, keyword!(Struct), "'struct'");
 
     let name = try_parse_qualified_name(&mut data.tokens)?;
-    let template_prototype = try_parse_template(&mut data.tokens)?;
     let attributes = parse_type_attributes(data, "struct")?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, HIRTagKind::Struct, template_prototype);
-    }
-
-    if let Some(template_prototype) = &template_prototype {
-        note_templated_types(data, template_prototype)?;
+        return predeclaration_type(data, name, HIRTagKind::Struct);
     }
 
     let mut fields = Vec::new();
@@ -276,10 +283,6 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<HIRType> {
         },
     };
 
-    if let Some(template_prototype) = &template_prototype {
-        unnote_templated_types(data, template_prototype);
-    }
-
     defined_type(
         data,
         name.clone(),
@@ -289,7 +292,6 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<HIRType> {
             fields,
         }
         .to_type(),
-        template_prototype,
         HIRTagKind::Struct,
     )
 }
@@ -305,7 +307,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
     let name = try_parse_qualified_name(&mut data.tokens)?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, HIRTagKind::Enum, None);
+        return predeclaration_type(data, name, HIRTagKind::Enum);
     }
 
     let mut variants = Vec::new();
@@ -371,10 +373,9 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
         HIRTypeKind::Identifier {
             name: QualifiedName::new_raw(CXIdent::new("int")),
             lookup: HIRTypeLookup::Standard,
-            template_input: None,
+            args: None,
         }
         .to_type(),
-        None,
         HIRTagKind::Enum,
     )
 }
@@ -383,15 +384,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
     assert_token_matches!(data.tokens, keyword!(Enum), "'enum'");
     assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
-    let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-        return parse_point_error(
-            &data.tokens,
-            &EXPECTED_SYNTAX,
-            ("a tagged union name".into(), None, None),
-        );
-    };
-
-    let template_prototype = try_parse_template(&mut data.tokens)?;
+    let union_name = try_parse_simple_identifier(&mut data.tokens);
     let attributes = parse_type_attributes(data, "enum union")?;
 
     assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
@@ -442,14 +435,13 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
 
     defined_type(
         data,
-        Some(name.clone()),
+        union_name.clone(),
         HIRTypeKind::TaggedUnion {
-            name: name.clone(),
+            name: union_name,
             attributes,
-            variants: variants.clone(),
+            variants,
         }
         .to_type(),
-        template_prototype,
         HIRTagKind::Union,
     )
 }
@@ -458,10 +450,9 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<HIRType> {
     assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
     let name = try_parse_qualified_name(&mut data.tokens)?;
-    let template_prototype = try_parse_template(&mut data.tokens)?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, HIRTagKind::Union, template_prototype);
+        return predeclaration_type(data, name, HIRTagKind::Union);
     }
 
     let mut fields = Vec::new();
@@ -489,7 +480,6 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<HIRType> {
         data,
         name.clone(),
         HIRTypeKind::Union { name, fields }.to_type(),
-        template_prototype,
         HIRTagKind::Union,
     )
 }
@@ -533,7 +523,7 @@ impl DeclarationAttributes {
         let mut unreachable = HIRTypeKind::Identifier {
             name: QualifiedName::root(CXIdent::new("unreachable")),
             lookup: HIRTypeLookup::Standard,
-            template_input: None,
+            args: None,
         }
         .to_type();
         unreachable.range = return_type.range;
@@ -582,6 +572,15 @@ pub(crate) fn parse_type_mods(
     data: &mut ParserData,
     acc_type: HIRType,
 ) -> CXResult<(Option<CXIdent>, HIRType)> {
+    parse_declarator_mods(data, acc_type, true)
+}
+
+// With 'named' unset only the pointer and reference suffixes of an abstract type are read
+fn parse_declarator_mods(
+    data: &mut ParserData,
+    acc_type: HIRType,
+    named: bool,
+) -> CXResult<(Option<CXIdent>, HIRType)> {
     let Some(next_tok) = data.tokens.peek() else {
         return Ok((None, acc_type));
     };
@@ -602,7 +601,7 @@ pub(crate) fn parse_type_mods(
             );
             acc_type.range = range;
 
-            parse_type_mods(data, acc_type)
+            parse_declarator_mods(data, acc_type, named)
         }
 
         operator!(Asterisk) => {
@@ -610,7 +609,7 @@ pub(crate) fn parse_type_mods(
             let specs = parse_specifier(&mut data.tokens);
             let acc_type = acc_type.pointer_to(specs);
 
-            parse_type_mods(data, acc_type)
+            parse_declarator_mods(data, acc_type, named)
         }
 
         punctuator!(Apostrophe) => {
@@ -643,7 +642,7 @@ pub(crate) fn parse_type_mods(
             .to_type()
             .with_range(range);
 
-            parse_type_mods(data, ref_type)
+            parse_declarator_mods(data, ref_type, named)
         }
 
         operator!(Ampersand) => {
@@ -657,10 +656,10 @@ pub(crate) fn parse_type_mods(
             .to_type()
             .with_range(range);
 
-            parse_type_mods(data, ref_type)
+            parse_declarator_mods(data, ref_type, named)
         }
 
-        punctuator!(OpenParen) => {
+        punctuator!(OpenParen) if named => {
             data.tokens.next();
             if !matches!(next_kind!(data.tokens), Ok(operator!(Asterisk))) {
                 data.tokens.index = start_index;
@@ -694,6 +693,7 @@ pub(crate) fn parse_type_mods(
 
             let prototype = HIRFunctionPrototype {
                 kind: HIRFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
+                comptime: false,
                 return_type: acc_type,
                 params,
                 var_args,
@@ -722,7 +722,7 @@ pub(crate) fn parse_type_mods(
             Ok((name, fn_ptr_type))
         }
 
-        identifier!() => {
+        identifier!() if named => {
             let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
                 unreachable!();
             };
@@ -777,17 +777,59 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
 
     let ty = match &next_token.kind {
         identifier!() => {
-            let Some(ident) = try_parse_type_identifier(data)? else {
+            let Some(name) = try_parse_qualified_name(&mut data.tokens)? else {
                 unreachable!();
             };
 
-            Ok(ident.into_type(HIRTypeLookup::Standard))
+            let args = if peek_kind!(data.tokens, punctuator!(OpenParen))
+                && data.is_generator(&name)?
+            {
+                Some(parse_comptime_args(data)?)
+            } else {
+                None
+            };
+
+            Ok(HIRTypeKind::Identifier {
+                name,
+                lookup: HIRTypeLookup::Standard,
+                args,
+            }
+            .to_type())
+        }
+
+        intrinsic!(Auto) if !data.c_mode => {
+            data.tokens.next();
+            Ok(HIRTypeKind::Auto.to_type())
+        }
+
+        TokenKind::CompilerIdentifier(name) if name == "type" => {
+            data.tokens.next();
+            Ok(HIRTypeKind::Universe.to_type())
+        }
+
+        TokenKind::CompilerIdentifier(name) if name == "fn" => {
+            data.tokens.next();
+            Ok(fn_declarator_marker())
+        }
+
+        keyword!(Expr) => {
+            data.tokens.next();
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'(' after 'expr'");
+            let (None, result, _) = parse_initializer(data)? else {
+                return parse_point_error(
+                    &data.tokens,
+                    &EXPECTED_SYNTAX,
+                    ("an unnamed type".into(), Some("in 'expr(...)'".into()), None),
+                );
+            };
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            Ok(HIRTypeKind::Expr(Box::new(result)).to_type())
         }
 
         intrinsic!() => Ok(HIRTypeKind::Identifier {
             name: QualifiedName::new_raw(parse_intrinsic(&mut data.tokens)?),
             lookup: HIRTypeLookup::Standard,
-            template_input: None,
+            args: None,
         }
         .to_type()),
 
@@ -811,10 +853,150 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
         .with_range(token_range(data, start_index, data.tokens.index)))
 }
 
+// Comptime arguments applied to a generator, 'opt(int)'
+pub(crate) fn parse_comptime_args(data: &mut ParserData) -> CXResult<Vec<HIRExpression>> {
+    fn arguments(data: &mut ParserData) -> CXResult<Vec<HIRExpression>> {
+        let mut args = Vec::new();
+
+        while !try_next!(data.tokens, punctuator!(CloseParen)) {
+            args.push(parse_expr(data)?);
+
+            if !try_next!(data.tokens, operator!(Comma)) {
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+                break;
+            }
+        }
+
+        Ok(args)
+    }
+
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+    data.change_comma_mode(false);
+    let args = arguments(data);
+    data.pop_comma_mode();
+    args
+}
+
+// '@fn' is parsed as a base type whose declarator carries the signature, the name sitting
+// where C puts it: '@fn table[4](int) -> int'
+fn fn_declarator_marker() -> HIRType {
+    HIRTypeKind::Identifier {
+        name: QualifiedName::new_raw(CXIdent::new("@fn")),
+        lookup: HIRTypeLookup::Standard,
+        args: None,
+    }
+    .to_type()
+}
+
+fn is_fn_declarator_marker(ty: &HIRType) -> bool {
+    matches!(
+        &ty.kind,
+        HIRTypeKind::Identifier { name, args: None, .. }
+            if name.namespace.is_root() && name.name.as_str() == "@fn"
+    )
+}
+
+fn parse_fn_signature(data: &mut ParserData) -> CXResult<HIRType> {
+    let start_index = data.tokens.index;
+    let ParseParamsResult {
+        params,
+        var_args,
+        contract,
+        ..
+    } = parse_params(data)?;
+    assert_token_matches!(data.tokens, operator!(Arrow), "'->' after '@fn' parameters");
+    let return_type = parse_abstract_type(data)?;
+
+    let prototype = HIRFunctionPrototype {
+        kind: HIRFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
+        comptime: false,
+        return_type,
+        params,
+        var_args,
+        contract,
+        linkage: LinkageMode::Standard,
+        symbol_naming: HIRSymbolNameScheme::Namespaced,
+        range: TokenRange::internal(),
+    };
+
+    Ok(HIRTypeKind::FunctionPointer {
+        prototype: Box::new(prototype),
+    }
+    .to_type()
+    .pointer_to(0)
+    .with_range(token_range(data, start_index, data.tokens.index)))
+}
+
+fn parse_fn_declarator(data: &mut ParserData) -> CXResult<(Option<CXIdent>, HIRType)> {
+    let mut pointers = Vec::new();
+    while try_next!(data.tokens, operator!(Asterisk)) {
+        pointers.push(parse_specifier(&mut data.tokens));
+    }
+
+    let name = try_parse_simple_identifier(&mut data.tokens);
+
+    let mut array_suffixes: Vec<Option<HIRExpression>> = Vec::new();
+    while try_next!(data.tokens, punctuator!(OpenBracket)) {
+        if try_next!(data.tokens, punctuator!(CloseBracket)) {
+            array_suffixes.push(None);
+        } else {
+            let size = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseBracket), "']'");
+            array_suffixes.push(Some(size));
+        }
+    }
+
+    if !peek_kind!(data.tokens, punctuator!(OpenParen)) {
+        return parse_point_error(
+            &data.tokens,
+            &EXPECTED_SYNTAX,
+            ("a parameter list".into(), Some("after '@fn'".into()), None),
+        );
+    }
+
+    let signature = parse_fn_signature(data)?;
+
+    // The anonymous form is an ordinary base type
+    if name.is_none() && pointers.is_empty() && array_suffixes.is_empty() {
+        return parse_base_mods(data, signature);
+    }
+
+    let pointed = pointers
+        .into_iter()
+        .fold(signature, |inner, specifiers| inner.pointer_to(specifiers));
+    let ty = array_suffixes
+        .into_iter()
+        .rev()
+        .fold(pointed, |inner, size| match size {
+            Some(size) => {
+                HIRTypeKind::ExplicitSizedArray(Box::new(inner), Box::new(size)).to_type()
+            }
+            None => HIRTypeKind::ImplicitSizedArray(Box::new(inner)).to_type(),
+        });
+
+    Ok((name, ty))
+}
+
+// A type with no declarator name: the base and its pointer and reference suffixes
+pub(crate) fn parse_abstract_type(data: &mut ParserData) -> CXResult<HIRType> {
+    let specifiers = parse_decl_specifiers(&mut data.tokens);
+    let base = parse_type_base(data)?.add_specifier(specifiers.qualifiers);
+
+    if is_fn_declarator_marker(&base) {
+        return parse_fn_signature(data);
+    }
+
+    Ok(parse_declarator_mods(data, base, false)?.1)
+}
+
 pub(crate) fn parse_base_mods(
     data: &mut ParserData,
     acc_type: HIRType,
 ) -> CXResult<(Option<CXIdent>, HIRType)> {
+    if is_fn_declarator_marker(&acc_type) {
+        return parse_fn_declarator(data);
+    }
+
     let (name, modified_type) = parse_type_mods(data, acc_type)?;
 
     let modified_type = parse_type_suffix_mod(data, modified_type)?;
@@ -851,6 +1033,7 @@ pub(crate) fn parse_typedef_initializer(
 
     let prototype = HIRFunctionPrototype {
         kind: HIRFunctionKind::Standard(CXIdent::new("__internal_fnptr")),
+        comptime: false,
         return_type: specifiers
             .attributes
             .merge(attributes)

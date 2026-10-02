@@ -1,0 +1,17 @@
+/* CX-STDOUT: 11 5 */
+
+#include <stdio.h>
+
+comptime expr(void) with(expr(int&) v, @fn body(expr(int&)) -> expr(void)) =>
+    emit .{ body(v); };
+
+comptime expr(int) apply(@fn f(expr(int), expr(int)) -> expr(int), expr(int) a, expr(int) b) =>
+    emit f(a, b);
+
+int main() {
+    int x = 10;
+    with(emit x, |expr(int&) v| emit .{ v += 1; });
+    int d = apply(|a, b| emit a - b, emit 8, emit 3);
+    printf("%d %d\n", x, d);
+    return 0;
+}

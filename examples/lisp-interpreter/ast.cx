@@ -7,38 +7,38 @@ import std::string as std;
 public:
 
 enum union lisp_node : @nodrop {
-    Program     :: std::vector<lisp_node>,
+    Program     :: std::vector(lisp_node),
     Number      :: f64,
     Symbol      :: std::string,
 
     // (fndef <name> (<params>...) <body>...)
     FnDef       :: struct : @nodrop {
         std::string name;
-        std::vector<std::string> params;
-        std::vector<lisp_node> body;
+        std::vector(std::string) params;
+        std::vector(lisp_node) body;
     },
     FnCall      :: struct : @nodrop {
         std::string name;
-        std::vector<lisp_node> args;
+        std::vector(lisp_node) args;
     },
     Plus        :: struct : @nodrop {
-        std::box<lisp_node> left;
-        std::box<lisp_node> right;
+        std::box(lisp_node) left;
+        std::box(lisp_node) right;
     },
     Minus       :: struct : @nodrop {
-        std::box<lisp_node> left;
-        std::box<lisp_node> right;
+        std::box(lisp_node) left;
+        std::box(lisp_node) right;
     },
-    PrintNum    :: std::box<lisp_node>,
+    PrintNum    :: std::box(lisp_node),
     PrintStr    :: std::string
 };
 
 void lisp_node::drop(lisp_node node) {
     match (move node) {
-        lisp_node::Program(body) => move body |> std::vector::drop_with<lisp_node>(lisp_node::drop);
-        lisp_node::Number(_) => {}
-        lisp_node::Symbol(name) => move name |> std::string::drop();
-        lisp_node::FnDef(fn_def) => {
+        Program(auto body) => move body |>(1) std::vector::drop_with(lisp_node, lisp_node::drop);
+        Number(_) => {}
+        Symbol(auto name) => move name |> std::string::drop();
+        FnDef(auto fn_def) => {
             @unpack(move fn_def) {
                 name: name,
                 params: params,
@@ -46,37 +46,37 @@ void lisp_node::drop(lisp_node node) {
             };
 
             move name |> std::string::drop();
-            move params |> std::vector::drop_with<std::string>(std::string::drop);
-            move body |> std::vector::drop_with<lisp_node>(lisp_node::drop);
+            move params |>(1) std::vector::drop_with(std::string, std::string::drop);
+            move body |>(1) std::vector::drop_with(lisp_node, lisp_node::drop);
         }
-        lisp_node::FnCall(fn_call) => {
+        FnCall(auto fn_call) => {
             @unpack(move fn_call) {
                 name: name,
                 args: args
             };
 
             move name |> std::string::drop();
-            move args |> std::vector::drop_with<lisp_node>(lisp_node::drop);
+            move args |>(1) std::vector::drop_with(lisp_node, lisp_node::drop);
         }
-        lisp_node::Plus(plus) => {
+        Plus(auto plus) => {
             @unpack(move plus) {
                 left: left,
                 right: right
             };
 
-            move left |> std::box::drop_with<lisp_node>(lisp_node::drop);
-            move right |> std::box::drop_with<lisp_node>(lisp_node::drop);
+            move left |>(1) std::box::drop_with(lisp_node, lisp_node::drop);
+            move right |>(1) std::box::drop_with(lisp_node, lisp_node::drop);
         }
-        lisp_node::Minus(minus) => {
+        Minus(auto minus) => {
             @unpack(move minus) {
                 left: left,
                 right: right
             };
         
-            move left |> std::box::drop_with<lisp_node>(lisp_node::drop);
-            move right |> std::box::drop_with<lisp_node>(lisp_node::drop);
+            move left |>(1) std::box::drop_with(lisp_node, lisp_node::drop);
+            move right |>(1) std::box::drop_with(lisp_node, lisp_node::drop);
         }
-        lisp_node::PrintNum(value) => move value |> std::box::drop_with<lisp_node>(lisp_node::drop);
-        lisp_node::PrintStr(value) => move value |> std::string::drop();
+        PrintNum(auto value) => move value |>(1) std::box::drop_with(lisp_node, lisp_node::drop);
+        PrintStr(auto value) => move value |> std::string::drop();
     }
 }

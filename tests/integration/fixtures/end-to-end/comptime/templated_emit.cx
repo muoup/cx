@@ -4,18 +4,18 @@
 
 #include <stdio.h>
 
-comptime expr T pass<T>(expr T value) {
+comptime expr(T) pass(@type T, expr(T) value) {
     return emit value;
 }
 
-comptime expr T choose_first<T>(expr T lhs, expr T rhs) {
+comptime expr(T) choose_first(@type T, expr(T) lhs, expr(T) rhs) {
     return emit lhs;
 }
 
 int main() {
-    int int_value = pass<int>(37);
-    float float_value = pass<float>(4.5);
-    int selected = choose_first<int>(9, 100);
+    int int_value = pass(int, emit 37);
+    float float_value = pass(float, emit 4.5);
+    int selected = choose_first(int, emit 9, emit 100);
 
     printf("int %d\n", int_value);
     printf("float %.1f\n", float_value);

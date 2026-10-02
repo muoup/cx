@@ -1,18 +1,19 @@
-struct wrapper<T> {
-    T* value;
-};
+comptime @type wrapper(@type T) =>
+    struct {
+        T* value;
+    };
 
 enum union node {
-    link :: wrapper<node>,
+    link :: wrapper(node),
     end :: void
 };
 
-void consume(wrapper<node> value) {}
+void consume(wrapper(node) value) {}
 
 void inspect(node value) {
     match (value) {
-        node::link(link) => consume(link);
-        node::end() => {}
+        link(auto link) => consume(link);
+        end() => {}
     }
 }
 

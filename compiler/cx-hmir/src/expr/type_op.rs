@@ -1,3 +1,5 @@
+use cx_util::identifier::CXIdent;
+
 use crate::{
     expr::kind::HMIRExprID,
     ty::{
@@ -12,6 +14,10 @@ pub enum HMIRTypeOp {
     Reference(HMIRExprID),
     PointerInner(HMIRExprID),
     ReferenceInner(HMIRExprID),
+    Member {
+        ty: HMIRExprID,
+        name: CXIdent,
+    },
     TypeOf(HMIRExprID),
     Decay(HMIRExprID),
     Array {
@@ -49,6 +55,7 @@ impl HMIRTypeOp {
             Self::Reference(_) => "type.reference",
             Self::PointerInner(_) => "type.pointer_inner",
             Self::ReferenceInner(_) => "type.reference_inner",
+            Self::Member { .. } => "type.member",
             Self::TypeOf(_) => "type.type_of",
             Self::Decay(_) => "type.decay",
             Self::Array { .. } => "type.array",

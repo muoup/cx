@@ -1,6 +1,5 @@
 use cx_hir::ast::{
-    function::{HIRComptimeValueType, HIRFunctionPrototype},
-    template::HIRTemplateInput,
+    function::HIRFunctionPrototype,
     types::{HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
 };
 use cx_hmir::{
@@ -18,24 +17,32 @@ use crate::{
 
 pub(crate) fn lower_type(cx: &mut BodyLowering<'_>, ty: &HIRType) -> HMIRExprID {
     let span = &ty.range;
+    if let Some((params, result)) = staged_signature(ty) {
+        return lower_staged_type(cx, params, result, span);
+    }
+
     match &ty.kind {
-        HIRTypeKind::Identifier {
-            name,
-            template_input,
-            ..
-        } => {
+        HIRTypeKind::Identifier { name, args, .. } => {
             let callee = match cx.lookup(name, ty.tag_kind()) {
                 Symbol::Local(binding) => cx.push(HMIRExprKind::Local(binding.local()), span),
                 Symbol::Global(GlobalSymbol::Primitive(desc)) => cx.type_constant(desc, span),
                 Symbol::Global(
                     GlobalSymbol::Def(def)
-                    | GlobalSymbol::Function(def, _)
+                    | GlobalSymbol::Function(def)
                     | GlobalSymbol::ComptimeFunction(def, ..),
                 ) => cx.push(HMIRExprKind::Def(def), span),
                 Symbol::Global(GlobalSymbol::Constructor(..)) => cx.error(span),
             };
-            lower_instantiate(cx, callee, template_input.as_ref(), span)
+            let Some(args) = args else {
+                return callee;
+            };
+            let args = args.iter().map(|arg| lower_expr(cx, arg)).collect();
+            cx.push(HMIRExprKind::Call { callee, args }, span)
         }
+        HIRTypeKind::Universe => cx.type_of_types(span),
+        HIRTypeKind::Auto => cx.hole(span),
+        // Handled as a staged signature above
+        HIRTypeKind::Expr(result) => lower_staged_type(cx, Vec::new(), result, span),
         HIRTypeKind::ExplicitSizedArray(element, length) => {
             let element = lower_type(cx, element);
             let length = lower_expr(cx, length);
@@ -96,48 +103,49 @@ pub(crate) fn lower_type(cx: &mut BodyLowering<'_>, ty: &HIRType) -> HMIRExprID 
     }
 }
 
-pub(crate) fn lower_comptime_value_type(
-    cx: &mut BodyLowering<'_>,
-    value_type: &HIRComptimeValueType,
-) -> HMIRExprID {
-    let result = lower_type(cx, &value_type.ty);
-    if !value_type.expr {
-        return result;
+// The shape of a staged value: 'expr(T)', or a comptime function over code such as
+// '@fn(expr(A)) -> expr(T)'. Code parameters are listed by the type of code they carry.
+pub(crate) fn staged_signature(ty: &HIRType) -> Option<(Vec<&HIRType>, &HIRType)> {
+    if let HIRTypeKind::Expr(result) = &ty.kind {
+        return Some((Vec::new(), result));
     }
-    let params = value_type
+
+    let HIRTypeKind::PointerTo { inner_type } = &ty.kind else {
+        return None;
+    };
+    let HIRTypeKind::FunctionPointer { prototype } = &inner_type.kind else {
+        return None;
+    };
+    let result = match &prototype.return_type.kind {
+        HIRTypeKind::Expr(result) => result.as_ref(),
+        _ => return None,
+    };
+    let params = prototype
         .params
         .iter()
-        .map(|param| lower_type(cx, param))
+        .map(|param| match &param.ty.kind {
+            HIRTypeKind::Expr(carried) => carried.as_ref(),
+            _ => &param.ty,
+        })
         .collect();
-    cx.type_op(HMIRTypeOp::Expr { params, result }, &value_type.ty.range)
+    Some((params, result))
 }
 
-pub(crate) fn lower_instantiate(
+fn lower_staged_type(
     cx: &mut BodyLowering<'_>,
-    callee: HMIRExprID,
-    template_input: Option<&HIRTemplateInput>,
+    params: Vec<&HIRType>,
+    result: &HIRType,
     span: &TokenRange,
 ) -> HMIRExprID {
-    let Some(input) = template_input else {
-        return callee;
-    };
-    let args = lower_template_args(cx, Some(input));
-    cx.push(HMIRExprKind::Call { callee, args }, span)
+    let params = params.into_iter().map(|param| lower_type(cx, param)).collect();
+    let result = lower_type(cx, result);
+    cx.type_op(HMIRTypeOp::Expr { params, result }, span)
 }
 
-pub(crate) fn lower_template_args(
-    cx: &mut BodyLowering<'_>,
-    input: Option<&HIRTemplateInput>,
-) -> Vec<HMIRExprID> {
-    input
-        .map(|input| input.params.iter().map(|ty| lower_type(cx, ty)).collect())
-        .unwrap_or_default()
-}
-
+// The sum a constructor builds, as the def of its type
 pub(crate) fn lower_constructor_sum(
     cx: &mut BodyLowering<'_>,
     union_type: &HIRType,
-    template_input: Option<&HIRTemplateInput>,
     span: &TokenRange,
 ) -> HMIRExprID {
     let HIRTypeKind::Identifier { name, .. } = &union_type.kind else {
@@ -147,8 +155,7 @@ pub(crate) fn lower_constructor_sum(
         Symbol::Global(GlobalSymbol::Def(def)) => def,
         _ => HMIRDefRef::External(name.clone()),
     };
-    let callee = cx.push(HMIRExprKind::Def(def), span);
-    lower_instantiate(cx, callee, template_input, span)
+    cx.push(HMIRExprKind::Def(def), span)
 }
 
 fn lower_function_type(cx: &mut BodyLowering<'_>, prototype: &HIRFunctionPrototype) -> HMIRExprID {

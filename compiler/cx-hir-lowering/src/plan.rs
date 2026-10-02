@@ -3,10 +3,9 @@ use std::collections::HashSet;
 use cx_hir::ast::{
     HIR, HIRStmt,
     expression::HIRExpression,
-    function::{HIRComptimeFnPrototype, HIRFunctionBody, HIRFunctionKind, HIRFunctionPrototype},
+    function::{HIRFunctionBody, HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
     modifiers::{HIRSymbolNameScheme, LinkageMode},
-    template::HIRTemplatePrototype,
     types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_util::identifier::CXIdent;
@@ -18,18 +17,11 @@ use crate::resolve::def_name;
 pub(crate) enum DefSource<'h> {
     OpaqueType,
     Type {
-        template: Option<&'h HIRTemplatePrototype>,
         ty: &'h HIRType,
     },
     Function {
         prototype: &'h HIRFunctionPrototype,
-        template: Option<&'h HIRTemplatePrototype>,
         body: Option<&'h HIRFunctionBody>,
-    },
-    ComptimeFunction {
-        prototype: &'h HIRComptimeFnPrototype,
-        template: Option<&'h HIRTemplatePrototype>,
-        body: &'h HIRFunctionBody,
     },
     Global {
         ty: &'h HIRType,
@@ -43,7 +35,6 @@ pub(crate) enum DefSource<'h> {
         index: usize,
     },
     Constructor {
-        template: Option<&'h HIRTemplatePrototype>,
         union_type: &'h HIRType,
         payload: HIRType,
     },
@@ -99,7 +90,7 @@ pub(crate) fn is_forward_declaration(name: &CXIdent, tag: Option<HIRTagKind>, ty
         HIRTypeKind::Identifier {
             name: referenced,
             lookup: HIRTypeLookup::Tag(referenced_tag),
-            template_input: None,
+            args: None,
         } if referenced.name == *name && tag == Some(*referenced_tag)
     )
 }
@@ -165,56 +156,32 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
             }
             HIRStmt::TypeDefinition {
                 name: Some(name),
-                template_prototype,
                 ty,
                 tag,
                 ..
             } => plan(
                 def_name(QualifiedName::new(base.clone(), name.clone()), *tag),
                 &ty.range,
-                DefSource::Type {
-                    template: template_prototype.as_ref(),
-                    ty,
-                },
+                DefSource::Type { ty },
             ),
             HIRStmt::TypeDefinition { name: None, .. } => {}
 
             HIRStmt::FunctionDefinition {
-                prototype,
-                template_prototype,
-                body,
-                ..
+                prototype, body, ..
             } => {
-                let declaration_only = body.is_none()
-                    && (template_prototype.is_some()
-                        || defined_functions.contains(&prototype.kind.into_key()));
+                let declaration_only =
+                    body.is_none() && defined_functions.contains(&prototype.kind.into_key());
                 if !declaration_only {
                     plan(
                         function_name(base, &prototype.kind),
                         &prototype.range,
                         DefSource::Function {
                             prototype,
-                            template: template_prototype.as_ref(),
                             body: body.as_ref(),
                         },
                     );
                 }
             }
-
-            HIRStmt::ComptimeFunctionDefinition {
-                prototype,
-                template_prototype,
-                body,
-                ..
-            } => plan(
-                function_name(base, &prototype.kind),
-                &prototype.range,
-                DefSource::ComptimeFunction {
-                    prototype,
-                    template: template_prototype.as_ref(),
-                    body,
-                },
-            ),
 
             HIRStmt::GlobalVariableDefinition { variable, .. } => match variable {
                 HIRGlobalVariable::Standard {

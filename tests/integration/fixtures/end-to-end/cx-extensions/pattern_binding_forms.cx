@@ -1,0 +1,36 @@
+/* CX-STDOUT: red other 7 9 two */
+
+#include <stdio.h>
+
+enum color { RED, GREEN, BLUE };
+
+enum union shape { circle :: int, square :: int, empty :: void };
+
+const char* name(color c) {
+    match (c) {
+        RED => return "red";
+        auto other => return "other";
+    }
+}
+
+int main() {
+    shape s = shape::circle(7);
+    int r = 0;
+    if (s is circle(auto& radius)) {
+        r = radius;
+        radius = 9;
+    }
+    int r2 = match (s) {
+        circle(const auto& v) => yield v;
+        square(auto v) => yield v;
+        _ => yield 0;
+    };
+    int k = 2;
+    const char* word = match (k) {
+        1 => yield "one";
+        2 => yield "two";
+        _ => yield "many";
+    };
+    printf("%s %s %d %d %s\n", name(RED), name(BLUE), r, r2, word);
+    return 0;
+}

@@ -2,7 +2,7 @@ int x;
 
 public:
 
-T increment<T>() {
+T increment(@type T) {
     x++;
     return x;
 }

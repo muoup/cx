@@ -17,23 +17,23 @@ struct string : @nodrop {
 
 string string::new() {
     match (string::try_new_string()) {
-        std::opt::some(val) => return move val;
-        std::opt::none(_) => {
+        some(auto val) => return move val;
+        none() => {
             std::io::println("Failed to allocate memory for string");
             @unsafe(exit(1));
         }
     }
 }
 
-std::opt<string> string::try_new_string() {
+std::opt(string) string::try_new_string() {
     @unsafe {
         void* base_buffer = calloc(1, 16);
 
         if (base_buffer == NULL) {
-            return std::opt::none();
+            return _::none();
         }
 
-        return std::opt::some((string) {
+        return _::some((string) {
             .data = base_buffer,
             .length = 0,
             .capacity = 16
@@ -53,7 +53,7 @@ string string::from_str(const _str& s) {
     return move result;
 }
 
-string string::from_span(const std::span<const char>& s) {
+string string::from_span(const std::span(const char)& s) {
     string result = string::new();
     result |> string::append(s |> std::span::as_str());
     return move result;

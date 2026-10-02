@@ -16,5 +16,5 @@ int read_header_type() {
 }
 
 int read_header_template() {
-    return selected(13);
+    return selected(_, 13);
 }

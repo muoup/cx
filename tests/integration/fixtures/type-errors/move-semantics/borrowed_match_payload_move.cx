@@ -5,8 +5,8 @@ enum union Choice {
 
 int read(Choice& value) {
     return match (value) {
-        Choice::some(inner) => yield move inner;
-        Choice::none() => yield 0;
+        some(auto inner) => yield move inner;
+        none() => yield 0;
     };
 }
 

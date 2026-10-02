@@ -2,7 +2,7 @@ comptime void divide(int divisor) {
     int result = 1 / divisor;
 }
 
-comptime expr void deferred_divide() {
+comptime expr(void) deferred_divide() {
     return emit .{
         divide(0);
     };

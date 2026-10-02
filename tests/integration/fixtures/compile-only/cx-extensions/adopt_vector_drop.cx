@@ -9,12 +9,12 @@ void destroy(Resource value) {
 }
 
 int main() {
-    std::vector::vector<Resource> values = std::vector::vector::new<Resource>();
+    std::vector::vector(Resource) values = std::vector::vector::new(Resource);
     Resource value = (Resource) {
         .data = 11
     };
 
-    values |> std::vector::vector::push<Resource>(move value);
-    move values |> std::vector::vector::drop_with<Resource>(destroy);
+    values |>(1) std::vector::vector::push(Resource, move value);
+    move values |>(1) std::vector::vector::drop_with(Resource, destroy);
     return 0;
 }

@@ -1,17 +1,15 @@
 public:
 
-comptime expr T tap<T>(expr T value, expr(T&) void func) {
-    return emit .{
+comptime expr(T) tap(@type T, expr(T) value, @fn func(expr(T&)) -> expr(void)) =>
+    emit .{
         T val = value;
         func(val);
         yield move val;
     };
-}
 
-comptime expr T inspect<T>(expr T value, expr(const T&) void func) {
-    return emit .{
+comptime expr(T) inspect(@type T, expr(T) value, @fn func(expr(const T&)) -> expr(void)) =>
+    emit .{
         T val = value;
         func(val);
         yield move val;
     };
-}

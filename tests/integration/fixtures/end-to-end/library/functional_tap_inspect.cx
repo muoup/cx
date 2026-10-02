@@ -11,13 +11,13 @@ int read(int& value) {
 
 int main() {
     int input = 4;
-    int tapped = read(input) |> std::tap<int>(|value| .{
+    int tapped = read(input) |>(1) std::tap(int, |value| emit .{
         value += 1;
     });
     printf("tapped %d\n", tapped);
 
     int observed = 0;
-    int inspected = move tapped |> std::inspect<int>(|value| .{
+    int inspected = move tapped |>(1) std::inspect(int, |value| emit .{
         observed = value;
     });
     printf("inspected %d\n", observed);

@@ -23,11 +23,11 @@ void destructor(test_type t) {
 }
 
 int main() {
-    std::vector::vector<test_type> t = std::vector::vector::new<test_type>();
+    std::vector::vector(test_type) t = std::vector::vector::new(test_type);
 
     for (int i = 0; i < 10; i++) {
-        t |> std::vector::vector::push<test_type>((test_type) { .num = i });
+        t |>(1) std::vector::vector::push(test_type, (test_type) { .num = i });
     }
 
-    move t |> std::vector::vector::drop_with<test_type>(destructor);
+    move t |>(1) std::vector::vector::drop_with(test_type, destructor);
 }

@@ -4,9 +4,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
 
-use crate::ast::{
-    modifiers::LinkageMode, pattern::HIRPattern, template::HIRTemplateInput, types::HIRType,
-};
+use crate::ast::{modifiers::LinkageMode, pattern::HIRPattern, types::HIRType};
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct HIRExpression {
@@ -45,7 +43,15 @@ pub enum HIRExprKind {
 
     Identifier {
         name: QualifiedName,
-        template_input: Option<HIRTemplateInput>,
+    },
+    // A type written where a value is expected, such as a comptime argument
+    Type(HIRType),
+    // '_', a comptime argument left for the compiler to fill in
+    Hole,
+    // 'base::member' where the base is computed, 'opt(int)::some'
+    ScopeAccess {
+        base: Box<HIRExpression>,
+        member: CXIdent,
     },
 
     IntLiteral {
@@ -133,8 +139,9 @@ pub enum HIRExprKind {
     Defer {
         expr: Box<HIRExpression>,
     },
-    ParamStagedExpression {
-        params: Vec<CXIdent>,
+    // An anonymous comptime function, '|value| emit ...'
+    Closure {
+        params: Vec<HIRClosureParam>,
         body: Box<HIRExpression>,
     },
     Then,
@@ -172,6 +179,11 @@ pub enum HIRExprKind {
         expr: Box<HIRExpression>,
         bindings: Vec<HIRUnpackBinding>,
     },
+    // '@reify(signature, value)': the function of that signature whose body is the staged value
+    Reify {
+        signature: Box<HIRExpression>,
+        value: Box<HIRExpression>,
+    },
 
     InitializerList {
         indices: Vec<HIRInitIndex>,
@@ -181,6 +193,12 @@ pub enum HIRExprKind {
         list: Box<HIRExpression>,
         ty: HIRType,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct HIRClosureParam {
+    pub name: CXIdent,
+    pub ty: Option<HIRType>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -236,7 +254,8 @@ pub enum HIRBinOp {
     Access,
     MethodCall,
     ArrayIndex,
-    Pipe,
+    // The piped value becomes the argument at this index
+    Pipe(u32),
     BackwardPipe,
 }
 

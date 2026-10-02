@@ -1,7 +1,7 @@
-comptime expr void discard(expr(int) void body) {
+comptime expr(void) discard(@fn body(expr(int)) -> expr(void)) {
     return emit .{};
 }
 
 int missing_return() {
-    discard() <| |unused| .{ return 1; };
+    discard() <| |unused| emit .{ return 1; };
 }

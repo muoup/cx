@@ -130,16 +130,41 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn is_type_ident(&self, name: &QualifiedName) -> CXResult<bool> {
-        Ok(self.query_identifier(name.clone())?
-            || (name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name)))
+        Ok(self.is_temporary_type(name) || self.query_identifier(name.clone())?)
+    }
+
+    pub fn is_temporary_type(&self, name: &QualifiedName) -> bool {
+        name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name)
+    }
+
+    pub fn is_generator(&self, name: &QualifiedName) -> CXResult<bool> {
+        Ok(!self.is_temporary_type(name)
+            && self.symbol_kind(name)? == Some(PreparseSymbolKind::Generator))
+    }
+
+    pub fn note_type_name(&mut self, name: CXIdent) {
+        *self.temporary_type_names.entry(name).or_insert(0) += 1;
+    }
+
+    pub fn unnote_type_name(&mut self, name: &CXIdent) {
+        if let Some(count) = self.temporary_type_names.get_mut(name) {
+            *count -= 1;
+            if *count == 0 {
+                self.temporary_type_names.remove(name);
+            }
+        }
     }
 
     pub fn query_identifier(&self, name: QualifiedName) -> CXResult<bool> {
-        match self.qualified_lookup(&self.current_module_namespace(), &name) {
-            QualifiedLookupResult::Found { value, .. } => {
-                Ok(!(self.c_mode && matches!(value, PreparseSymbolKind::Tag)))
-            }
-            QualifiedLookupResult::NotFound => Ok(false),
+        Ok(self
+            .symbol_kind(&name)?
+            .is_some_and(|kind| !(self.c_mode && kind == PreparseSymbolKind::Tag)))
+    }
+
+    pub fn symbol_kind(&self, name: &QualifiedName) -> CXResult<Option<PreparseSymbolKind>> {
+        match self.qualified_lookup(&self.current_module_namespace(), name) {
+            QualifiedLookupResult::Found { value, .. } => Ok(Some(value)),
+            QualifiedLookupResult::NotFound => Ok(None),
             QualifiedLookupResult::Ambiguous { candidates } => parse_point_error(
                 &self.tokens,
                 &AMBIGUOUS_LOOKUP,

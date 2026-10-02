@@ -28,45 +28,45 @@ struct udp_socket : @nodrop {
     i32 fd;
 };
 
-std::opt<udp_socket> udp_socket::open() {
+std::opt(udp_socket) udp_socket::open() {
     i32 fd = socket(std::net::LINUX_AF_INET, LINUX_SOCK_DGRAM, 0);
 
     if (fd < 0) {
-        return std::opt::none<udp_socket>();
+        return _::none();
     }
 
-    return std::opt::some<udp_socket>((udp_socket) { .fd = fd });
+    return _::some((udp_socket) { .fd = fd });
 }
 
-std::opt<void> udp_socket::bind(udp_socket& this, std::net::endpoint addr) {
+std::opt(void) udp_socket::bind(udp_socket& this, std::net::endpoint addr) {
     if (bind(this.fd, &addr.address, addr.length) < 0) {
-        return std::opt::none();
+        return _::none();
     }
 
-    return std::opt::some();
+    return _::some();
 }
 
-std::opt<u64> udp_socket::send_to(udp_socket& this, const std::span<const u8> buffer, std::net::endpoint& remote) {
+std::opt(u64) udp_socket::send_to(udp_socket& this, const std::span(const u8) buffer, std::net::endpoint& remote) {
     i64 sent = sendto(this.fd, buffer.data, buffer.length, 0, &remote.address, remote.length);
 
     if (sent < 0) {
-        return std::opt::none<u64>();
+        return _::none();
     }
 
-    return std::opt::some<u64>((u64) sent);
+    return _::some((u64) sent);
 }
 
-std::opt<datagram> udp_socket::recv_from(udp_socket& this, void* buffer, u64 capacity) {
+std::opt(datagram) udp_socket::recv_from(udp_socket& this, void* buffer, u64 capacity) {
     std::net::endpoint source;
     source.length = (u32) sizeof(std::net::sockaddr_in);
 
     i64 received = recvfrom(this.fd, buffer, capacity, 0, &source.address, &source.length);
 
     if (received < 0) {
-        return std::opt::none<datagram>();
+        return _::none();
     }
 
-    return std::opt::some<datagram>((datagram) {
+    return _::some((datagram) {
         .length = (u64) received,
         .source = source
     });

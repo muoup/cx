@@ -11,13 +11,13 @@ void discard(int value) {}
 
 void consume(Outer value) {
     match (move value) {
-        Outer::leaf(leaf) => {
+        leaf(auto leaf) => {
             @unpack(move leaf) {
                 value: field_value
             };
             discard(move field_value);
         }
-        Outer::none() => {}
+        none() => {}
     }
 }
 

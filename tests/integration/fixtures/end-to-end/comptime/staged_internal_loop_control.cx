@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 
-comptime expr void with_break(expr unreachable stop) {
+comptime expr(void) with_break(expr(unreachable) stop) {
     return emit .{
         while (1) {
             printf("break body\n");
@@ -16,7 +16,7 @@ comptime expr void with_break(expr unreachable stop) {
     };
 }
 
-comptime expr void with_continue(expr void next) {
+comptime expr(void) with_continue(expr(void) next) {
     return emit .{
         int iteration = 0;
         while (iteration < 2) {
@@ -29,10 +29,10 @@ comptime expr void with_continue(expr void next) {
 }
 
 int main() {
-    with_break(.{
+    with_break(emit .{
         break;
     });
-    with_continue(.{
+    with_continue(emit .{
         continue;
     });
     return 0;

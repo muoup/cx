@@ -2,18 +2,19 @@
 
 #include <stdio.h>
 
-struct templated_object<T> : @nodrop {
-    T value;
-};
+comptime @type templated_object(@type T) =>
+    struct : @nodrop {
+        T value;
+    };
 
-void templated_object::drop<T>(templated_object<T> this) {
+void templated_object::drop(@type T, templated_object(T) this) {
     printf("drop templated_object\n");
     @leak(this);
 }
 
 int main() {
-    templated_object<int> object = (templated_object<int>) {
+    templated_object(int) object = (templated_object(int)) {
         .value = 3
     };
-    move object |> templated_object::drop<int>();
+    move object |>(1) templated_object::drop(int);
 }

@@ -26,7 +26,7 @@ use crate::{
     },
     function::{Expect, Stop, inspect::inspect},
     lower::{LowerContext, LowerOutput, lower},
-    module::member_type,
+    module::{member_type, variant_index},
     program::{DefKey, Instance, Program, UnitID, def_body},
     staging_error,
     ty::{FunctionType, TypeID, TypeKind},
@@ -787,8 +787,9 @@ fn exec_aggregate(
                 (HMIRPattern::Integer(expected), StaticValue::Int { value, .. }) => {
                     *value == *expected as i128
                 }
-                (HMIRPattern::Variant { index, .. }, StaticValue::Aggregate { fields, .. }) => {
-                    fields.first().is_some_and(|(field, _)| field == index)
+                (HMIRPattern::Variant { name, .. }, StaticValue::Aggregate { fields, .. }) => {
+                    let index = variant_index(cx, ty, name, span)?;
+                    fields.first().is_some_and(|(field, _)| *field == index)
                 }
                 (HMIRPattern::Binding(_), _) => true,
                 _ => return Err(staging_error(span, "compile-time pattern test".into())),

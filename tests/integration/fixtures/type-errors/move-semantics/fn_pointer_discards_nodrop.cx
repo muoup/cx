@@ -1,0 +1,13 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+Resource make(int data) {
+    return (Resource) { .data = data };
+}
+
+int main() {
+    @fn discard(int) -> void = make;
+    discard(3);
+    return 0;
+}

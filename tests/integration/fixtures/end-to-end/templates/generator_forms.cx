@@ -1,0 +1,28 @@
+/* CX-STDOUT: 3 4 5 1 */
+
+#include <stdio.h>
+
+comptime @type pair(@type A, @type B) {
+    return struct { A first; B second; };
+}
+
+comptime @type maybe(@type T) => enum union { nothing :: void, just :: T };
+
+comptime @type ptr(@type T) => T*;
+
+A pair::first_of(@type A, @type B, pair(A, B)& p) { return p.first; }
+
+int main() {
+    pair(int, float) p = { 3, 4.0f };
+    maybe(int) m = maybe(int)::just(5);
+    maybe(int) n = _::nothing();
+    int x = 4;
+    ptr(int) q = &x;
+    int got = 0;
+    match (m) {
+        just(auto v) => got = v;
+        nothing() => got = -1;
+    }
+    printf("%d %d %d %d\n", p |>(2) pair::first_of(_, _), *q, got, n is nothing() ? 1 : 0);
+    return 0;
+}

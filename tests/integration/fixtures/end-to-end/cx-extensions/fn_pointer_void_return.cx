@@ -1,0 +1,17 @@
+/* CX-STDOUT: called 3 */
+
+#include <stdio.h>
+
+int report(int value) {
+    printf("called %d\n", value);
+    return value;
+}
+
+void run(@fn callback(int) -> void, int value) {
+    callback(value);
+}
+
+int main() {
+    run(report, 3);
+    return 0;
+}

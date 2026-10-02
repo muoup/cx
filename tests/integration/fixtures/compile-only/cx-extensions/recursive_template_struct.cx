@@ -1,8 +1,9 @@
-struct Node<T> {
-    T value;
-    Node<T>* next;
-};
+comptime @type Node(@type T) =>
+    struct {
+        T value;
+        Node(T)* next;
+    };
 
-int read_node(Node<int>* node) {
+int read_node(Node(int)* node) {
     return node->next->value;
 }

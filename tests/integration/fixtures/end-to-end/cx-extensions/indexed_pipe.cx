@@ -1,0 +1,17 @@
+/* CX-STDOUT: 7 7 3 */
+
+#include <stdio.h>
+import std::optional as std;
+
+int sub(int a, int b) { return a - b; }
+
+T second(@type T, T a, T b) { return b; }
+
+int main() {
+    int a = 10 |> sub(3);
+    int b = 3 |>(1) sub(10);
+    int c = 3 |>(2) second(_, 1);
+    printf("%d %d %d\n", a, b, c);
+    std::opt(int) o = std::opt(_)::some(4);
+    return o |>(1) std::opt::unwrap_or(_, 0) - 4;
+}

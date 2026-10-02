@@ -27,11 +27,11 @@ struct sockaddr_in {
     char sin_zero[8];
 };
 
-std::opt<endpoint> endpoint::ipv4(const _str& address, u16 port) {
+std::opt(endpoint) endpoint::ipv4(const _str& address, u16 port) {
     u32 raw_address = inet_addr(address);
 
     if (raw_address == 0xFFFFFFFF) {
-        return std::opt::none<endpoint>();
+        return _::none();
     }
 
     endpoint value = (endpoint) {
@@ -43,5 +43,5 @@ std::opt<endpoint> endpoint::ipv4(const _str& address, u16 port) {
         .length = (u32) sizeof(sockaddr_in)
     };
 
-    return std::opt::some<endpoint>(value);
+    return _::some(value);
 }

@@ -1,16 +1,13 @@
 use cx_hir::ast::{
-    function::{
-        HIRComptimeFnPrototype, HIRFunctionBody, HIRFunctionContract, HIRFunctionPrototype,
-    },
+    function::{HIRFunctionBody, HIRFunctionContract, HIRFunctionPrototype},
     global_var::HIREnumVariant,
     modifiers::HIRSymbolNameScheme,
-    template::HIRTemplatePrototype,
     types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRComptimeGlobal, HMIRContract, HMIRDefKind,
     HMIRExprID, HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRIntWidth,
-    HMIRLocalID, HMIRNativeOp, HMIROwnershipOp, HMIRSignature, HMIRTypeDesc,
+    HMIRNativeOp, HMIROwnershipOp, HMIRSignature, HMIRTypeDesc,
 };
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
@@ -21,7 +18,7 @@ use crate::{
     expr::{lower_expr, lower_initial_value},
     plan::{DefSource, PlannedDef},
     resolve::GlobalSymbol,
-    ty::{lower_comptime_value_type, lower_type},
+    ty::{lower_type, staged_signature},
 };
 
 pub(crate) fn lower_def(mut cx: BodyLowering<'_>, plan: &PlannedDef) -> HMIRDefKind {
@@ -31,7 +28,7 @@ pub(crate) fn lower_def(mut cx: BodyLowering<'_>, plan: &PlannedDef) -> HMIRDefK
             size: 0,
             alignment: 1,
         })),
-        DefSource::Type { template: None, ty } => {
+        DefSource::Type { ty } => {
             let ty_of = cx.type_of_types(span);
             let initializer = lower_type(&mut cx, ty);
             HMIRDefKind::ComptimeGlobal(Box::new(HMIRComptimeGlobal::new(
@@ -40,20 +37,9 @@ pub(crate) fn lower_def(mut cx: BodyLowering<'_>, plan: &PlannedDef) -> HMIRDefK
                 initializer,
             )))
         }
-        DefSource::Type {
-            template: Some(template),
-            ty,
-        } => lower_type_generator(cx, plan.name(), template, ty, span),
-        DefSource::Function {
-            prototype,
-            template,
-            body,
-        } => lower_function(cx, plan.name(), prototype, *template, *body),
-        DefSource::ComptimeFunction {
-            prototype,
-            template,
-            body,
-        } => lower_comptime_function(cx, plan.name(), prototype, *template, body),
+        DefSource::Function { prototype, body } => {
+            lower_function(cx, plan.name(), prototype, *body)
+        }
         DefSource::Global {
             ty,
             mutable,
@@ -78,62 +64,41 @@ pub(crate) fn lower_def(mut cx: BodyLowering<'_>, plan: &PlannedDef) -> HMIRDefK
             lower_enum_variant(cx, plan.name(), variants, *index)
         }
         DefSource::Constructor {
-            template,
             union_type,
             payload,
-        } => lower_constructor(cx, plan.name(), *template, union_type, payload, span),
+        } => lower_constructor(cx, plan.name(), union_type, payload, span),
     }
-}
-
-fn lower_type_generator(
-    mut cx: BodyLowering<'_>,
-    name: &QualifiedName,
-    template: &HIRTemplatePrototype,
-    ty: &HIRType,
-    span: &TokenRange,
-) -> HMIRDefKind {
-    let (params, return_type, root) = cx.with_stage(true, |this| {
-        let params = lower_template_params(this, Some(template), span);
-        let return_type = this.type_of_types(span);
-        let ty = lower_type(this, ty);
-        (params, return_type, this.returning_block(ty, span))
-    });
-    let signature = HMIRSignature::new(
-        params,
-        return_type,
-        false,
-        LinkageMode::Standard,
-        cx.resolver()
-            .link_name(name, HIRSymbolNameScheme::Namespaced),
-        HMIRContract::default(),
-    );
-    HMIRDefKind::Function(Box::new(HMIRFunction::new(
-        HMIRFunctionStage::Comptime,
-        cx.finish(),
-        signature,
-        Some(root),
-    )))
 }
 
 fn lower_function(
     mut cx: BodyLowering<'_>,
     name: &QualifiedName,
     prototype: &HIRFunctionPrototype,
-    template: Option<&HIRTemplatePrototype>,
     body: Option<&HIRFunctionBody>,
 ) -> HMIRDefKind {
-    let mut params = lower_template_params(&mut cx, template, &prototype.range);
-    let declared = match prototype.params.as_slice() {
-        [param] if param.name.is_none() && is_void(&cx, &param.ty) => &[],
-        params => params,
-    };
-    for param in declared {
-        let ty = lower_type(&mut cx, &param.ty);
-        params.push(cx.declare(param.name.as_ref(), ty, false, false, &param.ty.range));
-    }
-    let return_type = lower_type(&mut cx, &prototype.return_type);
-    let contract = lower_contract(&mut cx, &prototype.contract, &prototype.range);
-    let root = body.map(|body| lower_function_body(&mut cx, body));
+    let (params, return_type, contract, root) = cx.with_stage(prototype.comptime, |this| {
+        let declared = match prototype.params.as_slice() {
+            [param] if param.name.is_none() && is_void(this, &param.ty) => &[],
+            params => params,
+        };
+        let params = declared
+            .iter()
+            .map(|param| {
+                let ty = lower_type(this, &param.ty);
+                this.declare(
+                    param.name.as_ref(),
+                    ty,
+                    param.comptime,
+                    staged_signature(&param.ty).is_some(),
+                    &param.ty.range,
+                )
+            })
+            .collect();
+        let return_type = lower_type(this, &prototype.return_type);
+        let contract = lower_contract(this, &prototype.contract, &prototype.range);
+        let root = body.map(|body| lower_function_body(this, body));
+        (params, return_type, contract, root)
+    });
     let signature = HMIRSignature::new(
         params,
         return_type,
@@ -142,8 +107,13 @@ fn lower_function(
         cx.resolver().link_name(name, prototype.symbol_naming),
         contract,
     );
+    let stage = if prototype.comptime {
+        HMIRFunctionStage::Comptime
+    } else {
+        HMIRFunctionStage::Runtime
+    };
     HMIRDefKind::Function(Box::new(HMIRFunction::new(
-        HMIRFunctionStage::Runtime,
+        stage,
         cx.finish(),
         signature,
         root,
@@ -154,7 +124,7 @@ pub(crate) fn is_void(cx: &BodyLowering<'_>, ty: &HIRType) -> bool {
     let HIRTypeKind::Identifier {
         name,
         lookup: HIRTypeLookup::Standard,
-        template_input: None,
+        args: None,
     } = &ty.kind
     else {
         return false;
@@ -169,15 +139,13 @@ pub(crate) fn is_void(cx: &BodyLowering<'_>, ty: &HIRType) -> bool {
 fn lower_constructor(
     mut cx: BodyLowering<'_>,
     name: &QualifiedName,
-    template: Option<&HIRTemplatePrototype>,
     union_type: &HIRType,
     payload: &HIRType,
     span: &TokenRange,
 ) -> HMIRDefKind {
-    let mut params = lower_template_params(&mut cx, template, span);
     let payload = lower_type(&mut cx, payload);
     let value = cx.declare(None, payload, false, false, span);
-    params.push(value);
+    let params = vec![value];
     let return_type = lower_type(&mut cx, union_type);
 
     let ty = lower_type(&mut cx, union_type);
@@ -202,45 +170,6 @@ fn lower_constructor(
     );
     HMIRDefKind::Function(Box::new(HMIRFunction::new(
         HMIRFunctionStage::Runtime,
-        cx.finish(),
-        signature,
-        Some(root),
-    )))
-}
-
-fn lower_comptime_function(
-    mut cx: BodyLowering<'_>,
-    name: &QualifiedName,
-    prototype: &HIRComptimeFnPrototype,
-    template: Option<&HIRTemplatePrototype>,
-    body: &HIRFunctionBody,
-) -> HMIRDefKind {
-    let (params, return_type, root) = cx.with_stage(true, |this| {
-        let mut params = lower_template_params(this, template, &prototype.range);
-        for param in &prototype.params {
-            let ty = lower_comptime_value_type(this, &param.value_type);
-            params.push(this.declare(
-                param.name.as_ref(),
-                ty,
-                true,
-                param.value_type.expr,
-                &param.value_type.ty.range,
-            ));
-        }
-        let return_type = lower_comptime_value_type(this, &prototype.return_type);
-        (params, return_type, lower_function_body(this, body))
-    });
-    let signature = HMIRSignature::new(
-        params,
-        return_type,
-        false,
-        LinkageMode::Standard,
-        cx.resolver()
-            .link_name(name, HIRSymbolNameScheme::Namespaced),
-        HMIRContract::default(),
-    );
-    HMIRDefKind::Function(Box::new(HMIRFunction::new(
-        HMIRFunctionStage::Comptime,
         cx.finish(),
         signature,
         Some(root),
@@ -282,24 +211,6 @@ fn lower_enum_variant(
         ty,
         initializer,
     )))
-}
-
-fn lower_template_params(
-    cx: &mut BodyLowering<'_>,
-    template: Option<&HIRTemplatePrototype>,
-    span: &TokenRange,
-) -> Vec<HMIRLocalID> {
-    let Some(template) = template else {
-        return Vec::new();
-    };
-    template
-        .types
-        .iter()
-        .map(|name| {
-            let ty = cx.type_of_types(span);
-            cx.declare(Some(name), ty, true, false, span)
-        })
-        .collect()
 }
 
 fn lower_contract(

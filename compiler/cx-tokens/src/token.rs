@@ -366,6 +366,7 @@ pub enum OperatorType {
 
     Comma,
     Access,
+    Arrow,
     ScopeRes,
 
     Move,

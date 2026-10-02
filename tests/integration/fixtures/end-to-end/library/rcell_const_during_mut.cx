@@ -5,11 +5,11 @@ import std::cell::rcell as std;
 import std::io as std;
 
 int main() {
-    std::rcell<int> cell = std::rcell::new(8);
-    std::rcell::borrow(cell) <| |mutable| then
+    std::rcell(int) cell = std::rcell::new(_, 8);
+    std::rcell::borrow(_, emit cell) <| |mutable| then
 
     std::printf("mutable active %d\n", mutable);
-    std::rcell::borrow_const(cell) <| |value| .{
+    std::rcell::borrow_const(_, emit cell) <| |value| emit .{
         std::printf("unreachable const %d\n", value);
     };
     std::printf("unreachable end\n");

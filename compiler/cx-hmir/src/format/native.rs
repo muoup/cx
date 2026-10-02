@@ -144,6 +144,11 @@ impl BodyPrinter<'_> {
                 self.expr(f, *inner, depth)?;
                 f.write_str("&")
             }
+            HMIRTypeOp::Member { ty, name } => {
+                write!(f, "{}(", op.path())?;
+                self.expr(f, *ty, depth)?;
+                write!(f, ", {name})")
+            }
             HMIRTypeOp::Array { element, length } => {
                 self.expr(f, *element, depth)?;
                 f.write_str("[")?;

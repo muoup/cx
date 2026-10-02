@@ -80,6 +80,28 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             data.contents.module_symbols.add_tag(ident, visibility);
         }
 
+        // 'comptime @type name(' declares a type generator
+        keyword!(Comptime) => {
+            let start = data.tokens.index;
+            if let (
+                Some(TokenKind::CompilerIdentifier(universe)),
+                Some(identifier!(ident)),
+                Some(punctuator!(OpenParen)),
+            ) = (
+                data.tokens.slice.get(start).map(|token| &token.kind),
+                data.tokens.slice.get(start + 1).map(|token| &token.kind),
+                data.tokens.slice.get(start + 2).map(|token| &token.kind),
+            ) {
+                if universe != "type" {
+                    return Ok(());
+                }
+
+                let ident = CXIdent::new(ident.as_str());
+                let visibility = data.visibility_mode;
+                data.contents.module_symbols.add_generator(ident, visibility);
+            }
+        }
+
         keyword!(Typedef) => {
             let mut last_ident = None;
             let mut depth = 0usize;

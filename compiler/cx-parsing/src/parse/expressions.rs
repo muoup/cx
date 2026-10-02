@@ -5,22 +5,23 @@ use crate::{
     next_kind, peek_next_kind, try_next,
 };
 use cx_hir::ast::expression::{
-    HIRBinOp, HIRExprKind, HIRExpression, HIRInitIndex, HIRUnpackBinding,
+    HIRBinOp, HIRClosureParam, HIRExprKind, HIRExpression, HIRInitIndex, HIRUnpackBinding,
 };
-use cx_hir::ast::pattern::HIRPattern;
+use cx_hir::ast::pattern::{HIRBindingMode, HIRPattern};
+use cx_hir::ast::types::{HIRTypeKind, HIRTypeLookup};
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
-use cx_namespace::module::QualifiedName;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_tokens::{identifier, operator, punctuator};
+use cx_tokens::{identifier, intrinsic, operator, punctuator, specifier};
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
-use crate::parse::types::{is_type_decl, parse_initializer};
+use crate::parse::types::{is_type_decl, parse_comptime_args, parse_initializer};
 use crate::parse::{
-    parse_block, parse_body, parse_expression_block, parse_intrinsic, try_parse_identifier,
+    parse_body, parse_expression_block, parse_intrinsic, try_parse_qualified_name,
 };
 
 fn parse_at_intrinsic_expr(
@@ -74,6 +75,24 @@ fn parse_at_intrinsic_expr(
 
             Ok(HIRExprKind::Adopt {
                 expr: Box::new(expr),
+            }
+            .into_expr(
+                start_index,
+                data.tokens.index,
+                data.token_range(start_index, data.tokens.index),
+            ))
+        }
+
+        "reify" => {
+            let mut args = parse_comptime_args(data)?.into_iter();
+            let (Some(signature), Some(value), None) = (args.next(), args.next(), args.next())
+            else {
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a signature and a staged value".into(), Some("in @reify".into()), None));
+            };
+
+            Ok(HIRExprKind::Reify {
+                signature: Box::new(signature),
+                value: Box::new(value),
             }
             .into_expr(
                 start_index,
@@ -229,10 +248,7 @@ pub(crate) fn parse_expr_op_concat(
 fn is_va_arg_callee(expression: &HIRExpression) -> bool {
     matches!(
         &expression.kind,
-        HIRExprKind::Identifier {
-            name,
-            template_input: None,
-        } if name.root_name_ref().is_some_and(|name| matches!(name.as_str(), "va_arg" | "__builtin_va_arg"))
+        HIRExprKind::Identifier { name } if name.root_name_ref().is_some_and(|name| matches!(name.as_str(), "va_arg" | "__builtin_va_arg"))
     )
 }
 
@@ -278,38 +294,116 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
             Ok(HIRPattern::Float(FloatWrapper::from(value)))
         }
 
-        TokenKind::Identifier(_) => {
-            let Some(ident) = try_parse_identifier(data)? else {
-                unreachable!()
+        specifier!(Const) | intrinsic!(Auto) => {
+            let is_const = try_next!(data.tokens, specifier!(Const));
+            assert_token_matches!(data.tokens, intrinsic!(Auto), "'auto'");
+            let is_reference = try_next!(data.tokens, operator!(Ampersand));
+
+            let mode = match (is_const, is_reference) {
+                (false, false) => HIRBindingMode::Owned,
+                (false, true) => HIRBindingMode::Reference,
+                (true, true) => HIRBindingMode::ConstReference,
+                (true, false) => {
+                    return parse_point_error(
+                        &data.tokens,
+                        &EXPECTED_SYNTAX,
+                        ("'&'".into(), Some("after 'const auto' in a binding pattern".into()), None),
+                    );
+                }
             };
 
-            if ident.name.namespace.is_root() {
-                if ident.template_input.is_some() {
-                    return parse_point_error(&data.tokens, &INVALID_CONTEXT, ("template arguments".into(), "binding patterns".into()));
-                }
+            let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
+                return parse_point_error(
+                    &data.tokens,
+                    &EXPECTED_SYNTAX,
+                    ("a binding name".into(), Some("after 'auto'".into()), None),
+                );
+            };
 
-                Ok(HIRPattern::Binding(ident.name.root_name().unwrap()))
-            } else {
-                let binding = if try_next!(data.tokens, punctuator!(OpenParen)) {
-                    if try_next!(data.tokens, punctuator!(CloseParen)) {
-                        None
-                    } else {
-                        data.change_comma_mode(true);
-                        let binding = parse_pattern(data)?;
-                        data.pop_comma_mode();
-                        assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-                        Some(Box::new(binding))
-                    }
-                } else {
-                    None
+            Ok(HIRPattern::Binding { name, mode })
+        }
+
+        TokenKind::Identifier(_) => {
+            let start_index = data.tokens.index;
+            let Some(path) = try_parse_qualified_name(&mut data.tokens)? else {
+                unreachable!()
+            };
+            let applied = peek_next_kind!(data.tokens)
+                .is_ok_and(|kind| matches!(kind, punctuator!(OpenParen)));
+
+            if path.namespace.is_root() && path.name.as_str() == "_" && !applied {
+                return Ok(HIRPattern::Wildcard);
+            }
+
+            let (qualifier, name) = if applied && data.is_generator(&path)? {
+                let args = parse_comptime_args(data)?;
+                let sum = HIRTypeKind::Identifier {
+                    name: path,
+                    lookup: HIRTypeLookup::Standard,
+                    args: Some(args),
+                }
+                .to_type()
+                .with_range(data.token_range(start_index, data.tokens.index));
+                let qualifier = HIRExprKind::Type(sum).into_expr(
+                    start_index,
+                    data.tokens.index,
+                    data.token_range(start_index, data.tokens.index),
+                );
+
+                assert_token_matches!(data.tokens, operator!(ScopeRes), "'::' after the sum type");
+                let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
+                    return parse_point_error(
+                        &data.tokens,
+                        &EXPECTED_SYNTAX,
+                        ("a variant name".into(), None, None),
+                    );
                 };
 
-                Ok(HIRPattern::Variant {
-                    constructor: ident.name,
-                    template_input: ident.template_input,
-                    inner: binding,
-                })
-            }
+                (Some(Box::new(qualifier)), name)
+            } else if !applied {
+                // A reference to an existing value, never a binding
+                return Ok(HIRPattern::Value(HIRExprKind::Identifier { name: path }.into_expr(
+                    start_index,
+                    data.tokens.index,
+                    data.token_range(start_index, data.tokens.index),
+                )));
+            } else {
+                let mut segments = path.namespace.segments().to_vec();
+                let qualifier = match segments.pop() {
+                    None => None,
+                    Some(hole) if segments.is_empty() && hole.as_str() == "_" => None,
+                    Some(sum) => {
+                        let sum = HIRTypeKind::Identifier {
+                            name: QualifiedName::new(NamespacePath::new(segments), sum),
+                            lookup: HIRTypeLookup::Standard,
+                            args: None,
+                        }
+                        .to_type();
+                        Some(Box::new(HIRExprKind::Type(sum).into_expr(
+                            start_index,
+                            data.tokens.index,
+                            data.token_range(start_index, data.tokens.index),
+                        )))
+                    }
+                };
+
+                (qualifier, path.name)
+            };
+
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'(' after the variant name");
+            let inner = if try_next!(data.tokens, punctuator!(CloseParen)) {
+                None
+            } else {
+                let inner = parse_pattern(data)?;
+                assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+                Some(Box::new(inner))
+            };
+
+            Ok(HIRPattern::Variant {
+                qualifier,
+                name,
+                inner,
+            })
         }
 
         _ => parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a pattern value".into(), None, None)),
@@ -394,7 +488,25 @@ pub(crate) fn parse_expr_val(
         op_stack.push(PrecOperator::UnOp(op));
     }
 
-    let acc = match &next_kind!(data.tokens)? {
+    // A type in value position, 'opt(int)' as a comptime argument or the head of 'T::member'
+    let acc = if !data.c_mode && !data.in_include() && is_type_decl(data)? {
+        let type_start = data.tokens.index;
+        let (name, ty, _) = parse_initializer(data)?;
+        if name.is_some() {
+            return parse_point_error(
+                &data.tokens,
+                &INVALID_CONTEXT,
+                ("declarations".into(), "expressions".into()),
+            );
+        }
+
+        HIRExprKind::Type(ty).into_expr(
+            type_start,
+            data.tokens.index,
+            data.token_range(type_start, data.tokens.index),
+        )
+    } else {
+        match &next_kind!(data.tokens)? {
         TokenKind::IntLiteral(literal) => HIRExprKind::IntLiteral {
             magnitude: literal.magnitude,
             base: literal.base,
@@ -418,10 +530,31 @@ pub(crate) fn parse_expr_val(
         TokenKind::Operator(OperatorType::Bar) => {
             let mut params = Vec::new();
             loop {
-                let Some(param) = try_parse_simple_identifier(&mut data.tokens) else {
-                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a staged parameter".into(), None, None));
-                };
-                params.push(param);
+                let untyped = matches!(
+                    (
+                        data.tokens.peek().map(|token| &token.kind),
+                        data.tokens
+                            .slice
+                            .get(data.tokens.index + 1)
+                            .map(|token| &token.kind),
+                    ),
+                    (
+                        Some(TokenKind::Identifier(_)),
+                        Some(operator!(Comma) | operator!(Bar))
+                    )
+                );
+
+                if untyped {
+                    let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
+                        unreachable!()
+                    };
+                    params.push(HIRClosureParam { name, ty: None });
+                } else {
+                    let (Some(name), ty, _) = parse_initializer(data)? else {
+                        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a closure parameter".into(), None, None));
+                    };
+                    params.push(HIRClosureParam { name, ty: Some(ty) });
+                }
 
                 if try_next!(data.tokens, operator!(Bar)) {
                     break;
@@ -429,22 +562,18 @@ pub(crate) fn parse_expr_val(
                 assert_token_matches!(data.tokens, operator!(Comma), "',' or '|'");
             }
 
-            let body = if try_next!(data.tokens, punctuator!(OpenBrace)) {
-                data.tokens.back();
-                parse_block(data)?
-            } else {
-                parse_expr(data)?
-            };
+            data.change_comma_mode(false);
+            let body = parse_expr(data);
+            data.pop_comma_mode();
 
-            HIRExprKind::ParamStagedExpression {
+            HIRExprKind::Closure {
                 params,
-                body: Box::new(body),
+                body: Box::new(body?),
             }
         }
 
         TokenKind::Intrinsic(_) => HIRExprKind::Identifier {
             name: QualifiedName::new_raw(parse_intrinsic(&mut data.back().tokens)?),
-            template_input: None,
         },
         TokenKind::CompilerIdentifier(ident) => {
             let ident = ident.clone();
@@ -544,13 +673,14 @@ pub(crate) fn parse_expr_val(
             return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression value".into(), None, None));
         }
     }
-    .into_expr(
-        start_index,
-        data.tokens.index,
-        data.token_range(start_index, data.tokens.index),
-    );
+        .into_expr(
+            start_index,
+            data.tokens.index,
+            data.token_range(start_index, data.tokens.index),
+        )
+    };
 
-    expr_stack.push(acc);
+    expr_stack.push(parse_scope_suffix(data, acc, start_index)?);
 
     while let Some(op) = parse_postfix_unop(data)? {
         let prec = unop_prec(op.clone());
@@ -562,16 +692,69 @@ pub(crate) fn parse_expr_val(
     Ok(())
 }
 
+// Postfix '::member' on a computed base, '(std::opt(int))::some'
+fn parse_scope_suffix(
+    data: &mut ParserData,
+    mut base: HIRExpression,
+    start_index: usize,
+) -> CXResult<HIRExpression> {
+    while try_next!(data.tokens, operator!(ScopeRes)) {
+        let Some(member) = try_parse_simple_identifier(&mut data.tokens) else {
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a member name".into(), Some("after '::'".into()), None));
+        };
+
+        base = HIRExprKind::ScopeAccess {
+            base: Box::new(base),
+            member,
+        }
+        .into_expr(
+            start_index,
+            data.tokens.index,
+            data.token_range(start_index, data.tokens.index),
+        );
+    }
+
+    Ok(base)
+}
+
 pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<HIRExpression> {
     let start_index = data.tokens.index;
-    let Some(ident) = try_parse_identifier(data)? else {
+    let Some(name) = try_parse_qualified_name(&mut data.tokens)? else {
         return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an identifier".into(), None, None));
     };
+    let range = data.token_range(start_index, data.tokens.index);
+    let holes = !data.c_mode && !data.in_include();
 
-    Ok(ident.into_expr(
-        start_index,
-        data.tokens.index,
-        data.token_range(start_index, data.tokens.index),
+    let mut path = name.namespace.segments().to_vec();
+    path.push(name.name.clone());
+
+    // '_::none' and 'T::none' start from a type rather than a namespace
+    let head = QualifiedName::root(path[0].clone());
+    let base = if holes && head.name.as_str() == "_" {
+        HIRExprKind::Hole
+    } else if path.len() > 1 && data.is_temporary_type(&head) {
+        HIRExprKind::Type(
+            HIRTypeKind::Identifier {
+                name: head,
+                lookup: HIRTypeLookup::Standard,
+                args: None,
+            }
+            .to_type()
+            .with_range(range.clone()),
+        )
+    } else {
+        return Ok(HIRExprKind::Identifier { name }.into_expr(start_index, data.tokens.index, range));
+    };
+
+    Ok(path.into_iter().skip(1).fold(
+        base.into_expr(start_index, data.tokens.index, range.clone()),
+        |base, member| {
+            HIRExprKind::ScopeAccess {
+                base: Box::new(base),
+                member,
+            }
+            .into_expr(start_index, data.tokens.index, range.clone())
+        },
     ))
 }
 
@@ -696,10 +879,13 @@ pub(crate) fn parse_keyword_expr(
         KeywordType::Comptime => parse_point_error(&data.tokens, &RESERVED_KEYWORD, "comptime".into()),
         KeywordType::Expr => parse_point_error(&data.tokens, &RESERVED_KEYWORD, "expr".into()),
         KeywordType::Emit => {
-            let expr = parse_expr(data)?;
+            // 'f(emit a, b)' passes two arguments
+            data.change_comma_mode(false);
+            let expr = parse_expr(data);
+            data.pop_comma_mode();
 
             Ok(HIRExprKind::Emit {
-                expr: Box::new(expr),
+                expr: Box::new(expr?),
             })
         }
         KeywordType::Then => Ok(HIRExprKind::Then),

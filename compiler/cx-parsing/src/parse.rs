@@ -3,7 +3,6 @@ use cx_hir::ast::{
     function::{HIRFunctionBody, HIRFunctionPrototype},
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
-    template::HIRTemplatePrototype,
     types::{HIRType, HIRTypeKind, HIRTypeLookup},
     HIRStmt,
 };
@@ -23,7 +22,6 @@ use crate::{
         functions::try_function_parse,
         parser::ParserData,
         statement::parse_stmt,
-        templates::{note_templated_types, parse_template_prototype, unnote_templated_types},
         types::{parse_base_mods, parse_initializer, parse_typedef_initializer},
     }, peek_next_kind, try_next,
 };
@@ -35,12 +33,9 @@ mod functions;
 mod identifier;
 mod operators;
 mod statement;
-mod templates;
 mod types;
 
-pub(crate) use identifier::{
-    try_parse_identifier, try_parse_qualified_name, try_parse_type_identifier,
-};
+pub(crate) use identifier::try_parse_qualified_name;
 
 pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
     let Some(token) = data.tokens.peek() else {
@@ -60,7 +55,10 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
             data.tokens.goto_statement_end();
         }
         keyword!(Typedef) => parse_typedef(data)?,
-        keyword!(Comptime) => parse_comptime_fn_merge(data)?,
+        keyword!(Comptime) => {
+            data.tokens.next();
+            parse_global_expr(data, true)?
+        }
         punctuator!(Semicolon) => {
             data.tokens.next();
         }
@@ -70,7 +68,7 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CXResult<()> {
             parse_extern_c_mod(data)?
         }
         specifier!(Public) | specifier!(Private) => parse_access_mods(data)?,
-        _ => parse_global_expr(data)?,
+        _ => parse_global_expr(data, false)?,
     };
 
     Ok(())
@@ -164,37 +162,9 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
     Ok(())
 }
 
-fn parse_comptime_fn_merge(data: &mut ParserData) -> CXResult<()> {
-    let func = functions::parse_comptime_function(data)?;
-
-    let body = if let Some(template_prototype) = func.template_prototype.as_ref() {
-        note_templated_types(data, template_prototype)?;
-        let body = parse_function_body(data);
-        unnote_templated_types(data, template_prototype);
-        body
-    } else {
-        parse_function_body(data)
-    }?;
-
-    data.add_stmt(HIRStmt::ComptimeFunctionDefinition {
-        prototype: func.prototype,
-        visibility: data.visibility,
-        template_prototype: func.template_prototype,
-        body,
-    });
-
-    Ok(())
-}
-
 pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     assert_token_matches!(data.tokens, keyword!(Typedef), "'typedef'");
     let start_index = data.tokens.index;
-
-    let template_prototype = if matches!(peek_next_kind!(data.tokens)?, operator!(Less)) {
-        Some(parse_template_prototype(&mut data.tokens)?)
-    } else {
-        None
-    };
 
     let (name, ty) = parse_typedef_initializer(data)?;
 
@@ -211,7 +181,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     if let HIRTypeKind::Identifier {
         name: type_name,
         lookup,
-        template_input: None,
+        args: None,
     } = &ty.kind
     {
         let is_existing_type_alias = *lookup == HIRTypeLookup::Standard
@@ -229,7 +199,6 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
                 name: Some(name),
                 visibility: data.visibility,
                 ty: ty.clone(),
-                template_prototype: template_prototype.clone(),
                 tag: None,
             });
             return Ok(());
@@ -240,7 +209,6 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         name: Some(name),
         visibility: data.visibility,
         ty: ty.clone(),
-        template_prototype: template_prototype.clone(),
         tag: None,
     });
 
@@ -250,18 +218,9 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
 fn parse_fn_merge(
     data: &mut ParserData,
     mut prototype: HIRFunctionPrototype,
-    template_prototype: Option<HIRTemplatePrototype>,
     inherited_external: bool,
 ) -> CXResult<()> {
     if try_next!(data.tokens, punctuator!(Semicolon)) {
-        if template_prototype.is_some() {
-            return parse_point_error(
-                &data.tokens,
-                &EXPECTED_SYNTAX,
-                ("a function body".into(), None, None),
-            );
-        }
-
         if inherited_external {
             prototype.linkage = LinkageMode::Extern;
         }
@@ -269,31 +228,70 @@ fn parse_fn_merge(
         data.add_stmt(HIRStmt::FunctionDefinition {
             prototype,
             visibility: data.visibility,
-            template_prototype: None,
             body: None,
         });
     } else {
-        let body = if let Some(template_prototype) = template_prototype.as_ref() {
-            note_templated_types(data, template_prototype)?;
-            let body = parse_function_body(data);
-            unnote_templated_types(data, template_prototype);
-            body
-        } else {
-            parse_function_body(data)
-        }?;
+        let body = parse_function_body(data)?;
 
         data.add_stmt(HIRStmt::FunctionDefinition {
             prototype,
             visibility: data.visibility,
             body: Some(body),
-            template_prototype,
         });
     }
 
     Ok(())
 }
 
-fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
+// The names bound by '@type' parameters of the declaration ahead. They are types from the
+// return type onwards, which is written before the parameter list that binds them.
+fn scan_type_binders(data: &ParserData) -> Vec<CXIdent> {
+    let mut names = Vec::new();
+    let mut depth = 0usize;
+
+    for (offset, token) in data.tokens.slice[data.tokens.index..].iter().enumerate() {
+        match &token.kind {
+            punctuator!(OpenParen) => depth += 1,
+            punctuator!(CloseParen) => depth = depth.saturating_sub(1),
+            punctuator!(Semicolon) | punctuator!(OpenBrace) | punctuator!(ThickArrow)
+                if depth == 0 =>
+            {
+                break;
+            }
+            TokenKind::Assignment(_) if depth == 0 => break,
+            TokenKind::CompilerIdentifier(name) if depth > 0 && name == "type" => {
+                if let Some(TokenKind::Identifier(binder)) = data
+                    .tokens
+                    .slice
+                    .get(data.tokens.index + offset + 1)
+                    .map(|token| &token.kind)
+                {
+                    names.push(CXIdent::new(binder.clone()));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    names
+}
+
+fn parse_global_expr(data: &mut ParserData, comptime: bool) -> CXResult<()> {
+    let binders = scan_type_binders(data);
+    for binder in &binders {
+        data.note_type_name(binder.clone());
+    }
+
+    let result = parse_global_declaration(data, comptime);
+
+    for binder in &binders {
+        data.unnote_type_name(binder);
+    }
+
+    result
+}
+
+fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<()> {
     let (name, return_type, specifiers) = parse_initializer(data)?;
     let linkage = specifiers.linkage;
     let symbol_naming = if data.c_mode {
@@ -325,19 +323,23 @@ fn parse_global_expr(data: &mut ParserData) -> CXResult<()> {
         );
     }
 
-    if let Some(func) = try_function_parse(
+    if let Some(prototype) = try_function_parse(
         data,
         return_type.clone(),
         name.clone(),
+        comptime,
         linkage,
         symbol_naming,
         specifiers.attributes,
     )? {
-        return parse_fn_merge(
-            data,
-            func.prototype,
-            func.template_prototype,
-            inherited_external,
+        return parse_fn_merge(data, prototype, inherited_external);
+    }
+
+    if comptime {
+        return parse_point_error(
+            &data.tokens,
+            &EXPECTED_SYNTAX,
+            ("comptime function parameters".into(), None, None),
         );
     }
 
@@ -548,7 +550,7 @@ pub(crate) fn count_then_markers(expr: &HIRExpression) -> usize {
         | HIRExprKind::Unsafe { expr: operand }
         | HIRExprKind::Leak { expr: operand }
         | HIRExprKind::Adopt { expr: operand } => count_then_markers(operand),
-        HIRExprKind::ParamStagedExpression { body, .. } => count_then_markers(body),
+        HIRExprKind::Closure { body, .. } => count_then_markers(body),
         HIRExprKind::Block { exprs, .. } => exprs.iter().map(count_then_markers).sum(),
         _ => 0,
     }
@@ -556,12 +558,8 @@ pub(crate) fn count_then_markers(expr: &HIRExpression) -> usize {
 
 pub(crate) fn count_capturing_then_markers(expr: &HIRExpression) -> usize {
     match &expr.kind {
-        HIRExprKind::ParamStagedExpression { body, .. }
-            if matches!(body.kind, HIRExprKind::Then) =>
-        {
-            1
-        }
-        HIRExprKind::ParamStagedExpression { body, .. } => count_capturing_then_markers(body),
+        HIRExprKind::Closure { body, .. } if matches!(body.kind, HIRExprKind::Then) => 1,
+        HIRExprKind::Closure { body, .. } => count_capturing_then_markers(body),
         HIRExprKind::BinOp { lhs, rhs, .. } => {
             count_capturing_then_markers(lhs) + count_capturing_then_markers(rhs)
         }
@@ -592,7 +590,7 @@ fn replace_then_marker(expr: &mut HIRExpression, continuation: HIRExpression) {
             | HIRExprKind::Unsafe { expr: operand }
             | HIRExprKind::Leak { expr: operand }
             | HIRExprKind::Adopt { expr: operand } => replace(operand, continuation),
-            HIRExprKind::ParamStagedExpression { body, .. } => replace(body, continuation),
+            HIRExprKind::Closure { body, .. } => replace(body, continuation),
             HIRExprKind::Block { exprs, .. } => {
                 for expr in exprs {
                     replace(expr, continuation);

@@ -31,46 +31,46 @@ struct tcp_stream : @nodrop {
     i32 fd;
 };
 
-std::opt<tcp_listener> tcp_listener::open() {
+std::opt(tcp_listener) tcp_listener::open() {
     i32 fd = socket(LINUX_AF_INET, LINUX_SOCK_STREAM, 0);
 
     if (fd < 0) {
-        return std::opt::none<tcp_listener>();
+        return _::none();
     }
 
     int enabled = 1;
     setsockopt(fd, LINUX_SOL_SOCKET, LINUX_SO_REUSEADDR, &enabled, (u32) sizeof(int));
 
-    return std::opt::some<tcp_listener>((tcp_listener) { .fd = fd });
+    return _::some((tcp_listener) { .fd = fd });
 }
 
-std::opt<void> tcp_listener::bind(tcp_listener& this, std::net::endpoint addr) {
+std::opt(void) tcp_listener::bind(tcp_listener& this, std::net::endpoint addr) {
     if (bind(this.fd, &addr.address, addr.length) < 0) {
-        return std::opt::none();
+        return _::none();
     }
 
-    return std::opt::some();
+    return _::some();
 }
 
-std::opt<void> tcp_listener::listen(tcp_listener& this, int backlog) {
+std::opt(void) tcp_listener::listen(tcp_listener& this, int backlog) {
     if (listen(this.fd, backlog) < 0) {
-        return std::opt::none();
+        return _::none();
     }
 
-    return std::opt::some();
+    return _::some();
 }
 
-std::opt<tcp_stream> tcp_listener::accept(tcp_listener& this) {
+std::opt(tcp_stream) tcp_listener::accept(tcp_listener& this) {
     std::net::endpoint remote;
     remote.length = (u32) sizeof(std::net::sockaddr_in);
 
     i32 fd = accept(this.fd, &remote.address, &remote.length);
 
     if (fd < 0) {
-        return std::opt::none<tcp_stream>();
+        return _::none();
     }
 
-    return std::opt::some<tcp_stream>((tcp_stream) { .fd = fd });
+    return _::some((tcp_stream) { .fd = fd });
 }
 
 void tcp_listener::close(tcp_listener this) {
@@ -78,24 +78,24 @@ void tcp_listener::close(tcp_listener this) {
     @leak(this);
 }
 
-std::opt<u64> tcp_stream::read(tcp_stream& this, void* buffer, u64 capacity) {
+std::opt(u64) tcp_stream::read(tcp_stream& this, void* buffer, u64 capacity) {
     i64 received = read(this.fd, buffer, capacity);
 
     if (received < 0) {
-        return std::opt::none<u64>();
+        return _::none();
     }
 
-    return std::opt::some<u64>((u64) received);
+    return _::some((u64) received);
 }
 
-std::opt<u64> tcp_stream::write(tcp_stream& this, const std::span<const u8> buffer) {
+std::opt(u64) tcp_stream::write(tcp_stream& this, const std::span(const u8) buffer) {
     i64 sent = write(this.fd, buffer.data, buffer.length);
 
     if (sent < 0) {
-        return std::opt::none<u64>();
+        return _::none();
     }
 
-    return std::opt::some<u64>((u64) sent);
+    return _::some((u64) sent);
 }
 
 void tcp_stream::close(tcp_stream this) {

@@ -1,7 +1,7 @@
-T add<T>(T a, T b) {
+T add(@type T, T a, T b) {
     return a + b;
 }
 
 int main() {
-    return add(1, 2.0);
+    return add(_, 1, 2.0);
 }

@@ -5,10 +5,9 @@ use cx_preparse_data::NamespaceAliases;
 use cx_util::{identifier::CXIdent};
 
 use crate::ast::{
-    function::{HIRComptimeFnPrototype, HIRFunctionBody, HIRFunctionPrototype},
+    function::{HIRFunctionBody, HIRFunctionPrototype},
     global_var::HIRGlobalVariable,
     modifiers::VisibilityMode,
-    template::HIRTemplatePrototype,
     types::{HIRTagKind, HIRType},
 };
 
@@ -17,7 +16,6 @@ pub mod function;
 pub mod global_var;
 pub mod modifiers;
 pub mod pattern;
-pub mod template;
 pub mod types;
 
 #[derive(Debug)]
@@ -39,7 +37,6 @@ pub enum HIRStmt {
     TypeDefinition {
         name: Option<CXIdent>,
         visibility: VisibilityMode,
-        template_prototype: Option<HIRTemplatePrototype>,
         ty: HIRType,
         tag: Option<HIRTagKind>,
     },
@@ -47,15 +44,7 @@ pub enum HIRStmt {
     FunctionDefinition {
         prototype: HIRFunctionPrototype,
         visibility: VisibilityMode,
-        template_prototype: Option<HIRTemplatePrototype>,
         body: Option<HIRFunctionBody>,
-    },
-
-    ComptimeFunctionDefinition {
-        prototype: HIRComptimeFnPrototype,
-        visibility: VisibilityMode,
-        template_prototype: Option<HIRTemplatePrototype>,
-        body: HIRFunctionBody,
     },
 
     GlobalVariableDefinition {

@@ -15,8 +15,8 @@ void Resource::drop(Resource this) safe {
 
 void discard(MaybeResource value) {
     match (move value) {
-        MaybeResource::some(resource) => move resource |> Resource::drop();
-        _ => @leak(_);
+        some(auto resource) => move resource |> Resource::drop();
+        auto rest => @leak(rest);
     }
 }
 

@@ -1,4 +1,4 @@
-comptime expr void invoke(expr(int&, int&) void proc) {
+comptime expr(void) invoke(@fn proc(expr(int&), expr(int&)) -> expr(void)) {
     return emit .{};
 }
 
@@ -7,6 +7,6 @@ void consume(int& value) {
 }
 
 int main() {
-    invoke(|value| consume(value));
+    invoke(|value| emit consume(value));
     return 0;
 }

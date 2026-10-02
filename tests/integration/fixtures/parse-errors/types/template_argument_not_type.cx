@@ -1,8 +1,0 @@
-struct Box<T> {
-    T value;
-};
-
-int main() {
-    Box<1> value;
-    return 0;
-}

@@ -3,17 +3,17 @@
 
 #include <stdio.h>
 
-comptime expr T twice<T>(expr T value) {
+comptime expr(T) twice(@type T, expr(T) value) {
     return emit value * 2;
 }
 
-comptime expr T add_ten<T>(expr T value) {
+comptime expr(T) add_ten(@type T, expr(T) value) {
     return emit value + 10;
 }
 
 int main() {
-    int value = twice<int>(21);
-    int chained = add_ten<int>(twice<int>(4));
+    int value = twice(int, emit 21);
+    int chained = add_ten(int, emit twice(int, emit 4));
 
     printf("value %d\n", value);
     printf("chained %d\n", chained);

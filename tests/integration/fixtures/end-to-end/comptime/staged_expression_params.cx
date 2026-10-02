@@ -2,10 +2,10 @@
 
 #include <stdio.h>
 
-comptime expr void invoke_pair(
-    expr int& lhs,
-    expr int& rhs,
-    expr(int&, int&) void proc
+comptime expr(void) invoke_pair(
+    expr(int&) lhs,
+    expr(int&) rhs,
+    @fn proc(expr(int&), expr(int&)) -> expr(void)
 ) {
     return emit .{
         proc(lhs, rhs);
@@ -21,7 +21,7 @@ int main() {
     int rhs = 22;
     int result = 0;
 
-    invoke_pair(lhs, rhs) <| |left, right| store_sum(&result, left, right);
+    invoke_pair(emit lhs, emit rhs) <| |left, right| emit store_sum(&result, left, right);
 
     printf("staged pair %d\n", result);
     return 0;

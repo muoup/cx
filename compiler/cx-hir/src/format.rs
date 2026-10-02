@@ -3,13 +3,9 @@ use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
     expression::{HIRBinOp, HIRBlockKind, HIRExprKind, HIRExpression, HIRInitIndex},
-    function::{
-        HIRComptimeFnPrototype, HIRComptimeValueType, HIRFunctionBody, HIRFunctionKind,
-        HIRFunctionPrototype,
-    },
+    function::{HIRFunctionBody, HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
-    pattern::HIRPattern,
-    template::HIRTemplateInput,
+    pattern::{HIRBindingMode, HIRPattern},
     types::{HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
     HIRDefinition, HIRStmt, HIR,
 };
@@ -127,20 +123,10 @@ impl Display for HIRStmt {
             HIRStmt::TypeDefinition {
                 name,
                 visibility,
-                template_prototype,
                 ty,
                 tag: _,
             } => {
                 write!(f, "{visibility:?} ")?;
-                if let Some(template) = template_prototype {
-                    let params = template
-                        .types
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    write!(f, "template <{params}> ")?;
-                }
 
                 match name {
                     Some(name) => write!(f, "type {name} = {ty};"),
@@ -151,18 +137,11 @@ impl Display for HIRStmt {
             HIRStmt::FunctionDefinition {
                 prototype,
                 visibility,
-                template_prototype,
                 body,
             } => {
                 write!(f, "{visibility:?} ")?;
-                if let Some(template) = template_prototype {
-                    let params = template
-                        .types
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    write!(f, "template <{params}> ")?;
+                if prototype.comptime {
+                    write!(f, "comptime ")?;
                 }
                 write!(f, "fn {prototype}")?;
                 if let Some(body) = body {
@@ -170,25 +149,6 @@ impl Display for HIRStmt {
                 } else {
                     write!(f, ";")
                 }
-            }
-
-            HIRStmt::ComptimeFunctionDefinition {
-                prototype,
-                visibility,
-                template_prototype,
-                body,
-            } => {
-                write!(f, "{visibility:?} ")?;
-                if let Some(template) = template_prototype {
-                    let params = template
-                        .types
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    write!(f, "template <{params}> ")?;
-                }
-                write!(f, "comptime fn {prototype} {body}")
             }
 
             HIRStmt::GlobalVariableDefinition {
@@ -233,36 +193,28 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 writeln!(f, "Defer")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-            HIRExprKind::ParamStagedExpression { params, body } => {
+            HIRExprKind::Closure { params, body } => {
                 writeln!(
                     f,
-                    "StagedExpression |{}|",
+                    "Closure |{}|",
                     params
                         .iter()
-                        .map(ToString::to_string)
+                        .map(|param| match &param.ty {
+                            Some(ty) => format!("{ty} {}", param.name),
+                            None => param.name.to_string(),
+                        })
                         .collect::<Vec<_>>()
                         .join(", ")
                 )?;
                 HIRExprFormatter::new(body, self.depth + 1).fmt(f)
             }
             HIRExprKind::Then => writeln!(f, "Then"),
-            HIRExprKind::Identifier {
-                name,
-                template_input,
-                ..
-            } => {
-                if let Some(template_input) = template_input {
-                    let arg_string = template_input
-                        .params
-                        .iter()
-                        .map(|arg| format!("{}", arg))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    writeln!(f, "Identifier {}<{}>", name, arg_string)
-                } else {
-                    writeln!(f, "Identifier {}", name)
-                }
+            HIRExprKind::Identifier { name } => writeln!(f, "Identifier {}", name),
+            HIRExprKind::Type(ty) => writeln!(f, "Type {ty}"),
+            HIRExprKind::Hole => writeln!(f, "Hole"),
+            HIRExprKind::ScopeAccess { base, member } => {
+                writeln!(f, "ScopeAccess {member}")?;
+                HIRExprFormatter::new(base, self.depth + 1).fmt(f)
             }
             HIRExprKind::VarDeclaration {
                 name,
@@ -393,6 +345,11 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 writeln!(f, "Adopt")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
+            HIRExprKind::Reify { signature, value } => {
+                writeln!(f, "Reify")?;
+                HIRExprFormatter::new(signature, self.depth + 1).fmt(f)?;
+                HIRExprFormatter::new(value, self.depth + 1).fmt(f)
+            }
             HIRExprKind::SizeOfExpr { expr } => {
                 writeln!(f, "SizeOf")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
@@ -490,7 +447,7 @@ impl Display for HIRBinOp {
             HIRBinOp::BitXor => write!(f, "^"),
             HIRBinOp::LShift => write!(f, "<<"),
             HIRBinOp::RShift => write!(f, ">>"),
-            HIRBinOp::Pipe => write!(f, "|>"),
+            HIRBinOp::Pipe(index) => write!(f, "|>({index})"),
             HIRBinOp::BackwardPipe => write!(f, "<|"),
         }
     }
@@ -536,17 +493,16 @@ impl Display for HIRType {
 impl Display for HIRTypeKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            HIRTypeKind::Identifier {
-                name,
-                template_input,
-                ..
-            } => {
-                if let Some(input) = template_input {
-                    write!(f, "{name}{input}")
-                } else {
-                    write!(f, "{name}")
+            HIRTypeKind::Identifier { name, args, .. } => {
+                write!(f, "{name}")?;
+                if let Some(args) = args {
+                    write!(f, "(<{} comptime arguments>)", args.len())?;
                 }
+                Ok(())
             }
+            HIRTypeKind::Universe => write!(f, "@type"),
+            HIRTypeKind::Auto => write!(f, "auto"),
+            HIRTypeKind::Expr(inner) => write!(f, "expr({inner})"),
             HIRTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             HIRTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
             HIRTypeKind::MemoryReference {
@@ -666,7 +622,8 @@ impl Display for HIRTypeKind {
                 }
                 write!(
                     f,
-                    "union class {name}{} {{ {variants_str} }}",
+                    "union class {}{} {{ {variants_str} }}",
+                    name.as_ref().map(|n| n.as_str()).unwrap_or("__anonymous__"),
                     if attrs.is_empty() {
                         "".to_string()
                     } else {
@@ -698,55 +655,6 @@ impl Display for HIRFunctionPrototype {
     }
 }
 
-impl Display for HIRComptimeValueType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.expr {
-            write!(f, "expr ")?;
-            if !self.params.is_empty() {
-                write!(f, "(")?;
-                for (index, param) in self.params.iter().enumerate() {
-                    if index != 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{param}")?;
-                }
-                write!(f, ") ")?;
-            }
-        }
-
-        write!(f, "{}", self.ty)
-    }
-}
-
-impl Display for HIRComptimeFnPrototype {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut params = Vec::new();
-
-        params.extend(self.params.iter().map(|param| {
-            format!(
-                "{}: {}",
-                param.name.as_ref().unwrap_or(&CXIdent::new("_")),
-                param.value_type
-            )
-        }));
-
-        let params_str = params.join(", ");
-        write!(f, "{} :: {}({})", self.return_type, self.kind, params_str)
-    }
-}
-
-impl Display for HIRTemplateInput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let params_str = self
-            .params
-            .iter()
-            .map(|param| param.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        write!(f, "<{params_str}>")
-    }
-}
-
 impl Display for HIRFunctionKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -761,31 +669,21 @@ impl Display for HIRFunctionKind {
 impl Display for HIRPattern {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
-            HIRPattern::Binding(name) => write!(f, "{name}"),
+            HIRPattern::Wildcard => write!(f, "_"),
+            HIRPattern::Binding { name, mode } => match mode {
+                HIRBindingMode::Owned => write!(f, "auto {name}"),
+                HIRBindingMode::Reference => write!(f, "auto& {name}"),
+                HIRBindingMode::ConstReference => write!(f, "const auto& {name}"),
+            },
             HIRPattern::Integer(value) => write!(f, "{value}"),
             HIRPattern::Float(value) => write!(f, "{value}"),
-            HIRPattern::Variant {
-                constructor,
-                template_input,
-                inner,
-            } => {
-                write!(f, "{constructor}")?;
-                if let Some(input) = template_input {
-                    write!(
-                        f,
-                        "<{}>",
-                        input
-                            .params
-                            .iter()
-                            .map(|param| param.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )?;
-                }
+            HIRPattern::Value(_) => write!(f, "<value>"),
+            HIRPattern::Variant { name, inner, .. } => {
+                write!(f, "{name}(")?;
                 if let Some(inner) = inner {
-                    write!(f, "({inner})")?;
+                    write!(f, "{inner}")?;
                 }
-                Ok(())
+                write!(f, ")")
             }
         }
     }

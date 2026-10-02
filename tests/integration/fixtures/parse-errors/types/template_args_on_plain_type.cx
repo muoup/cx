@@ -3,7 +3,7 @@ struct Plain {
 };
 
 struct Holder {
-    Plain<int> value;
+    Plain(int) value;
 };
 
 int main() {

@@ -16,6 +16,7 @@ use crate::{
         lower_cleanup_to, lower_eval, lower_return, lower_type_hint,
         operand::{lower_copy, lower_read, lower_spill, lower_value},
     },
+    module::variant_index,
     ty::TypeID,
     value::{arithmetic_type, promote_integer_type},
 };
@@ -542,7 +543,19 @@ pub(crate) fn lower_match(
         let case = match pattern {
             HMIRPattern::Binding(_) => continue,
             HMIRPattern::Integer(value) if !variants => *value as i128,
-            HMIRPattern::Variant { index, .. } if variants => *index as i128,
+            HMIRPattern::Value(expected) if !variants => {
+                let expected = lower_eval(cx, frame, *expected, Expect::Type(value.ty()))?;
+                let Some(expected) = expected.as_int() else {
+                    return cx.error(
+                        span,
+                        "value pattern is not an integer constant; bind the value with 'auto name'",
+                    );
+                };
+                expected
+            }
+            HMIRPattern::Variant { name, .. } if variants => {
+                variant_index(cx.program, value.ty(), name, span)? as i128
+            }
             HMIRPattern::Float(_) => {
                 return cx.error(span, "floating patterns cannot be matched by cases");
             }

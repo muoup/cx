@@ -5,8 +5,8 @@ import std::optional;
 #include <stdio.h>
 
 int main() {
-    std::optional::opt<int> value = std::optional::opt::some<int>(7);
-    if (value is std::optional::opt::some(inner)) {
+    std::optional::opt(int) value = std::optional::opt(int)::some(7);
+    if (value is some(auto inner)) {
         printf("%d\n", inner);
     }
     return 0;

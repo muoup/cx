@@ -24,6 +24,16 @@ pub(super) fn exec_type_op(
             .collect::<CXResult<Vec<_>>>()
     };
     Ok(match op {
+        HMIRTypeOp::Member { ty, name } => {
+            let ty = eval_type(cx, frame, *ty)?;
+            let Some((_, field)) = cx.types().field(ty, name.as_str()) else {
+                return Err(staging_error(
+                    span,
+                    format!("'{}' has no member '{name}'", cx.types().display(ty)),
+                ));
+            };
+            StaticValue::Type(field.ty())
+        }
         HMIRTypeOp::TypeOf(operand) => StaticValue::Type(inspect(cx, frame, *operand, None)?),
         HMIRTypeOp::PointerInner(operand) | HMIRTypeOp::ReferenceInner(operand) => {
             let ty = eval_type(cx, frame, *operand)?;

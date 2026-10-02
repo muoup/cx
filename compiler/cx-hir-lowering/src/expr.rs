@@ -5,9 +5,10 @@ pub(crate) mod op;
 pub(crate) mod pattern;
 
 use cx_hir::ast::expression::{
-    HIRBinOp, HIRBlockKind, HIRExprKind, HIRExpression, HIRInitIndex, HIRUnpackBinding,
+    HIRBinOp, HIRBlockKind, HIRClosureParam, HIRExprKind, HIRExpression, HIRInitIndex,
+    HIRUnpackBinding,
 };
-use cx_hir::ast::{template::HIRTemplateInput, types::HIRType};
+use cx_hir::ast::types::HIRType;
 use cx_hmir::{
     HMIRAggregateOp, HMIRBlockKind, HMIRConstant, HMIRControlOp, HMIRExprID, HMIRExprKind,
     HMIRNativeOp, HMIROwnershipOp, HMIRTypeOp,
@@ -18,14 +19,14 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    body::{BodyLowering, Symbol, lower_static},
+    body::{BodyLowering, Symbol, lower_reify, lower_static, lower_variant_constructor},
     def::is_void,
-    expr::call::{lower_call, lower_construct},
+    expr::call::{lower_call, lower_construct, lower_scope_base},
     expr::control::{lower_for, lower_if, lower_match, lower_switch, lower_while},
     expr::literal::{lower_float_literal, lower_int_literal},
     expr::op::{lower_binop, lower_unop},
     resolve::GlobalSymbol,
-    ty::{lower_instantiate, lower_type},
+    ty::{lower_constructor_sum, lower_type, staged_signature},
 };
 
 pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMIRExprID {
@@ -34,10 +35,13 @@ pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMI
         HIRExprKind::Taken | HIRExprKind::Then => cx.error(span),
         HIRExprKind::Void => cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span),
 
-        HIRExprKind::Identifier {
-            name,
-            template_input,
-        } => lower_identifier(cx, name, template_input.as_ref(), span),
+        HIRExprKind::Identifier { name } => lower_identifier(cx, name, span),
+        HIRExprKind::Type(ty) => lower_type(cx, ty),
+        HIRExprKind::Hole => cx.hole(span),
+        HIRExprKind::ScopeAccess { base, member } => {
+            let sum = lower_scope_base(cx, base);
+            lower_variant_constructor(cx, sum, member, span)
+        }
         HIRExprKind::IntLiteral {
             magnitude,
             base,
@@ -113,7 +117,7 @@ pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMI
             ..
         } => lower_declaration(cx, ty, name, initial_value.as_deref(), span),
         HIRExprKind::BinOp {
-            op: HIRBinOp::MethodCall | HIRBinOp::Pipe | HIRBinOp::BackwardPipe,
+            op: HIRBinOp::MethodCall | HIRBinOp::Pipe(_) | HIRBinOp::BackwardPipe,
             ..
         } => lower_call(cx, expr, Vec::new(), Vec::new()),
         HIRExprKind::BinOp { lhs, rhs, op } => lower_binop(cx, op, lhs, rhs, span),
@@ -129,7 +133,7 @@ pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMI
             let inner = lower_expr(cx, inner);
             cx.control(HMIRControlOp::Unsafe(inner), span)
         }
-        HIRExprKind::ParamStagedExpression { params, body } => lower_quote(cx, params, body, span),
+        HIRExprKind::Closure { params, body } => lower_closure(cx, params, body, span),
         HIRExprKind::Emit { expr: inner } => lower_quote(cx, &[], inner, span),
 
         HIRExprKind::Break => cx.control(HMIRControlOp::Break, span),
@@ -158,6 +162,7 @@ pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMI
             let inner = lower_expr(cx, inner);
             cx.ownership(HMIROwnershipOp::Leak(inner), span)
         }
+        HIRExprKind::Reify { signature, value } => lower_reify(cx, signature, value, span),
         HIRExprKind::Adopt { expr: inner } => {
             let inner = lower_expr(cx, inner);
             cx.ownership(HMIROwnershipOp::Adopt(inner), span)
@@ -200,10 +205,9 @@ fn lower_block(
 pub(crate) fn lower_identifier(
     cx: &mut BodyLowering<'_>,
     name: &QualifiedName,
-    template_input: Option<&HIRTemplateInput>,
     span: &TokenRange,
 ) -> HMIRExprID {
-    let value = match cx.lookup(name, None) {
+    match cx.lookup(name, None) {
         Symbol::Local(binding) => {
             let local = cx.push(HMIRExprKind::Local(binding.local()), span);
             if !binding.is_quoted() || cx.is_comptime() {
@@ -221,19 +225,19 @@ pub(crate) fn lower_identifier(
         Symbol::Global(GlobalSymbol::Primitive(desc)) => cx.type_constant(desc, span),
         Symbol::Global(
             GlobalSymbol::Def(def)
-            | GlobalSymbol::Function(def, _)
+            | GlobalSymbol::Function(def)
             | GlobalSymbol::ComptimeFunction(def, ..),
         ) => cx.push(HMIRExprKind::Def(def), span),
         Symbol::Global(GlobalSymbol::Constructor(data, variant, def)) => {
             let payload = cx.resolver().constructor_payload(&data);
             if payload.is_none_or(|payload| is_void(cx, &payload)) {
                 let unit = cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span);
-                return lower_construct(cx, &data.union_type, template_input, variant, unit, span);
+                let sum = lower_constructor_sum(cx, &data.union_type, span);
+                return lower_construct(cx, sum, variant, unit, span);
             }
             cx.push(HMIRExprKind::Def(def), span)
         }
-    };
-    lower_instantiate(cx, value, template_input, span)
+    }
 }
 
 fn lower_declaration(
@@ -305,20 +309,47 @@ fn lower_unpack(
     cx.aggregate_op(HMIRAggregateOp::Unpack { value, bindings }, span)
 }
 
-pub(crate) fn lower_quote(
+// A closure is an anonymous comptime function; the code it produces is its 'emit'
+fn lower_closure(
     cx: &mut BodyLowering<'_>,
-    params: &[CXIdent],
+    params: &[HIRClosureParam],
     body: &HIRExpression,
     span: &TokenRange,
 ) -> HMIRExprID {
+    match &body.kind {
+        HIRExprKind::Emit { expr } => lower_quote(cx, params, expr, span),
+        // 'then' has been replaced by the rest of the enclosing block, which it emits
+        HIRExprKind::Block {
+            kind: HIRBlockKind::Sequence,
+            ..
+        } => lower_quote(cx, params, body, span),
+        _ => cx.error(span),
+    }
+}
+
+pub(crate) fn lower_quote(
+    cx: &mut BodyLowering<'_>,
+    params: &[HIRClosureParam],
+    body: &HIRExpression,
+    span: &TokenRange,
+) -> HMIRExprID {
+    // Parameter types are written in the stage the closure appears in
+    let types = params
+        .iter()
+        .map(|param| match &param.ty {
+            Some(ty) => match staged_signature(ty) {
+                Some((_, carried)) => lower_type(cx, carried),
+                None => lower_type(cx, ty),
+            },
+            None => cx.hole(span),
+        })
+        .collect::<Vec<_>>();
     cx.with_stage(false, |this| {
         this.scoped(|this| {
             let params = params
                 .iter()
-                .map(|param| {
-                    let ty = this.hole(span);
-                    this.declare_local(Some(param), ty, span)
-                })
+                .zip(types)
+                .map(|(param, ty)| this.declare_local(Some(&param.name), ty, span))
                 .collect();
             let body = lower_expr(this, body);
             this.push(HMIRExprKind::Quote { params, body }, span)

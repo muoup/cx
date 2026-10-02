@@ -59,7 +59,7 @@ pub(crate) fn operator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
         '-' => match iter.peek() {
             Some('>') => {
                 iter.next();
-                Some(TokenKind::Operator(OperatorType::Access))
+                Some(TokenKind::Operator(OperatorType::Arrow))
             }
             Some('-') => {
                 iter.next();

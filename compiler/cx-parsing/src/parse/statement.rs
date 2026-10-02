@@ -17,7 +17,7 @@ use crate::{
         functions::try_function_parse,
         parse_block,
         parser::ParserData,
-        try_parse_simple_identifier,
+        try_parse_qualified_name, try_parse_simple_identifier,
         types::{is_type_decl, parse_base_mods, parse_type_base},
     },
     peek_next_kind, try_next,
@@ -98,13 +98,48 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpres
     }
 
     data.back();
-    if is_type_decl(data)? {
+    if is_type_decl(data)? && !is_scoped_type_expression(data)? {
         let stmt = parse_declaration_stmt(data)?;
         assert_token_matches!(data.tokens, punctuator!(Semicolon), ";");
         Ok(Some(stmt))
     } else {
         Ok(None)
     }
+}
+
+// 'opt(int)::some(5);' opens with a type but is an expression
+fn is_scoped_type_expression(data: &mut ParserData) -> CXResult<bool> {
+    let start = data.tokens.index;
+    let Some(name) = try_parse_qualified_name(&mut data.tokens)? else {
+        return Ok(false);
+    };
+    let mut index = data.tokens.index;
+    data.tokens.index = start;
+
+    if !data.is_generator(&name)? {
+        return Ok(false);
+    }
+
+    let mut depth = 0usize;
+    while let Some(token) = data.tokens.slice.get(index) {
+        match &token.kind {
+            punctuator!(OpenParen) => depth += 1,
+            punctuator!(CloseParen) => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+            }
+            _ if depth == 0 => break,
+            _ => {}
+        }
+        index += 1;
+    }
+
+    Ok(matches!(
+        data.tokens.slice.get(index + 1).map(|token| &token.kind),
+        Some(TokenKind::Operator(OperatorType::ScopeRes))
+    ))
 }
 
 pub(crate) fn try_parse_keyword_stmt(
@@ -352,18 +387,18 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 } else {
                     specifiers.linkage
                 };
-                if let Some(function) = try_function_parse(
+                if let Some(prototype) = try_function_parse(
                     data,
                     ty.clone(),
                     name.clone(),
+                    false,
                     linkage,
                     data.symbol_naming,
                     specifiers.attributes,
                 )? {
                     data.add_stmt(HIRStmt::FunctionDefinition {
-                        prototype: function.prototype,
+                        prototype,
                         visibility: data.visibility,
-                        template_prototype: function.template_prototype,
                         body: None,
                     });
                     data.pop_comma_mode();

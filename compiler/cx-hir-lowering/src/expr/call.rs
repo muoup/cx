@@ -1,10 +1,8 @@
 use cx_hir::ast::{
     expression::{HIRBinOp, HIRExprKind, HIRExpression},
-    function::HIRComptimeFnPrototype,
-    template::HIRTemplateInput,
-    types::HIRType,
+    types::{HIRType, HIRTypeKind},
 };
-use cx_hmir::{HMIRAggregateOp, HMIRConstant, HMIRDefRef, HMIRExprID, HMIRExprKind};
+use cx_hmir::{HMIRAggregateOp, HMIRConstant, HMIRExprID, HMIRExprKind};
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -13,7 +11,7 @@ use crate::{
     body::{BodyLowering, Symbol},
     expr::{lower_expr, lower_identifier, lower_quote},
     resolve::GlobalSymbol,
-    ty::{lower_constructor_sum, lower_template_args},
+    ty::{lower_constructor_sum, lower_type},
 };
 
 fn comma_separated(expr: &HIRExpression) -> Vec<&HIRExpression> {
@@ -32,10 +30,11 @@ fn comma_separated(expr: &HIRExpression) -> Vec<&HIRExpression> {
     }
 }
 
+// 'piped' values are placed at the argument index their pipe names, 'append' after the rest
 pub(crate) fn lower_call<'h>(
     cx: &mut BodyLowering<'_>,
     call: &'h HIRExpression,
-    prepend: Vec<&'h HIRExpression>,
+    mut piped: Vec<(usize, &'h HIRExpression)>,
     append: Vec<&'h HIRExpression>,
 ) -> HMIRExprID {
     let HIRExprKind::BinOp { op, lhs, rhs } = &call.kind else {
@@ -43,38 +42,51 @@ pub(crate) fn lower_call<'h>(
     };
     match op {
         HIRBinOp::MethodCall => {
-            let args = prepend
+            let mut args = comma_separated(rhs)
                 .into_iter()
-                .chain(comma_separated(rhs))
-                .chain(append)
-                .collect();
+                .map(|arg| (arg, false))
+                .collect::<Vec<_>>();
+            for (index, value) in piped.into_iter().rev() {
+                if index > args.len() {
+                    return cx.error(&value.range);
+                }
+                args.insert(index, (value, true));
+            }
+            args.extend(append.into_iter().map(|arg| (arg, false)));
             lower_callee_call(cx, lhs, args, &call.range)
         }
-        HIRBinOp::Pipe => {
-            let prepend = std::iter::once(lhs.as_ref()).chain(prepend).collect();
-            lower_call(cx, rhs, prepend, append)
+        HIRBinOp::Pipe(index) => {
+            piped.push((*index as usize, lhs.as_ref()));
+            lower_call(cx, rhs, piped, append)
         }
         HIRBinOp::BackwardPipe => {
             let append = std::iter::once(rhs.as_ref()).chain(append).collect();
-            lower_call(cx, lhs, prepend, append)
+            lower_call(cx, lhs, piped, append)
         }
         _ => cx.error(&call.range),
     }
 }
 
+// Each argument is paired with whether a pipe supplied it
 fn lower_callee_call(
     cx: &mut BodyLowering<'_>,
     callee: &HIRExpression,
-    args: Vec<&HIRExpression>,
+    args: Vec<(&HIRExpression, bool)>,
     span: &TokenRange,
 ) -> HMIRExprID {
-    let HIRExprKind::Identifier {
-        name,
-        template_input,
-    } = &callee.kind
-    else {
-        let callee = lower_expr(cx, callee);
-        return lower_call_args(cx, callee, Vec::new(), &args, span);
+    let subjects = args.iter().map(|(_, piped)| *piped).collect::<Vec<_>>();
+    let args = args.into_iter().map(|(arg, _)| arg).collect::<Vec<_>>();
+    let name = match &callee.kind {
+        HIRExprKind::Identifier { name } => name,
+        HIRExprKind::ScopeAccess { base, member } => {
+            let sum = lower_scope_base(cx, base);
+            let value = lower_payload(cx, &args, span);
+            return lower_construct(cx, sum, member.clone(), value, span);
+        }
+        _ => {
+            let callee = lower_expr(cx, callee);
+            return lower_call_args(cx, callee, &args, span);
+        }
     };
 
     if let Some(root) = name.root_name_ref()
@@ -89,102 +101,64 @@ fn lower_callee_call(
             let args = args.iter().map(|arg| lower_expr(cx, arg)).collect();
             cx.push(HMIRExprKind::Splice { quote, args }, span)
         }
-        Symbol::Global(GlobalSymbol::ComptimeFunction(def, prototype, arity)) => {
-            let leading = lower_template_prefix(cx, template_input.as_ref(), arity, span);
-            lower_comptime_call(cx, def, &prototype, leading, &args, span)
-        }
-        Symbol::Global(GlobalSymbol::Function(def, arity)) => {
-            let callee_id = cx.push(HMIRExprKind::Def(def), &callee.range);
-            let leading = lower_template_prefix(cx, template_input.as_ref(), arity, span);
-            lower_call_args(cx, callee_id, leading, &args, span)
+        Symbol::Global(GlobalSymbol::ComptimeFunction(def, code, staged)) => {
+            let callee = cx.push(HMIRExprKind::Def(def), span);
+            let args = args
+                .iter()
+                .enumerate()
+                .map(|(index, arg)| {
+                    // A piped subject is passed as code where the function takes code;
+                    // every other argument is quoted by the caller with 'emit'
+                    let quote = subjects[index]
+                        && staged.get(index).copied().unwrap_or(false)
+                        && !cx.is_comptime()
+                        && !matches!(arg.kind, HIRExprKind::Emit { .. });
+                    if quote {
+                        lower_quote(cx, &[], arg, &arg.range)
+                    } else {
+                        lower_expr(cx, arg)
+                    }
+                })
+                .collect();
+            lower_comptime_call(cx, callee, code, args, span)
         }
         Symbol::Global(GlobalSymbol::Constructor(data, variant, _)) => {
-            let value = match args.as_slice() {
-                [] => cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span),
-                [value] => lower_expr(cx, value),
-                _ => cx.error(span),
-            };
-            lower_construct(
-                cx,
-                &data.union_type,
-                template_input.as_ref(),
-                variant,
-                value,
-                span,
-            )
+            let sum = lower_constructor_sum(cx, &data.union_type, span);
+            let value = lower_payload(cx, &args, span);
+            lower_construct(cx, sum, variant, value, span)
         }
         _ => {
-            let callee_id = lower_identifier(cx, name, None, &callee.range);
-            let leading = lower_template_args(cx, template_input.as_ref());
-            lower_call_args(cx, callee_id, leading, &args, span)
+            let callee_id = lower_identifier(cx, name, &callee.range);
+            lower_call_args(cx, callee_id, &args, span)
         }
     }
-}
-
-// A call names every comptime parameter; the ones its template arguments omit are deduced
-fn lower_template_prefix(
-    cx: &mut BodyLowering<'_>,
-    template_input: Option<&HIRTemplateInput>,
-    arity: usize,
-    span: &TokenRange,
-) -> Vec<HMIRExprID> {
-    let mut leading = lower_template_args(cx, template_input);
-    while leading.len() < arity {
-        leading.push(cx.hole(span));
-    }
-    leading
 }
 
 fn lower_call_args(
     cx: &mut BodyLowering<'_>,
     callee: HMIRExprID,
-    mut leading: Vec<HMIRExprID>,
     args: &[&HIRExpression],
     span: &TokenRange,
 ) -> HMIRExprID {
-    leading.extend(args.iter().map(|arg| lower_expr(cx, arg)));
-    cx.push(
-        HMIRExprKind::Call {
-            callee,
-            args: leading,
-        },
-        span,
-    )
+    let args = args.iter().map(|arg| lower_expr(cx, arg)).collect();
+    cx.push(HMIRExprKind::Call { callee, args }, span)
 }
 
+// Outside comptime code the call runs at compile time, and code it returns is spliced in place
 fn lower_comptime_call(
     cx: &mut BodyLowering<'_>,
-    def: HMIRDefRef,
-    prototype: &HIRComptimeFnPrototype,
-    mut lowered: Vec<HMIRExprID>,
-    args: &[&HIRExpression],
+    callee: HMIRExprID,
+    code: bool,
+    args: Vec<HMIRExprID>,
     span: &TokenRange,
 ) -> HMIRExprID {
-    let callee = cx.push(HMIRExprKind::Def(def), span);
-    for (index, arg) in args.iter().enumerate() {
-        let quoted = prototype
-            .params
-            .get(index)
-            .is_some_and(|param| param.value_type.expr);
-        lowered.push(if quoted && !cx.is_comptime() {
-            lower_quote_argument(cx, arg)
-        } else {
-            lower_expr(cx, arg)
-        });
-    }
-    let call = cx.push(
-        HMIRExprKind::Call {
-            callee,
-            args: lowered,
-        },
-        span,
-    );
+    let call = cx.push(HMIRExprKind::Call { callee, args }, span);
     if cx.is_comptime() {
         return call;
     }
 
     let staged = cx.push(HMIRExprKind::Comptime(call), span);
-    if !prototype.return_type.expr {
+    if !code {
         return staged;
     }
     cx.push(
@@ -196,25 +170,56 @@ fn lower_comptime_call(
     )
 }
 
-fn lower_quote_argument(cx: &mut BodyLowering<'_>, arg: &HIRExpression) -> HMIRExprID {
-    match &arg.kind {
-        HIRExprKind::ParamStagedExpression { .. } | HIRExprKind::Emit { .. } => lower_expr(cx, arg),
-        _ => lower_quote(cx, &[], arg, &arg.range),
+// The type a 'base::variant(...)' constructor builds. A base left to the compiler, '_' or a
+// generator applied to holes, is completed from the type the value is expected to have.
+pub(crate) fn lower_scope_base(cx: &mut BodyLowering<'_>, base: &HIRExpression) -> HMIRExprID {
+    match &base.kind {
+        HIRExprKind::Hole => cx.hole(&base.range),
+        HIRExprKind::Type(ty) => match &ty.kind {
+            HIRTypeKind::Identifier {
+                name,
+                lookup,
+                args: Some(args),
+            } if args.iter().any(|arg| matches!(arg.kind, HIRExprKind::Hole)) => {
+                let generator = HIRType {
+                    kind: HIRTypeKind::Identifier {
+                        name: name.clone(),
+                        lookup: *lookup,
+                        args: None,
+                    },
+                    specifiers: ty.specifiers,
+                    range: ty.range.clone(),
+                };
+                lower_type(cx, &generator)
+            }
+            _ => lower_type(cx, ty),
+        },
+        _ => lower_expr(cx, base),
+    }
+}
+
+fn lower_payload(
+    cx: &mut BodyLowering<'_>,
+    args: &[&HIRExpression],
+    span: &TokenRange,
+) -> HMIRExprID {
+    match args {
+        [] => cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span),
+        [value] => lower_expr(cx, value),
+        _ => cx.error(span),
     }
 }
 
 pub(crate) fn lower_construct(
     cx: &mut BodyLowering<'_>,
-    union_type: &HIRType,
-    template_input: Option<&HIRTemplateInput>,
+    sum: HMIRExprID,
     variant: CXIdent,
     value: HMIRExprID,
     span: &TokenRange,
 ) -> HMIRExprID {
-    let ty = lower_constructor_sum(cx, union_type, template_input, span);
     cx.aggregate_op(
         HMIRAggregateOp::Initialize {
-            ty,
+            ty: sum,
             fields: vec![(Some(variant), value)],
         },
         span,

@@ -18,10 +18,10 @@ int main() {
         .data = 1
     });
     match (move maybe) {
-        MaybeResource::some(inner) => {
+        some(auto inner) => {
             move inner |> Resource::drop();
         }
-        MaybeResource::none() => {}
+        none() => {}
     }
     return 0;
 }

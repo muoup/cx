@@ -2,7 +2,7 @@ pub(crate) use cx_log::catalogue::parse::{EXPECTED_SYNTAX, UNEXPECTED_END};
 use cx_log::{
     catalogue::ErrorDefinition,
     error::{
-        context::{from_token_range, CXInternalContext, CXPointingContext},
+        context::{from_token_range, CXPointingContext},
         CXError, CXErrorContext,
     },
     CXResult,
@@ -46,8 +46,4 @@ pub fn parse_underline_error<T, A>(
     range: &TokenRange,
 ) -> CXResult<T> {
     Err(parse_error(definition, args, range_context(range)))
-}
-
-pub fn internal_error<A>(definition: &ErrorDefinition<A>, args: A, context: &str) -> CXError {
-    parse_error(definition, args, CXInternalContext::error(context))
 }

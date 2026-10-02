@@ -3,12 +3,13 @@
 
 import std::io as std;
 
-struct test<T> {
-    T i;
-};
+comptime @type test(@type T) =>
+    struct {
+        T i;
+    };
 
-test<U> test::map<T, U>(test<T>& this, U (*func)(T)) {
-    return (test<U>) { .i = func(this.i) };
+test(U) test::map(@type T, @type U, test(T)& this, U (*func)(T)) {
+    return (test(U)) { .i = func(this.i) };
 }
 
 float add_one(int x) {
@@ -16,8 +17,8 @@ float add_one(int x) {
 }
 
 int main() {
-    test<int> a = (test<int>) { .i = 42 };
-    test<float> b = a |> test::map<int, float>(add_one);
+    test(int) a = (test(int)) { .i = 42 };
+    test(float) b = a |>(2) test::map(int, float, add_one);
     
     std::printf("a.i: %d\n", a.i);
     std::printf("b.i: %.0f\n", b.i);

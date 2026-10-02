@@ -4,7 +4,6 @@ use cx_util::{identifier::CXIdent};
 
 use crate::ast::{
     expression::HIRExpression, function::HIRFunctionPrototype, modifiers::HIRTypeQualifiers,
-    template::HIRTemplateInput,
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -71,8 +70,14 @@ pub enum HIRTypeKind {
     Identifier {
         name: QualifiedName,
         lookup: HIRTypeLookup,
-        template_input: Option<HIRTemplateInput>,
+        // Comptime arguments applied to a type generator, 'opt(int)'
+        args: Option<Vec<HIRExpression>>,
     },
+    // '@type', the type of types
+    Universe,
+    Auto,
+    // 'expr(T)', code producing a 'T'
+    Expr(Box<HIRType>),
 
     ExplicitSizedArray(Box<HIRType>, Box<HIRExpression>),
     ImplicitSizedArray(Box<HIRType>),
@@ -95,7 +100,7 @@ pub enum HIRTypeKind {
         fields: Vec<HIRField>,
     },
     TaggedUnion {
-        name: CXIdent,
+        name: Option<CXIdent>,
         attributes: HIRAggregateAttributes,
         variants: Vec<HIRField>,
     },
@@ -112,7 +117,7 @@ impl From<&str> for HIRType {
             HIRTypeKind::Identifier {
                 name: QualifiedName::new_raw(CXIdent::from(value)),
                 lookup: HIRTypeLookup::Standard,
-                template_input: None,
+                args: None,
             },
         )
     }
@@ -166,10 +171,9 @@ impl HIRType {
     pub fn get_name(&self) -> Option<&CXIdent> {
         match &self.kind {
             HIRTypeKind::Identifier { name, .. } => Some(&name.name),
-            HIRTypeKind::TaggedUnion { name, .. } => Some(name),
-
-            HIRTypeKind::Structured { name, .. } => name.as_ref(),
-            HIRTypeKind::Union { name, .. } => name.as_ref(),
+            HIRTypeKind::TaggedUnion { name, .. }
+            | HIRTypeKind::Structured { name, .. }
+            | HIRTypeKind::Union { name, .. } => name.as_ref(),
 
             _ => None,
         }
@@ -177,12 +181,10 @@ impl HIRType {
 
     pub fn set_name(&mut self, to: CXIdent) {
         match &mut self.kind {
-            HIRTypeKind::Union { name, .. } | HIRTypeKind::Structured { name, .. } => {
+            HIRTypeKind::Union { name, .. }
+            | HIRTypeKind::Structured { name, .. }
+            | HIRTypeKind::TaggedUnion { name, .. } => {
                 *name = Some(to);
-            }
-
-            HIRTypeKind::TaggedUnion { name, .. } => {
-                *name = to;
             }
 
             _ => {}

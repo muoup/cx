@@ -10,13 +10,13 @@ enum union MaybePair {
 
 void inspect(MaybePair& value) {
     match (value) {
-        MaybePair::some(payload) => {
+        some(auto payload) => {
             @unpack(move payload) {
                 left: left,
                 right: right
             };
         }
-        MaybePair::none() => {}
+        none() => {}
     }
 }
 

@@ -5,10 +5,9 @@ use cx_preparse_data::NamespaceAliases;
 use cx_util::identifier::CXIdent;
 
 use crate::ast::{
-    function::{HIRComptimeFnPrototype, HIRFunctionBody, HIRFunctionPrototype},
+    function::{HIRFunctionBody, HIRFunctionPrototype},
     global_var::HIREnumDefinition,
     modifiers::{HIRSymbolNameScheme, VisibilityMode},
-    template::HIRTemplatePrototype,
     types::{HIRTagKind, HIRType},
 };
 
@@ -38,14 +37,13 @@ pub struct HIRSymbolData<
 > {
     pub base: Base,
     pub data: Data,
-    pub template_prototype: Option<HIRTemplatePrototype>,
 }
 
 impl<Base: std::fmt::Debug + Clone + PartialEq, Data: std::fmt::Debug + Clone + PartialEq>
     HIRSymbolData<Base, Data>
 {
-    pub fn new(base: Base, data: Data, template_proto: Option<HIRTemplatePrototype>) -> Self {
-        Self { base, data, template_prototype: template_proto }
+    pub fn new(base: Base, data: Data) -> Self {
+        Self { base, data }
     }
 
     pub fn base(&self) -> &Base {
@@ -56,7 +54,6 @@ impl<Base: std::fmt::Debug + Clone + PartialEq, Data: std::fmt::Debug + Clone + 
 pub type HIRTypeSymbol = HIRSymbolData<HIRType, ()>;
 pub type HIRTypeConstructorSymbol = HIRSymbolData<TypeConstructorData, ()>;
 pub type HIRFunctionSymbol = HIRSymbolData<HIRFunctionPrototype, Option<HIRFunctionBody>>;
-pub type HIRComptimeFunctionSymbol = HIRSymbolData<HIRComptimeFnPrototype, HIRFunctionBody>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeConstructorData {
@@ -69,7 +66,6 @@ pub enum HIRSymbolKind {
     Type(HIRTypeSymbol),
     Function(HIRFunctionSymbol),
     TypeConstructor(HIRTypeConstructorSymbol),
-    ComptimeFunction(HIRComptimeFunctionSymbol),
     AddressableGlobal {
         name: CXIdent,
         ty: HIRType,

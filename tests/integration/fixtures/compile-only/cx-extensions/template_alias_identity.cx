@@ -1,9 +1,10 @@
-struct Box<T> {
-    T value;
-};
+comptime @type Box(@type T) =>
+    struct {
+        T value;
+    };
 
-typedef<T> Box<T> Alias;
+comptime @type Alias(@type T) => Box(T);
 
-Box<int> unwrap_alias(Alias<int> value) {
+Box(int) unwrap_alias(Alias(int) value) {
     return value;
 }

@@ -1,16 +1,30 @@
-use crate::ast::template::HIRTemplateInput;
-use cx_namespace::module::QualifiedName;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
+
+use crate::ast::expression::HIRExpression;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HIRBindingMode {
+    Owned,
+    Reference,
+    ConstReference,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HIRPattern {
-    Binding(CXIdent),
+    Wildcard,
+    Binding {
+        name: CXIdent,
+        mode: HIRBindingMode,
+    },
 
     Integer(i64),
     Float(FloatWrapper),
+    // An existing value the subject is compared against
+    Value(HIRExpression),
+    // Resolved in the subject's type unless a qualifier names the sum
     Variant {
-        constructor: QualifiedName,
-        template_input: Option<HIRTemplateInput>,
+        qualifier: Option<Box<HIRExpression>>,
+        name: CXIdent,
         inner: Option<Box<HIRPattern>>,
     },
 }

@@ -2,40 +2,40 @@
 
 import std::optional as std;
 
-comptime expr void make_none() {
+comptime expr(void) make_none() {
     return emit .{
-        return std::opt::none();
+        return _::none();
     };
 }
 
-comptime expr void forward_none() {
+comptime expr(void) forward_none() {
     return make_none();
 }
 
-std::opt<int> int_result() {
+std::opt(int) int_result() {
     forward_none();
-    return std::opt::some<int>(123);
+    return std::opt(int)::some(123);
 }
 
-std::opt<float> float_result() {
+std::opt(float) float_result() {
     forward_none();
-    return std::opt::some<float>(4.5);
+    return std::opt(float)::some(4.5);
 }
 
 int main() {
-    std::opt<int> first = int_result();
-    std::opt<int> second = int_result();
-    std::opt<float> third = float_result();
+    std::opt(int) first = int_result();
+    std::opt(int) second = int_result();
+    std::opt(float) third = float_result();
     match (first) {
-        std::opt::some<int>(value) => printf("int some %d\n", value);
-        std::opt::none<int>() => printf("int none\n");
+        some(auto value) => printf("int some %d\n", value);
+        none() => printf("int none\n");
     }
     match (second) {
-        std::opt::some<int>(value) => printf("int repeat some %d\n", value);
-        std::opt::none<int>() => printf("int repeat none\n");
+        some(auto value) => printf("int repeat some %d\n", value);
+        none() => printf("int repeat none\n");
     }
     match (third) {
-        std::opt::some<float>(value) => printf("float some %.1f\n", value);
-        std::opt::none<float>() => printf("float none\n");
+        some(auto value) => printf("float some %.1f\n", value);
+        none() => printf("float none\n");
     }
 }

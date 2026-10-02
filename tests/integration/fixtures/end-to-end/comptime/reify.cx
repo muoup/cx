@@ -1,0 +1,31 @@
+/* CX-STDOUT: hi */
+/* CX-STDOUT-NEXT: 5 1 2 3 4 9 */
+
+#include <stdio.h>
+
+comptime expr(int) scaled(expr(int) value) => emit value * 3;
+
+void sort(int* values, int count, @fn compare(const void*, const void*) -> int) {
+    for (int i = 1; i < count; i++) {
+        for (int j = i; j > 0 && compare(&values[j - 1], &values[j]) > 0; j--) {
+            int held = values[j];
+            values[j] = values[j - 1];
+            values[j - 1] = held;
+        }
+    }
+}
+
+int main() {
+    @fn hello() -> int = @reify(@fn() -> int, emit printf("hi\n"));
+    hello();
+
+    auto difference = @reify(@fn(int, int) -> int, |a, b| emit a - b);
+    int xs[4] = { 3, 1, 4, 2 };
+    sort(xs, 4, @reify(
+        @fn(const void* lhs, const void* rhs) -> int,
+        |a, b| emit .{ return *(const int*)a - *(const int*)b; }
+    ));
+    auto triple = @reify(@fn(int) -> int, |expr(int) v| emit scaled(emit v));
+    printf("%d %d %d %d %d %d\n", difference(8, 3), xs[0], xs[1], xs[2], xs[3], triple(3));
+    return 0;
+}

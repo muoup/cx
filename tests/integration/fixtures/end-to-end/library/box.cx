@@ -6,7 +6,7 @@ import std::box;
 #include <stdlib.h>
 
 int main() {
-  std::box::box<int> i = std::box::box::new<int>(2);
-  printf("i = %d\n", i |> std::box::box::deref_mut<int>());
-  move i |> std::box::box::drop<int>();
+  std::box::box(int) i = std::box::box::new(int, 2);
+  printf("i = %d\n", i |>(1) std::box::box::deref_mut(int));
+  move i |>(1) std::box::box::drop(int);
 }

@@ -1,21 +1,22 @@
 use std::collections::HashMap;
 
 use cx_hir::ast::{
-    expression::HIRExpression,
-    types::{HIRTagKind, HIRType},
+    expression::{HIRExprKind, HIRExpression},
+    types::{HIRTagKind, HIRType, HIRTypeKind},
 };
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBlockKind, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRControlOp, HMIRDef,
-    HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRExpr, HMIRExprID, HMIRExprKind, HMIRGlobal, HMIRHole,
-    HMIRLocal, HMIRLocalID, HMIRNativeOp, HMIROwnershipOp, HMIRTypeDesc, HMIRTypeID,
-    HMIRTypeInterner, HMIRTypeOp,
+    HMIRAggregateOp, HMIRBlockKind, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRContract,
+    HMIRControlOp, HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRExpr, HMIRExprID, HMIRExprKind,
+    HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIRNativeOp,
+    HMIROwnershipOp, HMIRSignature, HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner, HMIRTypeOp,
 };
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    expr::lower_initial_value,
+    def::is_void,
+    expr::{lower_expr, lower_initial_value},
     resolve::{GlobalSymbol, Resolver},
     ty::lower_type,
 };
@@ -236,6 +237,140 @@ impl<'a> BodyLowering<'a> {
             span,
         )
     }
+}
+
+// A variant of a computed sum named as a value, 'opt(int)::some': a function over the sum type,
+// bound to the sum it is named on
+pub(crate) fn lower_variant_constructor(
+    cx: &mut BodyLowering<'_>,
+    sum: HMIRExprID,
+    variant: &CXIdent,
+    span: &TokenRange,
+) -> HMIRExprID {
+    let id = cx.resolver.next_static();
+    let mut ctor = BodyLowering::new(cx.resolver, cx.types, cx.namespace.clone(), false);
+    let universe = ctor.type_of_types(span);
+    let sum_param = ctor.declare(None, universe, true, false, span);
+    let sum_ty = ctor.push(HMIRExprKind::Local(sum_param), span);
+    let payload = ctor.type_op(
+        HMIRTypeOp::Member {
+            ty: sum_ty,
+            name: variant.clone(),
+        },
+        span,
+    );
+    let value = ctor.declare(None, payload, false, false, span);
+    let return_type = ctor.push(HMIRExprKind::Local(sum_param), span);
+
+    let ty = ctor.push(HMIRExprKind::Local(sum_param), span);
+    let moved = ctor.push(HMIRExprKind::Local(value), span);
+    let moved = ctor.ownership(HMIROwnershipOp::Move(moved), span);
+    let built = ctor.aggregate_op(
+        HMIRAggregateOp::Initialize {
+            ty,
+            fields: vec![(Some(variant.clone()), moved)],
+        },
+        span,
+    );
+    let root = ctor.returning_block(built, span);
+    let name = CXIdent::from(format!("{variant}.{}", id.index()).as_str());
+    let signature = HMIRSignature::new(
+        vec![sum_param, value],
+        return_type,
+        false,
+        LinkageMode::Static,
+        name.clone(),
+        HMIRContract::default(),
+    );
+    let function = HMIRFunction::new(
+        HMIRFunctionStage::Runtime,
+        ctor.finish(),
+        signature,
+        Some(root),
+    );
+    cx.resolver.push_static(HMIRDef::new(
+        QualifiedName::new(cx.namespace.clone(), name),
+        span.clone(),
+        HMIRDefKind::Function(Box::new(function)),
+    ));
+    let callee = cx.push(HMIRExprKind::Def(HMIRDefRef::Local(id)), span);
+    cx.push(
+        HMIRExprKind::Call {
+            callee,
+            args: vec![sum],
+        },
+        span,
+    )
+}
+
+// '@reify(signature, value)' is a function of its own: its parameters are handed to the staged
+// value, whose code becomes the body. It is lowered outside the enclosing function, so the code
+// can only name what a function at file scope could.
+pub(crate) fn lower_reify(
+    cx: &mut BodyLowering<'_>,
+    signature: &HIRExpression,
+    value: &HIRExpression,
+    span: &TokenRange,
+) -> HMIRExprID {
+    let prototype = match &signature.kind {
+        HIRExprKind::Type(ty) => match &ty.kind {
+            HIRTypeKind::PointerTo { inner_type } => match &inner_type.kind {
+                HIRTypeKind::FunctionPointer { prototype } => Some(prototype),
+                _ => None,
+            },
+            _ => None,
+        },
+        _ => None,
+    };
+    let Some(prototype) = prototype else {
+        return cx.error(&signature.range);
+    };
+
+    let id = cx.resolver.next_static();
+    let mut anon = BodyLowering::new(cx.resolver, cx.types, cx.namespace.clone(), false);
+    let declared = match prototype.params.as_slice() {
+        [param] if param.name.is_none() && is_void(&anon, &param.ty) => &[],
+        params => params,
+    };
+    let params = declared
+        .iter()
+        .map(|param| {
+            let ty = lower_type(&mut anon, &param.ty);
+            anon.declare(param.name.as_ref(), ty, false, false, &param.ty.range)
+        })
+        .collect::<Vec<_>>();
+    let return_type = lower_type(&mut anon, &prototype.return_type);
+
+    let quote = anon.with_stage(true, |anon| lower_expr(anon, value));
+    let quote = anon.push(HMIRExprKind::Comptime(quote), &value.range);
+    let args = params
+        .iter()
+        .map(|param| anon.push(HMIRExprKind::Local(*param), span))
+        .collect();
+    let body = anon.push(HMIRExprKind::Splice { quote, args }, span);
+    let root = anon.returning_block(body, span);
+
+    let name = CXIdent::from(format!("reify.{}", id.index()).as_str());
+    let signature = HMIRSignature::new(
+        params,
+        return_type,
+        prototype.var_args,
+        LinkageMode::Static,
+        name.clone(),
+        HMIRContract::default(),
+    );
+    let function = HMIRFunction::new(
+        HMIRFunctionStage::Runtime,
+        anon.finish(),
+        signature,
+        Some(root),
+    );
+    cx.resolver.push_static(HMIRDef::new(
+        QualifiedName::new(cx.namespace.clone(), name),
+        span.clone(),
+        HMIRDefKind::Function(Box::new(function)),
+    ));
+    cx.push(HMIRExprKind::Def(HMIRDefRef::Local(id)), span)
 }
 
 // Lowers a function-level static into its own global def visible from this scope

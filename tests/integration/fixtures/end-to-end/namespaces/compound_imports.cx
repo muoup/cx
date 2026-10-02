@@ -6,15 +6,15 @@ import std::{net::{udp, address,},};
 #include <stdio.h>
 
 int main() {
-    v::vector<int> values = v::vector::new<int>();
-    values |> v::vector::push<int>(1);
+    v::vector(int) values = v::vector::new(int);
+    values |>(1) v::vector::push(int, 1);
 
     std::net::address::endpoint address =
         std::net::address::endpoint::ipv4("127.0.0.1", 80)
-        |> v::opt::unwrap();
+        |>(1) v::opt::unwrap(_);
 
     printf("%zu\n", values.length);
 
-    move values |> v::vector::drop<int>();
+    move values |>(1) v::vector::drop(int);
     return 0;
 }

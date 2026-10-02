@@ -27,7 +27,7 @@ impl PrecOperator {
 pub(crate) fn binop_prec(op: HIRBinOp) -> u8 {
     match op {
         HIRBinOp::Access | HIRBinOp::MethodCall | HIRBinOp::ArrayIndex => 1,
-        HIRBinOp::Pipe | HIRBinOp::BackwardPipe => 2,
+        HIRBinOp::Pipe(_) | HIRBinOp::BackwardPipe => 2,
 
         HIRBinOp::Multiply | HIRBinOp::Divide | HIRBinOp::Modulus => 4,
         HIRBinOp::Add | HIRBinOp::Subtract => 5,
@@ -115,6 +115,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CXResult<Option<HIRUnO
                         | punctuator!(CloseBracket)
                         | punctuator!(CloseBrace)
                         | operator!(Comma)
+                        | operator!(ScopeRes)
                 )
             ) {
                 data.tokens.index = pre_index;
@@ -168,7 +169,7 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<HIRBinOp> {
         OperatorType::Slash => HIRBinOp::Divide,
         OperatorType::Percent => HIRBinOp::Modulus,
 
-        OperatorType::Access => HIRBinOp::Access,
+        OperatorType::Access | OperatorType::Arrow => HIRBinOp::Access,
         OperatorType::Comma => HIRBinOp::Comma,
 
         OperatorType::Equal => HIRBinOp::Equal,
@@ -186,7 +187,7 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CXResult<HIRBinOp> {
         OperatorType::DoubleBar => HIRBinOp::LOr,
         OperatorType::DoubleAmpersand => HIRBinOp::LAnd,
 
-        OperatorType::Pipe => HIRBinOp::Pipe,
+        OperatorType::Pipe => HIRBinOp::Pipe(0),
         OperatorType::BackwardPipe => HIRBinOp::BackwardPipe,
 
         _ => {
@@ -233,6 +234,26 @@ pub(crate) fn parse_binop(data: &mut ParserData) -> CXResult<HIRBinOp> {
                 }
             } else {
                 HIRBinOp::Less
+            }
+        }
+        // 'x |>(1) f(_, y)' pipes into the argument at that index
+        Ok(TokenKind::Operator(OperatorType::Pipe)) => {
+            let index = data.tokens.index;
+            match (
+                data.tokens.slice.get(index).map(|token| &token.kind),
+                data.tokens.slice.get(index + 1).map(|token| &token.kind),
+                data.tokens.slice.get(index + 2).map(|token| &token.kind),
+            ) {
+                (
+                    Some(punctuator!(OpenParen)),
+                    Some(TokenKind::IntLiteral(literal)),
+                    Some(punctuator!(CloseParen)),
+                ) => {
+                    let argument = literal.magnitude as u32;
+                    data.tokens.index = index + 3;
+                    HIRBinOp::Pipe(argument)
+                }
+                _ => HIRBinOp::Pipe(0),
             }
         }
         Ok(TokenKind::Operator(op)) => op_to_binop(data, op)?,

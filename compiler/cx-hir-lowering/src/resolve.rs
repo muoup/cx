@@ -2,8 +2,7 @@ use std::{cell::RefCell, collections::HashMap};
 
 use cx_hir::{
     ast::{
-        function::HIRComptimeFnPrototype, modifiers::HIRSymbolNameScheme,
-        template::HIRTemplatePrototype,
+        modifiers::HIRSymbolNameScheme,
         types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
     },
     intrinsic_types::{HIRIntrinsicType, INTRINSIC_TYPES},
@@ -30,9 +29,10 @@ pub(crate) struct Resolver<'a> {
 
 pub(crate) enum GlobalSymbol {
     Def(HMIRDefRef),
-    // A function and the number of leading comptime parameters its template declares
-    Function(HMIRDefRef, usize),
-    ComptimeFunction(HMIRDefRef, Box<HIRComptimeFnPrototype>, usize),
+    Function(HMIRDefRef),
+    // A comptime function: whether it returns code to splice where it is called, and which
+    // of its parameters take code
+    ComptimeFunction(HMIRDefRef, bool, Vec<bool>),
     Constructor(TypeConstructorData, CXIdent, HMIRDefRef),
     Primitive(HMIRTypeDesc),
 }
@@ -159,15 +159,19 @@ impl<'a> Resolver<'a> {
             return GlobalSymbol::Def(self.def_ref(resolved_name));
         };
         match symbol.kind {
-            HIRSymbolKind::Function(function) => GlobalSymbol::Function(
-                self.def_ref(resolved_name),
-                template_arity(function.template_prototype.as_ref()),
-            ),
-            HIRSymbolKind::ComptimeFunction(function) => GlobalSymbol::ComptimeFunction(
-                self.def_ref(resolved_name),
-                Box::new(function.base().clone()),
-                template_arity(function.template_prototype.as_ref()),
-            ),
+            HIRSymbolKind::Function(function) if function.base().comptime => {
+                GlobalSymbol::ComptimeFunction(
+                    self.def_ref(resolved_name),
+                    matches!(function.base().return_type.kind, HIRTypeKind::Expr(_)),
+                    function
+                        .base()
+                        .params
+                        .iter()
+                        .map(|param| matches!(param.ty.kind, HIRTypeKind::Expr(_)))
+                        .collect(),
+                )
+            }
+            HIRSymbolKind::Function(_) => GlobalSymbol::Function(self.def_ref(resolved_name)),
             HIRSymbolKind::TypeConstructor(constructor) => {
                 let variant = resolved_name.name.clone();
                 let def = self.def_ref(resolved_name);
@@ -236,8 +240,4 @@ pub(crate) fn constructor_payload(
             let (_, payload) = variants.get(data.variant_index)?.standard_parts()?;
             Some(payload.clone())
         })
-}
-
-fn template_arity(template: Option<&HIRTemplatePrototype>) -> usize {
-    template.map_or(0, |template| template.types.len())
 }

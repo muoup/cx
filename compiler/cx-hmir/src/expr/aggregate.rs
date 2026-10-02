@@ -32,9 +32,13 @@ pub enum HMIRPattern {
     Binding(HMIRLocalID),
     Integer(i64),
     Float(FloatWrapper),
+    // A comptime constant the subject is compared against
+    Value(HMIRExprID),
+    // The variant is looked up by name in the subject's type; 'sum' is the type the source
+    // qualified it with, if any
     Variant {
-        sum: HMIRExprID,
-        index: usize,
+        sum: Option<HMIRExprID>,
+        name: CXIdent,
         inner: Option<HMIRLocalID>,
     },
 }

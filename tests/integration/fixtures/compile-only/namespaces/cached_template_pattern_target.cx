@@ -1,14 +1,14 @@
 import std::optional;
 
 int main() {
-    std::optional::opt<int> value = std::optional::opt::some<int>(1);
+    std::optional::opt(int) value = std::optional::opt(int)::some(1);
 
-    if (value is std::optional::opt::some(inner)) {
+    if (value is some(auto inner)) {
         return inner;
     }
 
-    std::optional::opt<int> later = std::optional::opt::none<int>();
-    if (later is std::optional::opt::none(_)) {
+    std::optional::opt(int) later = std::optional::opt(int)::none();
+    if (later is none(_)) {
         return 0;
     }
 

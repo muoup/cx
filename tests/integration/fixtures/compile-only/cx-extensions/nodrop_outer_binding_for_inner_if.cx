@@ -9,7 +9,7 @@ void Resource::drop_resource(Resource value) {
 }
 
 int main() {
-    std::vector<Resource> values = std::vector::with_capacity<Resource>(1);
+    std::vector(Resource) values = std::vector::with_capacity(Resource, 1);
 
     for (usize i = 0; i < 1; i++) {
         if (i == 0) {
@@ -19,9 +19,9 @@ int main() {
         Resource value = {
             .value = 2
         };
-        values |> std::vector::push<Resource>(move value);
+        values |>(1) std::vector::push(Resource, move value);
     }
 
-    move values |> std::vector::drop_with<Resource>(Resource::drop_resource);
+    move values |>(1) std::vector::drop_with(Resource, Resource::drop_resource);
     return 0;
 }

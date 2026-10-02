@@ -44,16 +44,7 @@ pub fn generate_external_hmir(
             lexical_namespace(&bare, &function.base.kind),
             DefSource::Function {
                 prototype: &function.base,
-                template: function.template_prototype.as_ref(),
                 body: function.data.as_ref(),
-            },
-        ),
-        Some(HIRSymbolKind::ComptimeFunction(function)) => (
-            lexical_namespace(&bare, &function.base.kind),
-            DefSource::ComptimeFunction {
-                prototype: &function.base,
-                template: function.template_prototype.as_ref(),
-                body: &function.data,
             },
         ),
         Some(HIRSymbolKind::Type(ty)) if is_forward_declaration(&bare.name, tag, &ty.base) => {
@@ -61,10 +52,7 @@ pub fn generate_external_hmir(
         }
         Some(HIRSymbolKind::Type(ty)) => (
             bare.namespace.clone(),
-            DefSource::Type {
-                template: ty.template_prototype.as_ref(),
-                ty: &ty.base,
-            },
+            DefSource::Type { ty: &ty.base },
         ),
         Some(HIRSymbolKind::AddressableGlobal {
             ty, symbol_naming, ..
@@ -97,7 +85,6 @@ pub fn generate_external_hmir(
                 .parent()
                 .unwrap_or_else(NamespacePath::root),
             DefSource::Constructor {
-                template: constructor.template_prototype.as_ref(),
                 union_type: &constructor.base.union_type,
                 payload: constructor_payload(registry, &constructor.base)?,
             },

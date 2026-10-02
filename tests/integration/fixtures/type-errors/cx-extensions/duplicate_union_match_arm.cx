@@ -5,8 +5,8 @@ enum union Choice {
 
 void inspect(Choice value) {
     match (move value) {
-        Choice::zero(inner) => {}
-        Choice::zero(other) => {}
+        zero(auto inner) => {}
+        zero(auto other) => {}
         _ => {}
     }
 }

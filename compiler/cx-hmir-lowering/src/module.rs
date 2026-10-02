@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use cx_hmir::{HMIRDefKind, HMIRFunctionStage};
+use cx_hmir::{HMIRAggregateKind, HMIRDefKind, HMIRFunctionStage};
 use cx_log::CXResult;
 use cx_mir::{
     MIRBody, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
@@ -409,6 +409,38 @@ pub(crate) fn to_constant(
             ));
         }
     })
+}
+
+// The position of the variant a pattern names within the sum it is matched against
+pub(crate) fn variant_index(
+    cx: &Program<'_>,
+    ty: TypeID,
+    name: &CXIdent,
+    span: &TokenRange,
+) -> CXResult<usize> {
+    let Some(nominal) = cx
+        .types()
+        .nominal_of(ty)
+        .filter(|nominal| nominal.kind() == HMIRAggregateKind::TaggedUnion)
+    else {
+        return Err(staging_error(
+            span,
+            format!(
+                "variant pattern '{name}' on '{}', which is not a tagged union",
+                cx.types().display(ty)
+            ),
+        ));
+    };
+    nominal
+        .fields()
+        .iter()
+        .position(|field| field.name() == Some(name))
+        .ok_or_else(|| {
+            staging_error(
+                span,
+                format!("'{}' has no variant '{name}'", cx.types().display(ty)),
+            )
+        })
 }
 
 // The type of the 'index'th member of an aggregate: a field, an array element, or a variant

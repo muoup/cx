@@ -5,13 +5,13 @@ int printf(char* fmt, ...);
 
 int x;
 
-T increment<T>() {
+T increment(@type T) {
     x++;
     return x;
 }
 
 void procedure() {
-    int result = increment<int>();
+    int result = increment(int);
     printf("Incremented value: %d\n", result);
 }
 

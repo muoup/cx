@@ -3,13 +3,14 @@ extern "C":
 
 public:
 
-struct box<T> : @nodrop {
-    T* ptr;
-};
+comptime @type box(@type T) =>
+    struct : @nodrop {
+        T* ptr;
+    };
 
-box<T> box::new<T>(T value) safe {
+box(T) box::new(@type T, T value) safe {
     @unsafe {
-        box<T> b = (box<T>) {
+        box(T) b = (box(T)) {
             .ptr = malloc(sizeof(T))
         };
         *(b.ptr) = move value;
@@ -17,36 +18,36 @@ box<T> box::new<T>(T value) safe {
     };
 }
 
-const T& box::deref<T>(const box<T>& this) {
+const T& box::deref(@type T, const box(T)& this) {
     return *(this.ptr);
 }
 
-T& box::deref_mut<T>(box<T>& this) {
+T& box::deref_mut(@type T, box(T)& this) {
     return *(this.ptr);
 }
 
 // TODO: Bound this type as not @pinned when that feature is added
-T box::unwrap<T>(box<T> this) safe {
+T box::unwrap(@type T, box(T) this) safe {
     T inner = move @adopt(*this.ptr);
     @leak(this);
     return move inner;
 }
 
-T* box::leak<T>(box<T> this) {
+T* box::leak(@type T, box(T) this) {
     T* ptr = this.ptr;
     @leak(this);
     return ptr;
 }
 
-void box::drop_with<T>(box<T> this, void(*drop_value)(T)) {
+void box::drop_with(@type T, box(T) this, @fn drop_value(T) -> void) {
     @unsafe {
         drop_value(@adopt(*this.ptr));
     };
 
-    move this |> box::drop<T>();
+    move this |>(1) box::drop(T);
 }
 
-void box::drop<T>(box<T> this) safe {
+void box::drop(@type T, box(T) this) safe {
     @unsafe {
         free(this.ptr);
         @leak(this);

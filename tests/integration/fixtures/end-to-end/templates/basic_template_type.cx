@@ -2,19 +2,20 @@
 
 #include <stdio.h>
 
-typedef<T> T* Ptr;
+comptime @type Ptr(@type T) => T*;
 
-struct Data<T> {
-    Ptr<T> ptr;
-};
+comptime @type Data(@type T) =>
+    struct {
+        Ptr(T) ptr;
+    };
 
-void access(Data<int> *data) {
+void access(Data(int) *data) {
     *data.ptr = 42;
 }
 
 int main() {
     int val;
-    Data<int> data = {
+    Data(int) data = {
         .ptr = &val
     };
 

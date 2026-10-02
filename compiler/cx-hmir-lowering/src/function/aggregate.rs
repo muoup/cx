@@ -1,6 +1,6 @@
 use cx_hmir::{
     HMIRAggregateKind, HMIRAggregateOp, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRLocalID,
-    HMIRPattern,
+    HMIRNativeOp, HMIRPattern, HMIRTypeOp,
 };
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRConstant, MIRFloatIntrinsic,
@@ -24,7 +24,7 @@ use crate::{
         ops::lower_pointer_offset,
         promote::{lower_decay, lower_promote},
     },
-    module::member_type,
+    module::{member_type, variant_index},
     ty::{TypeID, TypeKind, TypeTable},
     value::StaticValue,
 };
@@ -280,6 +280,15 @@ fn lower_initialize(
             }
             ty
         }
+        _ if let [(Some(name), _)] = fields => {
+            return cx.error(
+                span,
+                format!(
+                    "'{}' has no member '{name}'",
+                    cx.program.types().display(ty)
+                ),
+            );
+        }
         _ if fields.len() == 1 => {
             let operand = lower_expr(cx, frame, fields[0].1, Expect::Type(ty))?;
             return lower_convert(cx, operand, ty, span);
@@ -416,7 +425,29 @@ fn lower_is(
             );
             subject
         }
-        HMIRPattern::Variant { index, .. } => {
+        HMIRPattern::Value(expected) => {
+            let ty = subject.ty();
+            let expected = lower_eval(cx, frame, *expected, Expect::Type(ty))?;
+            let Some(expected) = expected.as_int() else {
+                return cx.error(
+                    span,
+                    "value pattern is not an integer constant; bind the value with 'auto name'",
+                );
+            };
+            let expected = lower_int_constant(cx, expected, ty);
+            let value = lower_value(cx, subject.clone(), span)?;
+            cx.intrinsic(
+                MIRIntIntrinsic::Eq {
+                    out: target,
+                    lhs: value,
+                    rhs: expected,
+                },
+                span,
+            );
+            subject
+        }
+        HMIRPattern::Variant { name, .. } => {
+            let index = variant_index(cx.program, subject.ty(), name, span)?;
             let subject = lower_spill(cx, subject, span)?;
             let tag = lower_sum_index(cx, &subject, span)?;
             cx.intrinsic(
@@ -425,7 +456,7 @@ fn lower_is(
                     lhs: tag,
                     rhs: MIRValue::Constant(MIRConstant::Integer {
                         ty: MIRIntType::I8,
-                        value: *index as i128,
+                        value: index as i128,
                     }),
                 },
                 span,
@@ -493,12 +524,20 @@ pub(super) fn lower_bind_pattern(
     } = binding;
     let span = span.clone();
     match pattern {
-        HMIRPattern::Binding(local) => cx.bind(frame, local, subject),
+        HMIRPattern::Binding(local) => {
+            let bound = if owned || binds_by_reference(cx, frame, local) {
+                subject
+            } else {
+                lower_copy_binding(cx, &subject, frame, local, &span)?
+            };
+            cx.bind(frame, local, bound);
+        }
         HMIRPattern::Variant {
-            index,
+            name,
             inner: Some(local),
             ..
         } => {
+            let index = variant_index(cx.program, subject.ty(), &name, &span)?;
             let payload = member_type(cx.program, subject.ty(), index, &span)?;
             if cx.program.types().is_void(payload) {
                 lower_consume_subject(cx, &subject, owned, &span);
@@ -518,17 +557,20 @@ pub(super) fn lower_bind_pattern(
                 },
                 &span,
             );
+            let borrowed = Operand::reference(reference, payload, None);
             let bound = match subject.origin().filter(|_| owned) {
-                None => Operand::reference(reference, payload, None),
                 Some(origin) => {
                     lower_lift_payload(cx, reference, origin, payload, frame, local, &span)?
                 }
+                None if owned || binds_by_reference(cx, frame, local) => borrowed,
+                None => lower_copy_binding(cx, &borrowed, frame, local, &span)?,
             };
             cx.bind(frame, local, bound);
         }
         HMIRPattern::Variant {
-            index, inner: None, ..
+            name, inner: None, ..
         } => {
+            let index = variant_index(cx.program, subject.ty(), &name, &span)?;
             let payload = member_type(cx.program, subject.ty(), index, &span)?;
             if cx.program.types().is_void(payload) {
                 lower_consume_subject(cx, &subject, owned, &span);
@@ -537,6 +579,43 @@ pub(super) fn lower_bind_pattern(
         _ => {}
     }
     Ok(())
+}
+
+fn binds_by_reference(cx: &FunctionLowering<'_, '_>, frame: usize, local: HMIRLocalID) -> bool {
+    let ty = cx.frames[frame].body().local(local).ty();
+    matches!(
+        cx.kind(frame, ty),
+        HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Reference(_)))
+    )
+}
+
+// 'auto x' on a subject that stays in use copies the matched value; one that cannot be copied
+// has to be borrowed or matched on a moved subject
+fn lower_copy_binding(
+    cx: &mut FunctionLowering<'_, '_>,
+    source: &Operand,
+    frame: usize,
+    local: HMIRLocalID,
+    span: &TokenRange,
+) -> LowerResult<Operand> {
+    let ty = source.ty();
+    let name = cx.frames[frame].body().local(local).name().cloned();
+    if !cx.program.types().is_pod(ty) {
+        let binding = name.map_or_else(|| "auto".to_string(), |name| format!("auto {name}"));
+        return cx.error(
+            span,
+            format!(
+                "'{binding}' would move '{}' out of a value that is still in use; \
+                 borrow it with 'auto&' or match on a moved value",
+                cx.program.types().display(ty)
+            ),
+        );
+    }
+    let value = lower_copy(cx, source, span)?;
+    let place = cx.place(ty, name, span)?;
+    lower_store(cx, MIRTarget::Place(place), value, ty, None, span)?;
+    cx.initialize(place, span);
+    Ok(Operand::place(place, ty))
 }
 
 // An owned subject matched on a payload-free variant has nothing left to give away

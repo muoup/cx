@@ -8,7 +8,7 @@ void trace_count(int count) {
     printf("loop cleanup %d\n", count);
 }
 
-comptime expr void around(expr(int) void proc) {
+comptime expr(void) around(@fn proc(expr(int)) -> expr(void)) {
     return emit .{
         defer trace("stage cleanup");
         proc(1);
@@ -18,7 +18,7 @@ comptime expr void around(expr(int) void proc) {
 
 int returning() {
     defer trace("caller cleanup");
-    around() <| |unused| .{
+    around() <| |unused| emit .{
         defer trace("callback cleanup");
         return 7;
     };
@@ -26,7 +26,7 @@ int returning() {
     return 0;
 }
 
-comptime expr void ignore(expr(int) void proc) {
+comptime expr(void) ignore(@fn proc(expr(int)) -> expr(void)) {
     return emit .{};
 }
 
@@ -36,15 +36,15 @@ int main() {
     while (count < 2) {
         count += 1;
         defer trace_count(count);
-        around() <| |unused| .{ continue; };
+        around() <| |unused| emit .{ continue; };
         printf("loop suffix\n");
     }
-    ignore() <| |unused| .{ return 1; };
+    ignore() <| |unused| emit .{ return 1; };
     printf("dropped return\n");
     int yielded = match (1) {
         0 => yield 0;
         _ => {
-            around() <| |unused| .{ yield 9; };
+            around() <| |unused| emit .{ yield 9; };
             yield 0;
         }
     };

@@ -10,6 +10,8 @@ use crate::VisibilityMode;
 pub enum PreparseSymbolKind {
     Type,
     Tag,
+    // A comptime function returning '@type'; applying it to arguments names a type
+    Generator,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
@@ -24,6 +26,14 @@ impl PreparseSymbol {
         Self {
             name,
             kind: PreparseSymbolKind::Type,
+            visibility,
+        }
+    }
+
+    pub fn generator_name(name: CXIdent, visibility: VisibilityMode) -> Self {
+        Self {
+            name,
+            kind: PreparseSymbolKind::Generator,
             visibility,
         }
     }
@@ -46,8 +56,8 @@ pub struct PreparseNamespaceData {
 impl PreparseNamespaceData {
     pub fn insert_symbol(&mut self, symbol: PreparseSymbol) {
         self.symbols.entry(symbol.name).and_modify(|kind| {
-            if symbol.kind == PreparseSymbolKind::Type {
-                *kind = PreparseSymbolKind::Type;
+            if symbol.kind != PreparseSymbolKind::Tag {
+                *kind = symbol.kind;
             }
         }).or_insert(symbol.kind);
     }
@@ -82,6 +92,11 @@ impl PreparseModuleSymbols {
     pub fn add_type(&mut self, name: CXIdent, visibility: VisibilityMode) {
         self.symbols
             .push(PreparseSymbol::type_name(name, visibility));
+    }
+
+    pub fn add_generator(&mut self, name: CXIdent, visibility: VisibilityMode) {
+        self.symbols
+            .push(PreparseSymbol::generator_name(name, visibility));
     }
 
     pub fn add_tag(&mut self, name: CXIdent, visibility: VisibilityMode) {

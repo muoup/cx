@@ -37,6 +37,7 @@ pub struct HIRFunctionContract {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct HIRFunctionPrototype {
     pub kind: HIRFunctionKind,
+    pub comptime: bool,
 
     pub return_type: HIRType,
     pub params: Vec<HIRParameter>,
@@ -52,27 +53,7 @@ pub struct HIRFunctionPrototype {
 pub struct HIRParameter {
     pub name: Option<CXIdent>,
     pub ty: HIRType,
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct HIRComptimeFnPrototype {
-    pub kind: HIRFunctionKind,
-    pub return_type: HIRComptimeValueType,
-    pub params: Vec<HIRComptimeParameter>,
-    pub range: TokenRange,
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct HIRComptimeParameter {
-    pub name: Option<CXIdent>,
-    pub value_type: HIRComptimeValueType,
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct HIRComptimeValueType {
-    pub expr: bool,
-    pub params: Vec<HIRType>,
-    pub ty: HIRType,
+    pub comptime: bool,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

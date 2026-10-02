@@ -1,6 +1,7 @@
 # Parser modernization: syntax decisions (2026-10-02)
 
-Planning record, nothing here is implemented. Builds on
+Sections 1 to 6 and 8 are implemented (see "Implementation status" at the end); `@reify`
+(section 7) is implemented for explicit signatures only. Builds on
 `TEMP_AI_GENERATED_c_compatible_type_parsing.md` (computed-head declarations, `@type`
 binders, `_` holes) and `TEMP_AI_GENERATED_staged_pipeline_design.md`.
 
@@ -64,14 +65,14 @@ match (c) { RED => ...; auto other => ...; }
 - `auto x` owns, `auto& x` / `const auto& x` borrows. Today a binding aliases an lvalue
   subject and owns an rvalue one; that implicit rule goes away.
 
-Open details:
+Restrictions (confirmed):
 
-- Owning bindings on a non-copyable lvalue subject (`x is some(auto v) && v > 3` moves out
-  even when the second test fails). Proposed: require `auto&` or an rvalue subject.
-- Typed bindings (`some(int x)`) are ambiguous with computed heads (`ok(some(int) x)`).
-  Proposed: only `auto`, `auto&`, `const auto&` at first.
-- Value patterns limited to comptime constants at first; `some(value)` with a runtime local
-  gets a "did you mean `auto value`" diagnostic, which also covers migration.
+- An owning binding on a subject that stays in use copies the matched value. If the value
+  cannot be copied it is an error: borrow with `auto&` or match on a moved subject.
+- Only `auto`, `auto&` and `const auto&` bindings; typed bindings (`some(int x)`) are
+  ambiguous with computed heads (`ok(some(int) x)`).
+- Value patterns are comptime constants; `some(value)` with a runtime local gets a "bind the
+  value with `auto name`" diagnostic, which also covers migration.
 
 ## 4. Scope resolution on types (decided)
 
@@ -167,16 +168,17 @@ A closure is an anonymous comptime function and nothing else.
   of the code value.
 - Arguments to `expr(T)` parameters are **no longer auto-quoted**; the caller writes `emit`.
   ```c
-  x |> opt::unwrap_or_else(return 5);        // before
-  x |> opt::unwrap_or_else(emit return 5);   // after
+  x |> opt::unwrap_or_else(return 5);              // before
+  x |>(1) opt::unwrap_or_else(_, emit return 5);   // after
   ```
+  One exception as implemented, **to be confirmed**: the subject of a pipe is quoted when it
+  lands on an `expr` parameter, so `x |>(1) opt::try(_)` needs no `(emit x)`.
 - Calls inside `emit` to a comptime function splice the result; arguments are passed as
   code or evaluated at comptime according to each parameter's type.
 
-## 7. Runtime anonymous functions (decided, name open)
+## 7. Runtime anonymous functions (decided, explicit signatures implemented)
 
-A native operator turns a comptime function on code into a real function. `@reify` is a
-placeholder name.
+A native operator, `@reify`, turns a comptime function on code into a real function.
 
 ```
 @reify(@type F, f)
@@ -194,7 +196,10 @@ auto h     = @reify(@fn() -> int, emit printf("hi\n"));                // explic
 - The signature is deduced from the expression when the parameter types are known (no
   parameters, or typed closure parameters) and the body does not itself need an expected
   type. Otherwise it comes from the expected type or the explicit argument.
-- The explicit signature is a bound, not a conversion: a mismatch is an error.
+- The explicit signature is a bound, with one allowance shared by every function pointer
+  conversion: a function may stand in for one returning `void`, unless its result is an
+  owned `@nodrop` value. Nodrop and nocopy act as pseudo-effects until there is an effect
+  algebra.
 - An emitted `return` lands in the anonymous function, so it returns from the lambda.
 - Capturing is rejected by a general check: emitted code that uses a local of one function
   cannot be spliced into another. Comptime values are baked in and allowed.
@@ -225,3 +230,47 @@ and types, dependent function types.
   expected-type resolution of holes at splice; escaping-local check; `@reify`.
 - Migration: `lib/std`, about 60 fixtures, examples. Every closure call site gains `emit`,
   every `expr` argument gains `emit`, every variant pattern changes.
+
+## Implementation status (2026-10-02)
+
+Implemented: comptime parameters and generators with both body forms, `_` holes, `auto`
+bindings and binding modes, name-resolved variant patterns, value patterns, scope resolution
+on types including constructors as values (`opt(int)::some`), `@fn` in declarator and
+anonymous form, `expr(T)`, explicit-`emit` closures with optional typed parameters,
+`|>(n)`, the void-result function pointer rule, `@reify` with an explicit `@fn(...) -> T`
+signature. `lib/std`, the fixtures and the examples are migrated.
+
+`@reify` is lowered in HIR lowering to a static function whose body returns the splice of
+the value applied to its parameters. It is lowered outside the enclosing function, so a
+captured local is reported as an unresolved symbol.
+
+One rule was added that section 6 does not state and still needs a verdict: a piped subject
+that lands on an `expr` parameter is quoted implicitly (`x |>(1) opt::try(_)`). Every other
+`expr` argument needs `emit`.
+
+Not implemented:
+
+- `@reify` signature deduction (`_`, or from the expected type), and `@reify` inside a
+  generic function when the signature mentions its comptime parameters.
+- `const` is not enforced on `const auto&` bindings.
+- A closure body must be `emit ...` or `then`; the comptime-scratch form is rejected.
+- The escaping-local check for spliced code.
+- A payload-free variant of a generated type named as a value (`opt(int)::none` without a
+  call); the call form works.
+- Type-directed lookup of `T::member` beyond constructors.
+- Diagnostics from HIR lowering are mostly the generic "erroneous expression".
+- `site/docs`, `site/stdlib/*.json`, the README and the vendored copy under
+  `compiler/cx-zed-extension/grammars/cx` still show the old syntax.
+
+Suite: 313 of 367 pass. The 54 failures are `type-errors` fixtures whose checks have not
+been ported to HMIR lowering; the same 54 fail on HEAD once its `optional.cx` sketch is
+removed.
+
+Found along the way, present before this pass:
+
+- `std::printf` is unresolved when `std::io` and `std::string` or `std::span` are both
+  imported `as std`: the lookup is ambiguous and is treated as not found.
+- Several `stdlib.h` functions are unresolved (`qsort`, `bsearch`, `getenv`, `labs`,
+  `atexit`, `mblen`).
+- `examples/lisp-interpreter` does not build (the ambiguity above, and two pattern subjects
+  that are pointers, `interpreter.cx` lines 70 and 91) and segfaults when patched.
