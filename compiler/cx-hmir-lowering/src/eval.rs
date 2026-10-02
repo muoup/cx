@@ -26,7 +26,7 @@ use crate::{
     program::{DefKey, Instance, Program, UnitID, def_body},
     staging_error,
     ty::{FunctionType, TypeID, TypeKind},
-    value::{FrameRef, Quote, QuoteRef, StaticValue},
+    value::{FrameRef, Quote, QuoteRef, StaticValue, truncate_int},
 };
 
 const LOOP_LIMIT: usize = 1 << 20;
@@ -45,6 +45,7 @@ pub(crate) struct EvalFrame {
     owner: Rc<Instance>,
     locals: HashMap<HMIRLocalID, StaticValue>,
     runtime: Option<RuntimeView>,
+    ret: Option<TypeID>,
 }
 
 pub(crate) enum Flow {
@@ -79,6 +80,7 @@ impl EvalFrame {
             owner,
             locals: HashMap::new(),
             runtime: None,
+            ret: None,
         }
     }
 
@@ -446,15 +448,16 @@ pub(crate) fn call_static(
     for (param, arg) in function.signature().params().iter().zip(&instance.1) {
         let declared = body.local(*param).ty();
         let arg = match eval(cx, &mut frame, declared, None) {
-            Ok(StaticValue::Type(ty))
-                if !matches!(cx.types().kind(ty), TypeKind::Expr { .. } | TypeKind::Type) =>
-            {
+            Ok(StaticValue::Type(ty)) if !matches!(cx.types().kind(ty), TypeKind::Type) => {
                 coerce_static(cx, arg.clone(), ty, span)?
             }
             _ => arg.clone(),
         };
         frame.bind(*param, arg);
     }
+    frame.ret = eval_type_hint(cx, &mut frame, function.signature().return_type())
+        .ok()
+        .flatten();
     let result = exec(cx, &mut frame, root, None);
     if memoize {
         cx.active_mut().remove(&instance);
@@ -467,6 +470,12 @@ pub(crate) fn call_static(
                 "loop control escaped a function".into(),
             ));
         }
+    };
+    let value = match frame.ret {
+        Some(ty) if matches!(cx.types().kind(ty), TypeKind::Expr { .. }) => {
+            coerce_static(cx, value, ty, span)?
+        }
+        _ => value,
     };
     if memoize {
         cx.generated_mut().insert(instance, value.clone());
@@ -629,7 +638,7 @@ pub(crate) fn exec_native(
         HMIRNativeOp::Control(control) => {
             return Ok(match control {
                 HMIRControlOp::Return(value) => Flow::Return(match value {
-                    Some(value) => eval(cx, frame, *value, None)?,
+                    Some(value) => eval(cx, frame, *value, frame.ret)?,
                     None => StaticValue::Unit,
                 }),
                 HMIRControlOp::Yield(value) => Flow::Yield(match value {
@@ -682,7 +691,7 @@ fn exec_aggregate(
         }
         HMIRAggregateOp::Member { base, name } => {
             let base = eval(cx, frame, *base, None)?;
-            let StaticValue::Aggregate { ty, fields } = base else {
+            let StaticValue::Aggregate { ty, fields } = read_global(cx, base, span)? else {
                 return Err(staging_error(
                     span,
                     format!("no compile-time member '{name}'"),
@@ -768,10 +777,31 @@ fn static_initializer(
         };
         let member = member_type(cx, ty, index, span)?;
         let value = eval(cx, frame, *value, Some(member))?;
-        values.push((index, coerce_static(cx, value, member, span)?));
+        let value = coerce_static(cx, value, member, span)?;
+        values.push((index, truncate_bitfield(cx, ty, index, value)));
         next = index + 1;
     }
     Ok(StaticValue::Aggregate { ty, fields: values })
+}
+
+fn truncate_bitfield(
+    cx: &Program<'_>,
+    ty: TypeID,
+    index: usize,
+    value: StaticValue,
+) -> StaticValue {
+    let bits = cx
+        .types()
+        .nominal_of(ty)
+        .and_then(|nominal| nominal.fields().get(index))
+        .and_then(|field| field.bit_width());
+    match (bits, value) {
+        (Some(bits), StaticValue::Int { value, ty }) => {
+            let signed = cx.types().int_info(ty).is_some_and(|(_, signed)| signed);
+            StaticValue::int(truncate_int(value, bits as u32, signed), ty)
+        }
+        (_, value) => value,
+    }
 }
 
 fn static_address(

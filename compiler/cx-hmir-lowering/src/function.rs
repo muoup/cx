@@ -1,6 +1,7 @@
 mod aggregate;
 pub(crate) mod call;
 mod coerce;
+mod contract;
 pub(crate) mod control;
 pub(crate) mod expr;
 pub(crate) mod inspect;
@@ -12,11 +13,16 @@ use std::{collections::HashMap, rc::Rc};
 use cx_hmir::{
     HMIRBody, HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRLocalID, HMIRPattern, HMIRUnit,
 };
-use cx_log::{CXResult, error::CXError};
+use cx_log::{
+    CXResult,
+    catalogue::mir,
+    error::{CXError, context::from_token_range},
+};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRBody, MIRConstant, MIRFunctionID,
-    MIRInstruction, MIRInstructionKind, MIRIntType, MIRIntrinsic, MIRPlaceID, MIRRegisterID,
-    MIRScopeID, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
+    MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRBody, MIRConstant, MIRFnPrototype,
+    MIRFunctionID, MIRInstruction, MIRInstructionKind, MIRIntType, MIRIntrinsic, MIRPlaceID,
+    MIRRegisterID, MIRScopeID, MIRTypeID, MIRValue,
+    expr::{instruction::MIRInvalidationKind, visit},
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -174,7 +180,6 @@ pub(crate) fn lower_function(
     let root = function.root().expect("queued functions have a body");
     let signature = eval_signature(cx, instance, &span)?;
     let prototype = cx.module().function(id).prototype().clone();
-    let main = prototype.symbol_name.as_str() == "main";
     let statics = eval_frame_for(cx, instance).locals().clone();
     let serial = cx.next_serial();
 
@@ -197,11 +202,15 @@ pub(crate) fn lower_function(
         cx.bind(0, *local, Operand::place(place, ty));
     }
 
-    lower_root(&mut cx, root, main)?;
+    lower_root(&mut cx, root, &prototype)?;
     Ok(cx.body)
 }
 
-fn lower_root(cx: &mut FunctionLowering<'_, '_>, root: HMIRExprID, main: bool) -> CXResult<()> {
+fn lower_root(
+    cx: &mut FunctionLowering<'_, '_>,
+    root: HMIRExprID,
+    prototype: &MIRFnPrototype,
+) -> CXResult<()> {
     let span = cx.span(0, root);
     let is_block = matches!(
         cx.frames[0].body().expr(root).kind(),
@@ -227,7 +236,7 @@ fn lower_root(cx: &mut FunctionLowering<'_, '_>, root: HMIRExprID, main: bool) -
         if cx.program.types().is_void(cx.ret) {
             return lower_return(cx, None, &span);
         }
-        if main {
+        if prototype.symbol_name.as_str() == "main" {
             let zero = Operand::value(
                 MIRValue::Constant(MIRConstant::Integer {
                     ty: MIRIntType::I32,
@@ -236,6 +245,15 @@ fn lower_root(cx: &mut FunctionLowering<'_, '_>, root: HMIRExprID, main: bool) -
                 cx.ret,
             );
             return lower_return(cx, Some(zero), &span);
+        }
+        if cx.program.require_explicit_return()
+            && !cx.program.types().is_unreachable(cx.ret)
+            && cx.reachable()
+        {
+            return Err(Stop::Error(CXError::new(
+                mir::FUNCTION_RETURN.bind(prototype.symbol_name.to_string()),
+                from_token_range(&span),
+            )));
         }
         cx.emit(MIRInstructionKind::Unreachable, &span);
         Ok(())
@@ -301,6 +319,31 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
             },
             span,
         );
+    }
+
+    fn reachable(&self) -> bool {
+        let mut visited = vec![false; self.body.blocks().len()];
+        let mut pending = vec![self.body.entry()];
+        while let Some(id) = pending.pop() {
+            if id == self.current {
+                return true;
+            }
+            if std::mem::replace(&mut visited[id.index()], true) {
+                continue;
+            }
+            if let Some(instruction) = self
+                .body
+                .block(id)
+                .and_then(|block| block.last_instruction())
+            {
+                pending.extend(
+                    visit::successors(instruction)
+                        .into_iter()
+                        .map(|target| target.block),
+                );
+            }
+        }
+        false
     }
 
     pub(crate) fn terminated(&self) -> bool {
@@ -493,6 +536,7 @@ pub(crate) fn lower_return(
         }
         _ => None,
     };
+    contract::lower_return_postcondition(cx, value.as_ref())?;
     let root = cx.scopes[0].id;
     lower_cleanup_to(cx, root, true, span)?;
     cx.emit(MIRInstructionKind::Return { value }, span);

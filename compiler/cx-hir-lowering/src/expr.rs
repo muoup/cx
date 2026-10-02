@@ -315,6 +315,8 @@ fn lower_unpack(
             span,
         ));
     }
+    let shell = cx.push(HMIRExprKind::Local(source), span);
+    statements.push(cx.ownership(HMIROwnershipOp::Leak(shell), span));
     cx.block(HMIRBlockKind::Sequence, statements, span)
 }
 

@@ -52,7 +52,7 @@ pub(crate) struct FrameRef {
     frame: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Quote {
     unit: UnitID,
     def: HMIRDefID,
@@ -62,6 +62,8 @@ pub(crate) struct Quote {
     env: HashMap<HMIRLocalID, StaticValue>,
     runtime_types: HashMap<HMIRLocalID, TypeID>,
     origin: Option<FrameRef>,
+    // A void quote's yields target the context it is spliced into
+    external_yield: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -102,7 +104,12 @@ impl Quote {
             env,
             runtime_types,
             origin,
+            external_yield: false,
         }
+    }
+
+    pub(crate) fn external_yield(&self) -> bool {
+        self.external_yield
     }
 
     pub(crate) fn unit(&self) -> UnitID {
@@ -145,6 +152,16 @@ impl QuoteRef {
 
     pub(crate) fn get(&self) -> &Quote {
         &self.0
+    }
+
+    pub(crate) fn with_external_yield(&self) -> Self {
+        if self.0.external_yield {
+            return self.clone();
+        }
+        Self::new(Quote {
+            external_yield: true,
+            ..(*self.0).clone()
+        })
     }
 }
 
@@ -206,10 +223,13 @@ impl StaticValue {
 
 // Wraps an integer into the range of 'ty'
 pub(crate) fn normalize_int(value: i128, ty: TypeID, types: &TypeTable) -> i128 {
-    let Some((width, signed)) = types.int_info(ty) else {
-        return value;
-    };
-    let bits = width.bits() as u32;
+    match types.int_info(ty) {
+        Some((width, signed)) => truncate_int(value, width.bits() as u32, signed),
+        None => value,
+    }
+}
+
+pub(crate) fn truncate_int(value: i128, bits: u32, signed: bool) -> i128 {
     if bits >= 128 {
         return value;
     }

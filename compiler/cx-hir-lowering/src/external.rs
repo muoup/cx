@@ -27,16 +27,20 @@ pub fn generate_external_hmir(
 ) -> Option<HMIRUnit> {
     let (tag, bare) = split_tag(name);
     let symbols = registry
-        .resolve(&bare, tag.is_some())?
+        .resolve(&bare, tag.is_some())
+        .unwrap_or_default()
         .into_iter()
         .filter(|symbol| tag.is_none() || symbol.tag == tag)
         .collect::<Vec<_>>();
-    let symbol = preferred_symbol(&symbols, &bare)?;
+    // A struct or union tag nothing declares names an incomplete type
+    let incomplete = matches!(tag, Some(HIRTagKind::Struct | HIRTagKind::Union));
 
     let enum_block: HIREnumDefinition;
     let span = TokenRange::internal();
-    let (namespace, source) = match &symbol.kind {
-        HIRSymbolKind::Function(function) => (
+    let (namespace, source) = match preferred_symbol(&symbols, &bare).map(|symbol| &symbol.kind) {
+        None if incomplete => (bare.namespace.clone(), DefSource::OpaqueType),
+        None => return None,
+        Some(HIRSymbolKind::Function(function)) => (
             lexical_namespace(&bare, &function.base.kind),
             DefSource::Function {
                 prototype: &function.base,
@@ -44,7 +48,7 @@ pub fn generate_external_hmir(
                 body: function.data.as_ref(),
             },
         ),
-        HIRSymbolKind::ComptimeFunction(function) => (
+        Some(HIRSymbolKind::ComptimeFunction(function)) => (
             lexical_namespace(&bare, &function.base.kind),
             DefSource::ComptimeFunction {
                 prototype: &function.base,
@@ -52,19 +56,19 @@ pub fn generate_external_hmir(
                 body: &function.data,
             },
         ),
-        HIRSymbolKind::Type(ty) if is_forward_declaration(&bare.name, tag, &ty.base) => {
+        Some(HIRSymbolKind::Type(ty)) if is_forward_declaration(&bare.name, tag, &ty.base) => {
             (bare.namespace.clone(), DefSource::OpaqueType)
         }
-        HIRSymbolKind::Type(ty) => (
+        Some(HIRSymbolKind::Type(ty)) => (
             bare.namespace.clone(),
             DefSource::Type {
                 template: ty.template_prototype.as_ref(),
                 ty: &ty.base,
             },
         ),
-        HIRSymbolKind::AddressableGlobal {
+        Some(HIRSymbolKind::AddressableGlobal {
             ty, symbol_naming, ..
-        } => (
+        }) => (
             bare.namespace.clone(),
             DefSource::Global {
                 ty,
@@ -74,10 +78,10 @@ pub fn generate_external_hmir(
                 naming: *symbol_naming,
             },
         ),
-        HIRSymbolKind::EnumIdent {
+        Some(HIRSymbolKind::EnumIdent {
             enum_block_idx,
             variant_index,
-        } => {
+        }) => {
             enum_block = registry.enum_block(&bare.namespace, *enum_block_idx)?;
             (
                 bare.namespace.clone(),
@@ -87,7 +91,7 @@ pub fn generate_external_hmir(
                 },
             )
         }
-        HIRSymbolKind::TypeConstructor(_) => return None,
+        Some(HIRSymbolKind::TypeConstructor(_)) => return None,
     };
 
     let plan = PlannedDef::new(name.clone(), namespace.clone(), span.clone(), source);

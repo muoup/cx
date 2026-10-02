@@ -1,7 +1,8 @@
 use std::rc::Rc;
 
 use cx_hmir::{
-    HMIRExprID, HMIRExprKind, HMIRIntrinsic, HMIRLocalID, HMIRNativeOp, HMIROwnershipOp,
+    HMIRBlockKind, HMIRExprID, HMIRExprKind, HMIRIntrinsic, HMIRLocalID, HMIRNativeOp,
+    HMIROwnershipOp,
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
 use cx_mir::{
@@ -17,7 +18,7 @@ use crate::{
         Expect, Frame, FunctionLowering, LowerResult, Operand, OperandKind,
         aggregate::{lower_address_of, lower_aggregate, lower_deref_pointer},
         coerce::{lower_coerce, lower_nonnull_pointer},
-        control::lower_control,
+        control::{lower_block, lower_control},
         inspect, lower_eval, lower_eval_type, lower_eval_type_hint,
         operand::{
             lower_auto_deref, lower_convert, lower_decay, lower_lift, lower_store, lower_value,
@@ -304,6 +305,15 @@ fn lower_ownership(
 ) -> LowerResult<Operand> {
     match op {
         HMIROwnershipOp::Move(inner) => {
+            // Moving a reference binding moves the reference itself, not its referent
+            if let HMIRExprKind::Local(local) = cx.kind(frame, inner)
+                && let Some(binding) = cx.binding(frame, local)
+                && binding.origin().is_some()
+                && cx.program.types().is_reference(binding.ty())
+            {
+                let reference = lower_lift(cx, &binding, span)?;
+                return lower_auto_deref(cx, Operand::value(reference, binding.ty()), span);
+            }
             let operand = lower_expr(cx, frame, inner, expect)?;
             if !operand.is_lvalue() {
                 return Ok(operand);
@@ -410,6 +420,23 @@ pub(crate) fn lower_splice(
             _ => operand,
         };
         cx.bind(index, *param, operand);
+    }
+    if quote.external_yield()
+        && let HMIRExprKind::Block {
+            kind: HMIRBlockKind::Yield,
+            statements,
+            tail,
+        } = cx.frames[index].body().expr(quote.body()).kind().clone()
+    {
+        return lower_block(
+            cx,
+            index,
+            HMIRBlockKind::Scope,
+            &statements,
+            tail,
+            expect,
+            span,
+        );
     }
     lower_expr(cx, index, quote.body(), expect)
 }

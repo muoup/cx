@@ -14,6 +14,7 @@ use crate::{
     function::{
         Expect, FunctionLowering, LowerResult, Operand, Stop,
         aggregate::{lower_address_of_operand, lower_deref_pointer, lower_member},
+        contract::{lower_call_postcondition, lower_call_precondition},
         expr::{lower_expr, lower_static_operand},
         inspect, lower_eval, lower_eval_frame,
         operand::{lower_convert, lower_decay, lower_value},
@@ -267,7 +268,10 @@ fn lower_static_call(
         }
         values.push(lower_argument(cx, operand, ty, span)?);
     }
-    lower_emit_call(cx, callee, values, signature.ret(), span)
+    let contract = lower_call_precondition(cx, &instance, &signature, &values)?;
+    let result = lower_emit_call(cx, callee, values, signature.ret(), span)?;
+    lower_call_postcondition(cx, contract, &result)?;
+    Ok(result)
 }
 
 // A receiver lvalue is passed by address to a method taking a pointer

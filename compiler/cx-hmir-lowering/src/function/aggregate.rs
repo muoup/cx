@@ -438,6 +438,7 @@ pub(super) fn lower_bind_pattern(
         } => {
             let payload = member_type(cx.program, subject.ty(), index, &span)?;
             if cx.program.types().is_void(payload) {
+                lower_consume_subject(cx, &subject, owned, &span);
                 let unit = Operand::unit(cx.program.types_mut());
                 cx.bind(frame, local, unit);
                 return Ok(());
@@ -462,9 +463,35 @@ pub(super) fn lower_bind_pattern(
             };
             cx.bind(frame, local, bound);
         }
+        HMIRPattern::Variant {
+            index, inner: None, ..
+        } => {
+            let payload = member_type(cx.program, subject.ty(), index, &span)?;
+            if cx.program.types().is_void(payload) {
+                lower_consume_subject(cx, &subject, owned, &span);
+            }
+        }
         _ => {}
     }
     Ok(())
+}
+
+// An owned subject matched on a payload-free variant has nothing left to give away
+fn lower_consume_subject(
+    cx: &mut FunctionLowering<'_, '_>,
+    subject: &Operand,
+    owned: bool,
+    span: &TokenRange,
+) {
+    if let Some(origin) = subject.origin().filter(|_| owned) {
+        cx.emit(
+            MIRInstructionKind::Invalidate {
+                place: MIRBindable::Place(origin),
+                kind: MIRInvalidationKind::Move,
+            },
+            span,
+        );
+    }
 }
 
 fn lower_lift_payload(

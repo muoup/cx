@@ -170,6 +170,10 @@ pub(crate) fn declare_function(
     if let Some(id) = cx.module().instances.get(instance) {
         return Ok(*id);
     }
+    let safe = matches!(
+        def.kind(),
+        HMIRDefKind::Function(function) if function.signature().contract().is_safe()
+    );
     let signature = eval_signature(cx, instance, span)?;
     let symbol = instance_symbol(cx, instance, signature.link_name());
     let linkage = if instance.1.is_empty() {
@@ -189,7 +193,7 @@ pub(crate) fn declare_function(
             }
             let ret = cx.types_mut().mir(signature.ret(), span)?;
             let prototype = MIRFnPrototype::new(
-                MIRFnSignature::new(params, ret, signature.is_variadic(), false),
+                MIRFnSignature::new(params, ret, signature.is_variadic(), safe),
                 linkage,
                 CXIdent::from(symbol.as_str()),
                 Some(CXIdent::from(cx.def_name(instance.0).to_string())),

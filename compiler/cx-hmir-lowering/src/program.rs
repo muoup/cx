@@ -46,6 +46,7 @@ pub(crate) struct Program<'l> {
     global_types: HashMap<DefKey, TypeID>,
     imported: HashMap<(UnitID, HMIRTypeID), TypeID>,
     serial: u64,
+    require_explicit_return: bool,
 }
 
 impl DefKey {
@@ -84,6 +85,7 @@ impl<'l> Program<'l> {
         main: HMIRUnit,
         loader: Box<ExternalLoader<'l>>,
         architecture: ArchitectureConfig,
+        require_explicit_return: bool,
     ) -> Self {
         let mut program = Self {
             units: Vec::new(),
@@ -98,9 +100,14 @@ impl<'l> Program<'l> {
             global_types: HashMap::new(),
             imported: HashMap::new(),
             serial: 0,
+            require_explicit_return,
         };
         program.push_unit(main);
         program
+    }
+
+    pub(crate) fn require_explicit_return(&self) -> bool {
+        self.require_explicit_return
     }
 
     fn push_unit(&mut self, unit: HMIRUnit) -> UnitID {

@@ -16,7 +16,7 @@ use crate::{
         operand::{lower_convert, lower_copy, lower_read, lower_spill, lower_truthy, lower_value},
     },
     ty::TypeID,
-    value::arithmetic_type,
+    value::{arithmetic_type, promote_integer_type},
 };
 
 pub(crate) fn lower_block(
@@ -37,20 +37,17 @@ pub(crate) fn lower_block(
         HMIRBlockKind::Yield => {
             let merge = lower_open_merge(cx, "block.yield", expect, span)?;
             cx.push_control(ControlKind::Yield { merge });
+            let expect = cx.merge_expect(merge);
             let result = lower_scope(cx, span, |this| {
-                let value =
-                    lower_sequence(this, frame, statements, tail, this.merge_expect(merge))?;
-                if tail.is_some() {
-                    lower_merge_edge(this, merge, Some(value), span)?;
-                }
-                Ok(())
+                let value = lower_sequence(this, frame, statements, tail, expect)?;
+                settle_scope_value(this, value, expect, span)
             });
             cx.controls.pop();
             match result {
-                Ok(()) | Err(Stop::Diverged) => {}
+                Ok(value) => lower_merge_edge(cx, merge, tail.map(|_| value), span)?,
+                Err(Stop::Diverged) => {}
                 Err(error) => return Err(error),
             }
-            cx.emit(MIRInstructionKind::Unreachable, span);
             lower_close_merge(cx, merge, span)
         }
     }
@@ -630,7 +627,23 @@ pub(super) fn lower_control(
                 Some(value) => {
                     let expect = cx.merge_expect(merge);
                     let value = lower_expr(cx, frame, value, expect)?;
-                    Some(settle_scope_value(cx, value, expect, span)?)
+                    let value = settle_scope_value(cx, value, expect, span)?;
+                    if let Expect::Type(expected) = expect {
+                        let found = lower_inferred_type(cx, value.ty());
+                        let promoted = promote_integer_type(cx.program.types_mut(), found);
+                        if found != expected && promoted != expected {
+                            let types = cx.program.types();
+                            return cx.error(
+                                span,
+                                format!(
+                                    "yielded '{}' where '{}' is expected",
+                                    types.display(found),
+                                    types.display(expected)
+                                ),
+                            );
+                        }
+                    }
+                    Some(value)
                 }
                 None => None,
             };
@@ -776,7 +789,7 @@ fn lower_close_merge(
     })
 }
 
-fn lower_scope<T>(
+pub(super) fn lower_scope<T>(
     cx: &mut FunctionLowering<'_, '_>,
     span: &TokenRange,
     body: impl FnOnce(&mut FunctionLowering<'_, '_>) -> LowerResult<T>,

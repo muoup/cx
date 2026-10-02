@@ -325,6 +325,16 @@ pub(crate) enum JobResult {
     UnchangedSinceLastCompilation,
 }
 
+fn require_explicit_return(context: &GlobalCompilationContext, unit: &CompilationUnit) -> bool {
+    context.config.require_explicit_return.unwrap_or_else(|| {
+        unit.module()
+            .as_path()
+            .extension()
+            .and_then(|extension| extension.to_str())
+            != Some("c")
+    })
+}
+
 fn perform_job_with_dump(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
@@ -497,15 +507,7 @@ pub(crate) fn perform_job(
                 ));
             }
 
-            let require_explicit_return =
-                context.config.require_explicit_return.unwrap_or_else(|| {
-                    job.unit
-                        .module()
-                        .as_path()
-                        .extension()
-                        .and_then(|extension| extension.to_str())
-                        != Some("c")
-                });
+            let require_explicit_return = require_explicit_return(context, &job.unit);
             let mut env = TypeEnvironment::new(
                 &context.module_db,
                 context.config.architecture,
@@ -531,11 +533,13 @@ pub(crate) fn perform_job(
                 let hir = context.module_db.hir.get(job.unit.namespace());
                 let registry = &context.module_db.symbol_registry;
                 let architecture = context.config.architecture;
-                let hmir = generate_hmir(&hir, job.unit.namespace().clone(), registry, architecture);
+                let hmir =
+                    generate_hmir(&hir, job.unit.namespace().clone(), registry, architecture);
                 stage_hmir(
                     hmir,
                     |name| generate_external_hmir(registry, architecture, name),
                     architecture,
+                    require_explicit_return(context, &job.unit),
                 )?
             } else {
                 let thir = context.module_db.thir.get(job.unit.namespace());

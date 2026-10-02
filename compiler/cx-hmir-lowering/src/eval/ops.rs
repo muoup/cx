@@ -191,6 +191,11 @@ pub(crate) fn coerce_static(
 ) -> CXResult<StaticValue> {
     let kind = cx.types().kind(ty).clone();
     Ok(match (value, kind) {
+        (StaticValue::Quote(quote), TypeKind::Expr { result, .. })
+            if cx.types().is_void(result) =>
+        {
+            StaticValue::Quote(quote.with_external_yield())
+        }
         (value, TypeKind::Type | TypeKind::Expr { .. }) => value,
         (_, TypeKind::Void) => StaticValue::Unit,
         (StaticValue::Int { value, .. }, TypeKind::Int { width, .. }) => {
