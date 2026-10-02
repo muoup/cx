@@ -19,6 +19,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     body::{BodyLowering, Symbol, lower_static},
+    def::is_void,
     expr::call::{lower_call, lower_construct},
     expr::control::{lower_for, lower_if, lower_match, lower_switch, lower_while},
     expr::literal::{lower_float_literal, lower_int_literal},
@@ -218,12 +219,18 @@ pub(crate) fn lower_identifier(
             }
         }
         Symbol::Global(GlobalSymbol::Primitive(desc)) => cx.type_constant(desc, span),
-        Symbol::Global(GlobalSymbol::Def(def) | GlobalSymbol::ComptimeFunction(def, _)) => {
+        Symbol::Global(
+            GlobalSymbol::Def(def)
+            | GlobalSymbol::Function(def, _)
+            | GlobalSymbol::ComptimeFunction(def, ..),
+        ) => cx.push(HMIRExprKind::Def(def), span),
+        Symbol::Global(GlobalSymbol::Constructor(data, variant, def)) => {
+            let payload = cx.resolver().constructor_payload(&data);
+            if payload.is_none_or(|payload| is_void(cx, &payload)) {
+                let unit = cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span);
+                return lower_construct(cx, &data.union_type, template_input, variant, unit, span);
+            }
             cx.push(HMIRExprKind::Def(def), span)
-        }
-        Symbol::Global(GlobalSymbol::Constructor(data, variant)) => {
-            let unit = cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span);
-            return lower_construct(cx, &data.union_type, template_input, variant, unit, span);
         }
     };
     lower_instantiate(cx, value, template_input, span)

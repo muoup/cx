@@ -8,7 +8,7 @@ use cx_hmir::{
     HMIRTypeDesc, HMIRTypeID, HMIRUnit,
 };
 use cx_log::CXResult;
-use cx_namespace::module::{NamespacePath, QualifiedName};
+use cx_namespace::module::QualifiedName;
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
@@ -211,23 +211,6 @@ impl<'l> Program<'l> {
         let key = DefKey::new(self.push_unit(unit), HMIRDefID::new(0));
         self.externals.insert(canonical, Some(key));
         key
-    }
-
-    // Finds an associated def such as 'ns::opt::is_some' for the type defined by 'owner'
-    pub(crate) fn associated(&mut self, owner: DefKey, name: &CXIdent) -> Option<DefKey> {
-        let owner_name = self.def_name(owner);
-        let namespace: NamespacePath = owner_name
-            .namespace
-            .clone()
-            .child(CXIdent::from(untagged_name(&owner_name.name)));
-        let qualified = QualifiedName::new(namespace, name.clone());
-        if let Some(id) = self.names[owner.unit.index()].get(&qualified) {
-            return Some(DefKey::new(owner.unit, *id));
-        }
-        if let Some(id) = self.names[self.main_unit().index()].get(&qualified) {
-            return Some(DefKey::new(self.main_unit(), *id));
-        }
-        self.external(&qualified)
     }
 
     pub(crate) fn import_type(

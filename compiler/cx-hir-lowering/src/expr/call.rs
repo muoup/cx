@@ -89,10 +89,16 @@ fn lower_callee_call(
             let args = args.iter().map(|arg| lower_expr(cx, arg)).collect();
             cx.push(HMIRExprKind::Splice { quote, args }, span)
         }
-        Symbol::Global(GlobalSymbol::ComptimeFunction(def, prototype)) => {
-            lower_comptime_call(cx, def, &prototype, template_input.as_ref(), &args, span)
+        Symbol::Global(GlobalSymbol::ComptimeFunction(def, prototype, arity)) => {
+            let leading = lower_template_prefix(cx, template_input.as_ref(), arity, span);
+            lower_comptime_call(cx, def, &prototype, leading, &args, span)
         }
-        Symbol::Global(GlobalSymbol::Constructor(data, variant)) => {
+        Symbol::Global(GlobalSymbol::Function(def, arity)) => {
+            let callee_id = cx.push(HMIRExprKind::Def(def), &callee.range);
+            let leading = lower_template_prefix(cx, template_input.as_ref(), arity, span);
+            lower_call_args(cx, callee_id, leading, &args, span)
+        }
+        Symbol::Global(GlobalSymbol::Constructor(data, variant, _)) => {
             let value = match args.as_slice() {
                 [] => cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span),
                 [value] => lower_expr(cx, value),
@@ -113,6 +119,20 @@ fn lower_callee_call(
             lower_call_args(cx, callee_id, leading, &args, span)
         }
     }
+}
+
+// A call names every comptime parameter; the ones its template arguments omit are deduced
+fn lower_template_prefix(
+    cx: &mut BodyLowering<'_>,
+    template_input: Option<&HIRTemplateInput>,
+    arity: usize,
+    span: &TokenRange,
+) -> Vec<HMIRExprID> {
+    let mut leading = lower_template_args(cx, template_input);
+    while leading.len() < arity {
+        leading.push(cx.hole(span));
+    }
+    leading
 }
 
 fn lower_call_args(
@@ -136,12 +156,11 @@ fn lower_comptime_call(
     cx: &mut BodyLowering<'_>,
     def: HMIRDefRef,
     prototype: &HIRComptimeFnPrototype,
-    template_input: Option<&HIRTemplateInput>,
+    mut lowered: Vec<HMIRExprID>,
     args: &[&HIRExpression],
     span: &TokenRange,
 ) -> HMIRExprID {
     let callee = cx.push(HMIRExprKind::Def(def), span);
-    let mut lowered = lower_template_args(cx, template_input);
     for (index, arg) in args.iter().enumerate() {
         let quoted = prototype
             .params

@@ -401,10 +401,12 @@ pub(crate) fn def_value(
     }
 }
 
+// Fewer arguments than parameters bind the leading comptime parameters and yield the function;
+// a 'None' argument is a hole deduced from the arguments after the template prefix
 pub(crate) fn call_static(
     cx: &mut Program<'_>,
     callee: StaticValue,
-    args: Vec<StaticValue>,
+    args: Vec<Option<StaticValue>>,
     span: &TokenRange,
 ) -> CXResult<StaticValue> {
     let StaticValue::Function { def, args: bound } = callee else {
@@ -420,28 +422,38 @@ pub(crate) fn call_static(
             "called a non-function at compile time".into(),
         ));
     };
+    let params = function.signature().params();
+    let mut all = bound.into_iter().map(Some).collect::<Vec<_>>();
+    all.extend(args);
+    let curried = all.len() < params.len()
+        && params[..all.len()]
+            .iter()
+            .all(|param| function.body().local(*param).is_comptime());
+    if all.len() != params.len() && !curried {
+        return Err(staging_error(
+            span,
+            format!(
+                "'{}' expects {} arguments, found {}",
+                unit.def(def.def()).name(),
+                params.len(),
+                all.len()
+            ),
+        ));
+    }
+    let all = match all.iter().cloned().collect::<Option<Vec<_>>>() {
+        Some(all) => all,
+        None if curried => return Err(staging_error(span, "cannot infer this type".into())),
+        None => deduce_static(cx, def, all, span)?,
+    };
+    if curried {
+        return Ok(StaticValue::Function { def, args: all });
+    }
     let Some(root) = function.root() else {
         return Err(staging_error(
             span,
             format!("'{}' has no body to evaluate", unit.def(def.def()).name()),
         ));
     };
-    let params = function.signature().params().len();
-    let mut all = bound;
-    all.extend(args);
-    if all.len() < params {
-        all = deduce_static(cx, def, all, span)?;
-    }
-    if all.len() != params {
-        return Err(staging_error(
-            span,
-            format!(
-                "'{}' expects {params} arguments, found {}",
-                unit.def(def.def()).name(),
-                all.len()
-            ),
-        ));
-    }
 
     let memoize = all
         .iter()

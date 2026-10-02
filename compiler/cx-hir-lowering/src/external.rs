@@ -13,7 +13,7 @@ use crate::{
     body::BodyLowering,
     def::lower_def,
     plan::{DefSource, PlannedDef, is_forward_declaration},
-    resolve::Resolver,
+    resolve::{Resolver, constructor_payload},
 };
 
 const TAGS: [HIRTagKind; 3] = [HIRTagKind::Struct, HIRTagKind::Union, HIRTagKind::Enum];
@@ -91,7 +91,17 @@ pub fn generate_external_hmir(
                 },
             )
         }
-        Some(HIRSymbolKind::TypeConstructor(_)) => return None,
+        Some(HIRSymbolKind::TypeConstructor(constructor)) => (
+            bare.namespace
+                .clone()
+                .parent()
+                .unwrap_or_else(NamespacePath::root),
+            DefSource::Constructor {
+                template: constructor.template_prototype.as_ref(),
+                union_type: &constructor.base.union_type,
+                payload: constructor_payload(registry, &constructor.base)?,
+            },
+        ),
     };
 
     let plan = PlannedDef::new(name.clone(), namespace.clone(), span.clone(), source);

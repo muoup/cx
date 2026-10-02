@@ -1,4 +1,4 @@
-use cx_hmir::{HMIRExprID, HMIRLocalID};
+use cx_hmir::{HMIRExprID, HMIRExprKind, HMIRLocalID};
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
@@ -44,7 +44,10 @@ pub(crate) fn call(
     let callee = eval(cx, frame, callee, None)?;
     let mut values = Vec::with_capacity(args.len());
     for arg in args {
-        values.push(eval(cx, frame, *arg, None)?);
+        values.push(match frame.body().expr(*arg).kind() {
+            HMIRExprKind::Hole(_) => None,
+            _ => Some(eval(cx, frame, *arg, None)?),
+        });
     }
     Ok(Flow::Normal(call_static(cx, callee, values, span)?))
 }

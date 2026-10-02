@@ -1,19 +1,14 @@
 use std::rc::Rc;
 
-use cx_hmir::{
-    HMIRAggregateOp, HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRFloatWidth, HMIRIntWidth,
-    HMIRNativeOp,
-};
+use cx_hmir::{HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRFloatWidth, HMIRIntWidth};
 use cx_mir::{MIRConstant, MIRInstructionKind, MIRValue};
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
 
 use crate::{
     deduce::{deduce_template, template_params},
     eval::{EvalFrame, def_value, eval_signature, eval_static_type, eval_type},
     function::{
         Expect, FunctionLowering, LowerResult, Operand, Stop,
-        aggregate::{lower_address_of_operand, lower_deref_pointer, lower_member},
         coerce::lower_convert,
         contract::{lower_call_postcondition, lower_call_precondition},
         expr::{lower_expr, lower_static_operand},
@@ -30,7 +25,6 @@ use crate::{
 enum CallArg {
     Static(StaticValue),
     Expr(HMIRExprID),
-    Receiver(Operand),
 }
 
 pub(crate) fn lower_call(
@@ -40,15 +34,9 @@ pub(crate) fn lower_call(
     args: &[HMIRExprID],
     span: &TokenRange,
 ) -> LowerResult<Operand> {
-    if let HMIRExprKind::Native(HMIRNativeOp::AggregateOp(HMIRAggregateOp::Member { base, name })) =
-        cx.kind(frame, callee)
-    {
-        let receiver = lower_expr(cx, frame, base, Expect::Any)?;
-        return lower_method_call(cx, frame, receiver, &name, args, span);
-    }
     let callee = match lower_static_callee(cx, frame, callee)? {
         Some(StaticValue::Function { def, args: bound }) => {
-            return lower_static_call(cx, frame, def, bound, None, args, span);
+            return lower_static_call(cx, frame, def, bound, args, span);
         }
         Some(value) => lower_static_operand(cx, value, span)?,
         None => lower_expr(cx, frame, callee, Expect::Any)?,
@@ -56,7 +44,7 @@ pub(crate) fn lower_call(
     match callee.as_static() {
         Some(StaticValue::Function { def, args: bound }) => {
             let (def, bound) = (*def, bound.clone());
-            lower_static_call(cx, frame, def, bound, None, args, span)
+            lower_static_call(cx, frame, def, bound, args, span)
         }
         _ => lower_indirect_call(cx, frame, callee, args, span),
     }
@@ -80,48 +68,11 @@ fn lower_static_callee(
     })
 }
 
-// A member that is not a field names an associated function taking the receiver first
-fn lower_method_call(
-    cx: &mut FunctionLowering<'_, '_>,
-    frame: usize,
-    receiver: Operand,
-    name: &CXIdent,
-    args: &[HMIRExprID],
-    span: &TokenRange,
-) -> LowerResult<Operand> {
-    let object = match cx.program.types().kind(receiver.ty()) {
-        TypeKind::Pointer(inner) => *inner,
-        _ => receiver.ty(),
-    };
-    if cx.program.types().field(object, name.as_str()).is_some() {
-        let member = lower_member(cx, receiver, name, span)?;
-        return lower_indirect_call(cx, frame, member, args, span);
-    }
-    let method = cx
-        .program
-        .types()
-        .nominal_of(object)
-        .map(|nominal| nominal.key().owner())
-        .and_then(|owner| cx.program.associated(owner, name));
-    let Some(def) = method else {
-        return cx.error(
-            span,
-            format!(
-                "'{}' has no method '{name}'",
-                cx.program.types().display(object)
-            ),
-        );
-    };
-    let receiver = lower_deref_pointer(cx, receiver, span)?;
-    lower_static_call(cx, frame, def, Vec::new(), Some(receiver), args, span)
-}
-
 fn lower_static_call(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
     def: DefKey,
     bound: Vec<StaticValue>,
-    receiver: Option<Operand>,
     args: &[HMIRExprID],
     span: &TokenRange,
 ) -> LowerResult<Operand> {
@@ -136,16 +87,17 @@ fn lower_static_call(
     let variadic = function.signature().is_variadic();
     let body = function.body();
     let template = template_params(cx.program, def);
-    let rest_len = params.len() - template.len();
-    let given = bound.len() + receiver.is_some() as usize + args.len();
-    let explicit_len = given.saturating_sub(rest_len).min(template.len());
-    if given < rest_len || (!variadic && given > params.len()) {
+    let given = bound.len() + args.len();
+    if given < params.len() {
+        return lower_curry(cx, frame, def, bound, args, span);
+    }
+    if !variadic && given > params.len() {
         return cx.error(
             span,
             format!(
                 "'{}' expects {} arguments, found {given}",
                 unit.def(def.def()).name(),
-                rest_len
+                params.len()
             ),
         );
     }
@@ -153,7 +105,7 @@ fn lower_static_call(
     let mut bound = bound.into_iter();
     let mut args = args.iter().copied();
     let mut explicit = Vec::with_capacity(template.len());
-    for _ in 0..explicit_len {
+    for _ in 0..template.len() {
         if let Some(value) = bound.next() {
             explicit.push(Some(value));
             continue;
@@ -167,7 +119,6 @@ fn lower_static_call(
     }
 
     let mut rest = bound.map(CallArg::Static).collect::<Vec<_>>();
-    rest.extend(receiver.map(CallArg::Receiver));
     for arg in args {
         let param = params.get(template.len() + rest.len()).copied();
         let comptime = param.is_some_and(|param| body.local(param).is_comptime());
@@ -182,7 +133,7 @@ fn lower_static_call(
         Vec::new()
     } else {
         let mut actual = Vec::new();
-        if explicit.len() < template.len() || explicit.iter().any(Option::is_none) {
+        if explicit.iter().any(Option::is_none) {
             let mut hints = EvalFrame::new(unit.clone(), def, Rc::new((def, Vec::new())));
             for (param, value) in template.iter().zip(&explicit) {
                 if let Some(value) = value {
@@ -193,7 +144,6 @@ fn lower_static_call(
             for (param, arg) in params[template.len()..].iter().zip(&rest) {
                 actual.push(match arg {
                     CallArg::Static(value) => eval_static_type(cx.program, value, span).ok(),
-                    CallArg::Receiver(operand) => Some(operand.ty()),
                     CallArg::Expr(arg) => {
                         let hint = eval_type(cx.program, &mut hints, body.local(*param).ty()).ok();
                         Some(inspect::inspect(cx.program, &source, *arg, hint)?)
@@ -209,7 +159,6 @@ fn lower_static_call(
         }
         let value = match arg {
             CallArg::Static(value) => Some(value),
-            CallArg::Receiver(operand) => operand.as_static(),
             CallArg::Expr(_) => None,
         };
         let Some(value) = value else {
@@ -239,10 +188,6 @@ fn lower_static_call(
         let operand = match arg {
             CallArg::Static(value) => lower_static_operand(cx, value, span)?,
             CallArg::Expr(arg) => lower_expr(cx, frame, arg, Expect::of(ty))?,
-            CallArg::Receiver(operand) => match ty {
-                Some(ty) => lower_receiver(cx, operand, ty, span)?,
-                None => operand,
-            },
         };
         if param.is_some() && ty.is_none() {
             continue;
@@ -255,19 +200,38 @@ fn lower_static_call(
     Ok(result)
 }
 
-// A receiver lvalue is passed by address to a method taking a pointer
-fn lower_receiver(
+// Fewer arguments than parameters bind the leading comptime parameters and yield the function
+fn lower_curry(
     cx: &mut FunctionLowering<'_, '_>,
-    receiver: Operand,
-    param: TypeID,
+    frame: usize,
+    def: DefKey,
+    mut bound: Vec<StaticValue>,
+    args: &[HMIRExprID],
     span: &TokenRange,
 ) -> LowerResult<Operand> {
-    match cx.program.types().kind(param) {
-        TypeKind::Pointer(inner) if *inner == receiver.ty() => {
-            lower_address_of_operand(cx, receiver, span)
-        }
-        _ => Ok(receiver),
+    let unit = cx.program.unit(def.unit());
+    let HMIRDefKind::Function(function) = unit.def(def.def()).kind() else {
+        unreachable!("curried def is a function");
+    };
+    let params = function.signature().params();
+    let given = bound.len() + args.len();
+    if params[..given]
+        .iter()
+        .any(|param| !function.body().local(*param).is_comptime())
+    {
+        return cx.error(
+            span,
+            format!(
+                "'{}' expects {} arguments, found {given}",
+                unit.def(def.def()).name(),
+                params.len()
+            ),
+        );
     }
+    for arg in args {
+        bound.push(lower_eval(cx, frame, *arg, Expect::Any)?);
+    }
+    lower_static_operand(cx, StaticValue::Function { def, args: bound }, span)
 }
 
 fn lower_indirect_call(

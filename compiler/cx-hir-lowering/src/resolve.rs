@@ -2,7 +2,9 @@ use std::{cell::RefCell, collections::HashMap};
 
 use cx_hir::{
     ast::{
-        function::HIRComptimeFnPrototype, modifiers::HIRSymbolNameScheme, types::HIRTagKind,
+        function::HIRComptimeFnPrototype, modifiers::HIRSymbolNameScheme,
+        template::HIRTemplatePrototype,
+        types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
     },
     registry::GlobalSymbolRegistry,
     symbols::{HIRSymbol, HIRSymbolKind, TypeConstructorData},
@@ -33,8 +35,10 @@ pub(crate) struct Resolver<'a> {
 
 pub(crate) enum GlobalSymbol {
     Def(HMIRDefRef),
-    ComptimeFunction(HMIRDefRef, Box<HIRComptimeFnPrototype>),
-    Constructor(TypeConstructorData, CXIdent),
+    // A function and the number of leading comptime parameters its template declares
+    Function(HMIRDefRef, usize),
+    ComptimeFunction(HMIRDefRef, Box<HIRComptimeFnPrototype>, usize),
+    Constructor(TypeConstructorData, CXIdent, HMIRDefRef),
     Primitive(HMIRTypeDesc),
 }
 
@@ -154,15 +158,26 @@ impl<'a> Resolver<'a> {
             return GlobalSymbol::Def(self.def_ref(resolved_name));
         };
         match symbol.kind {
+            HIRSymbolKind::Function(function) => GlobalSymbol::Function(
+                self.def_ref(resolved_name),
+                template_arity(function.template_prototype.as_ref()),
+            ),
             HIRSymbolKind::ComptimeFunction(function) => GlobalSymbol::ComptimeFunction(
                 self.def_ref(resolved_name),
                 Box::new(function.base().clone()),
+                template_arity(function.template_prototype.as_ref()),
             ),
             HIRSymbolKind::TypeConstructor(constructor) => {
-                GlobalSymbol::Constructor(constructor.base().clone(), resolved_name.name)
+                let variant = resolved_name.name.clone();
+                let def = self.def_ref(resolved_name);
+                GlobalSymbol::Constructor(constructor.base().clone(), variant, def)
             }
             _ => GlobalSymbol::Def(self.def_ref(def_name(resolved_name, symbol.tag))),
         }
+    }
+
+    pub(crate) fn constructor_payload(&self, data: &TypeConstructorData) -> Option<HIRType> {
+        constructor_payload(self.registry, data)
     }
 
     fn primitive(&self, name: &str) -> Option<HMIRTypeDesc> {
@@ -188,6 +203,34 @@ impl<'a> Resolver<'a> {
             _ => return None,
         })
     }
+}
+
+// The type a sum variant carries, which its constructor takes
+pub(crate) fn constructor_payload(
+    registry: &GlobalSymbolRegistry,
+    data: &TypeConstructorData,
+) -> Option<HIRType> {
+    let HIRTypeKind::Identifier { name, lookup, .. } = &data.union_type.kind else {
+        return None;
+    };
+    let tagged = matches!(lookup, HIRTypeLookup::Tag(_));
+    registry
+        .resolve(name, tagged)?
+        .into_iter()
+        .find_map(|symbol| {
+            let HIRSymbolKind::Type(ty) = symbol.kind else {
+                return None;
+            };
+            let HIRTypeKind::TaggedUnion { variants, .. } = &ty.base.kind else {
+                return None;
+            };
+            let (_, payload) = variants.get(data.variant_index)?.standard_parts()?;
+            Some(payload.clone())
+        })
+}
+
+fn template_arity(template: Option<&HIRTemplatePrototype>) -> usize {
+    template.map_or(0, |template| template.types.len())
 }
 
 fn int_width(ty: THIRIntType) -> HMIRIntWidth {

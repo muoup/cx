@@ -26,7 +26,7 @@ pub(crate) fn lower_pattern(
             inner,
         } => {
             let (sum, index) = match cx.lookup(constructor, None) {
-                Symbol::Global(GlobalSymbol::Constructor(data, _)) => (
+                Symbol::Global(GlobalSymbol::Constructor(data, ..)) => (
                     lower_constructor_sum(cx, &data.union_type, template_input.as_ref(), span),
                     data.variant_index,
                 ),

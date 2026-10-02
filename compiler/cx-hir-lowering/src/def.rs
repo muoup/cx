@@ -8,9 +8,9 @@ use cx_hir::ast::{
     types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBlockKind, HMIRComptimeGlobal, HMIRContract, HMIRDefKind, HMIRExprID,
-    HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRIntWidth, HMIRLocalID, HMIRNativeOp,
-    HMIRSignature, HMIRTypeDesc,
+    HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRComptimeGlobal, HMIRContract, HMIRDefKind,
+    HMIRExprID, HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRIntWidth,
+    HMIRLocalID, HMIRNativeOp, HMIROwnershipOp, HMIRSignature, HMIRTypeDesc,
 };
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
@@ -77,6 +77,11 @@ pub(crate) fn lower_def(mut cx: BodyLowering<'_>, plan: &PlannedDef) -> HMIRDefK
         DefSource::EnumVariant { variants, index } => {
             lower_enum_variant(cx, plan.name(), variants, *index)
         }
+        DefSource::Constructor {
+            template,
+            union_type,
+            payload,
+        } => lower_constructor(cx, plan.name(), *template, union_type, payload, span),
     }
 }
 
@@ -145,7 +150,7 @@ fn lower_function(
     )))
 }
 
-fn is_void(cx: &BodyLowering<'_>, ty: &HIRType) -> bool {
+pub(crate) fn is_void(cx: &BodyLowering<'_>, ty: &HIRType) -> bool {
     let HIRTypeKind::Identifier {
         name,
         lookup: HIRTypeLookup::Standard,
@@ -158,6 +163,49 @@ fn is_void(cx: &BodyLowering<'_>, ty: &HIRType) -> bool {
         cx.lookup(name, None),
         Symbol::Global(GlobalSymbol::Primitive(HMIRTypeDesc::Void))
     )
+}
+
+// A sum variant used as a value is a function building the sum from the variant's payload
+fn lower_constructor(
+    mut cx: BodyLowering<'_>,
+    name: &QualifiedName,
+    template: Option<&HIRTemplatePrototype>,
+    union_type: &HIRType,
+    payload: &HIRType,
+    span: &TokenRange,
+) -> HMIRDefKind {
+    let mut params = lower_template_params(&mut cx, template, span);
+    let payload = lower_type(&mut cx, payload);
+    let value = cx.declare(None, payload, false, false, span);
+    params.push(value);
+    let return_type = lower_type(&mut cx, union_type);
+
+    let ty = lower_type(&mut cx, union_type);
+    let value = cx.push(HMIRExprKind::Local(value), span);
+    let value = cx.ownership(HMIROwnershipOp::Move(value), span);
+    let sum = cx.aggregate_op(
+        HMIRAggregateOp::Initialize {
+            ty,
+            fields: vec![(Some(name.name.clone()), value)],
+        },
+        span,
+    );
+    let root = cx.returning_block(sum, span);
+    let signature = HMIRSignature::new(
+        params,
+        return_type,
+        false,
+        LinkageMode::Static,
+        cx.resolver()
+            .link_name(name, HIRSymbolNameScheme::Namespaced),
+        HMIRContract::default(),
+    );
+    HMIRDefKind::Function(Box::new(HMIRFunction::new(
+        HMIRFunctionStage::Runtime,
+        cx.finish(),
+        signature,
+        Some(root),
+    )))
 }
 
 fn lower_comptime_function(

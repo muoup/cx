@@ -39,14 +39,6 @@ pub(crate) fn template_params(cx: &Program<'_>, def: DefKey) -> Vec<HMIRLocalID>
         .collect()
 }
 
-fn param_count(cx: &Program<'_>, def: DefKey) -> usize {
-    let unit = cx.unit(def.unit());
-    match unit.def(def.def()).kind() {
-        HMIRDefKind::Function(function) => function.signature().params().len(),
-        _ => 0,
-    }
-}
-
 // Completes the template prefix of 'def' from explicit arguments ('None' for '_') and the
 // types of the arguments that follow it
 pub(crate) fn deduce_template(
@@ -99,25 +91,25 @@ pub(crate) fn deduce_template(
         .collect()
 }
 
+// Fills the holes in the template prefix of a compile-time call
 pub(crate) fn deduce_static(
     cx: &mut Program<'_>,
     def: DefKey,
-    args: Vec<StaticValue>,
+    args: Vec<Option<StaticValue>>,
     span: &TokenRange,
 ) -> CXResult<Vec<StaticValue>> {
     let template = template_params(cx, def).len();
-    let rest = param_count(cx, def) - template;
-    if args.len() < rest {
-        return Err(staging_error(span, "too few arguments".into()));
-    }
-    let explicit_count = (args.len() - rest).min(template);
-    let actual = args[explicit_count..]
+    let mut args = args.into_iter();
+    let explicit = args.by_ref().take(template).collect();
+    let rest = args
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| staging_error(span, "cannot infer this type".into()))?;
+    let actual = rest
         .iter()
         .map(|arg| eval_static_type(cx, arg, span).ok())
         .collect::<Vec<_>>();
-    let explicit = args[..explicit_count].iter().cloned().map(Some).collect();
     let mut values = deduce_template(cx, def, explicit, &actual, span)?;
-    values.extend(args.into_iter().skip(explicit_count));
+    values.extend(rest);
     Ok(values)
 }
 

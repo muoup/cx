@@ -42,6 +42,11 @@ pub(crate) enum DefSource<'h> {
         variants: &'h [HIREnumVariant],
         index: usize,
     },
+    Constructor {
+        template: Option<&'h HIRTemplatePrototype>,
+        union_type: &'h HIRType,
+        payload: HIRType,
+    },
 }
 
 pub(crate) struct PlannedDef<'h> {

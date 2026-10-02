@@ -27,9 +27,11 @@ pub(crate) fn lower_type(cx: &mut BodyLowering<'_>, ty: &HIRType) -> HMIRExprID 
             let callee = match cx.lookup(name, ty.tag_kind()) {
                 Symbol::Local(binding) => cx.push(HMIRExprKind::Local(binding.local()), span),
                 Symbol::Global(GlobalSymbol::Primitive(desc)) => cx.type_constant(desc, span),
-                Symbol::Global(GlobalSymbol::Def(def) | GlobalSymbol::ComptimeFunction(def, _)) => {
-                    cx.push(HMIRExprKind::Def(def), span)
-                }
+                Symbol::Global(
+                    GlobalSymbol::Def(def)
+                    | GlobalSymbol::Function(def, _)
+                    | GlobalSymbol::ComptimeFunction(def, ..),
+                ) => cx.push(HMIRExprKind::Def(def), span),
                 Symbol::Global(GlobalSymbol::Constructor(..)) => cx.error(span),
             };
             lower_instantiate(cx, callee, template_input.as_ref(), span)
