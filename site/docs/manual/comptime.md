@@ -21,6 +21,32 @@ comptime int add(int lhs, int rhs) {
 
 Comptime functions may also be templated or associated with a namespace using the syntax described in the preceding chapters.
 
+## Type Arguments
+
+Instead of supporting generic types via templates, CX treats types as values in compile time environments. As such, types are passed as values:
+
+```cx
+T add(comptime @type T, T lhs, T rhs) {
+    return lhs + rhs;
+}
+```
+
+Note that @type must be used in comptime contexts, either a comptime function or a non-comptime function with a comptime marker on the parameter.
+
+Comptime functions also support returning comptime types like @type, and as such the canonical way to produce types generic over certain comptime arguments is via a comptime function:
+
+```cx
+@type vec(comptime @type T) {
+    return struct : @nodrop {
+        T* data;
+        usize length;
+        usize capacity;
+    };
+}
+```
+
+enabling not only varying members based on provided arguments, but also the type shape itself.
+
 ## Staged Expressions
 
 The syntax `expr T` denotes a staged expression that will produce a runtime value of type `T`. It is not a compile-time-known `T`, and the comptime function cannot inspect its eventual runtime value. Instead, the function can place the expression is used for codegen, acting as a 'frozen' expression which can be inserted and manipulated as needed to enable richer code generation. For instance, Rust's `?` operator, which serves to return None from a optional-returning function if its operand is none, allowing for a concise and safe unwrap, can be neatly reimplemented in CX using a comptime function and staged expressions like so:
@@ -28,8 +54,8 @@ The syntax `expr T` denotes a staged expression that will produce a runtime valu
 ```cx
 comptime expr T opt::try(expr opt<T> this) {
     return emit match (move this) {
-        opt::some(val) => val;
-        opt::none => return opt::none();
+        some(auto val) => val;
+        none => return _::none();
     };
 }
 ```
@@ -37,7 +63,7 @@ comptime expr T opt::try(expr opt<T> this) {
 Above also introduces the 'emit' operator. In comptime contexts, the 'emit' operator converts the provided operand into a staged expression. In a runtime function, an rvalue expression passed through a method call to a comptime function expecting a staged expression will handle 'staging' the provided parameter automatically, as such the above function can be invoked like so:
 
 ```cx
-std::opt<int> parse_integer(const str&_ input) { ... }
+std::opt<int> parse_integer(const _str& input) { ... }
 
 int i = parse_integer(string)
     |> std::opt::try();
@@ -64,7 +90,7 @@ if_then(cond, .{ printf("Condition was true!"); });
 A staged expression can accept parameters at its materialization point, useful for when a comptime function wants to do internal evaluation and ensure that its results can be exposed as context to the provided staged expression, for instance:
 
 ```cx
-comptime expr void opt::map<T, U>(opt<T> this, expr U(T) proc) {
+comptime expr void opt::map<T, U>(opt(T) this, expr U(T) proc) {
     match (move this) {
         opt::some(val) => opt::some(proc(this)),
         opt::none => opt::none(),
