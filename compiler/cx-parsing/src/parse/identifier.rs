@@ -18,7 +18,7 @@ pub(crate) fn try_parse_qualified_name(tokens: &mut TokenIter) -> CXResult<Optio
 
     loop {
         let TokenKind::Identifier(ident) = next_kind!(tokens)? else {
-            return parse_point_error(tokens, &EXPECTED_SYNTAX, ("a qualified identifier".into(), None, None));
+            return parse_point_error(tokens, &EXPECTED_SYNTAX, ("a qualified identifier".into(), None));
         };
 
         segments.push(CXIdent::new(ident.clone()));

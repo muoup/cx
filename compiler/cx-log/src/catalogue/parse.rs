@@ -1,13 +1,10 @@
 use super::define_errors;
 
 define_errors! {
-    EXPECTED_SYNTAX: (String, Option<String>, Option<String>) = "P0001" => |(expected, context, found)| {
+    EXPECTED_SYNTAX: (String, Option<String>) = "P0001" => |(expected, context)| {
         let mut message = format!("expected {expected}");
         if let Some(context) = context {
             message.push_str(&format!(" {context}"));
-        }
-        if let Some(found) = found {
-            message.push_str(&format!(", found {found}"));
         }
         message
     };

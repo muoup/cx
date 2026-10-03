@@ -29,7 +29,7 @@ fn parse_at_intrinsic_expr(
     ident: &str,
     start_index: usize,
 ) -> CXResult<HIRExpression> {
-    assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(_));
+    assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(_), "an '@' intrinsic");
 
     match ident {
         "unsafe" => {
@@ -87,7 +87,7 @@ fn parse_at_intrinsic_expr(
             let mut args = parse_comptime_args(data)?.into_iter();
             let (Some(signature), Some(value), None) = (args.next(), args.next(), args.next())
             else {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a signature and a staged value".into(), Some("in @reify".into()), None));
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a signature and a staged value".into(), Some("in @reify".into())));
             };
 
             Ok(HIRExprKind::Reify {
@@ -110,11 +110,11 @@ fn parse_at_intrinsic_expr(
             let mut bindings = Vec::new();
             while !try_next!(data.tokens, punctuator!(CloseBrace)) {
                 let Some(field) = try_parse_simple_identifier(&mut data.tokens) else {
-                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a field identifier".into(), Some("in @unpack binding".into()), None));
+                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a field identifier".into(), Some("in @unpack binding".into())));
                 };
                 assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
                 let Some(binding) = try_parse_simple_identifier(&mut data.tokens) else {
-                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a binding identifier".into(), Some("in @unpack binding".into()), None));
+                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a binding identifier".into(), Some("in @unpack binding".into())));
                 };
 
                 bindings.push(HIRUnpackBinding { field, binding });
@@ -160,7 +160,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
         )?;
 
         let Some(condition) = expr_stack.pop() else {
-            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression".into(), Some("before '?'".into()), None));
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression".into(), Some("before '?'".into())));
         };
 
         let then_branch = parse_expr(data)?;
@@ -194,7 +194,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
         return parse_point_error(
             &data.tokens,
             &EXPECTED_SYNTAX,
-            ("an expression".into(), Some("after operator".into()), data.tokens.peek().map(|token| format!("{token:#?}"))),
+            ("an expression".into(), Some("after operator".into())),
         );
     };
 
@@ -307,7 +307,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
                     return parse_point_error(
                         &data.tokens,
                         &EXPECTED_SYNTAX,
-                        ("'&'".into(), Some("after 'const auto' in a binding pattern".into()), None),
+                        ("'&'".into(), Some("after 'const auto' in a binding pattern".into())),
                     );
                 }
             };
@@ -316,7 +316,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
                 return parse_point_error(
                     &data.tokens,
                     &EXPECTED_SYNTAX,
-                    ("a binding name".into(), Some("after 'auto'".into()), None),
+                    ("a binding name".into(), Some("after 'auto'".into())),
                 );
             };
 
@@ -355,7 +355,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
                     return parse_point_error(
                         &data.tokens,
                         &EXPECTED_SYNTAX,
-                        ("a variant name".into(), None, None),
+                        ("a variant name".into(), None),
                     );
                 };
 
@@ -406,7 +406,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
             })
         }
 
-        _ => parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a pattern value".into(), None, None)),
+        _ => parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a pattern value".into(), None)),
     }
 }
 
@@ -520,7 +520,7 @@ pub(crate) fn parse_expr_val(
 
         TokenKind::Operator(OperatorType::Access) => {
             if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("'{'".into(), Some("after '.'".into()), None));
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("'{'".into(), Some("after '.'".into())));
             }
 
             data.tokens.back();
@@ -551,7 +551,7 @@ pub(crate) fn parse_expr_val(
                     params.push(HIRClosureParam { name, ty: None });
                 } else {
                     let (Some(name), ty, _) = parse_initializer(data)? else {
-                        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a closure parameter".into(), None, None));
+                        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a closure parameter".into(), None));
                     };
                     params.push(HIRClosureParam { name, ty: Some(ty) });
                 }
@@ -670,7 +670,7 @@ pub(crate) fn parse_expr_val(
 
         _ => {
             data.back();
-            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression value".into(), None, None));
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression value".into(), None));
         }
     }
         .into_expr(
@@ -700,7 +700,7 @@ fn parse_scope_suffix(
 ) -> CXResult<HIRExpression> {
     while try_next!(data.tokens, operator!(ScopeRes)) {
         let Some(member) = try_parse_simple_identifier(&mut data.tokens) else {
-            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a member name".into(), Some("after '::'".into()), None));
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a member name".into(), Some("after '::'".into())));
         };
 
         base = HIRExprKind::ScopeAccess {
@@ -720,7 +720,7 @@ fn parse_scope_suffix(
 pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CXResult<HIRExpression> {
     let start_index = data.tokens.index;
     let Some(name) = try_parse_qualified_name(&mut data.tokens)? else {
-        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an identifier".into(), None, None));
+        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an identifier".into(), None));
     };
     let range = data.token_range(start_index, data.tokens.index);
     let holes = !data.c_mode && !data.in_include();
@@ -787,7 +787,6 @@ pub(crate) fn parse_keyword_expr(
                         }
                         .to_string(),
                         Some("unnamed type".into()),
-                        None,
                     ),
                     );
                 };
@@ -920,9 +919,9 @@ pub(crate) fn parse_structured_initialization(data: &mut ParserData) -> CXResult
         TokenKind::Punctuator(PunctuatorType::CloseBrace)
     ) {
         let field_name = if try_next!(data.tokens, TokenKind::Operator(OperatorType::Access)) {
-            assert_token_matches!(data.tokens, identifier!(field_name));
+            assert_token_matches!(data.tokens, identifier!(field_name), "a field name");
             let field_name = field_name.clone();
-            assert_token_matches!(data.tokens, TokenKind::Assignment(None));
+            assert_token_matches!(data.tokens, TokenKind::Assignment(None), "'='");
             Some(field_name)
         } else {
             None

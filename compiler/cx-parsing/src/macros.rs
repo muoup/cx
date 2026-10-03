@@ -1,9 +1,5 @@
 #[macro_export]
 macro_rules! assert_token_matches {
-    ($data:expr, $pattern:pat) => {
-        assert_token_matches!($data, $pattern, stringify!($pattern));
-    };
-
     ($data:expr, $pattern:pat, $expected:expr) => {
         let token_index = $data.index;
         let Some($pattern) = &$data.next().map(|t| &t.kind) else {
@@ -12,14 +8,7 @@ macro_rules! assert_token_matches {
             return $crate::log::parse_point_error(
                 &$data,
                 &$crate::log::EXPECTED_SYNTAX,
-                (
-                    $expected.to_string(),
-                    None,
-                    $data
-                        .peek()
-                        .map(ToString::to_string)
-                        .or_else(|| Some("end of input".into())),
-                ),
+                ($expected.to_string(), None),
             );
         };
     };

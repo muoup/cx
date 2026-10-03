@@ -124,7 +124,7 @@ pub(crate) fn parse_function_contract(
                 data.tokens.next();
 
                 let return_val_name = if try_next!(data.tokens, punctuator!(OpenParen)) {
-                    assert_token_matches!(data.tokens, identifier!(ret));
+                    assert_token_matches!(data.tokens, identifier!(ret), "a return value name");
                     let name = CXIdent::new(ret.as_str());
 
                     assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");

@@ -100,7 +100,7 @@ pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpres
     data.back();
     if is_type_decl(data)? && !is_scoped_type_expression(data)? {
         let stmt = parse_declaration_stmt(data)?;
-        assert_token_matches!(data.tokens, punctuator!(Semicolon), ";");
+        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
         Ok(Some(stmt))
     } else {
         Ok(None)
@@ -250,7 +250,7 @@ pub(crate) fn try_parse_keyword_stmt(
                     peek_next_kind!(data.tokens)?,
                     TokenKind::Keyword(KeywordType::Default)
                 ) {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("'_' match binding".into(), Some("in match patterns".into()), None));
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("'_' match binding".into(), Some("in match patterns".into())));
                 }
 
                 let value = parse_pattern(data)?;
@@ -300,7 +300,7 @@ pub(crate) fn try_parse_keyword_stmt(
 
         KeywordType::Goto => {
             let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a goto label".into(), None, None));
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a goto label".into(), None));
             };
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
             Some(HIRExprKind::Goto { name })
@@ -440,7 +440,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 data.token_range(start_index, data.tokens.index),
             ));
         } else {
-            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a declaration name".into(), None, None));
+            return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a declaration name".into(), None));
         }
 
         if !try_next!(data.tokens, TokenKind::Operator(OperatorType::Comma)) {

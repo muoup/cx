@@ -31,7 +31,7 @@ impl Preprocessor {
 
             return frame
                 .cursor_view()
-                .log_error(directive_start, &EXPECTED_SYNTAX, ("a preprocessor directive".into(), None, None));
+                .log_error(directive_start, &EXPECTED_SYNTAX, ("a preprocessor directive".into(), None));
         };
 
         let mut directive = directive;
@@ -42,7 +42,7 @@ impl Preprocessor {
                 return frame.cursor_view().log_error(
                     directive_start,
                     &EXPECTED_SYNTAX,
-                    ("a directive name".into(), Some("after '#'".into()), None),
+                    ("a directive name".into(), Some("after '#'".into())),
                 );
             };
             directive.push_str(&name);

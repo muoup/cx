@@ -46,7 +46,7 @@ fn handle_include_impl(
 
         return frame
             .cursor_view()
-            .log_error(directive_start, &EXPECTED_SYNTAX, ("an include path".into(), Some("after '#include'".into()), None));
+            .log_error(directive_start, &EXPECTED_SYNTAX, ("an include path".into(), Some("after '#include'".into())));
     };
     let _file_name_end = context.current_frame().cursor;
 
@@ -56,7 +56,7 @@ fn handle_include_impl(
         let frame = context.current_frame();
         return frame
             .cursor_view()
-            .log_error(file_name_start, &EXPECTED_SYNTAX, ("\"...\" or <...>".into(), Some("for an include path".into()), Some(file_name)));
+            .log_error(file_name_start, &EXPECTED_SYNTAX, ("\"...\" or <...>".into(), Some("for an include path".into())));
     }
 
     let current_file = context.current_frame().file_path.clone();

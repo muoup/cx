@@ -306,10 +306,10 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
                 ImportFrameState::AfterPath => push_import_name(&mut names, frame, tokens),
                 ImportFrameState::AfterGroup => Ok(()),
                 ImportFrameState::ExpectItem if !frame.saw_item => {
-                    parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path segment".into(), Some("in import path".into()), None))
+                    parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path segment".into(), Some("in import path".into())))
                 }
                 ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
-                    parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path segment".into(), Some("in import path".into()), None))
+                    parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path segment".into(), Some("in import path".into())))
                 }
             }?;
 
@@ -337,7 +337,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
                     frame.saw_item = true;
                 }
                 ImportFrameState::AfterPath | ImportFrameState::AfterGroup => {
-                    return parse_point_error(tokens, &EXPECTED_SYNTAX, ("',' or '}'".into(), Some("after import path item".into()), None));
+                    return parse_point_error(tokens, &EXPECTED_SYNTAX, ("',' or '}'".into(), Some("after import path item".into())));
                 }
             },
 
@@ -381,7 +381,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
                     }
                     ImportFrameState::AfterGroup => {}
                     ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
-                        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path item".into(), Some("before ','".into()), None));
+                        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path item".into(), Some("before ','".into())));
                     }
                 }
 
@@ -405,7 +405,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
                     ImportFrameState::AfterGroup => {}
                     ImportFrameState::ExpectItem if frame.saw_item => {}
                     ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
-                        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path item".into(), Some("before '}'".into()), None));
+                        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path item".into(), Some("before '}'".into())));
                     }
                 }
 
@@ -429,7 +429,7 @@ fn push_import_name(
     tokens: &TokenIter,
 ) -> CXResult<()> {
     if frame.item.is_empty() {
-        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path".into(), None, None));
+        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path".into(), None));
     }
 
     let mut segments = frame.prefix.clone();
@@ -441,7 +441,7 @@ fn push_import_name(
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
     let Some(ident) = try_parse_qualified_name(tokens)? else {
-        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import alias".into(), None, None));
+        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import alias".into(), None));
     };
 
     if ident.namespace.is_root() && ident.name.as_str() == "_" {

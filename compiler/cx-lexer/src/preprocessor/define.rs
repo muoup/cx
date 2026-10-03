@@ -22,7 +22,7 @@ pub(crate) fn handle_define(
         let frame = context.current_frame();
         return frame
             .cursor_view()
-            .log_error(directive_start, &EXPECTED_SYNTAX, ("a macro name".into(), Some("after '#define'".into()), None));
+            .log_error(directive_start, &EXPECTED_SYNTAX, ("a macro name".into(), Some("after '#define'".into())));
     };
 
     let rest_of_line = rest_of_logical_directive(context.current_frame_mut());

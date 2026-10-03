@@ -132,7 +132,7 @@ fn parse_extern_c_mod(data: &mut ParserData) -> CXResult<()> {
 }
 
 fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
-    assert_token_matches!(data.tokens, TokenKind::Specifier(specifier));
+    assert_token_matches!(data.tokens, TokenKind::Specifier(specifier), "an access specifier");
 
     match specifier {
         SpecifierType::Public => {
@@ -152,7 +152,7 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
-                ("a declaration".into(), Some("in global scope".into()), None),
+                ("a declaration".into(), Some("in global scope".into())),
             );
         }
     };
@@ -172,7 +172,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         return parse_point_error(
             &data.tokens.with_index(start_index),
             &EXPECTED_SYNTAX,
-            ("a typedef name".into(), None, None),
+            ("a typedef name".into(), None),
         );
     };
 
@@ -339,7 +339,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
         return parse_point_error(
             &data.tokens,
             &EXPECTED_SYNTAX,
-            ("comptime function parameters".into(), None, None),
+            ("comptime function parameters".into(), None),
         );
     }
 
@@ -393,7 +393,6 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                         (
                             "a variable declaration".into(),
                             Some("after ','".into()),
-                            None,
                         ),
                     );
                 };
@@ -420,7 +419,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                         return parse_point_error(
                             &data.tokens,
                             &EXPECTED_SYNTAX,
-                            ("a global separator".into(), None, None),
+                            ("a global separator".into(), None),
                         );
                     }
                 }
@@ -434,7 +433,6 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                 (
                     "a global declaration".into(),
                     None,
-                    data.tokens.peek().map(|token| format!("{token:#?}")),
                 ),
             );
         }
@@ -505,14 +503,14 @@ fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<HIRExpression>>
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
-                ("a direct body".into(), Some("after 'then'".into()), None),
+                ("a direct body".into(), Some("after 'then'".into())),
             );
         }
         if then_count > 1 {
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
-                ("at most one 'then' marker".into(), None, None),
+                ("at most one 'then' marker".into(), None),
             );
         }
 
@@ -638,7 +636,7 @@ fn parse_function_body(data: &mut ParserData) -> CXResult<HIRFunctionBody> {
     parse_point_error(
         &data.tokens,
         &EXPECTED_SYNTAX,
-        ("a braced or arrow function body".into(), None, None),
+        ("a braced or arrow function body".into(), None),
     )
 }
 
@@ -655,7 +653,7 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
         return parse_point_error(
             tokens,
             &EXPECTED_SYNTAX,
-            ("an intrinsic identifier".into(), None, None),
+            ("an intrinsic identifier".into(), None),
         );
     }
 

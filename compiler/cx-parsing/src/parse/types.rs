@@ -89,7 +89,7 @@ fn parse_type_attributes(
 
     if try_next!(data.tokens, punctuator!(Colon)) {
         loop {
-            assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(attr));
+            assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(attr), "a type attribute");
             let attr = attr.clone();
 
             match attr.as_str() {
@@ -98,7 +98,7 @@ fn parse_type_attributes(
                 "unsafe_move" => attributes.unsafe_move = true,
                 "copy_traits" => {
                     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-                    assert_token_matches!(data.tokens, identifier!(type_param));
+                    assert_token_matches!(data.tokens, identifier!(type_param), "a type parameter name");
                     let type_param = type_param.clone();
                     assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
                     attributes.copy_traits = Some(type_param);
@@ -136,7 +136,6 @@ fn aggregate_field_from_decl(
                     (
                         "a non-negative integer literal".into(),
                         Some("as bitfield width".into()),
-                        None,
                     ),
                 );
             }
@@ -189,7 +188,6 @@ fn predeclaration_type(
             (
                 "a type name".into(),
                 Some("for a predeclaration".into()),
-                None,
             ),
         );
     };
@@ -277,7 +275,7 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<HIRType> {
                 return parse_point_error(
                     &data.tokens,
                     &EXPECTED_SYNTAX,
-                    ("a struct name".into(), None, None),
+                    ("a struct name".into(), None),
                 );
             }
         },
@@ -317,7 +315,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
-                ("an enum variant".into(), None, None),
+                ("an enum variant".into(), None),
             );
         };
 
@@ -352,7 +350,6 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
                     (
                         "a simple identifier".into(),
                         Some("as a qualified type name".into()),
-                        None,
                     ),
                 );
             }
@@ -396,7 +393,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
-                ("a tagged union variant name".into(), None, None),
+                ("a tagged union variant name".into(), None),
             );
         };
 
@@ -413,7 +410,6 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
                     (
                         "an unnamed type".into(),
                         Some("for tagged union variant".into()),
-                        None,
                     ),
                 );
             }
@@ -422,7 +418,7 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
                 return parse_point_error(
                     &data.tokens,
                     &EXPECTED_SYNTAX,
-                    ("a tagged union variant type".into(), None, None),
+                    ("a tagged union variant type".into(), None),
                 );
             }
         }
@@ -470,7 +466,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<HIRType> {
                 return parse_point_error(
                     &data.tokens,
                     &EXPECTED_SYNTAX,
-                    ("a union name".into(), None, None),
+                    ("a union name".into(), None),
                 );
             }
         },
@@ -619,14 +615,13 @@ fn parse_declarator_mods(
             let lifetime = match lifetime_kind {
                 TokenKind::Identifier(lifetime) => CXIdent::from(lifetime.as_str()),
                 TokenKind::Specifier(SpecifierType::Static) => CXIdent::new("static"),
-                kind => {
+                _ => {
                     return parse_point_error(
                         &data.tokens,
                         &EXPECTED_SYNTAX,
                         (
                             "a lifetime identifier".into(),
                             None,
-                            Some(kind.to_string()),
                         ),
                     );
                 }
@@ -819,7 +814,7 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
                 return parse_point_error(
                     &data.tokens,
                     &EXPECTED_SYNTAX,
-                    ("an unnamed type".into(), Some("in 'expr(...)'".into()), None),
+                    ("an unnamed type".into(), Some("in 'expr(...)'".into())),
                 );
             };
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
@@ -837,11 +832,11 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
         keyword!(Enum) => parse_enum_def(data),
         keyword!(Union) => parse_union_def(data),
 
-        tok => {
+        _ => {
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
-                ("a type".into(), None, Some(tok.to_string())),
+                ("a type".into(), None),
             );
         }
     };
@@ -950,7 +945,7 @@ fn parse_fn_declarator(data: &mut ParserData) -> CXResult<(Option<CXIdent>, HIRT
         return parse_point_error(
             &data.tokens,
             &EXPECTED_SYNTAX,
-            ("a parameter list".into(), Some("after '@fn'".into()), None),
+            ("a parameter list".into(), Some("after '@fn'".into())),
         );
     }
 

@@ -21,7 +21,7 @@ pub(crate) fn handle_ifdef(
         return frame.cursor_view().log_error(
             directive_start,
             &EXPECTED_SYNTAX,
-            ("a macro name".into(), Some(format!("after '{directive}'")), None),
+            ("a macro name".into(), Some(format!("after '{directive}'"))),
         );
     };
 
