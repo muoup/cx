@@ -91,8 +91,8 @@ pub(crate) fn read_global<'thir, C: ComptimeContext<'thir>>(
         return comptime_error(
             range.clone(),
             (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "invalid global projection".into(),
+                &mir::COMPTIME_INVARIANT,
+                "an invalid global projection".into(),
             ),
         );
     };

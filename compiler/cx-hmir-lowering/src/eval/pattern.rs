@@ -1,5 +1,8 @@
 use cx_hmir::{HMIRExprID, HMIRExprKind, HMIRLocalID, HMIRNativeOp, HMIRPattern, HMIRTypeOp};
-use cx_log::CXResult;
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -25,10 +28,7 @@ pub(crate) fn match_value(
     let value = read_global(cx, value, span)?;
     let ty = eval_static_type(cx, &value, span)?;
     if cx.types().is_pointer(ty) {
-        return Err(staging_error(
-            span,
-            "pattern subject is a pointer; dereference it explicitly".into(),
-        ));
+        return Err(staging_error(span, &typecheck::POINTER_PATTERN, ()));
     }
     let cases = match_cases(cx, frame, ty, arms.iter().map(|(pattern, _)| pattern), span)?;
     let tag = match &value {
@@ -49,7 +49,7 @@ pub(crate) fn match_value(
             flow => flow,
         });
     }
-    Err(staging_error(span, "no matching arm".into()))
+    Err(staging_error(span, &mir::COMPTIME_NO_MATCH, ()))
 }
 
 fn bind_pattern(
@@ -70,7 +70,12 @@ fn bind_pattern(
             let StaticValue::Aggregate { ty, fields } = value else {
                 return Err(staging_error(
                     span,
-                    "variant pattern on a non-aggregate".into(),
+                    &typecheck::TYPE_REQUIREMENT,
+                    (
+                        format!("variant pattern '{name}'"),
+                        "a tagged union".into(),
+                        Some(value.describe().into()),
+                    ),
                 ));
             };
             let index = variant_index(cx, *ty, name, span)?;
@@ -82,7 +87,7 @@ fn bind_pattern(
                     .iter()
                     .find(|(field, _)| *field == index)
                     .map(|(_, value)| value.clone())
-                    .ok_or_else(|| staging_error(span, "matched an unset payload".into()))?
+                    .ok_or_else(|| staging_error(span, &mir::UNSET_PAYLOAD, ()))?
             };
             (*local, value)
         }
@@ -95,17 +100,16 @@ fn bind_pattern(
     ) {
         return Err(staging_error(
             span,
-            "reference binding to compile-time storage is not supported".into(),
+            &mir::COMPTIME_INVALID_OPERATION,
+            "binding a reference to compile-time storage".into(),
         ));
     }
     let ty = eval_static_type(cx, &value, span)?;
     if !owned && !cx.types().is_pod(ty) {
         return Err(staging_error(
             span,
-            format!(
-                "binding would copy '{}' out of a value that is still in use",
-                cx.types().display(ty)
-            ),
+            &typecheck::BINDING_COPIES_IN_USE,
+            cx.types().display(ty),
         ));
     }
     frame.bind(local, value);
@@ -125,14 +129,30 @@ pub(crate) fn switch(
     let ty = eval_static_type(cx, &value, span)?;
     let value = value
         .as_int()
-        .ok_or_else(|| staging_error(span, "switch condition is not an integer".into()))?;
+        .ok_or_else(|| {
+            staging_error(
+                span,
+                &typecheck::UNEXPECTED_KIND,
+                ("switch condition".into(), "an integer".into()),
+            )
+        })?;
     let mut segments = Vec::with_capacity(cases.len() + usize::from(default.is_some()));
     for (case, body) in cases {
         let case = eval(cx, frame, *case, Some(ty))?
             .as_int()
-            .ok_or_else(|| staging_error(span, "switch case is not an integer constant".into()))?;
+            .ok_or_else(|| {
+                staging_error(
+                    span,
+                    &mir::EXPECTED_CONSTANT,
+                    ("switch case".into(), "integer".into()),
+                )
+            })?;
         if segments.iter().any(|(existing, _)| *existing == Some(case)) {
-            return Err(staging_error(span, "duplicate switch case".into()));
+            return Err(staging_error(
+                span,
+                &typecheck::DUPLICATE_ITEM,
+                ("case".into(), "switch".into()),
+            ));
         }
         segments.push((Some(case), *body));
     }

@@ -2,6 +2,7 @@ use cx_hmir::{
     HMIRAggregateKind, HMIRBlockKind, HMIRControlOp, HMIRExprID, HMIRExprKind, HMIRLocalID,
     HMIRPattern,
 };
+use cx_log::catalogue::{mir, typecheck};
 use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, MIRScopeID, MIRValue};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -494,7 +495,11 @@ pub(crate) fn lower_switch(
         let case_span = cx.span(frame, *case);
         let case_value = lower_eval(cx, frame, *case, Expect::Type(condition_ty))?;
         let Some(case_value) = case_value.as_int() else {
-            return cx.error(&case_span, "switch case is not an integer constant");
+            return cx.error(
+                &case_span,
+                &mir::EXPECTED_CONSTANT,
+                ("switch case".into(), "integer".into()),
+            );
         };
         let block = cx.new_block("switch.case");
         targets.push((case_value, MIRBlockTarget::new(block)));
@@ -645,7 +650,7 @@ pub(super) fn lower_control(
     match op {
         HMIRControlOp::Return(value) => {
             if value.is_some() && cx.check_return && cx.program.types().is_void(cx.ret) {
-                return cx.error(span, "cannot return a value from a void function");
+                return cx.error(span, &typecheck::VOID_RETURN_VALUE, ());
             }
             let value = match value {
                 Some(value) => {
@@ -667,7 +672,11 @@ pub(super) fn lower_control(
                 ControlKind::Yield { merge } => Some(merge),
                 _ => None,
             }) else {
-                return cx.error(span, "yield outside of a yielding block");
+                return cx.error(
+                    span,
+                    &typecheck::REQUIRED_CONTEXT,
+                    ("yield".into(), "a yielding block".into()),
+                );
             };
             let value = match value {
                 Some(value) => {
@@ -684,10 +693,11 @@ pub(super) fn lower_control(
                             let types = cx.program.types();
                             return cx.error(
                                 span,
-                                format!(
-                                    "yielded '{}' where '{}' is expected",
-                                    types.display(found),
-                                    types.display(expected)
+                                &typecheck::TYPE_MISMATCH,
+                                (
+                                    "yield".into(),
+                                    format!("'{}'", types.display(expected)),
+                                    format!("'{}'", types.display(found)),
                                 ),
                             );
                         }
@@ -705,7 +715,11 @@ pub(super) fn lower_control(
                 ControlKind::Loop { exit, .. } | ControlKind::Switch { exit } => Some(exit),
                 ControlKind::Yield { .. } => None,
             }) else {
-                return cx.error(span, "break outside of a loop or switch");
+                return cx.error(
+                    span,
+                    &typecheck::REQUIRED_CONTEXT,
+                    ("break".into(), "a loop or switch".into()),
+                );
             };
             lower_cleanup_to(cx, boundary, false, span)?;
             cx.jump(exit, Vec::new(), span);
@@ -716,7 +730,11 @@ pub(super) fn lower_control(
                 ControlKind::Loop { next, .. } => Some(next),
                 _ => None,
             }) else {
-                return cx.error(span, "continue outside of a loop");
+                return cx.error(
+                    span,
+                    &typecheck::REQUIRED_CONTEXT,
+                    ("continue".into(), "a loop".into()),
+                );
             };
             lower_cleanup_to(cx, boundary, false, span)?;
             cx.jump(next, Vec::new(), span);
@@ -724,7 +742,7 @@ pub(super) fn lower_control(
         }
         HMIRControlOp::Goto(name) => {
             if cx.defer_boundary.is_some() {
-                return cx.error(span, "cannot jump from a deferred expression");
+                return cx.error(span, &typecheck::DEFER_JUMP, "jump".into());
             }
             let target = cx.label_block(&name);
             cx.jump(target, Vec::new(), span);
@@ -813,9 +831,11 @@ fn lower_merge_edge(
         (MergeParam::Value(_, ty), None) => {
             return cx.error(
                 span,
-                format!(
-                    "expression produces no value where '{}' is expected",
-                    cx.program.types().display(ty)
+                &typecheck::TYPE_MISMATCH,
+                (
+                    "expression".into(),
+                    format!("'{}'", cx.program.types().display(ty)),
+                    "no value".into(),
                 ),
             );
         }

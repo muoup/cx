@@ -1,4 +1,5 @@
 use cx_hmir::HMIRIntWidth;
+use cx_log::catalogue::mir;
 use cx_mir::{
     MIRBindable, MIRBitfieldAccess, MIRConstant, MIRGlobalRef, MIRInstructionKind,
     MIRInternalIntrinsic, MIRPlaceID, MIRRegisterID, MIRStoreBitfield, MIRTarget, MIRValue,
@@ -335,7 +336,13 @@ pub(super) fn lower_auto_deref(
         OperandKind::Value(MIRValue::Register(register)) => register,
         _ => match lower_value(cx, operand, span)? {
             MIRValue::Register(register) => register,
-            _ => return cx.error(span, "reference is not a register"),
+            _ => {
+                return cx.error(
+                    span,
+                    &mir::UNSUPPORTED_LOWERING,
+                    "a reference outside of a register".into(),
+                );
+            }
         },
     };
     Ok(Operand::reference(reference, inner, None))

@@ -4,7 +4,7 @@ use cx_hmir::{
     HMIRConstant, HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRLocalID, HMIRNativeOp, HMIRTypeDesc,
     HMIRTypeOp,
 };
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -59,7 +59,8 @@ pub(crate) fn deduce_template(
     let HMIRDefKind::Function(function) = unit.def(def.def()).kind() else {
         return Err(staging_error(
             span,
-            "template arguments for a non-function".into(),
+            &typecheck::TEMPLATE_ARGUMENTS,
+            (format!("'{}'", unit.def(def.def()).name()), false),
         ));
     };
     let template = template_params(cx, def);
@@ -92,11 +93,11 @@ pub(crate) fn deduce_template(
     if let Some((param, first, second)) = deduction.conflict {
         return Err(staging_error(
             span,
-            format!(
-                "conflicting deductions for comptime argument '{}': {} vs {}",
+            &typecheck::CONFLICTING_DEDUCTIONS,
+            (
                 param_name(param),
                 cx.types().display(first),
-                cx.types().display(second)
+                cx.types().display(second),
             ),
         ));
     }
@@ -107,8 +108,9 @@ pub(crate) fn deduce_template(
                 let name = param_name(*param);
                 staging_error(
                     span,
+                    &typecheck::TEMPLATE_DEDUCTION,
                     format!(
-                        "cannot deduce comptime argument '{name}' of '{}'",
+                        "comptime argument '{name}' of '{}'",
                         unit.def(def.def()).name()
                     ),
                 )
@@ -129,7 +131,7 @@ pub(crate) fn deduce_static(
     let explicit = args.by_ref().take(template).collect();
     let rest = args
         .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| staging_error(span, "cannot infer this type".into()))?;
+        .ok_or_else(|| staging_error(span, &typecheck::CANNOT_INFER, "this type".into()))?;
     let actual = rest
         .iter()
         .map(|arg| eval_static_type(cx, arg, span).ok())

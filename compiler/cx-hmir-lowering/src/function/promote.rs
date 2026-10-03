@@ -1,3 +1,4 @@
+use cx_log::catalogue::typecheck;
 use cx_mir::{MIRInternalIntrinsic, MIRTarget};
 use cx_tokens::TokenRange;
 
@@ -24,7 +25,8 @@ pub(super) fn lower_promote(
         if !cx.program.types().is_pod(operand.ty()) {
             return cx.error(
                 span,
-                format!("cannot copy '{}'", cx.program.types().display(operand.ty())),
+                &typecheck::INVALID_OPERAND,
+                ("copy".into(), cx.program.types().display(operand.ty())),
             );
         }
         Operand::value(lower_copy(cx, &operand, span)?, operand.ty())
@@ -82,7 +84,7 @@ fn lower_str_to_pointer(
         return Ok(Operand::value(value, ty));
     }
     let Some(reference) = operand.address() else {
-        return cx.error(span, "string value has no storage to point at");
+        return cx.error(span, &typecheck::NOT_ADDRESSABLE, "take a pointer to".into());
     };
     let out = cx.register(ty, span)?;
     cx.intrinsic(

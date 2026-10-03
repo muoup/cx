@@ -1,4 +1,5 @@
 use cx_hmir::{HMIRConstant, HMIRExprID, HMIRExprKind, HMIRFloatWidth, HMIRIntWidth, HMIRTypeDesc};
+use cx_log::catalogue::typecheck;
 use cx_tokens::{
     TokenRange,
     token::{FloatSuffix, IntegerBase, IntegerLength, IntegerSuffix},
@@ -34,10 +35,7 @@ pub(crate) fn lower_int_literal(
             bits == 64 || magnitude < 1u64 << bits
         });
     let Some((width, signed)) = candidate else {
-        return cx.error_message(
-            "integer literal does not fit any permitted type".into(),
-            span,
-        );
+        return cx.error(span, &typecheck::INTEGER_LITERAL_RANGE, ());
     };
     cx.int_constant(HMIRTypeDesc::Int { width, signed }, magnitude as i128, span)
 }
@@ -52,7 +50,7 @@ pub(crate) fn lower_float_literal(
         FloatSuffix::Float => HMIRFloatWidth::F32,
         FloatSuffix::Default => HMIRFloatWidth::F64,
         FloatSuffix::LongDouble => {
-            return cx.error_message("long double literals are not supported".into(), span);
+            return cx.error(span, &typecheck::UNSUPPORTED_LITERAL, "long double".into());
         }
     };
     let ty = cx.intern(HMIRTypeDesc::Float { width });

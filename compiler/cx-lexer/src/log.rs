@@ -3,7 +3,7 @@ use cx_log::{
     catalogue::ErrorDefinition,
     error::{
         CXError,
-        context::{CXInternalContext, CXPointingContext},
+        context::{CXNoSourceContext, CXPointingContext},
     },
 };
 use std::path::Path;
@@ -20,10 +20,10 @@ pub(crate) fn point_error<T, A>(
     ))
 }
 
-pub(crate) fn internal_error<A>(
+pub(crate) fn no_source_error<A>(
     definition: &ErrorDefinition<A>,
     args: A,
     context: &'static str,
 ) -> CXError {
-    CXError::new(definition.bind(args), CXInternalContext::error(context))
+    CXError::new(definition.bind(args), CXNoSourceContext::error(context))
 }

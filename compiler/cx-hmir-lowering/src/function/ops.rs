@@ -1,4 +1,5 @@
 use cx_hmir::{HMIRBinaryOp, HMIRExprID, HMIRIntWidth, HMIRUnaryOp};
+use cx_log::catalogue::typecheck;
 use cx_mir::{
     MIRBindable, MIRBlockTarget, MIRConstant, MIRFloatIntrinsic, MIRInstructionKind,
     MIRIntIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRStoreBitfield, MIRTarget, MIRValue,
@@ -110,11 +111,11 @@ fn lower_arithmetic(
     let Some(common) = common else {
         return cx.error(
             span,
-            format!(
-                "no operator '{}' for '{}' and '{}'",
-                op.path(),
+            &typecheck::INVALID_BINARY_OPERANDS,
+            (
+                op.path().into(),
                 cx.program.types().display(lhs.ty()),
-                cx.program.types().display(rhs.ty())
+                cx.program.types().display(rhs.ty()),
             ),
         );
     };
@@ -144,7 +145,7 @@ fn lower_arithmetic(
                 HMIRBinaryOp::Gt => MIRFloatIntrinsic::Gt { out, lhs, rhs },
                 HMIRBinaryOp::Ge => MIRFloatIntrinsic::Geq { out, lhs, rhs },
                 _ => {
-                    return cx.error(span, format!("'{}' on floating values", op.path()));
+                    return cx.error(span, &typecheck::FLOATING_OPERAND, op.path().into());
                 }
             }
             .into()
@@ -355,10 +356,10 @@ pub(super) fn lower_unary(
     let Some(ty) = arithmetic_type(types, value.ty(), value.ty()) else {
         return cx.error(
             span,
-            format!(
-                "no operator '{}' for '{}'",
-                op.path(),
-                cx.program.types().display(value.ty())
+            &typecheck::INVALID_OPERAND,
+            (
+                format!("apply '{}' to", op.path()),
+                cx.program.types().display(value.ty()),
             ),
         );
     };
@@ -371,7 +372,7 @@ pub(super) fn lower_unary(
         HMIRUnaryOp::Neg if float => MIRFloatIntrinsic::Neg { out: target, value }.into(),
         HMIRUnaryOp::Neg => MIRIntIntrinsic::Neg { out: target, value }.into(),
         HMIRUnaryOp::BNot if !float => MIRIntIntrinsic::BNot { out: target, value }.into(),
-        _ => return cx.error(span, format!("'{}' on floating values", op.path())),
+        _ => return cx.error(span, &typecheck::FLOATING_OPERAND, op.path().into()),
     };
     cx.intrinsic(intrinsic, span);
     Ok(Operand::register(out, ty))
@@ -387,7 +388,7 @@ fn lower_increment(
 ) -> LowerResult<Operand> {
     let target = lower_expr(cx, frame, operand, Expect::Any)?;
     let Some(destination) = target.target() else {
-        return cx.error(span, "incremented a value that is not addressable");
+        return cx.error(span, &typecheck::NOT_ADDRESSABLE, "increment".into());
     };
     cx.require_mutable(target.ty(), "modify", span)?;
     let ty = target.ty();
@@ -448,7 +449,8 @@ fn lower_increment(
         _ => {
             return cx.error(
                 span,
-                format!("cannot increment '{}'", cx.program.types().display(ty)),
+                &typecheck::INVALID_OPERAND,
+                ("increment".into(), cx.program.types().display(ty)),
             );
         }
     }
@@ -471,7 +473,7 @@ pub(super) fn lower_assign(
 ) -> LowerResult<Operand> {
     let lhs = lower_expr(cx, frame, target, Expect::Any)?;
     let Some(destination) = lhs.target() else {
-        return cx.error(span, "assigned to a value that is not addressable");
+        return cx.error(span, &typecheck::NOT_ADDRESSABLE, "assign to".into());
     };
     cx.require_mutable(lhs.ty(), "assign to", span)?;
     let ty = lhs.ty();

@@ -1,4 +1,8 @@
 use cx_hmir::{HMIRExprID, HMIRExprKind};
+use cx_log::{
+    catalogue::{mir, typecheck},
+    error::{CXError, context::from_token_range, message::CXStdErrMessage},
+};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -79,7 +83,7 @@ pub(crate) fn lower(
                         .name()
                         .map(ToString::to_string)
                         .unwrap_or_else(|| local.to_string());
-                    staging_error(&span, format!("'{name}' is not available at compile time"))
+                    staging_error(&span, &mir::COMPTIME_UNAVAILABLE, format!("'{name}'"))
                 })?;
                 Ok(LowerOutput::Comptime(Flow::Normal(value)))
             }
@@ -88,11 +92,11 @@ pub(crate) fn lower(
             LowerContext::Comptime(_, _) if expect.ty().is_some() => Ok(LowerOutput::Comptime(
                 Flow::Normal(StaticValue::Type(expect.ty().unwrap())),
             )),
-            _ => Err(staging_error(&span, "cannot infer this type".into()).into()),
+            _ => Err(staging_error(&span, &typecheck::CANNOT_INFER, "this type".into()).into()),
         },
-        HMIRExprKind::Error(message) => Err(staging_error(
-            &span,
-            message.unwrap_or_else(|| "erroneous expression".into()),
+        HMIRExprKind::Error(error) => Err(CXError::new(
+            CXStdErrMessage::error(error.code, error.message),
+            from_token_range(&span),
         )
         .into()),
         HMIRExprKind::Comptime(inner) => match cx {
@@ -121,7 +125,7 @@ pub(crate) fn lower(
                 lower_splice(lowering, frame, quote, &args, expect, &span).map(LowerOutput::Runtime)
             }
             LowerContext::Comptime(_, _) => {
-                Err(staging_error(&span, "splice inside a comptime context".into()).into())
+                Err(staging_error(&span, &mir::COMPTIME_INVALID_OPERATION, "splicing".into()).into())
             }
         },
         HMIRExprKind::Intrinsic(intrinsic) => match cx {
@@ -129,7 +133,7 @@ pub(crate) fn lower(
                 lower_intrinsic_expr(lowering, frame, intrinsic, &span).map(LowerOutput::Runtime)
             }
             LowerContext::Comptime(_, _) => {
-                Err(staging_error(&span, "intrinsic at compile time".into()).into())
+                Err(staging_error(&span, &mir::COMPTIME_INVALID_OPERATION, "intrinsics".into()).into())
             }
         },
         HMIRExprKind::Native(op) => match cx {

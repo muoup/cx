@@ -80,7 +80,7 @@ fn handle_include_impl(
     }
 
     let source = std::fs::read_to_string(path.as_path()).map_err(|e| {
-        crate::log::internal_error(
+        crate::log::no_source_error(
             &READ_FILE,
             (
                 "included file".into(),

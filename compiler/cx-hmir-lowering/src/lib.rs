@@ -11,7 +11,7 @@ mod value;
 use cx_hmir::HMIRUnit;
 use cx_log::{
     CXResult,
-    catalogue::mir,
+    catalogue::ErrorDefinition,
     error::{CXError, context::from_token_range},
 };
 use cx_mir::MIRUnit;
@@ -34,6 +34,10 @@ pub fn generate_mir<'l>(
     Ok(module.finish(types.finish()))
 }
 
-pub(crate) fn staging_error(span: &TokenRange, message: String) -> CXError {
-    CXError::new(mir::HMIR_STAGING.bind(message), from_token_range(span))
+pub(crate) fn staging_error<A>(
+    span: &TokenRange,
+    definition: &ErrorDefinition<A>,
+    args: A,
+) -> CXError {
+    CXError::new(definition.bind(args), from_token_range(span))
 }

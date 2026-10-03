@@ -5,7 +5,7 @@ use cx_hir::{
 use cx_log::catalogue::typecheck as catalogue;
 use cx_log::{
     CXRawResult, CXResult,
-    error::{CXError, context::CXInternalContext},
+    error::{CXError, context::CXNoSourceContext},
 };
 use cx_namespace::{
     lookup::{QualifiedLookup, QualifiedLookupResult},
@@ -169,7 +169,7 @@ impl TypeEnvironment<'_> {
         let lookup = self.lookup_symbol(namespace, name, None).map_err(|err| {
             CXError::new(
                 err,
-                CXInternalContext::error(
+                CXNoSourceContext::error(
                     "symbol lookup failed before a source range was available",
                 ),
             )

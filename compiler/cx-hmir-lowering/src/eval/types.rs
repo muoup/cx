@@ -1,5 +1,8 @@
 use cx_hmir::{HMIRAggregateKind, HMIRExprID, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeOp};
-use cx_log::CXResult;
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -29,7 +32,8 @@ pub(super) fn exec_type_op(
             let Some((_, field)) = cx.types().field(ty, name.as_str()) else {
                 return Err(staging_error(
                     span,
-                    format!("'{}' has no member '{name}'", cx.types().display(ty)),
+                    &typecheck::UNKNOWN_MEMBER,
+                    (cx.types().display(ty), name.to_string()),
                 ));
             };
             StaticValue::Type(field.ty())
@@ -37,15 +41,22 @@ pub(super) fn exec_type_op(
         HMIRTypeOp::TypeOf(operand) => StaticValue::Type(inspect(cx, frame, *operand, None)?),
         HMIRTypeOp::PointerInner(operand) | HMIRTypeOp::ReferenceInner(operand) => {
             let ty = eval_type(cx, frame, *operand)?;
-            let inner = match op {
-                HMIRTypeOp::PointerInner(_) => cx.types().pointer_inner(ty),
-                HMIRTypeOp::ReferenceInner(_) => cx.types().reference_inner(ty),
+            let (inner, expected) = match op {
+                HMIRTypeOp::PointerInner(_) => (cx.types().pointer_inner(ty), "a pointer type"),
+                HMIRTypeOp::ReferenceInner(_) => {
+                    (cx.types().reference_inner(ty), "a reference type")
+                }
                 _ => unreachable!(),
-            }
-            .ok_or_else(|| {
+            };
+            let inner = inner.ok_or_else(|| {
                 staging_error(
                     span,
-                    format!("{} is invalid for '{}'", op.path(), cx.types().display(ty)),
+                    &typecheck::TYPE_REQUIREMENT,
+                    (
+                        op.path().to_string(),
+                        expected.into(),
+                        Some(format!("'{}'", cx.types().display(ty))),
+                    ),
                 )
             })?;
             StaticValue::Type(inner)
@@ -57,7 +68,11 @@ pub(super) fn exec_type_op(
         HMIRTypeOp::Pointer(inner) => {
             let inner = eval_type(cx, frame, *inner)?;
             if cx.types().is_unreachable(inner) {
-                return Err(staging_error(span, "pointer to 'unreachable'".into()));
+                return Err(staging_error(
+                    span,
+                    &typecheck::INVALID_POINTEE,
+                    cx.types().display(inner),
+                ));
             }
             StaticValue::Type(cx.types_mut().pointer_to(inner))
         }
@@ -75,7 +90,11 @@ pub(super) fn exec_type_op(
                 Some(length) => {
                     let value = eval(cx, frame, *length, None)?;
                     let length = value.as_int().ok_or_else(|| {
-                        staging_error(span, "array length is not a compile-time integer".into())
+                        staging_error(
+                            span,
+                            &mir::EXPECTED_CONSTANT,
+                            ("array length".into(), "integer".into()),
+                        )
                     })?;
                     Some(length.max(0) as u64)
                 }
@@ -177,16 +196,17 @@ pub(super) fn eval_aggregate_type(
     for field in fields {
         let field_ty = eval_type(cx, frame, field.ty())?;
         if cx.types().is_void(field_ty) && kind != HMIRAggregateKind::TaggedUnion {
-            return Err(staging_error(span, "aggregate field of type void".into()));
+            return Err(staging_error(span, &typecheck::VOID_FIELD, ()));
         }
-        if cx.types().object_problem(field_ty).is_some() {
+        if let Some(problem) = cx.types().object_problem(field_ty) {
             let name = field
                 .name()
                 .map(ToString::to_string)
                 .unwrap_or_else(|| "<anonymous>".into());
             return Err(staging_error(
                 frame.body().expr(field.ty()).span(),
-                format!("field '{name}' has an incomplete or recursive type"),
+                &typecheck::INVALID_OBJECT_TYPE,
+                (format!("field '{name}'"), problem.into()),
             ));
         }
         let (field_semantics, field_unsafe_move) = cx.types().owned_traits(field_ty);
@@ -207,9 +227,8 @@ pub(super) fn eval_aggregate_type(
                 .unwrap_or_else(|| "<anonymous>".into());
             return Err(staging_error(
                 span,
-                format!(
-                    "aggregate containing {required} field '{name}' must also be marked as {required}"
-                ),
+                &typecheck::FIELD_TRAIT,
+                (name, required.to_string(), required.to_string()),
             ));
         }
         defined.push(Field::new(

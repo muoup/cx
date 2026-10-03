@@ -23,8 +23,8 @@ pub(super) fn target_type(
         None => comptime_error(
             range.clone(),
             (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "unknown intrinsic output type".into(),
+                &mir::COMPTIME_INVARIANT,
+                "an unknown intrinsic output type".into(),
             ),
         ),
     }
@@ -42,8 +42,8 @@ pub(super) fn integer_type<R: MTRegistry>(
         _ => comptime_error(
             range.clone(),
             (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "integer result has a non-integer type".into(),
+                &mir::COMPTIME_INVARIANT,
+                "an integer result with a non-integer type".into(),
             ),
         ),
     }
@@ -61,8 +61,8 @@ pub(super) fn float_type<R: MTRegistry>(
         _ => comptime_error(
             range.clone(),
             (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "float result has a non-float type".into(),
+                &mir::COMPTIME_INVARIANT,
+                "a float result with a non-float type".into(),
             ),
         ),
     }

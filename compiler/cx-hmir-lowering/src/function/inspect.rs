@@ -1,5 +1,5 @@
 use cx_hmir::{HMIRBlockKind, HMIRExprID};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{MIRConstant, MIRValue};
 use cx_tokens::TokenRange;
 
@@ -108,12 +108,21 @@ pub(super) fn check(
         }
     };
     match result {
-        Ok(value) if deferred && !checking.program.types().is_void(value.ty()) => Err(
-            crate::staging_error(&span, "defer requires a void expression".into()),
-        ),
+        Ok(value) if deferred && !checking.program.types().is_void(value.ty()) => {
+            Err(crate::staging_error(
+                &span,
+                &typecheck::TYPE_REQUIREMENT,
+                (
+                    "defer".into(),
+                    "a void expression".into(),
+                    Some(format!("'{}'", checking.program.types().display(value.ty()))),
+                ),
+            ))
+        }
         Err(Stop::Diverged) if deferred => Err(crate::staging_error(
             &span,
-            "deferred expression must fall through".into(),
+            &typecheck::DEFER_FALLTHROUGH,
+            (),
         )),
         Ok(_) | Err(Stop::Diverged) => Ok(()),
         Err(Stop::Error(error)) => Err(error),

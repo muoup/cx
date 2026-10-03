@@ -48,6 +48,13 @@ fn expect_failure(input: &Path, expected_stage: FailureStage) {
         Err(failure) => failure,
     };
 
+    if failure.code.as_bytes().get(1) == Some(&b'X') {
+        panic!(
+            "\nExpected failure stage: {:?}\nGot an internal compiler error instead\n\n{}",
+            expected_stage, failure.rendered
+        );
+    }
+
     let actual_stage = classify_failure_stage(&failure);
     if actual_stage != Some(expected_stage) {
         panic!(

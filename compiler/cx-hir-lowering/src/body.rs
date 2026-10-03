@@ -6,10 +6,11 @@ use cx_hir::ast::{
 };
 use cx_hmir::{
     HMIRAggregateOp, HMIRBlockKind, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRContract,
-    HMIRControlOp, HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRExpr, HMIRExprID, HMIRExprKind,
-    HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIRNativeOp,
+    HMIRControlOp, HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRError, HMIRExpr, HMIRExprID,
+    HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIRNativeOp,
     HMIROwnershipOp, HMIRSignature, HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner, HMIRTypeOp,
 };
+use cx_log::catalogue::{ErrorDefinition, typecheck};
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -20,6 +21,13 @@ use crate::{
     resolve::{GlobalSymbol, Resolver},
     ty::lower_type,
 };
+
+pub(crate) fn hmir_error<A>(definition: &ErrorDefinition<A>, args: A) -> HMIRError {
+    HMIRError {
+        code: definition.code,
+        message: (definition.message)(args),
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Binding {
@@ -90,12 +98,13 @@ impl<'a> BodyLowering<'a> {
         self.push(HMIRExprKind::Native(op), span)
     }
 
-    pub(crate) fn error(&mut self, span: &TokenRange) -> HMIRExprID {
-        self.push(HMIRExprKind::Error(None), span)
-    }
-
-    pub(crate) fn error_message(&mut self, message: String, span: &TokenRange) -> HMIRExprID {
-        self.push(HMIRExprKind::Error(Some(message)), span)
+    pub(crate) fn error<A>(
+        &mut self,
+        span: &TokenRange,
+        definition: &ErrorDefinition<A>,
+        args: A,
+    ) -> HMIRExprID {
+        self.push(HMIRExprKind::Error(hmir_error(definition, args)), span)
     }
 
     pub(crate) fn hole(&mut self, span: &TokenRange) -> HMIRExprID {
@@ -327,7 +336,11 @@ pub(crate) fn lower_reify(
         _ => None,
     };
     let Some(prototype) = prototype else {
-        return cx.error(&signature.range);
+        return cx.error(
+            &signature.range,
+            &typecheck::TYPE_REQUIREMENT,
+            ("@reify".into(), "a function pointer type".into(), None),
+        );
     };
 
     let id = cx.resolver.next_static();

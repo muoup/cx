@@ -71,8 +71,8 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
                         return comptime_error(
                             range.clone(),
                             (
-                                &mir::COMPTIME_INVALID_OPERATION,
-                                "bitfield read through a non-reference".into(),
+                                &mir::COMPTIME_INVARIANT,
+                                "a bitfield read through a non-reference".into(),
                             ),
                         );
                     };
@@ -153,10 +153,7 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
         MIRInstructionKind::Unreachable => {
             return comptime_error(
                 range.clone(),
-                (
-                    &mir::COMPTIME_INVALID_OPERATION,
-                    "unreachable instruction".into(),
-                ),
+                (&mir::COMPTIME_UNREACHABLE, ()),
             );
         }
     }
@@ -174,16 +171,16 @@ pub(crate) fn execute_comptime_instruction<'c, 'thir, Context: ComptimeContext<'
         MIRComptimeOp::Call { out, callee, args } => {
             let function = engine.context().function(*callee).ok_or_else(|| {
                 internal_error(
-                    &mir::COMPTIME_INVALID_OPERATION,
-                    "unknown comptime function".into(),
+                    &mir::COMPTIME_INVARIANT,
+                    "an unknown function".into(),
                     "comptime execution",
                 )
             })?;
 
             let body = function.body().ok_or_else(|| {
                 internal_error(
-                    &mir::COMPTIME_INVALID_OPERATION,
-                    "undefined comptime function".into(),
+                    &mir::COMPTIME_INVARIANT,
+                    "an undefined function".into(),
                     "comptime execution",
                 )
             })?;

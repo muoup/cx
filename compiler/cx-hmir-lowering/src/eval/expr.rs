@@ -1,5 +1,5 @@
 use cx_hmir::{HMIRExprID, HMIRExprKind, HMIRLocalID};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -64,7 +64,13 @@ pub(crate) fn dereference(
     let inner = cx
         .types()
         .pointer_inner(ty)
-        .ok_or_else(|| staging_error(span, "dereferenced a non-pointer".into()))?;
+        .ok_or_else(|| {
+            staging_error(
+                span,
+                &typecheck::UNEXPECTED_KIND,
+                ("dereferenced value".into(), "a pointer".into()),
+            )
+        })?;
     if cx.types().is_function(inner) {
         return Ok(value);
     }

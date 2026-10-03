@@ -1,5 +1,8 @@
 use cx_hmir::{HMIRBinaryOp, HMIRExprID, HMIRIntWidth, HMIRUnaryOp};
-use cx_log::CXResult;
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -23,10 +26,8 @@ pub(crate) fn fold_binary(
     let unsupported = |lhs: &StaticValue, rhs: &StaticValue| {
         staging_error(
             span,
-            format!(
-                "cannot evaluate '{}' on {lhs:?} and {rhs:?} at compile time",
-                op.path()
-            ),
+            &mir::COMPTIME_INVALID_OPERATION,
+            format!("'{}' on {} and {}", op.path(), lhs.describe(), rhs.describe()),
         )
     };
     match (&lhs, &rhs) {
@@ -55,7 +56,9 @@ pub(crate) fn fold_binary(
             let left = normalize_int(*left, ty, cx.types());
             let right = normalize_int(*right, ty, cx.types());
             let result = fold_int(op, left, right, signed)
-                .ok_or_else(|| staging_error(span, "invalid compile-time arithmetic".into()))?;
+                .ok_or_else(|| {
+                    staging_error(span, &mir::COMPTIME_UNDEFINED_ARITHMETIC, op.path().into())
+                })?;
             if is_comparison(op) {
                 return Ok(StaticValue::bool(result != 0, cx.types_mut()));
             }
@@ -158,13 +161,15 @@ pub(crate) fn exec_unary(
             let Some(local) = frame.as_local(operand) else {
                 return Err(staging_error(
                     span,
-                    "comptime increment of a non-local".into(),
+                    &mir::COMPTIME_INVALID_OPERATION,
+                    "incrementing a value that is not a local".into(),
                 ));
             };
             let Some(StaticValue::Int { value, ty }) = frame.local(local).cloned() else {
                 return Err(staging_error(
                     span,
-                    "comptime increment of a non-integer".into(),
+                    &mir::COMPTIME_INVALID_OPERATION,
+                    "incrementing a value that is not an integer".into(),
                 ));
             };
             let delta = match op {
@@ -194,10 +199,8 @@ pub(crate) fn coerce_static(
             if given != params.len() {
                 return Err(staging_error(
                     span,
-                    format!(
-                        "staged expression takes {given} parameters where {} are expected",
-                        params.len()
-                    ),
+                    &typecheck::ARGUMENT_COUNT,
+                    ("staged expression".into(), params.len(), given, false),
                 ));
             }
             StaticValue::Quote(quote.with_result(result, cx.types().is_void(result)))
@@ -237,7 +240,8 @@ pub(crate) fn coerce_static(
             } else {
                 return Err(staging_error(
                     span,
-                    format!("cannot convert a global to '{}'", cx.types().display(ty)),
+                    &typecheck::INVALID_CONVERSION,
+                    ("a global".into(), cx.types().display(ty)),
                 ));
             }
         }
@@ -263,10 +267,8 @@ pub(crate) fn coerce_static(
         (value, _) => {
             return Err(staging_error(
                 span,
-                format!(
-                    "cannot convert {value:?} to '{}' at compile time",
-                    cx.types().display(ty)
-                ),
+                &typecheck::INVALID_CONVERSION,
+                (value.describe().into(), cx.types().display(ty)),
             ));
         }
     })
@@ -289,7 +291,9 @@ pub(crate) fn fold_unary(
     if op == HMIRUnaryOp::LNot {
         let truthy = value
             .is_truthy()
-            .ok_or_else(|| staging_error(span, "value has no compile-time truthiness".into()))?;
+            .ok_or_else(|| {
+                staging_error(span, &mir::COMPTIME_NO_TRUTH_VALUE, value.describe().into())
+            })?;
         return Ok(StaticValue::bool(!truthy, cx.types_mut()));
     }
     match value {
@@ -307,11 +311,8 @@ pub(crate) fn fold_unary(
         }
         other => Err(staging_error(
             span,
-            format!(
-                "cannot apply '{}' to {} at compile time",
-                op.path(),
-                other.describe()
-            ),
+            &mir::COMPTIME_INVALID_OPERATION,
+            format!("'{}' on {}", op.path(), other.describe()),
         )),
     }
 }

@@ -6,7 +6,7 @@ use lower::lower_type;
 use std::collections::HashMap;
 
 use cx_hmir::{HMIRAggregateKind, HMIRExprID, HMIRFloatWidth, HMIRIntWidth, HMIRMoveSemantics};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{
     MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind,
     ty::{layout::calculate_type_layout, registry::MIRTypeRegistry},
@@ -498,7 +498,8 @@ impl TypeTable {
         if incomplete {
             return Err(staging_error(
                 span,
-                format!("'{}' has an incomplete type", self.display(ty)),
+                &typecheck::INCOMPLETE_TYPE,
+                format!("'{}'", self.display(ty)),
             ));
         }
         Ok(())

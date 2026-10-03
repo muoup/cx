@@ -177,6 +177,10 @@ impl Hash for CompilationUnit {
 
 impl Display for CompilationUnit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Unit {}", self.namespace())
+        if !self.namespace.is_root() {
+            return write!(f, "{}", self.namespace);
+        }
+        let path = self.module.as_path();
+        write!(f, "{}", path.file_name().unwrap_or(path.as_os_str()).to_string_lossy())
     }
 }

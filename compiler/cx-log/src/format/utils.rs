@@ -39,12 +39,16 @@ pub(crate) fn format_error_link(
     error_line: usize,
     error_padding: usize,
 ) -> String {
+    let path = file_path
+        .canonicalize()
+        .unwrap_or_else(|_| file_path.to_path_buf());
+    let relative = std::env::current_dir()
+        .and_then(|directory| directory.canonicalize())
+        .ok()
+        .and_then(|directory| path.strip_prefix(directory).ok().map(Path::to_path_buf));
     format!(
         "{}:{}:{}",
-        file_path
-            .canonicalize()
-            .map(|s| s.to_string_lossy().as_ref().to_owned())
-            .unwrap_or("path parse failure".into()),
+        relative.unwrap_or(path).display(),
         error_line,
         error_padding + 1
     )

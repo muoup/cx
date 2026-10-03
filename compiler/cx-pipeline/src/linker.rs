@@ -14,7 +14,7 @@ pub(crate) fn link_relocatable(
     exported_symbols: &[String],
     reporter: &mut ProgressReporter,
 ) -> CXResult<()> {
-    reporter.link_status("[Linking (relocatable)]");
+    reporter.link_status("Linking (relocatable)");
 
     let mut cmd = Command::new("ld");
     cmd.arg("-r");
@@ -59,7 +59,7 @@ pub(crate) fn link(
     context: &GlobalCompilationContext,
     reporter: &mut ProgressReporter,
 ) -> CXResult<()> {
-    reporter.link_status("[Linking]");
+    reporter.link_status("Linking");
 
     let mut cmd = Command::new("gcc");
     cmd.arg("-Wl,--gc-sections");

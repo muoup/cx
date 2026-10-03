@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque, hash_map::Entry};
 
 use cx_hmir::{HMIRAggregateKind, HMIRDefKind, HMIRFunctionStage};
-use cx_log::CXResult;
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_mir::{
     MIRBody, MIRConstant, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID,
     MIRGlobalID, MIRGlobalRef, MIRGlobalState, MIRGlobalVariable, MIRIntType, MIRUnit,
@@ -176,10 +179,8 @@ pub(crate) fn declare_function(
     {
         return Err(staging_error(
             span,
-            format!(
-                "comptime function '{}' cannot be emitted into runtime MIR",
-                def.name()
-            ),
+            &mir::COMPTIME_FUNCTION_AT_RUNTIME,
+            def.name().to_string(),
         ));
     }
     if let Some(id) = cx.module().instances.get(instance) {
@@ -249,7 +250,8 @@ pub(crate) fn declare_global(
     let HMIRDefKind::Global(global) = def.kind() else {
         return Err(staging_error(
             span,
-            format!("'{}' is not a global", def.name()),
+            &typecheck::UNEXPECTED_KIND,
+            (format!("'{}'", def.name()), "a global".into()),
         ));
     };
     let ty = eval_global_type(cx, key, span)?;
@@ -258,7 +260,8 @@ pub(crate) fn declare_global(
     {
         return Err(staging_error(
             span,
-            format!("'{}' has {problem}", def.name()),
+            &typecheck::INVALID_OBJECT_TYPE,
+            (format!("'{}'", def.name()), problem.into()),
         ));
     }
     let mir = cx.types_mut().mir(ty, span)?;
@@ -351,7 +354,11 @@ pub(crate) fn to_constant(
             },
             _ => {
                 let (width, _) = cx.types().int_info(ty).ok_or_else(|| {
-                    staging_error(span, "integer constant of a non-integer type".into())
+                    staging_error(
+                        span,
+                        &mir::CONSTANT_TYPE,
+                        ("integer".into(), cx.types().display(ty)),
+                    )
                 })?;
                 MIRConstant::Integer {
                     ty: TypeTable::mir_int(width),
@@ -367,7 +374,8 @@ pub(crate) fn to_constant(
             _ => {
                 return Err(staging_error(
                     span,
-                    "float constant of a non-float type".into(),
+                    &mir::CONSTANT_TYPE,
+                    ("float".into(), cx.types().display(ty)),
                 ));
             }
         },
@@ -428,10 +436,7 @@ pub(crate) fn to_constant(
             }
         }
         StaticValue::Type(_) | StaticValue::Quote(_) | StaticValue::Global(_) => {
-            return Err(staging_error(
-                span,
-                "comptime-only value used as a runtime constant".into(),
-            ));
+            return Err(staging_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
         }
     })
 }
@@ -450,9 +455,11 @@ pub(crate) fn variant_index(
     else {
         return Err(staging_error(
             span,
-            format!(
-                "variant pattern '{name}' on '{}', which is not a tagged union",
-                cx.types().display(ty)
+            &typecheck::TYPE_REQUIREMENT,
+            (
+                format!("variant pattern '{name}'"),
+                "a tagged union".into(),
+                Some(format!("'{}'", cx.types().display(ty))),
             ),
         ));
     };
@@ -463,7 +470,8 @@ pub(crate) fn variant_index(
         .ok_or_else(|| {
             staging_error(
                 span,
-                format!("'{}' has no variant '{name}'", cx.types().display(ty)),
+                &typecheck::UNKNOWN_VARIANT,
+                (cx.types().display(ty), name.to_string()),
             )
         })
 }
@@ -485,7 +493,8 @@ pub(crate) fn member_type(
         .ok_or_else(|| {
             staging_error(
                 span,
-                format!("'{}' is not an aggregate", cx.types().display(ty)),
+                &typecheck::UNEXPECTED_KIND,
+                (format!("'{}'", cx.types().display(ty)), "an aggregate".into()),
             )
         })
 }

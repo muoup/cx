@@ -40,8 +40,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                         return comptime_error(
                             range.clone(),
                             (
-                                &mir::COMPTIME_INVALID_OPERATION,
-                                "array address has a non-pointer result".into(),
+                                &mir::COMPTIME_INVARIANT,
+                                "an array address with a non-pointer result".into(),
                             ),
                         );
                     };

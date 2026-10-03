@@ -9,6 +9,7 @@ use cx_mir::{
     expr::instruction::MIRInvalidationKind,
     ty::layout::{MIRFieldLayout, calculate_field_layout},
 };
+use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -71,13 +72,7 @@ fn lower_unpack(
     let fields = match types.nominal_of(ty) {
         Some(nominal) if !operand.is_lvalue() && !types.is_reference(ty) => nominal.fields(),
         _ => {
-            return cx.error(
-                span,
-                format!(
-                    "@unpack takes an owned structure, found '{}'; move the value into it",
-                    types.display(ty)
-                ),
-            );
+            return cx.error(span, &typecheck::UNPACK_OWNED, Some(types.display(ty)));
         }
     };
     let unbound = fields.iter().find(|field| {
@@ -89,10 +84,10 @@ fn lower_unpack(
     if let Some(field) = unbound {
         return cx.error(
             span,
-            format!(
-                "@unpack of '{}' must bind @nodrop field '{}'",
+            &typecheck::UNPACK_REQUIRED_FIELD,
+            (
                 types.display(ty),
-                field.name().map(CXIdent::as_str).unwrap_or("_")
+                field.name().map(CXIdent::as_str).unwrap_or("_").to_string(),
             ),
         );
     }
@@ -160,10 +155,8 @@ pub(super) fn lower_member(
     let Some((index, field)) = cx.program.types().field(base.ty(), name.as_str()) else {
         return cx.error(
             span,
-            format!(
-                "'{}' has no member '{name}'",
-                cx.program.types().display(base.ty())
-            ),
+            &typecheck::UNKNOWN_MEMBER,
+            (cx.program.types().display(base.ty()), name.to_string()),
         );
     };
     let field_ty = field.ty();
@@ -218,7 +211,11 @@ fn lower_index(
         (TypeKind::Pointer(element), TypeKind::Int { .. }) => (base, index, *element),
         (TypeKind::Int { .. }, TypeKind::Pointer(element)) => (index, base, *element),
         _ => {
-            return cx.error(span, "indexing requires a pointer and an integer");
+            return cx.error(
+                span,
+                &typecheck::TYPE_REQUIREMENT,
+                ("indexing".into(), "a pointer and an integer".into(), None),
+            );
         }
     };
     let ty = pointer.ty();
@@ -241,7 +238,11 @@ fn lower_initialize(
             if let Some(length) = length
                 && fields.len() as u64 > length
             {
-                return cx.error(span, "too many initializers for the array");
+                return cx.error(
+                    span,
+                    &typecheck::INITIALIZER_LIMIT,
+                    ("array".into(), Some(length as usize)),
+                );
             }
             for (index, (_, value)) in fields.iter().enumerate() {
                 let value = lower_field_value(cx, frame, *value, element, span)?;
@@ -266,10 +267,8 @@ fn lower_initialize(
                         None => {
                             return cx.error(
                                 span,
-                                format!(
-                                    "'{}' has no member '{name}'",
-                                    cx.program.types().display(ty)
-                                ),
+                                &typecheck::UNKNOWN_MEMBER,
+                                (cx.program.types().display(ty), name.to_string()),
                             );
                         }
                     },
@@ -289,10 +288,8 @@ fn lower_initialize(
         _ if let [(Some(name), _)] = fields => {
             return cx.error(
                 span,
-                format!(
-                    "'{}' has no member '{name}'",
-                    cx.program.types().display(ty)
-                ),
+                &typecheck::UNKNOWN_MEMBER,
+                (cx.program.types().display(ty), name.to_string()),
             );
         }
         _ if fields.len() == 1 => {
@@ -302,10 +299,8 @@ fn lower_initialize(
         _ => {
             return cx.error(
                 span,
-                format!(
-                    "'{}' cannot be initialized from a list",
-                    cx.program.types().display(ty)
-                ),
+                &typecheck::LIST_INITIALIZATION,
+                cx.program.types().display(ty),
             );
         }
     };
@@ -352,7 +347,7 @@ fn lower_initializer_type(
     if matches!(cx.kind(frame, ty), HMIRExprKind::Hole(_)) {
         return match expected {
             Some(expected) => Ok(expected),
-            None => cx.error(span, "cannot infer the initialized type"),
+            None => cx.error(span, &typecheck::CANNOT_INFER, "the initialized type".into()),
         };
     }
     match lower_eval(cx, frame, ty, Expect::Any)? {
@@ -367,10 +362,7 @@ fn lower_initializer_type(
         {
             Ok(expected.expect("checked above"))
         }
-        other => cx.error(
-            span,
-            format!("expected a type to initialize, found {}", other.describe()),
-        ),
+        other => cx.error(span, &typecheck::EXPECTED_TYPE, other.describe().into()),
     }
 }
 
@@ -415,7 +407,11 @@ fn lower_is(
         }
         HMIRPattern::Float(expected) => {
             let TypeKind::Float { width } = cx.program.types().kind(subject.ty()).clone() else {
-                return cx.error(span, "floating pattern on a non-floating value");
+                return cx.error(
+                    span,
+                    &typecheck::TYPE_REQUIREMENT,
+                    ("floating pattern".into(), "a floating value".into(), None),
+                );
             };
             let value = lower_value(cx, subject.clone(), span)?;
             cx.intrinsic(
@@ -435,10 +431,7 @@ fn lower_is(
             let ty = subject.ty();
             let expected = lower_eval(cx, frame, *expected, Expect::Type(ty))?;
             let Some(expected) = expected.as_int() else {
-                return cx.error(
-                    span,
-                    "value pattern is not an integer constant; bind the value with 'auto name'",
-                );
+                return cx.error(span, &typecheck::VALUE_PATTERN_CONSTANT, ());
             };
             let expected = lower_int_constant(cx, expected, ty);
             let value = lower_value(cx, subject.clone(), span)?;
@@ -488,10 +481,7 @@ pub(super) fn lower_pattern_subject(
 ) -> LowerResult<Operand> {
     let subject = lower_auto_deref(cx, subject, span)?;
     if cx.program.types().is_pointer(subject.ty()) {
-        return cx.error(
-            span,
-            "pattern subject is a pointer; dereference it explicitly",
-        );
+        return cx.error(span, &typecheck::POINTER_PATTERN, ());
     }
     Ok(subject)
 }
@@ -636,22 +626,13 @@ fn lower_copy_binding(
         .as_ref()
         .map_or_else(|| "auto".to_string(), |name| format!("auto {name}"));
     if borrowed {
-        return cx.error(
-            span,
-            format!(
-                "'{binding}' binds by value, but the matched value is behind a reference; \
-                 bind it with 'auto&'"
-            ),
-        );
+        return cx.error(span, &typecheck::BINDING_BEHIND_REFERENCE, binding.to_string());
     }
     if !cx.program.types().is_pod(ty) {
         return cx.error(
             span,
-            format!(
-                "'{binding}' would move '{}' out of a value that is still in use; \
-                 borrow it with 'auto&' or match on a moved value",
-                cx.program.types().display(ty)
-            ),
+            &typecheck::BINDING_MOVES_IN_USE,
+            (binding.to_string(), cx.program.types().display(ty)),
         );
     }
     let value = lower_copy(cx, source, span)?;
@@ -735,7 +716,7 @@ pub(super) fn lower_address_of_operand(
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     if operand.bitfield().is_some() {
-        return cx.error(span, "cannot take the address of a bitfield");
+        return cx.error(span, &typecheck::BITFIELD_REFERENCE, "take the address of".into());
     }
     let operand = lower_spill(cx, operand, span)?;
     let ty = cx.program.types_mut().pointer_to(operand.ty());

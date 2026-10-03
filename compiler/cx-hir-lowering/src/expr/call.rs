@@ -4,6 +4,7 @@ use cx_hir::ast::{
 };
 use cx_hmir::{HMIRAggregateOp, HMIRConstant, HMIRExprID, HMIRExprKind};
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
+use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -38,7 +39,11 @@ pub(crate) fn lower_call<'h>(
     append: Vec<&'h HIRExpression>,
 ) -> HMIRExprID {
     let HIRExprKind::BinOp { op, lhs, rhs } = &call.kind else {
-        return cx.error(&call.range);
+        return cx.error(
+            &call.range,
+            &typecheck::UNEXPECTED_KIND,
+            ("pipe target".into(), "a call".into()),
+        );
     };
     match op {
         HIRBinOp::MethodCall => {
@@ -48,7 +53,11 @@ pub(crate) fn lower_call<'h>(
                 .collect::<Vec<_>>();
             for (index, value) in piped.into_iter().rev() {
                 if index > args.len() {
-                    return cx.error(&value.range);
+                    return cx.error(
+                        &value.range,
+                        &typecheck::INDEX_BOUNDS,
+                        ("pipe".into(), index.to_string(), Some(args.len().to_string())),
+                    );
                 }
                 args.insert(index, (value, true));
             }
@@ -63,7 +72,11 @@ pub(crate) fn lower_call<'h>(
             let append = std::iter::once(rhs.as_ref()).chain(append).collect();
             lower_call(cx, lhs, piped, append)
         }
-        _ => cx.error(&call.range),
+        _ => cx.error(
+            &call.range,
+            &typecheck::UNEXPECTED_KIND,
+            ("pipe target".into(), "a call".into()),
+        ),
     }
 }
 
@@ -206,7 +219,11 @@ fn lower_payload(
     match args {
         [] => cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span),
         [value] => lower_expr(cx, value),
-        _ => cx.error(span),
+        _ => cx.error(
+            span,
+            &typecheck::ARGUMENT_COUNT,
+            ("variant constructor".into(), 1, args.len(), false),
+        ),
     }
 }
 

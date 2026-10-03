@@ -6,9 +6,10 @@ mod log;
 
 use crate::log::error;
 use args::Command;
-use cx_log::CXResult;
+use cx_log::{error::write_bug_report_notes, CXResult};
 use cx_pipeline::{link_object_files, standard_compilation};
 use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerConfig};
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -183,14 +184,34 @@ fn execute(command: Command) -> CXResult<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn main() -> ExitCode {
-    let command = match args::parse_args(std::env::args().skip(1)) {
-        Ok(command) => command,
-        Err(err) => {
-            let _ = err.print();
-            return ExitCode::from(2);
-        }
-    };
+// Compilation recurses over source structure, so it runs on a thread with a generous stack
+const COMPILER_STACK_SIZE: usize = 256 * 1024 * 1024;
+
+fn report_panic(info: &std::panic::PanicHookInfo<'_>) {
+    let mut stderr = std::io::stderr().lock();
+    if stderr.is_terminal() {
+        let _ = write!(stderr, "\r\x1b[2K");
+    }
+    let payload = info.payload();
+    let message = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown panic");
+    let _ = writeln!(stderr, "error: internal compiler error: {message}");
+    if let Some(location) = info.location() {
+        let _ = writeln!(stderr, "note: panicked at {location}");
+    }
+    let _ = write_bug_report_notes(&mut stderr);
+    let backtrace = std::backtrace::Backtrace::capture();
+    if backtrace.status() == std::backtrace::BacktraceStatus::Captured {
+        let _ = writeln!(stderr, "\n{backtrace}");
+    } else {
+        let _ = writeln!(stderr, "note: run with `RUST_BACKTRACE=1` to include a backtrace");
+    }
+}
+
+fn run(command: Command) -> ExitCode {
     match execute(command) {
         Ok(status) => status,
         Err(err) => {
@@ -198,4 +219,21 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn main() -> ExitCode {
+    std::panic::set_hook(Box::new(report_panic));
+    let command = match args::parse_args(std::env::args().skip(1)) {
+        Ok(command) => command,
+        Err(err) => {
+            let _ = err.print();
+            return ExitCode::from(2);
+        }
+    };
+    let compiler = std::thread::Builder::new()
+        .name("cx".into())
+        .stack_size(COMPILER_STACK_SIZE)
+        .spawn(move || run(command))
+        .expect("failed to spawn the compiler thread");
+    compiler.join().unwrap_or(ExitCode::from(101))
 }

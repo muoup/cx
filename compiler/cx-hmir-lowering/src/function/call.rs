@@ -3,6 +3,7 @@ use std::rc::Rc;
 use cx_hmir::{
     HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRFloatWidth, HMIRFunctionStage, HMIRIntWidth,
 };
+use cx_log::catalogue::{mir, typecheck};
 use cx_mir::{MIRConstant, MIRInstructionKind, MIRValue};
 use cx_tokens::TokenRange;
 
@@ -82,7 +83,8 @@ fn lower_static_call(
     let HMIRDefKind::Function(function) = unit.def(def.def()).kind() else {
         return cx.error(
             span,
-            format!("'{}' is not a function", unit.def(def.def()).name()),
+            &typecheck::UNEXPECTED_KIND,
+            (format!("'{}'", unit.def(def.def()).name()), "a function".into()),
         );
     };
     if function.stage() == HMIRFunctionStage::Runtime && !function.signature().contract().is_safe()
@@ -103,10 +105,12 @@ fn lower_static_call(
     if !variadic && given > params.len() {
         return cx.error(
             span,
-            format!(
-                "'{}' expects {} arguments, found {given}",
-                unit.def(def.def()).name(),
-                params.len()
+            &typecheck::ARGUMENT_COUNT,
+            (
+                format!("'{}'", unit.def(def.def()).name()),
+                params.len(),
+                given,
+                false,
             ),
         );
     }
@@ -171,7 +175,11 @@ fn lower_static_call(
             CallArg::Expr(_) => None,
         };
         let Some(value) = value else {
-            return cx.error(span, "comptime argument is not known at compile time");
+            return cx.error(
+                span,
+                &mir::EXPECTED_CONSTANT,
+                ("comptime argument".into(), "value".into()),
+            );
         };
         instance_args.push(value.clone());
     }
@@ -230,10 +238,12 @@ fn lower_curry(
     {
         return cx.error(
             span,
-            format!(
-                "'{}' expects {} arguments, found {given}",
-                unit.def(def.def()).name(),
-                params.len()
+            &typecheck::ARGUMENT_COUNT,
+            (
+                format!("'{}'", unit.def(def.def()).name()),
+                params.len(),
+                given,
+                false,
             ),
         );
     }
@@ -258,9 +268,10 @@ fn lower_indirect_call(
     let TypeKind::Function(function) = function else {
         return cx.error(
             span,
-            format!(
-                "'{}' is not callable",
-                cx.program.types().display(callee.ty())
+            &typecheck::UNEXPECTED_KIND,
+            (
+                format!("'{}'", cx.program.types().display(callee.ty())),
+                "callable".into(),
             ),
         );
     };
@@ -268,7 +279,13 @@ fn lower_indirect_call(
     if args.len() < params || (!function.is_variadic() && args.len() > params) {
         return cx.error(
             span,
-            format!("expected {params} arguments, found {}", args.len()),
+            &typecheck::ARGUMENT_COUNT,
+            (
+                "function".into(),
+                params,
+                args.len(),
+                function.is_variadic(),
+            ),
         );
     }
     let callee = lower_decay(cx, callee, span)?;

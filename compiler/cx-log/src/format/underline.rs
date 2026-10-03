@@ -12,7 +12,7 @@ pub(crate) fn pretty_underline_error(
     end_index: usize,
 ) -> std::io::Result<()> {
     let Some(source) = std::fs::read_to_string(file_path).ok() else {
-        writeln!(f, "(File could not be read)")?;
+        writeln!(f, " --> {} (file could not be read)", file_path.display())?;
         return Ok(());
     };
 
@@ -26,9 +26,7 @@ pub(crate) fn pretty_underline_error(
     let (error_line, error_padding) = get_error_loc(source.as_str(), start_index);
     let first_line_start = start_index.saturating_sub(error_padding);
 
-    let link = format_error_link(file_path, error_line, error_padding);
-    writeln!(f, "\n\t--> {link}")?;
-
+    let mut lines = Vec::new();
     let mut line_start = first_line_start;
     loop {
         let line_end = source[line_start..]
@@ -49,15 +47,23 @@ pub(crate) fn pretty_underline_error(
         }
         let underline_width = underline_end.saturating_sub(underline_start).max(1);
         let lpad = line_as_spacing(&line[..underline_start.min(line.len())]);
-
-        writeln!(f, "{line}")?;
-        writeln!(f, "{lpad}{}", "~".repeat(underline_width))?;
+        lines.push((line, lpad, underline_width));
 
         if end_index <= line_end || line_end == source.len() {
             break;
         }
 
         line_start = line_end.saturating_add(1);
+    }
+
+    let width = (error_line + lines.len() - 1).to_string().len();
+    let gutter = " ".repeat(width);
+    let link = format_error_link(file_path, error_line, error_padding);
+    writeln!(f, "{gutter}--> {link}")?;
+    writeln!(f, "{gutter} |")?;
+    for (offset, (line, lpad, underline_width)) in lines.iter().enumerate() {
+        writeln!(f, "{:>width$} | {line}", error_line + offset)?;
+        writeln!(f, "{gutter} | {lpad}{}", "^".repeat(*underline_width))?;
     }
 
     Ok(())

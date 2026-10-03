@@ -14,6 +14,7 @@ use cx_hmir::{
     HMIRNativeOp, HMIROwnershipOp, HMIRTypeOp,
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
+use cx_log::catalogue::{mir, typecheck};
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -32,7 +33,12 @@ use crate::{
 pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMIRExprID {
     let span = &expr.range;
     match &expr.kind {
-        HIRExprKind::Taken | HIRExprKind::Then => cx.error(span),
+        HIRExprKind::Taken => cx.error(span, &mir::MALFORMED_HIR, "expression was taken".into()),
+        HIRExprKind::Then => cx.error(
+            span,
+            &typecheck::REQUIRED_CONTEXT,
+            ("'then'".into(), "a closure body".into()),
+        ),
         HIRExprKind::Void => cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span),
 
         HIRExprKind::Identifier { name } => lower_identifier(cx, name, span),
@@ -228,7 +234,7 @@ pub(crate) fn lower_identifier(
             | GlobalSymbol::Function(def)
             | GlobalSymbol::ComptimeFunction(def, ..),
         ) => cx.push(HMIRExprKind::Def(def), span),
-        Symbol::Global(GlobalSymbol::Invalid(message)) => cx.error_message(message, span),
+        Symbol::Global(GlobalSymbol::Invalid(error)) => cx.push(HMIRExprKind::Error(error), span),
         Symbol::Global(GlobalSymbol::Constructor(data, variant, def)) => {
             let payload = cx.resolver().constructor_payload(&data);
             if payload.is_none_or(|payload| is_void(cx, &payload)) {
@@ -324,7 +330,11 @@ fn lower_closure(
             kind: HIRBlockKind::Sequence,
             ..
         } => lower_quote(cx, params, body, span),
-        _ => cx.error(span),
+        _ => cx.error(
+            span,
+            &typecheck::TYPE_REQUIREMENT,
+            ("closure body".into(), "an emit expression or a block".into(), None),
+        ),
     }
 }
 

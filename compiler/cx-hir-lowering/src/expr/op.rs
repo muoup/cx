@@ -3,6 +3,7 @@ use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRCoerceMode, HMIRExprID, HMIRExprKind,
     HMIRNativeOp, HMIROwnershipOp, HMIRUnaryOp,
 };
+use cx_log::catalogue::{mir, typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -65,7 +66,13 @@ pub(crate) fn lower_binop(
             let op = match compound.as_deref() {
                 Some(compound) => match binary_op(compound) {
                     Some(op) => Some(op),
-                    None => return cx.error(span),
+                    None => {
+                        return cx.error(
+                            span,
+                            &mir::MALFORMED_HIR,
+                            "compound assignment without a binary operator".into(),
+                        );
+                    }
                 },
                 None => None,
             };
@@ -75,7 +82,11 @@ pub(crate) fn lower_binop(
         }
         HIRBinOp::Access => {
             let HIRExprKind::Identifier { name, .. } = &rhs.kind else {
-                return cx.error(span);
+                return cx.error(
+                    span,
+                    &typecheck::TYPE_REQUIREMENT,
+                    ("member access".into(), "a member name".into(), None),
+                );
             };
             let base = lower_expr(cx, lhs);
             cx.aggregate_op(
@@ -91,7 +102,11 @@ pub(crate) fn lower_binop(
             let index = lower_expr(cx, rhs);
             cx.aggregate_op(HMIRAggregateOp::Index { base, index }, span)
         }
-        _ => cx.error(span),
+        _ => cx.error(
+            span,
+            &mir::MALFORMED_HIR,
+            "call operator outside of a call".into(),
+        ),
     }
 }
 

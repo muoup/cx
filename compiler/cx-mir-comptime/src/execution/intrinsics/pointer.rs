@@ -14,7 +14,7 @@ use crate::{
         scalar::{bool_const, integer_value, mask_integer},
         typing::{integer_type, target_type},
     },
-    log::{comptime_error, internal_error},
+    log::comptime_error,
 };
 
 pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
@@ -31,13 +31,9 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             let delta = engine
                 .read(frame, body, offset, range)
                 .and_then(|value| integer_value(value, range))?;
-            let delta = i64::try_from(delta).map_err(|_| {
-                internal_error(
-                    &mir::COMPTIME_INVALID_OPERATION,
-                    "pointer offset overflow".into(),
-                    "comptime pointer arithmetic",
-                )
-            })?;
+            let Ok(delta) = i64::try_from(delta) else {
+                return comptime_error(range.clone(), (&mir::COMPTIME_POINTER_OVERFLOW, ()));
+            };
             let delta = if matches!(op, P::Sub { .. }) {
                 delta.checked_neg()
             } else {
@@ -46,10 +42,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
             let Some(delta) = delta else {
                 return comptime_error(
                     range.clone(),
-                    (
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "pointer offset overflow".into(),
-                    ),
+                    (&mir::COMPTIME_POINTER_OVERFLOW, ()),
                 );
             };
             match pointer {
@@ -57,10 +50,7 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                     let Some(offset) = reference.offset.checked_add(delta) else {
                         return comptime_error(
                             range.clone(),
-                            (
-                                &mir::COMPTIME_INVALID_OPERATION,
-                                "pointer offset overflow".into(),
-                            ),
+                            (&mir::COMPTIME_POINTER_OVERFLOW, ()),
                         );
                     };
                     reference.offset = offset;
@@ -74,8 +64,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                         return comptime_error(
                             range.clone(),
                             (
-                                &mir::COMPTIME_INVALID_OPERATION,
-                                "pointer operation has a non-pointer result".into(),
+                                &mir::COMPTIME_INVARIANT,
+                                "a pointer operation with a non-pointer result".into(),
                             ),
                         );
                     };

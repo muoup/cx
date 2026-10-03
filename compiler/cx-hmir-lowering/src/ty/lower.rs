@@ -1,5 +1,5 @@
 use cx_hmir::HMIRAggregateKind;
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{MIRField, MIRFnParam, MIRFnSignature, MIRType, MIRTypeID, MIRTypeKind};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -23,7 +23,8 @@ pub(super) fn lower_type(
         TypeKind::Type | TypeKind::Expr { .. } => {
             return Err(staging_error(
                 span,
-                format!("comptime-only type '{}' used at runtime", types.display(ty)),
+                &typecheck::COMPTIME_ONLY_TYPE,
+                types.display(ty),
             ));
         }
         TypeKind::Str => MIRTypeKind::Str,

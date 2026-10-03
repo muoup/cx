@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use cx_hmir::{HMIRContract, HMIRDefKind, HMIRExprID};
+use cx_log::catalogue::typecheck;
 use cx_mir::{MIRInternalIntrinsic, MIRValue};
 
 use crate::{
@@ -45,7 +46,11 @@ fn lower_condition(
     let result = lower_scope(cx, &span, |cx| {
         let value = match lower_expr(cx, frame, condition, Expect::Any) {
             Err(Stop::Diverged) => {
-                return cx.error(&span, "function condition must produce a value");
+                return cx.error(
+                    &span,
+                    &typecheck::TYPE_REQUIREMENT,
+                    ("function condition".into(), "a value".into(), None),
+                );
             }
             result => result?,
         };
@@ -81,7 +86,8 @@ pub(super) fn check_contract(
                 if cx.program.types().is_void(cx.ret) {
                     return cx.error(
                         &cx.span(0, condition),
-                        "void function has no result to bind in its postcondition",
+                        &typecheck::VOID_POSTCONDITION_BINDING,
+                        (),
                     );
                 }
                 let value = inspect::binding(cx, cx.ret, &cx.span(0, condition))?;

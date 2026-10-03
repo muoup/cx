@@ -43,8 +43,8 @@ pub(super) fn integer(value: &MIRConstant, range: &TokenRange) -> CXResult<(u128
         _ => comptime_error(
             range.clone(),
             (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "non-integer arithmetic operand".into(),
+                &mir::COMPTIME_INVARIANT,
+                "a non-integer arithmetic operand".into(),
             ),
         ),
     }
@@ -56,8 +56,8 @@ pub(super) fn integer_value(value: MIRConstant, range: &TokenRange) -> CXResult<
         _ => comptime_error(
             range.clone(),
             (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "non-integer operand".into(),
+                &mir::COMPTIME_INVARIANT,
+                "a non-integer operand".into(),
             ),
         ),
     }
@@ -68,7 +68,7 @@ pub(super) fn float_value(value: MIRConstant, range: &TokenRange) -> CXResult<f6
         MIRConstant::Float { value, .. } => Ok(f64::from(&value)),
         _ => comptime_error(
             range.clone(),
-            (&mir::COMPTIME_INVALID_OPERATION, "non-float operand".into()),
+            (&mir::COMPTIME_INVARIANT, "a non-float operand".into()),
         ),
     }
 }

@@ -1,6 +1,6 @@
 use cx_log::{
     catalogue::{ErrorDefinition, backend},
-    error::{CXError, context::CXInternalContext, message::CXStdErrMessage},
+    error::{CXError, context::CXNoSourceContext, message::CXStdErrMessage},
 };
 use std::fmt::{Display, Formatter};
 
@@ -19,10 +19,7 @@ impl LLVMError {
     }
 
     pub(crate) fn from_error(error: impl Display) -> Self {
-        Self::new(
-            &backend::OPERATION_FAILED,
-            ("execute LLVM operation".into(), Some(error.to_string())),
-        )
+        Self::new(&backend::BUILDER_FAILED, ("LLVM".into(), error.to_string()))
     }
 }
 
@@ -36,14 +33,14 @@ impl LLVMError {
     pub(crate) fn complete(self, context: &str) -> CXError {
         CXError::new(
             CXStdErrMessage::error(self.code, self.message),
-            CXInternalContext::error(context),
+            CXNoSourceContext::error(context),
         )
     }
 }
 
 impl From<LLVMError> for CXError {
     fn from(error: LLVMError) -> Self {
-        error.complete("Internal error while generating LLVM; please report this issue.")
+        error.complete("while generating LLVM IR")
     }
 }
 

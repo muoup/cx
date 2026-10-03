@@ -12,13 +12,20 @@ dense_id!(HMIRExprID, "e");
 
 pub type HMIRIntrinsic = Intrinsic<HMIRExprID, HMIRExprID>;
 
+// A diagnostic found while lowering into HMIR, reported once staging reaches its expression
+#[derive(Debug, Clone)]
+pub struct HMIRError {
+    pub code: &'static str,
+    pub message: String,
+}
+
 #[derive(Debug, Clone)]
 pub enum HMIRExprKind {
     Constant(HMIRConstant),
     Local(HMIRLocalID),
     Def(HMIRDefRef),
     Hole(HMIRHoleID),
-    Error(Option<String>),
+    Error(HMIRError),
 
     Comptime(HMIRExprID),
     Quote {

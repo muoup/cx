@@ -10,7 +10,9 @@ pub use binding::{HMIRHole, HMIRHoleID, HMIRLocal, HMIRLocalID};
 pub use body::HMIRBody;
 pub use expr::HMIRConstant;
 pub use expr::aggregate::{HMIRAggregateOp, HMIRPattern};
-pub use expr::kind::{HMIRBlockKind, HMIRExpr, HMIRExprID, HMIRExprKind, HMIRIntrinsic};
+pub use expr::kind::{
+    HMIRBlockKind, HMIRError, HMIRExpr, HMIRExprID, HMIRExprKind, HMIRIntrinsic,
+};
 pub use expr::native_op::{
     HMIRBinaryOp, HMIRCoerceMode, HMIRControlOp, HMIRNativeOp, HMIROwnershipOp, HMIRUnaryOp,
 };

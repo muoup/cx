@@ -1,5 +1,5 @@
 use cx_hmir::{HMIRBlockKind, HMIRExprID};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -57,7 +57,7 @@ pub(super) fn check_condition(
 ) -> CXResult<()> {
     let span = frame.body().expr(condition).span().clone();
     if !static_condition(cx, frame, condition, &span)? {
-        return Err(staging_error(&span, message.into()));
+        return Err(staging_error(&span, &mir::COMPTIME_ASSERTION, Some(message.into())));
     }
     Ok(())
 }
@@ -82,7 +82,7 @@ pub(crate) fn while_loop(
             flow => return Ok(flow),
         }
     }
-    Err(staging_error(span, "comptime loop limit exceeded".into()))
+    Err(staging_error(span, &mir::COMPTIME_LOOP_LIMIT, LOOP_LIMIT))
 }
 
 pub(crate) fn for_loop(
@@ -106,5 +106,5 @@ pub(crate) fn for_loop(
         }
         eval(cx, frame, increment, None)?;
     }
-    Err(staging_error(span, "comptime loop limit exceeded".into()))
+    Err(staging_error(span, &mir::COMPTIME_LOOP_LIMIT, LOOP_LIMIT))
 }

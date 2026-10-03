@@ -62,14 +62,14 @@ impl LexingContext {
     ) -> CXResult<Self> {
         let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
         let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
-            crate::log::internal_error(
+            crate::log::no_source_error(
                 &READ_FILE,
                 (
                     "internal builtin header".into(),
                     builtin_path.display().to_string(),
                     e.to_string(),
                 ),
-                "failed to initialize lexer builtin source",
+                "the cx library could not be found; set CX_HOME to the directory containing its 'lib' folder",
             )
         })?;
 

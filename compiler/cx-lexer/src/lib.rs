@@ -31,7 +31,7 @@ pub fn lex_with_context(
 
 pub fn lex_file(source_path: &Path, include_dirs: &[PathBuf]) -> CXResult<Vec<Token>> {
     let source = std::fs::read_to_string(source_path).map_err(|e| {
-        crate::log::internal_error(
+        crate::log::no_source_error(
             &READ_FILE,
             (
                 "source file".into(),

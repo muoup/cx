@@ -16,7 +16,7 @@ use cx_hmir::{
 };
 use cx_log::{
     CXResult,
-    catalogue::mir,
+    catalogue::{ErrorDefinition, mir, typecheck},
     error::{CXError, context::from_token_range},
 };
 use cx_mir::{
@@ -182,7 +182,11 @@ pub(crate) fn lower_function(
     let def = unit.def(instance.0.def());
     let span = def.span().clone();
     let HMIRDefKind::Function(function) = def.kind() else {
-        return Err(staging_error(&span, "lowered a non-function".into()));
+        return Err(staging_error(
+            &span,
+            &mir::UNEXPECTED_DEF,
+            (def.name().to_string(), "a function".into()),
+        ));
     };
     let root = function.root().expect("queued functions have a body");
     let signature = eval_signature(cx, instance, &span)?;
@@ -308,8 +312,13 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         self.frames[frame].body().expr(id).kind().clone()
     }
 
-    fn error<T>(&self, span: &TokenRange, message: impl Into<String>) -> LowerResult<T> {
-        Err(Stop::Error(staging_error(span, message.into())))
+    fn error<T, A>(
+        &self,
+        span: &TokenRange,
+        definition: &ErrorDefinition<A>,
+        args: A,
+    ) -> LowerResult<T> {
+        Err(Stop::Error(staging_error(span, definition, args)))
     }
 
     pub(crate) fn require_mutable(
@@ -322,7 +331,8 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         if types.is_const(ty) {
             return self.error(
                 span,
-                format!("cannot {action} a value of type '{}'", types.display(ty)),
+                &typecheck::MUTATE_CONST,
+                (action.into(), types.display(ty)),
             );
         }
         Ok(())
@@ -332,13 +342,7 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         if !self.safe || self.unsafe_depth > 0 {
             return Ok(());
         }
-        self.error(
-            span,
-            format!(
-                "{operation} is unsafe and so cannot be used in safe contexts, wrap this \
-                 expression in an `@unsafe` block to bypass this restriction"
-            ),
-        )
+        self.error(span, &typecheck::UNSAFE_OPERATION, operation.into())
     }
 
     pub(crate) fn emit(&mut self, kind: MIRInstructionKind, span: &TokenRange) {
@@ -435,7 +439,11 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         span: &TokenRange,
     ) -> LowerResult<MIRPlaceID> {
         if let Some(problem) = self.program.types().object_problem(ty) {
-            return self.error(span, format!("variable has {problem}"));
+            return self.error(
+                span,
+                &typecheck::INVALID_OBJECT_TYPE,
+                ("variable".into(), problem.into()),
+            );
         }
         let mir = self.mir(ty, span)?;
         let nodrop = self.program.types().is_nodrop(ty);
@@ -565,7 +573,8 @@ fn lower_cleanup_scope(
             let span = cx.span(frame, expr);
             cx.error(
                 &span,
-                format!("defer requires a void expression, found '{found}'"),
+                &typecheck::TYPE_REQUIREMENT,
+                ("defer".into(), "a void expression".into(), Some(format!("'{found}'"))),
             )
         });
         let popped = cx.pop_scope(span);
@@ -598,24 +607,24 @@ pub(crate) fn lower_return(
     span: &TokenRange,
 ) -> LowerResult<()> {
     if cx.defer_boundary.is_some() {
-        return cx.error(span, "cannot return from a deferred expression");
+        return cx.error(span, &typecheck::DEFER_JUMP, "return".into());
     }
     if !cx.check_return {
         cx.emit(MIRInstructionKind::Unreachable, span);
         return Err(Stop::Diverged);
     }
     if cx.program.types().is_unreachable(cx.ret) {
-        return cx.error(span, "cannot return from an unreachable-returning function");
+        return cx.error(span, &typecheck::NORETURN_RETURN, ());
     }
     if value.is_none() && !cx.program.types().is_void(cx.ret) {
-        return cx.error(span, "return requires a value in a non-void function");
+        return cx.error(span, &typecheck::MISSING_RETURN_VALUE, ());
     }
     if value
         .as_ref()
         .is_some_and(|value| !cx.program.types().is_void(value.ty()))
         && cx.program.types().is_void(cx.ret)
     {
-        return cx.error(span, "cannot return a value from a void function");
+        return cx.error(span, &typecheck::VOID_RETURN_VALUE, ());
     }
     let value = match value {
         Some(value) if !cx.program.types().is_void(cx.ret) => {

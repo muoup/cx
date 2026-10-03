@@ -9,7 +9,10 @@ use cx_hir::{
     registry::{ExportNameMode, GlobalSymbolRegistry},
     symbols::{HIRSymbol, HIRSymbolKind, TypeConstructorData},
 };
-use cx_hmir::{HMIRDef, HMIRDefID, HMIRDefRef, HMIRFloatWidth, HMIRIntWidth, HMIRTypeDesc};
+use cx_hmir::{
+    HMIRDef, HMIRDefID, HMIRDefRef, HMIRError, HMIRFloatWidth, HMIRIntWidth, HMIRTypeDesc,
+};
+use cx_log::catalogue::typecheck;
 use cx_namespace::{
     lookup::{QualifiedLookup, QualifiedLookupResult},
     mangling::mangle_namespace_symbol,
@@ -17,6 +20,8 @@ use cx_namespace::{
 };
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
+
+use crate::body::hmir_error;
 
 pub(crate) struct Resolver<'a> {
     registry: &'a GlobalSymbolRegistry,
@@ -35,7 +40,7 @@ pub(crate) enum GlobalSymbol {
     ComptimeFunction(HMIRDefRef, bool, Vec<bool>),
     Constructor(TypeConstructorData, CXIdent, HMIRDefRef),
     Primitive(HMIRTypeDesc),
-    Invalid(String),
+    Invalid(HMIRError),
 }
 
 struct RegistryLookup<'a> {
@@ -178,8 +183,9 @@ impl<'a> Resolver<'a> {
                 if let Some(tag) = tag
                     && value.iter().any(|symbol| symbol.tag != Some(tag))
                 {
-                    return GlobalSymbol::Invalid(format!(
-                        "incompatible tag declarations for '{resolved_name}'"
+                    return GlobalSymbol::Invalid(hmir_error(
+                        &typecheck::INCOMPATIBLE_TAG,
+                        resolved_name.to_string(),
                     ));
                 }
                 self.symbol(resolved_name, value)
@@ -220,8 +226,8 @@ impl<'a> Resolver<'a> {
                     {
                         GlobalSymbol::Def(HMIRDefRef::Candidates(defs))
                     }
-                    _ => GlobalSymbol::Invalid(format!(
-                        "ambiguous symbol reference, candidates: {}",
+                    _ => GlobalSymbol::Invalid(hmir_error(
+                        &typecheck::AMBIGUOUS_SYMBOL,
                         candidates
                             .iter()
                             .map(ToString::to_string)

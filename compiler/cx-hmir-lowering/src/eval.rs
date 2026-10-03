@@ -15,7 +15,11 @@ use cx_hmir::{
     HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRIntWidth,
     HMIRLocalID, HMIRNativeOp, HMIROwnershipOp, HMIRPattern, HMIRTypeOp, HMIRUnit,
 };
-use cx_log::CXResult;
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+    error::CXError,
+};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
@@ -211,7 +215,8 @@ pub(crate) fn eval_signature(
     let HMIRDefKind::Function(function) = def.kind() else {
         return Err(staging_error(
             span,
-            format!("'{}' is not a function", def.name()),
+            &typecheck::UNEXPECTED_KIND,
+            (format!("'{}'", def.name()), "a function".into()),
         ));
     };
     check_variadic(function, span)?;
@@ -271,7 +276,7 @@ pub(crate) fn eval_global_type(
     }
     let unit = cx.unit(key.unit());
     let HMIRDefKind::Global(global) = unit.def(key.def()).kind() else {
-        return Err(staging_error(span, "expected a global".into()));
+        return Err(not_a_global(&unit, key, span));
     };
     let mut frame = EvalFrame::new(unit.clone(), key, Rc::new((key, Vec::new())));
     let mut ty = eval_type(cx, &mut frame, global.ty())?;
@@ -346,15 +351,24 @@ fn read_global(
     }
     let unit = cx.unit(key.unit());
     let HMIRDefKind::Global(global) = unit.def(key.def()).kind() else {
-        return Err(staging_error(span, "expected a global".into()));
+        return Err(not_a_global(&unit, key, span));
     };
     match global.initializer() {
         Some(initializer) => eval_global_initializer(cx, key, initializer, ty, span),
         None => Err(staging_error(
             span,
-            "global without an initializer read at compile time".into(),
+            &mir::COMPTIME_UNAVAILABLE,
+            format!("'{}', which has no initializer,", unit.def(key.def()).name()),
         )),
     }
+}
+
+fn not_a_global(unit: &HMIRUnit, key: DefKey, span: &TokenRange) -> CXError {
+    staging_error(
+        span,
+        &mir::UNEXPECTED_DEF,
+        (unit.def(key.def()).name().to_string(), "a global".into()),
+    )
 }
 
 #[derive(PartialEq)]
@@ -433,8 +447,8 @@ pub(crate) fn check_redeclaration(
 ) -> CXResult<()> {
     let unit = cx.unit(first.unit());
     let name = unit.def(first.def()).name();
-    let incompatible = || staging_error(span, format!("incompatible declarations for '{name}'"));
-    let duplicate = || staging_error(span, format!("duplicate definition of '{name}'"));
+    let incompatible = || staging_error(span, &typecheck::INCOMPATIBLE_DECLARATION, name.to_string());
+    let duplicate = || staging_error(span, &typecheck::REDEFINITION, name.to_string());
     match (unit.def(first.def()).kind(), unit.def(other.def()).kind()) {
         (HMIRDefKind::Function(left), HMIRDefKind::Function(right)) => {
             if left.root().is_some() && right.root().is_some() {
@@ -507,10 +521,7 @@ pub(crate) fn equivalent_def(
             .map(|key| cx.def_name(*key).to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        return Err(staging_error(
-            span,
-            format!("ambiguous symbol reference, candidates: {candidates}"),
-        ));
+        return Err(staging_error(span, &typecheck::AMBIGUOUS_SYMBOL, candidates));
     }
     Ok(definition.unwrap_or(keys[0]))
 }
@@ -541,7 +552,8 @@ pub(crate) fn def_value(
             if reentry && !cx.reentered_mut().insert(instance.clone()) {
                 return Err(staging_error(
                     span,
-                    format!("'{}' depends on itself", def.name()),
+                    &mir::DEPENDENCY_CYCLE,
+                    def.name().to_string(),
                 ));
             }
             let mut frame = EvalFrame::new(unit.clone(), key, Rc::new(instance.clone()));
@@ -573,7 +585,8 @@ pub(crate) fn check_variadic(function: &HMIRFunction, span: &TokenRange) -> CXRe
     if function.signature().contract().is_safe() && function.signature().is_variadic() {
         return Err(staging_error(
             span,
-            "varargs are not allowed in a safe function".into(),
+            &typecheck::INVALID_CONTEXT,
+            ("varargs".into(), "a safe function".into()),
         ));
     }
     Ok(())
@@ -590,14 +603,16 @@ pub(crate) fn call_static(
     let StaticValue::Function { def, args: bound } = callee else {
         return Err(staging_error(
             span,
-            "called a non-function at compile time".into(),
+            &typecheck::UNEXPECTED_KIND,
+            ("called value".into(), "a function".into()),
         ));
     };
     let unit = cx.unit(def.unit());
     let HMIRDefKind::Function(function) = unit.def(def.def()).kind() else {
         return Err(staging_error(
             span,
-            "called a non-function at compile time".into(),
+            &mir::UNEXPECTED_DEF,
+            (unit.def(def.def()).name().to_string(), "a function".into()),
         ));
     };
     check_variadic(function, span)?;
@@ -611,17 +626,20 @@ pub(crate) fn call_static(
     if all.len() != params.len() && !curried {
         return Err(staging_error(
             span,
-            format!(
-                "'{}' expects {} arguments, found {}",
-                unit.def(def.def()).name(),
+            &typecheck::ARGUMENT_COUNT,
+            (
+                format!("'{}'", unit.def(def.def()).name()),
                 params.len(),
-                all.len()
+                all.len(),
+                false,
             ),
         ));
     }
     let all = match all.iter().cloned().collect::<Option<Vec<_>>>() {
         Some(all) => all,
-        None if curried => return Err(staging_error(span, "cannot infer this type".into())),
+        None if curried => {
+            return Err(staging_error(span, &typecheck::CANNOT_INFER, "this type".into()));
+        }
         None => deduce_static(cx, def, all, span)?,
     };
     if curried {
@@ -630,7 +648,8 @@ pub(crate) fn call_static(
     let Some(root) = function.root() else {
         return Err(staging_error(
             span,
-            format!("'{}' has no body to evaluate", unit.def(def.def()).name()),
+            &mir::COMPTIME_NO_BODY,
+            unit.def(def.def()).name().to_string(),
         ));
     };
 
@@ -644,7 +663,8 @@ pub(crate) fn call_static(
     if memoize && !cx.active_mut().insert(instance.clone()) {
         return Err(staging_error(
             span,
-            format!("'{}' depends on itself", unit.def(def.def()).name()),
+            &mir::DEPENDENCY_CYCLE,
+            unit.def(def.def()).name().to_string(),
         ));
     }
 
@@ -661,7 +681,7 @@ pub(crate) fn call_static(
         }
         frame.ret = eval_type_hint(cx, &mut frame, function.signature().return_type())?;
         if let Some(condition) = function.signature().contract().precondition() {
-            control::check_condition(cx, &mut frame, condition, "Precondition failed")?;
+            control::check_condition(cx, &mut frame, condition, "precondition failed")?;
         }
         let result = exec(cx, &mut frame, root, None);
         let value = match result? {
@@ -672,16 +692,14 @@ pub(crate) fn call_static(
             _ => {
                 return Err(staging_error(
                     span,
-                    "loop control escaped a function".into(),
+                    &typecheck::REQUIRED_CONTEXT,
+                    ("'break' or 'continue'".into(), "a loop".into()),
                 ));
             }
         };
         let value = match frame.ret {
             Some(ty) if cx.types().is_void(ty) && value != StaticValue::Unit => {
-                return Err(staging_error(
-                    span,
-                    "cannot return a value from a void function".into(),
-                ));
+                return Err(staging_error(span, &typecheck::VOID_RETURN_VALUE, ()));
             }
             Some(ty) => coerce_static(cx, value, ty, span)?,
             _ => value,
@@ -690,7 +708,7 @@ pub(crate) fn call_static(
             if let Some(binding) = binding {
                 frame.bind(binding, value.clone());
             }
-            control::check_condition(cx, &mut frame, condition, "Postcondition failed")?;
+            control::check_condition(cx, &mut frame, condition, "postcondition failed")?;
         }
         Ok(value)
     })();
@@ -714,10 +732,7 @@ pub(crate) fn eval(
         Flow::Normal(value) => Ok(value),
         _ => {
             let span = frame.body().expr(id).span().clone();
-            Err(staging_error(
-                &span,
-                "control flow escaped a comptime expression".into(),
-            ))
+            Err(staging_error(&span, &mir::COMPTIME_CONTROL_ESCAPE, ()))
         }
     }
 }
@@ -735,7 +750,8 @@ pub(crate) fn eval_type(
             let span = frame.body().expr(id).span().clone();
             Err(staging_error(
                 &span,
-                format!("expected a type, found {}", other.describe()),
+                &typecheck::EXPECTED_TYPE,
+                other.describe().into(),
             ))
         }
     }
@@ -774,7 +790,13 @@ pub(crate) fn static_condition(
 ) -> CXResult<bool> {
     eval(cx, frame, condition, None)?
         .is_truthy()
-        .ok_or_else(|| staging_error(span, "condition is not a compile-time boolean".into()))
+        .ok_or_else(|| {
+            staging_error(
+                span,
+                &mir::EXPECTED_CONSTANT,
+                ("condition".into(), "boolean".into()),
+            )
+        })
 }
 
 pub(crate) fn exec_native(
@@ -815,7 +837,7 @@ pub(crate) fn exec_native(
             match (mode, target) {
                 (HMIRCoerceMode::Truthy, _) => {
                     let truthy = value.is_truthy().ok_or_else(|| {
-                        staging_error(span, "value has no compile-time truthiness".into())
+                        staging_error(span, &mir::COMPTIME_NO_TRUTH_VALUE, value.describe().into())
                     })?;
                     StaticValue::bool(truthy, cx.types_mut())
                 }
@@ -827,14 +849,15 @@ pub(crate) fn exec_native(
             let Some(local) = frame.as_local(*target) else {
                 return Err(staging_error(
                     span,
-                    "comptime assignment to a non-local".into(),
+                    &mir::COMPTIME_INVALID_OPERATION,
+                    "assigning to a value that is not a local".into(),
                 ));
             };
             let mut value = eval(cx, frame, *value, None)?;
             let current = frame.locals.get(&local).cloned();
             if let Some(op) = op {
                 let current = current.clone().ok_or_else(|| {
-                    staging_error(span, "compound assignment to an unset local".into())
+                    staging_error(span, &mir::COMPTIME_UNSET, "assigned local".into())
                 })?;
                 value = fold_binary(cx, *op, current, value, span)?;
             }
@@ -863,10 +886,7 @@ pub(crate) fn exec_native(
             return Ok(match control {
                 HMIRControlOp::Return(value) => {
                     if value.is_some() && frame.ret.is_some_and(|ret| cx.types().is_void(ret)) {
-                        return Err(staging_error(
-                            span,
-                            "cannot return a value from a void function".into(),
-                        ));
+                        return Err(staging_error(span, &typecheck::VOID_RETURN_VALUE, ()));
                     }
                     let returned = match value {
                         Some(value) => eval(cx, frame, *value, frame.ret)?,
@@ -874,22 +894,17 @@ pub(crate) fn exec_native(
                     };
                     if let Some(ret) = frame.ret {
                         if cx.types().is_unreachable(ret) {
-                            return Err(staging_error(
-                                span,
-                                "cannot return from an unreachable-returning function".into(),
-                            ));
+                            return Err(staging_error(span, &typecheck::NORETURN_RETURN, ()));
                         }
                         if value.is_none() && !cx.types().is_void(ret) {
                             return Err(staging_error(
                                 span,
-                                "return requires a value in a non-void function".into(),
+                                &typecheck::MISSING_RETURN_VALUE,
+                                (),
                             ));
                         }
                         if cx.types().is_void(ret) && returned != StaticValue::Unit {
-                            return Err(staging_error(
-                                span,
-                                "cannot return a value from a void function".into(),
-                            ));
+                            return Err(staging_error(span, &typecheck::VOID_RETURN_VALUE, ()));
                         }
                     }
                     Flow::Return(returned)
@@ -904,7 +919,8 @@ pub(crate) fn exec_native(
                 HMIRControlOp::Goto(_) | HMIRControlOp::Defer(_) | HMIRControlOp::Unreachable => {
                     return Err(staging_error(
                         span,
-                        format!("'{}' at compile time", control.path()),
+                        &mir::COMPTIME_INVALID_OPERATION,
+                        format!("'{}'", control.path()),
                     ));
                 }
             });
@@ -918,7 +934,8 @@ pub(crate) fn exec_native(
             HMIROwnershipOp::Allocate(_) | HMIROwnershipOp::Adopt(_) => {
                 return Err(staging_error(
                     span,
-                    format!("'{}' at compile time", op.path()),
+                    &mir::COMPTIME_INVALID_OPERATION,
+                    format!("'{}'", op.path()),
                 ));
             }
         },
@@ -939,28 +956,30 @@ fn exec_aggregate(
             let ty = match eval_type_hint(cx, frame, *ty)? {
                 Some(ty) => ty,
                 None => expect.ok_or_else(|| {
-                    staging_error(span, "cannot infer the initializer's type".into())
+                    staging_error(span, &typecheck::CANNOT_INFER, "the initializer's type".into())
                 })?,
             };
             static_initializer(cx, frame, ty, fields, span)
         }
         HMIRAggregateOp::Unpack { value, bindings } => {
             let StaticValue::Aggregate { ty, fields } = eval(cx, frame, *value, None)? else {
-                return Err(staging_error(
-                    span,
-                    "@unpack takes an owned structure".into(),
-                ));
+                return Err(staging_error(span, &typecheck::UNPACK_OWNED, None));
             };
             for (name, local) in bindings {
-                let (index, _) = cx
-                    .types()
-                    .field(ty, name.as_str())
-                    .ok_or_else(|| staging_error(span, format!("no member '{name}'")))?;
+                let (index, _) = cx.types().field(ty, name.as_str()).ok_or_else(|| {
+                    staging_error(
+                        span,
+                        &typecheck::UNKNOWN_MEMBER,
+                        (cx.types().display(ty), name.to_string()),
+                    )
+                })?;
                 let value = fields
                     .iter()
                     .find(|(field, _)| *field == index)
                     .map(|(_, value)| value.clone())
-                    .ok_or_else(|| staging_error(span, format!("member '{name}' is not set")))?;
+                    .ok_or_else(|| {
+                        staging_error(span, &mir::COMPTIME_UNSET, format!("member '{name}'"))
+                    })?;
                 frame.bind(*local, value);
             }
             Ok(StaticValue::Unit)
@@ -970,18 +989,22 @@ fn exec_aggregate(
             let StaticValue::Aggregate { ty, fields } = read_global(cx, base, span)? else {
                 return Err(staging_error(
                     span,
-                    format!("no compile-time member '{name}'"),
+                    &mir::COMPTIME_INVALID_OPERATION,
+                    format!("accessing member '{name}' of this value"),
                 ));
             };
-            let (index, _) = cx
-                .types()
-                .field(ty, name.as_str())
-                .ok_or_else(|| staging_error(span, format!("no member '{name}'")))?;
+            let (index, _) = cx.types().field(ty, name.as_str()).ok_or_else(|| {
+                staging_error(
+                    span,
+                    &typecheck::UNKNOWN_MEMBER,
+                    (cx.types().display(ty), name.to_string()),
+                )
+            })?;
             fields
                 .into_iter()
                 .find(|(field, _)| *field == index)
                 .map(|(_, value)| value)
-                .ok_or_else(|| staging_error(span, format!("member '{name}' is not set")))
+                .ok_or_else(|| staging_error(span, &mir::COMPTIME_UNSET, format!("member '{name}'")))
         }
         HMIRAggregateOp::Index { base, index } => {
             let base = eval(cx, frame, *base, None)?;
@@ -991,23 +1014,30 @@ fn exec_aggregate(
                     .into_iter()
                     .find(|(field, _)| *field as i128 == index)
                     .map(|(_, value)| value)
-                    .ok_or_else(|| staging_error(span, "index out of bounds".into())),
+                    .ok_or_else(|| {
+                        staging_error(
+                            span,
+                            &mir::INDEX_BOUNDS,
+                            ("array".into(), index.to_string()),
+                        )
+                    }),
                 (StaticValue::Str(string), Some(index)) => {
                     let byte = string.as_bytes().get(index as usize).copied().unwrap_or(0);
                     let char = cx.types_mut().int(HMIRIntWidth::I8, true);
                     Ok(StaticValue::int(byte as i128, char))
                 }
-                _ => Err(staging_error(span, "compile-time index".into())),
+                _ => Err(staging_error(
+                    span,
+                    &mir::COMPTIME_INVALID_OPERATION,
+                    "indexing this value".into(),
+                )),
             }
         }
         HMIRAggregateOp::Is { value, pattern } => {
             let value = eval(cx, frame, *value, None)?;
             let ty = eval_static_type(cx, &value, span)?;
             if cx.types().is_pointer(ty) {
-                return Err(staging_error(
-                    span,
-                    "pattern subject is a pointer; dereference it explicitly".into(),
-                ));
+                return Err(staging_error(span, &typecheck::POINTER_PATTERN, ()));
             }
             let matched = match (pattern, &value) {
                 (HMIRPattern::Integer(expected), StaticValue::Int { value, .. }) => {
@@ -1018,7 +1048,13 @@ fn exec_aggregate(
                     fields.first().is_some_and(|(field, _)| *field == index)
                 }
                 (HMIRPattern::Binding(_), _) => true,
-                _ => return Err(staging_error(span, "compile-time pattern test".into())),
+                _ => {
+                    return Err(staging_error(
+                        span,
+                        &mir::COMPTIME_INVALID_OPERATION,
+                        "testing this pattern".into(),
+                    ));
+                }
             };
             Ok(StaticValue::bool(matched, cx.types_mut()))
         }
@@ -1049,7 +1085,13 @@ fn static_initializer(
                 .types()
                 .field(ty, name.as_str())
                 .map(|(index, _)| index)
-                .ok_or_else(|| staging_error(span, format!("no member '{name}'")))?,
+                .ok_or_else(|| {
+                    staging_error(
+                        span,
+                        &typecheck::UNKNOWN_MEMBER,
+                        (cx.types().display(ty), name.to_string()),
+                    )
+                })?,
             None => next,
         };
         let member = member_type(cx, ty, index, span)?;
@@ -1095,14 +1137,26 @@ fn static_address(
         let base = static_address(cx, frame, *base, span)?;
         let index = eval(cx, frame, *index, None)?
             .as_int()
-            .ok_or_else(|| staging_error(span, "non-constant index".into()))?;
+            .ok_or_else(|| {
+                staging_error(
+                    span,
+                    &mir::EXPECTED_CONSTANT,
+                    ("index".into(), "integer".into()),
+                )
+            })?;
         if let StaticValue::GlobalAddress { def, offset, ty } = base {
             let element = match cx.types().kind(ty).clone() {
                 TypeKind::Pointer(array) => match cx.types().kind(array).clone() {
                     TypeKind::Array { element, .. } => element,
                     _ => array,
                 },
-                _ => return Err(staging_error(span, "address of a non-pointer".into())),
+                _ => {
+                    return Err(staging_error(
+                        span,
+                        &mir::COMPTIME_INVALID_OPERATION,
+                        "indexing this address".into(),
+                    ));
+                }
             };
             let size = cx.types_mut().size_of(element, span)? as i64;
             return Ok(StaticValue::GlobalAddress {
@@ -1111,7 +1165,11 @@ fn static_address(
                 ty: cx.types_mut().pointer_to(element),
             });
         }
-        return Err(staging_error(span, "compile-time address".into()));
+        return Err(staging_error(
+            span,
+            &mir::COMPTIME_INVALID_OPERATION,
+            "taking this address".into(),
+        ));
     }
     match eval(cx, frame, inner, None)? {
         StaticValue::Global(def) => {
@@ -1123,7 +1181,11 @@ fn static_address(
             })
         }
         function @ StaticValue::Function { .. } => Ok(function),
-        _ => Err(staging_error(span, "compile-time address".into())),
+        _ => Err(staging_error(
+            span,
+            &mir::COMPTIME_INVALID_OPERATION,
+            "taking this address".into(),
+        )),
     }
 }
 
@@ -1169,7 +1231,13 @@ pub(crate) fn eval_static_type(
         StaticValue::Function { def, args } => eval_function_type(cx, &(*def, args.clone()), span),
         StaticValue::Global(def) => eval_global_type(cx, *def, span),
         StaticValue::Quote(quote) => eval_quote_type(cx, quote.get())
-            .ok_or_else(|| staging_error(span, "cannot infer the quoted expression's type".into())),
+            .ok_or_else(|| {
+                staging_error(
+                    span,
+                    &typecheck::CANNOT_INFER,
+                    "the quoted expression's type".into(),
+                )
+            }),
         _ => unreachable!("simple_type covers the remaining values"),
     }
 }

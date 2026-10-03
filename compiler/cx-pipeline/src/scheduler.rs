@@ -46,11 +46,9 @@ pub(crate) fn scheduling_loop_many(
 
     let mut compilation_exists = HashMap::new();
 
-    let initial_jobs = initial_jobs.into_iter().collect::<Vec<_>>();
-    for initial_job in initial_jobs.iter().cloned() {
+    for initial_job in initial_jobs {
         queue.push_job(initial_job);
     }
-    reporter.add_total(initial_jobs.len());
 
     // TODO: Parallelize this loop
     'queue: while !queue.is_empty() {
@@ -82,7 +80,6 @@ pub(crate) fn scheduling_loop_many(
             }
 
             reporter.skip_step(&job.unit.to_string());
-            reporter.complete_step();
             queue.complete_all_unit_jobs(&job.unit);
             context
                 .linking_files
@@ -112,11 +109,8 @@ pub(crate) fn scheduling_loop_many(
         let retain_lmir = context.config.compilation_mode == CompilationMode::Library;
 
         for new_jobs in handle_job(context, job, retain_lmir)?.into_iter() {
-            reporter.add_total(1);
             queue.push_new_job(new_jobs);
         }
-
-        reporter.complete_step();
 
         if is_codegen {
             reporter.increment_modules();

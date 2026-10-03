@@ -7,7 +7,10 @@ use cx_hmir::{
     HMIRBody, HMIRConstant, HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRFnTypeDesc,
     HMIRTypeDesc, HMIRTypeID, HMIRUnit,
 };
-use cx_log::CXResult;
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_namespace::module::QualifiedName;
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
@@ -189,7 +192,7 @@ impl<'l> Program<'l> {
             HMIRDefRef::Local(id) => Ok(DefKey::new(unit, *id)),
             HMIRDefRef::External(name) => self
                 .external(name)
-                .ok_or_else(|| staging_error(span, format!("unresolved symbol '{name}'"))),
+                .ok_or_else(|| staging_error(span, &typecheck::UNKNOWN_SYMBOL, name.to_string())),
             HMIRDefRef::Candidates(candidates) => {
                 let mut keys = Vec::new();
                 for candidate in candidates {
@@ -266,7 +269,7 @@ impl<'l> Program<'l> {
             },
             HMIRTypeDesc::Opaque { size, alignment } => TypeKind::Opaque { size, alignment },
             HMIRTypeDesc::Nominal(_) => {
-                return Err(staging_error(span, "interned nominal types".into()));
+                return Err(staging_error(span, &mir::UNRESOLVED_NOMINAL, ()));
             }
         };
         let id = self.types.intern(kind);

@@ -1,4 +1,5 @@
 use cx_hmir::{HMIRCoerceMode, HMIRExprID, HMIRIntWidth};
+use cx_log::catalogue::{mir, typecheck};
 use cx_mir::{
     MIRAggregateIntrinsic, MIRConstant, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic,
     MIRPtrIntrinsic, MIRTarget, MIRValue,
@@ -161,10 +162,8 @@ pub(super) fn lower_truthy(
         _ => {
             return cx.error(
                 span,
-                format!(
-                    "'{}' has no truth value",
-                    cx.program.types().display(source_ty)
-                ),
+                &typecheck::NO_TRUTH_VALUE,
+                cx.program.types().display(source_ty),
             );
         }
     }
@@ -211,11 +210,8 @@ pub(crate) fn lower_convert(
     if discards_nodrop_result(types, source, target) {
         return cx.error(
             span,
-            format!(
-                "cannot convert '{}' to '{}': the @nodrop result would be discarded",
-                types.display(source),
-                types.display(target)
-            ),
+            &typecheck::DISCARDED_NODROP,
+            (types.display(source), types.display(target)),
         );
     }
 
@@ -249,7 +245,11 @@ pub(crate) fn lower_convert(
         }
         (_, TypeKind::Reference(inner)) if same(cx, *inner, source) => {
             if operand.bitfield().is_some() {
-                return cx.error(span, "cannot bind a reference to a bitfield");
+                return cx.error(
+                    span,
+                    &typecheck::BITFIELD_REFERENCE,
+                    "bind a reference to".into(),
+                );
             }
             let operand = lower_spill(cx, operand, span)?;
             let address = operand.address().expect("spilled operand is addressable");
@@ -268,10 +268,10 @@ pub(crate) fn lower_convert(
             }
             return cx.error(
                 span,
-                format!(
-                    "cannot convert '{}' to '{}'",
-                    cx.program.types().display(source),
-                    cx.program.types().display(target)
+                &typecheck::INVALID_CONVERSION,
+                (
+                    format!("'{}'", cx.program.types().display(source)),
+                    cx.program.types().display(target),
                 ),
             );
         }
@@ -447,10 +447,10 @@ pub(crate) fn lower_convert(
     }
     cx.error(
         span,
-        format!(
-            "cannot convert '{}' to '{}'",
-            cx.program.types().display(source),
-            cx.program.types().display(target)
+        &typecheck::INVALID_CONVERSION,
+        (
+            format!("'{}'", cx.program.types().display(source)),
+            cx.program.types().display(target),
         ),
     )
 }
@@ -463,11 +463,19 @@ fn lower_string_array(
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let Some(StaticValue::Str(string)) = operand.as_static().cloned() else {
-        return cx.error(span, "array initialized from a non-constant string");
+        return cx.error(
+            span,
+            &mir::EXPECTED_CONSTANT,
+            ("array initializer".into(), "string".into()),
+        );
     };
     let length = length.unwrap_or(string.len() as u64 + 1) as usize;
     if string.len() > length {
-        return cx.error(span, "string is longer than its array");
+        return cx.error(
+            span,
+            &typecheck::INITIALIZER_LIMIT,
+            ("string".into(), Some(length)),
+        );
     }
     let mut fields = string
         .bytes()

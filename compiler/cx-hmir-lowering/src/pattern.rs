@@ -1,5 +1,5 @@
 use cx_hmir::{HMIRAggregateKind, HMIRPattern};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -36,10 +36,7 @@ pub(crate) fn match_cases<'a>(
             .is_some_and(|names| (0..names.len()).all(|index| cases.contains(&Some(index as i128))))
     };
     let unreachable = || {
-        staging_error(
-            span,
-            "unreachable match arm: this pattern is already covered by a previous arm".into(),
-        )
+        staging_error(span, &typecheck::UNREACHABLE_MATCH_ARM, ())
     };
     for pattern in patterns {
         if caught || covered(&cases) {
@@ -60,26 +57,16 @@ pub(crate) fn match_cases<'a>(
             )?
             .as_int()
             .ok_or_else(|| {
-                staging_error(
-                    span,
-                    "value pattern is not an integer constant; bind the value with 'auto name'"
-                        .into(),
-                )
+                staging_error(span, &typecheck::VALUE_PATTERN_CONSTANT, ())
             })?,
             HMIRPattern::Variant { name, .. } if variants.is_some() => {
                 variant_index(cx, ty, name, span)? as i128
             }
             HMIRPattern::Float(_) => {
-                return Err(staging_error(
-                    span,
-                    "floating patterns cannot be matched by cases".into(),
-                ));
+                return Err(staging_error(span, &typecheck::FLOATING_CASE, ()));
             }
             _ => {
-                return Err(staging_error(
-                    span,
-                    "pattern does not fit the matched value".into(),
-                ));
+                return Err(staging_error(span, &typecheck::INVALID_PATTERN, ()));
             }
         };
         if cases.contains(&Some(case)) {
@@ -95,17 +82,8 @@ pub(crate) fn match_cases<'a>(
             .filter(|(index, _)| !cases.contains(&Some(*index as i128)))
             .filter_map(|(_, name)| name.as_ref().map(ToString::to_string))
             .collect::<Vec<_>>();
-        let missing = if missing.is_empty() {
-            String::new()
-        } else {
-            format!("; missing variants: {}", missing.join(", "))
-        };
-        return Err(staging_error(
-            span,
-            format!(
-                "match must be exhaustive{missing}; add the missing arms or a catch-all binding such as '_ => ...'"
-            ),
-        ));
+        let missing = (!missing.is_empty()).then(|| missing.join(", "));
+        return Err(staging_error(span, &typecheck::NONEXHAUSTIVE_MATCH, missing));
     }
     Ok(cases)
 }

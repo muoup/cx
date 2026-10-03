@@ -11,7 +11,7 @@ use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
 use cx_lmir::{LMIRABISlot, LMIRFunctionSignature};
 use cx_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
 use cx_log::catalogue::backend::*;
-use cx_log::error::context::CXInternalContext;
+use cx_log::error::context::CXNoSourceContext;
 use cx_log::error::CXError;
 use cx_log::{CXRawResult, CXResult};
 use cx_target::ArchitectureConfig;
@@ -196,7 +196,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
                     target_pointer_size.to_string(),
                 ),
             ),
-            CXInternalContext::error("LMIR and Cranelift target configurations disagree"),
+            CXNoSourceContext::error("LMIR and Cranelift target configurations disagree"),
         ));
     }
 
@@ -222,8 +222,8 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
         codegen_fn_prototype(&mut global_state, fn_prototype).map_err(|e| {
             CXError::new(
                 e,
-                CXInternalContext::error(format!(
-                    "Failed to codegen function prototype: {}",
+                CXNoSourceContext::error(format!(
+                    "failed to codegen function prototype: {}",
                     fn_prototype.name
                 )),
             )
@@ -253,7 +253,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
                         "Cranelift function map".into(),
                     ),
                 ),
-                CXInternalContext::error("Failed to look up function during codegen"),
+                CXNoSourceContext::error("failed to look up function during codegen"),
             ));
         };
 
@@ -270,7 +270,7 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
     global_state.object_module.finish().emit().map_err(|err| {
         CXError::new(
             raw(&OPERATION_FAILED, ("emit object file".into(), Some(err.to_string()))),
-            CXInternalContext::error("Failed to finalize Cranelift object module"),
+            CXNoSourceContext::error("failed to finalize Cranelift object module"),
         )
     })
 }

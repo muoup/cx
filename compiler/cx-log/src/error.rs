@@ -1,5 +1,14 @@
+use crate::catalogue::{ISSUE_TRACKER, is_internal};
 use crate::error::context::{CXErrorContextTrait, CXSourceSpan};
 use crate::error::message::CXErrorMessage;
+
+pub fn write_bug_report_notes(f: &mut dyn std::io::Write) -> std::io::Result<()> {
+    writeln!(f, "note: this is a bug in the cx compiler, not in your code")?;
+    writeln!(
+        f,
+        "note: please report it at {ISSUE_TRACKER}, including the input that triggered it"
+    )
+}
 
 pub struct CXRawError(pub Box<dyn CXErrorMessage>, pub(crate) Vec<String>);
 pub type CXErrorContext = Box<dyn CXErrorContextTrait>;
@@ -50,6 +59,10 @@ impl CXError {
         &self.error.1
     }
 
+    pub fn is_internal(&self) -> bool {
+        is_internal(&self.code())
+    }
+
     pub fn source_span(&self) -> Option<CXSourceSpan> {
         self.context.source_span()
     }
@@ -60,10 +73,13 @@ impl CXError {
     {
         self.error.0.dump(f)?;
         writeln!(f)?;
+        self.context.dump(f)?;
         for note in self.notes() {
             writeln!(f, "note: {note}")?;
         }
-        self.context.dump(f)?;
+        if self.is_internal() {
+            write_bug_report_notes(f)?;
+        }
 
         Ok(())
     }

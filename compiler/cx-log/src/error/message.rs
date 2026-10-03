@@ -1,4 +1,7 @@
-use crate::error::{CXRawError, CXRawResult};
+use crate::{
+    catalogue::is_internal,
+    error::{CXRawError, CXRawResult},
+};
 
 pub trait CXErrorMessage {
     fn code(&self) -> String;
@@ -9,6 +12,8 @@ pub trait CXErrorMessage {
         let code = self.code();
         if code.is_empty() {
             write!(f, "error: {}", self.message())
+        } else if is_internal(&code) {
+            write!(f, "error[{code}]: internal compiler error: {}", self.message())
         } else {
             write!(f, "error[{code}]: {}", self.message())
         }

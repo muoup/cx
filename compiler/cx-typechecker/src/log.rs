@@ -3,7 +3,7 @@ use cx_log::{
     catalogue::ErrorDefinition,
     error::{
         CXError, CXRawError,
-        context::{CXInternalContext, from_token_range},
+        context::{CXNoSourceContext, from_token_range},
     },
 };
 use cx_tokens::TokenRange;
@@ -27,6 +27,6 @@ pub fn generate_raw_error<A>(definition: &ErrorDefinition<A>, args: A) -> CXRawE
 pub fn internal_type_error<T, A>(definition: &ErrorDefinition<A>, args: A) -> CXResult<T> {
     Err(CXError::new(
         generate_raw_error(definition, args),
-        CXInternalContext::error("typechecker diagnostic has no source range"),
+        CXNoSourceContext::error("typechecker diagnostic has no source range"),
     ))
 }

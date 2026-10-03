@@ -5,6 +5,7 @@ use cx_hmir::{
     HMIROwnershipOp,
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
+use cx_log::catalogue::{mir, typecheck};
 use cx_mir::{
     MIRBindable, MIRInternalIntrinsic, MIRTarget, MIRVAIntrinsic, MIRValue,
     expr::instruction::MIRInvalidationKind,
@@ -100,7 +101,7 @@ pub(crate) fn lower_local(
             .name()
             .map(ToString::to_string)
             .unwrap_or_else(|| local.to_string());
-        return cx.error(span, format!("'{name}' is not bound at runtime"));
+        return cx.error(span, &mir::RUNTIME_UNAVAILABLE, name);
     };
     lower_auto_deref(cx, operand, span)
 }
@@ -148,8 +149,18 @@ pub(crate) fn lower_let(
     if let Some(init) = &init
         && let OperandKind::AdoptedPlace(place) = init.kind()
     {
-        if declared.is_some_and(|ty| ty != init.ty()) {
-            return cx.error(span, "adopted storage does not match the declared type");
+        if let Some(declared) = declared
+            && declared != init.ty()
+        {
+            return cx.error(
+                span,
+                &typecheck::TYPE_MISMATCH,
+                (
+                    "adoption".into(),
+                    format!("'{}'", cx.program.types().display(declared)),
+                    format!("'{}'", cx.program.types().display(init.ty())),
+                ),
+            );
         }
         cx.body
             .place_mut(*place)
@@ -168,7 +179,13 @@ pub(crate) fn lower_let(
         },
         (Some(ty), None) => ty,
         (None, Some(init)) => lower_inferred_type(cx, init.ty()),
-        (None, None) => return cx.error(span, "local without a type or initializer"),
+        (None, None) => {
+            return cx.error(
+                span,
+                &mir::MALFORMED_HIR,
+                "local without a type or initializer".into(),
+            );
+        }
     };
     if cx.program.types().is_void(ty) {
         let unit = Operand::unit(cx.program.types_mut());
@@ -224,13 +241,17 @@ fn lower_place_op(
                 reference.kind(),
                 OperandKind::Place(_) | OperandKind::AdoptedPlace(_)
             ) {
-                return cx.error(span, "cannot adopt a local place; use a move instead");
+                return cx.error(span, &typecheck::ADOPT_LOCAL, ());
             }
             if reference.bitfield().is_some() {
-                return cx.error(span, "cannot adopt bitfield storage");
+                return cx.error(span, &typecheck::BITFIELD_REFERENCE, "adopt".into());
             }
             let Some(address) = reference.address() else {
-                return cx.error(span, "adoption requires referenced storage");
+                return cx.error(
+                    span,
+                    &typecheck::TYPE_REQUIREMENT,
+                    ("@adopt".into(), "referenced storage".into(), None),
+                );
             };
             cx.require_mutable(reference.ty(), "adopt", span)?;
             let ty = reference.ty();
@@ -268,7 +289,14 @@ pub(crate) fn lower_native(
             let operand = lower_expr(cx, frame, inner, Expect::Any)?;
             let operand = lower_decay(cx, operand, span)?;
             let Some(inner) = cx.program.types().pointer_inner(operand.ty()) else {
-                return cx.error(span, "dereferenced a non-pointer");
+                return cx.error(
+                    span,
+                    &typecheck::UNEXPECTED_KIND,
+                    (
+                        format!("'{}'", cx.program.types().display(operand.ty())),
+                        "a pointer".into(),
+                    ),
+                );
             };
             if matches!(cx.program.types().kind(inner), TypeKind::Function(_)) {
                 let ty = operand.ty();
@@ -350,12 +378,17 @@ pub(crate) fn lower_splice(
                 let TypeKind::Expr { params, result } =
                     cx.program.types().kind(operand.ty()).clone()
                 else {
-                    return cx.error(span, "spliced a value that is not a quote");
+                    return cx.error(
+                        span,
+                        &typecheck::UNEXPECTED_KIND,
+                        ("spliced value".into(), "a quote".into()),
+                    );
                 };
                 if params.len() != args.len() {
                     return cx.error(
                         span,
-                        "expression argument count does not match its parameters",
+                        &typecheck::ARGUMENT_COUNT,
+                        ("expression".into(), params.len(), args.len(), false),
                     );
                 }
                 for (arg, param) in args.iter().zip(params) {
@@ -367,7 +400,11 @@ pub(crate) fn lower_splice(
         }
     } else {
         let StaticValue::Quote(quote) = lower_eval(cx, frame, quote, Expect::Any)? else {
-            return cx.error(span, "spliced a value that is not a quote");
+            return cx.error(
+                span,
+                &typecheck::UNEXPECTED_KIND,
+                ("spliced value".into(), "a quote".into()),
+            );
         };
         quote
     };
@@ -375,11 +412,8 @@ pub(crate) fn lower_splice(
     if quote.params().len() != args.len() {
         return cx.error(
             span,
-            format!(
-                "quote expects {} arguments, found {}",
-                quote.params().len(),
-                args.len()
-            ),
+            &typecheck::ARGUMENT_COUNT,
+            ("quote".into(), quote.params().len(), args.len(), false),
         );
     }
     let mut operands = Vec::with_capacity(args.len());
@@ -449,9 +483,11 @@ pub(crate) fn lower_splice(
     {
         return cx.error(
             span,
-            format!(
-                "staged expression produces no value where '{}' is expected",
-                cx.program.types().display(result)
+            &typecheck::TYPE_MISMATCH,
+            (
+                "staged expression".into(),
+                format!("'{}'", cx.program.types().display(result)),
+                "no value".into(),
             ),
         );
     }
@@ -476,7 +512,11 @@ pub(crate) fn lower_intrinsic_expr(
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let Intrinsic::VA(intrinsic) = intrinsic else {
-        return cx.error(span, "only variadic intrinsics are lowered from HMIR");
+        return cx.error(
+            span,
+            &mir::UNSUPPORTED_LOWERING,
+            "a non-variadic intrinsic".into(),
+        );
     };
     match intrinsic {
         VAIntrinsic::Start { list, last } => {

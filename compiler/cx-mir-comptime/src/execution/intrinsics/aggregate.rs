@@ -51,8 +51,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                 return comptime_error(
                     range.clone(),
                     (
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "invalid aggregate field".into(),
+                        &mir::COMPTIME_INVARIANT,
+                        "an invalid aggregate field".into(),
                     ),
                 );
             };
@@ -85,22 +85,15 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                 );
             };
             let stride = calculate_type_layout(engine.context().types(), *element_ty).size();
-            let offset = index.checked_mul(stride).ok_or_else(|| {
-                internal_error(
-                    &mir::COMPTIME_INVALID_OPERATION,
-                    "array offset overflow".into(),
-                    "comptime aggregate access",
-                )
-            })?;
+            let Some(offset) = index.checked_mul(stride) else {
+                return comptime_error(range.clone(), (&mir::COMPTIME_POINTER_OVERFLOW, ()));
+            };
             let value = match base {
                 MIRConstant::GlobalRef(mut reference) => {
                     let Some(offset) = reference.offset.checked_add(offset as i64) else {
                         return comptime_error(
                             range.clone(),
-                            (
-                                &mir::COMPTIME_INVALID_OPERATION,
-                                "array offset overflow".into(),
-                            ),
+                            (&mir::COMPTIME_POINTER_OVERFLOW, ()),
                         );
                     };
                     reference.offset = offset;
@@ -122,8 +115,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                     return comptime_error(
                         range.clone(),
                         (
-                            &mir::COMPTIME_INVALID_OPERATION,
-                            "index a non-aggregate value".into(),
+                            &mir::COMPTIME_INVARIANT,
+                            "an index into a non-aggregate value".into(),
                         ),
                     );
                 }
@@ -141,8 +134,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                     return comptime_error(
                         range.clone(),
                         (
-                            &mir::COMPTIME_INVALID_OPERATION,
-                            "read a tag from a non-aggregate".into(),
+                            &mir::COMPTIME_INVARIANT,
+                            "a tag read from a non-aggregate".into(),
                         ),
                     );
                 }
@@ -168,8 +161,8 @@ pub(super) fn execute<'c, 'thir, C: ComptimeContext<'thir>>(
                 .map(|(_, ty)| ty)
                 .ok_or_else(|| {
                     internal_error(
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "invalid sum variant".into(),
+                        &mir::COMPTIME_INVARIANT,
+                        "an invalid sum variant".into(),
                         "comptime aggregate access",
                     )
                 })?;
@@ -216,10 +209,7 @@ fn project_aggregate<'c, 'thir, C: ComptimeContext<'thir>>(
             let Some(new_offset) = reference.offset.checked_add(offset as i64) else {
                 return comptime_error(
                     range.clone(),
-                    (
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "aggregate offset overflow".into(),
-                    ),
+                    (&mir::COMPTIME_POINTER_OVERFLOW, ()),
                 );
             };
             reference.offset = new_offset;
@@ -258,8 +248,8 @@ fn project_aggregate<'c, 'thir, C: ComptimeContext<'thir>>(
         _ => comptime_error(
             range.clone(),
             (
-                &mir::COMPTIME_INVALID_OPERATION,
-                "project a non-aggregate value".into(),
+                &mir::COMPTIME_INVARIANT,
+                "a projection of a non-aggregate value".into(),
             ),
         ),
     }

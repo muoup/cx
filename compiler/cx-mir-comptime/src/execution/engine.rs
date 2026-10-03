@@ -76,8 +76,8 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
             return comptime_error(
                 TokenRange::internal(),
                 (
-                    &mir::COMPTIME_INVALID_OPERATION,
-                    "argument count mismatch".into(),
+                    &mir::COMPTIME_INVARIANT,
+                    "an argument count mismatch".into(),
                 ),
             );
         }
@@ -107,8 +107,8 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
                 .and_then(|block| block.instruction(frame.instruction))
                 .ok_or_else(|| {
                     internal_error(
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "unterminated comptime block".into(),
+                        &mir::COMPTIME_INVARIANT,
+                        "an unterminated block".into(),
                         "comptime execution",
                     )
                 })?;
@@ -153,8 +153,8 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
                 .cloned()
                 .ok_or_else(|| {
                     internal_error(
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "read of uninitialized staged register".into(),
+                        &mir::COMPTIME_INVARIANT,
+                        "a read of an uninitialized staged register".into(),
                         "comptime execution",
                     )
                 }),
@@ -180,8 +180,8 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
                     None => comptime_error(
                         range.clone(),
                         (
-                            &mir::COMPTIME_INVALID_OPERATION,
-                            "read of uninitialized comptime register".into(),
+                            &mir::COMPTIME_INVARIANT,
+                            "a read of an uninitialized register".into(),
                         ),
                     ),
                 }
@@ -227,8 +227,8 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
             _ => comptime_error(
                 TokenRange::internal(),
                 (
-                    &mir::COMPTIME_INVALID_OPERATION,
-                    "invalid comptime write target".into(),
+                    &mir::COMPTIME_INVARIANT,
+                    "an invalid write target".into(),
                 ),
             ),
         }
@@ -245,8 +245,8 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
             return comptime_error(
                 range.clone(),
                 (
-                    &mir::COMPTIME_INVALID_OPERATION,
-                    "invalid comptime jump".into(),
+                    &mir::COMPTIME_INVARIANT,
+                    "an invalid jump".into(),
                 ),
             );
         };
@@ -254,8 +254,8 @@ impl<'c, 'thir, C: ComptimeContext<'thir>> Engine<'c, 'thir, C> {
             return comptime_error(
                 range.clone(),
                 (
-                    &mir::COMPTIME_INVALID_OPERATION,
-                    "block argument count mismatch".into(),
+                    &mir::COMPTIME_INVARIANT,
+                    "a block argument count mismatch".into(),
                 ),
             );
         }

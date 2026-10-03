@@ -7,6 +7,7 @@ use cx_hmir::{
     HMIRAggregateKind, HMIRDefRef, HMIRExprID, HMIRExprKind, HMIRFieldDef, HMIRMoveSemantics,
     HMIRTypeOp,
 };
+use cx_log::catalogue::typecheck;
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -42,8 +43,14 @@ fn lower_unqualified_type(cx: &mut BodyLowering<'_>, ty: &HIRType) -> HMIRExprID
                     | GlobalSymbol::Function(def)
                     | GlobalSymbol::ComptimeFunction(def, ..),
                 ) => cx.push(HMIRExprKind::Def(def), span),
-                Symbol::Global(GlobalSymbol::Constructor(..)) => cx.error(span),
-                Symbol::Global(GlobalSymbol::Invalid(message)) => cx.error_message(message, span),
+                Symbol::Global(GlobalSymbol::Constructor(..)) => cx.error(
+                    span,
+                    &typecheck::EXPECTED_TYPE,
+                    format!("constructor '{name}'"),
+                ),
+                Symbol::Global(GlobalSymbol::Invalid(error)) => {
+                    cx.push(HMIRExprKind::Error(error), span)
+                }
             };
             let Some(args) = args else {
                 return callee;

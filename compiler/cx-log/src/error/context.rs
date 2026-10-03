@@ -15,10 +15,10 @@ pub fn from_token_range(range: &TokenRange) -> CXErrorContext {
             byte_end,
         } => CXUnderlineContext::error(file.clone(), *byte_start, *byte_end),
         TokenRange::Internal => {
-            CXInternalContext::error("diagnostic originated in compiler-generated code")
+            CXNoSourceContext::error("diagnostic originated in compiler-generated code")
         }
         TokenRange::Error(message) => {
-            CXInternalContext::error(format!("failed to determine source range: {message}"))
+            CXNoSourceContext::error(format!("failed to determine source range: {message}"))
         }
     }
 }
@@ -101,11 +101,11 @@ impl CXErrorContextTrait for CXUnderlineContext {
     }
 }
 
-pub struct CXInternalContext {
+pub struct CXNoSourceContext {
     message: String,
 }
 
-impl CXInternalContext {
+impl CXNoSourceContext {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -117,8 +117,8 @@ impl CXInternalContext {
     }
 }
 
-impl CXErrorContextTrait for CXInternalContext {
+impl CXErrorContextTrait for CXNoSourceContext {
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()> {
-        writeln!(f, "{}", self.message)
+        writeln!(f, "note: {}", self.message)
     }
 }
