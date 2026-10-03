@@ -202,7 +202,7 @@ pub(crate) fn coerce_static(
             }
             StaticValue::Quote(quote.with_result(result, cx.types().is_void(result)))
         }
-        (value, TypeKind::Type | TypeKind::Expr { .. }) => value,
+        (value @ StaticValue::Type(_), TypeKind::Type) => value,
         (_, TypeKind::Void) => StaticValue::Unit,
         (StaticValue::Int { value, .. }, TypeKind::Int { width, .. }) => {
             if width == HMIRIntWidth::I1 {
@@ -248,8 +248,16 @@ pub(crate) fn coerce_static(
         (value @ StaticValue::Function { .. }, TypeKind::Pointer(_) | TypeKind::Function(_)) => {
             value
         }
-        (value @ StaticValue::Aggregate { .. }, TypeKind::Nominal(_) | TypeKind::Array { .. }) => {
+        (value @ StaticValue::Aggregate { ty: source, .. }, TypeKind::Nominal(_))
+            if cx.types_mut().same_unqualified(source, ty) =>
+        {
             value
+        }
+        (StaticValue::Aggregate { ty: source, fields }, TypeKind::Array { element, length })
+            if matches!(cx.types().kind(source), TypeKind::Array { element: from, length: count }
+                if *from == element && (length == *count || length.is_none() || count.is_none())) =>
+        {
+            StaticValue::Aggregate { ty, fields }
         }
         (value, _) if value.simple_type(cx.types_mut()) == Some(ty) => value,
         (value, _) => {

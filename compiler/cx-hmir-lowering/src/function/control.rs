@@ -13,10 +13,9 @@ use crate::{
         aggregate::{lower_bind_pattern, lower_pattern_subject, lower_sum_index},
         coerce::{lower_convert, lower_truthy},
         expr::{lower_expr, lower_inferred_type},
-        lower_cleanup_to, lower_eval, lower_return, lower_type_hint,
+        inspect, lower_cleanup_to, lower_eval, lower_return, lower_type_hint,
         operand::{lower_copy, lower_read, lower_spill, lower_value},
     },
-    module::variant_index,
     ty::TypeID,
     value::{arithmetic_type, promote_integer_type},
 };
@@ -63,21 +62,48 @@ fn lower_sequence(
     expect: Expect,
 ) -> LowerResult<Operand> {
     let mut live = true;
-    for statement in statements
+    let mut checked = false;
+    for (index, statement) in statements
         .iter()
         .chain(tail.iter().filter(|_| expect == Expect::Discard))
+        .enumerate()
     {
-        if live {
+        if live || cx.unevaluated {
+            if cx.terminated() {
+                let block = cx.new_block("check.unreachable");
+                cx.set_block(block);
+            }
             match lower_expr(cx, frame, *statement, Expect::Discard) {
                 Ok(_) => {}
                 Err(Stop::Diverged) => live = false,
                 Err(error) => return Err(error),
             }
         } else {
+            if !checked {
+                inspect::check(
+                    cx,
+                    frame,
+                    inspect::Check::Sequence {
+                        statements: &statements[index.min(statements.len())..],
+                        tail,
+                        expect,
+                    },
+                )?;
+                checked = true;
+            }
             live = lower_dead(cx, frame, *statement)?;
         }
     }
     if !live {
+        if cx.unevaluated
+            && expect != Expect::Discard
+            && let Some(tail) = tail
+        {
+            lower_expr(cx, frame, tail, expect).or_else(|stop| match stop {
+                Stop::Diverged => Ok(Operand::unit(cx.program.types_mut())),
+                error => Err(error),
+            })?;
+        }
         return Err(Stop::Diverged);
     }
     match tail {
@@ -161,6 +187,15 @@ fn lower_skip(
     span: &TokenRange,
 ) -> LowerResult<bool> {
     let resume = cx.current;
+    inspect::check(
+        cx,
+        frame,
+        inspect::Check::Sequence {
+            statements: &[id],
+            tail: None,
+            expect: Expect::Discard,
+        },
+    )?;
     let falls = lower_dead(cx, frame, id)?;
     if cx.current == resume {
         return Ok(live);
@@ -475,12 +510,17 @@ pub(crate) fn lower_switch(
         span,
     );
 
-    let segments = cases
+    let mut segments = cases
         .iter()
         .map(|(_, body)| *body)
         .zip(blocks.iter().copied())
         .chain(default.zip(default_block))
         .collect::<Vec<_>>();
+    segments.sort_by_key(|(body, _)| {
+        cx.span(frame, *body)
+            .source_bounds()
+            .map(|(_, start, _)| start)
+    });
     for (index, (body, block)) in segments.iter().enumerate() {
         let next = segments
             .get(index + 1)
@@ -538,81 +578,19 @@ pub(crate) fn lower_match(
         matches!(pattern, HMIRPattern::Binding(_)).then_some(*block)
     });
     let default = binding_block.unwrap_or_else(|| cx.new_block("match.unreachable"));
-    let variant_names = cx
-        .program
-        .types()
-        .nominal_of(value.ty())
-        .filter(|_| variants)
-        .map(|nominal| {
-            nominal
-                .fields()
-                .iter()
-                .map(|field| field.name().cloned())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let covered = |cases: &[(i128, MIRBlockTarget)]| {
-        variants
-            && (0..variant_names.len())
-                .all(|index| cases.iter().any(|(case, _)| *case == index as i128))
-    };
-    const UNREACHABLE_ARM: &str =
-        "unreachable match arm: this pattern is already covered by a previous arm";
-    let mut cases: Vec<(i128, MIRBlockTarget)> = Vec::with_capacity(arms.len());
-    let mut caught = false;
-    for ((pattern, _), block) in arms.iter().zip(&blocks) {
-        if caught || covered(&cases) {
-            return cx.error(span, UNREACHABLE_ARM);
-        }
-        let case = match pattern {
-            HMIRPattern::Binding(_) => {
-                caught = true;
-                continue;
-            }
-            HMIRPattern::Integer(value) if !variants => *value as i128,
-            HMIRPattern::Value(expected) if !variants => {
-                let expected = lower_eval(cx, frame, *expected, Expect::Type(value.ty()))?;
-                let Some(expected) = expected.as_int() else {
-                    return cx.error(
-                        span,
-                        "value pattern is not an integer constant; bind the value with 'auto name'",
-                    );
-                };
-                expected
-            }
-            HMIRPattern::Variant { name, .. } if variants => {
-                variant_index(cx.program, value.ty(), name, span)? as i128
-            }
-            HMIRPattern::Float(_) => {
-                return cx.error(span, "floating patterns cannot be matched by cases");
-            }
-            _ => return cx.error(span, "pattern does not fit the matched value"),
-        };
-        if cases.iter().any(|(existing, _)| *existing == case) {
-            return cx.error(span, UNREACHABLE_ARM);
-        }
-        cases.push((case, MIRBlockTarget::new(*block)));
-    }
-    if !caught && !covered(&cases) {
-        let missing = variant_names
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !cases.iter().any(|(case, _)| *case == *index as i128))
-            .filter_map(|(_, name)| name.as_ref().map(ToString::to_string))
-            .collect::<Vec<_>>();
-        let missing = if missing.is_empty() {
-            String::new()
-        } else {
-            format!("; missing variants: {}", missing.join(", "))
-        };
-        return cx.error(
-            span,
-            format!(
-                "match must be exhaustive{missing}; add the missing arms or a catch-all \
-                 binding such as '_ => ...'"
-            ),
-        );
-    }
+    let mut evaluated = crate::function::lower_eval_frame(cx, frame);
+    let planned = crate::pattern::match_cases(
+        cx.program,
+        &mut evaluated,
+        value.ty(),
+        arms.iter().map(|(pattern, _)| pattern),
+        span,
+    )?;
+    let cases = planned
+        .into_iter()
+        .zip(&blocks)
+        .filter_map(|(case, block)| case.map(|case| (case, MIRBlockTarget::new(*block))))
+        .collect();
     cx.emit(
         MIRInstructionKind::CaseBranch {
             value: dispatch,
@@ -666,14 +644,18 @@ pub(super) fn lower_control(
 ) -> LowerResult<Operand> {
     match op {
         HMIRControlOp::Return(value) => {
+            if value.is_some() && cx.check_return && cx.program.types().is_void(cx.ret) {
+                return cx.error(span, "cannot return a value from a void function");
+            }
             let value = match value {
                 Some(value) => {
-                    let value = lower_expr(cx, frame, value, Expect::Type(cx.ret))?;
-                    if cx.program.types().is_void(cx.ret) {
-                        None
+                    let expect = if cx.check_return {
+                        Expect::Type(cx.ret)
                     } else {
-                        Some(value)
-                    }
+                        Expect::Any
+                    };
+                    let value = lower_expr(cx, frame, value, expect)?;
+                    Some(value)
                 }
                 None => None,
             };
@@ -741,11 +723,15 @@ pub(super) fn lower_control(
             Err(Stop::Diverged)
         }
         HMIRControlOp::Goto(name) => {
+            if cx.defer_boundary.is_some() {
+                return cx.error(span, "cannot jump from a deferred expression");
+            }
             let target = cx.label_block(&name);
             cx.jump(target, Vec::new(), span);
             Err(Stop::Diverged)
         }
         HMIRControlOp::Defer(body) => {
+            inspect::check(cx, frame, inspect::Check::Deferred(body))?;
             cx.scopes
                 .last_mut()
                 .expect("function has a scope")
@@ -824,9 +810,14 @@ fn lower_merge_edge(
             let value = lower_value(cx, value, span)?;
             cx.jump(block, vec![value], span);
         }
-        (MergeParam::Value(..), None) => {
-            cx.emit(MIRInstructionKind::Unreachable, span);
-            return Ok(());
+        (MergeParam::Value(_, ty), None) => {
+            return cx.error(
+                span,
+                format!(
+                    "expression produces no value where '{}' is expected",
+                    cx.program.types().display(ty)
+                ),
+            );
         }
         (MergeParam::Undecided, None) => {
             cx.merges[merge].param = MergeParam::Valueless;
@@ -900,6 +891,7 @@ impl FunctionLowering<'_, '_> {
         select: impl Fn(ControlKind) -> Option<T>,
     ) -> Option<(MIRScopeID, T)> {
         self.controls
+            .get(self.defer_boundary.unwrap_or(0)..)?
             .iter()
             .rev()
             .find_map(|control| select(control.kind).map(|found| (control.boundary, found)))

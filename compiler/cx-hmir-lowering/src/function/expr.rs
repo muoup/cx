@@ -432,11 +432,14 @@ pub(crate) fn lower_splice(
         );
     }
     // Code declared to produce a value is lowered for that value even where it is discarded
-    let produces = quote
-        .result()
-        .is_some_and(|result| !cx.program.types().is_void(result));
+    let produces = quote.result().is_some_and(|result| {
+        !cx.program.types().is_void(result) && !cx.program.types().is_unreachable(result)
+    });
     let expect = match expect {
-        Expect::Discard if produces => Expect::Any,
+        _ if produces => {
+            let result = quote.result().unwrap();
+            Expect::Type(cx.program.types().reference_inner(result).unwrap_or(result))
+        }
         expect => expect,
     };
     let value = lower_expr(cx, index, quote.body(), expect)?;
@@ -451,6 +454,17 @@ pub(crate) fn lower_splice(
                 cx.program.types().display(result)
             ),
         );
+    }
+    if produces {
+        let result = quote.result().unwrap();
+        if let Some(inner) = cx.program.types().reference_inner(result) {
+            if value.is_lvalue() && cx.program.types_mut().same_unqualified(value.ty(), inner) {
+                return Ok(value.with_type(inner));
+            }
+            let value = lower_convert(cx, value, result, span)?;
+            return lower_auto_deref(cx, value, span);
+        }
+        return lower_convert(cx, value, result, span);
     }
     Ok(value)
 }

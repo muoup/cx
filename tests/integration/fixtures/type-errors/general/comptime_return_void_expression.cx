@@ -1,0 +1,3 @@
+comptime void noop() {}
+comptime void bad() { return noop(); }
+int main() { bad(); return 0; }

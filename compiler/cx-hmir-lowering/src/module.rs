@@ -11,7 +11,10 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    eval::{check_redeclaration, eval_global_initializer, eval_global_type, eval_signature, ops::coerce_static},
+    eval::{
+        check_redeclaration, eval_global_initializer, eval_global_type, eval_signature,
+        ops::coerce_static,
+    },
     function::lower_function,
     program::{DefKey, Instance, Program},
     staging_error,
@@ -86,12 +89,7 @@ impl Module {
             .into_iter()
             .filter(|id| globals.contains_key(id))
             .collect();
-        MIRUnit::new(
-            types,
-            functions,
-            globals,
-            global_order,
-        )
+        MIRUnit::new(types, functions, globals, global_order)
     }
 }
 
@@ -100,12 +98,20 @@ pub(crate) fn lower_roots(cx: &mut Program<'_>) -> CXResult<()> {
     let unit = cx.unit(main);
     let mut declared = HashMap::new();
     for (id, def) in unit.defs() {
+        if let HMIRDefKind::Function(function) = def.kind() {
+            crate::eval::check_variadic(function, def.span())?;
+        }
         match declared.entry(def.name()) {
             Entry::Vacant(entry) => {
                 entry.insert(id);
             }
             Entry::Occupied(entry) => {
-                check_redeclaration(cx, DefKey::new(main, *entry.get()), DefKey::new(main, id), def.span())?;
+                check_redeclaration(
+                    cx,
+                    DefKey::new(main, *entry.get()),
+                    DefKey::new(main, id),
+                    def.span(),
+                )?;
             }
         }
     }

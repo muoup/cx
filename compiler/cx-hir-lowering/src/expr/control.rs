@@ -132,7 +132,11 @@ pub(crate) fn lower_switch(
                 .iter()
                 .map(|statement| lower_expr(this, statement))
                 .collect();
-            this.block(HMIRBlockKind::Sequence, statements, span)
+            let segment_span = block
+                .get(start)
+                .map(HIRExpression::token_range)
+                .unwrap_or(span);
+            this.block(HMIRBlockKind::Sequence, statements, segment_span)
         };
 
         let mut ordered = cases.iter().collect::<Vec<_>>();
@@ -141,12 +145,14 @@ pub(crate) fn lower_switch(
             .iter()
             .enumerate()
             .map(|(index, (value, start))| {
+                let case_span = value.token_range();
                 let value = lower_expr(this, value);
                 let shares_segment = ordered
                     .get(index + 1)
-                    .is_some_and(|(_, next)| next == start);
+                    .is_some_and(|(_, next)| next == start)
+                    || default_case == Some(*start);
                 let body = if shares_segment {
-                    this.block(HMIRBlockKind::Sequence, Vec::new(), span)
+                    this.block(HMIRBlockKind::Sequence, Vec::new(), case_span)
                 } else {
                     segment(this, *start)
                 };

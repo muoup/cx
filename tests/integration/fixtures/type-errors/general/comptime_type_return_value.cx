@@ -1,0 +1,2 @@
+comptime @type bad() { return 42; }
+int value = bad();

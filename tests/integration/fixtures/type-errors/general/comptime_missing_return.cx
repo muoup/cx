@@ -1,0 +1,2 @@
+comptime int bad() { int x = 1; }
+int main() { auto value = bad(); return 0; }

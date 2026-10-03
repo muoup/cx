@@ -1,0 +1,2 @@
+int helper() { return 1; }
+int bad() safe { return 0; helper(); }

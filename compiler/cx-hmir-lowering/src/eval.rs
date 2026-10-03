@@ -2,6 +2,7 @@ pub(crate) mod control;
 pub(crate) mod expr;
 pub(crate) mod liveness;
 pub(crate) mod ops;
+pub(crate) mod pattern;
 mod types;
 
 use std::{
@@ -213,6 +214,7 @@ pub(crate) fn eval_signature(
             format!("'{}' is not a function", def.name()),
         ));
     };
+    check_variadic(function, span)?;
     let mut frame = eval_frame_for(cx, instance);
     let body = function.body();
     let mut runtime = Vec::new();
@@ -567,6 +569,16 @@ pub(crate) fn def_value(
     }
 }
 
+pub(crate) fn check_variadic(function: &HMIRFunction, span: &TokenRange) -> CXResult<()> {
+    if function.signature().contract().is_safe() && function.signature().is_variadic() {
+        return Err(staging_error(
+            span,
+            "varargs are not allowed in a safe function".into(),
+        ));
+    }
+    Ok(())
+}
+
 // Fewer arguments than parameters bind the leading comptime parameters and yield the function;
 // a 'None' argument is a hole deduced from the arguments after the template prefix
 pub(crate) fn call_static(
@@ -588,6 +600,7 @@ pub(crate) fn call_static(
             "called a non-function at compile time".into(),
         ));
     };
+    check_variadic(function, span)?;
     let params = function.signature().params();
     let mut all = bound.into_iter().map(Some).collect::<Vec<_>>();
     all.extend(args);
@@ -635,43 +648,56 @@ pub(crate) fn call_static(
         ));
     }
 
-    let mut frame = EvalFrame::new(unit.clone(), def, Rc::new(instance.clone()));
-    let body = function.body();
-    for (param, arg) in function.signature().params().iter().zip(&instance.1) {
-        let declared = body.local(*param).ty();
-        let arg = match eval(cx, &mut frame, declared, None) {
-            Ok(StaticValue::Type(ty)) if !matches!(cx.types().kind(ty), TypeKind::Type) => {
-                coerce_static(cx, arg.clone(), ty, span)?
+    let evaluated = (|| -> CXResult<StaticValue> {
+        let mut frame = EvalFrame::new(unit.clone(), def, Rc::new(instance.clone()));
+        let body = function.body();
+        for (param, arg) in function.signature().params().iter().zip(&instance.1) {
+            let declared = body.local(*param).ty();
+            let arg = match eval_type_hint(cx, &mut frame, declared)? {
+                Some(ty) => coerce_static(cx, arg.clone(), ty, span)?,
+                None => arg.clone(),
+            };
+            frame.bind(*param, arg);
+        }
+        frame.ret = eval_type_hint(cx, &mut frame, function.signature().return_type())?;
+        if let Some(condition) = function.signature().contract().precondition() {
+            control::check_condition(cx, &mut frame, condition, "Precondition failed")?;
+        }
+        let result = exec(cx, &mut frame, root, None);
+        let value = match result? {
+            Flow::Normal(value) | Flow::Return(value) => {
+                liveness::require_consumed(cx, &frame)?;
+                value
             }
-            _ => arg.clone(),
+            _ => {
+                return Err(staging_error(
+                    span,
+                    "loop control escaped a function".into(),
+                ));
+            }
         };
-        frame.bind(*param, arg);
-    }
-    frame.ret = eval_type_hint(cx, &mut frame, function.signature().return_type())
-        .ok()
-        .flatten();
-    let result = exec(cx, &mut frame, root, None);
+        let value = match frame.ret {
+            Some(ty) if cx.types().is_void(ty) && value != StaticValue::Unit => {
+                return Err(staging_error(
+                    span,
+                    "cannot return a value from a void function".into(),
+                ));
+            }
+            Some(ty) => coerce_static(cx, value, ty, span)?,
+            _ => value,
+        };
+        if let Some((binding, condition)) = function.signature().contract().postcondition() {
+            if let Some(binding) = binding {
+                frame.bind(binding, value.clone());
+            }
+            control::check_condition(cx, &mut frame, condition, "Postcondition failed")?;
+        }
+        Ok(value)
+    })();
     if memoize {
         cx.active_mut().remove(&instance);
     }
-    let value = match result? {
-        Flow::Normal(value) | Flow::Return(value) => {
-            liveness::require_consumed(cx, &frame)?;
-            value
-        }
-        _ => {
-            return Err(staging_error(
-                span,
-                "loop control escaped a function".into(),
-            ));
-        }
-    };
-    let value = match frame.ret {
-        Some(ty) if matches!(cx.types().kind(ty), TypeKind::Expr { .. }) => {
-            coerce_static(cx, value, ty, span)?
-        }
-        _ => value,
-    };
+    let value = evaluated?;
     if memoize {
         cx.generated_mut().insert(instance, value.clone());
     }
@@ -835,10 +861,39 @@ pub(crate) fn exec_native(
         HMIRNativeOp::Type(op) => types::exec_type_op(cx, frame, op, span)?,
         HMIRNativeOp::Control(control) => {
             return Ok(match control {
-                HMIRControlOp::Return(value) => Flow::Return(match value {
-                    Some(value) => eval(cx, frame, *value, frame.ret)?,
-                    None => StaticValue::Unit,
-                }),
+                HMIRControlOp::Return(value) => {
+                    if value.is_some() && frame.ret.is_some_and(|ret| cx.types().is_void(ret)) {
+                        return Err(staging_error(
+                            span,
+                            "cannot return a value from a void function".into(),
+                        ));
+                    }
+                    let returned = match value {
+                        Some(value) => eval(cx, frame, *value, frame.ret)?,
+                        None => StaticValue::Unit,
+                    };
+                    if let Some(ret) = frame.ret {
+                        if cx.types().is_unreachable(ret) {
+                            return Err(staging_error(
+                                span,
+                                "cannot return from an unreachable-returning function".into(),
+                            ));
+                        }
+                        if value.is_none() && !cx.types().is_void(ret) {
+                            return Err(staging_error(
+                                span,
+                                "return requires a value in a non-void function".into(),
+                            ));
+                        }
+                        if cx.types().is_void(ret) && returned != StaticValue::Unit {
+                            return Err(staging_error(
+                                span,
+                                "cannot return a value from a void function".into(),
+                            ));
+                        }
+                    }
+                    Flow::Return(returned)
+                }
                 HMIRControlOp::Yield(value) => Flow::Yield(match value {
                     Some(value) => eval(cx, frame, *value, None)?,
                     None => StaticValue::Unit,

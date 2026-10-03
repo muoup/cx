@@ -2,7 +2,7 @@ use cx_hmir::{HMIRExprID, HMIRExprKind};
 use cx_tokens::TokenRange;
 
 use crate::{
-    eval::{EvalFrame, Flow, control, def_value, exec, exec_native, expr, liveness},
+    eval::{EvalFrame, Flow, control, def_value, exec, exec_native, expr, liveness, pattern},
     function::{
         Expect, FunctionLowering, LowerResult, Operand, Stop,
         call::lower_call,
@@ -247,8 +247,10 @@ pub(crate) fn lower(
                 lower_switch(lowering, frame, condition, &cases, default, &span)
                     .map(LowerOutput::Runtime)
             }
-            LowerContext::Comptime(_, _) => {
-                Err(staging_error(&span, "switch at compile time".into()).into())
+            LowerContext::Comptime(program, frame) => {
+                pattern::switch(program, frame, condition, &cases, default, &span)
+                    .map(LowerOutput::Comptime)
+                    .map_err(Stop::Error)
             }
         },
         HMIRExprKind::Match {
@@ -260,9 +262,17 @@ pub(crate) fn lower(
                 lower_match(lowering, frame, scrutinee, subject, &arms, expect, &span)
                     .map(LowerOutput::Runtime)
             }
-            LowerContext::Comptime(_, _) => {
-                Err(staging_error(&span, "match at compile time".into()).into())
-            }
+            LowerContext::Comptime(program, frame) => pattern::match_value(
+                program,
+                frame,
+                scrutinee,
+                subject,
+                &arms,
+                expect.ty(),
+                &span,
+            )
+            .map(LowerOutput::Comptime)
+            .map_err(Stop::Error),
         },
         HMIRExprKind::Label { name, body } => match cx {
             LowerContext::Runtime(lowering, frame) => {

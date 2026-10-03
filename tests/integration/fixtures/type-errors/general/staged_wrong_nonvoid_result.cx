@@ -1,0 +1,3 @@
+struct S { int x; };
+comptime expr(struct S) bad() => emit 42;
+int main() { auto value = bad(); return 0; }

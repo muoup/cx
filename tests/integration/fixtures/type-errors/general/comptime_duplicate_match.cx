@@ -1,0 +1,2 @@
+comptime int bad(int x) { return match (x) { 1 => 2; 1 => 3; auto other => 4; }; }
+int value = bad(1);

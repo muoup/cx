@@ -1,0 +1,29 @@
+#include <stdio.h>
+
+comptime unsigned char narrow() => 300;
+comptime int truncate() => 3.75;
+comptime expr(unsigned char) staged_narrow() => emit 300;
+
+void noop() {}
+void implicit_void() => noop();
+int implicit_yield() => .{ yield 42; };
+
+int positive(int x) safe
+where pre: (x > 0), post(result): (result > x)
+{
+    return x + 1;
+}
+
+comptime int static_positive(int x)
+where pre: (x > 0), post(result): (result > x)
+{
+    return x + 1;
+}
+
+int main() {
+    implicit_void();
+    auto staged = staged_narrow();
+    printf("%d %d %d %d\n", narrow(), truncate(), staged, (int)sizeof(staged));
+    printf("%d %d %d\n", positive(1), static_positive(1), implicit_yield());
+    return 0;
+}

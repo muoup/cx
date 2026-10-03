@@ -49,6 +49,19 @@ pub(crate) fn conditional(
     }
 }
 
+pub(super) fn check_condition(
+    cx: &mut Program<'_>,
+    frame: &mut EvalFrame,
+    condition: HMIRExprID,
+    message: &str,
+) -> CXResult<()> {
+    let span = frame.body().expr(condition).span().clone();
+    if !static_condition(cx, frame, condition, &span)? {
+        return Err(staging_error(&span, message.into()));
+    }
+    Ok(())
+}
+
 pub(crate) fn while_loop(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,

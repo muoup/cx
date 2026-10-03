@@ -3,6 +3,7 @@ mod eval;
 mod function;
 mod lower;
 mod module;
+mod pattern;
 mod program;
 mod ty;
 mod value;

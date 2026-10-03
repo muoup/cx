@@ -197,8 +197,7 @@ fn lower_enum_variant(
         (Some(value), _) => lower_expr(&mut cx, value),
         (None, None) => cx.int_constant(int, index as i128, &span),
         (None, Some(explicit)) => {
-            let base =
-                QualifiedName::new(name.namespace.clone(), variants[explicit].name.clone());
+            let base = QualifiedName::new(name.namespace.clone(), variants[explicit].name.clone());
             let lhs = cx.def_expr(base, &span);
             let rhs = cx.int_constant(int, (index - explicit) as i128, &span);
             cx.native(
@@ -248,9 +247,6 @@ fn lower_function_body(cx: &mut BodyLowering<'_>, body: &HIRFunctionBody) -> HMI
                 .collect();
             this.block(HMIRBlockKind::Scope, statements, range)
         }),
-        HIRFunctionBody::Expression(expr) => {
-            let value = lower_expr(cx, expr);
-            cx.returning_block(value, &expr.range)
-        }
+        HIRFunctionBody::Expression(expr) => lower_expr(cx, expr),
     }
 }

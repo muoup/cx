@@ -6,8 +6,8 @@ use cx_mir::{MIRInternalIntrinsic, MIRValue};
 use crate::{
     eval::{Signature, eval_frame_for},
     function::{
-        Expect, Frame, FunctionLowering, LowerResult, Operand, coerce::lower_truthy,
-        control::lower_scope, expr::lower_expr, operand::lower_value,
+        Expect, Frame, FunctionLowering, LowerResult, Operand, Stop, coerce::lower_truthy,
+        control::lower_scope, expr::lower_expr, inspect, operand::lower_value,
     },
     program::Instance,
 };
@@ -38,8 +38,17 @@ fn lower_condition(
     check: Check,
 ) -> LowerResult<()> {
     let span = cx.span(frame, condition);
-    lower_scope(cx, &span, |cx| {
-        let value = lower_expr(cx, frame, condition, Expect::Any)?;
+    let safe = cx.safe;
+    let unsafe_depth = cx.unsafe_depth;
+    cx.safe = contract_of(cx, &cx.frames[frame].owner).is_safe();
+    cx.unsafe_depth = 0;
+    let result = lower_scope(cx, &span, |cx| {
+        let value = match lower_expr(cx, frame, condition, Expect::Any) {
+            Err(Stop::Diverged) => {
+                return cx.error(&span, "function condition must produce a value");
+            }
+            result => result?,
+        };
         let value = lower_truthy(cx, value, &span)?;
         let condition = lower_value(cx, value, &span)?;
         cx.intrinsic(
@@ -53,7 +62,40 @@ fn lower_condition(
             &span,
         );
         Ok(())
-    })
+    });
+    cx.safe = safe;
+    cx.unsafe_depth = unsafe_depth;
+    result
+}
+
+pub(super) fn check_contract(
+    cx: &mut FunctionLowering<'_, '_>,
+) -> Result<(), cx_log::error::CXError> {
+    let contract = contract_of(cx, &cx.frames[0].owner);
+    let result = (|| -> LowerResult<()> {
+        if let Some(condition) = contract.precondition() {
+            lower_condition(cx, 0, condition, Check::Assume)?;
+        }
+        if let Some((binding, condition)) = contract.postcondition() {
+            if let Some(binding) = binding {
+                if cx.program.types().is_void(cx.ret) {
+                    return cx.error(
+                        &cx.span(0, condition),
+                        "void function has no result to bind in its postcondition",
+                    );
+                }
+                let value = inspect::binding(cx, cx.ret, &cx.span(0, condition))?;
+                cx.bind(0, binding, value);
+            }
+            lower_condition(cx, 0, condition, Check::Assume)?;
+        }
+        Ok(())
+    })();
+    match result {
+        Ok(()) => Ok(()),
+        Err(Stop::Error(error)) => Err(error),
+        Err(Stop::Diverged) => unreachable!(),
+    }
 }
 
 pub(super) fn lower_call_precondition(

@@ -63,6 +63,7 @@ pub(crate) enum Expect {
 }
 
 // A lexical instantiation of some def's body; quotes spliced at runtime get their own frame
+#[derive(Clone)]
 pub(crate) struct Frame {
     unit: Rc<HMIRUnit>,
     pub(crate) def: DefKey,
@@ -72,6 +73,7 @@ pub(crate) struct Frame {
     origin: Option<usize>,
 }
 
+#[derive(Clone)]
 struct Scope {
     id: MIRScopeID,
     defers: Vec<(usize, HMIRExprID)>,
@@ -98,6 +100,7 @@ struct Control {
 }
 
 // A join point; with no expected type, the first value reaching it decides its parameter
+#[derive(Clone)]
 struct Merge {
     block: MIRBasicBlockID,
     param: MergeParam,
@@ -112,6 +115,7 @@ enum MergeParam {
 }
 
 // A pattern tested in a condition whose bindings take effect in the branch it guards
+#[derive(Clone)]
 pub(crate) struct PatternBinding {
     frame: usize,
     subject: Operand,
@@ -132,10 +136,12 @@ pub(crate) struct FunctionLowering<'p, 'l> {
     labels: HashMap<String, MIRBasicBlockID>,
     pattern_bindings: Vec<PatternBinding>,
     ret: TypeID,
+    check_return: bool,
     pub(crate) unevaluated: bool,
     // A safe function may only perform unsafe operations inside '@unsafe'
     safe: bool,
     unsafe_depth: usize,
+    defer_boundary: Option<usize>,
 }
 
 impl Expect {
@@ -199,6 +205,7 @@ pub(crate) fn lower_function(
         cx.bind(0, *local, Operand::place(place, ty));
     }
 
+    inspect::check(&mut cx, 0, inspect::Check::Contract)?;
     lower_root(&mut cx, root, &prototype)?;
     Ok(cx.body)
 }
@@ -211,7 +218,10 @@ fn lower_root(
     let span = cx.span(0, root);
     let is_block = matches!(
         cx.frames[0].body().expr(root).kind(),
-        HMIRExprKind::Block { .. }
+        HMIRExprKind::Block {
+            kind: cx_hmir::HMIRBlockKind::Scope,
+            ..
+        }
     );
     let result = if is_block {
         lower_expr(cx, 0, root, Expect::Discard).map(|_| None)
@@ -282,9 +292,11 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
             labels: HashMap::new(),
             pattern_bindings: Vec::new(),
             ret,
+            check_return: true,
             unevaluated: false,
             safe: false,
             unsafe_depth: 0,
+            defer_boundary: None,
         }
     }
 
@@ -543,6 +555,7 @@ fn lower_cleanup_scope(
     let mut result = Ok(());
     for (frame, expr) in defers.into_iter().rev() {
         cx.push_scope(span);
+        let boundary = cx.defer_boundary.replace(cx.controls.len());
         let lowered = lower_expr(cx, frame, expr, Expect::Discard).and_then(|value| {
             let types = cx.program.types();
             if types.is_void(value.ty()) || types.is_unreachable(value.ty()) {
@@ -556,6 +569,7 @@ fn lower_cleanup_scope(
             )
         });
         let popped = cx.pop_scope(span);
+        cx.defer_boundary = boundary;
         result = lowered.and(popped);
         if result.is_err() {
             break;
@@ -583,6 +597,26 @@ pub(crate) fn lower_return(
     value: Option<Operand>,
     span: &TokenRange,
 ) -> LowerResult<()> {
+    if cx.defer_boundary.is_some() {
+        return cx.error(span, "cannot return from a deferred expression");
+    }
+    if !cx.check_return {
+        cx.emit(MIRInstructionKind::Unreachable, span);
+        return Err(Stop::Diverged);
+    }
+    if cx.program.types().is_unreachable(cx.ret) {
+        return cx.error(span, "cannot return from an unreachable-returning function");
+    }
+    if value.is_none() && !cx.program.types().is_void(cx.ret) {
+        return cx.error(span, "return requires a value in a non-void function");
+    }
+    if value
+        .as_ref()
+        .is_some_and(|value| !cx.program.types().is_void(value.ty()))
+        && cx.program.types().is_void(cx.ret)
+    {
+        return cx.error(span, "cannot return a value from a void function");
+    }
     let value = match value {
         Some(value) if !cx.program.types().is_void(cx.ret) => {
             let value = lower_convert(cx, value, cx.ret, span)?;

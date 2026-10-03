@@ -1,0 +1,49 @@
+#include <stdio.h>
+
+import std::optional as std;
+
+comptime int choose(int value) {
+    return match (value) {
+        1 => 11;
+        auto other => other + 20;
+    };
+}
+
+comptime int unwrap(std::opt(int) value) {
+    return match (move value) {
+        some(auto inner) => inner + 1;
+        none() => -1;
+    };
+}
+
+comptime int classify(int value) {
+    int result = 0;
+    switch (value) {
+        case 1: result += 10;
+        default: result += 20;
+        case 2: result += 30; break;
+        case 3:
+        case 4: result += 40; break;
+    }
+    return result;
+}
+
+comptime int count() {
+    int result = 0;
+    for (int i = 0; i < 4; i++) {
+        switch (i) {
+            case 1: continue;
+            case 2: result += 10; break;
+            default: result += 1;
+        }
+        result += 100;
+    }
+    return result;
+}
+
+int main() {
+    printf("%d %d %d %d\n", choose(1), choose(2), unwrap(std::opt(int)::some(41)), unwrap(std::opt(int)::none()));
+    printf("%d %d %d %d %d\n", classify(1), classify(2), classify(3), classify(4), classify(9));
+    printf("%d\n", count());
+    return 0;
+}
