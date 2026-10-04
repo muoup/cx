@@ -1,0 +1,67 @@
+// NOTE: This is currently a sketch, this module will not compile
+
+import std::optional as std;
+
+public:
+
+comptime 'a @type iter(@lifetime a, @type index)
+    => 'a typeclass(this) {
+        std::opt(index) next(this);
+    };
+
+comptime ^iter(a, index) span::iter(@lifetime a, @type index, ^std::span(a, index) this)
+    =>  std::splice_tap(this, |auto& this|
+            span_iter(index) {
+                .data = this.data,
+                .remaining = this.length
+            }
+        )
+        |> iter(a, index)() {
+            .next = @reify(_, |auto& iter| {
+                if (iter.remaining == 0) return _::none();
+                remaining--;
+                return _::some(*data++);    
+            }),
+        };
+
+comptime ^void iter::for_each(@lifetime a, @type index, ^iter(a, index) this, ^fn callback(index) -> void)
+    => emit {
+        while (true) {
+            match (this.next()) {
+                some(auto value) => callback(value),
+                none() => break
+            }
+        }
+    };
+
+comptime ^iter(a, index) vector::iter(@lifetime a, @type index, ^std::vector('a, index) this)
+    => this
+        |>(2) std::vector::as_span(a, _)
+        |>(2) span::iter(_, _);
+
+private:
+
+comptime @type span_iter(@type index)
+    => struct {
+        T* data;
+        usize remaining;
+    };
+
+// Test:
+
+import std::vector as std;
+import std::iter as std;
+
+int main() {
+    std::vector(int) vec = vector_factory();
+
+    move vec 
+        |> std::vector::iter(_, _)
+        |> std::iter::for_each(_, _, |val| std::printf("%d ", val));
+};
+
+void routine(std::vector(std::string) strs)
+    => str
+    |>(2) std::vector::iter(_, _)
+    |>(2) std::iter::map_c(_, _, emit std::string::len, std::string::drop())
+    |>(2) std::iter::rfold(_, _, 0, std::add(_));
