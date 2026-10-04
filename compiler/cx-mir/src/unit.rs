@@ -8,9 +8,9 @@ pub mod function;
 use crate::{
     constant::MIRConstant,
     expr::instruction::MIRScopeID,
-    ty::{MIRTypeID, comptime::MIRComptimeType, registry::MIRTypeRegistry},
+    ty::{MIRTypeID, registry::MIRTypeRegistry},
     unit::function::{MIRFunction, MIRFunctionID},
-    value::{MIRComptimeRegisterID, MIRPlaceID, MIRRegisterID as MIRRegister},
+    value::{MIRPlaceID, MIRRegisterID as MIRRegister},
 };
 
 dense_id!(MIRGlobalID, "global.");
@@ -92,13 +92,6 @@ pub struct MIRScopeDecl {
 pub struct MIRRegisterDecl {
     pub id: MIRRegister,
     pub ty: MIRTypeID,
-    pub debug_name: Option<CXIdent>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MIRComptimeRegisterDecl {
-    pub id: MIRComptimeRegisterID,
-    pub ty: MIRComptimeType,
     pub debug_name: Option<CXIdent>,
 }
 

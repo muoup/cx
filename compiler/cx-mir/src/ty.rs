@@ -1,5 +1,4 @@
 pub mod comparison;
-pub mod comptime;
 pub mod interface;
 pub mod layout;
 pub mod registry;

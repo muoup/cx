@@ -6,4 +6,6 @@ The mid-level intermediate representation (MIR) is a flat SSA-style IR modeled t
  - Const value propogation for tautological assertion failures
  - Ghost variable value tracking (to be implemented)
 
-MIR intentionally avoids any notion of memory or registers, we carry over the term 'register' to represent virtual registers in the SSA sense, and abstract away the concept of memory via 'places'. Places are virtual regions containing contiguous memory. 
+MIR uses virtual SSA registers and abstracts storage through 'places'. Places are virtual regions containing contiguous memory.
+
+MIR is the result of staging HMIR in `cx-hmir-lowering`. The lowering evaluator handles comptime expressions, types, function specialization, and staged quotes before emitting runtime MIR. MIR bodies and basic blocks contain only `MIRInstruction`; they have no comptime parameters, registers, or operands. Evaluated data can appear as ordinary `MIRConstant` values and global initializers, while type and quote values remain within HMIR lowering.

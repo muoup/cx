@@ -12,14 +12,14 @@ use crate::{
 dense_id!(MIRScopeID, "scope.");
 
 #[derive(Debug, Clone)]
-pub struct MIRBasicBlock<I = MIRInstruction> {
+pub struct MIRBasicBlock {
     id: MIRBasicBlockID,
     debug_name: Option<CXIdent>,
     params: Vec<MIRRegisterID>,
-    instructions: Vec<I>,
+    instructions: Vec<MIRInstruction>,
 }
 
-impl<I> MIRBasicBlock<I> {
+impl MIRBasicBlock {
     pub fn new(id: MIRBasicBlockID, debug_name: Option<CXIdent>) -> Self {
         Self {
             id,
@@ -30,7 +30,7 @@ impl<I> MIRBasicBlock<I> {
         }
     }
 
-    pub fn push(&mut self, instr: I) -> &mut I {
+    pub fn push(&mut self, instr: MIRInstruction) -> &mut MIRInstruction {
         self.instructions.push(instr);
         self.instructions.last_mut().unwrap()
     }
@@ -55,19 +55,19 @@ impl<I> MIRBasicBlock<I> {
         self.params.push(param);
     }
 
-    pub fn instructions(&self) -> &[I] {
+    pub fn instructions(&self) -> &[MIRInstruction] {
         &self.instructions
     }
 
-    pub fn instruction(&self, index: usize) -> Option<&I> {
+    pub fn instruction(&self, index: usize) -> Option<&MIRInstruction> {
         self.instructions.get(index)
     }
 
-    pub fn last_instruction(&self) -> Option<&I> {
+    pub fn last_instruction(&self) -> Option<&MIRInstruction> {
         self.instructions.last()
     }
 
-    pub fn push_instruction(&mut self, instr: I) {
+    pub fn push_instruction(&mut self, instr: MIRInstruction) {
         self.instructions.push(instr);
     }
 }
@@ -84,16 +84,6 @@ impl MIRInstruction {
     }
 
     pub fn is_terminator(&self) -> bool {
-        self.kind.is_terminator()
-    }
-}
-
-pub trait MIRInstructionLike {
-    fn is_terminator(&self) -> bool;
-}
-
-impl MIRInstructionLike for MIRInstruction {
-    fn is_terminator(&self) -> bool {
         self.kind.is_terminator()
     }
 }

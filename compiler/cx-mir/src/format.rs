@@ -3,7 +3,6 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    MIRInstructionLike,
     expr::{
         body::MIRBody,
         instruction::{
@@ -17,15 +16,15 @@ use crate::{
     },
     ty::{
         MIRBitfieldAccess, MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind,
-        comptime::MIRComptimeType, interface::MTRegistry,
+        interface::MTRegistry,
     },
     unit::{
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
         function::{MIRFnSignature, MIRFunction},
     },
     value::{
-        MIRBindable, MIRBlockTarget, MIRComptimeOperand, MIRComptimeOutput, MIRComptimeValue,
-        MIRConstant, MIRGlobalRef, MIRPlaceID, MIRRegisterID, MIRTarget, MIRValue,
+        MIRBindable, MIRBlockTarget, MIRConstant, MIRGlobalRef, MIRPlaceID, MIRRegisterID,
+        MIRTarget, MIRValue,
     },
 };
 
@@ -79,35 +78,6 @@ impl Display for MIRGlobalRef {
             write!(f, " + {}", self.offset)?;
         }
         Ok(())
-    }
-}
-
-impl Display for MIRComptimeOutput {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Runtime(register) => Display::fmt(register, f),
-            Self::Comptime(register) => Display::fmt(register, f),
-        }
-    }
-}
-
-impl Display for MIRComptimeOperand {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Runtime(value) => Display::fmt(value, f),
-            Self::Comptime(register) => Display::fmt(register, f),
-            Self::Known(value) => Display::fmt(value, f),
-        }
-    }
-}
-
-impl Display for MIRComptimeValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Constant(value) => Display::fmt(value, f),
-            Self::Staged(value) => write!(f, "staged {value}"),
-            Self::Caller(value) => Display::fmt(value, f),
-        }
     }
 }
 
@@ -407,24 +377,17 @@ fn write_function<T: MTRegistry>(
     write!(f, " /* {} */", function.prototype().symbol_name)?;
 
     match function.body() {
-        Some(body) => write_body(f, unit, function, body, types, write_instruction),
+        Some(body) => write_body(f, unit, function, body, types),
         None => f.write_str(";"),
     }
 }
 
-fn write_body<T: MTRegistry, K: MIRInstructionLike>(
+fn write_body<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    body: &MIRBody<K>,
+    body: &MIRBody,
     types: &mut TypePrinter<'_, T>,
-    write_kind: impl Fn(
-        &mut Formatter<'_>,
-        &MIRUnit,
-        &MIRFunction,
-        &K,
-        &mut TypePrinter<'_, T>,
-    ) -> fmt::Result,
 ) -> fmt::Result {
     f.write_str(" {\n")?;
     for place in body.places() {
@@ -441,58 +404,18 @@ fn write_body<T: MTRegistry, K: MIRInstructionLike>(
         types.write(f, register.ty)?;
         f.write_str(";\n")?;
     }
-    for register in body.comptime_registers() {
-        f.write_str("    let ")?;
-        if let Some(name) = &register.debug_name {
-            write!(f, "%{name}")?;
-        } else {
-            Display::fmt(&register.id, f)?;
-        }
-        f.write_str(": ")?;
-        write_comptime_type(f, types, &register.ty)?;
-        f.write_str(";\n")?;
-    }
     for block in body.blocks() {
-        write_block(f, unit, function, block, types, &write_kind)?;
+        write_block(f, unit, function, block, types)?;
     }
     f.write_str("}")
 }
 
-fn write_comptime_type<T: MTRegistry>(
-    f: &mut Formatter<'_>,
-    types: &mut TypePrinter<'_, T>,
-    ty: &MIRComptimeType,
-) -> fmt::Result {
-    match ty {
-        MIRComptimeType::Standard(ty) => types.write(f, *ty),
-        MIRComptimeType::StagedExpression { result, params } => {
-            f.write_str("staged<")?;
-            types.write(f, *result)?;
-            f.write_str("; ")?;
-            for (index, param) in params.iter().enumerate() {
-                if index != 0 {
-                    f.write_str(", ")?;
-                }
-                types.write(f, *param)?;
-            }
-            f.write_str(">")
-        }
-    }
-}
-
-fn write_block<T: MTRegistry, K>(
+fn write_block<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    block: &MIRBasicBlock<K>,
+    block: &MIRBasicBlock,
     types: &mut TypePrinter<'_, T>,
-    write_kind: &impl Fn(
-        &mut Formatter<'_>,
-        &MIRUnit,
-        &MIRFunction,
-        &K,
-        &mut TypePrinter<'_, T>,
-    ) -> fmt::Result,
 ) -> fmt::Result {
     write!(f, "    {}", block.id())?;
     if !block.params().is_empty() {
@@ -511,7 +434,7 @@ fn write_block<T: MTRegistry, K>(
     f.write_str(":\n")?;
     for instruction in block.instructions() {
         f.write_str("        ")?;
-        write_kind(f, unit, function, instruction, types)?;
+        write_instruction(f, unit, function, instruction, types)?;
         f.write_str(";\n")?;
     }
     Ok(())

@@ -1,12 +1,10 @@
-use cx_util::{dense_id, unsafe_float::FloatWrapper};
+use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
     MIRGlobalRef,
     ty::{MIRFloatType, MIRIntType, MIRTypeID},
     unit::function::MIRFunctionID,
 };
-
-dense_id!(MIRStagedID, "%s");
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRConstant {

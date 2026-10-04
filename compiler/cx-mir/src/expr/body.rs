@@ -3,34 +3,26 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     expr::instruction::{MIRBasicBlock, MIRInstruction, MIRScopeID},
-    ty::{MIRTypeID, comptime::MIRComptimeType},
-    unit::{
-        MIRBasicBlockID, MIRComptimeRegisterDecl, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl,
-        function::MIRFnParam,
-    },
-    value::{
-        MIRBindable, MIRComptimeParameter, MIRComptimeRegisterID, MIRPlaceID,
-        MIRRegisterID as MIRRegister,
-    },
+    ty::MIRTypeID,
+    unit::{MIRBasicBlockID, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl, function::MIRFnParam},
+    value::{MIRBindable, MIRPlaceID, MIRRegisterID as MIRRegister},
 };
 
 #[derive(Debug, Clone)]
-pub struct MIRBody<I = MIRInstruction> {
+pub struct MIRBody {
     entry: MIRBasicBlockID,
 
-    blocks: Vec<MIRBasicBlock<I>>,
+    blocks: Vec<MIRBasicBlock>,
     places: Vec<MIRPlaceDecl>,
 
     parameters: Vec<MIRPlaceID>,
-    comptime_parameters: Vec<MIRComptimeParameter>,
 
     registers: Vec<MIRRegisterDecl>,
-    comptime_registers: Vec<MIRComptimeRegisterDecl>,
 
     scopes: Vec<MIRScopeDecl>,
 }
 
-impl<I> MIRBody<I> {
+impl MIRBody {
     pub fn new() -> Self {
         Self {
             entry: MIRBasicBlockID::new(0),
@@ -38,8 +30,6 @@ impl<I> MIRBody<I> {
             places: Vec::new(),
             parameters: Vec::new(),
             registers: Vec::new(),
-            comptime_parameters: Vec::new(),
-            comptime_registers: Vec::new(),
             scopes: Vec::new(),
         }
     }
@@ -76,21 +66,21 @@ impl<I> MIRBody<I> {
         register
     }
 
-    pub fn push_instr_at(&mut self, block: MIRBasicBlockID, instr: I) {
+    pub fn push_instr_at(&mut self, block: MIRBasicBlockID, instr: MIRInstruction) {
         self.block_mut(block)
             .expect("instruction pushed to unknown block")
             .push_instruction(instr);
     }
 
-    pub fn blocks(&self) -> &[MIRBasicBlock<I>] {
+    pub fn blocks(&self) -> &[MIRBasicBlock] {
         &self.blocks
     }
 
-    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock<I>> {
+    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
         self.blocks().get(id.index())
     }
 
-    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock<I>> {
+    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
         self.blocks.get_mut(id.index())
     }
 
@@ -170,57 +160,12 @@ impl<I> MIRBody<I> {
         place
     }
 
-    pub fn add_comptime_parameter(
-        &mut self,
-        ty: MIRComptimeType,
-        debug_name: Option<CXIdent>,
-        nodrop: bool,
-        scope: MIRScopeID,
-    ) -> MIRComptimeParameter {
-        let parameter = match ty {
-            MIRComptimeType::Standard(ty) => {
-                let place = self.add_place(ty, debug_name, nodrop, scope);
-                self.parameters.push(place);
-                MIRComptimeParameter::Runtime(place)
-            }
-            ty @ MIRComptimeType::StagedExpression { .. } => {
-                let register = self.add_comptime_register(ty, debug_name);
-                MIRComptimeParameter::Comptime(register)
-            }
-        };
-        self.comptime_parameters.push(parameter);
-        parameter
-    }
-
-    pub fn comptime_parameters(&self) -> &[MIRComptimeParameter] {
-        &self.comptime_parameters
-    }
-
     pub fn registers(&self) -> &[MIRRegisterDecl] {
         &self.registers
     }
 
     pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
         self.registers().get(id.index())
-    }
-
-    pub fn add_comptime_register(
-        &mut self,
-        ty: MIRComptimeType,
-        debug_name: Option<CXIdent>,
-    ) -> MIRComptimeRegisterID {
-        let id = MIRComptimeRegisterID::new(self.comptime_registers.len());
-        self.comptime_registers
-            .push(MIRComptimeRegisterDecl { id, ty, debug_name });
-        id
-    }
-
-    pub fn comptime_registers(&self) -> &[MIRComptimeRegisterDecl] {
-        &self.comptime_registers
-    }
-
-    pub fn comptime_register(&self, id: MIRComptimeRegisterID) -> Option<&MIRComptimeRegisterDecl> {
-        self.comptime_registers.get(id.index())
     }
 
     pub fn bindable_debug_name(&self, bindable: &MIRBindable) -> (String, bool) {

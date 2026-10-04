@@ -27,25 +27,27 @@ Preparsed data from imported modules is merged into a combined symbol view for t
 
 ## Stage 4: Parsing
 
-The parser builds the AST using the combined declaration environment from the preparse stages.
+The parser builds the AST, represented as HIR, using the combined declaration environment from the preparse stages.
 
 - **Input**: tokens + combined declaration environment
-- **Output**: AST
+- **Output**: HIR
 
-## Stage 5: Type Checking and Template Realization
+## Stage 5: HMIR Generation
 
-The typechecker resolves identifiers to concrete types, realizes templates, inserts implicit coercions, validates ownership rules, and constructs THIR. Staged expressions remain frozen, typechecked THIR fragments.
+`cx-hir-lowering` resolves names and constructs HMIR from HIR and the declaration environment. HMIR retains type expressions, comptime parameters and bodies, and staged quotes for evaluation during lowering.
 
-- **Input**: AST + declaration environment
-- **Output**: THIR
+- **Input**: HIR + declaration environment
+- **Output**: HMIR
 
 ## Stage 6: MIR Generation and Analysis
 
-THIR is lowered once into semantic MIR. MIR owns interned semantic types, target-dependent size/alignment layouts, storage ownership metadata such as `@nodrop`, and source ranges for emitted instructions. Symbolic `sizeof` and `alignof` queries are resolved here.
+`cx-hmir-lowering` evaluates comptime expressions, specializes functions, resolves types, inserts conversions, and splices staged quotes while lowering HMIR into MIR. Comptime parameters are bound in the evaluator and omitted from runtime signatures. Type and quote values cannot escape into runtime MIR values.
+
+MIR contains concrete runtime instructions, types, and constants. It owns interned semantic types, target-dependent size/alignment layouts, storage ownership metadata such as `@nodrop`, and source ranges for emitted instructions. Symbolic `sizeof` and `alignof` queries are resolved during HMIR lowering. MIR has no comptime register bank, comptime instruction stream, or staged-expression values.
 
 MIR validation, liveness, and safe-function assertion analysis run after lowering, so the code-generation IR remains the semantic analysis boundary.
 
-- **Input**: THIR
+- **Input**: HMIR
 - **Output**: MIR + analysis data
 
 ## Stage 7: LMIR Generation
@@ -86,6 +88,9 @@ After library linking, a C header is generated from the entry file's LMIR unit. 
 
 ## IR Roles
 
-- **AST**: parsed source structure
+- **HIR (AST)**: parsed declarations and bodies used for symbol lookup and HMIR generation
+- **HMIR**: resolved names with type expressions and staging constructs
 - **MIR**: typed, semantically resolved frontend IR
 - **LMIR**: lowered SSA-style IR for code generation
+
+The legacy THIR, typechecker, THIR lowering, and MIR comptime evaluator sources are retained for parity comparisons but are not part of the active workspace. THIR-specific MIR definitions are archived in [the legacy MIR reference](../compiler/cx-mir-comptime/legacy-mir/README.md).
