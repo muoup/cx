@@ -5,7 +5,7 @@ import std::optional as std;
 public:
 
 comptime 'a @type iter(@lifetime a, @type index)
-    => 'a typeclass(this) {
+    => 'a typeclass(@type this) {
         std::opt(index) next(this);
     };
 
@@ -34,6 +34,18 @@ comptime ^void iter::for_each(@lifetime a, @type index, ^iter(a, index) this, ^f
         }
     };
 
+comptime ^iter(a, out) iter::map(
+    @lifetime a, @type in, @type out, 
+    ^iter(a, index) this, 
+    ^fn callback(index) -> out
+)
+    => iter(a, out)() {
+        .next = @reify(_, |auto& iter| {
+            iter.next()
+            |>(1) std::optional::map(_, |auto value| callback(value))
+        }),
+    };
+
 comptime ^iter(a, index) vector::iter(@lifetime a, @type index, ^std::vector('a, index) this)
     => this
         |>(2) std::vector::as_span(a, _)
@@ -56,12 +68,13 @@ int main() {
     std::vector(int) vec = vector_factory();
 
     move vec 
-        |> std::vector::iter(_, _)
-        |> std::iter::for_each(_, _, |val| std::printf("%d ", val));
+        |>(2) std::vector::iter(_, _)
+        |>(2) std::iter::for_each(_, _, |val| std::printf("%d ", val));
 };
 
 void routine(std::vector(std::string) strs)
     => str
     |>(2) std::vector::iter(_, _)
-    |>(2) std::iter::map_c(_, _, emit std::string::len, std::string::drop())
+    |>(2) std::tap_c(_, emit std::string::len, emit std::string::drop)
+    |>(2) std::iter::map(_, _)
     |>(2) std::iter::rfold(_, _, 0, std::add(_));
