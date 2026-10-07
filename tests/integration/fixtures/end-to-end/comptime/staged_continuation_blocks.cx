@@ -1,0 +1,50 @@
+/* CX-STDOUT: enter 1 */
+/* CX-STDOUT-NEXT: call form 1 */
+/* CX-STDOUT-NEXT: leave 1 */
+/* CX-STDOUT-NEXT: enter 2 */
+/* CX-STDOUT-NEXT: inner 2 */
+/* CX-STDOUT-NEXT: leave 2 */
+/* CX-STDOUT-NEXT: after inner */
+/* CX-STDOUT-NEXT: enter 3 */
+/* CX-STDOUT-NEXT: leave 3 */
+
+#include <stdio.h>
+
+void trace_leave(int value) {
+    printf("leave %d\n", value);
+}
+
+comptime expr void with_trace(expr int& value, expr(int&) void proc) {
+    return emit .{
+        printf("enter %d\n", value);
+        defer trace_leave(value);
+        proc(value);
+    };
+}
+
+void call_form() {
+    int source = 1;
+    with_trace(source, |value| then);
+    printf("call form %d\n", value);
+}
+
+void inner_block() {
+    int source = 2;
+    {
+        with_trace(source) <| |value| then
+        printf("inner %d\n", value);
+    }
+    printf("after inner\n");
+}
+
+void at_block_end() {
+    int source = 3;
+    with_trace(source) <| |value| then
+}
+
+int main() {
+    call_form();
+    inner_block();
+    at_block_end();
+    return 0;
+}

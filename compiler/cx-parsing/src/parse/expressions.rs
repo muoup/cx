@@ -2,7 +2,7 @@ use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{
     assert_token_matches,
     log::{parse_point_error, parse_underline_error},
-    next_kind, peek_next_kind, try_next,
+    next_kind, peek_kind, peek_next_kind, try_next,
 };
 use cx_hir::ast::expression::{
     HIRBinOp, HIRExprKind, HIRExpression, HIRInitIndex, HIRUnpackBinding,
@@ -12,16 +12,15 @@ use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_namespace::module::QualifiedName;
 use cx_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
-use cx_tokens::{identifier, operator, punctuator};
+use cx_tokens::{identifier, keyword, operator, punctuator};
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
+use crate::parse::statement::parse_stmt;
 use crate::parse::types::{is_type_decl, parse_initializer};
-use crate::parse::{
-    parse_block, parse_body, parse_expression_block, parse_intrinsic, try_parse_identifier,
-};
+use crate::parse::{parse_block, parse_expression_block, parse_intrinsic, try_parse_identifier};
 
 fn parse_at_intrinsic_expr(
     data: &mut ParserData,
@@ -32,9 +31,8 @@ fn parse_at_intrinsic_expr(
 
     match ident {
         "unsafe" => {
-            let expr = if try_next!(data.tokens, punctuator!(OpenBrace)) {
-                data.tokens.back();
-                parse_body(data)?
+            let expr = if peek_kind!(data.tokens, punctuator!(OpenBrace)) {
+                parse_block(data)?
             } else {
                 assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                 let expr = parse_expr(data)?;
@@ -429,9 +427,10 @@ pub(crate) fn parse_expr_val(
                 assert_token_matches!(data.tokens, operator!(Comma), "',' or '|'");
             }
 
-            let body = if try_next!(data.tokens, punctuator!(OpenBrace)) {
-                data.tokens.back();
+            let body = if peek_kind!(data.tokens, punctuator!(OpenBrace)) {
                 parse_block(data)?
+            } else if try_next!(data.tokens, keyword!(Then)) {
+                data.expr_from(data.tokens.index - 1, HIRExprKind::Then)
             } else {
                 parse_expr(data)?
             };
@@ -654,9 +653,7 @@ pub(crate) fn parse_keyword_expr(
         }
 
         KeywordType::Return => {
-            let value = if try_next!(data.tokens, punctuator!(Semicolon)) {
-                data.tokens.back();
-
+            let value = if peek_kind!(data.tokens, punctuator!(Semicolon)) {
                 None
             } else {
                 Some(Box::new(parse_expr(data)?))
@@ -666,9 +663,7 @@ pub(crate) fn parse_keyword_expr(
         }
 
         KeywordType::Yield => {
-            let value = if try_next!(data.tokens, punctuator!(Semicolon)) {
-                data.tokens.back();
-
+            let value = if peek_kind!(data.tokens, punctuator!(Semicolon)) {
                 None
             } else {
                 Some(Box::new(parse_expr(data)?))
@@ -697,7 +692,7 @@ pub(crate) fn parse_keyword_expr(
 
                 let value = parse_pattern(data)?;
                 assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                let body = parse_body(data)?;
+                let body = parse_stmt(data)?;
                 arms.push((value, body));
             }
 
@@ -718,8 +713,6 @@ pub(crate) fn parse_keyword_expr(
                 expr: Box::new(expr),
             })
         }
-        KeywordType::Then => Ok(HIRExprKind::Then),
-
         _ => {
             data.tokens.back();
 

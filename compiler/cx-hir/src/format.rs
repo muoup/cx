@@ -108,7 +108,7 @@ impl Display for HIRFunctionBody {
         match self {
             Self::Block { statements, .. } => {
                 writeln!(f, "Function Body {{")?;
-                for statement in statements {
+                for statement in statements.iter() {
                     HIRExprFormatter::new(statement, 1).fmt(f)?;
                 }
                 writeln!(f, "}}")
@@ -223,7 +223,7 @@ impl<'a> Display for HIRExprFormatter<'a> {
                         HIRBlockKind::Expression => "Expression Block",
                     }
                 )?;
-                for stmt in exprs {
+                for stmt in exprs.iter() {
                     HIRExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
                 }
                 self.indent(f)?;

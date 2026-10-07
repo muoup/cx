@@ -1,3 +1,6 @@
+use std::rc::Rc;
+
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::{CXRawResult, catalogue::typecheck};
 use cx_thir::thir::r#type::THIRType;
 
@@ -33,6 +36,12 @@ struct Scope {
     expected_yield_type: Option<THIRType>,
     staged_boundary: bool,
     effects: ScopeEffects,
+    block: Option<BlockCursor>,
+}
+
+struct BlockCursor {
+    statements: Rc<[HIRExpression]>,
+    next: usize,
 }
 
 impl ControlFlow {
@@ -48,6 +57,7 @@ impl ControlFlow {
             expected_yield_type: None,
             staged_boundary: false,
             effects: ScopeEffects::default(),
+            block: None,
         });
     }
 
@@ -59,6 +69,7 @@ impl ControlFlow {
             expected_yield_type: expected_type,
             staged_boundary: false,
             effects: ScopeEffects::default(),
+            block: None,
         });
     }
 
@@ -70,7 +81,38 @@ impl ControlFlow {
             expected_yield_type: None,
             staged_boundary: true,
             effects: ScopeEffects::default(),
+            block: None,
         });
+    }
+
+    /// Marks the innermost scope as the scope of a block with these statements.
+    pub fn enter_block(&mut self, statements: &Rc<[HIRExpression]>) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.block = Some(BlockCursor {
+                statements: statements.clone(),
+                next: 0,
+            });
+        }
+    }
+
+    pub fn in_block(&self) -> bool {
+        self.scopes.iter().any(|scope| scope.block.is_some())
+    }
+
+    /// Advances the innermost block, returning its statements and the index of the one to check.
+    pub fn next_block_statement(&mut self) -> Option<(Rc<[HIRExpression]>, usize)> {
+        let cursor = self
+            .scopes
+            .iter_mut()
+            .rev()
+            .find_map(|scope| scope.block.as_mut())?;
+        let index = cursor.next;
+        if index == cursor.statements.len() {
+            return None;
+        }
+
+        cursor.next += 1;
+        Some((cursor.statements.clone(), index))
     }
 
     pub fn at_function_root(&self) -> bool {

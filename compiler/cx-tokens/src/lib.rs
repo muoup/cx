@@ -21,13 +21,13 @@ impl<'a> TokenIter<'a> {
         }
     }
 
-    pub fn next(&mut self) -> Option<&Token> {
+    pub fn next(&mut self) -> Option<&'a Token> {
         let next = self.slice.get(self.index)?;
         self.index += 1;
         Some(next)
     }
 
-    pub fn peek(&self) -> Option<&Token> {
+    pub fn peek(&self) -> Option<&'a Token> {
         self.slice.get(self.index)
     }
 

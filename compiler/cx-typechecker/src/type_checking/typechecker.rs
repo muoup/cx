@@ -47,6 +47,29 @@ pub fn typecheck_expr(
     typecheck_expr_inner(env, namespace, expr, expected_type)
 }
 
+fn typecheck_statement(
+    env: &mut TypeEnvironment,
+    namespace: &NamespacePath,
+    statement: &HIRExpression,
+) -> CXResult<THIRExpression> {
+    typecheck_expr(env, namespace, statement, None)?
+        .standard_ready_coerce(env, statement.token_range())
+}
+
+/// Typechecks what remains of the innermost block. `then` calls this from within a statement of
+/// that block, which leaves the block's own call with nothing further to check.
+pub(crate) fn typecheck_block_statements(
+    env: &mut TypeEnvironment,
+    namespace: &NamespacePath,
+) -> CXResult<Vec<THIRExpression>> {
+    let mut checked = Vec::new();
+    while let Some((statements, index)) = env.function.flow_mut().next_block_statement() {
+        checked.push(typecheck_statement(env, namespace, &statements[index])?);
+    }
+
+    Ok(checked)
+}
+
 fn typecheck_expr_inner(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
@@ -66,13 +89,15 @@ fn typecheck_expr_inner(
                 env.push_scope(false, false, expr.token_range().clone());
             }
 
-            let checked = exprs
-                .iter()
-                .map(|statement| {
-                    typecheck_expr(env, namespace, statement, None)
-                        .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
-                })
-                .collect::<CXResult<Vec<_>>>();
+            let checked = if creates_scope {
+                env.function.flow_mut().enter_block(exprs);
+                typecheck_block_statements(env, namespace)
+            } else {
+                exprs
+                    .iter()
+                    .map(|statement| typecheck_statement(env, namespace, statement))
+                    .collect()
+            };
 
             let effects = if creates_scope {
                 Some(
@@ -166,14 +191,26 @@ fn typecheck_expr_inner(
         }
 
         HIRExprKind::Then => {
-            return env.log_error(
-                expr.token_range(),
-                &catalogue::INVALID_CONTEXT,
-                (
-                    "then expression".into(),
-                    "outside of a backward pipe operator".into(),
-                ),
-            );
+            if !env.function.flow().in_block() {
+                return env.log_error(
+                    expr.token_range(),
+                    &catalogue::INVALID_CONTEXT,
+                    (
+                        "then expression".into(),
+                        "a context without an enclosing block".into(),
+                    ),
+                );
+            }
+
+            TypecheckResult::from(THIRExpression {
+                token_range: expr.token_range().clone(),
+                kind: THIRExpressionKind::Block {
+                    statements: typecheck_block_statements(env, namespace)?,
+                    kind: THIRBlockKind::Sequence,
+                    yields: false,
+                },
+                ty: THIRType::unit(),
+            })
         }
 
         HIRExprKind::IntLiteral {

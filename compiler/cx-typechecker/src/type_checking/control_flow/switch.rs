@@ -18,14 +18,14 @@ fn case_body_expression(
     end: usize,
     fallback_range: &TokenRange,
 ) -> HIRExpression {
-    let expressions = block[start..end].to_vec();
+    let expressions = &block[start..end];
     let range = expressions
         .first()
         .map(|expression| expression.range.clone())
         .unwrap_or_else(|| fallback_range.clone());
     HIRExpression {
         kind: HIRExprKind::Block {
-            exprs: expressions,
+            exprs: expressions.into(),
             kind: HIRBlockKind::Sequence,
         },
         range,

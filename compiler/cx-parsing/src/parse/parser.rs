@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use cx_hir::ast::{
-    function::HIRFunctionKind, modifiers::HIRSymbolNameScheme, HIRDefinition, HIRStmt, HIR,
+    expression::{HIRExprKind, HIRExpression},
+    function::HIRFunctionKind,
+    modifiers::HIRSymbolNameScheme,
+    HIRDefinition, HIRStmt, HIR,
 };
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
@@ -86,6 +89,14 @@ impl<'a> ParserData<'a> {
 
     pub fn token_range(&self, start_token: usize, end_token: usize) -> TokenRange {
         TokenRange::from_tokens(start_token, end_token, self.tokens.slice)
+    }
+
+    pub fn expr_from(&self, start_token: usize, kind: HIRExprKind) -> HIRExpression {
+        kind.into_expr(
+            start_token,
+            self.tokens.index,
+            self.token_range(start_token, self.tokens.index),
+        )
     }
 
     pub fn get_comma_mode(&self) -> bool {
