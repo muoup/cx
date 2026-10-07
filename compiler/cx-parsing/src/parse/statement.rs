@@ -48,6 +48,7 @@ pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
 
 pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpression>> {
     let label_start = data.tokens.index;
+    
     if let (Some(TokenKind::Identifier(name)), Some(TokenKind::Punctuator(PunctuatorType::Colon))) = (
         data.tokens.peek().map(|token| &token.kind),
         data.tokens
@@ -260,8 +261,14 @@ pub(crate) fn try_parse_keyword_stmt(
             })
         }
 
-        KeywordType::Break => Some(HIRExprKind::Break),
-        KeywordType::Continue => Some(HIRExprKind::Continue),
+        KeywordType::Break => {
+            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+            Some(HIRExprKind::Break)
+        }
+        KeywordType::Continue => {
+            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+            Some(HIRExprKind::Continue)
+        }
 
         KeywordType::Goto => {
             let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {

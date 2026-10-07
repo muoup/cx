@@ -474,7 +474,7 @@ impl Display for HIRBinOp {
             HIRBinOp::Access => write!(f, "."),
             HIRBinOp::MethodCall => write!(f, "()"),
             HIRBinOp::ArrayIndex => write!(f, "[]"),
-            HIRBinOp::Comma => write!(f, ","),
+            HIRBinOp::Comma | HIRBinOp::GroupedComma => write!(f, ","),
             HIRBinOp::Assign(add) => {
                 if let Some(add) = add {
                     write!(f, "{} =", add)

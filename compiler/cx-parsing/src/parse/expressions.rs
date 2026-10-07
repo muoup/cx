@@ -495,6 +495,11 @@ pub(crate) fn parse_expr_val(
                 return Ok(());
             }
 
+            let is_argument_list = matches!(
+                op_stack.last(),
+                Some(PrecOperator::BinOp(HIRBinOp::MethodCall))
+            );
+
             data.change_comma_mode(true);
 
             let expr = parse_expr(data)?;
@@ -507,7 +512,18 @@ pub(crate) fn parse_expr_val(
                 "')'"
             );
 
-            expr.kind
+            match expr.kind {
+                HIRExprKind::BinOp {
+                    lhs,
+                    rhs,
+                    op: HIRBinOp::Comma,
+                } if !is_argument_list => HIRExprKind::BinOp {
+                    lhs,
+                    rhs,
+                    op: HIRBinOp::GroupedComma,
+                },
+                kind => kind,
+            }
         }
 
         TokenKind::Punctuator(PunctuatorType::OpenBrace) => {

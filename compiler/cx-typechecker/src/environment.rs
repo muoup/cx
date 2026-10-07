@@ -22,7 +22,7 @@ use cx_util::identifier::CXIdent;
 pub use crate::environment::control_flow::{ControlTarget, ScopeEffects};
 use crate::{
     environment::function_context::FunctionContext,
-    symbol::registry::MIRSymbolRegistry,
+    symbol::{completion::DeferredType, registry::MIRSymbolRegistry},
 };
 use crate::{environment::items::ItemRegistry, log::generate_type_error};
 
@@ -44,6 +44,9 @@ pub struct TypeEnvironment<'a> {
     defer_depth: usize,
     staged_depth: usize,
     pub(crate) comptime_context: Option<StagingContext>,
+    pub(crate) named_type_depth: usize,
+    pub(crate) in_type_expression: bool,
+    pub(crate) deferred_types: Vec<DeferredType>,
     require_explicit_return: bool,
 }
 
@@ -62,6 +65,9 @@ impl TypeEnvironment<'_> {
             defer_depth: 0,
             staged_depth: 0,
             comptime_context: None,
+            named_type_depth: 0,
+            in_type_expression: false,
+            deferred_types: Vec::new(),
             require_explicit_return,
         }
     }

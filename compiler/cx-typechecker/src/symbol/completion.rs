@@ -126,9 +126,12 @@ pub(crate) fn complete_type_inner(
             let id = complete_type_id(env, namespace, inner)?;
             assert_valid_type_id_component(env, ty.range(), id, "an array element", true)?;
 
+            let in_type_expression = std::mem::replace(&mut env.in_type_expression, true);
             let size = typecheck_expr(env, namespace, size, None)
                 .and_then(|v| v.standard_ready_coerce(env, size.token_range()))
-                .and_then(|v| std_rval_promotion(env, v))?;
+                .and_then(|v| std_rval_promotion(env, v));
+            env.in_type_expression = in_type_expression;
+            let size = size?;
             let integer_type = env.get_intrinsic_type("int");
             let size = implicit_cast(env, size, &integer_type)?;
             THIRTypeKind::Array {
@@ -168,7 +171,7 @@ pub(crate) fn complete_type_inner(
         }
 
         HIRTypeKind::PointerTo { inner_type } => {
-            let inner_type = complete_type_id(env, namespace, inner_type)?;
+            let inner_type = complete_pointee_type_id(env, namespace, inner_type)?;
             assert_valid_type_id_component(env, ty.range(), inner_type, "a pointer target", false)?;
 
             THIRTypeKind::PointerTo { inner_type }.into()
@@ -523,7 +526,130 @@ fn complete_identifier_type(
     }
 }
 
+pub(crate) struct DeferredType {
+    name: QualifiedName,
+    declarations: Vec<HIRSymbol>,
+    id: THIRTypeID,
+}
+
+// A named pointee met while another named type is still being completed is only given a
+// placeholder, and completed once nothing is in progress. Completing it on the spot would
+// make mutually referential aggregates depend on which of them is reached first.
+// Expressions inside a type (array lengths) may look through the pointer, so they opt out.
+fn complete_pointee_type_id(
+    env: &mut TypeEnvironment,
+    namespace: &NamespacePath,
+    ty: &HIRType,
+) -> CXResult<THIRTypeID> {
+    if env.named_type_depth > 0 && !env.in_type_expression && ty.specifiers == 0 {
+        if let HIRTypeKind::Identifier {
+            name,
+            lookup,
+            template_input: None,
+        } = &ty.kind
+        {
+            let deferred = try_defer_named_type(env, namespace, name, *lookup)
+                .map_err(|err| env.complete_maybe_err(err, ty.range()))?;
+
+            if let Some(id) = deferred {
+                return Ok(id);
+            }
+        }
+    }
+
+    complete_type_id(env, namespace, ty)
+}
+
+fn try_defer_named_type(
+    env: &mut TypeEnvironment,
+    namespace: &NamespacePath,
+    name: &QualifiedName,
+    type_lookup: HIRTypeLookup,
+) -> CXMaybeRawResult<Option<THIRTypeID>> {
+    let tag = match type_lookup {
+        HIRTypeLookup::Standard => None,
+        HIRTypeLookup::Tag(tag) => Some(tag),
+    };
+
+    let Some(SymbolLookup {
+        resolved_name,
+        kind: SymbolLookupKind::Untyped(declarations),
+    }) = env.lookup_symbol(namespace, name, tag)?
+    else {
+        return Ok(None);
+    };
+
+    if !declarations.iter().all(HIRSymbol::is_type) {
+        return Ok(None);
+    }
+
+    let symbol = resolve_type_symbol(env, &resolved_name, &declarations)?;
+    let tagged = symbol.tag.is_some();
+
+    if matches!(&symbol.kind, HIRSymbolKind::Type(data) if data.template_prototype.is_some()) {
+        return Ok(None);
+    }
+
+    if let Some(cached) = env.symbols.cached(&resolved_name, tagged) {
+        return Ok(cached.as_type_id());
+    }
+
+    let id = insert_type_placeholder(env, &resolved_name, tagged);
+    env.deferred_types.push(DeferredType {
+        name: resolved_name,
+        declarations,
+        id,
+    });
+
+    Ok(Some(id))
+}
+
+fn take_deferred_type(env: &mut TypeEnvironment, id: THIRTypeID) -> bool {
+    let position = env
+        .deferred_types
+        .iter()
+        .position(|deferred| deferred.id == id);
+
+    position
+        .map(|position| env.deferred_types.remove(position))
+        .is_some()
+}
+
+fn insert_type_placeholder(
+    env: &mut TypeEnvironment,
+    name: &QualifiedName,
+    tagged: bool,
+) -> THIRTypeID {
+    let mut placeholder = THIRType::from(THIRTypeKind::Undefined);
+    placeholder.lookup_identifier = Some(name.clone());
+    placeholder.strong_identifier = tagged.then(|| mangle_namespace_symbol(name));
+    let id = env.symbols.generate_type_id(placeholder);
+    env.symbols
+        .insert_symbol(name.clone(), MIRSymbol::Type(id), tagged);
+
+    id
+}
+
 pub(crate) fn complete_named_type(
+    env: &mut TypeEnvironment,
+    name: &QualifiedName,
+    declarations: &[HIRSymbol],
+) -> CXResult<MIRSymbol> {
+    env.named_type_depth += 1;
+    let result = complete_named_type_inner(env, name, declarations);
+    env.named_type_depth -= 1;
+
+    if env.named_type_depth == 0 {
+        while let Some(deferred) = env.deferred_types.last() {
+            let (name, declarations) = (deferred.name.clone(), deferred.declarations.clone());
+            complete_named_type(env, &name, &declarations)?;
+        }
+    }
+
+    result
+}
+
+fn complete_named_type_inner(
     env: &mut TypeEnvironment,
     name: &QualifiedName,
     declarations: &[HIRSymbol],
@@ -531,9 +657,14 @@ pub(crate) fn complete_named_type(
     let symbol = resolve_type_symbol(env, name, declarations)
         .map_err(|error| env.complete_maybe_err(error, &cx_tokens::TokenRange::internal()))?;
     let tagged = symbol.tag.is_some();
+    let cached = env.symbols.cached(name, tagged).cloned();
+    let deferred_id = cached
+        .as_ref()
+        .and_then(MIRSymbol::as_type_id)
+        .filter(|id| take_deferred_type(env, *id));
 
-    if let Some(cached) = env.symbols.cached(name, tagged) {
-        return Ok(cached.clone());
+    if let (Some(cached), None) = (cached, deferred_id) {
+        return Ok(cached);
     }
 
     let HIRSymbolKind::Type(data) = &symbol.kind else {
@@ -551,12 +682,7 @@ pub(crate) fn complete_named_type(
         );
     }
 
-    let mut placeholder = THIRType::from(THIRTypeKind::Undefined);
-    placeholder.lookup_identifier = Some(name.clone());
-    placeholder.strong_identifier = tagged.then(|| mangle_namespace_symbol(name));
-    let id = env.symbols.generate_type_id(placeholder);
-    env.symbols
-        .insert_symbol(name.clone(), MIRSymbol::Type(id), tagged);
+    let id = deferred_id.unwrap_or_else(|| insert_type_placeholder(env, name, tagged));
     if tagged && is_self_predeclaration(data.base(), name) {
         return Ok(MIRSymbol::Type(id));
     }

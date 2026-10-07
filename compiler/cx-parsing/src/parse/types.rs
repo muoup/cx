@@ -1,6 +1,5 @@
 use crate::parse::expressions::parse_expr;
 use crate::parse::{try_parse_simple_identifier, ParserData};
-use crate::peek_next_kind;
 use crate::{assert_token_matches, log::parse_point_error, next_kind, peek_kind, try_next};
 use cx_hir::ast::expression::HIRExpression;
 use cx_hir::ast::global_var::HIREnumDefinition;
@@ -36,7 +35,10 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
     
     fn is_used_as_value(data: &ParserData) -> bool {
         matches!(
-            peek_next_kind!(data.tokens).ok(),
+            data.tokens
+                .slice
+                .get(data.tokens.index + 1)
+                .map(|token| &token.kind),
             Some(TokenKind::Assignment(_) | TokenKind::Operator(OperatorType::Access))
         )
     }
@@ -673,6 +675,19 @@ pub(crate) fn parse_type_mods(
 
         punctuator!(OpenParen) => {
             data.tokens.next();
+            if peek_kind!(data.tokens, identifier!())
+                && matches!(
+                    data.tokens
+                        .slice
+                        .get(data.tokens.index + 1)
+                        .map(|token| &token.kind),
+                    Some(punctuator!(CloseParen))
+                )
+            {
+                let name = try_parse_simple_identifier(&mut data.tokens);
+                data.tokens.next();
+                return Ok((name, acc_type));
+            }
             if !matches!(next_kind!(data.tokens), Ok(operator!(Asterisk))) {
                 data.tokens.index = start_index;
                 return Ok((None, acc_type));

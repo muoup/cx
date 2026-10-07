@@ -211,17 +211,21 @@ impl LexingContext {
                 continue;
             };
 
-            if !matches!(self.macros.get(name), Some(Macro::Function { .. })) {
+            if !matches!(
+                self.macros.get(name),
+                Some(Macro::Function { .. } | Macro::Builtin(BuiltinMacro::Attribute))
+            ) {
                 index += 1;
                 continue;
             }
 
-            if !matches!(
-                tokens.get(index + 1).map(|token| &token.kind),
-                Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
-            ) {
-                index += 1;
-                continue;
+            match tokens.get(index + 1).map(|token| &token.kind) {
+                Some(TokenKind::Punctuator(PunctuatorType::OpenParen)) => {}
+                None => return true,
+                Some(_) => {
+                    index += 1;
+                    continue;
+                }
             }
 
             let Some(next_index) = matching_close_paren_index(tokens, index + 1) else {

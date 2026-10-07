@@ -230,6 +230,8 @@ pub enum HIRBinOp {
     RShift,
 
     Comma,
+    // A parenthesised comma expression, kept apart from `Comma` so that it stays one call argument.
+    GroupedComma,
 
     Assign(Option<Box<HIRBinOp>>),
 
