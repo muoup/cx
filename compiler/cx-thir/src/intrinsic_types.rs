@@ -286,6 +286,12 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<THIRTypeKi
             ty: THIRFloatType::F64,
         })
     }),
+    ("__float128", |_| {
+        Some(THIRTypeKind::Opaque {
+            size: 16,
+            alignment: 16,
+        })
+    }),
     ("_Complex float", |_| {
         Some(THIRTypeKind::Float {
             ty: THIRFloatType::F64,

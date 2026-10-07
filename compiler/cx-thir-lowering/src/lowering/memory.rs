@@ -69,7 +69,7 @@ pub(crate) fn check_block_argument(
         .expect("unknown block argument");
     let expected_kind = builder.types().definition(expected).unwrap().kind();
     let actual_kind = builder.types().definition(actual).unwrap().kind();
-    if expected_kind != actual_kind {
+    if !builder.types().same_type(expected, actual) {
         return log_mir_error(
             range,
             (

@@ -645,15 +645,14 @@ fn parse_function_body(data: &mut ParserData) -> CXResult<HIRFunctionBody> {
 }
 
 pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
-    let mut ss = String::new();
+    let mut words = Vec::new();
 
     while let Ok(TokenKind::Intrinsic(ident)) = peek_next_kind!(tokens) {
-        ss.push_str(ident.as_str());
-        ss.push(' ');
+        words.push(ident.as_str().to_string());
         tokens.next();
     }
 
-    if ss.is_empty() {
+    if words.is_empty() {
         return parse_point_error(
             tokens,
             &EXPECTED_SYNTAX,
@@ -661,9 +660,14 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
         );
     }
 
-    ss.pop();
+    // C permits specifiers in any order; the intrinsic table is keyed on this one.
+    words.sort_by_key(|word| match word.as_str() {
+        "signed" | "unsigned" | "_Complex" => 0,
+        "short" | "long" => 1,
+        _ => 2,
+    });
 
-    Ok(CXIdent::new(ss))
+    Ok(CXIdent::new(words.join(" ")))
 }
 
 pub fn try_parse_simple_identifier(tokens: &mut TokenIter) -> Option<CXIdent> {
