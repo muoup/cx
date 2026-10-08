@@ -263,7 +263,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 } else {
                     specifiers.linkage
                 };
-                if let Some(function) = try_function_parse(
+                if let Some(mut function) = try_function_parse(
                     data,
                     ty.clone(),
                     name.clone(),
@@ -271,6 +271,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                     data.symbol_naming,
                     specifiers.attributes,
                 )? {
+                    super::functions::linkage::resolve(data, &mut function.prototype, false);
                     data.add_stmt(HIRStmt::FunctionDefinition {
                         prototype: function.prototype,
                         visibility: data.visibility,

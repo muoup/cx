@@ -254,6 +254,7 @@ fn parse_fn_merge(
     template_prototype: Option<HIRTemplatePrototype>,
     inherited_external: bool,
 ) -> CXResult<()> {
+    functions::linkage::resolve(data, &mut prototype, true);
     if try_next!(data.tokens, punctuator!(Semicolon)) {
         if template_prototype.is_some() {
             return parse_point_error(

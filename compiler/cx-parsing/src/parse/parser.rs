@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
     function::HIRFunctionKind,
-    modifiers::HIRSymbolNameScheme,
+    modifiers::{HIRSymbolNameScheme, LinkageMode},
     HIRDefinition, HIRStmt, HIR,
 };
 use cx_log::catalogue::parse::*;
@@ -29,6 +29,7 @@ pub struct ParserData<'a> {
     // uses u8 mapping instead of a set to prevent problems with shadowing
     pub temporary_type_names: HashMap<CXIdent, u8>,
     namespace_aliases: NamespaceAliases,
+    pub(super) c_function_linkages: HashMap<QualifiedName, LinkageMode>,
 
     pub registry: &'a GlobalPreparseRegistry,
     pub ast: HIR,
@@ -62,6 +63,7 @@ impl<'a> ParserData<'a> {
             registry,
             temporary_type_names: HashMap::new(),
             namespace_aliases: pp_contents.namespace_aliases.clone(),
+            c_function_linkages: HashMap::new(),
             ast: HIR::new(
                 ModulePath::from_source_path(pp_contents.module.as_str()),
                 pp_contents.imports.clone(),
