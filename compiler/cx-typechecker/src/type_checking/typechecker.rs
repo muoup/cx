@@ -56,7 +56,7 @@ fn typecheck_statement(
         .standard_ready_coerce(env, statement.token_range())
 }
 
-/// Typechecks what remains of the innermost block. `then` calls this from within a statement of
+/// Typechecks what remains of the current block. `then` calls this from within a statement of
 /// that block, which leaves the block's own call with nothing further to check.
 pub(crate) fn typecheck_block_statements(
     env: &mut TypeEnvironment,
@@ -197,7 +197,7 @@ fn typecheck_expr_inner(
                     &catalogue::INVALID_CONTEXT,
                     (
                         "then expression".into(),
-                        "a context without an enclosing block".into(),
+                        "a scope that is not a block".into(),
                     ),
                 );
             }
@@ -611,7 +611,9 @@ fn typecheck_expr_inner(
             op: HIRBinOp::MethodCall,
             lhs,
             rhs,
-        } => typecheck_method_call(env, namespace, lhs, rhs, expr, expected_type)?,
+        } => env.in_argument_scope(|env| {
+            typecheck_method_call(env, namespace, lhs, rhs, expr, expected_type)
+        })?,
 
         HIRExprKind::BinOp { op, lhs, rhs } => {
             if let Some(expr) =

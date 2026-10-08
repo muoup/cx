@@ -160,6 +160,19 @@ impl TypeEnvironment<'_> {
         Ok(effects)
     }
 
+    /// Checks a call in a symbol scope of its own, so that names bound by its arguments, such as
+    /// those of an `is` pattern, do not reach the enclosing block. The control-flow scopes are left
+    /// alone, as a `then` argument has to see that block.
+    pub fn in_argument_scope<F, T>(&mut self, f: F) -> CXResult<T>
+    where
+        F: FnOnce(&mut Self) -> CXResult<T>,
+    {
+        self.symbols.push_local_scope();
+        let result = f(self);
+        self.symbols.pop_local_scope();
+        result
+    }
+
     pub fn in_comptime_context(&self) -> bool {
         self.comptime_context.is_some()
     }

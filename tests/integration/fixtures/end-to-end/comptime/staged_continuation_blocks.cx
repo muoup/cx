@@ -7,6 +7,12 @@
 /* CX-STDOUT-NEXT: after inner */
 /* CX-STDOUT-NEXT: enter 3 */
 /* CX-STDOUT-NEXT: leave 3 */
+/* CX-STDOUT-NEXT: enter 4 */
+/* CX-STDOUT-NEXT: between 4 */
+/* CX-STDOUT-NEXT: enter 5 */
+/* CX-STDOUT-NEXT: sum 9 */
+/* CX-STDOUT-NEXT: leave 5 */
+/* CX-STDOUT-NEXT: leave 4 */
 
 #include <stdio.h>
 
@@ -42,9 +48,19 @@ void at_block_end() {
     with_trace(source) <| |value| then
 }
 
+void sequential() {
+    int left_source = 4;
+    int right_source = 5;
+    with_trace(left_source) <| |left| then
+    printf("between %d\n", left);
+    with_trace(right_source) <| |right| then
+    printf("sum %d\n", left + right);
+}
+
 int main() {
     call_form();
     inner_block();
     at_block_end();
+    sequential();
     return 0;
 }

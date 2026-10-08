@@ -95,17 +95,21 @@ impl ControlFlow {
         }
     }
 
-    pub fn in_block(&self) -> bool {
-        self.scopes.iter().any(|scope| scope.block.is_some())
+    /// The innermost scope, provided it is a block's. Staged boundaries are looked through, as
+    /// they are what a `then` sits behind.
+    fn block_scope(&self) -> Option<usize> {
+        let innermost = self.scopes.iter().rposition(|scope| !scope.staged_boundary)?;
+        self.scopes[innermost].block.is_some().then_some(innermost)
     }
 
-    /// Advances the innermost block, returning its statements and the index of the one to check.
+    pub fn in_block(&self) -> bool {
+        self.block_scope().is_some()
+    }
+
+    /// Advances the current block, returning its statements and the index of the one to check.
     pub fn next_block_statement(&mut self) -> Option<(Rc<[HIRExpression]>, usize)> {
-        let cursor = self
-            .scopes
-            .iter_mut()
-            .rev()
-            .find_map(|scope| scope.block.as_mut())?;
+        let scope = self.block_scope()?;
+        let cursor = self.scopes[scope].block.as_mut()?;
         let index = cursor.next;
         if index == cursor.statements.len() {
             return None;
