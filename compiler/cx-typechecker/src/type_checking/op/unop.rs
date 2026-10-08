@@ -1,5 +1,5 @@
 use cx_hir::ast::{
-    expression::{HIRExpression, HIRMemberDesignator, HIRUnOp},
+    expression::{HIRExprKind, HIRExpression, HIRMemberDesignator, HIRUnOp},
     types::HIRType,
 };
 use cx_log::CXResult;
@@ -310,6 +310,16 @@ pub(crate) fn typecheck_sizeof_expr(
     namespace: &NamespacePath,
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
+    // A string literal is the array of its bytes and their terminator, which is not a type
+    // the literal has anywhere else.
+    if let HIRExprKind::StringLiteral { val } = &expr.kind {
+        return Ok(TypecheckResult::from(THIRExpression {
+            token_range: expr.token_range().clone(),
+            kind: THIRExpressionKind::IntLiteral(val.len() as i64 + 1),
+            ty: size_type(),
+        }));
+    }
+
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
         .and_then(|v| sizeof_promotion(env, v))?;

@@ -524,6 +524,7 @@ version = "0.0.0"
 name = "cx-test-support"
 version = "0.0.0"
 dependencies = [
+ "cx-log",
  "cx-pipeline",
  "cx-pipeline-data",
 ]

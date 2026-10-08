@@ -60,13 +60,34 @@ if (artifactIssue) {
 } else if (!usableReport?.cases || !Array.isArray(usableReport.cases)) {
   lines.push("Benchmark artifact was unavailable; see the benchmark job logs for details.");
 } else {
-  lines.push("| Case | Backend | Compile | Δ | Execute | Δ |");
-  lines.push("| --- | --- | ---: | ---: | ---: | ---: |");
+  const reference = usableReport.reference;
+  const referenceCases = new Map(
+    usableReport.cases.filter((result) => result.reference).map((result) => [result.case, result]),
+  );
+  const columns = ["Compile", "Execute"].flatMap((timing) =>
+    reference ? [timing, "Δ", `vs ${reference.command}`] : [timing, "Δ"],
+  );
+  lines.push(`| Case | Backend | ${columns.map(cell).join(" | ")} |`);
+  lines.push(`| --- | --- |${" ---: |".repeat(columns.length)}`);
 
   for (const result of usableReport.cases) {
     const baseline = baselineCases.get(caseKey(result));
+    const referenceResult = result.reference ? null : referenceCases.get(result.case);
+    const cells = ["compile", "execute"].flatMap((timing) => {
+      const current = result[timing];
+      const timingCells = [formatTiming(current), formatDelta(current?.mean_ms, baseline?.[timing]?.mean_ms)];
+      if (reference) {
+        timingCells.push(formatRatio(current?.mean_ms, referenceResult?.[timing]?.mean_ms));
+      }
+      return timingCells;
+    });
+    lines.push(`| ${cell(result.case)} | ${cell(result.backend)} | ${cells.map(cell).join(" | ")} |`);
+  }
+
+  if (reference) {
     lines.push(
-      `| ${cell(result.case)} | ${cell(result.backend)} | ${cell(formatTiming(result.compile))} | ${cell(formatDelta(result.compile?.mean_ms, baseline?.compile?.mean_ms))} | ${cell(formatTiming(result.execute))} | ${cell(formatDelta(result.execute?.mean_ms, baseline?.execute?.mean_ms))} |`,
+      "",
+      `\`vs ${cell(reference.command)}\` compares each cx time with the \`${cell(reference.command)}\` time (${cell(reference.version)}).`,
     );
   }
 
@@ -133,8 +154,23 @@ function caseKey(result) {
   return `${result?.case || ""}\u0000${result?.backend || ""}`;
 }
 
+function formatRatio(current, reference) {
+  if (!Number.isFinite(current) || !Number.isFinite(reference) || current <= 0 || reference <= 0) {
+    return "—";
+  }
+  const ratio = current / reference;
+  const factor = Math.max(ratio, 1 / ratio).toFixed(2);
+  if (factor === "1.00") {
+    return "same";
+  }
+  return `${factor}× ${ratio > 1 ? "slower" : "faster"}`;
+}
+
 function formatTiming(timing) {
-  if (!timing || !Number.isFinite(timing.mean_ms)) {
+  if (!timing) {
+    return "—";
+  }
+  if (!Number.isFinite(timing.mean_ms)) {
     return "n/a";
   }
 

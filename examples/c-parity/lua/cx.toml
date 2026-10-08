@@ -1,0 +1,21 @@
+[project]
+name = "lua"
+
+[build]
+backend = "llvm"
+optimization = "O2"
+
+[workspace.targets.default]
+native_objects = [
+]
+include_dirs = []
+link = [
+  { name = "m", kind = "system" }
+]
+
+[[workspace.targets.default.binaries]]
+name = "lua"
+match = [
+    "upstream/*.c",
+    "!upstream/onelua.c"
+]

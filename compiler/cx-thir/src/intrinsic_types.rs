@@ -152,7 +152,7 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<THIRTypeKi
     ("unsigned short int", |_| {
         Some(THIRTypeKind::Integer {
             signed: false,
-            ty: THIRIntType::I32,
+            ty: THIRIntType::I16,
         })
     }),
     ("signed", |_| {

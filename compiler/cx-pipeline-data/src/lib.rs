@@ -83,7 +83,7 @@ pub enum OptimizationLevel {
     Ofast,
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CompilerBackend {
     Cranelift,
     LLVM,

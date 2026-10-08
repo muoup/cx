@@ -7,7 +7,7 @@ Build the shared raylib artifact once from the examples directory, then build Do
 ```sh
 cd examples
 ./build-raylib.sh
-cd doomgeneric
+cd c-parity/doomgeneric
 cx build
 ```
 
