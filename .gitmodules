@@ -1,3 +1,6 @@
 [submodule "examples/doomgeneric/upstream"]
 	path = examples/doomgeneric/upstream
 	url = https://github.com/ozkl/doomgeneric.git
+[submodule "tests/benchmarks/fixtures/lua/upstream"]
+	path = tests/benchmarks/fixtures/lua/upstream
+	url = https://github.com/lua/lua
