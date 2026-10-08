@@ -62,32 +62,62 @@ if (artifactIssue) {
 } else {
   const reference = usableReport.reference;
   const referenceCases = new Map(
-    usableReport.cases.filter((result) => result.reference).map((result) => [result.case, result]),
+    usableReport.cases.filter((result) => result.reference).map((result) => [subjectKey(result), result]),
   );
-  const columns = ["Compile", "Execute"].flatMap((timing) =>
-    reference ? [timing, "Δ", `vs ${reference.command}`] : [timing, "Δ"],
-  );
-  lines.push(`| Case | Backend | ${columns.map(cell).join(" | ")} |`);
-  lines.push(`| --- | --- |${" ---: |".repeat(columns.length)}`);
-
-  for (const result of usableReport.cases) {
-    const baseline = baselineCases.get(caseKey(result));
-    const referenceResult = result.reference ? null : referenceCases.get(result.case);
-    const cells = ["compile", "execute"].flatMap((timing) => {
-      const current = result[timing];
-      const timingCells = [formatTiming(current), formatDelta(current?.mean_ms, baseline?.[timing]?.mean_ms)];
-      if (reference) {
-        timingCells.push(formatRatio(current?.mean_ms, referenceResult?.[timing]?.mean_ms));
-      }
-      return timingCells;
+  const table = (subject, timings, results) => {
+    const columns = timings.flatMap((timing) => {
+      const title = timing[0].toUpperCase() + timing.slice(1);
+      return reference ? [title, "Δ", `vs ${reference.command}`] : [title, "Δ"];
     });
-    lines.push(`| ${cell(result.case)} | ${cell(result.backend)} | ${cells.map(cell).join(" | ")} |`);
-  }
+    const rows = [
+      `| ${subject} | Backend | ${columns.map(cell).join(" | ")} |`,
+      `| --- | --- |${" ---: |".repeat(columns.length)}`,
+    ];
+
+    for (const result of results) {
+      const baseline = baselineCases.get(caseKey(result));
+      const referenceResult = result.reference ? null : referenceCases.get(subjectKey(result));
+      const cells = timings.flatMap((timing) => {
+        const current = result[timing];
+        const timingCells = [formatTiming(current), formatDelta(current?.mean_ms, baseline?.[timing]?.mean_ms)];
+        if (reference) {
+          timingCells.push(formatRatio(current?.mean_ms, referenceResult?.[timing]?.mean_ms));
+        }
+        return timingCells;
+      });
+      rows.push(`| ${cell(result.workload ?? result.case)} | ${cell(result.backend)} | ${cells.map(cell).join(" | ")} |`);
+    }
+    return rows;
+  };
+
+  lines.push(
+    ...table(
+      "Case",
+      ["compile", "execute"],
+      usableReport.cases.filter((result) => result.workload == null),
+    ),
+  );
 
   if (reference) {
     lines.push(
       "",
       `\`vs ${cell(reference.command)}\` compares each cx time with the \`${cell(reference.command)}\` time (${cell(reference.version)}).`,
+    );
+  }
+
+  const workloads = new Map();
+  for (const result of usableReport.cases.filter((result) => result.workload != null)) {
+    workloads.set(result.case, [...(workloads.get(result.case) || []), result]);
+  }
+  for (const [name, results] of workloads) {
+    lines.push(
+      "",
+      "<details>",
+      `<summary>${escapeHtml(name)} workloads</summary>`,
+      "",
+      ...table("Workload", ["execute"], results),
+      "",
+      "</details>",
     );
   }
 
@@ -151,7 +181,15 @@ function indexCases(reportDocument) {
 }
 
 function caseKey(result) {
-  return `${result?.case || ""}\u0000${result?.backend || ""}`;
+  return `${subjectKey(result)}\u0000${result?.backend || ""}`;
+}
+
+function subjectKey(result) {
+  return `${result?.case || ""}\u0000${result?.workload || ""}`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>]/g, (character) => `&#${character.charCodeAt(0)};`);
 }
 
 function formatRatio(current, reference) {

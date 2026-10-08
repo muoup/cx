@@ -151,8 +151,9 @@ fn benchmark_case(
     }
 
     let (_temp, binary) = built.expect("a benchmark runs at least one iteration");
-    let result = |case: String, compile, execute| BenchmarkResult {
-        case,
+    let result = |workload: Option<String>, compile, execute| BenchmarkResult {
+        case: case.label.clone(),
+        workload,
         backend: toolchain_label.clone(),
         reference: toolchain.is_reference(),
         compile,
@@ -162,19 +163,27 @@ fn benchmark_case(
 
     if let [workload @ Workload { label: None, .. }] = case.workloads.as_slice() {
         let execute = time_workload(&name, &binary, workload, iterations, warmups)?;
-        return Ok(vec![result(case.label.clone(), compile, Some(execute))]);
+        let execute = Some(TimingStats::new(execute));
+        return Ok(vec![result(None, compile, execute)]);
     }
 
-    let mut results = vec![result(case.label.clone(), compile, None)];
+    // The row of the case itself reports the workloads together: each of its samples is one
+    // run of every workload.
+    let mut total_samples = vec![0.0; iterations];
+    let mut workload_results = Vec::with_capacity(case.workloads.len());
     for workload in &case.workloads {
-        let label = match &workload.label {
-            Some(label) => format!("{}: {label}", case.label),
-            None => case.label.clone(),
-        };
-        let name = format!("{label} ({toolchain_label})");
-        let execute = time_workload(&name, &binary, workload, iterations, warmups)?;
-        results.push(result(label, None, Some(execute)));
+        let label = workload.label.clone().unwrap_or_default();
+        let name = format!("{}: {label} ({toolchain_label})", case.label);
+        let samples = time_workload(&name, &binary, workload, iterations, warmups)?;
+        for (total, sample) in total_samples.iter_mut().zip(&samples) {
+            *total += sample;
+        }
+        workload_results.push(result(Some(label), None, Some(TimingStats::new(samples))));
     }
+
+    let total = (!case.workloads.is_empty()).then(|| TimingStats::new(total_samples));
+    let mut results = vec![result(None, compile, total)];
+    results.extend(workload_results);
     Ok(results)
 }
 
@@ -184,7 +193,7 @@ fn time_workload(
     workload: &Workload,
     iterations: usize,
     warmups: usize,
-) -> Result<TimingStats, String> {
+) -> Result<Vec<f64>, String> {
     let mut samples = Vec::with_capacity(iterations);
 
     for run in 0..warmups + iterations {
@@ -206,7 +215,7 @@ fn time_workload(
         }
     }
 
-    Ok(TimingStats::new(samples))
+    Ok(samples)
 }
 
 fn duration_ms(duration: Duration) -> f64 {

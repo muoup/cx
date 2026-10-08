@@ -21,7 +21,7 @@ Stdout is verified on every run, so a case that computes the wrong answer fails 
 
 Use `--format json` for machine-readable results and `--format github` for a Markdown summary suitable for `GITHUB_STEP_SUMMARY`. `--json-output PATH` writes the machine-readable report alongside the selected display format, so CI can publish one measurement without running the benchmark twice.
 
-The report (schema 2) holds one row per case, workload and toolchain. A row carries `case`, `backend`, and whichever of `compile` and `execute` apply: a case with several workloads has a build row followed by a `case: workload` row for each. Rows from the reference compiler set `reference: true` and name its command as their backend, and the top-level `reference` records the command and version.
+The report (schema 2) holds one row per case, workload and toolchain. A row carries `case`, `backend`, and whichever of `compile` and `execute` apply: a case with several workloads has a row for the build, whose `execute` is the total of the workloads, followed by a row for each that also carries `workload`. The rendered formats keep the workload rows out of the main table and list them in a table of their own for each case, which the Markdown formats collapse. Rows from the reference compiler set `reference: true` and name its command as their backend, and the top-level `reference` records the command and version.
 
 Human-readable timing cells show the mean with a 95% margin of error. Values of one second or longer are displayed in seconds, while shorter values remain in milliseconds; a single sample reports an unavailable margin of error.
 
