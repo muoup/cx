@@ -108,7 +108,6 @@
 #define __builtin_expect(x, expected) (x)
 #define __builtin_constant_p(x) 0
 #define __builtin_object_size(ptr, type) -1
-#define __builtin_offsetof(type, member) ((__SIZE_TYPE__)&((type *)0)->member)
 
 #define __builtin_inf() (1.0 / 0.0)
 #define __builtin_inff() (1.0f / 0.0f)

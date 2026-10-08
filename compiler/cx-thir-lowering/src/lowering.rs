@@ -24,7 +24,9 @@ use cx_mir::{
 use cx_thir::{
     thir::{
         data::{THIRFunction, THIRFunctionBody, THIRTypeKind},
-        expression::{THIRBlockKind, THIRCoercion, THIRExpression, THIRExpressionKind},
+        expression::{
+            THIRBlockKind, THIRCoercion, THIRExpression, THIRExpressionKind, THIROffsetStep,
+        },
     },
     type_context::THIRTypeContext,
 };
@@ -125,7 +127,14 @@ pub(crate) fn lower_function_block<'thir>(
             };
             emit_implicit_return(builder, result, expr.token_range.clone())?;
         }
-        THIRFunctionBody::Block { exprs, token_range } => {
+        THIRFunctionBody::Block {
+            exprs,
+            token_range,
+            address_taken_labels,
+        } => {
+            builder
+                .fun_mut()
+                .declare_address_labels(address_taken_labels);
             if let Err(LowerStop::Diagnostic(error)) =
                 control_flow::lower_sequence(builder, exprs, true)
             {
@@ -258,6 +267,55 @@ pub(crate) fn lower_expression<'thir>(
             })
         }
 
+        THIRExpressionKind::OffsetOf { steps } => {
+            let mut offset = 0;
+            for step in steps {
+                offset += match step {
+                    THIROffsetStep::Field { aggregate, index } => {
+                        let aggregate = lower_type(builder, aggregate).map_err(LowerStop::Diagnostic)?;
+                        calculate_field_layout(builder.types(), aggregate, *index)
+                            .ok_or_else(|| {
+                                mir_error(
+                                    &expr.token_range,
+                                    (
+                                        &mir::MISSING_ENTITY,
+                                        (format!("field {index}"), "aggregate layout".into()),
+                                    ),
+                                )
+                            })
+                            .map_err(LowerStop::Diagnostic)?
+                            .offset() as i128
+                    }
+                    THIROffsetStep::Element { element, index } => {
+                        let element = lower_type(builder, element).map_err(LowerStop::Diagnostic)?;
+                        let size = calculate_type_layout(builder.types(), element).size() as i128;
+                        match comptime::evaluate(builder, index).map_err(LowerStop::Diagnostic)? {
+                            MIRConstant::Integer { value, .. } => size * value,
+                            _ => {
+                                return log_mir_error(
+                                    &index.token_range,
+                                    (
+                                        &mir::ENTITY_REQUIREMENT,
+                                        (
+                                            "offsetof subscript".into(),
+                                            "an integer constant".into(),
+                                            None,
+                                        ),
+                                    ),
+                                )
+                                .map_err(LowerStop::Diagnostic);
+                            }
+                        }
+                    }
+                };
+            }
+
+            MIRValue::Constant(MIRConstant::Integer {
+                value: offset,
+                ty: MIRIntType::I64,
+            })
+        }
+
         THIRExpressionKind::Variable { local_id, .. } => {
             if let Some(value) = builder.fun().comptime_local(*local_id) {
                 staged::runtime_value(builder, value, &expr.token_range)?
@@ -326,6 +384,29 @@ pub(crate) fn lower_expression<'thir>(
                 )
             })
             .map(|v| MIRValue::Constant(MIRConstant::Function(v)))
+            .map_err(LowerStop::Diagnostic)?,
+
+        THIRExpressionKind::LabelAddress { function, name } => builder
+            .module_mut()
+            .function_symbol(function.as_str())
+            .ok_or_else(|| {
+                mir_error(
+                    &expr.token_range,
+                    (
+                        &mir::MISSING_ENTITY,
+                        (
+                            format!("function '{function}'"),
+                            "MIR lowering context".into(),
+                        ),
+                    ),
+                )
+            })
+            .map(|function| {
+                MIRValue::Constant(MIRConstant::BlockAddress {
+                    function,
+                    label: name.to_string(),
+                })
+            })
             .map_err(LowerStop::Diagnostic)?,
 
         THIRExpressionKind::BinaryOperation { lhs, rhs, op } => {
@@ -785,6 +866,21 @@ pub(crate) fn lower_expression<'thir>(
             ));
             return Err(LowerStop::Diverged);
         }
+        THIRExpressionKind::IndirectGoto { target } => {
+            let address = lower_expression(builder, target)?;
+            let targets = builder
+                .fun()
+                .body()
+                .address_label_blocks()
+                .into_iter()
+                .map(MIRBlockTarget::new)
+                .collect();
+            builder.emit(MIRInstruction::new(
+                MIRInstructionKind::IndirectJump { address, targets },
+                expr.token_range.clone(),
+            ));
+            return Err(LowerStop::Diverged);
+        }
         THIRExpressionKind::Label { name, statement } => {
             let target = if let Some(target) = builder.fun_mut().label(name) {
                 target
@@ -830,13 +926,13 @@ pub(crate) fn lower_expression<'thir>(
             control_flow::lower_for(builder, init, condition, increment, body)?;
             MIRValue::Constant(MIRConstant::Unit)
         }
-        THIRExpressionKind::CSwitch {
-            condition,
-            cases,
-            default,
-        } => {
-            control_flow::lower_switch(builder, condition, cases, default.as_deref())?;
+        THIRExpressionKind::CSwitch { condition, body } => {
+            control_flow::lower_switch(builder, condition, body)?;
             MIRValue::Constant(MIRConstant::Unit)
+        }
+        THIRExpressionKind::Case { value, statement } => {
+            control_flow::lower_case(builder, expr, value.as_deref())?;
+            lower_expression(builder, statement)?
         }
         THIRExpressionKind::Match {
             condition,

@@ -41,7 +41,8 @@ pub(crate) struct SourceFrame {
     pub(crate) file_path: PathBuf,
     pub(crate) cursor: usize,
     pub(crate) conditionals: Vec<ConditionalFrame>,
-    pub(crate) is_include: bool,
+    /// Whether the tokens of this include are bracketed by include markers.
+    pub(crate) marks_include: bool,
     pub(crate) language_mode: LanguageMode,
 }
 
@@ -60,7 +61,7 @@ impl SourceFrame {
             file_path: source_path.to_path_buf(),
             cursor: 0,
             conditionals: Vec::new(),
-            is_include: false,
+            marks_include: false,
             language_mode,
         }
     }
@@ -69,9 +70,10 @@ impl SourceFrame {
         source: String,
         source_path: &Path,
         language_mode: LanguageMode,
+        marks_include: bool,
     ) -> Self {
         let mut frame = Self::new_with_mode(source, source_path, language_mode);
-        frame.is_include = true;
+        frame.marks_include = marks_include;
         frame
     }
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cx_mir::{
-    MIRBasicBlockID, MIRBody, MIRComptimeFnPrototype, MIRComptimeOperand, MIRComptimeRegisterID,
+    MIRBasicBlockID, MIRBlockTarget, MIRBody, MIRComptimeFnPrototype, MIRComptimeOperand, MIRComptimeRegisterID,
     MIRComptimeType, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRInstruction,
     MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeID, MIRValue,
 };
@@ -48,6 +48,14 @@ pub(crate) struct ControlContext {
     yield_target: Option<MIRBasicBlockID>,
     break_target: Option<MIRBasicBlockID>,
     continue_target: Option<MIRBasicBlockID>,
+    switch_labels: Option<SwitchLabels>,
+}
+
+/// The blocks that the labels of a switch body lowered so far start at.
+#[derive(Debug, Default)]
+pub(crate) struct SwitchLabels {
+    pub cases: Vec<(i128, MIRBlockTarget)>,
+    pub default: Option<MIRBlockTarget>,
 }
 
 impl<'thir> ScopeContext<'thir> {
@@ -75,6 +83,7 @@ impl ControlContext {
             yield_target: None,
             break_target: None,
             continue_target: None,
+            switch_labels: None,
         }
     }
 
@@ -98,6 +107,15 @@ impl ControlContext {
     pub fn set_continue_target(&mut self, target: MIRBasicBlockID) -> &mut Self {
         self.continue_target = Some(target);
         self
+    }
+
+    pub fn collect_switch_labels(&mut self) -> &mut Self {
+        self.switch_labels = Some(SwitchLabels::default());
+        self
+    }
+
+    pub fn take_switch_labels(&mut self) -> SwitchLabels {
+        self.switch_labels.take().unwrap_or_default()
     }
 
     pub fn break_target(&self) -> Option<MIRBasicBlockID> {
@@ -197,6 +215,16 @@ impl<'thir> MIRFunctionBuilder<'thir> {
 
     pub fn declare_label(&mut self, name: &CXIdent, id: MIRBasicBlockID) {
         self.labels.insert(name.to_string(), id);
+    }
+
+    /// Creates the blocks of the labels whose address is taken, which an indirect jump may reach
+    /// before they are seen.
+    pub fn declare_address_labels(&mut self, names: &[CXIdent]) {
+        for name in names {
+            let block = self.new_block(name.clone());
+            self.declare_label(name, block);
+            self.body.add_address_label(name, block);
+        }
     }
 
     pub fn new_register(&mut self, ty: MIRTypeID, debug_name: Option<CXIdent>) -> MIRRegister {
@@ -390,6 +418,13 @@ impl<'thir> MIRFunctionBuilder<'thir> {
 
     pub fn control_stack(&self) -> &[ControlContext] {
         &self.control_stack
+    }
+
+    pub fn enclosing_switch_labels(&mut self) -> Option<&mut SwitchLabels> {
+        self.control_stack
+            .iter_mut()
+            .rev()
+            .find_map(|control| control.switch_labels.as_mut())
     }
 
     pub fn current_control_mut(&mut self) -> &mut ControlContext {

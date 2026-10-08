@@ -15,9 +15,11 @@ pub struct FunctionContext {
     flow: Option<ControlFlow>,
 }
 
+#[derive(Default)]
 struct LabelRecord {
     declaration: Option<TokenRange>,
     uses: Vec<TokenRange>,
+    address_taken: bool,
 }
 
 impl FunctionContext {
@@ -44,22 +46,30 @@ impl FunctionContext {
     pub fn record_label_use(&mut self, name: &CXIdent, range: TokenRange) {
         self.labels
             .entry(name.as_string())
-            .or_insert_with(|| LabelRecord {
-                declaration: None,
-                uses: Vec::new(),
-            })
+            .or_default()
             .uses
             .push(range);
     }
 
-    pub fn declare_label(&mut self, name: &CXIdent, range: TokenRange) -> bool {
-        let record = self
+    pub fn record_label_address(&mut self, name: &CXIdent, range: TokenRange) {
+        self.record_label_use(name, range);
+        self.labels.entry(name.as_string()).or_default().address_taken = true;
+    }
+
+    /// The labels whose address is taken, in a stable order.
+    pub fn address_taken_labels(&self) -> Vec<CXIdent> {
+        let mut labels: Vec<_> = self
             .labels
-            .entry(name.as_string())
-            .or_insert_with(|| LabelRecord {
-                declaration: None,
-                uses: Vec::new(),
-            });
+            .iter()
+            .filter(|(_, record)| record.address_taken)
+            .map(|(name, _)| CXIdent::new(name.as_str()))
+            .collect();
+        labels.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        labels
+    }
+
+    pub fn declare_label(&mut self, name: &CXIdent, range: TokenRange) -> bool {
+        let record = self.labels.entry(name.as_string()).or_default();
         if record.declaration.is_some() {
             return false;
         }

@@ -2,20 +2,27 @@ use std::collections::HashMap;
 
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
-    LMIRBasicBlock, LMIRBlockTarget, LMIRFunction, LMIRFunctionMap, LMIRFunctionPrototype,
+    LMIRBasicBlock, LMIRBlockID, LMIRBlockTarget, LMIRFunction, LMIRFunctionMap,
+    LMIRFunctionPrototype,
     LMIRGlobalType, LMIRGlobalValue, LMIRInstruction, LMIRInstructionKind, LMIRRegister, LMIRUnit,
     LMIRValue, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::{
-    MIRBasicBlockID, MIRBody, MIRFunction, MIRGlobalID, MIRPlaceID, MIRRegister, MIRTypeID, MIRUnit,
+    MIRBasicBlockID, MIRBody, MIRFunction, MIRFunctionID, MIRGlobalID, MIRPlaceID, MIRRegister,
+    MIRTypeID, MIRUnit,
 };
 use cx_util::identifier::CXIdent;
 
 use crate::lowering::memory;
 use crate::lowering::typing::convert_type;
 use crate::lowering::values::lower_rvalue;
+
+/// The LMIR name of a MIR block, which a block address elsewhere in the unit names it by.
+pub(crate) fn block_id(block: MIRBasicBlockID) -> LMIRBlockID {
+    CXIdent::new(format!("block.{}", block.index()))
+}
 
 pub(crate) struct GlobalContext<'mir> {
     pub unit: &'mir MIRUnit<'mir>,
@@ -50,6 +57,19 @@ impl<'mir> GlobalContext<'mir> {
         });
         self.strings.insert(text.to_owned(), index);
         index
+    }
+
+    /// The function and block that the address of one of its labels refers to.
+    pub fn block_address(&self, function: MIRFunctionID, label: &str) -> (CXIdent, LMIRBlockID) {
+        let function = self
+            .unit
+            .function(function)
+            .expect("block address of an unknown function");
+        let block = function
+            .body()
+            .and_then(|body| body.address_label(label))
+            .expect("block address of an unknown label");
+        (function.prototype().symbol_name.clone(), block_id(block))
     }
 
     pub fn finish(self) -> LMIRUnit {

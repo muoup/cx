@@ -146,6 +146,12 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
             };
             engine.jump(body, frame, target, range)?;
         }
+        MIRInstructionKind::IndirectJump { .. } => {
+            return comptime_error(
+                range.clone(),
+                (&mir::COMPTIME_INVALID_OPERATION, "indirect goto".into()),
+            );
+        }
         MIRInstructionKind::Unreachable => {
             return comptime_error(
                 range.clone(),

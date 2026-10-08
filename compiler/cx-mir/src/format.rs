@@ -68,6 +68,7 @@ impl Display for MIRConstant {
             }
             Self::String(value) => write!(f, "{value:?}"),
             Self::Function(function) => write!(f, "fn {function}"),
+            Self::BlockAddress { function, label } => write!(f, "label {function}::{label}"),
             Self::Undefined => f.write_str("undefined"),
         }
     }
@@ -627,6 +628,18 @@ fn write_instruction<T: MTRegistry>(
                 write_block_target(f, unit, function, default)?;
             }
             f.write_str(" }")
+        }
+        MIRInstructionKind::IndirectJump { address, targets } => {
+            f.write_str("goto *")?;
+            write_value(f, unit, function, address)?;
+            f.write_str(" [")?;
+            for (index, target) in targets.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                write_block_target(f, unit, function, target)?;
+            }
+            f.write_str("]")
         }
         MIRInstructionKind::Unreachable => f.write_str("unreachable"),
     }

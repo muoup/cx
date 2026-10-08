@@ -51,6 +51,8 @@ pub(crate) struct LexingContext {
     sources: Vec<SourceFrame>,
     pending_tokens: Vec<Token>,
     tokens: Vec<Token>,
+    /// How many brackets are open at the end of `tokens`.
+    bracket_depth: usize,
 }
 
 impl LexingContext {
@@ -94,6 +96,7 @@ impl LexingContext {
             ],
             pending_tokens: Vec::new(),
             tokens: Vec::new(),
+            bracket_depth: 0,
         })
     }
 
@@ -147,20 +150,26 @@ impl LexingContext {
                 self.flush_pending_tokens();
                 self.source_texts
                     .insert(input.path.clone(), input.source.clone());
-                self.tokens.push(Token::new(
-                    TokenKind::IncludeBegin,
-                    (0, 0),
-                    input.path.clone().into(),
-                ));
+                // An include in the middle of a declaration or a body only contributes tokens to it,
+                // so the parser is not told about it.
+                let marks_include = self.bracket_depth == 0;
+                if marks_include {
+                    self.tokens.push(Token::new(
+                        TokenKind::IncludeBegin,
+                        (0, 0),
+                        input.path.clone().into(),
+                    ));
+                }
                 self.sources.push(SourceFrame::new_include(
                     input.source,
                     &input.path,
                     input.language_mode,
+                    marks_include,
                 ));
             }
             LexTransition::PopSource => {
                 self.finish_current_source()?;
-                if self.current_frame().is_include {
+                if self.current_frame().marks_include {
                     let path = self.current_frame().file_path.clone();
                     let end = self.current_frame().source.len();
                     self.tokens
@@ -199,6 +208,21 @@ impl LexingContext {
 
         let pending = std::mem::take(&mut self.pending_tokens);
         let expanded = self.expand_macros(pending);
+        for token in &expanded {
+            match token.kind {
+                TokenKind::Punctuator(
+                    PunctuatorType::OpenParen
+                    | PunctuatorType::OpenBracket
+                    | PunctuatorType::OpenBrace,
+                ) => self.bracket_depth += 1,
+                TokenKind::Punctuator(
+                    PunctuatorType::CloseParen
+                    | PunctuatorType::CloseBracket
+                    | PunctuatorType::CloseBrace,
+                ) => self.bracket_depth = self.bracket_depth.saturating_sub(1),
+                _ => {}
+            }
+        }
         self.tokens.extend(expanded);
     }
 
@@ -589,8 +613,32 @@ fn token_paste_text(kind: &TokenKind) -> String {
         TokenKind::IntLiteral(literal) => literal.source_text(),
         TokenKind::FloatLiteral(literal) => literal.source_text(),
         TokenKind::StringLiteral(value) => format!("\"{value}\""),
+        TokenKind::Operator(operator) => operator.as_str().to_string(),
+        TokenKind::Assignment(operator) => {
+            format!("{}=", operator.map_or("", |operator| operator.as_str()))
+        }
+        TokenKind::Punctuator(punctuator) => punctuator.as_str().to_string(),
         _ => kind.to_string(),
     }
+}
+
+/// The spelling of a string literal holding `value`.
+fn string_literal_text(value: &str) -> String {
+    let mut text = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '"' => text.push_str("\\\""),
+            '\\' => text.push_str("\\\\"),
+            '\n' => text.push_str("\\n"),
+            '\t' => text.push_str("\\t"),
+            '\r' => text.push_str("\\r"),
+            ' '..='~' => text.push(character),
+            _ if character.is_ascii() => text.push_str(&format!("\\{:03o}", character as u32)),
+            _ => text.push(character),
+        }
+    }
+    text.push('"');
+    text
 }
 
 fn retarget_tokens(tokens: impl IntoIterator<Item = Token>, expansion_site: &Token) -> Vec<Token> {
@@ -620,7 +668,10 @@ fn gnu_attributes(args: &[Vec<Token>]) -> impl Iterator<Item = AttributeType> + 
 fn stringify_macro_arg(tokens: &[Token]) -> String {
     tokens
         .iter()
-        .map(|token| token.kind.to_string())
+        .map(|token| match &token.kind {
+            TokenKind::StringLiteral(value) => string_literal_text(value),
+            kind => token_paste_text(kind),
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }

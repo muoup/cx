@@ -28,11 +28,14 @@ pub struct MIRBody<I = MIRInstruction> {
     comptime_registers: Vec<MIRComptimeRegisterDecl>,
 
     scopes: Vec<MIRScopeDecl>,
+
+    address_labels: Vec<(String, MIRBasicBlockID)>,
 }
 
 impl<I> MIRBody<I> {
     pub fn new() -> Self {
         Self {
+            address_labels: Vec::new(),
             entry: MIRBasicBlockID::new(0),
             blocks: Vec::new(),
             places: Vec::new(),
@@ -46,6 +49,22 @@ impl<I> MIRBody<I> {
 
     pub fn entry(&self) -> MIRBasicBlockID {
         self.entry
+    }
+
+    /// Records the block of a label whose address is taken.
+    pub fn add_address_label(&mut self, label: impl Into<String>, block: MIRBasicBlockID) {
+        self.address_labels.push((label.into(), block));
+    }
+
+    /// The blocks that a `BlockAddress` of this body can refer to, by label.
+    pub fn address_labels(&self) -> &[(String, MIRBasicBlockID)] {
+        &self.address_labels
+    }
+
+    pub fn address_label(&self, label: &str) -> Option<MIRBasicBlockID> {
+        self.address_labels
+            .iter()
+            .find_map(|(name, block)| (name == label).then_some(*block))
     }
 
     pub fn add_block(&mut self) -> MIRBasicBlockID {

@@ -120,7 +120,14 @@ pub(crate) fn lower_comptime_function<'thir>(
                         .map_err(LowerStop::Diagnostic)?;
                 }
             }
-            THIRFunctionBody::Block { exprs, token_range } => {
+            THIRFunctionBody::Block {
+                exprs,
+                token_range,
+                address_taken_labels,
+            } => {
+                builder
+                    .fun_mut()
+                    .declare_address_labels(address_taken_labels);
                 lower_sequence(builder, exprs, true)?;
                 if function.prototype().return_type().ty().is_void() {
                     emit_implicit_return(builder, None, token_range.clone())

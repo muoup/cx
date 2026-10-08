@@ -158,6 +158,11 @@ pub(super) fn lower_instruction(
                 },
             );
         }
+        MIRInstructionKind::IndirectJump { address, targets } => {
+            let address = values::lower_read(context, address);
+            let targets = targets.iter().map(|target| context.target(target)).collect();
+            memory::void(context, LMIRInstructionKind::IndirectJump { address, targets });
+        }
         MIRInstructionKind::Unreachable => memory::void(context, LMIRInstructionKind::Unreachable),
     }
 }

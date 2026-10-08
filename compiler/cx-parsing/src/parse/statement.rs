@@ -4,7 +4,7 @@ use cx_hir::ast::HIRStmt;
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_tokens::{
-    identifier, keyword, punctuator,
+    identifier, keyword, operator, punctuator,
     token::{IntegerBase, IntegerSuffix, KeywordType, OperatorType, TokenKind},
 };
 
@@ -35,8 +35,19 @@ pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
         }
         identifier!(name) if try_next!(data.tokens, punctuator!(Colon)) => {
             let name = CXIdent::new(name.clone());
-            let statement = Box::new(parse_stmt(data)?);
+            let statement = parse_labelled_stmt(data)?;
             data.expr_from(start, HIRExprKind::Label { name, statement })
+        }
+        keyword!(Case) => {
+            let value = Some(Box::new(parse_expr(data)?));
+            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+            let statement = parse_labelled_stmt(data)?;
+            data.expr_from(start, HIRExprKind::Case { value, statement })
+        }
+        keyword!(Default) => {
+            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+            let statement = parse_labelled_stmt(data)?;
+            data.expr_from(start, HIRExprKind::Case { value: None, statement })
         }
 
         keyword!(If) => parse_if(data, start)?,
@@ -80,11 +91,21 @@ fn expects_semicolon(stmt: &HIRExpression) -> bool {
             | HIRExprKind::For { .. }
             | HIRExprKind::While { pre_eval: true, .. }
             | HIRExprKind::Label { .. }
+            | HIRExprKind::Case { .. }
             | HIRExprKind::Block {
                 kind: HIRBlockKind::Statement,
                 ..
             }
     )
+}
+
+/// The statement a label applies to. A label may also end a block, where it labels nothing.
+fn parse_labelled_stmt(data: &mut ParserData) -> CXResult<Box<HIRExpression>> {
+    if peek_kind!(data.tokens, punctuator!(CloseBrace)) {
+        return Ok(Box::new(data.expr_from(data.tokens.index, HIRExprKind::Void)));
+    }
+
+    Ok(Box::new(parse_stmt(data)?))
 }
 
 fn parse_declaration_or_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
@@ -124,41 +145,9 @@ fn parse_if(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
 
 fn parse_switch(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
     let condition = parse_condition(data)?;
-    assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
+    let body = Box::new(parse_stmt(data)?);
 
-    let mut block = Vec::new();
-    let mut cases = Vec::new();
-    let mut default_case = None;
-
-    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        if try_next!(data.tokens, keyword!(Case)) {
-            let case_value = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
-            cases.push((case_value, block.len()));
-        } else if try_next!(data.tokens, keyword!(Default)) {
-            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
-            if default_case.is_some() {
-                return parse_point_error(
-                    &data.tokens,
-                    &DUPLICATE_ITEM,
-                    ("default match arm".into(), "match".into()),
-                );
-            }
-            default_case = Some(block.len());
-        } else {
-            block.push(parse_stmt(data)?);
-        }
-    }
-
-    Ok(data.expr_from(
-        start,
-        HIRExprKind::Switch {
-            condition,
-            block,
-            cases,
-            default_case,
-        },
-    ))
+    Ok(data.expr_from(start, HIRExprKind::Switch { condition, body }))
 }
 
 fn parse_while(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
@@ -235,6 +224,11 @@ fn parse_for(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
 }
 
 fn parse_goto(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
+    if try_next!(data.tokens, operator!(Asterisk)) {
+        let target = Box::new(parse_expr(data)?);
+        return Ok(data.expr_from(start, HIRExprKind::IndirectGoto { target }));
+    }
+
     let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
         return parse_point_error(
             &data.tokens,

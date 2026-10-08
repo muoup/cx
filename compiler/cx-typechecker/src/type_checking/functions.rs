@@ -225,6 +225,7 @@ fn typecheck_function_body(
     Ok(THIRFunctionBody::Block {
         exprs,
         token_range: body.token_range().clone(),
+        address_taken_labels: env.function.address_taken_labels(),
     })
 }
 

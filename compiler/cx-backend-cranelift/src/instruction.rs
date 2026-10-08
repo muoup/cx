@@ -123,6 +123,13 @@ pub(crate) fn codegen_instruction(
             ))
         }
 
+        LMIRInstructionKind::IndirectJump { .. } => {
+            return Err(raw(
+                &UNSUPPORTED_FEATURE,
+                ("indirect goto".into(), "Cranelift lowering".into()),
+            ))
+        }
+
         LMIRInstructionKind::Return { value } => {
             match value {
                 Some(value) => {

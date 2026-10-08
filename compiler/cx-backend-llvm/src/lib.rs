@@ -27,7 +27,7 @@ use inkwell::values::{
     AnyValue, AnyValueEnum, BasicValueEnum, FunctionValue, GlobalValue, PhiValue,
 };
 
-use crate::globals::{declare_global_variable, define_global_variable};
+use crate::globals::{declare_global_variable, define_global_variable, has_block_address};
 use crate::instruction::reset_num;
 use cx_pipeline_data::OptimizationLevel;
 use cx_util::format::{dump_data, dumps_enabled};
@@ -116,6 +116,25 @@ impl<'a> FunctionState<'a, '_> {
                     None,
                 ),
             )),
+
+            LMIRValue::BlockAddress { function, block } => {
+                let address = (function == &self.current_function)
+                    .then(|| self.get_block(block))
+                    .transpose()?
+                    // SAFETY: the address is only ever the operand of an indirect branch.
+                    .and_then(|block| unsafe { block.get_address() })
+                    .ok_or_else(|| {
+                        LLVMError::new(
+                            &catalogue::MISSING_ENTITY,
+                            (
+                                format!("block '{block}' of function '{function}'"),
+                                format!("function '{}'", self.current_function),
+                            ),
+                        )
+                    })?;
+
+                Ok(CodegenValue::Value(address.as_any_value_enum()))
+            }
 
             LMIRValue::Register { .. } | LMIRValue::Global(..) => {
                 self.value_map.get(val).cloned().ok_or_else(|| {
@@ -290,12 +309,24 @@ pub fn lmir_aot_codegen(
         declare_global_variable(&mut global_state, global)?;
     }
 
-    for (index, global) in bytecode.global_vars.iter().enumerate() {
+    // A block address can only be formed once its block exists, so the globals initialized with
+    // one are defined after the functions.
+    let (after_functions, before_functions): (Vec<_>, Vec<_>) = bytecode
+        .global_vars
+        .iter()
+        .enumerate()
+        .partition(|(_, global)| has_block_address(global));
+
+    for (index, global) in before_functions {
         define_global_variable(&mut global_state, index, global)?;
     }
 
     for func in bytecode.fn_defs.iter() {
         fn_aot_codegen(func, &global_state)?;
+    }
+
+    for (index, global) in after_functions {
+        define_global_variable(&mut global_state, index, global)?;
     }
 
     if let Err(error) = global_state.module.verify() {

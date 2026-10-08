@@ -37,11 +37,17 @@ struct Scope {
     staged_boundary: bool,
     effects: ScopeEffects,
     block: Option<BlockCursor>,
+    switch: Option<SwitchFrame>,
 }
 
 struct BlockCursor {
     statements: Rc<[HIRExpression]>,
     next: usize,
+}
+
+struct SwitchFrame {
+    condition_type: THIRType,
+    has_default: bool,
 }
 
 impl ControlFlow {
@@ -58,6 +64,7 @@ impl ControlFlow {
             staged_boundary: false,
             effects: ScopeEffects::default(),
             block: None,
+            switch: None,
         });
     }
 
@@ -70,6 +77,7 @@ impl ControlFlow {
             staged_boundary: false,
             effects: ScopeEffects::default(),
             block: None,
+            switch: None,
         });
     }
 
@@ -82,6 +90,7 @@ impl ControlFlow {
             staged_boundary: true,
             effects: ScopeEffects::default(),
             block: None,
+            switch: None,
         });
     }
 
@@ -117,6 +126,36 @@ impl ControlFlow {
 
         cursor.next += 1;
         Some((cursor.statements.clone(), index))
+    }
+
+    /// Marks the innermost scope as that of a switch over a value of this type.
+    pub fn enter_switch(&mut self, condition_type: THIRType) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.switch = Some(SwitchFrame {
+                condition_type,
+                has_default: false,
+            });
+        }
+    }
+
+    fn enclosing_switch(&mut self) -> Option<&mut SwitchFrame> {
+        self.scopes
+            .iter_mut()
+            .rev()
+            .take_while(|scope| !scope.staged_boundary)
+            .find_map(|scope| scope.switch.as_mut())
+    }
+
+    /// The type that the case values of the enclosing switch are converted to.
+    pub fn switch_condition_type(&mut self) -> Option<THIRType> {
+        self.enclosing_switch()
+            .map(|switch| switch.condition_type.clone())
+    }
+
+    /// Records a `default` label in the enclosing switch, returning whether it is the first.
+    pub fn declare_switch_default(&mut self) -> bool {
+        self.enclosing_switch()
+            .is_some_and(|switch| !std::mem::replace(&mut switch.has_default, true))
     }
 
     pub fn at_function_root(&self) -> bool {

@@ -7,9 +7,8 @@ use cx_lmir::{
 use cx_log::CXResult;
 use cx_mir::ty::layout::calculate_type_layout;
 use cx_mir::{MIRBody, MIRFunction};
-use cx_util::identifier::CXIdent;
 
-use crate::context::{FunctionContext, GlobalContext};
+use crate::context::{FunctionContext, GlobalContext, block_id};
 
 use super::instructions::lower_instruction;
 use super::typing::convert_prototype;
@@ -36,7 +35,7 @@ pub(super) fn lower_function<'mir>(
         let index = context.blocks.len();
         context.block_indices.insert(block.id(), index);
         context.blocks.push(LMIRBasicBlock {
-            id: CXIdent::new(format!("block.{}", block.id().index())),
+            id: block_id(block.id()),
             debug_name: block.debug_name().cloned(),
             params,
             body: Vec::new(),

@@ -183,6 +183,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             false_target,
         ),
         LMIRInstructionKind::Jump { target } => control_flow::generate_jump(function_state, target),
+        LMIRInstructionKind::IndirectJump { address, targets } => {
+            control_flow::generate_indirect_jump(function_state, address, targets)
+        }
         LMIRInstructionKind::JumpTable {
             value,
             targets,

@@ -39,6 +39,13 @@ impl HIRExpression {
     }
 }
 
+/// One step from an aggregate to a subobject of it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum HIRMemberDesignator {
+    Field(CXIdent),
+    Index(Box<HIRExpression>),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HIRExprKind {
     Taken,
@@ -92,9 +99,12 @@ pub enum HIRExprKind {
 
     Switch {
         condition: Box<HIRExpression>,
-        block: Vec<HIRExpression>,
-        cases: Vec<(HIRExpression, usize)>, // (constant expression, block index)
-        default_case: Option<usize>,
+        body: Box<HIRExpression>,
+    },
+    /// A `case` label, or `default` when it has no value.
+    Case {
+        value: Option<Box<HIRExpression>>,
+        statement: Box<HIRExpression>,
     },
 
     SizeOfExpr {
@@ -108,6 +118,11 @@ pub enum HIRExprKind {
     },
     AlignOfType {
         ty: HIRType,
+    },
+    /// `__builtin_offsetof(ty, member)`, where `member` leads to a subobject of `ty`.
+    OffsetOf {
+        ty: HIRType,
+        member: Vec<HIRMemberDesignator>,
     },
 
     VarDeclaration {
@@ -143,6 +158,13 @@ pub enum HIRExprKind {
     Break,
     Continue,
     Goto {
+        name: CXIdent,
+    },
+    /// `goto *target`, jumping to a label whose address was taken with `&&`.
+    IndirectGoto {
+        target: Box<HIRExpression>,
+    },
+    LabelAddress {
         name: CXIdent,
     },
     Label {

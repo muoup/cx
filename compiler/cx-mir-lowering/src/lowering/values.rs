@@ -177,6 +177,10 @@ pub(super) fn lower_constant(
                 .symbol_name
                 .clone(),
         ),
+        MIRConstant::BlockAddress { function, label } => {
+            let (function, block) = context.global.block_address(*function, label);
+            LMIRValue::BlockAddress { function, block }
+        }
         MIRConstant::Aggregate { ty, fields } => {
             let address = memory::allocate(context, *ty);
             memory::void(

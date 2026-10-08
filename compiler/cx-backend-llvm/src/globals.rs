@@ -99,6 +99,9 @@ pub(crate) fn define_global_variable(
     })?;
     let initializer = match global_state {
         LMIRGlobalState::ZeroInitialized => basic_type.const_zero(),
+        LMIRGlobalState::Initialized(initializer) if has_overlay(initializer) => {
+            flat_initializer(state, ty, initializer)?
+        }
         LMIRGlobalState::Initialized(initializer) => {
             global_initializer(state, basic_type, initializer)?
         }
@@ -146,6 +149,12 @@ fn global_llvm_type<'ctx>(
     ty: &LMIRType,
     initializers: &[&LMIRGlobalInitializer],
 ) -> LLVMResult<BasicTypeEnum<'ctx>> {
+    if let [initializer] = initializers
+        && has_overlay(initializer)
+    {
+        return flat_type(state, ty, initializer);
+    }
+
     let base_type = || -> LLVMResult<BasicTypeEnum<'ctx>> {
         let llvm_type = bc_llvm_type(state.context, ty)?;
         any_to_basic_type(llvm_type)
@@ -206,6 +215,27 @@ fn global_llvm_type<'ctx>(
         }
         _ => base_type(),
     }
+}
+
+pub(crate) fn has_block_address(variable: &LMIRGlobalValue) -> bool {
+    fn contains(initializer: &LMIRGlobalInitializer) -> bool {
+        match initializer {
+            LMIRGlobalInitializer::BlockAddress { .. } => true,
+            LMIRGlobalInitializer::Aggregate { fields } => {
+                fields.iter().any(|(_, field)| contains(field))
+            }
+            LMIRGlobalInitializer::Overlay { value, .. } => contains(value),
+            _ => false,
+        }
+    }
+
+    matches!(
+        &variable.ty,
+        LMIRGlobalType::Variable {
+            state: LMIRGlobalState::Initialized(initializer),
+            ..
+        } if contains(initializer)
+    )
 }
 
 fn has_function_pointer_initializer(ty: &LMIRType, initializer: &LMIRGlobalInitializer) -> bool {
@@ -347,11 +377,182 @@ fn global_initializer<'ctx>(
                 .const_cast(pointer_type)
                 .into())
         }
+        LMIRGlobalInitializer::BlockAddress { function, block } => {
+            let address = state
+                .module
+                .get_function(function)
+                .and_then(|function| {
+                    function
+                        .get_basic_block_iter()
+                        .find(|candidate| candidate.get_name().to_bytes() == block.as_str().as_bytes())
+                })
+                // SAFETY: the address is only ever the operand of an indirect branch.
+                .and_then(|block| unsafe { block.get_address() })
+                .ok_or_else(|| {
+                    LLVMError::new(
+                        &catalogue::MISSING_ENTITY,
+                        (
+                            format!("block '{block}' of function '{function}'"),
+                            "LLVM module".into(),
+                        ),
+                    )
+                })?;
+            Ok(address.const_cast(basic_type.into_pointer_type()).into())
+        }
+        LMIRGlobalInitializer::Overlay { .. } => Err(LLVMError::new(
+            &catalogue::ENTITY_REQUIREMENT,
+            (
+                "typed global initializer".into(),
+                "no overlaid value".into(),
+                None,
+            ),
+        )),
         LMIRGlobalInitializer::Null => Ok(match basic_type {
             BasicTypeEnum::PointerType(pointer) => pointer.const_null().into(),
             _ => basic_type.const_zero(),
         }),
     }
+}
+
+/// A scalar of a global initializer and where it lies in the global.
+struct Leaf<'i> {
+    offset: usize,
+    ty: &'i LMIRType,
+    initializer: &'i LMIRGlobalInitializer,
+}
+
+fn has_overlay(initializer: &LMIRGlobalInitializer) -> bool {
+    match initializer {
+        LMIRGlobalInitializer::Overlay { .. } => true,
+        LMIRGlobalInitializer::Aggregate { fields } => {
+            fields.iter().any(|(_, field)| has_overlay(field))
+        }
+        _ => false,
+    }
+}
+
+fn aggregate_field(ty: &LMIRType, index: usize) -> Option<(&LMIRType, usize)> {
+    match &ty.kind {
+        LMIRTypeKind::Array { element, size } if index < *size => {
+            Some((element, index * usize::from(element.size())))
+        }
+        LMIRTypeKind::Struct { fields, .. } => {
+            let mut offset = 0usize;
+            for (field_index, (_, field_type)) in fields.iter().enumerate() {
+                offset = offset.next_multiple_of(usize::from(field_type.alignment()).max(1));
+                if field_index == index {
+                    return Some((field_type, offset));
+                }
+                offset += usize::from(field_type.size());
+            }
+            None
+        }
+        LMIRTypeKind::Opaque { .. } if index == 0 => Some((ty, 0)),
+        _ => None,
+    }
+}
+
+fn collect_leaves<'i>(
+    ty: &'i LMIRType,
+    initializer: &'i LMIRGlobalInitializer,
+    offset: usize,
+    leaves: &mut Vec<Leaf<'i>>,
+) -> LLVMResult<()> {
+    match initializer {
+        LMIRGlobalInitializer::Null => {}
+        LMIRGlobalInitializer::Overlay { ty, value } => {
+            collect_leaves(ty, value, offset, leaves)?;
+        }
+        LMIRGlobalInitializer::Aggregate { fields } => {
+            for (index, field) in fields {
+                let (field_type, field_offset) = aggregate_field(ty, *index).ok_or_else(|| {
+                    LLVMError::new(
+                        &catalogue::INDEX_BOUNDS,
+                        ("aggregate initializer field".into(), format!("{index}")),
+                    )
+                })?;
+                collect_leaves(field_type, field, offset + field_offset, leaves)?;
+            }
+        }
+        _ => leaves.push(Leaf {
+            offset,
+            ty,
+            initializer,
+        }),
+    }
+    Ok(())
+}
+
+fn flat_leaves<'i>(
+    ty: &'i LMIRType,
+    initializer: &'i LMIRGlobalInitializer,
+) -> LLVMResult<Vec<Leaf<'i>>> {
+    let mut leaves = Vec::new();
+    collect_leaves(ty, initializer, 0, &mut leaves)?;
+    leaves.sort_by_key(|leaf| leaf.offset);
+    Ok(leaves)
+}
+
+/// Lays `leaves` out as the fields of a packed struct of `size` bytes, padding the gaps.
+fn flat_fields<'i, T>(
+    size: usize,
+    leaves: &[Leaf<'i>],
+    mut padding: impl FnMut(u32) -> T,
+    mut scalar: impl FnMut(&Leaf<'i>) -> LLVMResult<T>,
+) -> LLVMResult<Vec<T>> {
+    let mut fields = Vec::new();
+    let mut end = 0;
+    for leaf in leaves {
+        if leaf.offset < end {
+            continue;
+        }
+        if leaf.offset > end {
+            fields.push(padding((leaf.offset - end) as u32));
+        }
+        fields.push(scalar(leaf)?);
+        end = leaf.offset + usize::from(leaf.ty.size());
+    }
+    if end < size {
+        fields.push(padding((size - end) as u32));
+    }
+    Ok(fields)
+}
+
+fn leaf_type<'ctx>(state: &GlobalState<'ctx>, leaf: &Leaf<'_>) -> LLVMResult<BasicTypeEnum<'ctx>> {
+    any_to_basic_type(bc_llvm_type(state.context, leaf.ty)?)
+}
+
+/// The type of a global whose initializer overlays a value on an opaque type. A global is only
+/// reached through its address, so its type is free to follow the initializer: a packed struct of
+/// the scalars at their offsets, which can hold any member of a union.
+fn flat_type<'ctx>(
+    state: &GlobalState<'ctx>,
+    ty: &LMIRType,
+    initializer: &LMIRGlobalInitializer,
+) -> LLVMResult<BasicTypeEnum<'ctx>> {
+    let leaves = flat_leaves(ty, initializer)?;
+    let fields = flat_fields(
+        usize::from(ty.size()),
+        &leaves,
+        |bytes| state.context.i8_type().array_type(bytes).into(),
+        |leaf| leaf_type(state, leaf),
+    )?;
+    Ok(state.context.struct_type(&fields, true).into())
+}
+
+fn flat_initializer<'ctx>(
+    state: &GlobalState<'ctx>,
+    ty: &LMIRType,
+    initializer: &LMIRGlobalInitializer,
+) -> LLVMResult<BasicValueEnum<'ctx>> {
+    let leaves = flat_leaves(ty, initializer)?;
+    let fields = flat_fields(
+        usize::from(ty.size()),
+        &leaves,
+        |bytes| state.context.i8_type().array_type(bytes).const_zero().into(),
+        |leaf| global_initializer(state, leaf_type(state, leaf)?, leaf.initializer),
+    )?;
+    Ok(state.context.const_struct(&fields, true).into())
 }
 
 /// Positions each field initializer at its index (the first initializer wins for duplicates), so

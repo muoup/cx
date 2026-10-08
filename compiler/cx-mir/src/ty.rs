@@ -54,6 +54,13 @@ impl MIRIntType {
         }
     }
 
+    pub const fn bits(self) -> usize {
+        match self {
+            Self::I1 => 1,
+            _ => self.bytes() * 8,
+        }
+    }
+
     pub const fn from_bytes(bytes: u8) -> Option<Self> {
         match bytes {
             1 => Some(Self::I8),
