@@ -310,6 +310,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 ),
             );
         } else if decls.is_empty() {
+            data.pop_comma_mode();
             return Ok(HIRExprKind::Void.into_expr(
                 start_index,
                 data.tokens.index,
