@@ -1,6 +1,9 @@
 use cx_util::identifier::CXIdent;
 
-use crate::expr::{aggregate::HMIRAggregateOp, kind::HMIRExprID, type_op::HMIRTypeOp};
+use crate::{
+    expr::{aggregate::HMIRAggregateOp, kind::HMIRExprID, type_op::HMIRTypeOp},
+    unit::def::HMIRDefRef,
+};
 
 #[derive(Debug, Clone)]
 pub enum HMIRNativeOp {
@@ -83,6 +86,13 @@ pub enum HMIRControlOp {
     Break,
     Continue,
     Goto(CXIdent),
+    // Jumps to the label whose address the operand holds
+    IndirectGoto(HMIRExprID),
+    // 'function' owns the label; a function-level static takes the address outside of its body
+    LabelAddress {
+        function: Option<HMIRDefRef>,
+        name: CXIdent,
+    },
 
     Defer(HMIRExprID),
     Unsafe(HMIRExprID),
@@ -155,6 +165,8 @@ impl HMIRControlOp {
             Self::Break => "break",
             Self::Continue => "continue",
             Self::Goto(_) => "goto",
+            Self::IndirectGoto(_) => "goto *",
+            Self::LabelAddress { .. } => "label_address",
             Self::Defer(_) => "defer",
             Self::Unsafe(_) => "unsafe",
             Self::Unreachable => "unreachable",

@@ -51,6 +51,17 @@ pub(crate) struct Program<'l> {
     imported: HashMap<(UnitID, HMIRTypeID), TypeID>,
     serial: u64,
     require_explicit_return: bool,
+    deferral: Deferral,
+}
+
+#[derive(Default)]
+pub(crate) struct Deferral {
+    // How many aggregates are having their fields evaluated
+    pub(crate) defining: usize,
+    // Set inside the expressions of a type, which may look through a pointer
+    pub(crate) eager: bool,
+    // Named aggregates that were pointed to before being defined
+    pub(crate) pending: Vec<DefKey>,
 }
 
 impl DefKey {
@@ -106,6 +117,7 @@ impl<'l> Program<'l> {
             imported: HashMap::new(),
             serial: 0,
             require_explicit_return,
+            deferral: Deferral::default(),
         };
         program.push_unit(main);
         program
@@ -159,6 +171,10 @@ impl<'l> Program<'l> {
 
     pub(crate) fn active_mut(&mut self) -> &mut HashSet<Instance> {
         &mut self.active
+    }
+
+    pub(crate) fn deferral_mut(&mut self) -> &mut Deferral {
+        &mut self.deferral
     }
 
     pub(crate) fn reentered_mut(&mut self) -> &mut HashSet<Instance> {

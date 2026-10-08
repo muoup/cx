@@ -1,6 +1,7 @@
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent};
+use std::rc::Rc;
 
 use crate::ast::{
     expression::HIRExpression,
@@ -11,7 +12,7 @@ use crate::ast::{
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum HIRFunctionBody {
     Block {
-        statements: Vec<HIRExpression>,
+        statements: Rc<[HIRExpression]>,
         range: TokenRange,
     },
     Expression(HIRExpression),

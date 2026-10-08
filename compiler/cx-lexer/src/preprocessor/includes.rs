@@ -212,9 +212,10 @@ fn system_include_dirs() -> &'static [PathBuf] {
 
 #[cfg(all(unix, not(feature = "ignore-system-headers")))]
 fn discover_system_include_dirs() -> Vec<PathBuf> {
-    let mut dirs = vec![PathBuf::from("/usr/include")];
-    dirs.extend(multiarch_include_dirs());
-    dirs.extend(gcc_include_dirs());
+    let dirs = gcc_search_dirs();
+    if dirs.is_empty() {
+        return vec![PathBuf::from("/usr/include")];
+    }
     dirs
 }
 
@@ -224,54 +225,20 @@ fn discover_system_include_dirs() -> Vec<PathBuf> {
 }
 
 #[cfg(all(unix, not(feature = "ignore-system-headers")))]
-fn multiarch_include_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    if let Ok(output) = std::process::Command::new("gcc")
-        .arg("-print-multiarch")
+fn gcc_search_dirs() -> Vec<PathBuf> {
+    let Ok(output) = std::process::Command::new("gcc")
+        .args(["-E", "-Wp,-v", "-xc", "/dev/null"])
         .output()
-        && output.status.success()
-        && let Ok(tuple) = String::from_utf8(output.stdout)
-    {
-        let include_dir = PathBuf::from("/usr/include").join(tuple.trim());
-        if include_dir.is_dir() {
-            dirs.push(include_dir);
-        }
-    }
-
-    dirs
-}
-
-#[cfg(all(unix, not(feature = "ignore-system-headers")))]
-fn gcc_include_dirs() -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    let targets = match std::fs::read_dir("/usr/lib/gcc") {
-        Ok(targets) => targets,
-        Err(error) => {
-            eprintln!("Warning: failed to inspect GCC include directories: {error}");
-            return dirs;
-        }
+    else {
+        return Vec::new();
     };
 
-    for target in targets.flatten() {
-        let versions = match std::fs::read_dir(target.path()) {
-            Ok(versions) => versions,
-            Err(error) => {
-                eprintln!(
-                    "Warning: failed to inspect GCC include directory {}: {error}",
-                    target.path().display()
-                );
-                continue;
-            }
-        };
-
-        for version in versions.flatten() {
-            let include_dir = version.path().join("include");
-            if include_dir.is_dir() {
-                dirs.push(include_dir);
-            }
-        }
-    }
-
-    dirs
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .skip_while(|line| !line.starts_with("#include <...>"))
+        .skip(1)
+        .take_while(|line| line.starts_with(' '))
+        .map(|line| PathBuf::from(line.trim()))
+        .filter(|dir| dir.is_dir())
+        .collect()
 }

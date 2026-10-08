@@ -3,7 +3,7 @@ use cx_hir::{
     registry::GlobalSymbolRegistry,
     symbols::{HIRSymbol, HIRSymbolKind},
 };
-use cx_hmir::{HMIRDef, HMIRUnit};
+use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit};
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
@@ -94,7 +94,8 @@ pub fn generate_external_hmir(
     let plan = PlannedDef::new(name.clone(), namespace.clone(), span.clone(), source);
     let resolver = Resolver::new(registry, architecture, 1);
     let mut unit = HMIRUnit::new(namespace);
-    let cx = BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false);
+    let cx = BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false)
+        .owned_by(HMIRDefID::new(0));
     let kind = lower_def(cx, &plan);
     unit.push_def(HMIRDef::new(name.clone(), span, kind));
     for def in resolver.take_statics() {

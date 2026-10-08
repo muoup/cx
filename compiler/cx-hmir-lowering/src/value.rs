@@ -5,7 +5,7 @@ use std::{
 };
 
 use cx_hmir::{HMIRBinaryOp, HMIRDefID, HMIRExprID, HMIRIntWidth, HMIRLocalID};
-use cx_util::unsafe_float::FloatWrapper;
+use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
 use crate::{
     program::{DefKey, UnitID},
@@ -41,6 +41,12 @@ pub(crate) enum StaticValue {
     GlobalAddress {
         def: DefKey,
         offset: i64,
+        ty: TypeID,
+    },
+    // The address of a label of a runtime function
+    LabelAddress {
+        function: DefKey,
+        label: CXIdent,
         ty: TypeID,
     },
 }
@@ -202,6 +208,7 @@ impl StaticValue {
             Self::Aggregate { .. } => "an aggregate",
             Self::Global(_) => "a global",
             Self::GlobalAddress { .. } => "a global address",
+            Self::LabelAddress { .. } => "a label address",
         }
     }
 
@@ -228,7 +235,10 @@ impl StaticValue {
             Self::Int { value, .. } => Some(*value != 0),
             Self::Float { value, .. } => Some(f64::from(value) != 0.0),
             Self::Null(_) => Some(false),
-            Self::Str(_) | Self::GlobalAddress { .. } | Self::Function { .. } => Some(true),
+            Self::Str(_)
+            | Self::GlobalAddress { .. }
+            | Self::LabelAddress { .. }
+            | Self::Function { .. } => Some(true),
             _ => None,
         }
     }
@@ -240,7 +250,9 @@ impl StaticValue {
             Self::Int { ty, .. } | Self::Float { ty, .. } | Self::Null(ty) => *ty,
             Self::Str(_) => types.str(),
             Self::Type(_) => types.type_of_types(),
-            Self::Aggregate { ty, .. } | Self::GlobalAddress { ty, .. } => *ty,
+            Self::Aggregate { ty, .. }
+            | Self::GlobalAddress { ty, .. }
+            | Self::LabelAddress { ty, .. } => *ty,
             Self::Function { .. } | Self::Quote(_) | Self::Global(_) => return None,
         })
     }

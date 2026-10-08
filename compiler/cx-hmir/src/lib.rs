@@ -16,7 +16,7 @@ pub use expr::kind::{
 pub use expr::native_op::{
     HMIRBinaryOp, HMIRCoerceMode, HMIRControlOp, HMIRNativeOp, HMIROwnershipOp, HMIRUnaryOp,
 };
-pub use expr::type_op::HMIRTypeOp;
+pub use expr::type_op::{HMIRMemberStep, HMIRTypeOp};
 pub use ty::desc::{HMIRFloatWidth, HMIRFnTypeDesc, HMIRIntWidth, HMIRTypeDesc, HMIRTypeID};
 pub use ty::field::HMIRFieldDef;
 pub use ty::interner::HMIRTypeInterner;

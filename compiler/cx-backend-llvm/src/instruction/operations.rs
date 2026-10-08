@@ -141,7 +141,7 @@ pub(super) fn generate_float_binop<'a, 'b>(
         | LMIRFloatBinOp::FGE => {
             let predicate = match op {
                 LMIRFloatBinOp::EQ => FloatPredicate::OEQ,
-                LMIRFloatBinOp::NEQ => FloatPredicate::ONE,
+                LMIRFloatBinOp::NEQ => FloatPredicate::UNE,
                 LMIRFloatBinOp::FLT => FloatPredicate::OLT,
                 LMIRFloatBinOp::FLE => FloatPredicate::OLE,
                 LMIRFloatBinOp::FGT => FloatPredicate::OGT,

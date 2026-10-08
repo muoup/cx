@@ -233,6 +233,13 @@ pub(crate) fn coerce_static(
             StaticValue::GlobalAddress { def, offset, .. },
             TypeKind::Pointer(_) | TypeKind::Reference(_),
         ) => StaticValue::GlobalAddress { def, offset, ty },
+        (StaticValue::LabelAddress { function, label, .. }, TypeKind::Pointer(_)) => {
+            StaticValue::LabelAddress {
+                function,
+                label,
+                ty,
+            }
+        }
         (StaticValue::Global(def), TypeKind::Pointer(element)) => {
             let global = eval_global_type(cx, def, span)?;
             if cx.types().is_array(global) || global == element {

@@ -78,13 +78,14 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             sign_extend,
         } => {
             let from = integer_type(context, value);
-            let coercion_type = if from.bytes() < target.bytes() {
-                if *sign_extend {
+            let coercion_type = if from.bits() < target.bits() {
+                // A boolean widens to 0 or 1 whatever the signedness of its type.
+                if *sign_extend && from != MIRIntType::I1 {
                     LMIRCoercionType::SExtend
                 } else {
                     LMIRCoercionType::ZExtend
                 }
-            } else if from.bytes() > target.bytes() {
+            } else if from.bits() > target.bits() {
                 LMIRCoercionType::Trunc
             } else {
                 LMIRCoercionType::BitCast

@@ -11,7 +11,8 @@ use crate::{
         Expect, FunctionLowering, LowerResult, Operand, Stop,
         call::lower_call,
         control::{
-            lower_block, lower_for, lower_if, lower_label, lower_match, lower_switch, lower_while,
+            lower_block, lower_case, lower_for, lower_if, lower_label, lower_match, lower_switch,
+            lower_while,
         },
         expr::{
             lower_expr, lower_intrinsic_expr, lower_let, lower_local, lower_native, lower_splice,
@@ -242,20 +243,25 @@ pub(crate) fn lower(
                     .map_err(Stop::Error)
             }
         },
-        HMIRExprKind::Switch {
-            condition,
-            cases,
-            default,
-        } => match cx {
+        HMIRExprKind::Switch { condition, body } => match cx {
             LowerContext::Runtime(lowering, frame) => {
-                lower_switch(lowering, frame, condition, &cases, default, &span)
-                    .map(LowerOutput::Runtime)
+                lower_switch(lowering, frame, condition, body, &span).map(LowerOutput::Runtime)
             }
             LowerContext::Comptime(program, frame) => {
-                pattern::switch(program, frame, condition, &cases, default, &span)
+                pattern::switch(program, frame, condition, body, &span)
                     .map(LowerOutput::Comptime)
                     .map_err(Stop::Error)
             }
+        },
+        HMIRExprKind::Case { value, body } => match cx {
+            LowerContext::Runtime(lowering, frame) => {
+                lower_case(lowering, frame, value, body, expect, &span).map(LowerOutput::Runtime)
+            }
+            // A switch enters its body at the label it selects, so one that is reached by
+            // running into it is fallen through
+            LowerContext::Comptime(program, frame) => exec(program, frame, body, expect.ty())
+                .map(LowerOutput::Comptime)
+                .map_err(Stop::Error),
         },
         HMIRExprKind::Match {
             scrutinee,

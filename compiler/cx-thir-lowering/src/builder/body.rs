@@ -196,6 +196,25 @@ impl<'thir> MIRBodyBuilder<'thir> {
         }
     }
 
+    pub fn add_address_label(&mut self, label: &CXIdent, block: MIRBasicBlockID) {
+        match &mut self.kind {
+            MIRBodyKind::Runtime { body, .. } => body.add_address_label(label.as_str(), block),
+            MIRBodyKind::Comptime { body, .. } | MIRBodyKind::ComptimeScratch { body } => {
+                body.add_address_label(label.as_str(), block)
+            }
+        }
+    }
+
+    pub fn address_label_blocks(&self) -> Vec<MIRBasicBlockID> {
+        let labels = match &self.kind {
+            MIRBodyKind::Runtime { body, .. } => body.address_labels(),
+            MIRBodyKind::Comptime { body, .. } | MIRBodyKind::ComptimeScratch { body } => {
+                body.address_labels()
+            }
+        };
+        labels.iter().map(|(_, block)| *block).collect()
+    }
+
     pub fn add_scope(&mut self, range: TokenRange) -> MIRScopeID {
         match &mut self.kind {
             MIRBodyKind::Runtime { body, .. } => body.add_scope(range),

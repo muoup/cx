@@ -1,1 +1,0 @@
-Add support for this part of the test suite so that we compare execution time performance

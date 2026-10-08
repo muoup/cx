@@ -1,9 +1,13 @@
+use crate::log::raw;
 use crate::{routines::convert_linkage, GlobalState};
 use cranelift_module::{DataDescription, DataId, Linkage, Module};
 use cx_lmir::types::{LMIRFloatType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
     LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue, LinkageType,
 };
+use cx_log::catalogue::backend::UNSUPPORTED_FEATURE;
+use cx_log::error::context::CXNoSourceContext;
+use cx_log::error::CXError;
 use cx_log::CXResult;
 
 pub(crate) fn declare_global(
@@ -69,6 +73,18 @@ pub(crate) fn define_global(
                     data.define_zeroinit(usize::from(ty.size()));
                 }
                 LMIRGlobalState::Initialized(initializer) => {
+                    if has_block_address(initializer) {
+                        return Err(CXError::new(
+                            raw(
+                                &UNSUPPORTED_FEATURE,
+                                ("label addresses".into(), "Cranelift lowering".into()),
+                            ),
+                            CXNoSourceContext::error(format!(
+                                "failed to codegen global: {}",
+                                variable.name
+                            )),
+                        ));
+                    }
                     data.define(initializer_bytes(initializer, ty).into_boxed_slice());
                     write_initializer_relocations(state, &mut data, initializer, ty, 0);
                 }
@@ -114,14 +130,27 @@ fn initializer_bytes(
             }
             bytes
         }
+        LMIRGlobalInitializer::Overlay { ty, value } => initializer_bytes(value, ty),
         LMIRGlobalInitializer::Global(_)
         | LMIRGlobalInitializer::GlobalOffset { .. }
+        | LMIRGlobalInitializer::BlockAddress { .. }
         | LMIRGlobalInitializer::Function(_) => {
             vec![0; usize::from(ty.size())]
         }
         LMIRGlobalInitializer::Null => vec![0; usize::from(ty.size())],
     };
     fit_bytes(bytes, usize::from(ty.size()))
+}
+
+fn has_block_address(initializer: &LMIRGlobalInitializer) -> bool {
+    match initializer {
+        LMIRGlobalInitializer::BlockAddress { .. } => true,
+        LMIRGlobalInitializer::Aggregate { fields } => {
+            fields.iter().any(|(_, field)| has_block_address(field))
+        }
+        LMIRGlobalInitializer::Overlay { value, .. } => has_block_address(value),
+        _ => false,
+    }
 }
 
 fn write_initializer_relocations(
@@ -172,6 +201,9 @@ fn write_initializer_relocations(
                     offset + field_offset,
                 );
             }
+        }
+        LMIRGlobalInitializer::Overlay { ty, value } => {
+            write_initializer_relocations(state, data, value, ty, offset);
         }
         _ => {}
     }

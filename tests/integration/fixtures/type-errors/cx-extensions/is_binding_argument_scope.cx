@@ -1,0 +1,12 @@
+enum union Output {
+    integer :: int,
+    error   :: void
+};
+
+void show(bool matched) {}
+
+int main() {
+    Output out = Output::integer(42);
+    show(out is Output::integer(number));
+    return number;
+}

@@ -419,6 +419,16 @@ pub(crate) fn to_constant(
             cx.module_mut().use_function(id);
             MIRConstant::Function(id)
         }
+        StaticValue::LabelAddress {
+            function, label, ..
+        } => {
+            let function = declare_function(cx, &(function, Vec::new()), span)?;
+            cx.module_mut().use_function(function);
+            MIRConstant::BlockAddress {
+                function,
+                label: label.to_string(),
+            }
+        }
         StaticValue::GlobalAddress { def, offset, .. } => {
             let mut global = global_ref(cx, def, span)?;
             global.offset = offset;

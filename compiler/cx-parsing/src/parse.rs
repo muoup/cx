@@ -15,6 +15,7 @@ use cx_tokens::{
     TokenIter,
 };
 use cx_util::identifier::CXIdent;
+use std::rc::Rc;
 
 use crate::{
     assert_token_matches, log::parse_point_error, next_kind, parse::{
@@ -220,6 +221,7 @@ fn parse_fn_merge(
     mut prototype: HIRFunctionPrototype,
     inherited_external: bool,
 ) -> CXResult<()> {
+    functions::linkage::resolve(data, &mut prototype, true);
     if try_next!(data.tokens, punctuator!(Semicolon)) {
         if inherited_external {
             prototype.linkage = LinkageMode::Extern;
@@ -479,138 +481,19 @@ fn parse_block_kind(data: &mut ParserData, kind: HIRBlockKind) -> CXResult<HIREx
     assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
 
     let start_index = data.tokens.index - 1;
-    let body = parse_block_statements(data)?;
+    let exprs = parse_block_statements(data)?;
 
-    Ok(HIRExprKind::Block {
-        exprs: body,
-        kind,
-    }
-    .into_expr(
-        start_index,
-        data.tokens.index,
-        data.token_range(start_index, data.tokens.index),
-    ))
+    Ok(data.expr_from(start_index, HIRExprKind::Block { exprs, kind }))
 }
 
-fn parse_block_statements(data: &mut ParserData) -> CXResult<Vec<HIRExpression>> {
+fn parse_block_statements(data: &mut ParserData) -> CXResult<Rc<[HIRExpression]>> {
     let mut body = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        let mut statement = parse_stmt(data)?;
-        let then_count = count_then_markers(&statement);
-        let capturing_then_count = count_capturing_then_markers(&statement);
-        if then_count != capturing_then_count {
-            return parse_point_error(
-                &data.tokens,
-                &EXPECTED_SYNTAX,
-                ("a direct body".into(), Some("after 'then'".into())),
-            );
-        }
-        if then_count > 1 {
-            return parse_point_error(
-                &data.tokens,
-                &EXPECTED_SYNTAX,
-                ("at most one 'then' marker".into(), None),
-            );
-        }
-
-        if then_count == 1 {
-            let continuation_start = data.tokens.index;
-            let continuation = parse_block_statements(data)?;
-
-            let continuation = HIRExprKind::Block {
-                exprs: continuation,
-                kind: HIRBlockKind::Sequence,
-            }
-            .into_expr(
-                continuation_start,
-                data.tokens.index,
-                data.token_range(continuation_start, data.tokens.index),
-            );
-            replace_then_marker(&mut statement, continuation);
-            body.push(statement);
-            break;
-        }
-
-        body.push(statement);
+        body.push(parse_stmt(data)?);
     }
 
-    Ok(body)
-}
-
-pub(crate) fn count_then_markers(expr: &HIRExpression) -> usize {
-    match &expr.kind {
-        HIRExprKind::Then => 1,
-        HIRExprKind::BinOp { lhs, rhs, .. } => count_then_markers(lhs) + count_then_markers(rhs),
-        HIRExprKind::UnOp { operand, .. }
-        | HIRExprKind::Defer { expr: operand }
-        | HIRExprKind::Emit { expr: operand }
-        | HIRExprKind::Unsafe { expr: operand }
-        | HIRExprKind::Leak { expr: operand }
-        | HIRExprKind::Adopt { expr: operand } => count_then_markers(operand),
-        HIRExprKind::Closure { body, .. } => count_then_markers(body),
-        HIRExprKind::Block { exprs, .. } => exprs.iter().map(count_then_markers).sum(),
-        _ => 0,
-    }
-}
-
-pub(crate) fn count_capturing_then_markers(expr: &HIRExpression) -> usize {
-    match &expr.kind {
-        HIRExprKind::Closure { body, .. } if matches!(body.kind, HIRExprKind::Then) => 1,
-        HIRExprKind::Closure { body, .. } => count_capturing_then_markers(body),
-        HIRExprKind::BinOp { lhs, rhs, .. } => {
-            count_capturing_then_markers(lhs) + count_capturing_then_markers(rhs)
-        }
-        HIRExprKind::UnOp { operand, .. }
-        | HIRExprKind::Defer { expr: operand }
-        | HIRExprKind::Emit { expr: operand }
-        | HIRExprKind::Unsafe { expr: operand }
-        | HIRExprKind::Leak { expr: operand }
-        | HIRExprKind::Adopt { expr: operand } => count_capturing_then_markers(operand),
-        HIRExprKind::Block { exprs, .. } => exprs.iter().map(count_capturing_then_markers).sum(),
-        _ => 0,
-    }
-}
-
-fn replace_then_marker(expr: &mut HIRExpression, continuation: HIRExpression) {
-    fn replace(expr: &mut HIRExpression, continuation: &mut Option<HIRExpression>) {
-        match &mut expr.kind {
-            HIRExprKind::Then => *expr = continuation.take().unwrap(),
-            HIRExprKind::BinOp { lhs, rhs, .. } => {
-                replace(lhs, continuation);
-                if continuation.is_some() {
-                    replace(rhs, continuation);
-                }
-            }
-            HIRExprKind::UnOp { operand, .. }
-            | HIRExprKind::Defer { expr: operand }
-            | HIRExprKind::Emit { expr: operand }
-            | HIRExprKind::Unsafe { expr: operand }
-            | HIRExprKind::Leak { expr: operand }
-            | HIRExprKind::Adopt { expr: operand } => replace(operand, continuation),
-            HIRExprKind::Closure { body, .. } => replace(body, continuation),
-            HIRExprKind::Block { exprs, .. } => {
-                for expr in exprs {
-                    replace(expr, continuation);
-                    if continuation.is_none() {
-                        break;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    replace(expr, &mut Some(continuation));
-}
-
-pub(crate) fn parse_body(data: &mut ParserData) -> CXResult<HIRExpression> {
-    if try_next!(data.tokens, punctuator!(OpenBrace)) {
-        data.tokens.back();
-        parse_block(data)
-    } else {
-        Ok(parse_stmt(data)?)
-    }
+    Ok(body.into())
 }
 
 fn parse_function_body(data: &mut ParserData) -> CXResult<HIRFunctionBody> {
@@ -641,15 +524,14 @@ fn parse_function_body(data: &mut ParserData) -> CXResult<HIRFunctionBody> {
 }
 
 pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
-    let mut ss = String::new();
+    let mut words = Vec::new();
 
     while let Ok(TokenKind::Intrinsic(ident)) = peek_next_kind!(tokens) {
-        ss.push_str(ident.as_str());
-        ss.push(' ');
+        words.push(ident.as_str().to_string());
         tokens.next();
     }
 
-    if ss.is_empty() {
+    if words.is_empty() {
         return parse_point_error(
             tokens,
             &EXPECTED_SYNTAX,
@@ -657,9 +539,14 @@ pub fn parse_intrinsic(tokens: &mut TokenIter) -> CXResult<CXIdent> {
         );
     }
 
-    ss.pop();
+    // C permits specifiers in any order; the intrinsic table is keyed on this one.
+    words.sort_by_key(|word| match word.as_str() {
+        "signed" | "unsigned" | "_Complex" => 0,
+        "short" | "long" => 1,
+        _ => 2,
+    });
 
-    Ok(CXIdent::new(ss))
+    Ok(CXIdent::new(words.join(" ")))
 }
 
 pub fn try_parse_simple_identifier(tokens: &mut TokenIter) -> Option<CXIdent> {

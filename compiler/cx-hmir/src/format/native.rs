@@ -5,7 +5,7 @@ use crate::{
         aggregate::HMIRAggregateOp,
         kind::HMIRExprID,
         native_op::{HMIRControlOp, HMIRNativeOp, HMIROwnershipOp},
-        type_op::HMIRTypeOp,
+        type_op::{HMIRMemberStep, HMIRTypeOp},
     },
     ty::nominal::{HMIRAggregateKind, HMIRMoveSemantics},
 };
@@ -75,7 +75,10 @@ impl BodyPrinter<'_> {
                 f.write_str(" ")?;
                 self.expr(f, *operand, depth)
             }
-            HMIRControlOp::Goto(label) => write!(f, " {label}"),
+            HMIRControlOp::IndirectGoto(target) => self.expr(f, *target, depth),
+            HMIRControlOp::Goto(label) | HMIRControlOp::LabelAddress { name: label, .. } => {
+                write!(f, " {label}")
+            }
             HMIRControlOp::Return(None)
             | HMIRControlOp::Yield(None)
             | HMIRControlOp::Break
@@ -230,6 +233,23 @@ impl BodyPrinter<'_> {
             | HMIRTypeOp::IsPointer(ty)
             | HMIRTypeOp::IsSigned(ty) => self.call(f, op.path(), &[*ty], depth),
             HMIRTypeOp::Equal(lhs, rhs) => self.call(f, op.path(), &[*lhs, *rhs], depth),
+            HMIRTypeOp::OffsetOf { ty, member } => {
+                write!(f, "{}(", op.path())?;
+                self.expr(f, *ty, depth)?;
+                f.write_str(", ")?;
+                for (position, step) in member.iter().enumerate() {
+                    match step {
+                        HMIRMemberStep::Field(name) if position == 0 => write!(f, "{name}")?,
+                        HMIRMemberStep::Field(name) => write!(f, ".{name}")?,
+                        HMIRMemberStep::Index(index) => {
+                            f.write_str("[")?;
+                            self.expr(f, *index, depth)?;
+                            f.write_str("]")?;
+                        }
+                    }
+                }
+                f.write_str(")")
+            }
         }
     }
 }

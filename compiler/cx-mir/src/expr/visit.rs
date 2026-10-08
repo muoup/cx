@@ -19,6 +19,7 @@ pub fn successors(kind: &MIRInstruction) -> Vec<&MIRBlockTarget> {
 
             cases_iter.chain(default_iter).collect()
         }
+        MIRInstructionKind::IndirectJump { targets, .. } => targets.iter().collect(),
         _ => vec![],
     }
 }
@@ -226,6 +227,12 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 block(target, &mut visit);
             }
             if let Some(target) = default {
+                block(target, &mut visit);
+            }
+        }
+        MIRInstructionKind::IndirectJump { address, targets } => {
+            value(address, &mut visit);
+            for target in targets {
                 block(target, &mut visit);
             }
         }

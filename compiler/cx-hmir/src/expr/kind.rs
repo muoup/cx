@@ -72,8 +72,12 @@ pub enum HMIRExprKind {
     },
     Switch {
         condition: HMIRExprID,
-        cases: Vec<(HMIRExprID, HMIRExprID)>,
-        default: Option<HMIRExprID>,
+        body: HMIRExprID,
+    },
+    // A label of the innermost enclosing switch; 'default' when it has no value
+    Case {
+        value: Option<HMIRExprID>,
+        body: HMIRExprID,
     },
     Match {
         scrutinee: HMIRExprID,

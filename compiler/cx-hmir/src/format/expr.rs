@@ -121,29 +121,20 @@ impl BodyPrinter<'_> {
                 f.write_str(") ")?;
                 self.expr(f, *body, depth)
             }
-            HMIRExprKind::Switch {
-                condition,
-                cases,
-                default,
-            } => {
+            HMIRExprKind::Switch { condition, body } => {
                 self.condition(f, "switch", *condition, depth)?;
-                f.write_str("{\n")?;
-                for (value, body) in cases {
-                    indent(f, depth + 1)?;
-                    f.write_str("case ")?;
-                    self.expr(f, *value, depth + 1)?;
-                    f.write_str(": ")?;
-                    self.expr(f, *body, depth + 1)?;
-                    f.write_str("\n")?;
+                self.expr(f, *body, depth)
+            }
+            HMIRExprKind::Case { value, body } => {
+                match value {
+                    Some(value) => {
+                        f.write_str("case ")?;
+                        self.expr(f, *value, depth)?;
+                        f.write_str(": ")?;
+                    }
+                    None => f.write_str("default: ")?,
                 }
-                if let Some(default) = default {
-                    indent(f, depth + 1)?;
-                    f.write_str("default: ")?;
-                    self.expr(f, *default, depth + 1)?;
-                    f.write_str("\n")?;
-                }
-                indent(f, depth)?;
-                f.write_str("}")
+                self.expr(f, *body, depth)
             }
             HMIRExprKind::Match {
                 scrutinee,
@@ -173,9 +164,7 @@ impl BodyPrinter<'_> {
 
     pub(super) fn is_structured(&self, id: HMIRExprID) -> bool {
         match self.body().expr(id).kind() {
-            HMIRExprKind::Block { .. }
-            | HMIRExprKind::Switch { .. }
-            | HMIRExprKind::Match { .. } => true,
+            HMIRExprKind::Block { .. } | HMIRExprKind::Match { .. } => true,
             HMIRExprKind::If {
                 then_branch,
                 else_branch,
@@ -187,6 +176,8 @@ impl BodyPrinter<'_> {
                 ..
             }
             | HMIRExprKind::For { body, .. }
+            | HMIRExprKind::Switch { body, .. }
+            | HMIRExprKind::Case { body, .. }
             | HMIRExprKind::Label { body, .. }
             | HMIRExprKind::Comptime(body)
             | HMIRExprKind::Native(HMIRNativeOp::Control(

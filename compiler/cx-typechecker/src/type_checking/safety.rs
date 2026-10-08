@@ -36,6 +36,7 @@ pub(crate) fn check_permissions(
         | THIRExpressionKind::Unit
         | THIRExpressionKind::SizeOf { .. }
         | THIRExpressionKind::AlignOf { .. }
+        | THIRExpressionKind::OffsetOf { .. }
         | THIRExpressionKind::Variable { .. }
         | THIRExpressionKind::GlobalVariable { .. }
         | THIRExpressionKind::ContractVariable { .. }
@@ -162,7 +163,9 @@ pub(crate) fn check_permissions(
         THIRExpressionKind::Break { .. }
         | THIRExpressionKind::Continue { .. }
         | THIRExpressionKind::Unreachable
-        | THIRExpressionKind::Goto { .. } => Ok(()),
+        | THIRExpressionKind::Goto { .. }
+        | THIRExpressionKind::LabelAddress { .. } => Ok(()),
+        THIRExpressionKind::IndirectGoto { target } => check_permissions(env, target, tier),
         THIRExpressionKind::Label { statement, .. } => check_permissions(env, statement, tier),
         THIRExpressionKind::If {
             condition,
@@ -194,21 +197,15 @@ pub(crate) fn check_permissions(
             check_permissions(env, increment, tier)?;
             check_permissions(env, body, tier)
         }
-        THIRExpressionKind::CSwitch {
-            condition,
-            cases,
-            default,
-        } => {
+        THIRExpressionKind::CSwitch { condition, body } => {
             check_permissions(env, condition, tier)?;
-            for (case, body) in cases {
-                check_permissions(env, case, tier)?;
-                check_permissions(env, body, tier)?;
+            check_permissions(env, body, tier)
+        }
+        THIRExpressionKind::Case { value, statement } => {
+            if let Some(value) = value {
+                check_permissions(env, value, tier)?;
             }
-            default
-                .as_deref()
-                .map(|branch| check_permissions(env, branch, tier))
-                .transpose()
-                .map(|_| ())
+            check_permissions(env, statement, tier)
         }
         THIRExpressionKind::Match {
             condition, arms, ..

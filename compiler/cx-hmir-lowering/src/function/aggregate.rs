@@ -152,14 +152,25 @@ pub(super) fn lower_member(
     };
     let base = lower_deref_pointer(cx, base, span)?;
     let base = lower_spill(cx, base, span)?;
-    let Some((index, field)) = cx.program.types().field(base.ty(), name.as_str()) else {
+    let Some(path) = cx.program.types().member_path(base.ty(), name.as_str()) else {
         return cx.error(
             span,
             &typecheck::UNKNOWN_MEMBER,
             (cx.program.types().display(base.ty()), name.to_string()),
         );
     };
-    let field_ty = field.ty();
+    path.into_iter()
+        .try_fold(base, |base, index| lower_field(cx, base, index, span))
+}
+
+fn lower_field(
+    cx: &mut FunctionLowering<'_, '_>,
+    base: Operand,
+    index: usize,
+    span: &TokenRange,
+) -> LowerResult<Operand> {
+    let nominal = cx.program.types().nominal_of(base.ty());
+    let field_ty = nominal.expect("member path is through aggregates").fields()[index].ty();
     let field_ty = if cx.program.types().is_const(base.ty()) {
         cx.program.types_mut().const_of(field_ty)
     } else {

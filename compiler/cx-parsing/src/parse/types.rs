@@ -11,7 +11,10 @@ use cx_hir::ast::{
     modifiers::{
         HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode, HIR_CONST, HIR_RESTRICT, HIR_VOLATILE,
     },
-    types::{HIRAggregateAttributes, HIRField, HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
+    types::{
+        HIRAggregateAttributes, HIRField, HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup,
+        ANONYMOUS_MEMBER_PREFIX,
+    },
 };
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
@@ -27,6 +30,19 @@ use crate::parse::functions::{parse_params, ParseParamsResult};
 use crate::parse::{parse_intrinsic, try_parse_qualified_name};
 
 pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
+    fn is_used_as_value(data: &ParserData) -> bool {
+        matches!(
+            data.tokens
+                .slice
+                .get(data.tokens.index + 1)
+                .map(|token| &token.kind),
+            Some(
+                TokenKind::Assignment(_)
+                    | TokenKind::Operator(OperatorType::Access | OperatorType::Arrow)
+            )
+        )
+    }
+
     let tok = data.tokens.peek().map(|tok| tok.kind.clone());
 
     if tok.is_none() {
@@ -45,7 +61,7 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
             Some(punctuator!(OpenParen))
         ),
 
-        identifier!(name) if is_intrinsic_type(name) => true,
+        identifier!(name) if is_intrinsic_type(name) => !is_used_as_value(data),
 
         TokenKind::Identifier(_) => {
             let pre_idx = data.tokens.index;
@@ -62,14 +78,7 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
                     Some(punctuator!(OpenParen))
                 )
             } else {
-                data.is_type_ident(&ident)?
-                    && !matches!(
-                        data.tokens.slice.get(pre_idx + 1).map(|token| &token.kind),
-                        Some(
-                            TokenKind::Assignment(_)
-                                | TokenKind::Operator(OperatorType::Access | OperatorType::Arrow)
-                        )
-                    )
+                data.is_type_ident(&ident)? && !is_used_as_value(data)
             }
         }
 
@@ -148,15 +157,25 @@ fn aggregate_field_from_decl(
         });
     }
 
-    let Some(name) = name else {
-        return parse_point_error(
-            &data.tokens,
-            &UNSUPPORTED_FEATURE,
-            (format!("nameless member of {ty}"), "the parser".into()),
-        );
+    let name = match name {
+        Some(name) => name.to_string(),
+        None if matches!(
+            ty.kind,
+            HIRTypeKind::Structured { name: None, .. } | HIRTypeKind::Union { name: None, .. }
+        ) =>
+        {
+            format!("{ANONYMOUS_MEMBER_PREFIX}{}", data.tokens.index)
+        }
+        None => {
+            return parse_point_error(
+                &data.tokens,
+                &UNSUPPORTED_FEATURE,
+                (format!("nameless member of {ty}"), "the parser".into()),
+            );
+        }
     };
 
-    Ok(HIRField::standard(name.to_string(), ty))
+    Ok(HIRField::standard(name, ty))
 }
 
 fn parse_aggregate_fields(data: &mut ParserData) -> CXResult<Vec<HIRField>> {
@@ -619,10 +638,7 @@ fn parse_declarator_mods(
                     return parse_point_error(
                         &data.tokens,
                         &EXPECTED_SYNTAX,
-                        (
-                            "a lifetime identifier".into(),
-                            None,
-                        ),
+                        ("a lifetime identifier".into(), None),
                     );
                 }
             };
@@ -656,6 +672,19 @@ fn parse_declarator_mods(
 
         punctuator!(OpenParen) if named => {
             data.tokens.next();
+            if peek_kind!(data.tokens, identifier!())
+                && matches!(
+                    data.tokens
+                        .slice
+                        .get(data.tokens.index + 1)
+                        .map(|token| &token.kind),
+                    Some(punctuator!(CloseParen))
+                )
+            {
+                let name = try_parse_simple_identifier(&mut data.tokens);
+                data.tokens.next();
+                return Ok((name, acc_type));
+            }
             if !matches!(next_kind!(data.tokens), Ok(operator!(Asterisk))) {
                 data.tokens.index = start_index;
                 return Ok((None, acc_type));

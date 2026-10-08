@@ -143,7 +143,7 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<HIRIntrins
     ("unsigned short int", |_| {
         Some(HIRIntrinsicType::Integer {
             signed: false,
-            bytes: 4,
+            bytes: 2,
         })
     }),
     ("signed", |_| {
@@ -268,6 +268,12 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<HIRIntrins
     }),
     ("long double", |_| {
         Some(HIRIntrinsicType::Float { bytes: 8 })
+    }),
+    ("__float128", |_| {
+        Some(HIRIntrinsicType::Opaque {
+            size: 16,
+            alignment: 16,
+        })
     }),
     ("_Complex float", |_| {
         Some(HIRIntrinsicType::Float { bytes: 8 })

@@ -33,7 +33,7 @@ pub(crate) fn dispatch(
 ) -> CXResult<TypecheckResult> {
     match &op {
         HIRBinOp::LOr | HIRBinOp::LAnd => resolve_logical(env, op, lhs, rhs),
-        HIRBinOp::Comma => resolve_comma(lhs, rhs),
+        HIRBinOp::Comma | HIRBinOp::GroupedComma => resolve_comma(lhs, rhs),
 
         _ => resolve_std_arithmetic(env, op, lhs, rhs),
     }

@@ -62,6 +62,14 @@ fn lower_dead_labels<'thir>(
                 Err(error) => Err(error),
             }
         }
+        THIRExpressionKind::Case { value, statement } => {
+            lower_case(builder, expression, value.as_deref())?;
+            match lower_expression(builder, statement) {
+                Ok(_) => Ok(!builder.fun().current_block_terminated()),
+                Err(LowerStop::Diverged) => Ok(false),
+                Err(error) => Err(error),
+            }
+        }
         THIRExpressionKind::Block {
             statements, kind, ..
         } => {
@@ -502,92 +510,99 @@ pub(super) fn lower_for<'thir>(
 pub(super) fn lower_switch<'thir>(
     builder: &mut MIRBuilder<'thir>,
     condition: &'thir THIRExpression,
-    cases: &'thir [(Box<THIRExpression>, Box<THIRExpression>)],
-    default: Option<&'thir THIRExpression>,
+    body: &'thir THIRExpression,
 ) -> LowerResult<()> {
     let value = lower_expression(builder, condition)?;
+    let dispatch = builder.fun().current_block();
     let exit = builder.fun_mut().new_block("switch.exit");
-    let default_block = default
-        .map(|_| builder.fun_mut().new_block("switch.default"))
-        .unwrap_or(exit);
-    let mut targets = Vec::with_capacity(cases.len());
-    let mut bodies = Vec::with_capacity(cases.len());
 
-    for (case, _) in cases {
-        let block = builder.fun_mut().new_block("switch.case");
-        let case_value = comptime::evaluate(builder, case).map_err(LowerStop::Diagnostic)?;
-
-        let MIRConstant::Integer { value, .. } = case_value else {
-            return log_mir_error(
-                &case.token_range,
-                (
-                    &mir::ENTITY_REQUIREMENT,
-                    ("switch case".into(), "an integer constant".into(), None),
-                ),
-            )
-            .map_err(LowerStop::Diagnostic);
-        };
-
-        targets.push((value, MIRBlockTarget::new(block)));
-        bodies.push(block);
+    // The body is lowered once, in order, so that its labels fall through to one another. Only
+    // those labels lead into it, which is why the branch can wait until they have all been seen.
+    let entry = builder.fun_mut().new_block("switch.body");
+    builder.fun_mut().set_current_block(entry);
+    builder.fun_mut().push_control_scope();
+    builder
+        .fun_mut()
+        .current_control_mut()
+        .set_break_target(exit)
+        .collect_switch_labels();
+    let body_result = lower_expression(builder, body);
+    let labels = builder.fun_mut().current_control_mut().take_switch_labels();
+    builder.fun_mut().pop_control_scope();
+    if let Err(LowerStop::Diagnostic(error)) = body_result {
+        return Err(LowerStop::Diagnostic(error));
     }
+    builder.emit(MIRInstruction::new(
+        MIRInstructionKind::Jump {
+            target: MIRBlockTarget::new(exit),
+        },
+        body.token_range.clone(),
+    ));
 
+    builder.fun_mut().set_current_block(dispatch);
     builder.emit(MIRInstruction::new(
         MIRInstructionKind::CaseBranch {
             value,
             signed: is_signed_integer(builder, &condition.ty),
-            cases: targets,
-            default: Some(MIRBlockTarget::new(default_block)),
+            cases: labels.cases,
+            default: Some(labels.default.unwrap_or(MIRBlockTarget::new(exit))),
         },
         condition.token_range.clone(),
     ));
 
-    for ((_, body), block) in cases.iter().zip(bodies) {
-        builder.fun_mut().set_current_block(block);
-        builder.fun_mut().push_control_scope();
-        builder
-            .fun_mut()
-            .current_control_mut()
-            .set_break_target(exit);
-        builder.fun_mut().push_scope(body.token_range.clone());
-        let body_result = lower_expression(builder, body);
-        auto_pop_scope(builder)?;
-        builder.fun_mut().pop_control_scope();
-        if let Err(LowerStop::Diagnostic(error)) = body_result {
-            return Err(LowerStop::Diagnostic(error));
-        }
-
-        builder.emit(MIRInstruction::new(
-            MIRInstructionKind::Jump {
-                target: MIRBlockTarget::new(exit),
-            },
-            body.token_range.clone(),
-        ));
-    }
-
-    if let Some(default) = default {
-        builder.fun_mut().set_current_block(default_block);
-        builder.fun_mut().push_control_scope();
-        builder
-            .fun_mut()
-            .current_control_mut()
-            .set_break_target(exit);
-        builder.fun_mut().push_scope(default.token_range.clone());
-        let default_result = lower_expression(builder, default);
-        auto_pop_scope(builder)?;
-        builder.fun_mut().pop_control_scope();
-        if let Err(LowerStop::Diagnostic(error)) = default_result {
-            return Err(LowerStop::Diagnostic(error));
-        }
-        builder.emit(MIRInstruction::new(
-            MIRInstructionKind::Jump {
-                target: MIRBlockTarget::new(exit),
-            },
-            default.token_range.clone(),
-        ));
-    }
-
     builder.fun_mut().set_current_block(exit);
+    Ok(())
+}
+
+/// Starts the block of a `case` or `default` label and records it with the enclosing switch.
+pub(super) fn lower_case<'thir>(
+    builder: &mut MIRBuilder<'thir>,
+    label: &'thir THIRExpression,
+    value: Option<&'thir THIRExpression>,
+) -> LowerResult<()> {
+    let value = match value {
+        Some(case) => match comptime::evaluate(builder, case).map_err(LowerStop::Diagnostic)? {
+            MIRConstant::Integer { value, ty } => {
+                Some(ty.decode(value, is_signed_integer(builder, &case.ty)))
+            }
+            _ => {
+                return log_mir_error(
+                    &case.token_range,
+                    (
+                        &mir::ENTITY_REQUIREMENT,
+                        ("switch case".into(), "an integer constant".into(), None),
+                    ),
+                )
+                .map_err(LowerStop::Diagnostic);
+            }
+        },
+        None => None,
+    };
+
+    let block = builder
+        .fun_mut()
+        .new_block(if value.is_some() { "switch.case" } else { "switch.default" });
+    let target = MIRBlockTarget::new(block);
+    let Some(labels) = builder.fun_mut().enclosing_switch_labels() else {
+        return log_mir_error(
+            &label.token_range,
+            (
+                &mir::REQUIRED_CONTEXT,
+                ("case label".into(), "a switch".into()),
+            ),
+        )
+        .map_err(LowerStop::Diagnostic);
+    };
+    match value {
+        Some(value) => labels.cases.push((value, target.clone())),
+        None => labels.default = Some(target.clone()),
+    }
+
+    builder.emit(MIRInstruction::new(
+        MIRInstructionKind::Jump { target },
+        label.token_range.clone(),
+    ));
+    builder.fun_mut().set_current_block(block);
     Ok(())
 }
 

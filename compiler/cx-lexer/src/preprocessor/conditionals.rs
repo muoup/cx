@@ -309,7 +309,7 @@ pub(crate) fn read_macro_head(
     let params_start = frame.cursor;
     while let Some(c) = frame.peek() {
         if c == ')' {
-            let params_text = &frame.source[params_start..frame.cursor];
+            let params_text = frame.source[params_start..frame.cursor].replace("\\\n", " ");
             let mut params = Vec::new();
             let mut variadic = false;
             for param in params_text.split(',') {

@@ -1,0 +1,12 @@
+comptime expr(void) with_value(expr(int&) value, @fn proc(expr(int&)) -> expr(void)) {
+    return emit .{
+        proc(value);
+    };
+}
+
+int main() {
+    int source = 1;
+    if (source)
+        with_value(emit source) <| |value| then
+    return 0;
+}

@@ -4,8 +4,8 @@ use cx_hir::ast::HIRStmt;
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_tokens::{
-    keyword, punctuator,
-    token::{IntegerBase, IntegerSuffix, KeywordType, OperatorType, PunctuatorType, TokenKind},
+    identifier, keyword, operator, punctuator,
+    token::{IntegerBase, IntegerSuffix, KeywordType, OperatorType, TokenKind},
 };
 
 use crate::{
@@ -13,97 +13,106 @@ use crate::{
     log::parse_point_error,
     next_kind,
     parse::{
-        expressions::{parse_expr, parse_pattern},
+        expressions::{parse_expr, parse_keyword_expr},
         functions::try_function_parse,
         parse_block,
         parser::ParserData,
         try_parse_qualified_name, try_parse_simple_identifier,
         types::{is_type_decl, parse_base_mods, parse_type_base},
     },
-    peek_next_kind, try_next,
+    peek_kind, try_next,
 };
 use cx_util::identifier::CXIdent;
 
 pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
-    let start_index = data.tokens.index;
+    let start = data.tokens.index;
 
-    try_parse_stmt(data)?.map(Result::Ok).unwrap_or_else(|| {
-        data.tokens.index = start_index;
-        let expr = parse_expr(data);
-        if expr
-            .as_ref()
-            .map(crate::parse::count_capturing_then_markers)
-            .unwrap_or(0)
-            == 0
-        {
-            assert_token_matches!(
-                data.tokens,
-                punctuator!(Semicolon),
-                "';' after expression statement"
-            );
-        }
-        expr
-    })
-}
-
-pub(crate) fn try_parse_stmt(data: &mut ParserData) -> CXResult<Option<HIRExpression>> {
-    let label_start = data.tokens.index;
-    if let (Some(TokenKind::Identifier(name)), Some(TokenKind::Punctuator(PunctuatorType::Colon))) = (
-        data.tokens.peek().map(|token| &token.kind),
-        data.tokens
-            .slice
-            .get(data.tokens.index + 1)
-            .map(|token| &token.kind),
-    ) {
-        let name = CXIdent::new(name.clone());
-        data.tokens.next();
-        data.tokens.next();
-        let statement = parse_stmt(data)?;
-        return Ok(Some(
-            HIRExprKind::Label {
-                name,
-                statement: Box::new(statement),
-            }
-            .into_expr(
-                label_start,
-                data.tokens.index,
-                data.token_range(label_start, data.tokens.index),
-            ),
-        ));
-    }
-
-    match next_kind!(data.tokens)? {
-        TokenKind::Keyword(keyword) => {
-            let keyword = *keyword;
-
-            if let Some(result) = try_parse_keyword_stmt(data, keyword)? {
-                return Ok(Some(result));
-            }
-        }
-
-        punctuator!(Semicolon) => {
-            return Ok(Some(HIRExprKind::Void.into_expr(
-                data.tokens.index,
-                data.tokens.index,
-                data.token_range(data.tokens.index.saturating_sub(1), data.tokens.index),
-            )));
-        }
-
+    let stmt = match next_kind!(data.tokens)? {
+        punctuator!(Semicolon) => return Ok(data.expr_from(start, HIRExprKind::Void)),
         punctuator!(OpenBrace) => {
             data.tokens.back();
-            return Ok(Some(parse_block(data)?));
+            parse_block(data)?
+        }
+        identifier!(name) if try_next!(data.tokens, punctuator!(Colon)) => {
+            let name = CXIdent::new(name.clone());
+            let statement = parse_labelled_stmt(data)?;
+            data.expr_from(start, HIRExprKind::Label { name, statement })
+        }
+        keyword!(Case) => {
+            let value = Some(Box::new(parse_expr(data)?));
+            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+            let statement = parse_labelled_stmt(data)?;
+            data.expr_from(start, HIRExprKind::Case { value, statement })
+        }
+        keyword!(Default) => {
+            assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
+            let statement = parse_labelled_stmt(data)?;
+            data.expr_from(start, HIRExprKind::Case { value: None, statement })
         }
 
-        _ => {}
+        keyword!(If) => parse_if(data, start)?,
+        keyword!(Switch) => parse_switch(data, start)?,
+        // Parsed here rather than by the fallback so that it ends at its closing brace.
+        keyword!(Match) => parse_keyword_expr(data, KeywordType::Match)?,
+        keyword!(While) => parse_while(data, start)?,
+        keyword!(Do) => parse_do_while(data, start)?,
+        keyword!(For) => parse_for(data, start)?,
+        keyword!(Goto) => parse_goto(data, start)?,
+        keyword!(Defer) => {
+            let expr = Box::new(parse_expr(data)?);
+            data.expr_from(start, HIRExprKind::Defer { expr })
+        }
+        keyword!(Break) => data.expr_from(start, HIRExprKind::Break),
+        keyword!(Continue) => data.expr_from(start, HIRExprKind::Continue),
+
+        _ => {
+            data.tokens.back();
+            parse_declaration_or_expr(data)?
+        }
+    };
+
+    let ends_with_then = matches!(
+        data.tokens.prev().map(|token| &token.kind),
+        Some(keyword!(Then))
+    );
+    if !ends_with_then && expects_semicolon(&stmt) {
+        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
     }
 
-    data.back();
+    Ok(stmt)
+}
+
+fn expects_semicolon(stmt: &HIRExpression) -> bool {
+    !matches!(
+        stmt.kind,
+        HIRExprKind::If { .. }
+            | HIRExprKind::Switch { .. }
+            | HIRExprKind::Match { .. }
+            | HIRExprKind::For { .. }
+            | HIRExprKind::While { pre_eval: true, .. }
+            | HIRExprKind::Label { .. }
+            | HIRExprKind::Case { .. }
+            | HIRExprKind::Block {
+                kind: HIRBlockKind::Statement,
+                ..
+            }
+    )
+}
+
+/// The statement a label applies to. A label may also end a block, where it labels nothing.
+fn parse_labelled_stmt(data: &mut ParserData) -> CXResult<Box<HIRExpression>> {
+    if peek_kind!(data.tokens, punctuator!(CloseBrace)) {
+        return Ok(Box::new(data.expr_from(data.tokens.index, HIRExprKind::Void)));
+    }
+
+    Ok(Box::new(parse_stmt(data)?))
+}
+
+fn parse_declaration_or_expr(data: &mut ParserData) -> CXResult<HIRExpression> {
     if is_type_decl(data)? && !is_scoped_type_expression(data)? {
-        let stmt = parse_declaration_stmt(data)?;
-        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-        Ok(Some(stmt))
+        parse_declaration_stmt(data)
     } else {
-        Ok(None)
+        parse_expr(data)
     }
 }
 
@@ -142,226 +151,128 @@ fn is_scoped_type_expression(data: &mut ParserData) -> CXResult<bool> {
     ))
 }
 
-pub(crate) fn try_parse_keyword_stmt(
-    data: &mut ParserData,
-    keyword_type: KeywordType,
-) -> CXResult<Option<HIRExpression>> {
-    let start = data.tokens.index - 1;
+fn parse_condition(data: &mut ParserData) -> CXResult<Box<HIRExpression>> {
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+    let condition = parse_expr(data)?;
+    assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
-    Ok(match keyword_type {
-        KeywordType::If => {
-            assert_token_matches!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::OpenParen),
-                "'('"
-            );
-            let expr = parse_expr(data)?;
-            assert_token_matches!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::CloseParen),
-                "')'"
-            );
-            let then_body = parse_stmt(data)?;
-            let else_body = if try_next!(data.tokens, TokenKind::Keyword(KeywordType::Else)) {
-                Some(parse_stmt(data)?)
-            } else {
-                None
-            };
+    Ok(Box::new(condition))
+}
 
-            Some(HIRExprKind::If {
-                condition: Box::new(expr),
-                then_branch: Box::new(then_body),
-                else_branch: else_body.map(Box::new),
-            })
-        }
+fn parse_if(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
+    let condition = parse_condition(data)?;
+    let then_branch = Box::new(parse_stmt(data)?);
+    let else_branch = if try_next!(data.tokens, keyword!(Else)) {
+        Some(Box::new(parse_stmt(data)?))
+    } else {
+        None
+    };
 
-        KeywordType::Switch => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
+    Ok(data.expr_from(
+        start,
+        HIRExprKind::If {
+            condition,
+            then_branch,
+            else_branch,
+        },
+    ))
+}
 
-            let mut block = Vec::new();
-            let mut cases = Vec::new();
-            let mut default_case = None;
-            let mut index = 0;
+fn parse_switch(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
+    let condition = parse_condition(data)?;
+    let body = Box::new(parse_stmt(data)?);
 
-            while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                if try_next!(data.tokens, keyword!(Case)) {
-                    let case_value = parse_expr(data)?;
-                    cases.push((case_value, index as usize));
-                    assert_token_matches!(
-                        data.tokens,
-                        TokenKind::Punctuator(PunctuatorType::Colon),
-                        "':'"
-                    );
-                    continue;
-                } else if try_next!(data.tokens, keyword!(Default)) {
-                    assert_token_matches!(
-                        data.tokens,
-                        TokenKind::Punctuator(PunctuatorType::Colon),
-                        "':'"
-                    );
-                    if default_case.is_some() {
-                        return parse_point_error(&data.tokens, &DUPLICATE_ITEM, ("default match arm".into(), "match".into()));
-                    }
-                    default_case = Some(index as usize);
-                    continue;
-                }
+    Ok(data.expr_from(start, HIRExprKind::Switch { condition, body }))
+}
 
-                let expr = parse_stmt(data)?;
-                index += 1;
-                block.push(expr);
-            }
+fn parse_while(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
+    let condition = parse_condition(data)?;
+    let body = Box::new(parse_stmt(data)?);
 
-            Some(HIRExprKind::Switch {
-                condition: Box::new(expr),
-                block,
-                cases,
-                default_case,
-            })
-        }
+    Ok(data.expr_from(
+        start,
+        HIRExprKind::While {
+            condition,
+            body,
+            pre_eval: true,
+        },
+    ))
+}
 
-        KeywordType::Defer => {
-            let deferred = parse_expr(data)?;
-            assert_token_matches!(
-                data.tokens,
-                punctuator!(Semicolon),
-                "';' after deferred expression"
-            );
+fn parse_do_while(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
+    let body = Box::new(parse_stmt(data)?);
+    assert_token_matches!(data.tokens, keyword!(While), "'while'");
+    let condition = parse_condition(data)?;
 
-            Some(HIRExprKind::Defer {
-                expr: Box::new(deferred),
-            })
-        }
+    Ok(data.expr_from(
+        start,
+        HIRExprKind::While {
+            condition,
+            body,
+            pre_eval: false,
+        },
+    ))
+}
 
-        KeywordType::Match => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
+fn parse_for(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
 
-            let mut arms = Vec::new();
+    let init = if peek_kind!(data.tokens, punctuator!(Semicolon)) {
+        data.expr_from(data.tokens.index, HIRExprKind::Void)
+    } else {
+        parse_declaration_or_expr(data)?
+    };
+    assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
-            data.change_comma_mode(false);
-
-            while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-                if matches!(
-                    peek_next_kind!(data.tokens)?,
-                    TokenKind::Keyword(KeywordType::Default)
-                ) {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("'_' match binding".into(), Some("in match patterns".into())));
-                }
-
-                let value = parse_pattern(data)?;
-                assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                let body = parse_stmt(data)?;
-                arms.push((value, body));
-            }
-
-            data.pop_comma_mode();
-
-            Some(HIRExprKind::Match {
-                condition: Box::new(expr),
-                arms,
-            })
-        }
-
-        KeywordType::Do => {
-            let body = parse_stmt(data)?;
-            assert_token_matches!(data.tokens, keyword!(While), "'while'");
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-
-            Some(HIRExprKind::While {
-                condition: Box::new(expr),
-                body: Box::new(body),
-                pre_eval: false,
-            })
-        }
-
-        KeywordType::While => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            let body = parse_stmt(data)?;
-
-            Some(HIRExprKind::While {
-                condition: Box::new(expr),
-                body: Box::new(body),
-                pre_eval: true,
-            })
-        }
-
-        KeywordType::Break => Some(HIRExprKind::Break),
-        KeywordType::Continue => Some(HIRExprKind::Continue),
-
-        KeywordType::Goto => {
-            let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a goto label".into(), None));
-            };
-            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-            Some(HIRExprKind::Goto { name })
-        }
-        KeywordType::For => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-
-            let init = parse_stmt(data)?;
-
-            let condition = if matches!(
-                data.tokens.peek().map(|token| &token.kind),
-                Some(punctuator!(Semicolon))
-            ) {
-                HIRExprKind::IntLiteral {
-                    magnitude: 1,
-                    base: IntegerBase::Decimal,
-                    suffix: IntegerSuffix::default(),
-                }
-                .into_expr(
-                    data.tokens.index,
-                    data.tokens.index,
-                    data.token_range(data.tokens.index, data.tokens.index),
-                )
-            } else {
-                parse_expr(data)?
-            };
-            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-
-            let increment = if matches!(
-                data.tokens.peek().map(|token| &token.kind),
-                Some(punctuator!(CloseParen))
-            ) {
-                HIRExprKind::Void.into_expr(
-                    data.tokens.index,
-                    data.tokens.index,
-                    data.token_range(data.tokens.index, data.tokens.index),
-                )
-            } else {
-                parse_expr(data)?
-            };
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-
-            let body = parse_stmt(data)?;
-
-            Some(HIRExprKind::For {
-                init: Box::new(init),
-                condition: Box::new(condition),
-                increment: Box::new(increment),
-                body: Box::new(body),
-            })
-        }
-
-        _ => return Ok(None),
-    }
-    .map(|kind| {
-        kind.into_expr(
-            start,
+    let condition = if peek_kind!(data.tokens, punctuator!(Semicolon)) {
+        data.expr_from(
             data.tokens.index,
-            data.token_range(start, data.tokens.index),
+            HIRExprKind::IntLiteral {
+                magnitude: 1,
+                base: IntegerBase::Decimal,
+                suffix: IntegerSuffix::default(),
+            },
         )
-    }))
+    } else {
+        parse_expr(data)?
+    };
+    assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+
+    let increment = if peek_kind!(data.tokens, punctuator!(CloseParen)) {
+        data.expr_from(data.tokens.index, HIRExprKind::Void)
+    } else {
+        parse_expr(data)?
+    };
+    assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+
+    let body = parse_stmt(data)?;
+
+    Ok(data.expr_from(
+        start,
+        HIRExprKind::For {
+            init: Box::new(init),
+            condition: Box::new(condition),
+            increment: Box::new(increment),
+            body: Box::new(body),
+        },
+    ))
+}
+
+fn parse_goto(data: &mut ParserData, start: usize) -> CXResult<HIRExpression> {
+    if try_next!(data.tokens, operator!(Asterisk)) {
+        let target = Box::new(parse_expr(data)?);
+        return Ok(data.expr_from(start, HIRExprKind::IndirectGoto { target }));
+    }
+
+    let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
+        return parse_point_error(
+            &data.tokens,
+            &EXPECTED_SYNTAX,
+            ("a goto label".into(), None),
+        );
+    };
+
+    Ok(data.expr_from(start, HIRExprKind::Goto { name }))
 }
 
 pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
@@ -387,7 +298,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 } else {
                     specifiers.linkage
                 };
-                if let Some(prototype) = try_function_parse(
+                if let Some(mut prototype) = try_function_parse(
                     data,
                     ty.clone(),
                     name.clone(),
@@ -396,6 +307,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                     data.symbol_naming,
                     specifiers.attributes,
                 )? {
+                    super::functions::linkage::resolve(data, &mut prototype, false);
                     data.add_stmt(HIRStmt::FunctionDefinition {
                         prototype,
                         visibility: data.visibility,
@@ -434,6 +346,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 ),
             );
         } else if decls.is_empty() {
+            data.pop_comma_mode();
             return Ok(HIRExprKind::Void.into_expr(
                 start_index,
                 data.tokens.index,
@@ -454,7 +367,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
         Ok(decls.pop().unwrap())
     } else {
         Ok(HIRExprKind::Block {
-            exprs: decls,
+            exprs: decls.into(),
             kind: HIRBlockKind::Sequence,
         }
         .into_expr(

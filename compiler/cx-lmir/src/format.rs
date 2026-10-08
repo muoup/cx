@@ -130,11 +130,13 @@ impl Display for LMIRGlobalInitializer {
                 }
                 f.write_str("}")
             }
+            Self::Overlay { ty, value } => write!(f, "{ty} {value}"),
             Self::Global(global) => write!(f, "global({global})"),
             Self::GlobalOffset { global, offset } => {
                 write!(f, "global({global}) + {offset}")
             }
             Self::Function(function) => write!(f, "function({function})"),
+            Self::BlockAddress { function, block } => write!(f, "block({function}::{block})"),
             Self::Null => f.write_str("null"),
         }
     }
@@ -190,6 +192,7 @@ impl Display for LMIRValue {
             LMIRValue::IntImmediate { val, ty } => write!(f, "{ty} {val}"),
             LMIRValue::FloatImmediate { val, ty } => write!(f, "{ty} {val}"),
             LMIRValue::FunctionRef(name) => write!(f, "{name}"),
+            LMIRValue::BlockAddress { function, block } => write!(f, "{function}::{block}"),
             LMIRValue::Global(id) => write!(f, "g{id}"),
             LMIRValue::Register { register, ty } => write!(f, "{ty} {register}"),
         }
@@ -276,6 +279,16 @@ impl Display for LMIRInstruction {
                     write!(f, "{key} -> {target}")?;
                 }
                 write!(f, "] else {default}")
+            }
+            LMIRInstructionKind::IndirectJump { address, targets } => {
+                write!(f, "jump *{address} [")?;
+                for (i, target) in targets.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{target}")?;
+                }
+                write!(f, "]")
             }
             LMIRInstructionKind::DirectCall { func, args, .. } => {
                 write!(f, "@{}(", func)?;

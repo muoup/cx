@@ -50,7 +50,7 @@ pub(crate) fn lower_binop(
     }
 
     match op {
-        HIRBinOp::Comma => {
+        HIRBinOp::Comma | HIRBinOp::GroupedComma => {
             let statement = lower_expr(cx, lhs);
             let tail = lower_expr(cx, rhs);
             cx.push(

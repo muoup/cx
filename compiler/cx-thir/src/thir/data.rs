@@ -57,6 +57,8 @@ pub enum THIRFunctionBody {
     Block {
         exprs: Vec<THIRExpression>,
         token_range: TokenRange,
+        /// The labels that a `LabelAddress` refers to, which an `IndirectGoto` may jump to.
+        address_taken_labels: Vec<CXIdent>,
     }
 }
 

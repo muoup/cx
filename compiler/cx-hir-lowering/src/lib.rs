@@ -31,8 +31,9 @@ pub fn generate_hmir(
     }
 
     let mut unit = HMIRUnit::new(namespace);
-    for plan in &plans {
-        let cx = BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false);
+    for (index, plan) in plans.iter().enumerate() {
+        let cx = BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false)
+            .owned_by(HMIRDefID::new(index));
         let kind = lower_def(cx, plan);
         unit.push_def(HMIRDef::new(plan.name().clone(), plan.span().clone(), kind));
     }

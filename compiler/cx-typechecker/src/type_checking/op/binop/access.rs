@@ -1,5 +1,5 @@
 use crate::environment::TypeEnvironment;
-use crate::type_checking::aggregate::fields::struct_field;
+use crate::type_checking::aggregate::fields::{anonymous_member_containing, struct_field};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::value::{IndirectBase, resolve_indirect_base};
 use cx_hir::ast::expression::{HIRExprKind, HIRExpression};
@@ -76,8 +76,11 @@ pub fn typecheck_access(
         );
     };
 
-    let Some(struct_field) = struct_field(&env.symbols, &base.source_type, rhs_name.as_str())
-    else {
+    let direct_field = struct_field(&env.symbols, &base.source_type, rhs_name.as_str());
+    let through_anonymous = direct_field.is_none();
+    let Some(struct_field) = direct_field.or_else(|| {
+        anonymous_member_containing(&env.symbols, &base.source_type, rhs_name.as_str())
+    }) else {
         return env.log_error(
             rhs.token_range(),
             &catalogue::UNKNOWN_MEMBER,
@@ -109,6 +112,10 @@ pub fn typecheck_access(
 
     if let Some(binding) = lhs_binding.as_ref().map(|binding| binding.project()) {
         result = result.with_binding(binding);
+    }
+
+    if through_anonymous {
+        return typecheck_access(env, namespace, result, rhs, expr);
     }
 
     Ok(result)

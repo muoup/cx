@@ -152,7 +152,7 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<THIRTypeKi
     ("unsigned short int", |_| {
         Some(THIRTypeKind::Integer {
             signed: false,
-            ty: THIRIntType::I32,
+            ty: THIRIntType::I16,
         })
     }),
     ("signed", |_| {
@@ -284,6 +284,12 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<THIRTypeKi
     ("long double", |_| {
         Some(THIRTypeKind::Float {
             ty: THIRFloatType::F64,
+        })
+    }),
+    ("__float128", |_| {
+        Some(THIRTypeKind::Opaque {
+            size: 16,
+            alignment: 16,
         })
     }),
     ("_Complex float", |_| {

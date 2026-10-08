@@ -40,6 +40,8 @@ pub fn try_explicit_cast(
         };
 
         match (&from_type.kind, &target_type.kind) {
+            (_, THIRTypeKind::Void) => coerced(THIRCoercion::Typechange),
+
             (THIRTypeKind::PointerTo { .. }, THIRTypeKind::PointerTo { .. }) => {
                 coerced(THIRCoercion::Bitcast)
             }

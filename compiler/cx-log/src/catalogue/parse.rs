@@ -43,7 +43,7 @@ define_errors! {
     READ_FILE: (String, String, String) = "P0013" => |(kind, path, error)| format!("failed to read {kind} '{path}': {error}");
     INCLUDE_NOT_FOUND: String = "P0014" => |file| format!("included file not found: {file}");
     PREPROCESSOR_ERROR: String = "P0015" => |message| format!("#error{}{}", if message.trim().is_empty() { "" } else { ": " }, message.trim());
-    EVAL_EXPRESSION: () = "P0016" => |()| "failed to evaluate preprocessor expression".into();
+    EVAL_EXPRESSION: String = "P0016" => |reason| format!("failed to evaluate preprocessor expression: {reason}");
     UNRESOLVED_VARIABLE_TYPE: () = "P0018" => |()| "could not resolve type for variable declaration".into();
     CANNOT_IMPORT_CURRENT_MODULE: (String,) = "P0019" => |(name,)| format!("cannot import current module '{name}'");
     MATCH_DEFAULT: () = "P0020" => |()| "match arms use binding patterns; replace 'default' with '_' to discard the binding".into();

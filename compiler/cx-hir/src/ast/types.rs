@@ -65,6 +65,8 @@ pub enum HIRField {
     },
 }
 
+pub const ANONYMOUS_MEMBER_PREFIX: &str = "__anonymous_member_";
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum HIRTypeKind {
     Identifier {

@@ -3,14 +3,14 @@ use cx_hir::ast::{
     pattern::HIRPattern,
 };
 use cx_hmir::{
-    HMIRBlockKind, HMIRCoerceMode, HMIRConstant, HMIRExprID, HMIRExprKind, HMIRIntWidth,
-    HMIRTypeDesc,
+    HMIRCoerceMode, HMIRConstant, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRTypeDesc,
 };
+use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
 
 use crate::{expr::lower_expr, expr::pattern::lower_pattern};
 
-use crate::body::BodyLowering;
+use crate::body::{BodyLowering, ScopeKind};
 
 pub(crate) fn lower_if(
     cx: &mut BodyLowering<'_>,
@@ -109,67 +109,41 @@ pub(crate) fn lower_match(
 pub(crate) fn lower_switch(
     cx: &mut BodyLowering<'_>,
     condition: &HIRExpression,
-    block: &[HIRExpression],
-    cases: &[(HIRExpression, usize)],
-    default_case: Option<usize>,
+    body: &HIRExpression,
     span: &TokenRange,
 ) -> HMIRExprID {
     let condition = lower_expr(cx, condition);
-    let mut starts = cases.iter().map(|(_, start)| *start).collect::<Vec<_>>();
-    starts.extend(default_case);
-    starts.push(block.len());
-    starts.sort_unstable();
-    starts.dedup();
+    let scope = ScopeKind::Switch { has_default: false };
+    let body = cx.scoped_as(scope, |this| lower_expr(this, body));
+    cx.push(HMIRExprKind::Switch { condition, body }, span)
+}
 
-    cx.scoped(|this| {
-        let segment = |this: &mut BodyLowering<'_>, start: usize| {
-            let end = starts
-                .iter()
-                .copied()
-                .find(|boundary| *boundary > start)
-                .unwrap_or(block.len());
-            let statements = block[start..end]
-                .iter()
-                .map(|statement| lower_expr(this, statement))
-                .collect();
-            let segment_span = block
-                .get(start)
-                .map(HIRExpression::token_range)
-                .unwrap_or(span);
-            this.block(HMIRBlockKind::Sequence, statements, segment_span)
-        };
-
-        let mut ordered = cases.iter().collect::<Vec<_>>();
-        ordered.sort_by_key(|(_, start)| *start);
-        let cases = ordered
-            .iter()
-            .enumerate()
-            .map(|(index, (value, start))| {
-                let case_span = value.token_range();
-                let value = lower_expr(this, value);
-                let shares_segment = ordered
-                    .get(index + 1)
-                    .is_some_and(|(_, next)| next == start)
-                    || default_case == Some(*start);
-                let body = if shares_segment {
-                    this.block(HMIRBlockKind::Sequence, Vec::new(), case_span)
-                } else {
-                    segment(this, *start)
-                };
-                (value, body)
-            })
-            .collect();
-        let default = default_case.map(|start| segment(this, start));
-
-        this.push(
-            HMIRExprKind::Switch {
-                condition,
-                cases,
-                default,
-            },
+pub(crate) fn lower_case(
+    cx: &mut BodyLowering<'_>,
+    value: Option<&HIRExpression>,
+    statement: &HIRExpression,
+    span: &TokenRange,
+) -> HMIRExprID {
+    if !cx.in_switch() {
+        return cx.error(
             span,
-        )
-    })
+            &typecheck::REQUIRED_CONTEXT,
+            ("case label".into(), "a switch".into()),
+        );
+    }
+    let value = match value {
+        Some(value) => Some(lower_expr(cx, value)),
+        None if cx.declare_switch_default() => None,
+        None => {
+            return cx.error(
+                span,
+                &typecheck::DUPLICATE_ITEM,
+                ("default label".into(), "switch statement".into()),
+            );
+        }
+    };
+    let body = lower_expr(cx, statement);
+    cx.push(HMIRExprKind::Case { value, body }, span)
 }
 
 fn lower_condition(cx: &mut BodyLowering<'_>, condition: &HIRExpression) -> HMIRExprID {

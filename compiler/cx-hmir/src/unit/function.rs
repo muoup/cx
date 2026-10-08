@@ -25,6 +25,8 @@ pub struct HMIRFunction {
     body: HMIRBody,
     signature: HMIRSignature,
     root: Option<HMIRExprID>,
+    // The labels whose address is taken, in the body or in the function's statics
+    address_labels: Vec<CXIdent>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -119,7 +121,17 @@ impl HMIRFunction {
             body,
             signature,
             root,
+            address_labels: Vec::new(),
         }
+    }
+
+    pub fn with_address_labels(mut self, labels: Vec<CXIdent>) -> Self {
+        self.address_labels = labels;
+        self
+    }
+
+    pub fn address_labels(&self) -> &[CXIdent] {
+        &self.address_labels
     }
 
     pub fn stage(&self) -> HMIRFunctionStage {

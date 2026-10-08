@@ -22,6 +22,9 @@ use crate::parse::{
     types::{parse_attributes, parse_initializer, DeclarationAttributes},
 };
 
+pub(crate) mod linkage;
+
+
 pub fn try_function_parse(
     data: &mut ParserData,
     return_type: HIRType,

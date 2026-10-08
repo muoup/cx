@@ -1,3 +1,4 @@
+use cx_log::CXResult;
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
@@ -29,6 +30,12 @@ impl TestTempDir {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub(crate) fn internal_directory(&self) -> PathBuf {
+        let internal_directory = self.path.join("internal");
+        std::fs::create_dir_all(&internal_directory).expect("failed to create internal directory");
+        internal_directory
     }
 }
 
@@ -93,22 +100,53 @@ pub fn compile_file(
     compilation_mode: CompilationMode,
     temp_dir: &TestTempDir,
 ) -> Result<CompilationResult, CompilationFailure> {
+    let config = file_config(input, backend, compilation_mode, temp_dir);
+    timed_compilation(config, |config| {
+        standard_compilation(config, base_file_name(input))
+    })
+}
+
+/// [`compile_file`] at `optimization_level` instead of the backend's test default.
+pub fn compile_file_at(
+    input: &Path,
+    backend: CompilerBackend,
+    optimization_level: OptimizationLevel,
+    compilation_mode: CompilationMode,
+    temp_dir: &TestTempDir,
+) -> Result<CompilationResult, CompilationFailure> {
+    let mut config = file_config(input, backend, compilation_mode, temp_dir);
+    config.optimization_level = optimization_level;
+    timed_compilation(config, |config| {
+        standard_compilation(config, base_file_name(input))
+    })
+}
+
+fn file_config(
+    input: &Path,
+    backend: CompilerBackend,
+    compilation_mode: CompilationMode,
+    temp_dir: &TestTempDir,
+) -> CompilerConfig {
     let working_directory = input
         .parent()
         .expect("test source should have a parent directory");
-    let internal_directory = temp_dir.path().join("internal");
-    std::fs::create_dir_all(&internal_directory).expect("failed to create internal directory");
-    let output = temp_dir.path().join("case.out");
-    let config = compiler_config(
+    compiler_config(
         backend,
-        output.clone(),
+        temp_dir.path().join("case.out"),
         working_directory,
-        &internal_directory,
+        &temp_dir.internal_directory(),
         compilation_mode,
-    );
+    )
+}
+
+pub(crate) fn timed_compilation(
+    config: CompilerConfig,
+    compile: impl FnOnce(CompilerConfig) -> CXResult<()>,
+) -> Result<CompilationResult, CompilationFailure> {
+    let output = config.output.clone();
     let start = Instant::now();
 
-    match standard_compilation(config, base_file_name(input)) {
+    match compile(config) {
         Ok(()) => Ok(CompilationResult {
             output,
             elapsed: start.elapsed(),

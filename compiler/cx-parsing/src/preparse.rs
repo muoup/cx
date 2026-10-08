@@ -106,8 +106,14 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
             let mut last_ident = None;
             let mut depth = 0usize;
             let mut pointer_declarator = false;
+            let mut after_open_paren = false;
 
             while let Some(token) = data.tokens.next() {
+                let starts_group = std::mem::replace(
+                    &mut after_open_paren,
+                    matches!(token.kind, punctuator!(OpenParen)),
+                );
+
                 match &token.kind {
                     punctuator!(OpenBrace) | punctuator!(OpenParen) | punctuator!(OpenBracket) => {
                         depth += 1
@@ -116,7 +122,7 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
                     | punctuator!(CloseParen)
                     | punctuator!(CloseBracket) => depth = depth.saturating_sub(1),
                     punctuator!(Semicolon) if depth == 0 => break,
-                    operator!(Asterisk) if depth == 1 => pointer_declarator = true,
+                    operator!(Asterisk) if depth == 1 && starts_group => pointer_declarator = true,
                     identifier!(ident) if depth == 0 => {
                         last_ident = Some(CXIdent::new(ident.as_str()))
                     }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
@@ -46,13 +46,44 @@ pub(crate) enum Symbol {
     Global(GlobalSymbol),
 }
 
+pub(crate) enum ScopeKind {
+    Plain,
+    // Names bound by the arguments of a call stay in it; a 'then' among them sees past it
+    Arguments,
+    Staged,
+    Block {
+        statements: Rc<[HIRExpression]>,
+        next: usize,
+    },
+    Switch {
+        has_default: bool,
+    },
+}
+
+struct Scope {
+    symbols: HashMap<CXIdent, ScopeEntry>,
+    kind: ScopeKind,
+}
+
 pub(crate) struct BodyLowering<'a> {
     resolver: &'a Resolver<'a>,
     types: &'a mut HMIRTypeInterner,
     namespace: NamespacePath,
     body: HMIRBody,
-    scopes: Vec<HashMap<CXIdent, ScopeEntry>>,
+    scopes: Vec<Scope>,
     comptime: bool,
+    // The def whose labels are in scope
+    owner: Option<HMIRDefID>,
+    address_labels: Vec<CXIdent>,
+}
+
+impl Scope {
+    fn new(kind: ScopeKind) -> Self {
+        Self {
+            symbols: HashMap::new(),
+            kind,
+        }
+    }
 }
 
 impl Binding {
@@ -77,9 +108,29 @@ impl<'a> BodyLowering<'a> {
             types,
             namespace,
             body: HMIRBody::new(),
-            scopes: vec![HashMap::new()],
+            scopes: vec![Scope::new(ScopeKind::Plain)],
             comptime,
+            owner: None,
+            address_labels: Vec::new(),
         }
+    }
+
+    pub(crate) fn owned_by(mut self, owner: HMIRDefID) -> Self {
+        self.owner = Some(owner);
+        self
+    }
+
+    pub(crate) fn label_address(&mut self, name: &CXIdent, span: &TokenRange) -> HMIRExprID {
+        if !self.address_labels.contains(name) {
+            self.address_labels.push(name.clone());
+        }
+        let function = self.owner.map(HMIRDefRef::Local);
+        let name = name.clone();
+        self.control(HMIRControlOp::LabelAddress { function, name }, span)
+    }
+
+    pub(crate) fn take_address_labels(&mut self) -> Vec<CXIdent> {
+        std::mem::take(&mut self.address_labels)
     }
 
     pub(crate) fn resolver(&self) -> &'a Resolver<'a> {
@@ -154,10 +205,72 @@ impl<'a> BodyLowering<'a> {
     }
 
     pub(crate) fn scoped<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
-        self.scopes.push(HashMap::new());
+        self.scoped_as(ScopeKind::Plain, f)
+    }
+
+    pub(crate) fn scoped_as<T>(&mut self, kind: ScopeKind, f: impl FnOnce(&mut Self) -> T) -> T {
+        self.scopes.push(Scope::new(kind));
         let result = f(self);
         self.scopes.pop();
         result
+    }
+
+    // The scope of the block a 'then' continues: the innermost one, looking through the staged
+    // code and the call arguments the 'then' sits behind
+    fn block_scope(&mut self) -> Option<&mut Scope> {
+        self.scopes
+            .iter_mut()
+            .rev()
+            .find(|scope| !matches!(scope.kind, ScopeKind::Staged | ScopeKind::Arguments))
+            .filter(|scope| matches!(scope.kind, ScopeKind::Block { .. }))
+    }
+
+    pub(crate) fn in_block(&mut self) -> bool {
+        self.block_scope().is_some()
+    }
+
+    // Lowers what remains of the current block. A 'then' calls this from within a statement of
+    // that block, which leaves the block's own call with nothing further to lower.
+    pub(crate) fn lower_block_statements(&mut self) -> Vec<HMIRExprID> {
+        let mut lowered = Vec::new();
+        loop {
+            let Some(Scope {
+                kind: ScopeKind::Block { statements, next },
+                ..
+            }) = self.block_scope()
+            else {
+                break;
+            };
+            if *next == statements.len() {
+                break;
+            }
+            let statements = statements.clone();
+            *next += 1;
+            let index = *next - 1;
+            lowered.push(lower_expr(self, &statements[index]));
+        }
+        lowered
+    }
+
+    fn enclosing_switch(&mut self) -> Option<&mut bool> {
+        self.scopes
+            .iter_mut()
+            .rev()
+            .take_while(|scope| !matches!(scope.kind, ScopeKind::Staged))
+            .find_map(|scope| match &mut scope.kind {
+                ScopeKind::Switch { has_default } => Some(has_default),
+                _ => None,
+            })
+    }
+
+    pub(crate) fn in_switch(&mut self) -> bool {
+        self.enclosing_switch().is_some()
+    }
+
+    // Records a 'default' label in the enclosing switch, returning whether it is the first
+    pub(crate) fn declare_switch_default(&mut self) -> bool {
+        self.enclosing_switch()
+            .is_some_and(|has_default| !std::mem::replace(has_default, true))
     }
 
     pub(crate) fn declare(
@@ -175,6 +288,7 @@ impl<'a> BodyLowering<'a> {
             self.scopes
                 .last_mut()
                 .expect("body lowering always has a root scope")
+                .symbols
                 .insert(name.clone(), ScopeEntry::Local(Binding { local, quoted }));
         }
         local
@@ -192,7 +306,11 @@ impl<'a> BodyLowering<'a> {
     pub(crate) fn lookup(&self, name: &QualifiedName, tag: Option<HIRTagKind>) -> Symbol {
         if tag.is_none()
             && let Some(root) = name.root_name_ref()
-            && let Some(entry) = self.scopes.iter().rev().find_map(|scope| scope.get(root))
+            && let Some(entry) = self
+                .scopes
+                .iter()
+                .rev()
+                .find_map(|scope| scope.symbols.get(root))
         {
             return match *entry {
                 ScopeEntry::Local(binding) => Symbol::Local(binding),
@@ -344,7 +462,8 @@ pub(crate) fn lower_reify(
     };
 
     let id = cx.resolver.next_static();
-    let mut anon = BodyLowering::new(cx.resolver, cx.types, cx.namespace.clone(), false);
+    let mut anon =
+        BodyLowering::new(cx.resolver, cx.types, cx.namespace.clone(), false).owned_by(id);
     let declared = match prototype.params.as_slice() {
         [param] if param.name.is_none() && is_void(&anon, &param.ty) => &[],
         params => params,
@@ -376,12 +495,14 @@ pub(crate) fn lower_reify(
         name.clone(),
         HMIRContract::default(),
     );
+    let labels = anon.take_address_labels();
     let function = HMIRFunction::new(
         HMIRFunctionStage::Runtime,
         anon.finish(),
         signature,
         Some(root),
-    );
+    )
+    .with_address_labels(labels);
     cx.resolver.push_static(HMIRDef::new(
         QualifiedName::new(cx.namespace.clone(), name),
         span.clone(),
@@ -401,9 +522,11 @@ pub(crate) fn lower_static(
 ) {
     let id = cx.resolver.next_static();
     let mut global_cx = BodyLowering::new(cx.resolver, cx.types, cx.namespace.clone(), false);
+    global_cx.owner = cx.owner;
     let global_ty = lower_type(&mut global_cx, ty);
     let initializer =
-        initializer.map(|initializer| lower_initial_value(&mut global_cx, ty, initializer));
+        initializer.map(|initializer| lower_initial_value(&mut global_cx, global_ty, initializer));
+    let labels = global_cx.take_address_labels();
     let global = HMIRGlobal::new(
         global_cx.finish(),
         global_ty,
@@ -421,8 +544,14 @@ pub(crate) fn lower_static(
         span.clone(),
         HMIRDefKind::Global(Box::new(global)),
     ));
+    for label in labels {
+        if !cx.address_labels.contains(&label) {
+            cx.address_labels.push(label);
+        }
+    }
     cx.scopes
         .last_mut()
         .expect("body lowering always has a root scope")
+        .symbols
         .insert(name.clone(), ScopeEntry::Static(id));
 }

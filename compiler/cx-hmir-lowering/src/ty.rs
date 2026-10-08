@@ -451,6 +451,21 @@ impl TypeTable {
             .find(|(_, field)| field.name().is_some_and(|field| field.as_str() == name))
     }
 
+    // The field indices leading to the member 'name', through the anonymous members holding it
+    pub(crate) fn member_path(&self, ty: TypeID, name: &str) -> Option<Vec<usize>> {
+        if let Some((index, _)) = self.field(ty, name) {
+            return Some(vec![index]);
+        }
+        let fields = self.nominal_of(ty)?.fields().iter().enumerate();
+        fields
+            .filter(|(_, field)| field.name().is_none() && field.bit_width().is_none())
+            .find_map(|(index, field)| {
+                let mut path = vec![index];
+                path.extend(self.member_path(field.ty(), name)?);
+                Some(path)
+            })
+    }
+
     // The move semantics a value of this type has where it is held by value
     pub(crate) fn owned_traits(&self, ty: TypeID) -> (HMIRMoveSemantics, bool) {
         match self.kind(ty) {

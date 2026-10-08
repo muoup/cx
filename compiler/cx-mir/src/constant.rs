@@ -27,5 +27,10 @@ pub enum MIRConstant {
         ty: MIRTypeID,
     },
     Function(MIRFunctionID),
+    /// The address of the block that a label of `function` starts at.
+    BlockAddress {
+        function: MIRFunctionID,
+        label: String,
+    },
     Undefined,
 }

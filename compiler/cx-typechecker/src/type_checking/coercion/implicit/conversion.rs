@@ -1,3 +1,4 @@
+use cx_hir::ast::modifiers::{HIR_CONST, HIR_RESTRICT, HIR_VOLATILE, HIRTypeQualifiers};
 use cx_log::CXResult;
 use cx_log::catalogue::typecheck as catalogue;
 use cx_thir::{
@@ -47,6 +48,16 @@ pub fn try_implicit_coercion(
             THIRCoercion::Typechange
         };
         return coercion_expr(expr, target_type.clone(), conversion);
+    }
+
+    // Qualifiers describe a place, so a value converts freely between the qualified forms of a type.
+    if !from_type.is_memory_reference() && from_type.specifiers != target_type.specifiers {
+        const CVR: HIRTypeQualifiers = HIR_CONST | HIR_VOLATILE | HIR_RESTRICT;
+        let mut requalified = from_type.clone();
+        requalified.specifiers = (from_type.specifiers & !CVR) | (target_type.specifiers & CVR);
+        if env.type_eq(&requalified, target_type) {
+            return coercion_expr(expr, target_type.clone(), THIRCoercion::Typechange);
+        }
     }
 
     match internal(env, expr, from_type, target_type)? {
@@ -103,7 +114,7 @@ fn internal(
             inner_type: to_inner,
         },
     ) = (&from_type.kind, &target_type.kind)
-        && compatible::compatible_types(
+        && qualifies_pointee(
             env,
             env.symbols.resolve_type_id(*from_inner),
             env.symbols.resolve_type_id(*to_inner),
@@ -301,14 +312,7 @@ fn internal(
                 return implicit::coercion_expr(expr, target_type.clone(), THIRCoercion::Bitcast);
             }
 
-            // If we are coercing T1* -> T2* and they are compatible as unqualified types, and we only
-            // add cvr-specifiers to coerce, than this is a valid implicit cast
-            if compatible::compatible_types(
-                env,
-                &from_inner.clone().without_specifiers(),
-                &to_inner.clone().without_specifiers(),
-            )? && from_inner.specifiers & to_inner.specifiers == from_inner.specifiers
-            {
+            if qualifies_pointee(env, from_inner, to_inner)? {
                 return implicit::coercion_expr(expr, target_type.clone(), THIRCoercion::Bitcast);
             }
 
@@ -317,6 +321,16 @@ fn internal(
 
         _ => CoercionResult::unapplied(expr),
     }
+}
+
+/// Whether a pointer to `from` converts to a pointer to `to`: the two are compatible once
+/// unqualified, and the conversion only adds qualifiers.
+fn qualifies_pointee(env: &TypeEnvironment, from: &THIRType, to: &THIRType) -> CXResult<bool> {
+    Ok(compatible::compatible_types(
+        env,
+        &from.clone().without_specifiers(),
+        &to.clone().without_specifiers(),
+    )? && from.specifiers & to.specifiers == from.specifiers)
 }
 
 pub(crate) fn is_char_array(env: &TypeEnvironment, ty: &THIRType) -> bool {

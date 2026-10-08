@@ -2,7 +2,9 @@ use cx_util::identifier::CXIdent;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 use crate::ast::{
-    expression::{HIRBinOp, HIRBlockKind, HIRExprKind, HIRExpression, HIRInitIndex},
+    expression::{
+        HIRBinOp, HIRBlockKind, HIRExprKind, HIRExpression, HIRInitIndex, HIRMemberDesignator,
+    },
     function::{HIRFunctionBody, HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
     pattern::{HIRBindingMode, HIRPattern},
@@ -104,7 +106,7 @@ impl Display for HIRFunctionBody {
         match self {
             Self::Block { statements, .. } => {
                 writeln!(f, "Function Body {{")?;
-                for statement in statements {
+                for statement in statements.iter() {
                     HIRExprFormatter::new(statement, 1).fmt(f)?;
                 }
                 writeln!(f, "}}")
@@ -183,7 +185,7 @@ impl<'a> Display for HIRExprFormatter<'a> {
                         HIRBlockKind::Expression => "Expression Block",
                     }
                 )?;
-                for stmt in exprs {
+                for stmt in exprs.iter() {
                     HIRExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
                 }
                 self.indent(f)?;
@@ -364,6 +366,21 @@ impl<'a> Display for HIRExprFormatter<'a> {
             HIRExprKind::AlignOfType { ty } => {
                 writeln!(f, "AlignOfType ({ty})")
             }
+            HIRExprKind::OffsetOf { ty, member } => {
+                writeln!(f, "OffsetOf ({ty})")?;
+                for designator in member {
+                    match designator {
+                        HIRMemberDesignator::Field(name) => {
+                            self.indent_plus_one(f)?;
+                            writeln!(f, ".{name}")?;
+                        }
+                        HIRMemberDesignator::Index(index) => {
+                            HIRExprFormatter::new(index, self.depth + 1).fmt(f)?;
+                        }
+                    }
+                }
+                Ok(())
+            }
             HIRExprKind::Void => writeln!(f, "Unit"),
             HIRExprKind::Match { condition, arms } => {
                 writeln!(f, "Match")?;
@@ -375,29 +392,20 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 }
                 Ok(())
             }
-            HIRExprKind::Switch {
-                condition,
-                block,
-                cases,
-                default_case,
-            } => {
+            HIRExprKind::Switch { condition, body } => {
                 writeln!(f, "Switch")?;
                 HIRExprFormatter::new(condition, self.depth + 1).fmt(f)?;
-                for (case_value, case_expr) in cases {
-                    self.indent(f)?;
-                    writeln!(f, "Case -> ID: {}", case_expr)?;
-                    HIRExprFormatter::new(case_value, self.depth + 1).fmt(f)?;
+                HIRExprFormatter::new(body, self.depth + 1).fmt(f)
+            }
+            HIRExprKind::Case { value, statement } => {
+                match value {
+                    Some(value) => {
+                        writeln!(f, "Case")?;
+                        HIRExprFormatter::new(value, self.depth + 1).fmt(f)?;
+                    }
+                    None => writeln!(f, "Default")?,
                 }
-                if let Some(default_expr) = default_case {
-                    self.indent(f)?;
-                    writeln!(f, "Default -> ID: {}", default_expr)?;
-                }
-                for (i, stmt) in block.iter().enumerate() {
-                    self.indent(f)?;
-                    writeln!(f, "Stmt[{}]: ", i)?;
-                    HIRExprFormatter::new(stmt, self.depth + 1).fmt(f)?;
-                }
-                Ok(())
+                HIRExprFormatter::new(statement, self.depth + 1).fmt(f)
             }
             HIRExprKind::VaArg { list, .. } => {
                 writeln!(f, "VaArg")?;
@@ -406,6 +414,11 @@ impl<'a> Display for HIRExprFormatter<'a> {
             HIRExprKind::Break => writeln!(f, "Break"),
             HIRExprKind::Continue => writeln!(f, "Continue"),
             HIRExprKind::Goto { name } => writeln!(f, "Goto {name}"),
+            HIRExprKind::IndirectGoto { target } => {
+                writeln!(f, "IndirectGoto")?;
+                HIRExprFormatter::new(target, self.depth + 1).fmt(f)
+            }
+            HIRExprKind::LabelAddress { name } => writeln!(f, "LabelAddress {name}"),
             HIRExprKind::Label { name, statement } => {
                 writeln!(f, "Label {name}")?;
                 HIRExprFormatter::new(statement, self.depth + 1).fmt(f)
@@ -431,7 +444,7 @@ impl Display for HIRBinOp {
             HIRBinOp::Access => write!(f, "."),
             HIRBinOp::MethodCall => write!(f, "()"),
             HIRBinOp::ArrayIndex => write!(f, "[]"),
-            HIRBinOp::Comma => write!(f, ","),
+            HIRBinOp::Comma | HIRBinOp::GroupedComma => write!(f, ","),
             HIRBinOp::Assign(add) => {
                 if let Some(add) = add {
                     write!(f, "{} =", add)

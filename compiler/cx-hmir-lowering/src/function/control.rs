@@ -3,14 +3,16 @@ use cx_hmir::{
     HMIRPattern,
 };
 use cx_log::catalogue::{mir, typecheck};
-use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, MIRScopeID, MIRValue};
+use cx_mir::{
+    MIRBasicBlockID, MIRBlockTarget, MIRConstant, MIRInstructionKind, MIRScopeID, MIRValue,
+};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
     function::{
         Control, ControlKind, Expect, FunctionLowering, LowerResult, Merge, MergeParam, Operand,
-        PatternBinding, Stop,
+        PatternBinding, Stop, SwitchLabels,
         aggregate::{lower_bind_pattern, lower_pattern_subject, lower_sum_index},
         coerce::{lower_convert, lower_truthy},
         expr::{lower_expr, lower_inferred_type},
@@ -18,7 +20,7 @@ use crate::{
         operand::{lower_copy, lower_read, lower_spill, lower_value},
     },
     ty::TypeID,
-    value::{arithmetic_type, promote_integer_type},
+    value::{arithmetic_type, normalize_int, promote_integer_type},
 };
 
 pub(crate) fn lower_block(
@@ -69,8 +71,14 @@ fn lower_sequence(
         .chain(tail.iter().filter(|_| expect == Expect::Discard))
         .enumerate()
     {
+        // A case label is reached from its switch, whatever came before it
+        let is_case = cx.is_case(frame, *statement);
+        if is_case && !live {
+            live = true;
+            checked = false;
+        }
         if live || cx.unevaluated {
-            if cx.terminated() {
+            if cx.terminated() && !is_case {
                 let block = cx.new_block("check.unreachable");
                 cx.set_block(block);
             }
@@ -81,12 +89,16 @@ fn lower_sequence(
             }
         } else {
             if !checked {
+                let dead = &statements[index.min(statements.len())..];
+                let resumed = dead
+                    .iter()
+                    .position(|statement| cx.is_case(frame, *statement));
                 inspect::check(
                     cx,
                     frame,
                     inspect::Check::Sequence {
-                        statements: &statements[index.min(statements.len())..],
-                        tail,
+                        statements: &dead[..resumed.unwrap_or(dead.len())],
+                        tail: tail.filter(|_| resumed.is_none()),
                         expect,
                     },
                 )?;
@@ -126,6 +138,15 @@ fn lower_dead(
                 return Ok(false);
             };
             cx.set_block(target);
+            match lower_expr(cx, frame, body, Expect::Discard) {
+                Ok(_) => Ok(!cx.terminated()),
+                Err(Stop::Diverged) => Ok(false),
+                Err(error) => Err(error),
+            }
+        }
+        HMIRExprKind::Case { value, body } => {
+            let span = cx.span(frame, id);
+            lower_case_label(cx, frame, value, &span)?;
             match lower_expr(cx, frame, body, Expect::Discard) {
                 Ok(_) => Ok(!cx.terminated()),
                 Err(Stop::Diverged) => Ok(false),
@@ -291,7 +312,7 @@ pub(crate) fn lower_if(
     lower_close_merge(cx, merge, span)
 }
 
-// The type both arms of a valued conditional agree on, when they can be predicted
+// The type both arms of a valued conditional are converted to, when it can be predicted
 fn lower_branch_type(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
@@ -300,10 +321,35 @@ fn lower_branch_type(
 ) -> Option<TypeID> {
     let lhs = lower_type_hint(cx, frame, lhs)?;
     let rhs = lower_type_hint(cx, frame, rhs)?;
-    if lhs == rhs {
+    let types = cx.program.types_mut();
+    let (lhs, rhs) = (types.decayed(lhs), types.decayed(rhs));
+    if lhs == rhs || types.is_unreachable(rhs) {
         return Some(lhs);
     }
-    arithmetic_type(cx.program.types_mut(), lhs, rhs).or(Some(lhs))
+    if types.is_unreachable(lhs) {
+        return Some(rhs);
+    }
+    if let Some(common) = arithmetic_type(types, lhs, rhs) {
+        return Some(common);
+    }
+    match (types.pointer_inner(lhs), types.pointer_inner(rhs)) {
+        // A null pointer constant takes the type of the other arm
+        (None, Some(_)) if types.int_info(lhs).is_some() => Some(rhs),
+        (Some(then_inner), Some(else_inner)) => {
+            let constant = types.is_const(then_inner) || types.is_const(else_inner);
+            let unqualified = types.unqualified(else_inner);
+            let pointee = match types.is_void(unqualified) {
+                true => else_inner,
+                false => then_inner,
+            };
+            let pointee = match constant {
+                true => types.const_of(pointee),
+                false => pointee,
+            };
+            Some(types.pointer_to(pointee))
+        }
+        _ => Some(lhs),
+    }
 }
 
 // Lowers one arm into 'merge' within its own scope
@@ -473,78 +519,131 @@ fn lower_seal(cx: &mut FunctionLowering<'_, '_>, blocks: &[MIRBasicBlockID], spa
     }
 }
 
-// Cases fall through in order; the last falls through to the default, if any
+// The body is lowered once, in order, so that its labels fall through to one another. Only those
+// labels lead into it, which is why the branch can wait until they have all been seen.
 pub(crate) fn lower_switch(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
     condition: HMIRExprID,
-    cases: &[(HMIRExprID, HMIRExprID)],
-    default: Option<HMIRExprID>,
+    body: HMIRExprID,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
+    let condition_span = cx.span(frame, condition);
     let condition = lower_expr(cx, frame, condition, Expect::Any)?;
-    let signed = cx.program.types().is_signed(condition.ty());
-    let condition_ty = condition.ty();
-    let value = lower_value(cx, condition, span)?;
-    let exit = cx.new_block("switch.exit");
-    let default_block = default.map(|_| cx.new_block("switch.default"));
-
-    let mut targets = Vec::with_capacity(cases.len());
-    let mut blocks = Vec::with_capacity(cases.len());
-    for (case, _) in cases {
-        let case_span = cx.span(frame, *case);
-        let case_value = lower_eval(cx, frame, *case, Expect::Type(condition_ty))?;
-        let Some(case_value) = case_value.as_int() else {
-            return cx.error(
-                &case_span,
-                &mir::EXPECTED_CONSTANT,
-                ("switch case".into(), "integer".into()),
-            );
-        };
-        let block = cx.new_block("switch.case");
-        targets.push((case_value, MIRBlockTarget::new(block)));
-        blocks.push(block);
+    let found = lower_inferred_type(cx, condition.ty());
+    let condition_ty = promote_integer_type(cx.program.types_mut(), found);
+    if cx.program.types().int_info(condition_ty).is_none() {
+        let types = cx.program.types();
+        return cx.error(
+            &condition_span,
+            &typecheck::TYPE_MISMATCH,
+            (
+                "switch condition".into(),
+                "integer type".into(),
+                format!("'{}'", types.display(found)),
+            ),
+        );
     }
+    let condition = lower_convert(cx, condition, condition_ty, &condition_span)?;
+    let signed = cx.program.types().is_signed(condition_ty);
+    let value = lower_value(cx, condition, &condition_span)?;
+    let dispatch = cx.current;
+    let exit = cx.new_block("switch.exit");
+
+    let entry = cx.new_block("switch.body");
+    cx.set_block(entry);
+    cx.push_control(ControlKind::Switch { exit });
+    cx.switches.push(SwitchLabels {
+        condition: condition_ty,
+        cases: Vec::new(),
+        default: None,
+    });
+    let result = lower_expr(cx, frame, body, Expect::Discard);
+    let labels = cx.switches.pop().expect("switch labels are balanced");
+    cx.controls.pop();
+    match result {
+        Ok(_) => cx.jump(exit, Vec::new(), span),
+        Err(Stop::Diverged) => {}
+        Err(error) => return Err(error),
+    }
+
+    cx.set_block(dispatch);
     cx.emit(
         MIRInstructionKind::CaseBranch {
             value,
             signed,
-            cases: targets,
-            default: Some(MIRBlockTarget::new(default_block.unwrap_or(exit))),
+            cases: labels.cases,
+            default: Some(MIRBlockTarget::new(labels.default.unwrap_or(exit))),
         },
-        span,
+        &condition_span,
     );
-
-    let mut segments = cases
-        .iter()
-        .map(|(_, body)| *body)
-        .zip(blocks.iter().copied())
-        .chain(default.zip(default_block))
-        .collect::<Vec<_>>();
-    segments.sort_by_key(|(body, _)| {
-        cx.span(frame, *body)
-            .source_bounds()
-            .map(|(_, start, _)| start)
-    });
-    for (index, (body, block)) in segments.iter().enumerate() {
-        let next = segments
-            .get(index + 1)
-            .map(|(_, block)| *block)
-            .unwrap_or(exit);
-        cx.set_block(*block);
-        cx.push_control(ControlKind::Switch { exit });
-        let result = lower_scope(cx, span, |this| {
-            lower_expr(this, frame, *body, Expect::Discard)
-        });
-        cx.controls.pop();
-        match result {
-            Ok(_) => cx.jump(next, Vec::new(), span),
-            Err(Stop::Diverged) => {}
-            Err(error) => return Err(error),
-        }
-    }
     cx.set_block(exit);
     Ok(Operand::unit(cx.program.types_mut()))
+}
+
+pub(crate) fn lower_case(
+    cx: &mut FunctionLowering<'_, '_>,
+    frame: usize,
+    value: Option<HMIRExprID>,
+    body: HMIRExprID,
+    expect: Expect,
+    span: &TokenRange,
+) -> LowerResult<Operand> {
+    lower_case_label(cx, frame, value, span)?;
+    lower_expr(cx, frame, body, expect)
+}
+
+// Starts the block of a 'case' or 'default' label and records it with the enclosing switch
+fn lower_case_label(
+    cx: &mut FunctionLowering<'_, '_>,
+    frame: usize,
+    value: Option<HMIRExprID>,
+    span: &TokenRange,
+) -> LowerResult<()> {
+    let Some(condition) = cx.switches.last().map(|labels| labels.condition) else {
+        return cx.error(
+            span,
+            &typecheck::REQUIRED_CONTEXT,
+            ("case label".into(), "a switch".into()),
+        );
+    };
+    let value = match value {
+        Some(case) => {
+            let case_span = cx.span(frame, case);
+            let Some(value) = lower_eval(cx, frame, case, Expect::Type(condition))?.as_int()
+            else {
+                return cx.error(
+                    &case_span,
+                    &mir::EXPECTED_CONSTANT,
+                    ("switch case".into(), "integer".into()),
+                );
+            };
+            let value = normalize_int(value, condition, cx.program.types());
+            let labels = cx.switches.last().expect("case label is in a switch");
+            if labels.cases.iter().any(|(seen, _)| *seen == value) {
+                return cx.error(
+                    &case_span,
+                    &typecheck::DUPLICATE_ITEM,
+                    ("case".into(), "switch".into()),
+                );
+            }
+            Some(value)
+        }
+        None => None,
+    };
+
+    let block = cx.new_block(match value {
+        Some(_) => "switch.case",
+        None => "switch.default",
+    });
+    let labels = cx.switches.last_mut().expect("case label is in a switch");
+    match value {
+        Some(value) => labels.cases.push((value, MIRBlockTarget::new(block))),
+        None => labels.default = Some(block),
+    }
+    cx.jump(block, Vec::new(), span);
+    cx.set_block(block);
+    Ok(())
 }
 
 pub(crate) fn lower_match(
@@ -748,6 +847,47 @@ pub(super) fn lower_control(
             cx.jump(target, Vec::new(), span);
             Err(Stop::Diverged)
         }
+        HMIRControlOp::IndirectGoto(target) => {
+            if cx.defer_boundary.is_some() {
+                return cx.error(span, &typecheck::DEFER_JUMP, "jump".into());
+            }
+            let types = cx.program.types_mut();
+            let void = types.void();
+            let pointee = types.const_of(void);
+            let address_ty = types.pointer_to(pointee);
+            let address = lower_expr(cx, frame, target, Expect::Type(address_ty))?;
+            let address = lower_convert(cx, address, address_ty, span)?;
+            let address = lower_value(cx, address, span)?;
+            let targets = cx
+                .body
+                .address_labels()
+                .iter()
+                .map(|(_, block)| MIRBlockTarget::new(*block))
+                .collect();
+            cx.emit(MIRInstructionKind::IndirectJump { address, targets }, span);
+            Err(Stop::Diverged)
+        }
+        HMIRControlOp::LabelAddress { name, .. } => {
+            let Some(function) = cx.function else {
+                return cx.error(
+                    span,
+                    &typecheck::REQUIRED_CONTEXT,
+                    ("label address".into(), "a function".into()),
+                );
+            };
+            if cx.body.address_label(name.as_str()).is_none() {
+                let block = cx.label_block(&name);
+                cx.body.add_address_label(name.as_str(), block);
+            }
+            let types = cx.program.types_mut();
+            let void = types.void();
+            let ty = types.pointer_to(void);
+            let address = MIRConstant::BlockAddress {
+                function,
+                label: name.to_string(),
+            };
+            Ok(Operand::value(MIRValue::Constant(address), ty))
+        }
         HMIRControlOp::Defer(body) => {
             inspect::check(cx, frame, inspect::Check::Deferred(body))?;
             cx.scopes
@@ -922,6 +1062,21 @@ impl FunctionLowering<'_, '_> {
             MergeParam::Undecided => Expect::Any,
             MergeParam::Valueless => Expect::Discard,
             MergeParam::Value(_, ty) => Expect::Type(ty),
+        }
+    }
+
+    fn is_case(&self, frame: usize, id: HMIRExprID) -> bool {
+        matches!(
+            self.frames[frame].body().expr(id).kind(),
+            HMIRExprKind::Case { .. }
+        )
+    }
+
+    // Blocks whose address a static of the function holds have to exist before the body does
+    pub(super) fn declare_address_labels(&mut self, labels: &[CXIdent]) {
+        for label in labels {
+            let block = self.label_block(label);
+            self.body.add_address_label(label.as_str(), block);
         }
     }
 

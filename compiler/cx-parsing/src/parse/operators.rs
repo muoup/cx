@@ -46,7 +46,7 @@ pub(crate) fn binop_prec(op: HIRBinOp) -> u8 {
 
         HIRBinOp::Assign(_) => 17,
 
-        HIRBinOp::Comma => 18,
+        HIRBinOp::Comma | HIRBinOp::GroupedComma => 18,
     }
 }
 

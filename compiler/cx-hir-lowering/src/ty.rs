@@ -1,7 +1,10 @@
 use cx_hir::ast::{
     function::HIRFunctionPrototype,
     modifiers::HIR_CONST,
-    types::{HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
+    types::{
+        ANONYMOUS_MEMBER_PREFIX, HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType,
+        HIRTypeKind,
+    },
 };
 use cx_hmir::{
     HMIRAggregateKind, HMIRDefRef, HMIRExprID, HMIRExprKind, HMIRFieldDef, HMIRMoveSemantics,
@@ -204,9 +207,12 @@ fn lower_aggregate_type(
     let fields = fields
         .iter()
         .map(|field| match field {
-            HIRField::Standard { name, ty } => {
-                HMIRFieldDef::new(Some(CXIdent::from(name.as_str())), lower_type(cx, ty), None)
-            }
+            // An anonymous member has no name of its own; its members are found through it
+            HIRField::Standard { name, ty } => HMIRFieldDef::new(
+                (!name.starts_with(ANONYMOUS_MEMBER_PREFIX)).then(|| CXIdent::from(name.as_str())),
+                lower_type(cx, ty),
+                None,
+            ),
             HIRField::Bitfield {
                 name,
                 integer_type,

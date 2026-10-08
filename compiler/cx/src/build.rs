@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use cx_pipeline::project_compilation;
 use cx_pipeline_data::{
     config::find_and_load_config, ArchitectureConfig, CompilationMode, CompilerBackend,
-    CompilerConfig, OptimizationLevel,
+    CompilerConfig,
 };
 use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
@@ -72,9 +72,10 @@ pub fn build_project(args: BuildArgs, topic: Topic) -> CXResult<Vec<PathBuf>> {
     let optimization_level = match args.optimization_level {
         Some(level) => level,
         None => build_section
-            .and_then(|build| build.optimization.as_deref())
-            .map(parse_optimization)
-            .transpose()?
+            .map(|build| build.optimization_level())
+            .transpose()
+            .map_err(|message| error(message, None))?
+            .flatten()
             .unwrap_or_default(),
     };
 
@@ -121,21 +122,6 @@ fn parse_backend(s: &str) -> CXResult<CompilerBackend> {
         )),
         other => Err(error(
             format!("unknown backend in cx.toml: '{other}'"),
-            None,
-        )),
-    }
-}
-
-fn parse_optimization(s: &str) -> CXResult<OptimizationLevel> {
-    match s {
-        "O0" => Ok(OptimizationLevel::O0),
-        "O1" => Ok(OptimizationLevel::O1),
-        "O2" => Ok(OptimizationLevel::O2),
-        "O3" => Ok(OptimizationLevel::O3),
-        "Osize" => Ok(OptimizationLevel::Osize),
-        "Ofast" => Ok(OptimizationLevel::Ofast),
-        other => Err(error(
-            format!("unknown optimization level in cx.toml: '{other}'"),
             None,
         )),
     }

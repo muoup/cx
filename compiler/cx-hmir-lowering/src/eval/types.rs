@@ -1,12 +1,16 @@
-use cx_hmir::{HMIRAggregateKind, HMIRExprID, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeOp};
+use cx_hmir::{
+    HMIRAggregateKind, HMIRConstant, HMIRDefKind, HMIRDefRef, HMIRExprID, HMIRExprKind,
+    HMIRFieldDef, HMIRMemberStep, HMIRMoveSemantics, HMIRNativeOp, HMIRTypeOp,
+};
 use cx_log::{
     CXResult,
     catalogue::{mir, typecheck},
 };
+use cx_mir::ty::layout::calculate_field_layout;
 use cx_tokens::TokenRange;
 
 use crate::{
-    eval::{EvalFrame, eval, eval_type},
+    eval::{EvalFrame, def_value, eval, eval_type},
     function::inspect::inspect,
     program::{Instance, Program, untagged_name},
     staging_error,
@@ -66,7 +70,7 @@ pub(super) fn exec_type_op(
             StaticValue::Type(decay(cx.types_mut(), ty))
         }
         HMIRTypeOp::Pointer(inner) => {
-            let inner = eval_type(cx, frame, *inner)?;
+            let inner = eval_pointee(cx, frame, *inner)?;
             if cx.types().is_unreachable(inner) {
                 return Err(staging_error(
                     span,
@@ -88,8 +92,10 @@ pub(super) fn exec_type_op(
             let element = eval_type(cx, frame, *element)?;
             let length = match length {
                 Some(length) => {
-                    let value = eval(cx, frame, *length, None)?;
-                    let length = value.as_int().ok_or_else(|| {
+                    let eager = std::mem::replace(&mut cx.deferral_mut().eager, true);
+                    let value = eval(cx, frame, *length, None);
+                    cx.deferral_mut().eager = eager;
+                    let length = value?.as_int().ok_or_else(|| {
                         staging_error(
                             span,
                             &mir::EXPECTED_CONSTANT,
@@ -122,6 +128,16 @@ pub(super) fn exec_type_op(
             StaticValue::Type(cx.types_mut().intern(TypeKind::Expr { params, result }))
         }
         HMIRTypeOp::Aggregate { .. } => unreachable!("aggregate types are evaluated with their id"),
+        // A string literal is the array of its bytes and their terminator, which is not a type
+        // the literal has anywhere else
+        HMIRTypeOp::SizeOf(operand)
+            if let HMIRExprKind::Constant(HMIRConstant::Str(literal)) =
+                frame.body().expr(*operand).kind() =>
+        {
+            let size = literal.len() as i128 + 1;
+            let size_type = cx.types_mut().size_type();
+            StaticValue::int(size, size_type)
+        }
         HMIRTypeOp::SizeOf(operand) | HMIRTypeOp::AlignOf(operand) => {
             let ty = inspect(cx, frame, *operand, None)?;
             let ty = match cx.types().kind(ty) {
@@ -135,6 +151,66 @@ pub(super) fn exec_type_op(
             };
             let size_type = cx.types_mut().size_type();
             StaticValue::int(size as i128, size_type)
+        }
+        HMIRTypeOp::OffsetOf { ty, member } => {
+            let mut current = eval_type(cx, frame, *ty)?;
+            let mut offset = 0;
+            for step in member {
+                match step {
+                    HMIRMemberStep::Field(name) => {
+                        let path = cx.types().member_path(current, name.as_str());
+                        let path = path.ok_or_else(|| {
+                            staging_error(
+                                span,
+                                &typecheck::UNKNOWN_MEMBER,
+                                (cx.types().display(current), name.to_string()),
+                            )
+                        })?;
+                        for index in path {
+                            let nominal = cx.types().nominal_of(current);
+                            let field = &nominal.expect("member path is through aggregates")
+                                .fields()[index];
+                            if field.bit_width().is_some() {
+                                return Err(staging_error(
+                                    span,
+                                    &typecheck::INVALID_FORM,
+                                    ("offsetof".into(), "bit-field member".into()),
+                                ));
+                            }
+                            let field_ty = field.ty();
+                            let aggregate = cx.types_mut().mir(current, span)?;
+                            let layout =
+                                calculate_field_layout(cx.types().mir_types(), aggregate, index);
+                            offset += layout.expect("aggregate lays out its fields").offset() as u64;
+                            current = field_ty;
+                        }
+                    }
+                    HMIRMemberStep::Index(index) => {
+                        let Some(element) = cx.types().array_inner(current) else {
+                            return Err(staging_error(
+                                span,
+                                &typecheck::TYPE_MISMATCH,
+                                (
+                                    "offsetof subscript".into(),
+                                    "an array member".into(),
+                                    format!("'{}'", cx.types().display(current)),
+                                ),
+                            ));
+                        };
+                        let index = eval(cx, frame, *index, None)?.as_int().ok_or_else(|| {
+                            staging_error(
+                                span,
+                                &mir::EXPECTED_CONSTANT,
+                                ("offsetof subscript".into(), "integer".into()),
+                            )
+                        })?;
+                        offset += index as u64 * cx.types_mut().size_of(element, span)?;
+                        current = element;
+                    }
+                }
+            }
+            let size_type = cx.types_mut().size_type();
+            StaticValue::int(offset as i128, size_type)
         }
         HMIRTypeOp::IsInt(operand)
         | HMIRTypeOp::IsFloat(operand)
@@ -161,6 +237,79 @@ pub(super) fn exec_type_op(
 pub(super) fn decay(types: &mut TypeTable, ty: TypeID) -> TypeID {
     let ty = types.reference_inner(ty).unwrap_or(ty);
     types.decayed(ty)
+}
+
+// A named aggregate pointed to while another aggregate is being defined only gets its nominal,
+// and is defined once nothing is in progress. Defining it on the spot would make mutually
+// referential aggregates depend on which of them is reached first.
+// Expressions inside a type (array lengths) may look through the pointer, so they opt out.
+fn eval_pointee(cx: &mut Program<'_>, frame: &mut EvalFrame, id: HMIRExprID) -> CXResult<TypeID> {
+    let deferral = cx.deferral_mut();
+    if deferral.defining > 0
+        && !deferral.eager
+        && let Some(ty) = defer_named_type(cx, frame, id)?
+    {
+        return Ok(ty);
+    }
+    eval_type(cx, frame, id)
+}
+
+fn defer_named_type(
+    cx: &mut Program<'_>,
+    frame: &EvalFrame,
+    id: HMIRExprID,
+) -> CXResult<Option<TypeID>> {
+    let expr = frame.body().expr(id);
+    let mut def = match expr.kind() {
+        HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Const(inner))) => {
+            let inner = defer_named_type(cx, frame, *inner)?;
+            return Ok(inner.map(|inner| cx.types_mut().const_of(inner)));
+        }
+        HMIRExprKind::Def(def) => def.clone(),
+        _ => return Ok(None),
+    };
+    let mut unit = frame.def().unit();
+    let mut seen = Vec::new();
+    loop {
+        if matches!(def, HMIRDefRef::Candidates(_)) {
+            return Ok(None);
+        }
+        let key = cx.resolve(unit, &def, expr.span())?;
+        let instance = (key, Vec::new());
+        if seen.contains(&key)
+            || cx.generated_mut().contains_key(&instance)
+            || cx.active_mut().contains(&instance)
+        {
+            return Ok(None);
+        }
+        seen.push(key);
+        let source = cx.unit(key.unit());
+        let HMIRDefKind::ComptimeGlobal(global) = source.def(key.def()).kind() else {
+            return Ok(None);
+        };
+        let root = global.initializer();
+        match global.body().expr(root).kind() {
+            HMIRExprKind::Def(alias) => (unit, def) = (key.unit(), alias.clone()),
+            HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Aggregate {
+                kind,
+                semantics,
+                unsafe_move,
+                traits_of: None,
+                ..
+            })) => {
+                let name = nominal_name(cx, &instance);
+                let nominal = NominalKey::new(key, Vec::new(), root);
+                let (ty, pending) =
+                    cx.types_mut()
+                        .intern_nominal(nominal, name, *kind, *semantics, *unsafe_move);
+                if pending {
+                    cx.deferral_mut().pending.push(key);
+                }
+                return Ok(Some(ty));
+            }
+            _ => return Ok(None),
+        }
+    }
 }
 
 pub(super) fn eval_aggregate_type(
@@ -192,6 +341,26 @@ pub(super) fn eval_aggregate_type(
         cx.generated_mut()
             .insert((*owner).clone(), StaticValue::Type(ty));
     }
+    cx.deferral_mut().defining += 1;
+    let defined = eval_fields(cx, frame, kind, (semantics, unsafe_move), fields, span);
+    cx.deferral_mut().defining -= 1;
+    cx.types_mut().define_nominal(ty, defined?);
+    if cx.deferral_mut().defining == 0 {
+        while let Some(deferred) = cx.deferral_mut().pending.pop() {
+            def_value(cx, deferred, span)?;
+        }
+    }
+    Ok(StaticValue::Type(ty))
+}
+
+fn eval_fields(
+    cx: &mut Program<'_>,
+    frame: &mut EvalFrame,
+    kind: HMIRAggregateKind,
+    (semantics, unsafe_move): (HMIRMoveSemantics, bool),
+    fields: &[HMIRFieldDef],
+    span: &TokenRange,
+) -> CXResult<Vec<Field>> {
     let mut defined = Vec::with_capacity(fields.len());
     for field in fields {
         let field_ty = eval_type(cx, frame, field.ty())?;
@@ -237,8 +406,7 @@ pub(super) fn eval_aggregate_type(
             field.bit_width(),
         ));
     }
-    cx.types_mut().define_nominal(ty, defined);
-    Ok(StaticValue::Type(ty))
+    Ok(defined)
 }
 
 fn nominal_name(cx: &mut Program<'_>, owner: &Instance) -> String {

@@ -45,11 +45,22 @@ pub enum HMIRTypeOp {
 
     SizeOf(HMIRExprID),
     AlignOf(HMIRExprID),
+    // The offset in bytes of the subobject of 'ty' that 'member' leads to
+    OffsetOf {
+        ty: HMIRExprID,
+        member: Vec<HMIRMemberStep>,
+    },
     IsInt(HMIRExprID),
     IsFloat(HMIRExprID),
     IsPointer(HMIRExprID),
     IsSigned(HMIRExprID),
     Equal(HMIRExprID, HMIRExprID),
+}
+
+#[derive(Debug, Clone)]
+pub enum HMIRMemberStep {
+    Field(CXIdent),
+    Index(HMIRExprID),
 }
 
 impl HMIRTypeOp {
@@ -69,6 +80,7 @@ impl HMIRTypeOp {
             Self::Aggregate { .. } => "type.aggregate",
             Self::SizeOf(_) => "type.size_of",
             Self::AlignOf(_) => "type.align_of",
+            Self::OffsetOf { .. } => "type.offset_of",
             Self::IsInt(_) => "type.is_int",
             Self::IsFloat(_) => "type.is_float",
             Self::IsPointer(_) => "type.is_pointer",

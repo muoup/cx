@@ -161,6 +161,11 @@ impl FunctionState<'_> {
                 Ok(CodegenValue::Value(gv))
             }
 
+            LMIRValue::BlockAddress { .. } => Err(raw(
+                &UNSUPPORTED_FEATURE,
+                ("label addresses".into(), "Cranelift lowering".into()),
+            )),
+
             LMIRValue::Register { register, ty: _ } => {
                 let Some(var) = self.variable_table.get(register).cloned() else {
                     return Err(raw(

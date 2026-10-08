@@ -102,6 +102,18 @@ pub struct THIRSourceRange {
     pub end_token: usize,
 }
 
+#[derive(Clone, Debug)]
+pub enum THIROffsetStep {
+    Field {
+        aggregate: THIRType,
+        index: usize,
+    },
+    Element {
+        element: THIRType,
+        index: Box<THIRExpression>,
+    },
+}
+
 #[derive(Clone, Debug, Default)]
 pub enum THIRExpressionKind {
     // Literals
@@ -139,6 +151,10 @@ pub enum THIRExpressionKind {
     },
     AlignOf {
         ty: THIRType,
+    },
+    /// The offset in bytes of a subobject, as the sum of the steps that lead to it.
+    OffsetOf {
+        steps: Vec<THIROffsetStep>,
     },
 
     // Arithmetic & Logic
@@ -234,6 +250,14 @@ pub enum THIRExpressionKind {
     Goto {
         name: CXIdent,
     },
+    IndirectGoto {
+        target: Box<THIRExpression>,
+    },
+    /// The address of a label of the function with this symbol name.
+    LabelAddress {
+        function: CXIdent,
+        name: CXIdent,
+    },
     Label {
         name: CXIdent,
         statement: Box<THIRExpression>,
@@ -257,8 +281,12 @@ pub enum THIRExpressionKind {
 
     CSwitch {
         condition: Box<THIRExpression>,
-        cases: Vec<(Box<THIRExpression>, Box<THIRExpression>)>,
-        default: Option<Box<THIRExpression>>,
+        body: Box<THIRExpression>,
+    },
+    /// A `case` label of the innermost enclosing `CSwitch`, or `default` when it has no value.
+    Case {
+        value: Option<Box<THIRExpression>>,
+        statement: Box<THIRExpression>,
     },
 
     Match {

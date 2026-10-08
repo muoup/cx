@@ -99,6 +99,14 @@ struct Control {
     kind: ControlKind,
 }
 
+// The labels seen so far in the body of a switch over a value of type 'condition'
+#[derive(Clone)]
+struct SwitchLabels {
+    condition: TypeID,
+    cases: Vec<(i128, MIRBlockTarget)>,
+    default: Option<MIRBasicBlockID>,
+}
+
 // A join point; with no expected type, the first value reaching it decides its parameter
 #[derive(Clone)]
 struct Merge {
@@ -126,12 +134,15 @@ pub(crate) struct PatternBinding {
 pub(crate) struct FunctionLowering<'p, 'l> {
     pub(crate) program: &'p mut Program<'l>,
     serial: u64,
+    // The function being lowered, which code that is only inspected has none of
+    function: Option<MIRFunctionID>,
     body: MIRBody,
     current: MIRBasicBlockID,
     pub(crate) frames: Vec<Frame>,
     bindings: HashMap<(usize, HMIRLocalID), Operand>,
     scopes: Vec<Scope>,
     controls: Vec<Control>,
+    switches: Vec<SwitchLabels>,
     merges: Vec<Merge>,
     labels: HashMap<String, MIRBasicBlockID>,
     pattern_bindings: Vec<PatternBinding>,
@@ -196,6 +207,7 @@ pub(crate) fn lower_function(
 
     let mut cx = FunctionLowering::new(cx, serial, signature.ret(), &span);
     cx.safe = function.signature().contract().is_safe();
+    cx.function = Some(id);
     let mut frame = Frame::new(unit.clone(), instance.0, Rc::new(instance.clone()));
     frame.statics = statics;
     cx.frames.push(frame);
@@ -209,6 +221,7 @@ pub(crate) fn lower_function(
         cx.bind(0, *local, Operand::place(place, ty));
     }
 
+    cx.declare_address_labels(function.address_labels());
     inspect::check(&mut cx, 0, inspect::Check::Contract)?;
     lower_root(&mut cx, root, &prototype)?;
     Ok(cx.body)
@@ -283,6 +296,7 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         Self {
             program: cx,
             serial,
+            function: None,
             body,
             current: entry,
             frames: Vec::new(),
@@ -292,6 +306,7 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
                 defers: Vec::new(),
             }],
             controls: Vec::new(),
+            switches: Vec::new(),
             merges: Vec::new(),
             labels: HashMap::new(),
             pattern_bindings: Vec::new(),

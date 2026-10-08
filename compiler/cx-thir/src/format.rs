@@ -7,7 +7,8 @@ use crate::thir::data::{
     THIRFnSignature, THIRFunctionBody, THIRParameter,
 };
 use crate::thir::expression::{
-    THIRBinOp, THIRBlockKind, THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp,
+    THIRBinOp, THIRBlockKind, THIRCoercion, THIRExpression, THIRExpressionKind, THIROffsetStep,
+    THIRUnOp,
 };
 use crate::thir::global::THIRGlobalVariable;
 use crate::thir::r#type::{
@@ -782,6 +783,24 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")
             }
+            THIRExpressionKind::OffsetOf { steps } => {
+                write!(f, "OffsetOf")?;
+                for step in steps {
+                    match step {
+                        THIROffsetStep::Field { aggregate, index } => {
+                            write!(f, " ")?;
+                            self.write_type(f, aggregate)?;
+                            write!(f, ".{index}")?;
+                        }
+                        THIROffsetStep::Element { element, .. } => {
+                            write!(f, " [")?;
+                            self.write_type(f, element)?;
+                            write!(f, "]")?;
+                        }
+                    }
+                }
+                writeln!(f)
+            }
             THIRExpressionKind::GlobalVariable { symbol } => {
                 write!(f, "GlobalVariable \"{symbol}\" <'")?;
                 self.write_type(f, &self.expr.ty)?;
@@ -1162,42 +1181,26 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 }
                 .fmt(f)
             }
-            THIRExpressionKind::CSwitch {
-                condition,
-                cases,
-                default,
-            } => {
+            THIRExpressionKind::CSwitch { condition, body } => {
                 write!(f, "CSwitch <'")?;
                 self.write_type(f, &self.expr.ty)?;
                 writeln!(f, ">")?;
-                MIRExpressionFormatter {
-                    expr: condition,
-                    depth: self.depth + 1,
-                    definitions: self.definitions,
-                }
-                .fmt(f)?;
-                for (case_value, label) in cases {
-                    self.indent(f)?;
-                    writeln!(f, "Case:")?;
+                for expr in [condition, body] {
                     MIRExpressionFormatter {
-                        expr: case_value,
-                        depth: self.depth + 2,
-                        definitions: self.definitions,
-                    }
-                    .fmt(f)?;
-                    MIRExpressionFormatter {
-                        expr: label,
-                        depth: self.depth + 2,
+                        expr,
+                        depth: self.depth + 1,
                         definitions: self.definitions,
                     }
                     .fmt(f)?;
                 }
-                if let Some(default) = default {
-                    self.indent(f)?;
-                    writeln!(f, "Default:")?;
+                Ok(())
+            }
+            THIRExpressionKind::Case { value, statement } => {
+                writeln!(f, "{}", if value.is_some() { "Case" } else { "Default" })?;
+                for expr in value.iter().chain([statement]) {
                     MIRExpressionFormatter {
-                        expr: default,
-                        depth: self.depth + 2,
+                        expr,
+                        depth: self.depth + 1,
                         definitions: self.definitions,
                     }
                     .fmt(f)?;
@@ -1507,6 +1510,18 @@ impl<'a> Display for MIRExpressionFormatter<'a> {
                 write!(f, "Goto {name} <type='")?;
                 self.write_type(f, &self.expr.ty)?;
                 writeln!(f, "'>")
+            }
+            THIRExpressionKind::IndirectGoto { target } => {
+                writeln!(f, "IndirectGoto")?;
+                MIRExpressionFormatter {
+                    expr: target,
+                    depth: self.depth + 1,
+                    definitions: self.definitions,
+                }
+                .fmt(f)
+            }
+            THIRExpressionKind::LabelAddress { function, name } => {
+                writeln!(f, "LabelAddress {function}::{name}")
             }
             THIRExpressionKind::Label { name, statement } => {
                 write!(f, "Label {name} <type='")?;

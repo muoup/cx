@@ -1,0 +1,19 @@
+[project]
+name = "zlib"
+
+[build]
+backend = "llvm"
+optimization = "O2"
+
+[workspace.targets.default]
+include_dirs = [
+  "upstream",
+]
+
+[[workspace.targets.default.binaries]]
+name = "roundtrip"
+match = [
+  "upstream/*.c",
+  "roundtrip.c",
+  "!upstream/gz*.c",
+]

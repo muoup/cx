@@ -373,7 +373,8 @@ fn not_a_global(unit: &HMIRUnit, key: DefKey, span: &TokenRange) -> CXError {
 
 #[derive(PartialEq)]
 enum Declaration {
-    Function(Vec<TypeID>, TypeID, bool, CXIdent),
+    // The last field is whether the function has internal linkage
+    Function(Vec<TypeID>, TypeID, bool, CXIdent, bool),
     Global(TypeID, CXIdent),
     Value(StaticValue),
 }
@@ -407,6 +408,7 @@ fn declaration(
                     ret,
                     signature.is_variadic(),
                     signature.link_name().clone(),
+                    signature.linkage() == LinkageMode::Static,
                 ),
                 function.root().is_some(),
             )
@@ -916,7 +918,35 @@ pub(crate) fn exec_native(
                 HMIRControlOp::Break => Flow::Break,
                 HMIRControlOp::Continue => Flow::Continue,
                 HMIRControlOp::Unsafe(inner) => return exec(cx, frame, *inner, expect),
-                HMIRControlOp::Goto(_) | HMIRControlOp::Defer(_) | HMIRControlOp::Unreachable => {
+                HMIRControlOp::LabelAddress {
+                    function: Some(function),
+                    name,
+                } => {
+                    let function = cx.resolve(frame.def().unit(), function, span)?;
+                    let owner = cx.unit(function.unit());
+                    if !matches!(owner.def(function.def()).kind(), HMIRDefKind::Function(owner)
+                        if owner.stage() == HMIRFunctionStage::Runtime
+                            && !owner.has_comptime_params())
+                    {
+                        return Err(staging_error(
+                            span,
+                            &typecheck::REQUIRED_CONTEXT,
+                            ("label address".into(), "a runtime function".into()),
+                        ));
+                    }
+                    let types = cx.types_mut();
+                    let void = types.void();
+                    Flow::Normal(StaticValue::LabelAddress {
+                        function,
+                        label: name.clone(),
+                        ty: types.pointer_to(void),
+                    })
+                }
+                HMIRControlOp::Goto(_)
+                | HMIRControlOp::IndirectGoto(_)
+                | HMIRControlOp::LabelAddress { .. }
+                | HMIRControlOp::Defer(_)
+                | HMIRControlOp::Unreachable => {
                     return Err(staging_error(
                         span,
                         &mir::COMPTIME_INVALID_OPERATION,

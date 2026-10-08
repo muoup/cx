@@ -15,7 +15,7 @@ use cx_util::linkage::LinkageMode;
 
 use crate::{
     body::{BodyLowering, Symbol},
-    expr::{lower_expr, lower_initial_value},
+    expr::{lower_expr, lower_initial_value, lower_scope_statements},
     plan::{DefSource, PlannedDef},
     resolve::GlobalSymbol,
     ty::{lower_type, staged_signature},
@@ -50,7 +50,7 @@ pub(crate) fn lower_def(mut cx: BodyLowering<'_>, plan: &PlannedDef) -> HMIRDefK
             let link_name = cx.resolver().link_name(plan.name(), *naming);
             let global_ty = lower_type(&mut cx, ty);
             let initializer =
-                initializer.map(|initializer| lower_initial_value(&mut cx, ty, initializer));
+                initializer.map(|initializer| lower_initial_value(&mut cx, global_ty, initializer));
             HMIRDefKind::Global(Box::new(HMIRGlobal::new(
                 cx.finish(),
                 global_ty,
@@ -112,12 +112,9 @@ fn lower_function(
     } else {
         HMIRFunctionStage::Runtime
     };
-    HMIRDefKind::Function(Box::new(HMIRFunction::new(
-        stage,
-        cx.finish(),
-        signature,
-        root,
-    )))
+    let labels = cx.take_address_labels();
+    let function = HMIRFunction::new(stage, cx.finish(), signature, root);
+    HMIRDefKind::Function(Box::new(function.with_address_labels(labels)))
 }
 
 pub(crate) fn is_void(cx: &BodyLowering<'_>, ty: &HIRType) -> bool {
@@ -240,13 +237,10 @@ fn lower_contract(
 
 fn lower_function_body(cx: &mut BodyLowering<'_>, body: &HIRFunctionBody) -> HMIRExprID {
     match body {
-        HIRFunctionBody::Block { statements, range } => cx.scoped(|this| {
-            let statements = statements
-                .iter()
-                .map(|statement| lower_expr(this, statement))
-                .collect();
-            this.block(HMIRBlockKind::Scope, statements, range)
-        }),
+        HIRFunctionBody::Block { statements, range } => {
+            let statements = lower_scope_statements(cx, statements);
+            cx.block(HMIRBlockKind::Scope, statements, range)
+        }
         HIRFunctionBody::Expression(expr) => lower_expr(cx, expr),
     }
 }
