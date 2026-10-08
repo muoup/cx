@@ -374,6 +374,44 @@ pub enum OperatorType {
     BackwardPipe,
 }
 
+impl OperatorType {
+    /// The source spelling of the operator. `->` is lexed as [`OperatorType::Access`] too, and is
+    /// spelled `.` here.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            OperatorType::Plus => "+",
+            OperatorType::Minus => "-",
+            OperatorType::Asterisk => "*",
+            OperatorType::Slash => "/",
+            OperatorType::Percent => "%",
+            OperatorType::NotEqual => "!=",
+            OperatorType::Less => "<",
+            OperatorType::Greater => ">",
+            OperatorType::Equal => "==",
+            OperatorType::LessEqual => "<=",
+            OperatorType::GreaterEqual => ">=",
+            OperatorType::LShift => "<<",
+            OperatorType::RShift => ">>",
+            OperatorType::DoubleAmpersand => "&&",
+            OperatorType::DoubleBar => "||",
+            OperatorType::Exclamation => "!",
+            OperatorType::Ampersand => "&",
+            OperatorType::Bar => "|",
+            OperatorType::Caret => "^",
+            OperatorType::Tilda => "~",
+            OperatorType::Increment => "++",
+            OperatorType::Decrement => "--",
+            OperatorType::Comma => ",",
+            OperatorType::Access => ".",
+            OperatorType::ScopeRes => "::",
+            OperatorType::Move => "move",
+            OperatorType::Is => "is",
+            OperatorType::Pipe => "|>",
+            OperatorType::BackwardPipe => "<|",
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum PunctuatorType {
     OpenParen,
@@ -392,6 +430,27 @@ pub enum PunctuatorType {
     Apostrophe,
 
     ThickArrow, /* (=>) */
+}
+
+impl PunctuatorType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PunctuatorType::OpenParen => "(",
+            PunctuatorType::CloseParen => ")",
+            PunctuatorType::OpenBracket => "[",
+            PunctuatorType::CloseBracket => "]",
+            PunctuatorType::OpenBrace => "{",
+            PunctuatorType::CloseBrace => "}",
+            PunctuatorType::Semicolon => ";",
+            PunctuatorType::Ellipsis => "...",
+            PunctuatorType::Colon => ":",
+            PunctuatorType::Period => ".",
+            PunctuatorType::QuestionMark => "?",
+            PunctuatorType::Hash => "#",
+            PunctuatorType::Apostrophe => "'",
+            PunctuatorType::ThickArrow => "=>",
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -427,6 +486,7 @@ pub enum KeywordType {
 
     Sizeof,
     Alignof,
+    Offsetof,
 
     // CX Specific
     Import,
@@ -604,6 +664,7 @@ impl TokenKind {
             "register" => TokenKind::Keyword(KeywordType::Register),
             "sizeof" => TokenKind::Keyword(KeywordType::Sizeof),
             "alignof" => TokenKind::Keyword(KeywordType::Alignof),
+            "__builtin_offsetof" => TokenKind::Keyword(KeywordType::Offsetof),
 
             "public" => TokenKind::Specifier(SpecifierType::Public),
             "private" => TokenKind::Specifier(SpecifierType::Private),

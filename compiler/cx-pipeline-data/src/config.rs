@@ -1,3 +1,4 @@
+use crate::OptimizationLevel;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -19,6 +20,23 @@ pub struct BuildSection {
     pub backend: Option<String>,
     pub optimization: Option<String>,
     pub require_explicit_return: Option<bool>,
+}
+
+impl BuildSection {
+    pub fn optimization_level(&self) -> Result<Option<OptimizationLevel>, String> {
+        let Some(level) = self.optimization.as_deref() else {
+            return Ok(None);
+        };
+        match level {
+            "O0" => Ok(Some(OptimizationLevel::O0)),
+            "O1" => Ok(Some(OptimizationLevel::O1)),
+            "O2" => Ok(Some(OptimizationLevel::O2)),
+            "O3" => Ok(Some(OptimizationLevel::O3)),
+            "Osize" => Ok(Some(OptimizationLevel::Osize)),
+            "Ofast" => Ok(Some(OptimizationLevel::Ofast)),
+            other => Err(format!("unknown optimization level in cx.toml: '{other}'")),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

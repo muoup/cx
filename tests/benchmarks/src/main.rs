@@ -1,16 +1,19 @@
-use cx_test_support::{
-    assert_stdout, backend_name, compile_file, expected_stdout, run_binary, CompilationMode,
-    CompilerBackend, TestTempDir,
+mod case;
+mod report;
+mod toolchain;
+
+use case::{all_cases, project_names, selected_case, Case, Workload};
+use cx_test_support::{assert_stdout, run_command, CompilerBackend, TestTempDir};
+use report::{
+    render_github_table, render_pretty_table, BenchmarkReport, BenchmarkResult, ReferenceCompiler,
+    TimingStats,
 };
-use serde::Serialize;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
-use tabled::{
-    settings::{object::Columns, Alignment, Style},
-    Table, Tabled,
-};
+use toolchain::Toolchain;
 
 const DEFAULT_ITERATIONS: usize = 3;
 const DEFAULT_WARMUPS: usize = 1;
@@ -26,48 +29,10 @@ struct Options {
     iterations: usize,
     warmups: usize,
     backend: Option<String>,
+    reference: Option<String>,
     format: OutputFormat,
     json_output: Option<PathBuf>,
-    cases: Vec<PathBuf>,
-}
-
-#[derive(Serialize)]
-struct BenchmarkReport {
-    schema: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    commit: Option<String>,
-    cases: Vec<BenchmarkResult>,
-}
-
-#[derive(Serialize)]
-struct BenchmarkResult {
-    case: String,
-    backend: String,
-    compile: TimingStats,
-    execute: TimingStats,
-}
-
-#[derive(Serialize)]
-struct TimingStats {
-    samples_ms: Vec<f64>,
-    mean_ms: f64,
-    median_ms: f64,
-    min_ms: f64,
-    max_ms: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    margin_of_error_ms: Option<f64>,
-}
-
-#[derive(Tabled)]
-struct BenchmarkTableRow {
-    #[tabled(rename = "Case")]
-    case: String,
-    #[tabled(rename = "Backend")]
-    backend: String,
-    #[tabled(rename = "Compile")]
-    compile: String,
-    #[tabled(rename = "Execute")]
-    execute: String,
+    cases: Vec<String>,
 }
 
 fn main() {
@@ -87,39 +52,64 @@ fn main() {
 }
 
 fn run(options: Options) -> Result<(), String> {
+    let invocation_directory = env::current_dir().map_err(|error| error.to_string())?;
     let cases = if options.cases.is_empty() {
-        discover_cases(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures"))?
+        all_cases()?
     } else {
-        options.cases
+        options
+            .cases
+            .iter()
+            .map(|selection| selected_case(selection, &invocation_directory))
+            .collect::<Result<Vec<_>, _>>()?
     };
 
     if cases.is_empty() {
         return Err("no benchmark cases were found".to_string());
     }
 
-    let backends = select_backends(options.backend.as_deref())?;
-    let mut results = Vec::new();
+    let reference = options
+        .reference
+        .as_deref()
+        .map(ReferenceCompiler::detect)
+        .transpose()?;
+    let mut toolchains = select_backends(options.backend.as_deref())?
+        .into_iter()
+        .map(Toolchain::Cx)
+        .collect::<Vec<_>>();
+    toolchains.extend(reference.as_ref().map(Toolchain::Reference));
 
-    for case in cases {
-        for backend in &backends {
-            results.push(benchmark_case(
-                &case,
-                *backend,
-                options.iterations,
-                options.warmups,
-            )?);
+    let mut results = Vec::new();
+    for case in &cases {
+        let mut rows = toolchains
+            .iter()
+            .filter(|toolchain| toolchain.builds(case))
+            .map(|toolchain| {
+                benchmark_case(case, *toolchain, options.iterations, options.warmups)
+                    .map(Vec::into_iter)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Every toolchain reports the same rows for a case, which are grouped here by row
+        // rather than by toolchain.
+        while let Some(row) = rows.iter_mut().map(Iterator::next).collect::<Option<Vec<_>>>() {
+            if row.is_empty() {
+                break;
+            }
+            results.extend(row);
         }
     }
 
     let report = BenchmarkReport {
-        schema: 1,
+        schema: 2,
         commit: env::var("GITHUB_SHA").ok(),
+        reference,
         cases: results,
     };
     let serialized_report =
         serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?;
 
     if let Some(path) = options.json_output {
+        let path = invocation_directory.join(path);
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -138,258 +128,98 @@ fn run(options: Options) -> Result<(), String> {
     Ok(())
 }
 
+/// Times `iterations` builds of the case, each in a fresh directory, then the workloads of the
+/// case against the last of those builds.
 fn benchmark_case(
-    input: &Path,
-    backend: CompilerBackend,
+    case: &Case,
+    toolchain: Toolchain,
     iterations: usize,
     warmups: usize,
-) -> Result<BenchmarkResult, String> {
-    let expected = expected_stdout(input)
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| {
-            format!(
-                "{} has no inline or sidecar stdout expectation",
-                input.display()
-            )
-        })?;
-    let backend_label = backend_name(backend).to_string();
-    let case_label = input
-        .strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")))
-        .unwrap_or(input)
-        .display()
-        .to_string();
+) -> Result<Vec<BenchmarkResult>, String> {
+    let toolchain_label = toolchain.label();
+    let name = format!("{} ({toolchain_label})", case.label);
     let mut compile_samples = Vec::with_capacity(iterations);
+    let mut built = None;
 
     for iteration in 0..iterations {
-        let temp = TestTempDir::new(&format!(
-            "benchmark-{case_label}-{backend_label}-{iteration}"
-        ));
-        let compilation = compile_file(input, backend, CompilationMode::Executable, &temp)
-            .map_err(|failure| {
-                format!(
-                    "{case_label} ({backend_label}) compilation failed:\n{}",
-                    failure.rendered
-                )
-            })?;
-        compile_samples.push(duration_ms(compilation.elapsed));
+        let temp = TestTempDir::new(&format!("benchmark-{name}-{iteration}"));
+        let build = toolchain
+            .build(case, &temp)
+            .map_err(|error| format!("{name} compilation failed:\n{error}"))?;
+        compile_samples.push(duration_ms(build.elapsed));
+        built = Some((temp, build.output));
     }
 
-    let execution_temp = TestTempDir::new(&format!("benchmark-{case_label}-{backend_label}-run"));
-    let compilation = compile_file(input, backend, CompilationMode::Executable, &execution_temp)
-        .map_err(|failure| {
-            format!(
-                "{case_label} ({backend_label}) setup compilation failed:\n{}",
-                failure.rendered
-            )
-        })?;
-    let working_directory = input
-        .parent()
-        .ok_or_else(|| format!("{} has no working directory", input.display()))?;
-
-    for _ in 0..warmups {
-        let execution = run_binary(&compilation.output, working_directory)?;
-        verify_execution(
-            &case_label,
-            &backend_label,
-            &expected,
-            &execution.stdout,
-            execution.success,
-            execution.status_code,
-            &execution.stderr,
-        )?;
-    }
-
-    let mut execute_samples = Vec::with_capacity(iterations);
-    for _ in 0..iterations {
-        let execution = run_binary(&compilation.output, working_directory)?;
-        verify_execution(
-            &case_label,
-            &backend_label,
-            &expected,
-            &execution.stdout,
-            execution.success,
-            execution.status_code,
-            &execution.stderr,
-        )?;
-        execute_samples.push(duration_ms(execution.elapsed));
-    }
-
-    Ok(BenchmarkResult {
-        case: case_label,
-        backend: backend_label,
-        compile: stats(compile_samples),
-        execute: stats(execute_samples),
-    })
-}
-
-fn verify_execution(
-    case: &str,
-    backend: &str,
-    expected: &str,
-    actual: &str,
-    success: bool,
-    status_code: Option<i32>,
-    stderr: &str,
-) -> Result<(), String> {
-    if !success {
-        return Err(format!(
-            "{case} ({backend}) exited with {status_code:?}:\n{stderr}"
-        ));
-    }
-
-    assert_stdout(expected, actual, &format!("{case} ({backend})"))
-}
-
-fn stats(mut samples_ms: Vec<f64>) -> TimingStats {
-    samples_ms.sort_by(|left, right| left.partial_cmp(right).unwrap());
-    let sum = samples_ms.iter().sum::<f64>();
-    let median_ms = samples_ms[samples_ms.len() / 2];
-
-    let mut timing = TimingStats {
-        mean_ms: sum / samples_ms.len() as f64,
-        median_ms,
-        min_ms: samples_ms[0],
-        max_ms: samples_ms[samples_ms.len() - 1],
-        samples_ms,
-        margin_of_error_ms: None,
+    let (_temp, binary) = built.expect("a benchmark runs at least one iteration");
+    let result = |workload: Option<String>, compile, execute| BenchmarkResult {
+        case: case.label.clone(),
+        workload,
+        backend: toolchain_label.clone(),
+        reference: toolchain.is_reference(),
+        compile,
+        execute,
     };
-    timing.margin_of_error_ms = margin_of_error_ms(&timing);
-    timing
+    let compile = Some(TimingStats::new(compile_samples));
+
+    if let [workload @ Workload { label: None, .. }] = case.workloads.as_slice() {
+        let execute = time_workload(&name, &binary, workload, iterations, warmups)?;
+        let execute = Some(TimingStats::new(execute));
+        return Ok(vec![result(None, compile, execute)]);
+    }
+
+    // The row of the case itself reports the workloads together: each of its samples is one
+    // run of every workload.
+    let mut total_samples = vec![0.0; iterations];
+    let mut workload_results = Vec::with_capacity(case.workloads.len());
+    for workload in &case.workloads {
+        let label = workload.label.clone().unwrap_or_default();
+        let name = format!("{}: {label} ({toolchain_label})", case.label);
+        let samples = time_workload(&name, &binary, workload, iterations, warmups)?;
+        for (total, sample) in total_samples.iter_mut().zip(&samples) {
+            *total += sample;
+        }
+        workload_results.push(result(Some(label), None, Some(TimingStats::new(samples))));
+    }
+
+    let total = (!case.workloads.is_empty()).then(|| TimingStats::new(total_samples));
+    let mut results = vec![result(None, compile, total)];
+    results.extend(workload_results);
+    Ok(results)
+}
+
+fn time_workload(
+    name: &str,
+    binary: &Path,
+    workload: &Workload,
+    iterations: usize,
+    warmups: usize,
+) -> Result<Vec<f64>, String> {
+    let mut samples = Vec::with_capacity(iterations);
+
+    for run in 0..warmups + iterations {
+        let execution = run_command(
+            Command::new(binary)
+                .args(&workload.arguments)
+                .current_dir(&workload.working_directory),
+        )?;
+        if !execution.success {
+            return Err(format!(
+                "{name} exited with {:?}:\n{}",
+                execution.status_code, execution.stderr
+            ));
+        }
+        assert_stdout(&workload.expected_stdout, &execution.stdout, name)?;
+
+        if run >= warmups {
+            samples.push(duration_ms(execution.elapsed));
+        }
+    }
+
+    Ok(samples)
 }
 
 fn duration_ms(duration: Duration) -> f64 {
     duration.as_secs_f64() * 1000.0
-}
-
-fn render_pretty_table(report: &BenchmarkReport) -> String {
-    let rows = report
-        .cases
-        .iter()
-        .map(|result| BenchmarkTableRow {
-            case: result.case.clone(),
-            backend: result.backend.clone(),
-            compile: format_stats(&result.compile),
-            execute: format_stats(&result.execute),
-        })
-        .collect::<Vec<_>>();
-    let mut table = Table::new(rows);
-    table.modify(Columns::one(2), Alignment::right());
-    table.modify(Columns::one(3), Alignment::right());
-    table.with(Style::rounded());
-
-    format!("\nResults: Benchmarks\n{}\n\n", table)
-}
-
-fn render_github_table(report: &BenchmarkReport) -> String {
-    let mut output = String::from("## Benchmark Results:\n\n");
-    output.push_str("| Case | Backend | Compile | Execute |\n");
-    output.push_str("| --- | --- | ---: | ---: |\n");
-
-    for result in &report.cases {
-        output.push_str(&format!(
-            "| {} | {} | {} | {} |\n",
-            result.case.replace('|', "\\|"),
-            result.backend,
-            format_stats(&result.compile),
-            format_stats(&result.execute),
-        ));
-    }
-
-    output.push('\n');
-    output
-}
-
-fn format_stats(stats: &TimingStats) -> String {
-    format_timing(stats.mean_ms, stats.margin_of_error_ms)
-}
-
-fn format_timing(mean_ms: f64, margin_ms: Option<f64>) -> String {
-    let (mean, margin, unit) = if mean_ms >= 1000.0 {
-        (
-            mean_ms / 1000.0,
-            margin_ms.map(|margin| margin / 1000.0),
-            "s",
-        )
-    } else {
-        (mean_ms, margin_ms, "ms")
-    };
-    let margin = margin
-        .map(|margin| format!("{margin:.2}"))
-        .unwrap_or_else(|| "n/a".to_string());
-
-    format!("{mean:.2} ± {margin} {unit}")
-}
-
-fn margin_of_error_ms(stats: &TimingStats) -> Option<f64> {
-    let sample_count = stats.samples_ms.len();
-    if sample_count < 2 {
-        return None;
-    }
-
-    let variance = stats
-        .samples_ms
-        .iter()
-        .map(|sample| (sample - stats.mean_ms).powi(2))
-        .sum::<f64>()
-        / (sample_count - 1) as f64;
-    let standard_error = (variance / sample_count as f64).sqrt();
-
-    Some(t_critical_95(sample_count - 1) * standard_error)
-}
-
-fn t_critical_95(degrees_of_freedom: usize) -> f64 {
-    const VALUES: [f64; 30] = [
-        12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160,
-        2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056,
-        2.052, 2.048, 2.045, 2.042,
-    ];
-
-    VALUES
-        .get(degrees_of_freedom.saturating_sub(1))
-        .copied()
-        .unwrap_or(1.96)
-}
-
-fn discover_cases(root: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut cases = Vec::new();
-    discover_cases_in(root, &mut cases)?;
-    cases.sort();
-    Ok(cases)
-}
-
-fn discover_cases_in(root: &Path, cases: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = fs::read_dir(root).map_err(|error| {
-        format!(
-            "failed to read benchmark directory {}: {error}",
-            root.display()
-        )
-    })?;
-
-    for entry in entries {
-        let path = entry
-            .map_err(|error| format!("failed to read benchmark entry: {error}"))?
-            .path();
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default();
-
-        if name.starts_with('_') {
-            continue;
-        }
-        if path.is_dir() {
-            discover_cases_in(&path, cases)?;
-            continue;
-        }
-        if matches!(
-            path.extension().and_then(|extension| extension.to_str()),
-            Some("cx") | Some("c")
-        ) {
-            cases.push(path);
-        }
-    }
-
-    Ok(())
 }
 
 fn select_backends(selection: Option<&str>) -> Result<Vec<CompilerBackend>, String> {
@@ -428,6 +258,7 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
         iterations: DEFAULT_ITERATIONS,
         warmups: DEFAULT_WARMUPS,
         backend: None,
+        reference: None,
         format: OutputFormat::Pretty,
         json_output: None,
         cases: Vec::new(),
@@ -439,6 +270,7 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
             "--iterations" => options.iterations = parse_count(&mut args, "iterations")?,
             "--warmups" => options.warmups = parse_count(&mut args, "warmups")?,
             "--backend" => options.backend = Some(next_value(&mut args, "backend")?),
+            "--reference" => options.reference = Some(next_value(&mut args, "reference")?),
             "--format" => {
                 options.format = match next_value(&mut args, "format")?.as_str() {
                     "pretty" => OutputFormat::Pretty,
@@ -450,9 +282,7 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
             "--json-output" => {
                 options.json_output = Some(PathBuf::from(next_value(&mut args, "json-output")?))
             }
-            "--case" => options
-                .cases
-                .push(PathBuf::from(next_value(&mut args, "case")?)),
+            "--case" => options.cases.push(next_value(&mut args, "case")?),
             "--help" | "-h" => return Err(help_text()),
             other => return Err(format!("unknown option: {other}")),
         }
@@ -460,18 +290,6 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
 
     if options.iterations == 0 {
         return Err("iterations must be greater than zero".to_string());
-    }
-
-    let current_directory = env::current_dir().map_err(|error| error.to_string())?;
-    for case in &mut options.cases {
-        if case.is_relative() {
-            *case = current_directory.join(&*case);
-        }
-    }
-    if let Some(path) = &mut options.json_output {
-        if path.is_relative() {
-            *path = current_directory.join(&*path);
-        }
     }
 
     Ok(options)
@@ -489,5 +307,8 @@ fn next_value(args: &mut impl Iterator<Item = String>, name: &str) -> Result<Str
 }
 
 fn help_text() -> String {
-    "options: --iterations N --warmups N --backend available|cranelift|llvm|both --format pretty|json|github --json-output PATH --case PATH".to_string()
+    format!(
+        "options: --iterations N --warmups N --backend available|cranelift|llvm|both --reference COMMAND --format pretty|json|github --json-output PATH --case PATH|{}",
+        project_names().collect::<Vec<_>>().join("|")
+    )
 }

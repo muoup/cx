@@ -46,6 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
@@ -61,7 +63,7 @@ jobs:
           echo "deb https://apt.llvm.org/${VERSION_CODENAME}/ llvm-toolchain-${VERSION_CODENAME}-22 main" \
             | sudo tee /etc/apt/sources.list.d/llvm-22.list >/dev/null
           sudo apt-get update
-          sudo apt-get install -y llvm-22 llvm-22-dev
+          sudo apt-get install -y llvm-22 llvm-22-dev clang-22
           llvm_prefix=/usr/lib/llvm-22
           echo "LLVM_SYS_221_PREFIX=${llvm_prefix}" >> "$GITHUB_ENV"
           echo "${llvm_prefix}/bin" >> "$GITHUB_PATH"
@@ -73,7 +75,7 @@ jobs:
       - name: Run compiler benchmarks
         run: |
           set -o pipefail
-          cargo run -p cx-benchmarks --features backend-llvm -- --iterations 1 --warmups 0 --backend both --format github --json-output benchmark-report/report.json > benchmark-report/report.md
+          cargo run --release -p cx-benchmarks --features backend-llvm -- --iterations 1 --warmups 0 --backend both --reference clang --format github --json-output benchmark-report/report.json > benchmark-report/report.md
 
       - name: Add benchmark report to job summary
         if: always()

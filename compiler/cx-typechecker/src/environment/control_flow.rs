@@ -1,3 +1,6 @@
+use std::rc::Rc;
+
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::{CXRawResult, catalogue::typecheck};
 use cx_thir::thir::r#type::THIRType;
 
@@ -33,6 +36,18 @@ struct Scope {
     expected_yield_type: Option<THIRType>,
     staged_boundary: bool,
     effects: ScopeEffects,
+    block: Option<BlockCursor>,
+    switch: Option<SwitchFrame>,
+}
+
+struct BlockCursor {
+    statements: Rc<[HIRExpression]>,
+    next: usize,
+}
+
+struct SwitchFrame {
+    condition_type: THIRType,
+    has_default: bool,
 }
 
 impl ControlFlow {
@@ -48,6 +63,8 @@ impl ControlFlow {
             expected_yield_type: None,
             staged_boundary: false,
             effects: ScopeEffects::default(),
+            block: None,
+            switch: None,
         });
     }
 
@@ -59,6 +76,8 @@ impl ControlFlow {
             expected_yield_type: expected_type,
             staged_boundary: false,
             effects: ScopeEffects::default(),
+            block: None,
+            switch: None,
         });
     }
 
@@ -70,7 +89,73 @@ impl ControlFlow {
             expected_yield_type: None,
             staged_boundary: true,
             effects: ScopeEffects::default(),
+            block: None,
+            switch: None,
         });
+    }
+
+    /// Marks the innermost scope as the scope of a block with these statements.
+    pub fn enter_block(&mut self, statements: &Rc<[HIRExpression]>) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.block = Some(BlockCursor {
+                statements: statements.clone(),
+                next: 0,
+            });
+        }
+    }
+
+    /// The innermost scope, provided it is a block's. Staged boundaries are looked through, as
+    /// they are what a `then` sits behind.
+    fn block_scope(&self) -> Option<usize> {
+        let innermost = self.scopes.iter().rposition(|scope| !scope.staged_boundary)?;
+        self.scopes[innermost].block.is_some().then_some(innermost)
+    }
+
+    pub fn in_block(&self) -> bool {
+        self.block_scope().is_some()
+    }
+
+    /// Advances the current block, returning its statements and the index of the one to check.
+    pub fn next_block_statement(&mut self) -> Option<(Rc<[HIRExpression]>, usize)> {
+        let scope = self.block_scope()?;
+        let cursor = self.scopes[scope].block.as_mut()?;
+        let index = cursor.next;
+        if index == cursor.statements.len() {
+            return None;
+        }
+
+        cursor.next += 1;
+        Some((cursor.statements.clone(), index))
+    }
+
+    /// Marks the innermost scope as that of a switch over a value of this type.
+    pub fn enter_switch(&mut self, condition_type: THIRType) {
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.switch = Some(SwitchFrame {
+                condition_type,
+                has_default: false,
+            });
+        }
+    }
+
+    fn enclosing_switch(&mut self) -> Option<&mut SwitchFrame> {
+        self.scopes
+            .iter_mut()
+            .rev()
+            .take_while(|scope| !scope.staged_boundary)
+            .find_map(|scope| scope.switch.as_mut())
+    }
+
+    /// The type that the case values of the enclosing switch are converted to.
+    pub fn switch_condition_type(&mut self) -> Option<THIRType> {
+        self.enclosing_switch()
+            .map(|switch| switch.condition_type.clone())
+    }
+
+    /// Records a `default` label in the enclosing switch, returning whether it is the first.
+    pub fn declare_switch_default(&mut self) -> bool {
+        self.enclosing_switch()
+            .is_some_and(|switch| !std::mem::replace(&mut switch.has_default, true))
     }
 
     pub fn at_function_root(&self) -> bool {

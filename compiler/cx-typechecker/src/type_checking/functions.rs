@@ -4,7 +4,7 @@ use crate::{
     type_checking::control_flow::expr_may_fall_through,
     type_checking::control_flow::r#return::typecheck_return,
     type_checking::safety::{PermissionTier, check_permissions},
-    type_checking::typechecker::typecheck_expr,
+    type_checking::typechecker::{typecheck_block_statements, typecheck_expr},
 };
 use cx_hir::ast::{
     expression::HIRExpression,
@@ -213,13 +213,10 @@ fn typecheck_function_body(
     return_type: &THIRType,
 ) -> CXResult<THIRFunctionBody> {
     let exprs = match body {
-        HIRFunctionBody::Block { statements, .. } => statements
-            .iter()
-            .map(|statement| {
-                typecheck_expr(env, namespace, statement, None)
-                    .and_then(|result| result.standard_ready_coerce(env, statement.token_range()))
-            })
-            .collect::<CXResult<Vec<_>>>()?,
+        HIRFunctionBody::Block { statements, .. } => {
+            env.function.flow_mut().enter_block(statements);
+            typecheck_block_statements(env, namespace)?
+        }
         HIRFunctionBody::Expression(expression) => {
             typecheck_expression_body(env, namespace, expression, return_type)?
         }
@@ -228,6 +225,7 @@ fn typecheck_function_body(
     Ok(THIRFunctionBody::Block {
         exprs,
         token_range: body.token_range().clone(),
+        address_taken_labels: env.function.address_taken_labels(),
     })
 }
 

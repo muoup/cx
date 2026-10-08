@@ -1,6 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use cx_log::CXResult;
+use cx_log::catalogue::parse::UNSUPPORTED_FEATURE;
 use cx_tokens::token::{Token, TokenKind};
 
 use crate::{
@@ -186,6 +187,26 @@ impl<'a> TokenAccumulator<'a> {
                 }
 
                 self.last_consume = self.cursor.cursor();
+            } else if let Some(quote @ ('"' | '\'')) = self.cursor.peek() {
+                // A literal directly after a word is a token of its own, unless the word is an
+                // encoding prefix, which belongs to the literal.
+                let word = &self.cursor.source()[self.last_consume..previous_lex];
+                match (quote, word) {
+                    ('"', "u8") | ('\'', "L" | "u" | "U" | "u8") => {
+                        self.last_consume = previous_lex;
+                    }
+                    ('"', "L" | "u" | "U") => {
+                        return self.cursor.log_error(
+                            self.last_consume,
+                            &UNSUPPORTED_FEATURE,
+                            ("a wide string literal".into(), "the lexer".into()),
+                        );
+                    }
+                    ('"', _) => self.consume(previous_lex),
+                    _ => {
+                        self.cursor.next();
+                    }
+                }
             } else {
                 self.cursor.next();
             }

@@ -46,7 +46,7 @@ define_errors! {
     READ_FILE: (String, String, String) = "P0013" => |(kind, path, error)| format!("Failed to read {kind} '{path}': {error}");
     INCLUDE_NOT_FOUND: String = "P0014" => |file| format!("Included file not found: {file}");
     PREPROCESSOR_ERROR: String = "P0015" => |message| format!("#error{}{}", if message.trim().is_empty() { "" } else { ": " }, message.trim());
-    EVAL_EXPRESSION: () = "P0016" => |()| "Failed to evaluate preprocessor expression".into();
+    EVAL_EXPRESSION: String = "P0016" => |reason| format!("Failed to evaluate preprocessor expression: {reason}");
     STACK_STATE: (String, String, String) = "P0017" => |(stack, expected, context)| format!("Expected {stack} stack to be {expected} while {context}");
     UNRESOLVED_VARIABLE_TYPE: () = "P0018" => |()| "Could not resolve type for variable declaration".into();
     CANNOT_IMPORT_CURRENT_MODULE: (String,) = "P0019" => |(name,)| format!("Cannot import current module '{name}'");

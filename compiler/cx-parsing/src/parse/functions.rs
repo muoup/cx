@@ -27,6 +27,8 @@ use crate::parse::{
     types::{parse_attributes, parse_initializer, DeclarationAttributes},
 };
 
+pub(crate) mod linkage;
+
 pub struct FunctionDeclaration {
     pub prototype: HIRFunctionPrototype,
     pub template_prototype: Option<HIRTemplatePrototype>,

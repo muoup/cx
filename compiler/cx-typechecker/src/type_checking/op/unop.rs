@@ -1,5 +1,5 @@
 use cx_hir::ast::{
-    expression::{HIRExpression, HIRUnOp},
+    expression::{HIRExprKind, HIRExpression, HIRMemberDesignator, HIRUnOp},
     types::HIRType,
 };
 use cx_log::CXResult;
@@ -7,7 +7,9 @@ use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
 use cx_thir::{
     thir::{
-        expression::{THIRCoercion, THIRExpression, THIRExpressionKind, THIRUnOp},
+        expression::{
+            THIRCoercion, THIRExpression, THIRExpressionKind, THIROffsetStep, THIRUnOp,
+        },
         r#type::{THIRIntType, THIRType, THIRTypeKind},
     },
     type_context::THIRTypeContext,
@@ -18,6 +20,7 @@ use crate::{
     environment::TypeEnvironment,
     symbol::completion::complete_type,
     type_checking::{
+        aggregate::fields::{anonymous_member_containing, struct_field},
         coercion::{
             explicit::explicit_cast,
             implicit::{
@@ -307,6 +310,16 @@ pub(crate) fn typecheck_sizeof_expr(
     namespace: &NamespacePath,
     expr: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
+    // A string literal is the array of its bytes and their terminator, which is not a type
+    // the literal has anywhere else.
+    if let HIRExprKind::StringLiteral { val } = &expr.kind {
+        return Ok(TypecheckResult::from(THIRExpression {
+            token_range: expr.token_range().clone(),
+            kind: THIRExpressionKind::IntLiteral(val.len() as i64 + 1),
+            ty: size_type(),
+        }));
+    }
+
     let tc_expr = typecheck_expr(env, namespace, expr, None)
         .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))
         .and_then(|v| sizeof_promotion(env, v))?;
@@ -340,6 +353,90 @@ fn alignof_result(range: TokenRange, ty: THIRType) -> TypecheckResult {
             ty: THIRIntType::I64,
             signed: false,
         }),
+    })
+}
+
+pub(crate) fn typecheck_offsetof(
+    env: &mut TypeEnvironment,
+    namespace: &NamespacePath,
+    expr: &HIRExpression,
+    ty: &HIRType,
+    member: &[HIRMemberDesignator],
+) -> CXResult<TypecheckResult> {
+    let mut current = complete_type(env, namespace, ty)?;
+    let mut steps = Vec::new();
+
+    for designator in member {
+        match designator {
+            HIRMemberDesignator::Field(name) => loop {
+                let direct = struct_field(&env.symbols, &current, name.as_str());
+                let found = direct.is_some();
+                let Some(field) = direct
+                    .or_else(|| anonymous_member_containing(&env.symbols, &current, name.as_str()))
+                else {
+                    return env.log_error(
+                        expr.token_range(),
+                        &catalogue::UNKNOWN_MEMBER,
+                        (
+                            format!("{}", current.display_with(&env.symbols)),
+                            name.as_str().into(),
+                        ),
+                    );
+                };
+                if field.is_bitfield {
+                    return env.log_error(
+                        expr.token_range(),
+                        &catalogue::INVALID_FORM,
+                        ("offsetof".into(), "bit-field member".into()),
+                    );
+                }
+
+                steps.push(THIROffsetStep::Field {
+                    aggregate: current,
+                    index: field.index,
+                });
+                current = field.field_type;
+                if found {
+                    break;
+                }
+            },
+            HIRMemberDesignator::Index(index) => {
+                let Some(element) = env.symbols.array_inner(&current).cloned() else {
+                    return env.log_error(
+                        index.token_range(),
+                        &catalogue::TYPE_MISMATCH,
+                        (
+                            "offsetof subscript".into(),
+                            "an array member".into(),
+                            format!("{}", current.display_with(&env.symbols)),
+                        ),
+                    );
+                };
+                let index = typecheck_expr(env, namespace, index, None)
+                    .and_then(|v| v.standard_ready_coerce(env, index.token_range()))
+                    .and_then(|v| std_rval_promotion(env, v))
+                    .and_then(|v| implicit_cast(env, v, &size_type()))?;
+
+                steps.push(THIROffsetStep::Element {
+                    element: element.clone(),
+                    index: Box::new(index),
+                });
+                current = element;
+            }
+        }
+    }
+
+    Ok(TypecheckResult::from(THIRExpression {
+        token_range: expr.range.clone(),
+        kind: THIRExpressionKind::OffsetOf { steps },
+        ty: size_type(),
+    }))
+}
+
+fn size_type() -> THIRType {
+    THIRType::from(THIRTypeKind::Integer {
+        ty: THIRIntType::I64,
+        signed: false,
     })
 }
 

@@ -131,10 +131,16 @@ pub(crate) fn bc_llvm_type<'a>(context: &'a Context, ty: &LMIRType) -> LLVMResul
         {
             context.ptr_type(AddressSpace::from(0)).as_any_type_enum()
         }
-        LMIRTypeKind::Opaque { bytes } => context
-            .i8_type()
-            .array_type(*bytes as u32)
-            .as_any_type_enum(),
+        LMIRTypeKind::Opaque { bytes } => {
+            // Made of integers as wide as its alignment, so that LLVM places it where LMIR does.
+            let (unit, width) = match usize::from(ty.alignment) {
+                2 if bytes.is_multiple_of(2) => (context.i16_type(), 2),
+                4 if bytes.is_multiple_of(4) => (context.i32_type(), 4),
+                8 if bytes.is_multiple_of(8) => (context.i64_type(), 8),
+                _ => (context.i8_type(), 1),
+            };
+            unit.array_type((*bytes / width) as u32).as_any_type_enum()
+        }
     })
 }
 

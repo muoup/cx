@@ -1,13 +1,12 @@
-use std::collections::HashMap;
-
 use cx_log::CXResult;
 use cx_log::catalogue::parse::EVAL_EXPRESSION;
 use cx_tokens::token::{OperatorType, PunctuatorType, Token, TokenKind};
 
-use crate::{
-    context::{LexingContext, Macro},
-    lexer::scanner::tokenize_text,
-};
+use crate::{context::LexingContext, lexer::scanner::tokenize_text};
+
+mod value;
+
+use value::IntegerValue;
 
 pub(crate) fn eval(
     context: &LexingContext,
@@ -22,14 +21,15 @@ pub(crate) fn eval(
     let mut parser = PreprocessorExprParser {
         tokens: &tokens,
         index: 0,
-        macros: &context.macros,
     };
 
     match parser.parse_expression() {
-        Some(value) => Ok(value != 0),
-        None => frame
-            .cursor_view()
-            .log_error(directive_start, &EVAL_EXPRESSION, ()),
+        Ok(value) => Ok(value.value != 0),
+        Err(reason) => {
+            frame
+                .cursor_view()
+                .log_error(directive_start, &EVAL_EXPRESSION, reason.into())
+        }
     }
 }
 
@@ -125,42 +125,48 @@ fn parse_ident(expression: &str, index: usize) -> Option<(String, usize)> {
 struct PreprocessorExprParser<'a> {
     tokens: &'a [Token],
     index: usize,
-    macros: &'a HashMap<String, Macro>,
 }
 
 #[derive(Clone, Copy)]
 struct PreprocessorBinOp {
     token_count: usize,
     precedence: u8,
-    apply: fn(i64, i64) -> i64,
+    operator: OperatorType,
 }
 
 impl PreprocessorExprParser<'_> {
-    fn parse_expression(&mut self) -> Option<i64> {
-        self.parse_conditional()
+    fn parse_expression(&mut self) -> Result<IntegerValue, &'static str> {
+        self.parse_conditional(true)
     }
 
-    fn parse_conditional(&mut self) -> Option<i64> {
-        let condition = self.parse_binary(0)?;
+    fn parse_conditional(&mut self, evaluate: bool) -> Result<IntegerValue, &'static str> {
+        let condition = self.parse_binary(0, evaluate)?;
         if !self.consume_punctuator(PunctuatorType::QuestionMark) {
-            return Some(condition);
+            return Ok(condition);
         }
 
-        let true_value = self.parse_conditional()?;
+        let true_value = self.parse_conditional(evaluate && condition.value != 0)?;
         if !self.consume_punctuator(PunctuatorType::Colon) {
-            return None;
+            return Err("expected ':' in conditional expression");
         }
-        let false_value = self.parse_conditional()?;
+        let false_value = self.parse_conditional(evaluate && condition.value == 0)?;
 
-        Some(if condition != 0 {
-            true_value
-        } else {
-            false_value
+        Ok(IntegerValue {
+            value: if condition.value != 0 {
+                true_value.value
+            } else {
+                false_value.value
+            },
+            signed: true_value.signed && false_value.signed,
         })
     }
 
-    fn parse_binary(&mut self, min_precedence: u8) -> Option<i64> {
-        let mut lhs = self.parse_unary()?;
+    fn parse_binary(
+        &mut self,
+        min_precedence: u8,
+        evaluate: bool,
+    ) -> Result<IntegerValue, &'static str> {
+        let mut lhs = self.parse_unary(evaluate)?;
 
         while let Some(op) = self.peek_binop() {
             if op.precedence < min_precedence {
@@ -168,52 +174,58 @@ impl PreprocessorExprParser<'_> {
             }
 
             self.index += op.token_count;
-            let rhs = self.parse_binary(op.precedence + 1)?;
-            lhs = (op.apply)(lhs, rhs);
+            let evaluate_rhs = evaluate
+                && match op.operator {
+                    OperatorType::DoubleAmpersand => lhs.value != 0,
+                    OperatorType::DoubleBar => lhs.value == 0,
+                    _ => true,
+                };
+            let rhs = self.parse_binary(op.precedence + 1, evaluate_rhs)?;
+            lhs = lhs.binary(op.operator, rhs, evaluate)?;
         }
 
-        Some(lhs)
+        Ok(lhs)
     }
 
-    fn parse_unary(&mut self) -> Option<i64> {
-        if self.consume_operator(OperatorType::Exclamation) {
-            return Some(i64::from(self.parse_unary()? == 0));
-        }
-        if self.consume_operator(OperatorType::Minus) {
-            return Some(-self.parse_unary()?);
-        }
-        if self.consume_operator(OperatorType::Plus) {
-            return self.parse_unary();
+    fn parse_unary(&mut self, evaluate: bool) -> Result<IntegerValue, &'static str> {
+        if let Some(TokenKind::Operator(operator)) =
+            self.tokens.get(self.index).map(|token| &token.kind)
+            && matches!(
+                operator,
+                OperatorType::Exclamation
+                    | OperatorType::Minus
+                    | OperatorType::Plus
+                    | OperatorType::Tilda
+            )
+        {
+            let operator = *operator;
+            self.index += 1;
+            return self.parse_unary(evaluate)?.unary(operator, evaluate);
         }
 
-        self.parse_primary()
+        self.parse_primary(evaluate)
     }
 
-    fn parse_primary(&mut self) -> Option<i64> {
-        match self.tokens.get(self.index).map(|token| &token.kind)? {
-            TokenKind::IntLiteral(literal) => {
+    fn parse_primary(&mut self, evaluate: bool) -> Result<IntegerValue, &'static str> {
+        match self.tokens.get(self.index).map(|token| &token.kind) {
+            Some(TokenKind::IntLiteral(literal)) => {
                 self.index += 1;
-                Some(literal.magnitude as i64)
+                IntegerValue::literal(*literal)
             }
-            TokenKind::Identifier(name) => {
+            Some(TokenKind::Identifier(_)) => {
                 self.index += 1;
-                match self.macros.get(name) {
-                    Some(Macro::Object(body)) if body.len() == 1 => match body[0].kind {
-                        TokenKind::IntLiteral(literal) => Some(literal.magnitude as i64),
-                        _ => Some(0),
-                    },
-                    _ => Some(0),
-                }
+                Ok(IntegerValue::boolean(false))
             }
-            TokenKind::Punctuator(PunctuatorType::OpenParen) => {
+            Some(TokenKind::Punctuator(PunctuatorType::OpenParen)) => {
                 self.index += 1;
-                let value = self.parse_conditional()?;
+                let value = self.parse_conditional(evaluate)?;
                 if !self.consume_punctuator(PunctuatorType::CloseParen) {
-                    return None;
+                    return Err("expected ')' in expression");
                 }
-                Some(value)
+                Ok(value)
             }
-            _ => None,
+            Some(_) => Err("expected an integer operand"),
+            None => Err("expected an operand before end of expression"),
         }
     }
 
@@ -230,7 +242,7 @@ impl PreprocessorExprParser<'_> {
                 Some(TokenKind::Operator(OperatorType::Less))
             )
         ) {
-            return Some(binop(2, 8, |lhs, rhs| lhs << rhs));
+            return Some(binop(2, 8, OperatorType::LShift));
         }
 
         if matches!(
@@ -243,50 +255,30 @@ impl PreprocessorExprParser<'_> {
                 Some(TokenKind::Operator(OperatorType::Greater))
             )
         ) {
-            return Some(binop(2, 8, |lhs, rhs| lhs >> rhs));
+            return Some(binop(2, 8, OperatorType::RShift));
         }
 
         let TokenKind::Operator(operator) = kind else {
             return None;
         };
 
-        match operator {
-            OperatorType::DoubleBar => {
-                Some(binop(1, 1, |lhs, rhs| i64::from(lhs != 0 || rhs != 0)))
-            }
-            OperatorType::DoubleAmpersand => {
-                Some(binop(1, 2, |lhs, rhs| i64::from(lhs != 0 && rhs != 0)))
-            }
-            OperatorType::Bar => Some(binop(1, 3, |lhs, rhs| lhs | rhs)),
-            OperatorType::Caret => Some(binop(1, 4, |lhs, rhs| lhs ^ rhs)),
-            OperatorType::Ampersand => Some(binop(1, 5, |lhs, rhs| lhs & rhs)),
-            OperatorType::Equal => Some(binop(1, 6, |lhs, rhs| i64::from(lhs == rhs))),
-            OperatorType::NotEqual => Some(binop(1, 6, |lhs, rhs| i64::from(lhs != rhs))),
-            OperatorType::Less => Some(binop(1, 7, |lhs, rhs| i64::from(lhs < rhs))),
-            OperatorType::LessEqual => Some(binop(1, 7, |lhs, rhs| i64::from(lhs <= rhs))),
-            OperatorType::Greater => Some(binop(1, 7, |lhs, rhs| i64::from(lhs > rhs))),
-            OperatorType::GreaterEqual => Some(binop(1, 7, |lhs, rhs| i64::from(lhs >= rhs))),
-            OperatorType::LShift => Some(binop(1, 8, |lhs, rhs| lhs << rhs)),
-            OperatorType::RShift => Some(binop(1, 8, |lhs, rhs| lhs >> rhs)),
-            OperatorType::Plus => Some(binop(1, 9, |lhs, rhs| lhs + rhs)),
-            OperatorType::Minus => Some(binop(1, 9, |lhs, rhs| lhs - rhs)),
-            OperatorType::Asterisk => Some(binop(1, 10, |lhs, rhs| lhs * rhs)),
-            OperatorType::Slash => Some(binop(1, 10, |lhs, rhs| lhs / rhs)),
-            OperatorType::Percent => Some(binop(1, 10, |lhs, rhs| lhs % rhs)),
-            _ => None,
-        }
-    }
-
-    fn consume_operator(&mut self, operator: OperatorType) -> bool {
-        if matches!(
-            self.tokens.get(self.index).map(|token| &token.kind),
-            Some(TokenKind::Operator(op)) if *op == operator
-        ) {
-            self.index += 1;
-            true
-        } else {
-            false
-        }
+        let precedence = match operator {
+            OperatorType::DoubleBar => 1,
+            OperatorType::DoubleAmpersand => 2,
+            OperatorType::Bar => 3,
+            OperatorType::Caret => 4,
+            OperatorType::Ampersand => 5,
+            OperatorType::Equal | OperatorType::NotEqual => 6,
+            OperatorType::Less
+            | OperatorType::LessEqual
+            | OperatorType::Greater
+            | OperatorType::GreaterEqual => 7,
+            OperatorType::LShift | OperatorType::RShift => 8,
+            OperatorType::Plus | OperatorType::Minus => 9,
+            OperatorType::Asterisk | OperatorType::Slash | OperatorType::Percent => 10,
+            _ => return None,
+        };
+        Some(binop(1, precedence, *operator))
     }
 
     fn consume_punctuator(&mut self, punctuator: PunctuatorType) -> bool {
@@ -302,10 +294,10 @@ impl PreprocessorExprParser<'_> {
     }
 }
 
-fn binop(token_count: usize, precedence: u8, apply: fn(i64, i64) -> i64) -> PreprocessorBinOp {
+fn binop(token_count: usize, precedence: u8, operator: OperatorType) -> PreprocessorBinOp {
     PreprocessorBinOp {
         token_count,
         precedence,
-        apply,
+        operator,
     }
 }

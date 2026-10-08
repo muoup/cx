@@ -80,10 +80,16 @@ fn lower_initializer(
             ty: convert_float_type(*ty),
         },
         MIRConstant::Aggregate { fields, .. } => {
-            if matches!(destination_kind, MIRTypeKind::Union { .. })
-                && fields.iter().all(|(_, value)| zero(value))
-            {
-                return LMIRGlobalInitializer::Null;
+            if matches!(destination_kind, MIRTypeKind::Union { .. }) {
+                let Some((index, value)) = fields.iter().rev().find(|(_, value)| !zero(value))
+                else {
+                    return LMIRGlobalInitializer::Null;
+                };
+                let variant_ty = aggregate_field_type(context, destination_ty, *index);
+                return LMIRGlobalInitializer::Overlay {
+                    ty: convert_type(variant_ty, context.unit.types()),
+                    value: Box::new(lower_initializer(context, value, variant_ty)),
+                };
             }
             if let MIRTypeKind::Structured { fields: members } = &destination_kind {
                 return lower_struct_initializer(context, fields, destination_ty, members);
@@ -145,6 +151,13 @@ fn lower_initializer(
                 .symbol_name
                 .to_string(),
         ),
+        MIRConstant::BlockAddress { function, label } => {
+            let (function, block) = context.block_address(*function, label);
+            LMIRGlobalInitializer::BlockAddress {
+                function: function.to_string(),
+                block,
+            }
+        }
         MIRConstant::Nullptr { .. } | MIRConstant::Unit => LMIRGlobalInitializer::Null,
         MIRConstant::Undefined => panic!("undefined MIR global initializer"),
     }

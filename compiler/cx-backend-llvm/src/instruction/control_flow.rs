@@ -56,6 +56,28 @@ pub(super) fn generate_jump<'a, 'b>(
     Ok(CodegenValue::Null)
 }
 
+pub(super) fn generate_indirect_jump<'a, 'b>(
+    function_state: &FunctionState<'a, 'b>,
+    address: &LMIRValue,
+    targets: &[LMIRBlockTarget],
+) -> LLVMResult<CodegenValue<'a>> {
+    let address = function_state.get_value(address)?.as_basic_value()?;
+    let predecessor = function_state
+        .builder
+        .get_insert_block()
+        .unwrap_or_else(|| unreachable!("no LLVM insertion block for indirect jump"));
+    let mut destinations = Vec::with_capacity(targets.len());
+    for target in targets {
+        function_state.add_block_arguments(target, predecessor)?;
+        destinations.push(function_state.get_block(&target.block)?);
+    }
+    function_state
+        .builder
+        .build_indirect_branch(address, &destinations)
+        .map_err(LLVMError::from_error)?;
+    Ok(CodegenValue::Null)
+}
+
 pub(super) fn generate_branch<'a, 'b>(
     global_state: &GlobalState<'a>,
     function_state: &FunctionState<'a, 'b>,

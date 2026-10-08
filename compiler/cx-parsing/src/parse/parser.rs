@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use cx_hir::ast::{
-    function::HIRFunctionKind, modifiers::HIRSymbolNameScheme, HIRDefinition, HIRStmt, HIR,
+    expression::{HIRExprKind, HIRExpression},
+    function::HIRFunctionKind,
+    modifiers::{HIRSymbolNameScheme, LinkageMode},
+    HIRDefinition, HIRStmt, HIR,
 };
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
@@ -26,6 +29,7 @@ pub struct ParserData<'a> {
     // uses u8 mapping instead of a set to prevent problems with shadowing
     pub temporary_type_names: HashMap<CXIdent, u8>,
     namespace_aliases: NamespaceAliases,
+    pub(super) c_function_linkages: HashMap<QualifiedName, LinkageMode>,
 
     pub registry: &'a GlobalPreparseRegistry,
     pub ast: HIR,
@@ -59,6 +63,7 @@ impl<'a> ParserData<'a> {
             registry,
             temporary_type_names: HashMap::new(),
             namespace_aliases: pp_contents.namespace_aliases.clone(),
+            c_function_linkages: HashMap::new(),
             ast: HIR::new(
                 ModulePath::from_source_path(pp_contents.module.as_str()),
                 pp_contents.imports.clone(),
@@ -86,6 +91,14 @@ impl<'a> ParserData<'a> {
 
     pub fn token_range(&self, start_token: usize, end_token: usize) -> TokenRange {
         TokenRange::from_tokens(start_token, end_token, self.tokens.slice)
+    }
+
+    pub fn expr_from(&self, start_token: usize, kind: HIRExprKind) -> HIRExpression {
+        kind.into_expr(
+            start_token,
+            self.tokens.index,
+            self.token_range(start_token, self.tokens.index),
+        )
     }
 
     pub fn get_comma_mode(&self) -> bool {

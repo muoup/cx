@@ -181,59 +181,83 @@ pub(crate) fn punctuator(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
 
 fn string(iter: &mut LexCursor<'_>) -> Option<TokenKind> {
     assert_eq!(iter.next(), Some('"'));
-    let start_iter = iter.cursor();
+    let mut string = String::new();
     while let Some(c) = iter.next() {
-        if c == '\\' {
-            iter.next();
-        }
-
-        if c == '"' {
-            break;
+        match c {
+            '"' => break,
+            '\\' => match escape_sequence(iter) {
+                Some(value) => string.push(char::from(value)),
+                None => {
+                    string.push('\\');
+                    string.extend(iter.next());
+                }
+            },
+            _ => string.push(c),
         }
     }
-    let string = iter.source()[start_iter..iter.cursor() - 1]
-        .replace("\\n", "\n")
-        .replace("\\t", "\t")
-        .replace("\\r", "\r")
-        .replace("\\\"", "\"");
 
     Some(TokenKind::StringLiteral(string))
+}
+
+fn escape_sequence(iter: &mut LexCursor<'_>) -> Option<u8> {
+    let simple = match iter.peek()? {
+        'n' => b'\n',
+        't' => b'\t',
+        'r' => b'\r',
+        'a' => 0x07,
+        'b' => 0x08,
+        'f' => 0x0c,
+        'v' => 0x0b,
+        'e' => 0x1b,
+        '\\' => b'\\',
+        '\'' => b'\'',
+        '"' => b'"',
+        '?' => b'?',
+        '0'..='7' => return Some(radix_escape(iter, 8, 3)),
+        'x' if iter.next_is(u8::is_ascii_hexdigit) => {
+            iter.next();
+            return Some(radix_escape(iter, 16, usize::MAX));
+        }
+        _ => return None,
+    };
+
+    iter.next();
+    Some(simple)
+}
+
+fn radix_escape(iter: &mut LexCursor<'_>, radix: u32, max_digits: usize) -> u8 {
+    let mut value = 0u32;
+    let mut digits = 0;
+    while digits < max_digits
+        && let Some(digit) = iter.peek().and_then(|c| c.to_digit(radix))
+    {
+        value = value.wrapping_mul(radix).wrapping_add(digit);
+        digits += 1;
+        iter.next();
+    }
+
+    value as u8
 }
 
 fn char_literal(iter: &mut LexCursor<'_>) -> CXResult<TokenKind> {
     let start_index = iter.cursor();
     assert_eq!(iter.next(), Some('\''));
 
-    let Some(c) = iter.next() else {
-        return iter.log_error(start_index, &UNEXPECTED_END, Some("character literal".into()));
+    let value = match iter.next() {
+        Some('\\') => escape_sequence(iter).map(u64::from),
+        Some('\'') => None,
+        Some(c) => Some(c as u64),
+        None => {
+            return iter.log_error(start_index, &UNEXPECTED_END, Some("character literal".into()));
+        }
     };
 
-    let Some(kind) = (match iter.next() {
-        Some('\'') if c == '\\' && iter.next() == Some('\'') => {
-            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\'' as u64)))
+    match value {
+        Some(value) if iter.next() == Some('\'') => {
+            Ok(TokenKind::IntLiteral(IntegerLiteral::decimal(value)))
         }
-        Some('\\') if c == '\\' && iter.next() == Some('\'') => {
-            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\\' as u64)))
-        }
-        Some('\'') if c != '\\' => Some(TokenKind::IntLiteral(IntegerLiteral::decimal(c as u64))),
-        Some('0') if c == '\\' && iter.next() == Some('\'') => {
-            Some(TokenKind::IntLiteral(IntegerLiteral::decimal(0)))
-        }
-        Some('n') if c == '\\' && iter.next() == Some('\'') => {
-            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\n' as u64)))
-        }
-        Some('t') if c == '\\' && iter.next() == Some('\'') => {
-            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\t' as u64)))
-        }
-        Some('r') if c == '\\' && iter.next() == Some('\'') => {
-            Some(TokenKind::IntLiteral(IntegerLiteral::decimal('\r' as u64)))
-        }
-        _ => None,
-    }) else {
-        return iter.log_error(start_index, &INVALID_LITERAL, ("character".into(), None));
-    };
-
-    Ok(kind)
+        _ => iter.log_error(start_index, &INVALID_LITERAL, ("character".into(), None)),
+    }
 }
 
 pub(crate) fn starts_lifetime_modifier(iter: &LexCursor<'_>) -> bool {

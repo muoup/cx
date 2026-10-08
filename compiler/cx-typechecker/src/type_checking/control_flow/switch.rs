@@ -2,7 +2,7 @@ use crate::environment::TypeEnvironment;
 use crate::type_checking::coercion::implicit::{implicit_cast, promotion::std_rval_promotion};
 use crate::type_checking::result::TypecheckResult;
 use crate::type_checking::typechecker::typecheck_expr;
-use cx_hir::ast::expression::{HIRBlockKind, HIRExprKind, HIRExpression};
+use cx_hir::ast::expression::HIRExpression;
 use cx_log::CXResult;
 use cx_log::catalogue::typecheck as catalogue;
 use cx_namespace::module::NamespacePath;
@@ -10,52 +10,13 @@ use cx_thir::thir::{
     data::{THIRType, THIRTypeKind},
     expression::THIRExpressionKind,
 };
-use cx_tokens::TokenRange;
-
-fn case_body_expression(
-    block: &[HIRExpression],
-    start: usize,
-    end: usize,
-    fallback_range: &TokenRange,
-) -> HIRExpression {
-    let expressions = block[start..end].to_vec();
-    let range = expressions
-        .first()
-        .map(|expression| expression.range.clone())
-        .unwrap_or_else(|| fallback_range.clone());
-    HIRExpression {
-        kind: HIRExprKind::Block {
-            exprs: expressions,
-            kind: HIRBlockKind::Sequence,
-        },
-        range,
-    }
-}
-
-fn next_case_boundary(
-    block_len: usize,
-    start: usize,
-    cases: &[(HIRExpression, usize)],
-    default_case: Option<&usize>,
-) -> usize {
-    cases
-        .iter()
-        .map(|(_, index)| *index)
-        .chain(default_case.copied())
-        .filter(|index| *index > start)
-        .min()
-        .unwrap_or(block_len)
-        .min(block_len)
-}
 
 pub fn typecheck_switch(
     env: &mut TypeEnvironment,
     namespace: &NamespacePath,
     expr: &HIRExpression,
     condition: &HIRExpression,
-    block: &[HIRExpression],
-    cases: &[(HIRExpression, usize)],
-    default_case: Option<&usize>,
+    body: &HIRExpression,
 ) -> CXResult<TypecheckResult> {
     let condition_value = typecheck_expr(env, namespace, condition, None)
         .and_then(|v| v.standard_ready_coerce(env, condition.token_range()))
@@ -73,38 +34,13 @@ pub fn typecheck_switch(
         );
     };
 
-    let condition_type = condition_value.ty.clone();
     env.push_scope(true, false, expr.token_range().clone());
+    env.function
+        .flow_mut()
+        .enter_switch(condition_value.ty.clone());
 
-    let mut arms = Vec::new();
-
-    for (case_expr, case_index) in cases {
-        let case_index = *case_index;
-        let case_end = next_case_boundary(block.len(), case_index, cases, default_case);
-        let case_body = case_body_expression(block, case_index, case_end, case_expr.token_range());
-
-        let case_value = typecheck_expr(env, namespace, case_expr, None)
-            .and_then(|v| v.standard_ready_coerce(env, case_expr.token_range()))
-            .and_then(|v| std_rval_promotion(env, v))
-            .and_then(|v| implicit_cast(env, v, &condition_type))?;
-
-        let case_body_expr = typecheck_expr(env, namespace, &case_body, None)
-            .and_then(|v| v.standard_ready_coerce(env, case_body.token_range()))?;
-
-        arms.push((Box::new(case_value), Box::new(case_body_expr)));
-    }
-
-    // Handle default case
-    let default_body = match default_case {
-        Some(&idx) => {
-            let end = next_case_boundary(block.len(), idx, cases, default_case);
-            let expr = case_body_expression(block, idx, end, &condition_value.token_range);
-            let body_expr = typecheck_expr(env, namespace, &expr, None)
-                .and_then(|v| v.standard_ready_coerce(env, expr.token_range()))?;
-            Some(Box::new(body_expr))
-        }
-        None => None,
-    };
+    let body = typecheck_expr(env, namespace, body, None)
+        .and_then(|v| v.standard_ready_coerce(env, body.token_range()))?;
 
     env.pop_scope()
         .map_err(|err| env.complete_err(err, condition.token_range()))?;
@@ -113,8 +49,51 @@ pub fn typecheck_switch(
         THIRType::unit(),
         THIRExpressionKind::CSwitch {
             condition: Box::new(condition_value),
-            cases: arms,
-            default: default_body,
+            body: Box::new(body),
+        },
+    ))
+}
+
+pub fn typecheck_case(
+    env: &mut TypeEnvironment,
+    namespace: &NamespacePath,
+    expr: &HIRExpression,
+    value: Option<&HIRExpression>,
+    statement: &HIRExpression,
+) -> CXResult<TypecheckResult> {
+    let Some(condition_type) = env.function.flow_mut().switch_condition_type() else {
+        return env.log_error(
+            expr.token_range(),
+            &catalogue::REQUIRED_CONTEXT,
+            ("case label".into(), "an enclosing switch statement".into()),
+        );
+    };
+
+    let value = match value {
+        Some(value) => Some(Box::new(
+            typecheck_expr(env, namespace, value, None)
+                .and_then(|v| v.standard_ready_coerce(env, value.token_range()))
+                .and_then(|v| std_rval_promotion(env, v))
+                .and_then(|v| implicit_cast(env, v, &condition_type))?,
+        )),
+        None if env.function.flow_mut().declare_switch_default() => None,
+        None => {
+            return env.log_error(
+                expr.token_range(),
+                &catalogue::DUPLICATE_ITEM,
+                ("default label".into(), "switch statement".into()),
+            );
+        }
+    };
+
+    let statement = typecheck_expr(env, namespace, statement, None)
+        .and_then(|v| v.standard_ready_coerce(env, statement.token_range()))?;
+
+    Ok(TypecheckResult::new(
+        THIRType::unit(),
+        THIRExpressionKind::Case {
+            value,
+            statement: Box::new(statement),
         },
     ))
 }

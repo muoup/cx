@@ -7,7 +7,7 @@ use cx_thir::thir::{
     data::{THIRComptimeValueType, THIRType},
     expression::{
         THIRCoercion, THIRExpression, THIRExpressionKind, THIRFnContract, THIRLocalID,
-        THIRPostcondition,
+        THIROffsetStep, THIRPostcondition,
     },
     pattern::THIRPattern,
 };
@@ -173,7 +173,19 @@ fn collect_expression_locals(
         | THIRExpressionKind::Break
         | THIRExpressionKind::Continue
         | THIRExpressionKind::Goto { .. }
+        | THIRExpressionKind::LabelAddress { .. }
         | THIRExpressionKind::Unreachable => {}
+
+        THIRExpressionKind::IndirectGoto { target } => {
+            collect_expression_locals(target, references, bindings);
+        }
+        THIRExpressionKind::OffsetOf { steps } => {
+            for step in steps {
+                if let THIROffsetStep::Element { index, .. } = step {
+                    collect_expression_locals(index, references, bindings);
+                }
+            }
+        }
 
         THIRExpressionKind::BinaryOperation { lhs, rhs, .. } => {
             collect_expression_locals(lhs, references, bindings);
@@ -288,19 +300,15 @@ fn collect_expression_locals(
             collect_expression_locals(increment, references, bindings);
             collect_expression_locals(body, references, bindings);
         }
-        THIRExpressionKind::CSwitch {
-            condition,
-            cases,
-            default,
-        } => {
+        THIRExpressionKind::CSwitch { condition, body } => {
             collect_expression_locals(condition, references, bindings);
-            for (case, body) in cases {
-                collect_expression_locals(case, references, bindings);
-                collect_expression_locals(body, references, bindings);
+            collect_expression_locals(body, references, bindings);
+        }
+        THIRExpressionKind::Case { value, statement } => {
+            if let Some(value) = value {
+                collect_expression_locals(value, references, bindings);
             }
-            if let Some(default) = default {
-                collect_expression_locals(default, references, bindings);
-            }
+            collect_expression_locals(statement, references, bindings);
         }
         THIRExpressionKind::Match {
             condition,

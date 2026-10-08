@@ -126,15 +126,22 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
         }
         MIRInstructionKind::CaseBranch {
             value,
+            signed,
             cases,
             default,
-            ..
         } => {
             let value = engine.read(frame, body, value, range)?;
-            let target = cases.iter().find(|(case, _)|
-                    matches!(&value, MIRConstant::Integer { value, .. } if value == case))
-                    .map(|(_, target)| target)
-                    .or(default.as_ref());
+            let target = match value {
+                MIRConstant::Integer { value, ty } => {
+                    let value = ty.decode(value, *signed);
+                    cases
+                        .iter()
+                        .find(|(case, _)| *case == value)
+                        .map(|(_, target)| target)
+                }
+                _ => None,
+            }
+            .or(default.as_ref());
             let Some(target) = target else {
                 return comptime_error(
                     range.clone(),
@@ -145,6 +152,12 @@ pub(crate) fn execute_runtime_instruction<'c, 'thir, Context: ComptimeContext<'t
                 );
             };
             engine.jump(body, frame, target, range)?;
+        }
+        MIRInstructionKind::IndirectJump { .. } => {
+            return comptime_error(
+                range.clone(),
+                (&mir::COMPTIME_INVALID_OPERATION, "indirect goto".into()),
+            );
         }
         MIRInstructionKind::Unreachable => {
             return comptime_error(

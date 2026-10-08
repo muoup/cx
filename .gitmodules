@@ -1,3 +1,9 @@
 [submodule "examples/doomgeneric/upstream"]
-	path = examples/doomgeneric/upstream
+	path = examples/c-parity/doomgeneric/upstream
 	url = https://github.com/ozkl/doomgeneric.git
+[submodule "examples/c-parity/lua/upstream"]
+	path = examples/c-parity/lua/upstream
+	url = https://github.com/lua/lua
+[submodule "examples/c-parity/zlib/upstream"]
+	path = examples/c-parity/zlib/upstream
+	url = https://github.com/madler/zlib

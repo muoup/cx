@@ -7,11 +7,10 @@ optimization = "O2"
 
 [workspace.targets.default]
 native_objects = [
-  "../artifacts/raylib/lib/raylib.o",
+  "../../artifacts/raylib/lib/raylib.o",
 ]
 include_dirs = [
-  "../../lib/libc",
-  "../artifacts/raylib/include",
+  "../../artifacts/raylib/include",
   "upstream/doomgeneric",
 ]
 link = [

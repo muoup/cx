@@ -37,41 +37,48 @@ pub fn try_typecheck_special_binop(
             
             Some(typecheck_expr(env, namespace, &rewritten, expected_type)?)
         }
-        HIRBinOp::Pipe => {
-            let implicit_param = typecheck_expr(env, namespace, lhs, None)?
-                .standard_ready_coerce(env, lhs.token_range())?;
-
-            match &rhs.kind {
-                HIRExprKind::BinOp {
-                    op: HIRBinOp::MethodCall,
-                    lhs,
-                    rhs,
-                } => {
-                    let callee = typecheck_expr(env, namespace, lhs, None)?;
-
-                    Some(typecheck_callee_call(
-                        env,
-                        namespace,
-                        callee,
-                        vec![implicit_param],
-                        rhs,
-                        expr,
-                        expected_type,
-                    )?)
-                }
-
-                _ => {
-                    return env.log_error(
-                        expr.token_range(),
-                        &catalogue::INVALID_FORM,
-                        ("non-function call".into(), "right-hand side of pipe operator".into())
-                    );
-                }
-            }
-        }
+        HIRBinOp::Pipe => Some(env.in_argument_scope(|env| {
+            typecheck_pipe(env, namespace, expr, lhs, rhs, expected_type)
+        })?),
 
         _ => None,
     })
+}
+
+fn typecheck_pipe(
+    env: &mut TypeEnvironment,
+    namespace: &NamespacePath,
+    expr: &HIRExpression,
+    lhs: &HIRExpression,
+    rhs: &HIRExpression,
+    expected_type: Option<&THIRType>,
+) -> CXResult<TypecheckResult> {
+    let implicit_param = typecheck_expr(env, namespace, lhs, None)?
+        .standard_ready_coerce(env, lhs.token_range())?;
+
+    let HIRExprKind::BinOp {
+        op: HIRBinOp::MethodCall,
+        lhs: callee,
+        rhs: arguments,
+    } = &rhs.kind
+    else {
+        return env.log_error(
+            expr.token_range(),
+            &catalogue::INVALID_FORM,
+            ("non-function call".into(), "right-hand side of pipe operator".into())
+        );
+    };
+
+    let callee = typecheck_expr(env, namespace, callee, None)?;
+    typecheck_callee_call(
+        env,
+        namespace,
+        callee,
+        vec![implicit_param],
+        arguments,
+        expr,
+        expected_type,
+    )
 }
 
 fn append_call_argument(

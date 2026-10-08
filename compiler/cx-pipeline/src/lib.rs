@@ -14,7 +14,7 @@ use crate::scheduler::{scheduling_loop, scheduling_loop_many};
 use cx_hir::registry::ExportNameMode;
 use cx_log::CXResult;
 use cx_namespace::module::{ModulePath, NamespacePath};
-use cx_pipeline_data::config::{CXProjectConfig, TargetConfig};
+use cx_pipeline_data::config::{BinaryEntry, CXProjectConfig, TargetConfig};
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::internal_storage::resource_path;
 use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
@@ -161,10 +161,12 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
 
         match compiler_context.config.compilation_mode {
             CompilationMode::Executable => link(&compiler_context, &mut reporter),
-            CompilationMode::Object | CompilationMode::Library => Err(pipeline_error(
+            // The objects stay in the internal directory; nothing is written to the output.
+            CompilationMode::Object => Ok(()),
+            CompilationMode::Library => Err(pipeline_error(
                 &catalogue::UNSUPPORTED_FEATURE,
                 (
-                    "non-executable output".into(),
+                    "library output".into(),
                     "multi-file compilation".into(),
                 ),
             )),
@@ -240,6 +242,22 @@ pub fn library_compilation(
     let entry_lmir = compiler_context.module_db.lmir.take(entry_unit.namespace());
 
     Ok(entry_lmir)
+}
+
+/// The source files `binary` is built from, relative to the project root, with its entry first.
+pub fn binary_sources(project_root: &Path, binary: &BinaryEntry) -> CXResult<Vec<PathBuf>> {
+    let mut sources = match &binary.match_patterns {
+        Some(patterns) => sources::expand_patterns(project_root, patterns)?,
+        None => Vec::new(),
+    };
+    sources::prepend_entry(&mut sources, binary.entry.as_deref());
+    if sources.is_empty() {
+        return Err(pipeline_error(
+            &catalogue::BINARY_SOURCES,
+            format!("{}", binary.name),
+        ));
+    }
+    Ok(sources)
 }
 
 pub fn project_compilation(
@@ -332,10 +350,8 @@ pub fn project_compilation(
                         );
                         standard_compilation(config, Path::new(entry))?;
                     }
-                    (_, Some(patterns)) => {
-                        let mut sources =
-                            sources::expand_patterns(&base_config.working_directory, patterns)?;
-                        sources::prepend_entry(&mut sources, binary.entry.as_deref());
+                    (_, Some(_)) => {
+                        let sources = binary_sources(&base_config.working_directory, binary)?;
                         eprintln!(
                             "Building binary '{}' (target: {}, {} sources)",
                             binary.name,

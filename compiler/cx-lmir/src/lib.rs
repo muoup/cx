@@ -65,12 +65,21 @@ pub enum LMIRGlobalInitializer {
     Aggregate {
         fields: Vec<(usize, LMIRGlobalInitializer)>,
     },
+    /// A value of type `ty` at the start of an opaque destination, the rest of which is zero.
+    Overlay {
+        ty: LMIRType,
+        value: Box<LMIRGlobalInitializer>,
+    },
     Global(u32),
     GlobalOffset {
         global: u32,
         offset: i64,
     },
     Function(String),
+    BlockAddress {
+        function: String,
+        block: LMIRBlockID,
+    },
     Null,
 }
 
@@ -92,6 +101,10 @@ pub enum LMIRValue {
     },
     Global(ElementID),
     FunctionRef(CXIdent),
+    BlockAddress {
+        function: CXIdent,
+        block: LMIRBlockID,
+    },
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -395,6 +408,12 @@ pub enum LMIRInstructionKind {
         default: LMIRBlockTarget,
     },
 
+    /// Jumps to the block that `address` is a block address of, which is one of `targets`.
+    IndirectJump {
+        address: LMIRValue,
+        targets: Vec<LMIRBlockTarget>,
+    },
+
     Return {
         value: Option<LMIRValue>,
     },
@@ -411,6 +430,7 @@ impl LMIRInstructionKind {
         matches!(
             self,
             LMIRInstructionKind::JumpTable { .. }
+                | LMIRInstructionKind::IndirectJump { .. }
                 | LMIRInstructionKind::Branch { .. }
                 | LMIRInstructionKind::Jump { .. }
                 | LMIRInstructionKind::Return { .. }

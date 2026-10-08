@@ -3,6 +3,7 @@ use cx_tokens::token::{FloatSuffix, IntegerBase, IntegerSuffix};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
+use std::rc::Rc;
 
 use crate::ast::{
     modifiers::LinkageMode, pattern::HIRPattern, template::HIRTemplateInput, types::HIRType,
@@ -36,6 +37,13 @@ impl HIRExpression {
     pub fn token_range(&self) -> &TokenRange {
         &self.range
     }
+}
+
+/// One step from an aggregate to a subobject of it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum HIRMemberDesignator {
+    Field(CXIdent),
+    Index(Box<HIRExpression>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -91,9 +99,12 @@ pub enum HIRExprKind {
 
     Switch {
         condition: Box<HIRExpression>,
-        block: Vec<HIRExpression>,
-        cases: Vec<(HIRExpression, usize)>, // (constant expression, block index)
-        default_case: Option<usize>,
+        body: Box<HIRExpression>,
+    },
+    /// A `case` label, or `default` when it has no value.
+    Case {
+        value: Option<Box<HIRExpression>>,
+        statement: Box<HIRExpression>,
     },
 
     SizeOfExpr {
@@ -107,6 +118,11 @@ pub enum HIRExprKind {
     },
     AlignOfType {
         ty: HIRType,
+    },
+    /// `__builtin_offsetof(ty, member)`, where `member` leads to a subobject of `ty`.
+    OffsetOf {
+        ty: HIRType,
+        member: Vec<HIRMemberDesignator>,
     },
 
     VarDeclaration {
@@ -126,7 +142,7 @@ pub enum HIRExprKind {
     },
 
     Block {
-        exprs: Vec<HIRExpression>,
+        exprs: Rc<[HIRExpression]>,
         kind: HIRBlockKind,
     },
 
@@ -142,6 +158,13 @@ pub enum HIRExprKind {
     Break,
     Continue,
     Goto {
+        name: CXIdent,
+    },
+    /// `goto *target`, jumping to a label whose address was taken with `&&`.
+    IndirectGoto {
+        target: Box<HIRExpression>,
+    },
+    LabelAddress {
         name: CXIdent,
     },
     Label {
@@ -230,6 +253,8 @@ pub enum HIRBinOp {
     RShift,
 
     Comma,
+    // A parenthesised comma expression, kept apart from `Comma` so that it stays one call argument.
+    GroupedComma,
 
     Assign(Option<Box<HIRBinOp>>),
 

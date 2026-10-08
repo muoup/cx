@@ -155,6 +155,11 @@ pub enum MIRInstructionKind {
         cases: Vec<(i128, MIRBlockTarget)>,
         default: Option<MIRBlockTarget>,
     },
+    /// Jumps to the block that `address` is a block address of, which is one of `targets`.
+    IndirectJump {
+        address: MIRValue,
+        targets: Vec<MIRBlockTarget>,
+    },
 
     Unreachable,
 }
@@ -176,6 +181,7 @@ impl MIRInstructionKind {
                 | Self::Jump { .. }
                 | Self::Branch { .. }
                 | Self::CaseBranch { .. }
+                | Self::IndirectJump { .. }
                 | Self::Unreachable
         )
     }
