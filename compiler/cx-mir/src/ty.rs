@@ -61,6 +61,15 @@ impl MIRIntType {
         }
     }
 
+    pub const fn decode(self, value: i128, signed: bool) -> i128 {
+        let shift = 128 - self.bits();
+        if signed {
+            (value << shift) >> shift
+        } else {
+            (((value as u128) << shift) >> shift) as i128
+        }
+    }
+
     pub const fn from_bytes(bytes: u8) -> Option<Self> {
         match bytes {
             1 => Some(Self::I8),

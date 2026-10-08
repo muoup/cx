@@ -562,7 +562,9 @@ pub(super) fn lower_case<'thir>(
 ) -> LowerResult<()> {
     let value = match value {
         Some(case) => match comptime::evaluate(builder, case).map_err(LowerStop::Diagnostic)? {
-            MIRConstant::Integer { value, .. } => Some(value),
+            MIRConstant::Integer { value, ty } => {
+                Some(ty.decode(value, is_signed_integer(builder, &case.ty)))
+            }
             _ => {
                 return log_mir_error(
                     &case.token_range,
