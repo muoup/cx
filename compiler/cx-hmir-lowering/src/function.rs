@@ -36,7 +36,7 @@ use crate::{
     function::{coerce::lower_convert, expr::lower_expr, operand::lower_value},
     program::{DefKey, Instance, Program, def_body},
     staging_error,
-    ty::TypeID,
+    ty::HMIRTypeID,
     value::{FrameRef, StaticValue},
 };
 
@@ -59,7 +59,7 @@ impl From<CXError> for Stop {
 pub(crate) enum Expect {
     Discard,
     Any,
-    Type(TypeID),
+    Type(HMIRTypeID),
 }
 
 // A lexical instantiation of some def's body; quotes spliced at runtime get their own frame
@@ -102,7 +102,7 @@ struct Control {
 // The labels seen so far in the body of a switch over a value of type 'condition'
 #[derive(Clone)]
 struct SwitchLabels {
-    condition: TypeID,
+    condition: HMIRTypeID,
     cases: Vec<(i128, MIRBlockTarget)>,
     default: Option<MIRBasicBlockID>,
 }
@@ -119,7 +119,7 @@ struct Merge {
 enum MergeParam {
     Undecided,
     Valueless,
-    Value(MIRRegisterID, TypeID),
+    Value(MIRRegisterID, HMIRTypeID),
 }
 
 // A pattern tested in a condition whose bindings take effect in the branch it guards
@@ -146,7 +146,7 @@ pub(crate) struct FunctionLowering<'p, 'l> {
     merges: Vec<Merge>,
     labels: HashMap<String, MIRBasicBlockID>,
     pattern_bindings: Vec<PatternBinding>,
-    ret: TypeID,
+    ret: HMIRTypeID,
     check_return: bool,
     pub(crate) unevaluated: bool,
     // A safe function may only perform unsafe operations inside '@unsafe'
@@ -156,14 +156,14 @@ pub(crate) struct FunctionLowering<'p, 'l> {
 }
 
 impl Expect {
-    pub(crate) fn ty(self) -> Option<TypeID> {
+    pub(crate) fn ty(self) -> Option<HMIRTypeID> {
         match self {
             Expect::Type(ty) => Some(ty),
             _ => None,
         }
     }
 
-    pub(crate) fn of(ty: Option<TypeID>) -> Self {
+    pub(crate) fn of(ty: Option<HMIRTypeID>) -> Self {
         ty.map(Expect::Type).unwrap_or(Expect::Any)
     }
 }
@@ -289,7 +289,7 @@ fn lower_root(
 }
 
 impl<'p, 'l> FunctionLowering<'p, 'l> {
-    fn new(cx: &'p mut Program<'l>, serial: u64, ret: TypeID, span: &TokenRange) -> Self {
+    fn new(cx: &'p mut Program<'l>, serial: u64, ret: HMIRTypeID, span: &TokenRange) -> Self {
         let mut body = MIRBody::new();
         let entry = body.add_block();
         let root = body.add_scope(span.clone());
@@ -338,7 +338,7 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
 
     pub(crate) fn require_mutable(
         &self,
-        ty: TypeID,
+        ty: HMIRTypeID,
         action: &str,
         span: &TokenRange,
     ) -> LowerResult<()> {
@@ -438,18 +438,18 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         self.current = block;
     }
 
-    pub(crate) fn mir(&mut self, ty: TypeID, span: &TokenRange) -> LowerResult<MIRTypeID> {
+    pub(crate) fn mir(&mut self, ty: HMIRTypeID, span: &TokenRange) -> LowerResult<MIRTypeID> {
         Ok(self.program.types_mut().mir(ty, span)?)
     }
 
-    pub(crate) fn register(&mut self, ty: TypeID, span: &TokenRange) -> LowerResult<MIRRegisterID> {
+    pub(crate) fn register(&mut self, ty: HMIRTypeID, span: &TokenRange) -> LowerResult<MIRRegisterID> {
         let mir = self.mir(ty, span)?;
         Ok(self.body.add_register(mir, None))
     }
 
     pub(crate) fn place(
         &mut self,
-        ty: TypeID,
+        ty: HMIRTypeID,
         name: Option<CXIdent>,
         span: &TokenRange,
     ) -> LowerResult<MIRPlaceID> {
@@ -659,7 +659,7 @@ pub(crate) fn lower_eval_type(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
     id: HMIRExprID,
-) -> LowerResult<TypeID> {
+) -> LowerResult<HMIRTypeID> {
     let mut eval_frame = lower_eval_frame(cx, frame);
     Ok(eval_type(cx.program, &mut eval_frame, id)?)
 }
@@ -668,7 +668,7 @@ pub(crate) fn lower_eval_type_hint(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
     id: HMIRExprID,
-) -> LowerResult<Option<TypeID>> {
+) -> LowerResult<Option<HMIRTypeID>> {
     let mut eval_frame = lower_eval_frame(cx, frame);
     Ok(eval_type_hint(cx.program, &mut eval_frame, id)?)
 }
@@ -677,7 +677,7 @@ pub(crate) fn lower_type_hint(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
     id: HMIRExprID,
-) -> Option<TypeID> {
+) -> Option<HMIRTypeID> {
     let mut eval_frame = lower_eval_frame(cx, frame);
     type_hint(cx.program, &mut eval_frame, id)
 }

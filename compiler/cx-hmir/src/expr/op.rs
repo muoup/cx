@@ -1,12 +1,12 @@
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    expr::{aggregate::HMIRAggregateOp, kind::HMIRExprID, type_op::HMIRTypeOp},
+    expr::{HMIRExprID, aggregate::HMIRAggregateOp},
     unit::def::HMIRDefRef,
 };
 
 #[derive(Debug, Clone)]
-pub enum HMIRNativeOp {
+pub enum HMIROp {
     BinOp {
         op: HMIRBinaryOp,
         lhs: HMIRExprID,
@@ -107,6 +107,50 @@ pub enum HMIROwnershipOp {
     Move(HMIRExprID),
 }
 
+#[derive(Debug, Clone)]
+pub enum HMIRTypeOp {
+    Pointer(HMIRExprID),
+    Reference(HMIRExprID),
+    Const(HMIRExprID),
+    PointerInner(HMIRExprID),
+    ReferenceInner(HMIRExprID),
+    Member {
+        ty: HMIRExprID,
+        name: CXIdent,
+    },
+    TypeOf(HMIRExprID),
+    Decay(HMIRExprID),
+    Array {
+        element: HMIRExprID,
+        length: Option<HMIRExprID>,
+    },
+    Function {
+        params: Vec<HMIRExprID>,
+        ret: HMIRExprID,
+        variadic: bool,
+    },
+    Expr {
+        params: Vec<HMIRExprID>,
+        result: HMIRExprID,
+    },
+    Aggregate {
+        ty: HMIRExprID,
+        pairs: Vec<(Option<CXIdent>, HMIRExprID)>,
+    },
+
+    SizeOf(HMIRExprID),
+    AlignOf(HMIRExprID),
+    // The offset in bytes of the subobject of 'ty' that 'member' leads to
+    OffsetOf {
+        ty: HMIRExprID,
+    },
+    IsInt(HMIRExprID),
+    IsFloat(HMIRExprID),
+    IsPointer(HMIRExprID),
+    IsSigned(HMIRExprID),
+    Equal(HMIRExprID, HMIRExprID),
+}
+
 impl HMIRBinaryOp {
     pub fn path(self) -> &'static str {
         match self {
@@ -181,6 +225,33 @@ impl HMIROwnershipOp {
             Self::Adopt(_) => "adopt",
             Self::Leak(_) => "leak",
             Self::Move(_) => "move",
+        }
+    }
+}
+
+impl HMIRTypeOp {
+    pub fn path(&self) -> &'static str {
+        match self {
+            Self::Pointer(_) => "type.pointer",
+            Self::Reference(_) => "type.reference",
+            Self::Const(_) => "type.const",
+            Self::PointerInner(_) => "type.pointer_inner",
+            Self::ReferenceInner(_) => "type.reference_inner",
+            Self::Member { .. } => "type.member",
+            Self::TypeOf(_) => "type.type_of",
+            Self::Decay(_) => "type.decay",
+            Self::Array { .. } => "type.array",
+            Self::Function { .. } => "type.function",
+            Self::Expr { .. } => "type.expr",
+            Self::Aggregate { .. } => "type.aggregate",
+            Self::SizeOf(_) => "type.size_of",
+            Self::AlignOf(_) => "type.align_of",
+            Self::OffsetOf { .. } => "type.offset_of",
+            Self::IsInt(_) => "type.is_int",
+            Self::IsFloat(_) => "type.is_float",
+            Self::IsPointer(_) => "type.is_pointer",
+            Self::IsSigned(_) => "type.is_signed",
+            Self::Equal(..) => "type.equal",
         }
     }
 }

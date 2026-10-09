@@ -1,7 +1,7 @@
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression, HIRUnOp};
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRCoerceMode, HMIRExprID, HMIRExprKind,
-    HMIRNativeOp, HMIROwnershipOp, HMIRUnaryOp,
+    HMIROp, HMIROwnershipOp, HMIRUnaryOp,
 };
 use cx_log::catalogue::{mir, typecheck};
 use cx_tokens::TokenRange;
@@ -46,7 +46,7 @@ pub(crate) fn lower_binop(
     if let Some(op) = binary_op(op) {
         let lhs = lower_expr(cx, lhs);
         let rhs = lower_expr(cx, rhs);
-        return cx.native(HMIRNativeOp::BinOp { op, lhs, rhs }, span);
+        return cx.native(HMIROp::BinOp { op, lhs, rhs }, span);
     }
 
     match op {
@@ -78,7 +78,7 @@ pub(crate) fn lower_binop(
             };
             let target = lower_expr(cx, lhs);
             let value = lower_expr(cx, rhs);
-            cx.native(HMIRNativeOp::Assign { target, op, value }, span)
+            cx.native(HMIROp::Assign { target, op, value }, span)
         }
         HIRBinOp::Access => {
             let HIRExprKind::Identifier { name, .. } = &rhs.kind else {
@@ -118,11 +118,11 @@ pub(crate) fn lower_unop(
 ) -> HMIRExprID {
     let value = lower_expr(cx, operand);
     let unary = |this: &mut BodyLowering<'_>, op| {
-        this.native(HMIRNativeOp::UnOp { op, operand: value }, span)
+        this.native(HMIROp::UnOp { op, operand: value }, span)
     };
     match op {
-        HIRUnOp::Dereference => cx.native(HMIRNativeOp::Dereference(value), span),
-        HIRUnOp::AddressOf => cx.native(HMIRNativeOp::AddressOf(value), span),
+        HIRUnOp::Dereference => cx.native(HMIROp::Dereference(value), span),
+        HIRUnOp::AddressOf => cx.native(HMIROp::AddressOf(value), span),
         HIRUnOp::Negative => unary(cx, HMIRUnaryOp::Neg),
         HIRUnOp::BNot => unary(cx, HMIRUnaryOp::BNot),
         HIRUnOp::LNot => unary(cx, HMIRUnaryOp::LNot),

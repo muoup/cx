@@ -13,7 +13,7 @@ use cx_hir::ast::expression::{
 use cx_hir::ast::types::HIRType;
 use cx_hmir::{
     HMIRAggregateOp, HMIRBlockKind, HMIRConstant, HMIRControlOp, HMIRExprID, HMIRExprKind,
-    HMIRMemberStep, HMIRNativeOp, HMIROwnershipOp, HMIRTypeOp,
+    HMIRMemberStep, HMIROp, HMIROwnershipOp, HMIRTypeOp,
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
 use cx_log::catalogue::{mir, typecheck};
@@ -101,19 +101,19 @@ pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMI
 
         HIRExprKind::SizeOfExpr { expr: operand } => {
             let operand = lower_expr(cx, operand);
-            cx.native(HMIRNativeOp::Type(HMIRTypeOp::SizeOf(operand)), span)
+            cx.native(HMIROp::Type(HMIRTypeOp::SizeOf(operand)), span)
         }
         HIRExprKind::SizeOfType { ty } => {
             let ty = lower_type(cx, ty);
-            cx.native(HMIRNativeOp::Type(HMIRTypeOp::SizeOf(ty)), span)
+            cx.native(HMIROp::Type(HMIRTypeOp::SizeOf(ty)), span)
         }
         HIRExprKind::AlignOfExpr { expr: operand } => {
             let operand = lower_expr(cx, operand);
-            cx.native(HMIRNativeOp::Type(HMIRTypeOp::AlignOf(operand)), span)
+            cx.native(HMIROp::Type(HMIRTypeOp::AlignOf(operand)), span)
         }
         HIRExprKind::AlignOfType { ty } => {
             let ty = lower_type(cx, ty);
-            cx.native(HMIRNativeOp::Type(HMIRTypeOp::AlignOf(ty)), span)
+            cx.native(HMIROp::Type(HMIRTypeOp::AlignOf(ty)), span)
         }
         HIRExprKind::OffsetOf { ty, member } => {
             let ty = lower_type(cx, ty);

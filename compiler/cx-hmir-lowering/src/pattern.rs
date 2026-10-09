@@ -7,13 +7,13 @@ use crate::{
     module::variant_index,
     program::Program,
     staging_error,
-    ty::TypeID,
+    ty::HMIRTypeID,
 };
 
 pub(crate) fn match_cases<'a>(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,
-    ty: TypeID,
+    ty: HMIRTypeID,
     patterns: impl Iterator<Item = &'a HMIRPattern>,
     span: &TokenRange,
 ) -> CXResult<Vec<Option<i128>>> {

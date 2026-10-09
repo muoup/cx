@@ -1,4 +1,4 @@
-use cx_hmir::{HMIRExprID, HMIRExprKind, HMIRLocalID, HMIRNativeOp, HMIRPattern, HMIRTypeOp};
+use cx_hmir::{HMIRExprID, HMIRExprKind, HMIRLocalID, HMIROp, HMIRPattern, HMIRTypeOp};
 use cx_log::{
     CXResult,
     catalogue::{mir, typecheck},
@@ -11,7 +11,7 @@ use crate::{
     pattern::match_cases,
     program::Program,
     staging_error,
-    ty::TypeID,
+    ty::HMIRTypeID,
     value::{StaticValue, normalize_int, promote_integer_type},
 };
 
@@ -21,7 +21,7 @@ pub(crate) fn match_value(
     scrutinee: HMIRExprID,
     subject: HMIRLocalID,
     arms: &[(HMIRPattern, HMIRExprID)],
-    expect: Option<TypeID>,
+    expect: Option<HMIRTypeID>,
     span: &TokenRange,
 ) -> CXResult<Flow> {
     let value = eval(cx, frame, scrutinee, None)?;
@@ -96,7 +96,7 @@ fn bind_pattern(
     let declared = frame.body().local(local).ty();
     if matches!(
         frame.body().expr(declared).kind(),
-        HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Reference(_)))
+        HMIRExprKind::Native(HMIROp::Type(HMIRTypeOp::Reference(_)))
     ) {
         return Err(staging_error(
             span,

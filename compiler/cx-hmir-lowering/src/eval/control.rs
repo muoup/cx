@@ -6,7 +6,7 @@ use crate::{
     eval::{EvalFrame, Flow, LOOP_LIMIT, eval, exec, static_condition},
     program::Program,
     staging_error,
-    ty::TypeID,
+    ty::HMIRTypeID,
     value::StaticValue,
 };
 
@@ -38,7 +38,7 @@ pub(crate) fn conditional(
     condition: HMIRExprID,
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
-    expect: Option<TypeID>,
+    expect: Option<HMIRTypeID>,
     span: &TokenRange,
 ) -> CXResult<Flow> {
     let taken = static_condition(cx, frame, condition, span)?;

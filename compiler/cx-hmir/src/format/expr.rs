@@ -3,9 +3,9 @@ use std::fmt::{self, Formatter};
 use cx_intrinsics::IntrinsicArg;
 
 use crate::expr::{
+    HMIRExprID, HMIRExprKind, HMIRIntrinsic,
     aggregate::HMIRPattern,
-    kind::{HMIRExprID, HMIRExprKind, HMIRIntrinsic},
-    native_op::{HMIRControlOp, HMIRNativeOp},
+    op::{HMIRControlOp, HMIROp},
 };
 
 use super::{
@@ -52,7 +52,7 @@ impl BodyPrinter<'_> {
             }
 
             HMIRExprKind::Intrinsic(intrinsic) => self.intrinsic(f, intrinsic, depth),
-            HMIRExprKind::Native(op) => self.native(f, op, depth),
+            HMIRExprKind::Op(op) => self.native(f, op, depth),
 
             HMIRExprKind::Let { local, initializer } => {
                 f.write_str("local ")?;
@@ -70,11 +70,8 @@ impl BodyPrinter<'_> {
                 f.write_str(")")
             }
 
-            HMIRExprKind::Block {
-                kind,
-                statements,
-                tail,
-            } => self.block(f, *kind, statements, *tail, depth),
+            HMIRExprKind::Block { statements } => self.block(f, statements, None, depth),
+
             HMIRExprKind::If {
                 condition,
                 then_branch,
@@ -180,7 +177,7 @@ impl BodyPrinter<'_> {
             | HMIRExprKind::Case { body, .. }
             | HMIRExprKind::Label { body, .. }
             | HMIRExprKind::Comptime(body)
-            | HMIRExprKind::Native(HMIRNativeOp::Control(
+            | HMIRExprKind::Op(HMIROp::Control(
                 HMIRControlOp::Defer(body) | HMIRControlOp::Unsafe(body),
             )) => self.is_structured(*body),
             _ => false,

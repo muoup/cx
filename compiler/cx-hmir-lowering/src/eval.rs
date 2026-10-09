@@ -13,7 +13,7 @@ use std::{
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRControlOp,
     HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRIntWidth,
-    HMIRLocalID, HMIRNativeOp, HMIROwnershipOp, HMIRPattern, HMIRTypeOp, HMIRUnit,
+    HMIRLocalID, HMIROp, HMIROwnershipOp, HMIRPattern, HMIRTypeOp, HMIRUnit,
 };
 use cx_log::{
     CXResult,
@@ -34,7 +34,7 @@ use crate::{
     module::{member_type, variant_index},
     program::{DefKey, Instance, Program, UnitID, def_body, untagged_name},
     staging_error,
-    ty::{FunctionType, TypeID, TypeKind},
+    ty::{FunctionType, HMIRTypeID, HMIRTypeKind},
     value::{FrameRef, Quote, QuoteRef, StaticValue, truncate_int},
 };
 
@@ -44,7 +44,7 @@ const LOOP_LIMIT: usize = 1 << 20;
 #[derive(Debug, Clone)]
 pub(crate) struct RuntimeView {
     origin: Option<FrameRef>,
-    types: HashMap<HMIRLocalID, TypeID>,
+    types: HashMap<HMIRLocalID, HMIRTypeID>,
 }
 
 pub(crate) struct EvalFrame {
@@ -54,7 +54,7 @@ pub(crate) struct EvalFrame {
     owner: Rc<Instance>,
     locals: HashMap<HMIRLocalID, StaticValue>,
     runtime: Option<RuntimeView>,
-    ret: Option<TypeID>,
+    ret: Option<HMIRTypeID>,
     moved: HashSet<HMIRLocalID>,
 }
 
@@ -68,15 +68,15 @@ pub(crate) enum Flow {
 
 pub(crate) struct Signature {
     runtime: Vec<HMIRLocalID>,
-    params: Vec<(Option<CXIdent>, TypeID)>,
-    ret: TypeID,
+    params: Vec<(Option<CXIdent>, HMIRTypeID)>,
+    ret: HMIRTypeID,
     variadic: bool,
     linkage: LinkageMode,
     link_name: CXIdent,
 }
 
 impl RuntimeView {
-    pub(crate) fn new(origin: Option<FrameRef>, types: HashMap<HMIRLocalID, TypeID>) -> Self {
+    pub(crate) fn new(origin: Option<FrameRef>, types: HashMap<HMIRLocalID, HMIRTypeID>) -> Self {
         Self { origin, types }
     }
 }
@@ -125,7 +125,7 @@ impl EvalFrame {
         &self.locals
     }
 
-    pub(crate) fn runtime_types(&self) -> impl Iterator<Item = (HMIRLocalID, TypeID)> + '_ {
+    pub(crate) fn runtime_types(&self) -> impl Iterator<Item = (HMIRLocalID, HMIRTypeID)> + '_ {
         self.runtime
             .iter()
             .flat_map(|view| view.types.iter().map(|(local, ty)| (*local, *ty)))
@@ -165,11 +165,11 @@ impl Signature {
         &self.runtime
     }
 
-    pub(crate) fn params(&self) -> &[(Option<CXIdent>, TypeID)] {
+    pub(crate) fn params(&self) -> &[(Option<CXIdent>, HMIRTypeID)] {
         &self.params
     }
 
-    pub(crate) fn ret(&self) -> TypeID {
+    pub(crate) fn ret(&self) -> HMIRTypeID {
         self.ret
     }
 
@@ -234,8 +234,8 @@ pub(crate) fn eval_signature(
             continue;
         }
         let ty = match cx.types().kind(ty).clone() {
-            TypeKind::Array { element, .. } => cx.types_mut().pointer_to(element),
-            TypeKind::Function(_) => cx.types_mut().pointer_to(ty),
+            HMIRTypeKind::Array { element, .. } => cx.types_mut().pointer_to(element),
+            HMIRTypeKind::Function(_) => cx.types_mut().pointer_to(ty),
             _ => ty,
         };
         runtime.push(*param);
@@ -259,18 +259,18 @@ pub(crate) fn eval_function_type(
     cx: &mut Program<'_>,
     instance: &Instance,
     span: &TokenRange,
-) -> CXResult<TypeID> {
+) -> CXResult<HMIRTypeID> {
     let signature = eval_signature(cx, instance, span)?;
     let params = signature.params().iter().map(|(_, ty)| *ty).collect();
     let function = FunctionType::new(params, signature.ret(), signature.is_variadic());
-    Ok(cx.types_mut().intern(TypeKind::Function(function)))
+    Ok(cx.types_mut().intern(HMIRTypeKind::Function(function)))
 }
 
 pub(crate) fn eval_global_type(
     cx: &mut Program<'_>,
     key: DefKey,
     span: &TokenRange,
-) -> CXResult<TypeID> {
+) -> CXResult<HMIRTypeID> {
     if let Some(ty) = cx.global_types_mut().get(&key) {
         return Ok(*ty);
     }
@@ -280,14 +280,14 @@ pub(crate) fn eval_global_type(
     };
     let mut frame = EvalFrame::new(unit.clone(), key, Rc::new((key, Vec::new())));
     let mut ty = eval_type(cx, &mut frame, global.ty())?;
-    if let TypeKind::Array {
+    if let HMIRTypeKind::Array {
         element,
         length: None,
     } = cx.types().kind(ty).clone()
         && let Some(initializer) = global.initializer()
         && let Some(length) = static_length(cx, &mut frame, initializer)?
     {
-        ty = cx.types_mut().intern(TypeKind::Array {
+        ty = cx.types_mut().intern(HMIRTypeKind::Array {
             element,
             length: Some(length),
         });
@@ -305,7 +305,7 @@ fn static_length(
     let unit = frame.unit.clone();
     let body = def_body(unit.def(frame.def.def())).expect("global has a body");
     Ok(match body.expr(initializer).kind() {
-        HMIRExprKind::Native(HMIRNativeOp::AggregateOp(HMIRAggregateOp::Initialize {
+        HMIRExprKind::Native(HMIROp::AggregateOp(HMIRAggregateOp::Initialize {
             fields,
             ..
         })) => Some(fields.len() as u64),
@@ -322,7 +322,7 @@ pub(crate) fn eval_global_initializer(
     cx: &mut Program<'_>,
     key: DefKey,
     initializer: HMIRExprID,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<StaticValue> {
     let unit = cx.unit(key.unit());
@@ -342,7 +342,7 @@ fn read_global(
         return Ok(value);
     };
     let ty = eval_global_type(cx, key, span)?;
-    if let TypeKind::Array { element, .. } = cx.types().kind(ty).clone() {
+    if let HMIRTypeKind::Array { element, .. } = cx.types().kind(ty).clone() {
         return Ok(StaticValue::GlobalAddress {
             def: key,
             offset: 0,
@@ -374,8 +374,8 @@ fn not_a_global(unit: &HMIRUnit, key: DefKey, span: &TokenRange) -> CXError {
 #[derive(PartialEq)]
 enum Declaration {
     // The last field is whether the function has internal linkage
-    Function(Vec<TypeID>, TypeID, bool, CXIdent, bool),
-    Global(TypeID, CXIdent),
+    Function(Vec<HMIRTypeID>, HMIRTypeID, bool, CXIdent, bool),
+    Global(HMIRTypeID, CXIdent),
     Value(StaticValue),
 }
 
@@ -399,7 +399,7 @@ fn declaration(
                 .collect();
             // A function may be redeclared with or without '_Noreturn'
             let ret = match cx.types().kind(signature.ret()) {
-                TypeKind::Unreachable => cx.types_mut().intern(TypeKind::Void),
+                HMIRTypeKind::Unreachable => cx.types_mut().intern(HMIRTypeKind::Void),
                 _ => signature.ret(),
             };
             (
@@ -421,14 +421,14 @@ fn declaration(
     })
 }
 
-fn compatible_objects(cx: &Program<'_>, left: TypeID, right: TypeID) -> bool {
+fn compatible_objects(cx: &Program<'_>, left: HMIRTypeID, right: HMIRTypeID) -> bool {
     match (cx.types().kind(left), cx.types().kind(right)) {
         (
-            TypeKind::Array {
+            HMIRTypeKind::Array {
                 element: left,
                 length: left_length,
             },
-            TypeKind::Array {
+            HMIRTypeKind::Array {
                 element: right,
                 length: right_length,
             },
@@ -728,7 +728,7 @@ pub(crate) fn eval(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     id: HMIRExprID,
-    expect: Option<TypeID>,
+    expect: Option<HMIRTypeID>,
 ) -> CXResult<StaticValue> {
     match exec(cx, frame, id, expect)? {
         Flow::Normal(value) => Ok(value),
@@ -743,7 +743,7 @@ pub(crate) fn eval_type(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     id: HMIRExprID,
-) -> CXResult<TypeID> {
+) -> CXResult<HMIRTypeID> {
     let value = eval(cx, frame, id, None)?;
     match value {
         StaticValue::Type(ty) => Ok(ty),
@@ -764,7 +764,7 @@ pub(crate) fn eval_type_hint(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     id: HMIRExprID,
-) -> CXResult<Option<TypeID>> {
+) -> CXResult<Option<HMIRTypeID>> {
     if matches!(frame.body().expr(id).kind(), HMIRExprKind::Hole(_)) {
         return Ok(None);
     }
@@ -775,7 +775,7 @@ pub(crate) fn exec(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     id: HMIRExprID,
-    expect: Option<TypeID>,
+    expect: Option<HMIRTypeID>,
 ) -> CXResult<Flow> {
     match lower(LowerContext::Comptime(cx, frame), id, Expect::of(expect)) {
         Ok(LowerOutput::Comptime(flow)) => Ok(flow),
@@ -805,12 +805,12 @@ pub(crate) fn exec_native(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     id: HMIRExprID,
-    op: &HMIRNativeOp,
+    op: &HMIROp,
     span: &TokenRange,
-    expect: Option<TypeID>,
+    expect: Option<HMIRTypeID>,
 ) -> CXResult<Flow> {
     let value = match op {
-        HMIRNativeOp::BinOp { op, lhs, rhs } => match op {
+        HMIROp::BinOp { op, lhs, rhs } => match op {
             HMIRBinaryOp::LAnd | HMIRBinaryOp::LOr => {
                 let lhs = static_condition(cx, frame, *lhs, span)?;
                 let result = match (op, lhs) {
@@ -828,8 +828,8 @@ pub(crate) fn exec_native(
                 fold_binary(cx, *op, lhs, rhs, span)?
             }
         },
-        HMIRNativeOp::UnOp { op, operand } => exec_unary(cx, frame, *op, *operand, span)?,
-        HMIRNativeOp::Coerce {
+        HMIROp::UnOp { op, operand } => exec_unary(cx, frame, *op, *operand, span)?,
+        HMIROp::Coerce {
             mode,
             value,
             target,
@@ -847,7 +847,7 @@ pub(crate) fn exec_native(
                 (_, None) => value,
             }
         }
-        HMIRNativeOp::Assign { target, op, value } => {
+        HMIROp::Assign { target, op, value } => {
             let Some(local) = frame.as_local(*target) else {
                 return Err(staging_error(
                     span,
@@ -871,9 +871,9 @@ pub(crate) fn exec_native(
             frame.bind(local, value.clone());
             value
         }
-        HMIRNativeOp::AddressOf(inner) => static_address(cx, frame, *inner, span)?,
-        HMIRNativeOp::Dereference(inner) => expr::dereference(cx, frame, *inner, span)?,
-        HMIRNativeOp::Type(HMIRTypeOp::Aggregate {
+        HMIROp::AddressOf(inner) => static_address(cx, frame, *inner, span)?,
+        HMIROp::Dereference(inner) => expr::dereference(cx, frame, *inner, span)?,
+        HMIROp::Type(HMIRTypeOp::Aggregate {
             kind,
             semantics,
             unsafe_move,
@@ -883,8 +883,8 @@ pub(crate) fn exec_native(
             let traits = (*semantics, *unsafe_move);
             eval_aggregate_type(cx, frame, id, *kind, traits, *traits_of, fields, span)?
         }
-        HMIRNativeOp::Type(op) => types::exec_type_op(cx, frame, op, span)?,
-        HMIRNativeOp::Control(control) => {
+        HMIROp::Type(op) => types::exec_type_op(cx, frame, op, span)?,
+        HMIROp::Control(control) => {
             return Ok(match control {
                 HMIRControlOp::Return(value) => {
                     if value.is_some() && frame.ret.is_some_and(|ret| cx.types().is_void(ret)) {
@@ -955,7 +955,7 @@ pub(crate) fn exec_native(
                 }
             });
         }
-        HMIRNativeOp::OwnershipOp(op) => match op {
+        HMIROp::OwnershipOp(op) => match op {
             HMIROwnershipOp::Move(inner) | HMIROwnershipOp::Leak(inner) => {
                 let flow = exec(cx, frame, *inner, expect)?;
                 liveness::consume(frame, *inner);
@@ -969,7 +969,7 @@ pub(crate) fn exec_native(
                 ));
             }
         },
-        HMIRNativeOp::AggregateOp(op) => exec_aggregate(cx, frame, op, span, expect)?,
+        HMIROp::AggregateOp(op) => exec_aggregate(cx, frame, op, span, expect)?,
     };
     Ok(Flow::Normal(value))
 }
@@ -979,7 +979,7 @@ fn exec_aggregate(
     frame: &mut EvalFrame,
     op: &HMIRAggregateOp,
     span: &TokenRange,
-    expect: Option<TypeID>,
+    expect: Option<HMIRTypeID>,
 ) -> CXResult<StaticValue> {
     match op {
         HMIRAggregateOp::Initialize { ty, fields } => {
@@ -1094,14 +1094,14 @@ fn exec_aggregate(
 fn static_initializer(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,
-    ty: TypeID,
+    ty: HMIRTypeID,
     fields: &[(Option<CXIdent>, HMIRExprID)],
     span: &TokenRange,
 ) -> CXResult<StaticValue> {
     if let [(None, value)] = fields
         && !matches!(
             cx.types().kind(ty),
-            TypeKind::Array { .. } | TypeKind::Nominal(_)
+            HMIRTypeKind::Array { .. } | HMIRTypeKind::Nominal(_)
         )
     {
         let value = eval(cx, frame, *value, Some(ty))?;
@@ -1135,7 +1135,7 @@ fn static_initializer(
 
 fn truncate_bitfield(
     cx: &Program<'_>,
-    ty: TypeID,
+    ty: HMIRTypeID,
     index: usize,
     value: StaticValue,
 ) -> StaticValue {
@@ -1161,7 +1161,7 @@ fn static_address(
 ) -> CXResult<StaticValue> {
     let unit = frame.unit.clone();
     let body = def_body(unit.def(frame.def.def())).expect("evaluated def has a body");
-    if let HMIRExprKind::Native(HMIRNativeOp::AggregateOp(HMIRAggregateOp::Index { base, index })) =
+    if let HMIRExprKind::Native(HMIROp::AggregateOp(HMIRAggregateOp::Index { base, index })) =
         body.expr(inner).kind()
     {
         let base = static_address(cx, frame, *base, span)?;
@@ -1176,8 +1176,8 @@ fn static_address(
             })?;
         if let StaticValue::GlobalAddress { def, offset, ty } = base {
             let element = match cx.types().kind(ty).clone() {
-                TypeKind::Pointer(array) => match cx.types().kind(array).clone() {
-                    TypeKind::Array { element, .. } => element,
+                HMIRTypeKind::PointerTo(array) => match cx.types().kind(array).clone() {
+                    HMIRTypeKind::Array { element, .. } => element,
                     _ => array,
                 },
                 _ => {
@@ -1219,7 +1219,7 @@ fn static_address(
     }
 }
 
-pub(crate) fn eval_quote_type(cx: &mut Program<'_>, quote: &Quote) -> Option<TypeID> {
+pub(crate) fn eval_quote_type(cx: &mut Program<'_>, quote: &Quote) -> Option<HMIRTypeID> {
     let unit = cx.unit(quote.unit());
     let key = DefKey::new(quote.unit(), quote.def());
     let mut frame = EvalFrame::new(unit, key, Rc::new(quote.owner().clone())).with_runtime(
@@ -1238,14 +1238,14 @@ pub(crate) fn eval_quote_type(cx: &mut Program<'_>, quote: &Quote) -> Option<Typ
         .collect::<CXResult<Vec<_>>>()
         .ok()?;
     let result = type_hint(cx, &mut frame, quote.body())?;
-    Some(cx.types_mut().intern(TypeKind::Expr { params, result }))
+    Some(cx.types_mut().intern(HMIRTypeKind::StagedExpr { params, result }))
 }
 
 pub(crate) fn type_hint(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     id: HMIRExprID,
-) -> Option<TypeID> {
+) -> Option<HMIRTypeID> {
     inspect(cx, frame, id, None).ok()
 }
 
@@ -1253,7 +1253,7 @@ pub(crate) fn eval_static_type(
     cx: &mut Program<'_>,
     value: &StaticValue,
     span: &TokenRange,
-) -> CXResult<TypeID> {
+) -> CXResult<HMIRTypeID> {
     if let Some(ty) = value.simple_type(cx.types_mut()) {
         return Ok(ty);
     }

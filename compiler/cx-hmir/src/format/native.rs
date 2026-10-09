@@ -1,28 +1,20 @@
 use std::fmt::{self, Formatter};
 
-use crate::{
-    expr::{
-        aggregate::HMIRAggregateOp,
-        kind::HMIRExprID,
-        native_op::{HMIRControlOp, HMIRNativeOp, HMIROwnershipOp},
-        type_op::{HMIRMemberStep, HMIRTypeOp},
-    },
-    ty::nominal::{HMIRAggregateKind, HMIRMoveSemantics},
+use crate::expr::{
+    HMIRExprID,
+    aggregate::HMIRAggregateOp,
+    op::HMIRTypeOp,
+    op::{HMIRControlOp, HMIROp, HMIROwnershipOp},
 };
 
-use super::body::{BodyPrinter, indent};
+use super::body::BodyPrinter;
 
 impl BodyPrinter<'_> {
-    pub(super) fn native(
-        &self,
-        f: &mut Formatter<'_>,
-        op: &HMIRNativeOp,
-        depth: usize,
-    ) -> fmt::Result {
+    pub(super) fn native(&self, f: &mut Formatter<'_>, op: &HMIROp, depth: usize) -> fmt::Result {
         match op {
-            HMIRNativeOp::BinOp { op, lhs, rhs } => self.call(f, op.path(), &[*lhs, *rhs], depth),
-            HMIRNativeOp::UnOp { op, operand } => self.call(f, op.path(), &[*operand], depth),
-            HMIRNativeOp::Coerce {
+            HMIROp::BinOp { op, lhs, rhs } => self.call(f, op.path(), &[*lhs, *rhs], depth),
+            HMIROp::UnOp { op, operand } => self.call(f, op.path(), &[*operand], depth),
+            HMIROp::Coerce {
                 mode,
                 value,
                 target,
@@ -33,7 +25,7 @@ impl BodyPrinter<'_> {
                 self.expr(f, *value, depth)?;
                 f.write_str(")")
             }
-            HMIRNativeOp::Assign { target, op, value } => {
+            HMIROp::Assign { target, op, value } => {
                 f.write_str("op.assign")?;
                 if let Some(op) = op {
                     write!(f, "<{}>", op.path())?;
@@ -42,14 +34,12 @@ impl BodyPrinter<'_> {
                 self.list(f, &[*target, *value], depth, Self::expr)?;
                 f.write_str(")")
             }
-            HMIRNativeOp::AddressOf(operand) => self.call(f, "op.address_of", &[*operand], depth),
-            HMIRNativeOp::Dereference(operand) => {
-                self.call(f, "op.dereference", &[*operand], depth)
-            }
-            HMIRNativeOp::Type(op) => self.type_op(f, op, depth),
-            HMIRNativeOp::Control(op) => self.control(f, op, depth),
-            HMIRNativeOp::OwnershipOp(op) => self.ownership(f, op, depth),
-            HMIRNativeOp::AggregateOp(op) => self.aggregate(f, op, depth),
+            HMIROp::AddressOf(operand) => self.call(f, "op.address_of", &[*operand], depth),
+            HMIROp::Dereference(operand) => self.call(f, "op.dereference", &[*operand], depth),
+            HMIROp::Type(op) => self.type_op(f, op, depth),
+            HMIROp::Control(op) => self.control(f, op, depth),
+            HMIROp::OwnershipOp(op) => self.ownership(f, op, depth),
+            HMIROp::AggregateOp(op) => self.aggregate(f, op, depth),
         }
     }
 
@@ -183,44 +173,19 @@ impl BodyPrinter<'_> {
                 f.write_str(") -> ")?;
                 self.expr(f, *result, depth)
             }
-            HMIRTypeOp::Aggregate {
-                kind,
-                semantics,
-                unsafe_move,
-                traits_of,
-                fields,
-            } => {
-                f.write_str(match kind {
-                    HMIRAggregateKind::Struct => "struct",
-                    HMIRAggregateKind::Union => "union",
-                    HMIRAggregateKind::TaggedUnion => "tagged_union",
-                })?;
-                if let Some(semantics) = semantics_keyword(*semantics) {
-                    write!(f, " {semantics}")?;
-                }
-                if *unsafe_move {
-                    f.write_str(" unsafe_move")?;
-                }
-                if let Some(traits_of) = traits_of {
-                    f.write_str(" copy_traits(")?;
-                    self.expr(f, *traits_of, depth)?;
-                    f.write_str(")")?;
-                }
-                f.write_str(" {\n")?;
-                for field in fields {
-                    indent(f, depth + 1)?;
-                    match field.name() {
-                        Some(name) => write!(f, "{name}: ")?,
-                        None => f.write_str("_: ")?,
+            HMIRTypeOp::Aggregate { ty, pairs } => {
+                f.write_str("aggregate(")?;
+                self.expr(f, *ty, depth)?;
+                for (position, (name, value)) in pairs.iter().enumerate() {
+                    if position > 0 {
+                        f.write_str(", ")?;
                     }
-                    self.expr(f, field.ty(), depth + 1)?;
-                    if let Some(width) = field.bit_width() {
-                        write!(f, " : {width}")?;
+                    if let Some(name) = name {
+                        write!(f, ".{name} = ")?;
                     }
-                    f.write_str(",\n")?;
+                    self.expr(f, *value, depth)?;
                 }
-                indent(f, depth)?;
-                f.write_str("}")
+                f.write_str(")")
             }
             HMIRTypeOp::PointerInner(ty)
             | HMIRTypeOp::ReferenceInner(ty)
@@ -233,31 +198,12 @@ impl BodyPrinter<'_> {
             | HMIRTypeOp::IsPointer(ty)
             | HMIRTypeOp::IsSigned(ty) => self.call(f, op.path(), &[*ty], depth),
             HMIRTypeOp::Equal(lhs, rhs) => self.call(f, op.path(), &[*lhs, *rhs], depth),
-            HMIRTypeOp::OffsetOf { ty, member } => {
+            HMIRTypeOp::OffsetOf { ty } => {
                 write!(f, "{}(", op.path())?;
                 self.expr(f, *ty, depth)?;
                 f.write_str(", ")?;
-                for (position, step) in member.iter().enumerate() {
-                    match step {
-                        HMIRMemberStep::Field(name) if position == 0 => write!(f, "{name}")?,
-                        HMIRMemberStep::Field(name) => write!(f, ".{name}")?,
-                        HMIRMemberStep::Index(index) => {
-                            f.write_str("[")?;
-                            self.expr(f, *index, depth)?;
-                            f.write_str("]")?;
-                        }
-                    }
-                }
                 f.write_str(")")
             }
         }
-    }
-}
-
-fn semantics_keyword(semantics: HMIRMoveSemantics) -> Option<&'static str> {
-    match semantics {
-        HMIRMoveSemantics::POD => None,
-        HMIRMoveSemantics::Nocopy => Some("nocopy"),
-        HMIRMoveSemantics::Nodrop => Some("nodrop"),
     }
 }

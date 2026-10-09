@@ -20,7 +20,7 @@ use crate::{
     eval::{Signature, equivalent_def},
     module::Module,
     staging_error,
-    ty::{FunctionType, TypeID, TypeKind, TypeTable},
+    ty::{FunctionType, HMIRTypeKind, TypeTable},
     value::StaticValue,
 };
 
@@ -38,17 +38,20 @@ pub(crate) type ExternalLoader<'l> = dyn FnMut(&QualifiedName) -> Option<HMIRUni
 
 pub(crate) struct Program<'l> {
     units: Vec<Rc<HMIRUnit>>,
+    
     names: Vec<HashMap<QualifiedName, HMIRDefID>>,
     externals: HashMap<QualifiedName, Option<DefKey>>,
+
     loader: Box<ExternalLoader<'l>>,
     types: TypeTable,
+
     module: Module,
     generated: HashMap<Instance, StaticValue>,
     active: HashSet<Instance>,
     reentered: HashSet<Instance>,
     signatures: HashMap<Instance, Rc<Signature>>,
-    global_types: HashMap<DefKey, TypeID>,
-    imported: HashMap<(UnitID, HMIRTypeID), TypeID>,
+    global_types: HashMap<DefKey, HMIRTypeID>,
+    imported: HashMap<(UnitID, HMIRTypeID), HMIRTypeID>,
     serial: u64,
     require_explicit_return: bool,
     deferral: Deferral,
@@ -185,7 +188,7 @@ impl<'l> Program<'l> {
         &mut self.signatures
     }
 
-    pub(crate) fn global_types_mut(&mut self) -> &mut HashMap<DefKey, TypeID> {
+    pub(crate) fn global_types_mut(&mut self) -> &mut HashMap<DefKey, HMIRTypeID> {
         &mut self.global_types
     }
 
@@ -253,37 +256,39 @@ impl<'l> Program<'l> {
         unit: UnitID,
         ty: HMIRTypeID,
         span: &TokenRange,
-    ) -> CXResult<TypeID> {
+    ) -> CXResult<HMIRTypeID> {
         if let Some(id) = self.imported.get(&(unit, ty)) {
             return Ok(*id);
         }
         let desc = self.units[unit.index()].types().get(ty).clone();
         let kind = match desc {
-            HMIRTypeDesc::Void => TypeKind::Void,
-            HMIRTypeDesc::Unreachable => TypeKind::Unreachable,
-            HMIRTypeDesc::Type => TypeKind::Type,
-            HMIRTypeDesc::Str => TypeKind::Str,
-            HMIRTypeDesc::Int { width, signed } => TypeKind::Int { width, signed },
-            HMIRTypeDesc::Float { width } => TypeKind::Float { width },
-            HMIRTypeDesc::Pointer(inner) => TypeKind::Pointer(self.import_type(unit, inner, span)?),
-            HMIRTypeDesc::Reference(inner) => {
-                TypeKind::Reference(self.import_type(unit, inner, span)?)
+            HMIRTypeDesc::Void => HMIRTypeKind::Void,
+            HMIRTypeDesc::Unreachable => HMIRTypeKind::Unreachable,
+            HMIRTypeDesc::Type => HMIRTypeKind::Type,
+            HMIRTypeDesc::Str => HMIRTypeKind::Str,
+            HMIRTypeDesc::Int { width, signed } => HMIRTypeKind::Int { width, signed },
+            HMIRTypeDesc::Float { width } => HMIRTypeKind::Float { width },
+            HMIRTypeDesc::Pointer(inner) => {
+                HMIRTypeKind::PointerTo(self.import_type(unit, inner, span)?)
             }
-            HMIRTypeDesc::Array { element, length } => TypeKind::Array {
+            HMIRTypeDesc::Reference(inner) => {
+                HMIRTypeKind::ReferenceTo(self.import_type(unit, inner, span)?)
+            }
+            HMIRTypeDesc::Array { element, length } => HMIRTypeKind::Array {
                 element: self.import_type(unit, element, span)?,
                 length,
             },
             HMIRTypeDesc::Function(function) => {
-                TypeKind::Function(self.import_function_type(unit, &function, span)?)
+                HMIRTypeKind::Function(self.import_function_type(unit, &function, span)?)
             }
-            HMIRTypeDesc::Expr { params, result } => TypeKind::Expr {
+            HMIRTypeDesc::Expr { params, result } => HMIRTypeKind::StagedExpr {
                 params: params
                     .iter()
                     .map(|param| self.import_type(unit, *param, span))
                     .collect::<CXResult<_>>()?,
                 result: self.import_type(unit, result, span)?,
             },
-            HMIRTypeDesc::Opaque { size, alignment } => TypeKind::Opaque { size, alignment },
+            HMIRTypeDesc::Opaque { size, alignment } => HMIRTypeKind::Opaque { size, alignment },
             HMIRTypeDesc::Nominal(_) => {
                 return Err(staging_error(span, &mir::UNRESOLVED_NOMINAL, ()));
             }

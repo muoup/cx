@@ -1,6 +1,6 @@
 use cx_hmir::{
     HMIRAggregateKind, HMIRConstant, HMIRDefKind, HMIRDefRef, HMIRExprID, HMIRExprKind,
-    HMIRFieldDef, HMIRMemberStep, HMIRMoveSemantics, HMIRNativeOp, HMIRTypeOp,
+    HMIRFieldDef, HMIRMemberStep, HMIRMoveSemantics, HMIROp, HMIRTypeOp,
 };
 use cx_log::{
     CXResult,
@@ -14,7 +14,7 @@ use crate::{
     function::inspect::inspect,
     program::{Instance, Program, untagged_name},
     staging_error,
-    ty::{Field, FunctionType, NominalKey, TypeID, TypeKind, TypeTable},
+    ty::{Field, FunctionType, NominalKey, HMIRTypeID, HMIRTypeKind, TypeTable},
     value::StaticValue,
 };
 
@@ -118,14 +118,14 @@ pub(super) fn exec_type_op(
                 .filter(|param| !cx.types().is_void(*param))
                 .collect();
             let ret = eval_type(cx, frame, *ret)?;
-            StaticValue::Type(cx.types_mut().intern(TypeKind::Function(FunctionType::new(
+            StaticValue::Type(cx.types_mut().intern(HMIRTypeKind::Function(FunctionType::new(
                 params, ret, *variadic,
             ))))
         }
         HMIRTypeOp::Expr { params, result } => {
             let params = types(cx, frame, params)?;
             let result = eval_type(cx, frame, *result)?;
-            StaticValue::Type(cx.types_mut().intern(TypeKind::Expr { params, result }))
+            StaticValue::Type(cx.types_mut().intern(HMIRTypeKind::StagedExpr { params, result }))
         }
         HMIRTypeOp::Aggregate { .. } => unreachable!("aggregate types are evaluated with their id"),
         // A string literal is the array of its bytes and their terminator, which is not a type
@@ -141,7 +141,7 @@ pub(super) fn exec_type_op(
         HMIRTypeOp::SizeOf(operand) | HMIRTypeOp::AlignOf(operand) => {
             let ty = inspect(cx, frame, *operand, None)?;
             let ty = match cx.types().kind(ty) {
-                TypeKind::Type => eval_type(cx, frame, *operand)?,
+                HMIRTypeKind::Type => eval_type(cx, frame, *operand)?,
                 _ => ty,
             };
             let size = if matches!(op, HMIRTypeOp::SizeOf(_)) {
@@ -219,8 +219,8 @@ pub(super) fn exec_type_op(
             let ty = eval_type(cx, frame, *operand)?;
             let kind = cx.types().kind(ty);
             let result = match op {
-                HMIRTypeOp::IsInt(_) => matches!(kind, TypeKind::Int { .. }),
-                HMIRTypeOp::IsFloat(_) => matches!(kind, TypeKind::Float { .. }),
+                HMIRTypeOp::IsInt(_) => matches!(kind, HMIRTypeKind::Int { .. }),
+                HMIRTypeOp::IsFloat(_) => matches!(kind, HMIRTypeKind::Float { .. }),
                 HMIRTypeOp::IsPointer(_) => cx.types().is_pointer(ty),
                 _ => cx.types().is_signed(ty),
             };
@@ -234,7 +234,7 @@ pub(super) fn exec_type_op(
     })
 }
 
-pub(super) fn decay(types: &mut TypeTable, ty: TypeID) -> TypeID {
+pub(super) fn decay(types: &mut TypeTable, ty: HMIRTypeID) -> HMIRTypeID {
     let ty = types.reference_inner(ty).unwrap_or(ty);
     types.decayed(ty)
 }
@@ -243,7 +243,7 @@ pub(super) fn decay(types: &mut TypeTable, ty: TypeID) -> TypeID {
 // and is defined once nothing is in progress. Defining it on the spot would make mutually
 // referential aggregates depend on which of them is reached first.
 // Expressions inside a type (array lengths) may look through the pointer, so they opt out.
-fn eval_pointee(cx: &mut Program<'_>, frame: &mut EvalFrame, id: HMIRExprID) -> CXResult<TypeID> {
+fn eval_pointee(cx: &mut Program<'_>, frame: &mut EvalFrame, id: HMIRExprID) -> CXResult<HMIRTypeID> {
     let deferral = cx.deferral_mut();
     if deferral.defining > 0
         && !deferral.eager
@@ -258,10 +258,10 @@ fn defer_named_type(
     cx: &mut Program<'_>,
     frame: &EvalFrame,
     id: HMIRExprID,
-) -> CXResult<Option<TypeID>> {
+) -> CXResult<Option<HMIRTypeID>> {
     let expr = frame.body().expr(id);
     let mut def = match expr.kind() {
-        HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Const(inner))) => {
+        HMIRExprKind::Native(HMIROp::Type(HMIRTypeOp::Const(inner))) => {
             let inner = defer_named_type(cx, frame, *inner)?;
             return Ok(inner.map(|inner| cx.types_mut().const_of(inner)));
         }
@@ -290,7 +290,7 @@ fn defer_named_type(
         let root = global.initializer();
         match global.body().expr(root).kind() {
             HMIRExprKind::Def(alias) => (unit, def) = (key.unit(), alias.clone()),
-            HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Aggregate {
+            HMIRExprKind::Native(HMIROp::Type(HMIRTypeOp::Aggregate {
                 kind,
                 semantics,
                 unsafe_move,

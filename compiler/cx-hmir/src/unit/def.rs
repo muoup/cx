@@ -3,7 +3,7 @@ use cx_tokens::TokenRange;
 use cx_util::dense_id;
 
 use crate::{
-    ty::desc::HMIRTypeID,
+    ty::HMIRTypeID,
     unit::{
         function::HMIRFunction,
         global::{HMIRComptimeGlobal, HMIRGlobal},

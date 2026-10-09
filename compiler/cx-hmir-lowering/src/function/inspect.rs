@@ -7,7 +7,7 @@ use crate::{
     eval::EvalFrame,
     function::{Expect, Frame, FunctionLowering, Operand, Stop, expr::lower_expr},
     program::Program,
-    ty::{TypeID, TypeKind},
+    ty::{HMIRTypeID, HMIRTypeKind},
 };
 
 pub(super) enum Check<'a> {
@@ -24,8 +24,8 @@ pub(crate) fn inspect(
     program: &mut Program<'_>,
     frame: &EvalFrame,
     id: HMIRExprID,
-    expect: Option<TypeID>,
-) -> CXResult<TypeID> {
+    expect: Option<HMIRTypeID>,
+) -> CXResult<HMIRTypeID> {
     let span = frame.body().expr(id).span().clone();
     let ret = program.types_mut().void();
     let serial = program.next_serial();
@@ -41,7 +41,7 @@ pub(crate) fn inspect(
     }
     match lower_expr(&mut lowering, 0, id, Expect::of(expect)) {
         Ok(value) => Ok(value.ty()),
-        Err(Stop::Diverged) => Ok(lowering.program.types_mut().intern(TypeKind::Unreachable)),
+        Err(Stop::Diverged) => Ok(lowering.program.types_mut().intern(HMIRTypeKind::Unreachable)),
         Err(Stop::Error(error)) => Err(error),
     }
 }
@@ -133,12 +133,12 @@ pub(super) fn check(
 
 pub(super) fn binding(
     lowering: &mut FunctionLowering<'_, '_>,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<Operand> {
     if matches!(
         lowering.program.types().kind(ty),
-        TypeKind::Type | TypeKind::Expr { .. }
+        HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. }
     ) {
         return Ok(Operand::value(MIRValue::Constant(MIRConstant::Unit), ty));
     }

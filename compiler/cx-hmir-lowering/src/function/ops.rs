@@ -16,7 +16,7 @@ use crate::{
         operand::{lower_copy, lower_int_constant, lower_store, lower_value},
         promote::lower_promote,
     },
-    ty::{TypeID, TypeKind, TypeTable},
+    ty::{HMIRTypeID, HMIRTypeKind, TypeTable},
     value::{arithmetic_type, is_comparison, is_logical},
 };
 
@@ -45,7 +45,7 @@ fn lower_binary_operands(
     rhs: Operand,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
-    if (!cx.unevaluated || matches!(cx.program.types().kind(lhs.ty()), TypeKind::Type))
+    if (!cx.unevaluated || matches!(cx.program.types().kind(lhs.ty()), HMIRTypeKind::Type))
         && let (Some(left), Some(right)) = (lhs.as_static(), rhs.as_static())
         && let Ok(value) = fold_binary(cx.program, op, left.clone(), right.clone(), span)
     {
@@ -54,17 +54,17 @@ fn lower_binary_operands(
     let left = cx.program.types().kind(lhs.ty()).clone();
     let right = cx.program.types().kind(rhs.ty()).clone();
     match (&left, &right) {
-        (TypeKind::Pointer(element), TypeKind::Int { .. })
+        (HMIRTypeKind::PointerTo(element), HMIRTypeKind::Int { .. })
             if matches!(op, HMIRBinaryOp::Add | HMIRBinaryOp::Sub) =>
         {
             let ty = lhs.ty();
             lower_pointer_offset(cx, lhs, rhs, *element, op == HMIRBinaryOp::Sub, ty, span)
         }
-        (TypeKind::Int { .. }, TypeKind::Pointer(element)) if op == HMIRBinaryOp::Add => {
+        (HMIRTypeKind::Int { .. }, HMIRTypeKind::PointerTo(element)) if op == HMIRBinaryOp::Add => {
             let ty = rhs.ty();
             lower_pointer_offset(cx, rhs, lhs, *element, false, ty, span)
         }
-        (TypeKind::Pointer(element), TypeKind::Pointer(_)) if op == HMIRBinaryOp::Sub => {
+        (HMIRTypeKind::PointerTo(element), HMIRTypeKind::PointerTo(_)) if op == HMIRBinaryOp::Sub => {
             let element_ty = cx.mir(*element, span)?;
             let ty = cx.program.types_mut().int(HMIRIntWidth::I64, true);
             let lhs = lower_value(cx, lhs, span)?;
@@ -81,8 +81,8 @@ fn lower_binary_operands(
             );
             Ok(Operand::register(out, ty))
         }
-        (TypeKind::Pointer(_), _) | (_, TypeKind::Pointer(_)) if is_comparison(op) => {
-            let (lhs, rhs) = if matches!(left, TypeKind::Pointer(_)) {
+        (HMIRTypeKind::PointerTo(_), _) | (_, HMIRTypeKind::PointerTo(_)) if is_comparison(op) => {
+            let (lhs, rhs) = if matches!(left, HMIRTypeKind::PointerTo(_)) {
                 let ty = lhs.ty();
                 let rhs = lower_convert(cx, rhs, ty, span)?;
                 (lhs, rhs)
@@ -131,7 +131,7 @@ fn lower_arithmetic(
     let out = cx.register(result, span)?;
     let out_target = MIRTarget::Register(out);
     let intrinsic: MIRIntrinsic = match cx.program.types().kind(common).clone() {
-        TypeKind::Float { .. } => {
+        HMIRTypeKind::Float { .. } => {
             let (out, lhs, rhs) = (out_target, lhs, rhs);
             match op {
                 HMIRBinaryOp::Add => MIRFloatIntrinsic::Add { out, lhs, rhs },
@@ -150,7 +150,7 @@ fn lower_arithmetic(
             }
             .into()
         }
-        TypeKind::Int { signed, .. } => {
+        HMIRTypeKind::Int { signed, .. } => {
             let (out, lhs, rhs) = (out_target, lhs, rhs);
             match op {
                 HMIRBinaryOp::Add => MIRIntIntrinsic::Add { out, lhs, rhs },
@@ -221,9 +221,9 @@ pub(super) fn lower_pointer_offset(
     cx: &mut FunctionLowering<'_, '_>,
     pointer: Operand,
     index: Operand,
-    element: TypeID,
+    element: HMIRTypeID,
     subtract: bool,
-    result: TypeID,
+    result: HMIRTypeID,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let origin = pointer.pointee_origin();
@@ -367,7 +367,7 @@ pub(super) fn lower_unary(
     let value = lower_value(cx, value, span)?;
     let out = cx.register(ty, span)?;
     let target = MIRTarget::Register(out);
-    let float = matches!(cx.program.types().kind(ty), TypeKind::Float { .. });
+    let float = matches!(cx.program.types().kind(ty), HMIRTypeKind::Float { .. });
     let intrinsic: MIRIntrinsic = match op {
         HMIRUnaryOp::Neg if float => MIRFloatIntrinsic::Neg { out: target, value }.into(),
         HMIRUnaryOp::Neg => MIRIntIntrinsic::Neg { out: target, value }.into(),
@@ -396,7 +396,7 @@ fn lower_increment(
     let out = cx.register(ty, span)?;
     let out_target = MIRTarget::Register(out);
     match cx.program.types().kind(ty).clone() {
-        TypeKind::Int { .. } => {
+        HMIRTypeKind::Int { .. } => {
             let step = lower_int_constant(cx, amount.abs(), ty);
             let (lhs, rhs) = (current.clone(), step);
             if amount >= 0 {
@@ -419,7 +419,7 @@ fn lower_increment(
                 );
             }
         }
-        TypeKind::Float { width } => {
+        HMIRTypeKind::Float { width } => {
             let step = MIRValue::Constant(MIRConstant::Float {
                 value: (amount as f64).into(),
                 ty: TypeTable::mir_float(width),
@@ -433,7 +433,7 @@ fn lower_increment(
                 span,
             );
         }
-        TypeKind::Pointer(element) => {
+        HMIRTypeKind::PointerTo(element) => {
             let size = cx.program.types_mut().size_of(element, span)?;
             let size_type = cx.program.types_mut().size_type();
             let offset = lower_int_constant(cx, amount * size as i128, size_type);

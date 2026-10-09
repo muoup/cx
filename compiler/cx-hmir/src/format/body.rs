@@ -3,7 +3,7 @@ use std::fmt::{self, Formatter};
 use crate::{
     binding::HMIRLocalID,
     body::HMIRBody,
-    expr::kind::{HMIRBlockKind, HMIRExprID, HMIRExprKind},
+    expr::{HMIRExprID, HMIRExprKind},
     unit::HMIRUnit,
 };
 
@@ -73,16 +73,10 @@ impl<'a> BodyPrinter<'a> {
     pub(super) fn block(
         &self,
         f: &mut Formatter<'_>,
-        kind: HMIRBlockKind,
         statements: &[HMIRExprID],
         tail: Option<HMIRExprID>,
         depth: usize,
     ) -> fmt::Result {
-        f.write_str(match kind {
-            HMIRBlockKind::Sequence => "seq {\n",
-            HMIRBlockKind::Scope => "{\n",
-            HMIRBlockKind::Yield => ".{\n",
-        })?;
         self.statements(f, statements, depth + 1)?;
         if let Some(tail) = tail {
             indent(f, depth + 1)?;
@@ -100,15 +94,6 @@ impl<'a> BodyPrinter<'a> {
         depth: usize,
     ) -> fmt::Result {
         for statement in statements {
-            if let HMIRExprKind::Block {
-                kind: HMIRBlockKind::Sequence,
-                statements,
-                tail: None,
-            } = self.body.expr(*statement).kind()
-            {
-                self.statements(f, statements, depth)?;
-                continue;
-            }
             indent(f, depth)?;
             self.statement(f, *statement, depth)?;
             if !self.is_structured(*statement) {

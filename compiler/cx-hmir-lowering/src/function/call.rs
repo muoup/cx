@@ -21,7 +21,7 @@ use crate::{
     },
     module::declare_function,
     program::DefKey,
-    ty::{TypeID, TypeKind},
+    ty::{HMIRTypeID, HMIRTypeKind},
     value::StaticValue,
 };
 
@@ -262,10 +262,10 @@ fn lower_indirect_call(
 ) -> LowerResult<Operand> {
     cx.require_unsafe("Non-safe function call", span)?;
     let function = match cx.program.types().kind(callee.ty()) {
-        TypeKind::Pointer(inner) => cx.program.types().kind(*inner).clone(),
+        HMIRTypeKind::PointerTo(inner) => cx.program.types().kind(*inner).clone(),
         kind => kind.clone(),
     };
-    let TypeKind::Function(function) = function else {
+    let HMIRTypeKind::Function(function) = function else {
         return cx.error(
             span,
             &typecheck::UNEXPECTED_KIND,
@@ -302,7 +302,7 @@ fn lower_indirect_call(
 fn lower_argument(
     cx: &mut FunctionLowering<'_, '_>,
     operand: Operand,
-    param: Option<TypeID>,
+    param: Option<HMIRTypeID>,
     span: &TokenRange,
 ) -> LowerResult<MIRValue> {
     if let Some(param) = param {
@@ -312,14 +312,14 @@ fn lower_argument(
     let operand = lower_auto_deref(cx, operand, span)?;
     let operand = lower_decay(cx, operand, span)?;
     let promoted = match cx.program.types().kind(operand.ty()).clone() {
-        TypeKind::Int { width, signed } if width < HMIRIntWidth::I32 => Some(
+        HMIRTypeKind::Int { width, signed } if width < HMIRIntWidth::I32 => Some(
             cx.program
                 .types_mut()
                 .int(HMIRIntWidth::I32, signed || width == HMIRIntWidth::I1),
         ),
-        TypeKind::Float {
+        HMIRTypeKind::Float {
             width: HMIRFloatWidth::F32,
-        } => Some(cx.program.types_mut().intern(TypeKind::Float {
+        } => Some(cx.program.types_mut().intern(HMIRTypeKind::Float {
             width: HMIRFloatWidth::F64,
         })),
         _ => None,
@@ -335,12 +335,12 @@ fn lower_emit_call(
     cx: &mut FunctionLowering<'_, '_>,
     callee: MIRValue,
     args: Vec<MIRValue>,
-    ret: TypeID,
+    ret: HMIRTypeID,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let types = cx.program.types();
     let unreachable = types.is_unreachable(ret);
-    if cx.unevaluated && matches!(types.kind(ret), TypeKind::Expr { .. } | TypeKind::Type) {
+    if cx.unevaluated && matches!(types.kind(ret), HMIRTypeKind::StagedExpr { .. } | HMIRTypeKind::Type) {
         return Ok(inspect::binding(cx, ret, span)?);
     }
     let out = if types.is_void(ret) || unreachable {

@@ -7,7 +7,7 @@ use cx_hir::ast::{
 use cx_hmir::{
     HMIRAggregateOp, HMIRBlockKind, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRContract,
     HMIRControlOp, HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRError, HMIRExpr, HMIRExprID,
-    HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIRNativeOp,
+    HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIROp,
     HMIROwnershipOp, HMIRSignature, HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner, HMIRTypeOp,
 };
 use cx_log::catalogue::{ErrorDefinition, typecheck};
@@ -145,7 +145,7 @@ impl<'a> BodyLowering<'a> {
         self.body.push_expr(HMIRExpr::new(kind, span.clone()))
     }
 
-    pub(crate) fn native(&mut self, op: HMIRNativeOp, span: &TokenRange) -> HMIRExprID {
+    pub(crate) fn native(&mut self, op: HMIROp, span: &TokenRange) -> HMIRExprID {
         self.push(HMIRExprKind::Native(op), span)
     }
 
@@ -338,19 +338,19 @@ impl<'a> BodyLowering<'a> {
         )
     }
     pub(crate) fn control(&mut self, op: HMIRControlOp, span: &TokenRange) -> HMIRExprID {
-        self.native(HMIRNativeOp::Control(op), span)
+        self.native(HMIROp::Control(op), span)
     }
     pub(crate) fn ownership(&mut self, op: HMIROwnershipOp, span: &TokenRange) -> HMIRExprID {
-        self.native(HMIRNativeOp::OwnershipOp(op), span)
+        self.native(HMIROp::OwnershipOp(op), span)
     }
     pub(crate) fn aggregate_op(&mut self, op: HMIRAggregateOp, span: &TokenRange) -> HMIRExprID {
-        self.native(HMIRNativeOp::AggregateOp(op), span)
+        self.native(HMIROp::AggregateOp(op), span)
     }
     pub(crate) fn type_of_types(&mut self, span: &TokenRange) -> HMIRExprID {
         self.type_constant(HMIRTypeDesc::Type, span)
     }
     pub(crate) fn type_op(&mut self, op: HMIRTypeOp, span: &TokenRange) -> HMIRExprID {
-        self.native(HMIRNativeOp::Type(op), span)
+        self.native(HMIROp::Type(op), span)
     }
     pub(crate) fn coerce(
         &mut self,
@@ -360,7 +360,7 @@ impl<'a> BodyLowering<'a> {
         span: &TokenRange,
     ) -> HMIRExprID {
         self.native(
-            HMIRNativeOp::Coerce {
+            HMIROp::Coerce {
                 mode,
                 value,
                 target,

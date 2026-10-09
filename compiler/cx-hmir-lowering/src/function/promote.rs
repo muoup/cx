@@ -8,7 +8,7 @@ use crate::{
         coerce::lower_convert,
         operand::{lower_auto_deref, lower_copy, lower_spill, lower_value},
     },
-    ty::{TypeID, TypeKind},
+    ty::{HMIRTypeID, HMIRTypeKind},
     value::promote_integer_type,
 };
 
@@ -46,9 +46,9 @@ pub(super) fn lower_decay(
 ) -> LowerResult<Operand> {
     let ty = cx.program.types_mut().decayed(operand.ty());
     match cx.program.types().kind(operand.ty()) {
-        TypeKind::Array { .. } => lower_array_to_pointer(cx, operand, ty, span),
-        TypeKind::Str => lower_str_to_pointer(cx, operand, ty, span),
-        TypeKind::Function(_) => lower_function_to_pointer(cx, operand, ty, span),
+        HMIRTypeKind::Array { .. } => lower_array_to_pointer(cx, operand, ty, span),
+        HMIRTypeKind::Str => lower_str_to_pointer(cx, operand, ty, span),
+        HMIRTypeKind::Function(_) => lower_function_to_pointer(cx, operand, ty, span),
         _ => Ok(operand),
     }
 }
@@ -56,7 +56,7 @@ pub(super) fn lower_decay(
 fn lower_array_to_pointer(
     cx: &mut FunctionLowering<'_, '_>,
     operand: Operand,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let operand = lower_spill(cx, operand, span)?;
@@ -76,7 +76,7 @@ fn lower_array_to_pointer(
 fn lower_str_to_pointer(
     cx: &mut FunctionLowering<'_, '_>,
     operand: Operand,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     if operand.as_static().is_some() {
@@ -100,7 +100,7 @@ fn lower_str_to_pointer(
 fn lower_function_to_pointer(
     cx: &mut FunctionLowering<'_, '_>,
     operand: Operand,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     if cx.unevaluated {

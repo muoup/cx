@@ -11,14 +11,14 @@ use crate::{
     eval::eval_global_type,
     function::{FunctionLowering, LowerResult},
     module::{declare_function, global_ref, to_constant},
-    ty::{TypeID, TypeKind, TypeTable},
+    ty::{HMIRTypeID, HMIRTypeKind, TypeTable},
     value::StaticValue,
 };
 
 #[derive(Debug, Clone)]
 pub(crate) struct Operand {
     kind: OperandKind,
-    ty: TypeID,
+    ty: HMIRTypeID,
     pointee_origin: Option<MIRPlaceID>,
 }
 
@@ -38,7 +38,7 @@ pub(crate) enum OperandKind {
 }
 
 impl Operand {
-    pub(crate) fn new(kind: OperandKind, ty: TypeID) -> Self {
+    pub(crate) fn new(kind: OperandKind, ty: HMIRTypeID) -> Self {
         Self {
             kind,
             ty,
@@ -46,19 +46,19 @@ impl Operand {
         }
     }
 
-    pub(crate) fn place(place: MIRPlaceID, ty: TypeID) -> Self {
+    pub(crate) fn place(place: MIRPlaceID, ty: HMIRTypeID) -> Self {
         Self::new(OperandKind::Place(place), ty)
     }
 
-    pub(crate) fn value(value: MIRValue, ty: TypeID) -> Self {
+    pub(crate) fn value(value: MIRValue, ty: HMIRTypeID) -> Self {
         Self::new(OperandKind::Value(value), ty)
     }
 
-    pub(crate) fn register(register: MIRRegisterID, ty: TypeID) -> Self {
+    pub(crate) fn register(register: MIRRegisterID, ty: HMIRTypeID) -> Self {
         Self::value(MIRValue::Register(register), ty)
     }
 
-    pub(crate) fn reference(reg: MIRRegisterID, ty: TypeID, origin: Option<MIRPlaceID>) -> Self {
+    pub(crate) fn reference(reg: MIRRegisterID, ty: HMIRTypeID, origin: Option<MIRPlaceID>) -> Self {
         Self::new(
             OperandKind::Ref {
                 reg,
@@ -77,11 +77,11 @@ impl Operand {
         &self.kind
     }
 
-    pub(crate) fn ty(&self) -> TypeID {
+    pub(crate) fn ty(&self) -> HMIRTypeID {
         self.ty
     }
 
-    pub(crate) fn with_type(mut self, ty: TypeID) -> Self {
+    pub(crate) fn with_type(mut self, ty: HMIRTypeID) -> Self {
         self.ty = ty;
         self
     }
@@ -156,7 +156,7 @@ pub(super) fn lower_store(
     cx: &mut FunctionLowering<'_, '_>,
     target: MIRTarget,
     value: MIRValue,
-    ty: TypeID,
+    ty: HMIRTypeID,
     bitfield: Option<MIRStoreBitfield>,
     span: &TokenRange,
 ) -> LowerResult<()> {
@@ -245,7 +245,7 @@ pub(super) fn lower_read(
 fn lower_static_value(
     cx: &mut FunctionLowering<'_, '_>,
     value: StaticValue,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> LowerResult<MIRValue> {
     if cx.unevaluated {
@@ -254,7 +254,7 @@ fn lower_static_value(
     match value {
         StaticValue::Str(string) => {
             let ty = match cx.program.types().kind(ty) {
-                TypeKind::Pointer(_) | TypeKind::Reference(_) => ty,
+                HMIRTypeKind::PointerTo(_) | HMIRTypeKind::ReferenceTo(_) => ty,
                 _ => cx.program.types_mut().char_pointer(),
             };
             let out = cx.register(ty, span)?;
@@ -351,7 +351,7 @@ pub(super) fn lower_auto_deref(
 pub(super) fn lower_int_constant(
     cx: &mut FunctionLowering<'_, '_>,
     value: i128,
-    ty: TypeID,
+    ty: HMIRTypeID,
 ) -> MIRValue {
     let width = cx
         .program

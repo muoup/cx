@@ -6,7 +6,12 @@ edition = "2024"
 [dependencies]
 speedy = "0.8.7"
 
+cx-hir = { path = "../cx-hir" }
 cx-intrinsics = { path = "../cx-intrinsics" }
+
+cx-target = { path = "../cx-target" }
 cx-namespace = { path = "../cx-namespace" }
+
 cx-tokens = { path = "../cx-tokens" }
+cx-log = { path = "../cx-log" }
 cx-util = { path = "../cx-util" }

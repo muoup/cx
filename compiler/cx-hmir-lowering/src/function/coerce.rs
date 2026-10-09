@@ -16,7 +16,7 @@ use crate::{
         operand::{lower_auto_deref, lower_int_constant, lower_read, lower_spill, lower_value},
         promote::lower_decay,
     },
-    ty::{TypeID, TypeKind, TypeTable},
+    ty::{HMIRTypeID, HMIRTypeKind, TypeTable},
     value::StaticValue,
 };
 
@@ -121,7 +121,7 @@ pub(super) fn lower_truthy(
     let out = cx.register(bool, span)?;
     let target = MIRTarget::Register(out);
     match kind {
-        TypeKind::Int { .. } => {
+        HMIRTypeKind::Int { .. } => {
             let zero = lower_int_constant(cx, 0, source_ty);
             cx.intrinsic(
                 MIRIntIntrinsic::Neq {
@@ -132,7 +132,7 @@ pub(super) fn lower_truthy(
                 span,
             );
         }
-        TypeKind::Float { width } => {
+        HMIRTypeKind::Float { width } => {
             let zero = MIRValue::Constant(MIRConstant::Float {
                 value: 0.0f64.into(),
                 ty: TypeTable::mir_float(width),
@@ -146,7 +146,7 @@ pub(super) fn lower_truthy(
                 span,
             );
         }
-        TypeKind::Pointer(_) | TypeKind::Str | TypeKind::Function(_) => {
+        HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Str | HMIRTypeKind::Function(_) => {
             let null = MIRValue::Constant(MIRConstant::Nullptr {
                 ty: cx.mir(source_ty, span)?,
             });
@@ -171,13 +171,13 @@ pub(super) fn lower_truthy(
 }
 
 // A function may stand in for one returning nothing unless its result has to be consumed
-fn discards_nodrop_result(types: &TypeTable, source: TypeID, target: TypeID) -> bool {
-    let function = |ty: TypeID| match types.kind(ty) {
-        TypeKind::Pointer(inner) => match types.kind(*inner) {
-            TypeKind::Function(function) => Some(function.ret()),
+fn discards_nodrop_result(types: &TypeTable, source: HMIRTypeID, target: HMIRTypeID) -> bool {
+    let function = |ty: HMIRTypeID| match types.kind(ty) {
+        HMIRTypeKind::PointerTo(inner) => match types.kind(*inner) {
+            HMIRTypeKind::Function(function) => Some(function.ret()),
             _ => None,
         },
-        TypeKind::Function(function) => Some(function.ret()),
+        HMIRTypeKind::Function(function) => Some(function.ret()),
         _ => None,
     };
     match (function(source), function(target)) {
@@ -186,7 +186,7 @@ fn discards_nodrop_result(types: &TypeTable, source: TypeID, target: TypeID) -> 
     }
 }
 
-fn same(cx: &mut FunctionLowering<'_, '_>, lhs: TypeID, rhs: TypeID) -> bool {
+fn same(cx: &mut FunctionLowering<'_, '_>, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bool {
     cx.program.types_mut().same_unqualified(lhs, rhs)
 }
 
@@ -194,7 +194,7 @@ fn same(cx: &mut FunctionLowering<'_, '_>, lhs: TypeID, rhs: TypeID) -> bool {
 pub(crate) fn lower_convert(
     cx: &mut FunctionLowering<'_, '_>,
     operand: Operand,
-    target: TypeID,
+    target: HMIRTypeID,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     let source = operand.ty();
@@ -225,25 +225,25 @@ pub(crate) fn lower_convert(
 
     if matches!(
         (&source_kind, &target_kind),
-        (TypeKind::Pointer(_), TypeKind::Int { width, .. })
-        | (TypeKind::Int { width, .. }, TypeKind::Pointer(_)) if *width != HMIRIntWidth::I1
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int { width, .. })
+        | (HMIRTypeKind::Int { width, .. }, HMIRTypeKind::PointerTo(_)) if *width != HMIRIntWidth::I1
     ) {
         cx.require_unsafe("Unsafe type conversion", span)?;
     }
 
     match (&source_kind, &target_kind) {
-        (_, TypeKind::Void) => return Ok(Operand::unit(cx.program.types_mut())),
-        (TypeKind::Reference(inner), _) if same(cx, *inner, target) => {
+        (_, HMIRTypeKind::Void) => return Ok(Operand::unit(cx.program.types_mut())),
+        (HMIRTypeKind::ReferenceTo(inner), _) if same(cx, *inner, target) => {
             let operand = lower_auto_deref(cx, operand, span)?;
             return Ok(operand);
         }
-        (TypeKind::Str, TypeKind::Reference(inner))
+        (HMIRTypeKind::Str, HMIRTypeKind::ReferenceTo(inner))
             if same(cx, *inner, source) && operand.as_static().is_some() =>
         {
             let value = lower_value(cx, operand.with_type(target), span)?;
             return Ok(Operand::value(value, target));
         }
-        (_, TypeKind::Reference(inner)) if same(cx, *inner, source) => {
+        (_, HMIRTypeKind::ReferenceTo(inner)) if same(cx, *inner, source) => {
             if operand.bitfield().is_some() {
                 return cx.error(
                     span,
@@ -255,7 +255,7 @@ pub(crate) fn lower_convert(
             let address = operand.address().expect("spilled operand is addressable");
             return Ok(Operand::value(address, target));
         }
-        (_, TypeKind::Reference(inner)) => {
+        (_, HMIRTypeKind::ReferenceTo(inner)) => {
             let operand = lower_decay(cx, operand, span)?;
             if let Some(pointee) = cx.program.types().pointer_inner(operand.ty())
                 && same(cx, pointee, *inner)
@@ -276,11 +276,11 @@ pub(crate) fn lower_convert(
             );
         }
         (
-            TypeKind::Int {
+            HMIRTypeKind::Int {
                 width: from,
                 signed,
             },
-            TypeKind::Int { width: to, .. },
+            HMIRTypeKind::Int { width: to, .. },
         ) => {
             let (from, signed, to) = (*from, *signed, *to);
             let value = lower_value(cx, operand, span)?;
@@ -311,7 +311,7 @@ pub(crate) fn lower_convert(
             }
             return Ok(Operand::register(out, target));
         }
-        (TypeKind::Int { signed, .. }, TypeKind::Float { width }) => {
+        (HMIRTypeKind::Int { signed, .. }, HMIRTypeKind::Float { width }) => {
             let (signed, width) = (*signed, *width);
             let value = lower_value(cx, operand, span)?;
             let out = cx.register(target, span)?;
@@ -326,7 +326,7 @@ pub(crate) fn lower_convert(
             );
             return Ok(Operand::register(out, target));
         }
-        (TypeKind::Float { .. }, TypeKind::Int { width, signed }) => {
+        (HMIRTypeKind::Float { .. }, HMIRTypeKind::Int { width, signed }) => {
             if *width == HMIRIntWidth::I1 {
                 return lower_truthy(cx, operand, span);
             }
@@ -345,7 +345,7 @@ pub(crate) fn lower_convert(
             );
             return Ok(Operand::register(out, target));
         }
-        (TypeKind::Float { width: from }, TypeKind::Float { width: to }) => {
+        (HMIRTypeKind::Float { width: from }, HMIRTypeKind::Float { width: to }) => {
             let value = lower_value(cx, operand, span)?;
             if from == to {
                 return Ok(Operand::value(value, target));
@@ -363,8 +363,8 @@ pub(crate) fn lower_convert(
             return Ok(Operand::register(out, target));
         }
         (
-            TypeKind::Pointer(_) | TypeKind::Str | TypeKind::Function(_),
-            TypeKind::Int { width, .. },
+            HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Str | HMIRTypeKind::Function(_),
+            HMIRTypeKind::Int { width, .. },
         ) => {
             if *width == HMIRIntWidth::I1 {
                 return lower_truthy(cx, operand, span);
@@ -383,7 +383,7 @@ pub(crate) fn lower_convert(
             );
             return Ok(Operand::register(out, target));
         }
-        (TypeKind::Int { signed, .. }, TypeKind::Pointer(_)) => {
+        (HMIRTypeKind::Int { signed, .. }, HMIRTypeKind::PointerTo(_)) => {
             let signed = *signed;
             let value = lower_value(cx, operand, span)?;
             let out = cx.register(target, span)?;
@@ -397,15 +397,15 @@ pub(crate) fn lower_convert(
             );
             return Ok(Operand::register(out, target));
         }
-        (TypeKind::Str, TypeKind::Array { length, .. }) => {
+        (HMIRTypeKind::Str, HMIRTypeKind::Array { length, .. }) => {
             let length = *length;
             return lower_string_array(cx, operand, target, length, span);
         }
-        (TypeKind::Array { .. } | TypeKind::Str | TypeKind::Function(_), TypeKind::Pointer(_)) => {
+        (HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) => {
             let operand = lower_decay(cx, operand, span)?;
             return lower_convert(cx, operand, target, span);
         }
-        (TypeKind::Pointer(_), TypeKind::Pointer(_)) => {
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => {
             let source_mir = cx.mir(source, span)?;
             let target_mir = cx.mir(target, span)?;
             let value = lower_value(cx, operand, span)?;
@@ -424,19 +424,19 @@ pub(crate) fn lower_convert(
             return Ok(Operand::register(out, target));
         }
         (
-            TypeKind::Array { element: from, .. },
-            TypeKind::Array {
+            HMIRTypeKind::Array { element: from, .. },
+            HMIRTypeKind::Array {
                 element: to,
                 length: None,
             },
         ) if same(cx, *from, *to) => {
             return Ok(operand.with_type(source));
         }
-        (TypeKind::Reference(_), _) => {
+        (HMIRTypeKind::ReferenceTo(_), _) => {
             let operand = lower_auto_deref(cx, operand, span)?;
             return lower_convert(cx, operand, target, span);
         }
-        (TypeKind::Unreachable, _) => return Ok(operand.with_type(target)),
+        (HMIRTypeKind::Unreachable, _) => return Ok(operand.with_type(target)),
         _ => {}
     }
 
@@ -458,7 +458,7 @@ pub(crate) fn lower_convert(
 fn lower_string_array(
     cx: &mut FunctionLowering<'_, '_>,
     operand: Operand,
-    target: TypeID,
+    target: HMIRTypeID,
     length: Option<u64>,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
@@ -500,10 +500,10 @@ fn lower_string_array(
         ));
     }
     let target = match cx.program.types().kind(target).clone() {
-        TypeKind::Array {
+        HMIRTypeKind::Array {
             element,
             length: None,
-        } => cx.program.types_mut().intern(TypeKind::Array {
+        } => cx.program.types_mut().intern(HMIRTypeKind::Array {
             element,
             length: Some(length as u64),
         }),

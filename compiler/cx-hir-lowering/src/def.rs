@@ -7,7 +7,7 @@ use cx_hir::ast::{
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRComptimeGlobal, HMIRContract, HMIRDefKind,
     HMIRExprID, HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRIntWidth,
-    HMIRNativeOp, HMIROwnershipOp, HMIRSignature, HMIRTypeDesc,
+    HMIROp, HMIROwnershipOp, HMIRSignature, HMIRTypeDesc,
 };
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
@@ -198,7 +198,7 @@ fn lower_enum_variant(
             let lhs = cx.def_expr(base, &span);
             let rhs = cx.int_constant(int, (index - explicit) as i128, &span);
             cx.native(
-                HMIRNativeOp::BinOp {
+                HMIROp::BinOp {
                     op: HMIRBinaryOp::Add,
                     lhs,
                     rhs,

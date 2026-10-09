@@ -6,12 +6,12 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     staging_error,
-    ty::{FunctionType, NominalID, TypeID, TypeKind, TypeTable},
+    ty::{FunctionType, NominalID, HMIRTypeID, HMIRTypeKind, TypeTable},
 };
 
 pub(super) fn lower_type(
     types: &mut TypeTable,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
     let ty = types.unqualified(ty);
@@ -19,28 +19,28 @@ pub(super) fn lower_type(
         return Ok(*id);
     }
     let kind = match types.kind(ty).clone() {
-        TypeKind::Void | TypeKind::Unreachable => MIRTypeKind::Void,
-        TypeKind::Type | TypeKind::Expr { .. } => {
+        HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
+        HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } => {
             return Err(staging_error(
                 span,
                 &typecheck::COMPTIME_ONLY_TYPE,
                 types.display(ty),
             ));
         }
-        TypeKind::Str => MIRTypeKind::Str,
-        TypeKind::Int { width, .. } => MIRTypeKind::Integer {
+        HMIRTypeKind::Str => MIRTypeKind::Str,
+        HMIRTypeKind::Int { width, .. } => MIRTypeKind::Integer {
             ty: TypeTable::mir_int(width),
         },
-        TypeKind::Float { width } => MIRTypeKind::Float {
+        HMIRTypeKind::Float { width } => MIRTypeKind::Float {
             ty: TypeTable::mir_float(width),
         },
-        TypeKind::Pointer(inner) => MIRTypeKind::PointerTo {
+        HMIRTypeKind::PointerTo(inner) => MIRTypeKind::PointerTo {
             inner: lower_type(types, inner, span)?,
         },
-        TypeKind::Reference(inner) => MIRTypeKind::MemoryReference {
+        HMIRTypeKind::ReferenceTo(inner) => MIRTypeKind::MemoryReference {
             inner: lower_type(types, inner, span)?,
         },
-        TypeKind::Array { element, length } => {
+        HMIRTypeKind::Array { element, length } => {
             let inner = lower_type(types, element, span)?;
             match length {
                 Some(length) => MIRTypeKind::Array {
@@ -50,12 +50,12 @@ pub(super) fn lower_type(
                 None => MIRTypeKind::IncompleteArray { inner },
             }
         }
-        TypeKind::Function(function) => MIRTypeKind::Function {
+        HMIRTypeKind::Function(function) => MIRTypeKind::Function {
             signature: lower_signature(types, &function, span)?,
         },
-        TypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
-        TypeKind::Nominal(nominal) => return lower_nominal_type(types, ty, nominal, span),
-        TypeKind::Const(_) => unreachable!("'kind' looks through qualifiers"),
+        HMIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
+        HMIRTypeKind::Nominal(nominal) => return lower_nominal_type(types, ty, nominal, span),
+        HMIRTypeKind::Const(_) => unreachable!("'kind' looks through qualifiers"),
     };
     let id = types.mir.intern(MIRType::new(kind));
     types.lowered.insert(ty, id);
@@ -86,7 +86,7 @@ fn lower_signature(
 
 fn lower_nominal_type(
     types: &mut TypeTable,
-    ty: TypeID,
+    ty: HMIRTypeID,
     nominal: NominalID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {

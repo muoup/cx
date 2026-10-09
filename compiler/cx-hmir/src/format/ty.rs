@@ -1,8 +1,8 @@
 use std::fmt::{self, Formatter};
 
 use crate::{
-    expr::HMIRConstant,
-    ty::desc::{HMIRTypeDesc, HMIRTypeID},
+    expr::constant::HMIRConstant,
+    ty::HMIRTypeID,
     unit::{HMIRUnit, def::HMIRDefRef},
 };
 

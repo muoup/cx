@@ -21,7 +21,7 @@ use crate::{
     function::lower_function,
     program::{DefKey, Instance, Program},
     staging_error,
-    ty::{TypeID, TypeKind, TypeTable},
+    ty::{HMIRTypeID, HMIRTypeKind, TypeTable},
     value::StaticValue,
 };
 
@@ -342,14 +342,14 @@ pub(crate) fn global_ref(
 pub(crate) fn to_constant(
     cx: &mut Program<'_>,
     value: &StaticValue,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRConstant> {
     let value = coerce_static(cx, value.clone(), ty, span)?;
     Ok(match value {
         StaticValue::Unit => MIRConstant::Unit,
         StaticValue::Int { value, ty } => match cx.types().kind(ty).clone() {
-            TypeKind::Pointer(_) if value == 0 => MIRConstant::Nullptr {
+            HMIRTypeKind::PointerTo(_) if value == 0 => MIRConstant::Nullptr {
                 ty: cx.types_mut().mir(ty, span)?,
             },
             _ => {
@@ -367,7 +367,7 @@ pub(crate) fn to_constant(
             }
         },
         StaticValue::Float { value, ty } => match cx.types().kind(ty) {
-            TypeKind::Float { width } => MIRConstant::Float {
+            HMIRTypeKind::Float { width } => MIRConstant::Float {
                 value,
                 ty: TypeTable::mir_float(*width),
             },
@@ -380,7 +380,7 @@ pub(crate) fn to_constant(
             }
         },
         StaticValue::Str(string) => match cx.types().kind(ty).clone() {
-            TypeKind::Array { element, length } => {
+            HMIRTypeKind::Array { element, length } => {
                 let length = length.unwrap_or(string.len() as u64 + 1) as usize;
                 let int = cx
                     .types()
@@ -454,7 +454,7 @@ pub(crate) fn to_constant(
 // The position of the variant a pattern names within the sum it is matched against
 pub(crate) fn variant_index(
     cx: &Program<'_>,
-    ty: TypeID,
+    ty: HMIRTypeID,
     name: &CXIdent,
     span: &TokenRange,
 ) -> CXResult<usize> {
@@ -489,10 +489,10 @@ pub(crate) fn variant_index(
 // The type of the 'index'th member of an aggregate: a field, an array element, or a variant
 pub(crate) fn member_type(
     cx: &mut Program<'_>,
-    ty: TypeID,
+    ty: HMIRTypeID,
     index: usize,
     span: &TokenRange,
-) -> CXResult<TypeID> {
+) -> CXResult<HMIRTypeID> {
     if let Some(element) = cx.types().array_inner(ty) {
         return Ok(element);
     }

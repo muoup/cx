@@ -1,7 +1,7 @@
 use std::{collections::HashSet, rc::Rc};
 
 use cx_hmir::{
-    HMIRConstant, HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRLocalID, HMIRNativeOp, HMIRTypeDesc,
+    HMIRConstant, HMIRDefKind, HMIRExprID, HMIRExprKind, HMIRLocalID, HMIROp, HMIRTypeDesc,
     HMIRTypeOp,
 };
 use cx_log::{CXResult, catalogue::typecheck};
@@ -11,7 +11,7 @@ use crate::{
     eval::{EvalFrame, eval, eval_static_type},
     program::{DefKey, Program, def_body},
     staging_error,
-    ty::{TypeID, TypeKind},
+    ty::{HMIRTypeID, HMIRTypeKind},
     value::StaticValue,
 };
 
@@ -19,7 +19,7 @@ struct Deduction<'t> {
     template: &'t [HMIRLocalID],
     // Parameters deduced from an argument of exactly the parameter's type
     direct: HashSet<HMIRLocalID>,
-    conflict: Option<(HMIRLocalID, TypeID, TypeID)>,
+    conflict: Option<(HMIRLocalID, HMIRTypeID, HMIRTypeID)>,
 }
 
 // Leading comptime type parameters; the explicit template arguments of a call fill them first
@@ -52,7 +52,7 @@ pub(crate) fn deduce_template(
     cx: &mut Program<'_>,
     def: DefKey,
     explicit: Vec<Option<StaticValue>>,
-    actual: &[Option<TypeID>],
+    actual: &[Option<HMIRTypeID>],
     span: &TokenRange,
 ) -> CXResult<Vec<StaticValue>> {
     let unit = cx.unit(def.unit());
@@ -145,7 +145,7 @@ fn unify(
     cx: &mut Program<'_>,
     frame: &mut EvalFrame,
     expr: HMIRExprID,
-    actual: TypeID,
+    actual: HMIRTypeID,
     deduction: &mut Deduction<'_>,
 ) {
     let template = deduction.template;
@@ -171,7 +171,7 @@ fn unify(
             }
         }
         HMIRExprKind::Comptime(inner) => unify(cx, frame, *inner, actual, deduction),
-        HMIRExprKind::Native(HMIRNativeOp::Type(op)) => match op {
+        HMIRExprKind::Native(HMIROp::Type(op)) => match op {
             HMIRTypeOp::Pointer(inner) => {
                 let inner_ty = cx
                     .types()
@@ -179,7 +179,7 @@ fn unify(
                     .or_else(|| cx.types().array_inner(actual));
                 if let Some(actual) = inner_ty {
                     unify(cx, frame, *inner, actual, deduction);
-                } else if matches!(cx.types().kind(actual), TypeKind::Str) {
+                } else if matches!(cx.types().kind(actual), HMIRTypeKind::Str) {
                     let char = cx.types_mut().char();
                     unify(cx, frame, *inner, char, deduction);
                 }
@@ -203,7 +203,7 @@ fn unify(
             }
             HMIRTypeOp::Expr { result, .. } => {
                 let actual = match cx.types().kind(actual) {
-                    TypeKind::Expr { result, .. } => *result,
+                    HMIRTypeKind::StagedExpr { result, .. } => *result,
                     _ => actual,
                 };
                 unify(cx, frame, *result, actual, deduction);

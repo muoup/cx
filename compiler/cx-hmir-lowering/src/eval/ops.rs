@@ -9,7 +9,7 @@ use crate::{
     eval::{EvalFrame, eval, eval_global_type},
     program::Program,
     staging_error,
-    ty::{TypeID, TypeKind},
+    ty::{HMIRTypeID, HMIRTypeKind},
     value::{
         FloatResult, StaticValue, arithmetic_type, float_value, fold_float, fold_int,
         is_comparison, is_logical, normalize_int,
@@ -189,12 +189,12 @@ pub(crate) fn exec_unary(
 pub(crate) fn coerce_static(
     cx: &mut Program<'_>,
     value: StaticValue,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<StaticValue> {
     let kind = cx.types().kind(ty).clone();
     Ok(match (value, kind) {
-        (StaticValue::Quote(quote), TypeKind::Expr { params, result }) => {
+        (StaticValue::Quote(quote), HMIRTypeKind::StagedExpr { params, result }) => {
             let given = quote.get().params().len();
             if given != params.len() {
                 return Err(staging_error(
@@ -205,17 +205,17 @@ pub(crate) fn coerce_static(
             }
             StaticValue::Quote(quote.with_result(result, cx.types().is_void(result)))
         }
-        (value @ StaticValue::Type(_), TypeKind::Type) => value,
-        (_, TypeKind::Void) => StaticValue::Unit,
-        (StaticValue::Int { value, .. }, TypeKind::Int { width, .. }) => {
+        (value @ StaticValue::Type(_), HMIRTypeKind::Type) => value,
+        (_, HMIRTypeKind::Void) => StaticValue::Unit,
+        (StaticValue::Int { value, .. }, HMIRTypeKind::Int { width, .. }) => {
             if width == HMIRIntWidth::I1 {
                 StaticValue::int((value != 0) as i128, ty)
             } else {
                 StaticValue::int(normalize_int(value, ty, cx.types()), ty)
             }
         }
-        (StaticValue::Int { value, .. }, TypeKind::Float { .. }) => float_value(value as f64, ty),
-        (StaticValue::Float { value, .. }, TypeKind::Int { width, .. }) => {
+        (StaticValue::Int { value, .. }, HMIRTypeKind::Float { .. }) => float_value(value as f64, ty),
+        (StaticValue::Float { value, .. }, HMIRTypeKind::Int { width, .. }) => {
             let value = f64::from(&value);
             if width == HMIRIntWidth::I1 {
                 StaticValue::int((value != 0.0) as i128, ty)
@@ -223,24 +223,24 @@ pub(crate) fn coerce_static(
                 StaticValue::int(normalize_int(value as i128, ty, cx.types()), ty)
             }
         }
-        (StaticValue::Float { value, .. }, TypeKind::Float { .. }) => {
+        (StaticValue::Float { value, .. }, HMIRTypeKind::Float { .. }) => {
             StaticValue::Float { value, ty }
         }
-        (StaticValue::Int { value: 0, .. } | StaticValue::Null(_), TypeKind::Pointer(_)) => {
+        (StaticValue::Int { value: 0, .. } | StaticValue::Null(_), HMIRTypeKind::PointerTo(_)) => {
             StaticValue::Null(ty)
         }
         (
             StaticValue::GlobalAddress { def, offset, .. },
-            TypeKind::Pointer(_) | TypeKind::Reference(_),
+            HMIRTypeKind::PointerTo(_) | HMIRTypeKind::ReferenceTo(_),
         ) => StaticValue::GlobalAddress { def, offset, ty },
-        (StaticValue::LabelAddress { function, label, .. }, TypeKind::Pointer(_)) => {
+        (StaticValue::LabelAddress { function, label, .. }, HMIRTypeKind::PointerTo(_)) => {
             StaticValue::LabelAddress {
                 function,
                 label,
                 ty,
             }
         }
-        (StaticValue::Global(def), TypeKind::Pointer(element)) => {
+        (StaticValue::Global(def), HMIRTypeKind::PointerTo(element)) => {
             let global = eval_global_type(cx, def, span)?;
             if cx.types().is_array(global) || global == element {
                 StaticValue::GlobalAddress { def, offset: 0, ty }
@@ -254,18 +254,18 @@ pub(crate) fn coerce_static(
         }
         (
             value @ StaticValue::Str(_),
-            TypeKind::Pointer(_) | TypeKind::Str | TypeKind::Array { .. },
+            HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Str | HMIRTypeKind::Array { .. },
         ) => value,
-        (value @ StaticValue::Function { .. }, TypeKind::Pointer(_) | TypeKind::Function(_)) => {
+        (value @ StaticValue::Function { .. }, HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Function(_)) => {
             value
         }
-        (value @ StaticValue::Aggregate { ty: source, .. }, TypeKind::Nominal(_))
+        (value @ StaticValue::Aggregate { ty: source, .. }, HMIRTypeKind::Nominal(_))
             if cx.types_mut().same_unqualified(source, ty) =>
         {
             value
         }
-        (StaticValue::Aggregate { ty: source, fields }, TypeKind::Array { element, length })
-            if matches!(cx.types().kind(source), TypeKind::Array { element: from, length: count }
+        (StaticValue::Aggregate { ty: source, fields }, HMIRTypeKind::Array { element, length })
+            if matches!(cx.types().kind(source), HMIRTypeKind::Array { element: from, length: count }
                 if *from == element && (length == *count || length.is_none() || count.is_none())) =>
         {
             StaticValue::Aggregate { ty, fields }

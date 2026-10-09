@@ -9,7 +9,7 @@ use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
 use crate::{
     program::{DefKey, UnitID},
-    ty::{TypeID, TypeKind, TypeTable},
+    ty::{HMIRTypeID, HMIRTypeKind, TypeTable},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -17,15 +17,15 @@ pub(crate) enum StaticValue {
     Unit,
     Int {
         value: i128,
-        ty: TypeID,
+        ty: HMIRTypeID,
     },
     Float {
         value: FloatWrapper,
-        ty: TypeID,
+        ty: HMIRTypeID,
     },
     Str(String),
-    Null(TypeID),
-    Type(TypeID),
+    Null(HMIRTypeID),
+    Type(HMIRTypeID),
     // A function def with its leading comptime arguments applied
     Function {
         def: DefKey,
@@ -33,7 +33,7 @@ pub(crate) enum StaticValue {
     },
     Quote(QuoteRef),
     Aggregate {
-        ty: TypeID,
+        ty: HMIRTypeID,
         fields: Vec<(usize, StaticValue)>,
     },
     // Designates a runtime global; only its address can be taken statically
@@ -41,13 +41,13 @@ pub(crate) enum StaticValue {
     GlobalAddress {
         def: DefKey,
         offset: i64,
-        ty: TypeID,
+        ty: HMIRTypeID,
     },
     // The address of a label of a runtime function
     LabelAddress {
         function: DefKey,
         label: CXIdent,
-        ty: TypeID,
+        ty: HMIRTypeID,
     },
 }
 
@@ -66,12 +66,12 @@ pub(crate) struct Quote {
     params: Vec<HMIRLocalID>,
     body: HMIRExprID,
     env: HashMap<HMIRLocalID, StaticValue>,
-    runtime_types: HashMap<HMIRLocalID, TypeID>,
+    runtime_types: HashMap<HMIRLocalID, HMIRTypeID>,
     origin: Option<FrameRef>,
     // A void quote's yields target the context it is spliced into
     external_yield: bool,
     // The result type declared where the quote was passed as a staged expression
-    result: Option<TypeID>,
+    result: Option<HMIRTypeID>,
 }
 
 #[derive(Debug, Clone)]
@@ -100,7 +100,7 @@ impl Quote {
         params: Vec<HMIRLocalID>,
         body: HMIRExprID,
         env: HashMap<HMIRLocalID, StaticValue>,
-        runtime_types: HashMap<HMIRLocalID, TypeID>,
+        runtime_types: HashMap<HMIRLocalID, HMIRTypeID>,
         origin: Option<FrameRef>,
     ) -> Self {
         Self {
@@ -121,7 +121,7 @@ impl Quote {
         self.external_yield
     }
 
-    pub(crate) fn result(&self) -> Option<TypeID> {
+    pub(crate) fn result(&self) -> Option<HMIRTypeID> {
         self.result
     }
 
@@ -149,7 +149,7 @@ impl Quote {
         &self.env
     }
 
-    pub(crate) fn runtime_types(&self) -> &HashMap<HMIRLocalID, TypeID> {
+    pub(crate) fn runtime_types(&self) -> &HashMap<HMIRLocalID, HMIRTypeID> {
         &self.runtime_types
     }
 
@@ -167,7 +167,7 @@ impl QuoteRef {
         &self.0
     }
 
-    pub(crate) fn with_result(&self, result: TypeID, external_yield: bool) -> Self {
+    pub(crate) fn with_result(&self, result: HMIRTypeID, external_yield: bool) -> Self {
         if self.0.result == Some(result) && (self.0.external_yield || !external_yield) {
             return self.clone();
         }
@@ -212,7 +212,7 @@ impl StaticValue {
         }
     }
 
-    pub(crate) fn int(value: i128, ty: TypeID) -> Self {
+    pub(crate) fn int(value: i128, ty: HMIRTypeID) -> Self {
         Self::Int { value, ty }
     }
 
@@ -244,7 +244,7 @@ impl StaticValue {
     }
 
     // Function values and quotes have no plain type; callers resolve those through the program
-    pub(crate) fn simple_type(&self, types: &mut TypeTable) -> Option<TypeID> {
+    pub(crate) fn simple_type(&self, types: &mut TypeTable) -> Option<HMIRTypeID> {
         Some(match self {
             Self::Unit => types.void(),
             Self::Int { ty, .. } | Self::Float { ty, .. } | Self::Null(ty) => *ty,
@@ -259,7 +259,7 @@ impl StaticValue {
 }
 
 // Wraps an integer into the range of 'ty'
-pub(crate) fn normalize_int(value: i128, ty: TypeID, types: &TypeTable) -> i128 {
+pub(crate) fn normalize_int(value: i128, ty: HMIRTypeID, types: &TypeTable) -> i128 {
     match types.int_info(ty) {
         Some((width, signed)) => truncate_int(value, width.bits() as u32, signed),
         None => value,
@@ -340,7 +340,7 @@ pub(crate) fn is_logical(op: HMIRBinaryOp) -> bool {
     matches!(op, HMIRBinaryOp::LAnd | HMIRBinaryOp::LOr)
 }
 
-pub(crate) fn promote_integer_type(types: &mut TypeTable, ty: TypeID) -> TypeID {
+pub(crate) fn promote_integer_type(types: &mut TypeTable, ty: HMIRTypeID) -> HMIRTypeID {
     match types.int_info(ty) {
         Some((width, _)) if width < HMIRIntWidth::I32 => types.int(HMIRIntWidth::I32, true),
         _ => ty,
@@ -348,23 +348,23 @@ pub(crate) fn promote_integer_type(types: &mut TypeTable, ty: TypeID) -> TypeID 
 }
 
 // C integer promotion followed by the usual arithmetic conversions
-pub(crate) fn arithmetic_type(types: &mut TypeTable, lhs: TypeID, rhs: TypeID) -> Option<TypeID> {
+pub(crate) fn arithmetic_type(types: &mut TypeTable, lhs: HMIRTypeID, rhs: HMIRTypeID) -> Option<HMIRTypeID> {
     let lhs = promote_integer_type(types, lhs);
     let rhs = promote_integer_type(types, rhs);
     match (types.kind(lhs).clone(), types.kind(rhs).clone()) {
-        (TypeKind::Float { width: left }, TypeKind::Float { width: right }) => {
-            Some(types.intern(TypeKind::Float {
+        (HMIRTypeKind::Float { width: left }, HMIRTypeKind::Float { width: right }) => {
+            Some(types.intern(HMIRTypeKind::Float {
                 width: left.max(right),
             }))
         }
-        (TypeKind::Float { .. }, TypeKind::Int { .. }) => Some(lhs),
-        (TypeKind::Int { .. }, TypeKind::Float { .. }) => Some(rhs),
+        (HMIRTypeKind::Float { .. }, HMIRTypeKind::Int { .. }) => Some(lhs),
+        (HMIRTypeKind::Int { .. }, HMIRTypeKind::Float { .. }) => Some(rhs),
         (
-            TypeKind::Int {
+            HMIRTypeKind::Int {
                 width: left,
                 signed: left_signed,
             },
-            TypeKind::Int {
+            HMIRTypeKind::Int {
                 width: right,
                 signed: right_signed,
             },
@@ -382,7 +382,7 @@ pub(crate) fn arithmetic_type(types: &mut TypeTable, lhs: TypeID, rhs: TypeID) -
     }
 }
 
-pub(crate) fn float_value(value: f64, ty: TypeID) -> StaticValue {
+pub(crate) fn float_value(value: f64, ty: HMIRTypeID) -> StaticValue {
     StaticValue::Float {
         value: FloatWrapper::from(value),
         ty,

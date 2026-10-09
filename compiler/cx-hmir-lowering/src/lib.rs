@@ -5,8 +5,9 @@ mod lower;
 mod module;
 mod pattern;
 mod program;
-mod ty;
 mod value;
+
+pub(crate) mod env;
 
 use cx_hmir::HMIRUnit;
 use cx_log::{

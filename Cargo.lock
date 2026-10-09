@@ -367,8 +367,11 @@ dependencies = [
 name = "cx-hmir"
 version = "0.1.0"
 dependencies = [
+ "cx-hir",
  "cx-intrinsics",
+ "cx-log",
  "cx-namespace",
+ "cx-target",
  "cx-tokens",
  "cx-util",
  "speedy",

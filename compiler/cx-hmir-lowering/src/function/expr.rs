@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use cx_hmir::{
-    HMIRBlockKind, HMIRExprID, HMIRExprKind, HMIRIntrinsic, HMIRLocalID, HMIRNativeOp,
+    HMIRBlockKind, HMIRExprID, HMIRExprKind, HMIRIntrinsic, HMIRLocalID, HMIROp,
     HMIROwnershipOp,
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
@@ -28,7 +28,7 @@ use crate::{
     lower::{LowerContext, LowerOutput, lower},
     module::global_ref,
     program::DefKey,
-    ty::{TypeID, TypeKind},
+    ty::{HMIRTypeID, HMIRTypeKind},
     value::StaticValue,
 };
 
@@ -120,7 +120,7 @@ pub(crate) fn lower_let(
                 let declared = lower_eval_type_hint(cx, frame, decl.ty())?;
                 let value = lower_eval(cx, frame, initializer, Expect::of(declared))?;
                 match declared {
-                    Some(ty) if !matches!(cx.program.types().kind(ty), TypeKind::Type) => {
+                    Some(ty) if !matches!(cx.program.types().kind(ty), HMIRTypeKind::Type) => {
                         coerce_static(cx.program, value, ty, span)?
                     }
                     _ => value,
@@ -135,7 +135,7 @@ pub(crate) fn lower_let(
     let declared = lower_eval_type_hint(cx, frame, decl.ty())?;
     let name = decl.name().cloned();
     if let Some(initializer) = initializer
-        && let HMIRExprKind::Native(HMIRNativeOp::OwnershipOp(op @ HMIROwnershipOp::Allocate(_))) =
+        && let HMIRExprKind::Native(HMIROp::OwnershipOp(op @ HMIROwnershipOp::Allocate(_))) =
             cx.kind(frame, initializer)
     {
         let place = lower_place_op(cx, frame, &op, declared, name, span)?;
@@ -171,7 +171,7 @@ pub(crate) fn lower_let(
     }
     let ty = match (declared, &init) {
         (Some(ty), Some(init)) => match cx.program.types().kind(ty) {
-            TypeKind::Array { length: None, .. } => {
+            HMIRTypeKind::Array { length: None, .. } => {
                 let init = lower_convert(cx, init.clone(), ty, span)?;
                 init.ty()
             }
@@ -205,11 +205,11 @@ pub(crate) fn lower_let(
 }
 
 // The type a local takes from its initializer when it declares none
-pub(super) fn lower_inferred_type(cx: &mut FunctionLowering<'_, '_>, ty: TypeID) -> TypeID {
+pub(super) fn lower_inferred_type(cx: &mut FunctionLowering<'_, '_>, ty: HMIRTypeID) -> HMIRTypeID {
     let types = cx.program.types_mut();
     let ty = match types.kind(ty).clone() {
-        TypeKind::Array { .. } => ty,
-        TypeKind::Reference(inner) => inner,
+        HMIRTypeKind::Array { .. } => ty,
+        HMIRTypeKind::ReferenceTo(inner) => inner,
         _ => types.decayed(ty),
     };
     types.unqualified(ty)
@@ -220,7 +220,7 @@ fn lower_place_op(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
     op: &HMIROwnershipOp,
-    declared: Option<TypeID>,
+    declared: Option<HMIRTypeID>,
     name: Option<CXIdent>,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
@@ -269,23 +269,23 @@ pub(crate) fn lower_native(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
     id: HMIRExprID,
-    op: HMIRNativeOp,
+    op: HMIROp,
     expect: Expect,
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     match op {
-        HMIRNativeOp::BinOp { op, lhs, rhs } => lower_binary(cx, frame, op, lhs, rhs, span),
-        HMIRNativeOp::UnOp { op, operand } => lower_unary(cx, frame, op, operand, span),
-        HMIRNativeOp::Coerce {
+        HMIROp::BinOp { op, lhs, rhs } => lower_binary(cx, frame, op, lhs, rhs, span),
+        HMIROp::UnOp { op, operand } => lower_unary(cx, frame, op, operand, span),
+        HMIROp::Coerce {
             mode,
             value,
             target,
         } => lower_coerce(cx, frame, mode, value, target, span),
-        HMIRNativeOp::Assign { target, op, value } => {
+        HMIROp::Assign { target, op, value } => {
             lower_assign(cx, frame, target, op, value, span)
         }
-        HMIRNativeOp::AddressOf(inner) => lower_address_of(cx, frame, inner, expect, span),
-        HMIRNativeOp::Dereference(inner) => {
+        HMIROp::AddressOf(inner) => lower_address_of(cx, frame, inner, expect, span),
+        HMIROp::Dereference(inner) => {
             let operand = lower_expr(cx, frame, inner, Expect::Any)?;
             let operand = lower_decay(cx, operand, span)?;
             let Some(inner) = cx.program.types().pointer_inner(operand.ty()) else {
@@ -298,20 +298,20 @@ pub(crate) fn lower_native(
                     ),
                 );
             };
-            if matches!(cx.program.types().kind(inner), TypeKind::Function(_)) {
+            if matches!(cx.program.types().kind(inner), HMIRTypeKind::Function(_)) {
                 let ty = operand.ty();
                 let pointer = lower_nonnull_pointer(cx, operand, span)?;
                 return Ok(Operand::value(pointer, ty));
             }
             lower_deref_pointer(cx, operand, span)
         }
-        HMIRNativeOp::Type(_) => {
+        HMIROp::Type(_) => {
             let value = lower_eval(cx, frame, id, expect)?;
             lower_static_operand(cx, value, span)
         }
-        HMIRNativeOp::Control(op) => lower_control(cx, frame, op, expect, span),
-        HMIRNativeOp::OwnershipOp(op) => lower_ownership(cx, frame, op, expect, span),
-        HMIRNativeOp::AggregateOp(op) => lower_aggregate(cx, frame, op, expect, span),
+        HMIROp::Control(op) => lower_control(cx, frame, op, expect, span),
+        HMIROp::OwnershipOp(op) => lower_ownership(cx, frame, op, expect, span),
+        HMIROp::AggregateOp(op) => lower_aggregate(cx, frame, op, expect, span),
     }
 }
 
@@ -375,7 +375,7 @@ pub(crate) fn lower_splice(
         match operand.as_static() {
             Some(StaticValue::Quote(quote)) => quote.clone(),
             _ => {
-                let TypeKind::Expr { params, result } =
+                let HMIRTypeKind::StagedExpr { params, result } =
                     cx.program.types().kind(operand.ty()).clone()
                 else {
                     return cx.error(

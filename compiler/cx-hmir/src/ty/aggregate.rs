@@ -1,6 +1,14 @@
 use cx_util::identifier::CXIdent;
 
-use crate::expr::kind::HMIRExprID;
+use crate::HMIRExprID;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HMIRMoveSemantics {
+    #[default]
+    POD,
+    Nocopy,
+    Nodrop,
+}
 
 #[derive(Debug, Clone)]
 pub struct HMIRFieldDef {

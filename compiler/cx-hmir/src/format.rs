@@ -8,8 +8,7 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    ty::desc::HMIRTypeID,
-    unit::{
+    ty::HMIRTypeID, unit::{
         HMIRUnit,
         def::{HMIRDef, HMIRDefKind},
         function::{HMIRFunction, HMIRFunctionStage},

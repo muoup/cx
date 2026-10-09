@@ -1,6 +1,6 @@
 use cx_hmir::{
     HMIRAggregateKind, HMIRAggregateOp, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRLocalID,
-    HMIRNativeOp, HMIRPattern, HMIRTypeOp,
+    HMIROp, HMIRPattern, HMIRTypeOp,
 };
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRConstant, MIRFloatIntrinsic,
@@ -26,7 +26,7 @@ use crate::{
         promote::{lower_decay, lower_promote},
     },
     module::{member_type, variant_index},
-    ty::{TypeID, TypeKind, TypeTable},
+    ty::{HMIRTypeID, HMIRTypeKind, TypeTable},
     value::StaticValue,
 };
 
@@ -219,8 +219,8 @@ fn lower_index(
 ) -> LowerResult<Operand> {
     let types = cx.program.types();
     let (pointer, index, element) = match (types.kind(base.ty()), types.kind(index.ty())) {
-        (TypeKind::Pointer(element), TypeKind::Int { .. }) => (base, index, *element),
-        (TypeKind::Int { .. }, TypeKind::Pointer(element)) => (index, base, *element),
+        (HMIRTypeKind::PointerTo(element), HMIRTypeKind::Int { .. }) => (base, index, *element),
+        (HMIRTypeKind::Int { .. }, HMIRTypeKind::PointerTo(element)) => (index, base, *element),
         _ => {
             return cx.error(
                 span,
@@ -245,7 +245,7 @@ fn lower_initialize(
     let ty = lower_initializer_type(cx, frame, ty, expect, span)?;
     let mut values = Vec::with_capacity(fields.len());
     let ty = match cx.program.types().kind(ty).clone() {
-        TypeKind::Array { element, length } => {
+        HMIRTypeKind::Array { element, length } => {
             if let Some(length) = length
                 && fields.len() as u64 > length
             {
@@ -259,12 +259,12 @@ fn lower_initialize(
                 let value = lower_field_value(cx, frame, *value, element, span)?;
                 values.push((index, value));
             }
-            cx.program.types_mut().intern(TypeKind::Array {
+            cx.program.types_mut().intern(HMIRTypeKind::Array {
                 element,
                 length: Some(length.unwrap_or(fields.len() as u64)),
             })
         }
-        TypeKind::Nominal(_) => {
+        HMIRTypeKind::Nominal(_) => {
             let tagged = cx
                 .program
                 .types()
@@ -332,7 +332,7 @@ fn lower_field_value(
     cx: &mut FunctionLowering<'_, '_>,
     frame: usize,
     value: HMIRExprID,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> LowerResult<MIRValue> {
     let operand = lower_expr(cx, frame, value, Expect::Type(ty))?;
@@ -348,11 +348,11 @@ fn lower_initializer_type(
     ty: HMIRExprID,
     expect: Expect,
     span: &TokenRange,
-) -> LowerResult<TypeID> {
+) -> LowerResult<HMIRTypeID> {
     let expected = expect
         .ty()
         .map(|expected| match cx.program.types().kind(expected) {
-            TypeKind::Reference(inner) => *inner,
+            HMIRTypeKind::ReferenceTo(inner) => *inner,
             _ => expected,
         });
     if matches!(cx.kind(frame, ty), HMIRExprKind::Hole(_)) {
@@ -417,7 +417,7 @@ fn lower_is(
             subject
         }
         HMIRPattern::Float(expected) => {
-            let TypeKind::Float { width } = cx.program.types().kind(subject.ty()).clone() else {
+            let HMIRTypeKind::Float { width } = cx.program.types().kind(subject.ty()).clone() else {
                 return cx.error(
                     span,
                     &typecheck::TYPE_REQUIREMENT,
@@ -595,7 +595,7 @@ fn binds_by_reference(cx: &FunctionLowering<'_, '_>, frame: usize, local: HMIRLo
     let ty = cx.frames[frame].body().local(local).ty();
     matches!(
         cx.kind(frame, ty),
-        HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Reference(_)))
+        HMIRExprKind::Native(HMIROp::Type(HMIRTypeOp::Reference(_)))
     )
 }
 
@@ -607,13 +607,13 @@ fn pattern_binding(
     bound: Operand,
 ) -> Operand {
     let ty = cx.frames[frame].body().local(local).ty();
-    let HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Reference(inner))) = cx.kind(frame, ty)
+    let HMIRExprKind::Native(HMIROp::Type(HMIRTypeOp::Reference(inner))) = cx.kind(frame, ty)
     else {
         return bound;
     };
     if !matches!(
         cx.kind(frame, inner),
-        HMIRExprKind::Native(HMIRNativeOp::Type(HMIRTypeOp::Const(_)))
+        HMIRExprKind::Native(HMIROp::Type(HMIRTypeOp::Const(_)))
     ) {
         return bound;
     }
@@ -669,7 +669,7 @@ fn lower_lift_payload(
     cx: &mut FunctionLowering<'_, '_>,
     reference: MIRRegisterID,
     origin: cx_mir::MIRPlaceID,
-    payload: TypeID,
+    payload: HMIRTypeID,
     frame: usize,
     local: HMIRLocalID,
     span: &TokenRange,
@@ -708,8 +708,8 @@ pub(super) fn lower_address_of(
 ) -> LowerResult<Operand> {
     let operand = lower_expr(cx, frame, inner, Expect::Any)?;
     let decays = match cx.program.types().kind(operand.ty()).clone() {
-        TypeKind::Function(_) | TypeKind::Str => true,
-        TypeKind::Array { element, .. } => expect
+        HMIRTypeKind::Function(_) | HMIRTypeKind::Str => true,
+        HMIRTypeKind::Array { element, .. } => expect
             .ty()
             .and_then(|expected| cx.program.types().pointer_inner(expected))
             .is_some_and(|pointee| cx.program.types_mut().same_unqualified(pointee, element)),

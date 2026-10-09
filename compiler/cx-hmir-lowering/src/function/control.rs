@@ -19,7 +19,7 @@ use crate::{
         inspect, lower_cleanup_to, lower_eval, lower_return, lower_type_hint,
         operand::{lower_copy, lower_read, lower_spill, lower_value},
     },
-    ty::TypeID,
+    ty::HMIRTypeID,
     value::{arithmetic_type, normalize_int, promote_integer_type},
 };
 
@@ -318,7 +318,7 @@ fn lower_branch_type(
     frame: usize,
     lhs: HMIRExprID,
     rhs: HMIRExprID,
-) -> Option<TypeID> {
+) -> Option<HMIRTypeID> {
     let lhs = lower_type_hint(cx, frame, lhs)?;
     let rhs = lower_type_hint(cx, frame, rhs)?;
     let types = cx.program.types_mut();
@@ -933,7 +933,7 @@ fn lower_open_merge(
 fn lower_merge_param(
     cx: &mut FunctionLowering<'_, '_>,
     block: MIRBasicBlockID,
-    ty: TypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> LowerResult<MergeParam> {
     let types = cx.program.types();
