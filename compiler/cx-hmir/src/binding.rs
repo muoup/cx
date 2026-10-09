@@ -1,7 +1,7 @@
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
-use crate::expr::kind::HMIRExprID;
+use crate::expr::HMIRExprID;
 
 dense_id!(HMIRLocalID, "%");
 dense_id!(HMIRHoleID, "?");

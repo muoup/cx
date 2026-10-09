@@ -1,32 +1,38 @@
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use crate::{binding::HMIRLocalID, body::HMIRBody, expr::kind::HMIRExprID};
+use crate::{binding::HMIRLocalID, body::HMIRBody, expr::HMIRExprID, ty::HMIRTypeID};
+
+#[derive(Debug, Clone)]
+pub struct HMIRFunction {
+    body: HMIRBody,
+
+    symbol_name: CXIdent,
+    signature: HMIRFnSignature,
+    linkage: LinkageMode,
+
+    def: Option<HMIRFunctionDef>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HMIRFunctionDef {
+    params: Box<[HMIRTypeID]>,
+    root: HMIRExprID,
+}
+
+#[derive(Debug, Clone)]
+pub struct HMIRFnSignature {
+    stage: HMIRFunctionStage,
+    return_type: HMIRExprID,
+    params: Vec<HMIRTypeID>,
+    variadic: bool,
+    contract: HMIRContract,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct HMIRContract {
     safe: bool,
     precondition: Option<HMIRExprID>,
     postcondition: Option<(Option<HMIRLocalID>, HMIRExprID)>,
-}
-
-#[derive(Debug, Clone)]
-pub struct HMIRSignature {
-    params: Vec<HMIRLocalID>,
-    return_type: HMIRExprID,
-    variadic: bool,
-    linkage: LinkageMode,
-    link_name: CXIdent,
-    contract: HMIRContract,
-}
-
-#[derive(Debug, Clone)]
-pub struct HMIRFunction {
-    stage: HMIRFunctionStage,
-    body: HMIRBody,
-    signature: HMIRSignature,
-    root: Option<HMIRExprID>,
-    // The labels whose address is taken, in the body or in the function's statics
-    address_labels: Vec<CXIdent>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -65,26 +71,28 @@ impl HMIRContract {
     }
 }
 
-impl HMIRSignature {
+impl HMIRFnSignature {
     pub fn new(
-        params: Vec<HMIRLocalID>,
+        stage: HMIRFunctionStage,
+        params: Vec<HMIRTypeID>,
         return_type: HMIRExprID,
         variadic: bool,
-        linkage: LinkageMode,
-        link_name: CXIdent,
         contract: HMIRContract,
     ) -> Self {
         Self {
+            stage,
             params,
             return_type,
             variadic,
-            linkage,
-            link_name,
             contract,
         }
     }
 
-    pub fn params(&self) -> &[HMIRLocalID] {
+    pub fn stage(&self) -> HMIRFunctionStage {
+        self.stage
+    }
+
+    pub fn params(&self) -> &[HMIRTypeID] {
         &self.params
     }
 
@@ -96,14 +104,6 @@ impl HMIRSignature {
         self.variadic
     }
 
-    pub fn linkage(&self) -> LinkageMode {
-        self.linkage
-    }
-
-    pub fn link_name(&self) -> &CXIdent {
-        &self.link_name
-    }
-
     pub fn contract(&self) -> &HMIRContract {
         &self.contract
     }
@@ -111,31 +111,19 @@ impl HMIRSignature {
 
 impl HMIRFunction {
     pub fn new(
-        stage: HMIRFunctionStage,
+        symbol_name: CXIdent,
+        linkage: LinkageMode,
         body: HMIRBody,
-        signature: HMIRSignature,
-        root: Option<HMIRExprID>,
+        signature: HMIRFnSignature,
+        def: Option<HMIRFunctionDef>,
     ) -> Self {
         Self {
-            stage,
+            symbol_name,
+            linkage,
             body,
             signature,
-            root,
-            address_labels: Vec::new(),
+            def,
         }
-    }
-
-    pub fn with_address_labels(mut self, labels: Vec<CXIdent>) -> Self {
-        self.address_labels = labels;
-        self
-    }
-
-    pub fn address_labels(&self) -> &[CXIdent] {
-        &self.address_labels
-    }
-
-    pub fn stage(&self) -> HMIRFunctionStage {
-        self.stage
     }
 
     pub fn body(&self) -> &HMIRBody {
@@ -146,18 +134,11 @@ impl HMIRFunction {
         &mut self.body
     }
 
-    pub fn signature(&self) -> &HMIRSignature {
+    pub fn signature(&self) -> &HMIRFnSignature {
         &self.signature
     }
 
-    pub fn root(&self) -> Option<HMIRExprID> {
-        self.root
-    }
-
-    pub fn has_comptime_params(&self) -> bool {
-        self.signature
-            .params
-            .iter()
-            .any(|param| self.body.local(*param).is_comptime())
+    pub fn def(&self) -> Option<&HMIRFunctionDef> {
+        self.def.as_ref()
     }
 }

@@ -1,5 +1,16 @@
-use cx_hmir::HMIRUnit;
+mod module;
+mod symbols;
 
-pub struct HMIREnvironment<'hmir> {
-    hmir: &'a HMIRUnit,
+use cx_hmir::{HMIRDefID, HMIRUnit};
+use cx_pipeline_data::db::ModuleData;
+
+pub struct HMIREnvironment<'global, 'hmir> {
+    global: &'global ModuleData,
+    hmir: &'hmir HMIRUnit,
+}
+
+impl<'_, 'hmir> HMIREnvironment<'hmir> {
+    pub fn finish(self) -> MIRUnit {
+        todo!()
+    }
 }

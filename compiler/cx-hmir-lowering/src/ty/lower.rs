@@ -55,7 +55,6 @@ pub(super) fn lower_type(
         },
         HMIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
         HMIRTypeKind::Nominal(nominal) => return lower_nominal_type(types, ty, nominal, span),
-        HMIRTypeKind::Const(_) => unreachable!("'kind' looks through qualifiers"),
     };
     let id = types.mir.intern(MIRType::new(kind));
     types.lowered.insert(ty, id);

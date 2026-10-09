@@ -1,13 +1,14 @@
 mod aggregate;
-pub(crate) mod call;
 mod coerce;
 mod contract;
-pub(crate) mod control;
-pub(crate) mod expr;
-pub(crate) mod inspect;
 mod operand;
 mod ops;
 mod promote;
+
+pub(crate) mod call;
+pub(crate) mod control;
+pub(crate) mod expr;
+pub(crate) mod inspect;
 
 use std::{collections::HashMap, rc::Rc};
 

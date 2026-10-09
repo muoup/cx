@@ -1,6 +1,6 @@
 use cx_util::identifier::CXIdent;
 
-use crate::HMIRExprID;
+use crate::expr::HMIRExprID;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum HMIRMoveSemantics {

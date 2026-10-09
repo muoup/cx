@@ -2,7 +2,7 @@ use std::fmt::{self, Formatter};
 
 use crate::{
     expr::constant::HMIRConstant,
-    ty::HMIRTypeID,
+    ty::{HMIRTypeID, HMIRTypeKind},
     unit::{HMIRUnit, def::HMIRDefRef},
 };
 
@@ -12,7 +12,7 @@ pub(super) fn write_def_ref(
     def: &HMIRDefRef,
 ) -> fmt::Result {
     match def {
-        HMIRDefRef::Local(id) => write!(f, "@{}", unit.def(*id).name()),
+        HMIRDefRef::Local(id) => write!(f, "@{}", unit.resolve_def(*id).name()),
         HMIRDefRef::External(name) => write!(f, "@{name}"),
         HMIRDefRef::Candidates(candidates) => {
             for (index, candidate) in candidates.iter().enumerate() {
@@ -52,31 +52,36 @@ pub(super) fn write_constant(
 }
 
 pub(super) fn write_type(f: &mut Formatter<'_>, unit: &HMIRUnit, id: HMIRTypeID) -> fmt::Result {
-    match unit.types().get(id) {
-        HMIRTypeDesc::Void => f.write_str("void"),
-        HMIRTypeDesc::Unreachable => f.write_str("never"),
-        HMIRTypeDesc::Type => f.write_str("@type"),
-        HMIRTypeDesc::Str => f.write_str("str"),
-        HMIRTypeDesc::Int { width, signed } => {
-            write!(f, "{}{}", if *signed { "i" } else { "u" }, width.bits())
+    match unit.resolve_type(id).kind() {
+        HMIRTypeKind::Void => f.write_str("void"),
+        HMIRTypeKind::Unreachable => f.write_str("never"),
+        HMIRTypeKind::Type => f.write_str("@type"),
+        HMIRTypeKind::Str => f.write_str("str"),
+        HMIRTypeKind::Int(ty) => {
+            write!(
+                f,
+                "{}{}",
+                if ty.signed() { "i" } else { "u" },
+                ty.width().bytes() * 8
+            )
         }
-        HMIRTypeDesc::Float { width } => write!(f, "f{}", width.bits()),
-        HMIRTypeDesc::Pointer(inner) => {
+        HMIRTypeKind::Float(ty) => write!(f, "f{}", ty.width().bytes() * 8),
+        HMIRTypeKind::PointerTo(inner) => {
             write_type(f, unit, *inner)?;
             f.write_str("*")
         }
-        HMIRTypeDesc::Reference(inner) => {
+        HMIRTypeKind::ReferenceTo(inner) => {
             write_type(f, unit, *inner)?;
             f.write_str("&")
         }
-        HMIRTypeDesc::Array { element, length } => {
+        HMIRTypeKind::Array { element, length } => {
             write_type(f, unit, *element)?;
             match length {
                 Some(length) => write!(f, "[{length}]"),
                 None => f.write_str("[]"),
             }
         }
-        HMIRTypeDesc::Function(signature) => {
+        HMIRTypeKind::Function(signature) => {
             f.write_str("fn(")?;
             write_type_list(f, unit, signature.params())?;
             if signature.is_variadic() {
@@ -87,30 +92,15 @@ pub(super) fn write_type(f: &mut Formatter<'_>, unit: &HMIRUnit, id: HMIRTypeID)
                 })?;
             }
             f.write_str(") -> ")?;
-            write_type(f, unit, signature.ret())
+            write_type(f, unit, signature.return_type())
         }
-        HMIRTypeDesc::Expr { params, result } => {
+        HMIRTypeKind::StagedExpr { params, result } => {
             f.write_str("expr(")?;
             write_type_list(f, unit, params)?;
             f.write_str(") -> ")?;
             write_type(f, unit, *result)
         }
-        HMIRTypeDesc::Nominal(id) => {
-            let nominal = unit.types().nominal(*id);
-            write_def_ref(f, unit, nominal.def())?;
-            if nominal.args().is_empty() {
-                return Ok(());
-            }
-            f.write_str("(")?;
-            for (index, arg) in nominal.args().iter().enumerate() {
-                if index != 0 {
-                    f.write_str(", ")?;
-                }
-                write_constant(f, unit, arg)?;
-            }
-            f.write_str(")")
-        }
-        HMIRTypeDesc::Opaque { size, alignment } => write!(f, "opaque({size}, {alignment})"),
+        HMIRTypeKind::Opaque { size, alignment } => write!(f, "opaque({size}, {alignment})"),
     }
 }
 

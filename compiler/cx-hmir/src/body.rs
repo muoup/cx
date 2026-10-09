@@ -1,5 +1,5 @@
 use crate::{
-    binding::{HMIRHole, HMIRHoleID, HMIRLocal, HMIRLocalID}, expr::{HMIRExpr, kind::{HMIRExpr, HMIRExprID}},
+    binding::{HMIRHole, HMIRHoleID, HMIRLocal, HMIRLocalID}, expr::{HMIRExpr, HMIRExprID},
 };
 
 #[derive(Debug, Clone, Default)]

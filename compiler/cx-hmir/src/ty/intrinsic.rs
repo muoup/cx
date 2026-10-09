@@ -1,9 +1,4 @@
 use cx_target::ArchitectureConfig;
-use cx_util::dense_id;
-
-use crate::HMIRContract;
-
-dense_id!(HMIRTypeID, "t");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HMIRIntType {
@@ -100,13 +95,4 @@ impl HMIRFloatType {
     pub const fn width(&self) -> HMIRFloatWidth {
         self.width
     }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct FunctionType {
-    params: Vec<HMIRTypeID>,
-    ret: HMIRTypeID,
-    variadic: bool,
-    safe: bool,
-    contract: HMIRContract,
 }

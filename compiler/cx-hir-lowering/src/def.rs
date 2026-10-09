@@ -7,7 +7,7 @@ use cx_hir::ast::{
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRComptimeGlobal, HMIRContract, HMIRDefKind,
     HMIRExprID, HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRIntWidth,
-    HMIROp, HMIROwnershipOp, HMIRSignature, HMIRTypeDesc,
+    HMIROp, HMIROwnershipOp, HMIRFnSignature, HMIRTypeDesc,
 };
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
@@ -99,7 +99,7 @@ fn lower_function(
         let root = body.map(|body| lower_function_body(this, body));
         (params, return_type, contract, root)
     });
-    let signature = HMIRSignature::new(
+    let signature = HMIRFnSignature::new(
         params,
         return_type,
         prototype.var_args,
@@ -156,7 +156,7 @@ fn lower_constructor(
         span,
     );
     let root = cx.returning_block(sum, span);
-    let signature = HMIRSignature::new(
+    let signature = HMIRFnSignature::new(
         params,
         return_type,
         false,

@@ -1,15 +1,16 @@
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use crate::{body::HMIRBody, expr::kind::HMIRExprID};
+use crate::{body::HMIRBody, expr::HMIRExprID};
 
 #[derive(Debug, Clone)]
 pub struct HMIRGlobal {
     body: HMIRBody,
+    
+    link_name: CXIdent,
+    linkage: LinkageMode,
+
     ty: HMIRExprID,
     initializer: Option<HMIRExprID>,
-    mutable: bool,
-    linkage: LinkageMode,
-    link_name: CXIdent,
 }
 
 // Evaluated entirely by the stager and never emitted (enum variants, type definitions)
@@ -25,7 +26,6 @@ impl HMIRGlobal {
         body: HMIRBody,
         ty: HMIRExprID,
         initializer: Option<HMIRExprID>,
-        mutable: bool,
         linkage: LinkageMode,
         link_name: CXIdent,
     ) -> Self {
@@ -33,7 +33,6 @@ impl HMIRGlobal {
             body,
             ty,
             initializer,
-            mutable,
             linkage,
             link_name,
         }
@@ -49,10 +48,6 @@ impl HMIRGlobal {
 
     pub fn initializer(&self) -> Option<HMIRExprID> {
         self.initializer
-    }
-
-    pub fn is_mutable(&self) -> bool {
-        self.mutable
     }
 
     pub fn linkage(&self) -> LinkageMode {

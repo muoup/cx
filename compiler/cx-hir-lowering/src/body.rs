@@ -8,7 +8,7 @@ use cx_hmir::{
     HMIRAggregateOp, HMIRBlockKind, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRContract,
     HMIRControlOp, HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRError, HMIRExpr, HMIRExprID,
     HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIROp,
-    HMIROwnershipOp, HMIRSignature, HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner, HMIRTypeOp,
+    HMIROwnershipOp, HMIRFnSignature, HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner, HMIRTypeOp,
 };
 use cx_log::catalogue::{ErrorDefinition, typecheck};
 use cx_namespace::module::{NamespacePath, QualifiedName};
@@ -405,7 +405,7 @@ pub(crate) fn lower_variant_constructor(
     );
     let root = ctor.returning_block(built, span);
     let name = CXIdent::from(format!("{variant}.{}", id.index()).as_str());
-    let signature = HMIRSignature::new(
+    let signature = HMIRFnSignature::new(
         vec![sum_param, value],
         return_type,
         false,
@@ -487,7 +487,7 @@ pub(crate) fn lower_reify(
     let root = anon.returning_block(body, span);
 
     let name = CXIdent::from(format!("reify.{}", id.index()).as_str());
-    let signature = HMIRSignature::new(
+    let signature = HMIRFnSignature::new(
         params,
         return_type,
         prototype.var_args,
