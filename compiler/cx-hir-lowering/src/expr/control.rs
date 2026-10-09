@@ -2,9 +2,7 @@ use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
     pattern::HIRPattern,
 };
-use cx_hmir::{
-    HMIRCoerceMode, HMIRConstant, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRTypeDesc,
-};
+use cx_hmir::{HMIRCoerceMode, HMIRConstant, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRTypeDesc};
 use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
 

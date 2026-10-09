@@ -99,8 +99,9 @@ pub(crate) fn scheduling_loop_many(
         let step_name = match job.step {
             CompilationStep::PreParse => "Lexing",
             CompilationStep::Parse => "Parsing",
-            CompilationStep::MIRGen => "MIR generation",
-            CompilationStep::LMIRGen => "Lowering",
+            CompilationStep::HMIR => "Typechecking",
+            CompilationStep::MIR => "Generating MIR",
+            CompilationStep::LMIR => "Lowering",
             CompilationStep::Codegen => "Compiling",
         };
         reporter.start_step(step_name, &job.unit.to_string());
@@ -274,9 +275,10 @@ pub(crate) fn handle_job(
 
             Ok(new_jobs.into())
         }
-        CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::MIRGen, false),
-        CompilationStep::MIRGen => map_reqs_new_stage(job, CompilationStep::LMIRGen, true),
-        CompilationStep::LMIRGen => map_reqs_new_stage(job, CompilationStep::Codegen, true),
+        CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::HMIR, false),
+        CompilationStep::HMIR => map_reqs_new_stage(job, CompilationStep::MIR, false),
+        CompilationStep::MIR => map_reqs_new_stage(job, CompilationStep::LMIR, true),
+        CompilationStep::LMIR => map_reqs_new_stage(job, CompilationStep::Codegen, true),
         CompilationStep::Codegen => Ok([].into()),
     }
 }
@@ -483,22 +485,31 @@ pub(crate) fn perform_job(
                 .insert(job.unit.namespace().clone(), parsed_ast);
         }
 
-        CompilationStep::MIRGen => {
+        CompilationStep::HMIR => {
             let hir = context.module_db.hir.get(job.unit.namespace());
             let registry = &context.module_db.symbol_registry;
             let architecture = context.config.architecture;
-            let hmir = generate_hmir(&hir, job.unit.namespace().clone(), registry, architecture);
+
+            let hmir = generate_hmir(
+                hir.as_ref(),
+                job.unit.namespace().clone(),
+                registry,
+                architecture,
+            );
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&hmir);
             }
 
-            let mir = generate_mir(
-                hmir,
-                |name| generate_external_hmir(registry, architecture, name),
-                architecture,
-                require_explicit_return(context, &job.unit),
-            )?;
+            context
+                .module_db
+                .hmir
+                .insert(job.unit.namespace().clone(), hmir);
+        }
+
+        CompilationStep::MIR => {
+            let env = HMIREnvironment::new();
+            let mir = generate_mir(env)?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir);
@@ -514,7 +525,7 @@ pub(crate) fn perform_job(
                 .insert(job.unit.namespace().clone(), mir);
         }
 
-        CompilationStep::LMIRGen => {
+        CompilationStep::LMIR => {
             let mir = context.module_db.mir.get(job.unit.namespace());
             let lmir = generate_lmir(mir.as_ref())?;
 
@@ -631,10 +642,7 @@ pub(crate) fn scheduling_loop_collect_errors(
         }
 
         // Stop after MIRGen for LSP
-        if matches!(
-            job.step,
-            CompilationStep::LMIRGen | CompilationStep::Codegen
-        ) {
+        if matches!(job.step, CompilationStep::LMIR | CompilationStep::Codegen) {
             continue;
         }
 
@@ -752,13 +760,14 @@ fn handle_job_collect_errors(
         }
 
         CompilationStep::Parse => Some(HandleJobResult::Success(map_reqs_new_stage(
-            CompilationStep::MIRGen,
+            CompilationStep::MIR,
             false,
         ))),
 
         // Stop here for LSP - no need for lowering or codegen
-        CompilationStep::MIRGen | CompilationStep::LMIRGen | CompilationStep::Codegen => {
-            Some(HandleJobResult::Success([].into()))
-        }
+        CompilationStep::HMIR
+        | CompilationStep::MIR
+        | CompilationStep::LMIR
+        | CompilationStep::Codegen => Some(HandleJobResult::Success([].into())),
     }
 }

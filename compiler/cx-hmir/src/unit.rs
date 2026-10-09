@@ -45,8 +45,8 @@ impl HMIRUnit {
         self.types.iter()
     }
 
-    pub fn resolve_def(&self, id: HMIRDefID) -> &HMIRDef {
-        self.defs.get(&id).expect("Def ID not found in unit")
+    pub fn resolve_def(&self, id: HMIRDefID) -> Option<&HMIRDef> {
+        self.defs.get(&id)
     }
 
     pub fn defs(&self) -> impl Iterator<Item = (&HMIRDefID, &HMIRDef)> {

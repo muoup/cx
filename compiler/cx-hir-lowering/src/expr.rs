@@ -22,9 +22,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    body::{
-        BodyLowering, ScopeKind, Symbol, lower_reify, lower_static, lower_variant_constructor,
-    },
+    body::{BodyLowering, ScopeKind, Symbol, lower_reify, lower_static, lower_variant_constructor},
     def::is_void,
     expr::call::{lower_call, lower_construct, lower_scope_base},
     expr::control::{lower_case, lower_for, lower_if, lower_match, lower_switch, lower_while},
@@ -95,9 +93,7 @@ pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMI
         } => lower_for(cx, init, condition, increment, body, span),
         HIRExprKind::Match { condition, arms } => lower_match(cx, condition, arms, span),
         HIRExprKind::Switch { condition, body } => lower_switch(cx, condition, body, span),
-        HIRExprKind::Case { value, statement } => {
-            lower_case(cx, value.as_deref(), statement, span)
-        }
+        HIRExprKind::Case { value, statement } => lower_case(cx, value.as_deref(), statement, span),
 
         HIRExprKind::SizeOfExpr { expr: operand } => {
             let operand = lower_expr(cx, operand);
@@ -370,7 +366,11 @@ fn lower_closure(
         _ => cx.error(
             span,
             &typecheck::TYPE_REQUIREMENT,
-            ("closure body".into(), "an emit expression or a block".into(), None),
+            (
+                "closure body".into(),
+                "an emit expression or a block".into(),
+                None,
+            ),
         ),
     }
 }

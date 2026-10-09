@@ -14,7 +14,7 @@ use crate::{
     function::inspect::inspect,
     program::{Instance, Program, untagged_name},
     staging_error,
-    ty::{Field, FunctionType, NominalKey, HMIRTypeID, HMIRTypeKind, TypeTable},
+    ty::{Field, FunctionType, HMIRTypeID, HMIRTypeKind, NominalKey, TypeTable},
     value::StaticValue,
 };
 
@@ -118,14 +118,20 @@ pub(super) fn exec_type_op(
                 .filter(|param| !cx.types().is_void(*param))
                 .collect();
             let ret = eval_type(cx, frame, *ret)?;
-            StaticValue::Type(cx.types_mut().intern(HMIRTypeKind::Function(FunctionType::new(
-                params, ret, *variadic,
-            ))))
+            StaticValue::Type(
+                cx.types_mut()
+                    .intern(HMIRTypeKind::Function(FunctionType::new(
+                        params, ret, *variadic,
+                    ))),
+            )
         }
         HMIRTypeOp::Expr { params, result } => {
             let params = types(cx, frame, params)?;
             let result = eval_type(cx, frame, *result)?;
-            StaticValue::Type(cx.types_mut().intern(HMIRTypeKind::StagedExpr { params, result }))
+            StaticValue::Type(
+                cx.types_mut()
+                    .intern(HMIRTypeKind::StagedExpr { params, result }),
+            )
         }
         HMIRTypeOp::Aggregate { .. } => unreachable!("aggregate types are evaluated with their id"),
         // A string literal is the array of its bytes and their terminator, which is not a type
@@ -168,7 +174,8 @@ pub(super) fn exec_type_op(
                         })?;
                         for index in path {
                             let nominal = cx.types().nominal_of(current);
-                            let field = &nominal.expect("member path is through aggregates")
+                            let field = &nominal
+                                .expect("member path is through aggregates")
                                 .fields()[index];
                             if field.bit_width().is_some() {
                                 return Err(staging_error(
@@ -181,7 +188,8 @@ pub(super) fn exec_type_op(
                             let aggregate = cx.types_mut().mir(current, span)?;
                             let layout =
                                 calculate_field_layout(cx.types().mir_types(), aggregate, index);
-                            offset += layout.expect("aggregate lays out its fields").offset() as u64;
+                            offset +=
+                                layout.expect("aggregate lays out its fields").offset() as u64;
                             current = field_ty;
                         }
                     }
@@ -243,7 +251,11 @@ pub(super) fn decay(types: &mut TypeTable, ty: HMIRTypeID) -> HMIRTypeID {
 // and is defined once nothing is in progress. Defining it on the spot would make mutually
 // referential aggregates depend on which of them is reached first.
 // Expressions inside a type (array lengths) may look through the pointer, so they opt out.
-fn eval_pointee(cx: &mut Program<'_>, frame: &mut EvalFrame, id: HMIRExprID) -> CXResult<HMIRTypeID> {
+fn eval_pointee(
+    cx: &mut Program<'_>,
+    frame: &mut EvalFrame,
+    id: HMIRExprID,
+) -> CXResult<HMIRTypeID> {
     let deferral = cx.deferral_mut();
     if deferral.defining > 0
         && !deferral.eager

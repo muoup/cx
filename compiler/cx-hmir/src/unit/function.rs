@@ -1,21 +1,21 @@
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use crate::{binding::HMIRLocalID, body::HMIRBody, expr::HMIRExprID, ty::HMIRTypeID};
+use crate::{binding::HMIRLocalID, body::HMIRBody, expr::HMIRExprID};
 
 #[derive(Debug, Clone)]
 pub struct HMIRFunction {
     body: HMIRBody,
 
+    linkage: LinkageMode,
     symbol_name: CXIdent,
     signature: HMIRFnSignature,
-    linkage: LinkageMode,
 
-    def: Option<HMIRFunctionDef>,
+    def: Option<HMIRFnDefinition>,
 }
 
 #[derive(Debug, Clone)]
-pub struct HMIRFunctionDef {
-    params: Box<[HMIRTypeID]>,
+pub struct HMIRFnDefinition {
+    params: Box<[HMIRLocalID]>,
     root: HMIRExprID,
 }
 
@@ -23,9 +23,15 @@ pub struct HMIRFunctionDef {
 pub struct HMIRFnSignature {
     stage: HMIRFunctionStage,
     return_type: HMIRExprID,
-    params: Vec<HMIRTypeID>,
+    params: Vec<HMIRFnParam>,
     variadic: bool,
     contract: HMIRContract,
+}
+
+#[derive(Debug, Clone)]
+pub struct HMIRFnParam {
+    comptime: bool,
+    ty: HMIRExprID,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -74,7 +80,7 @@ impl HMIRContract {
 impl HMIRFnSignature {
     pub fn new(
         stage: HMIRFunctionStage,
-        params: Vec<HMIRTypeID>,
+        params: Vec<HMIRFnParam>,
         return_type: HMIRExprID,
         variadic: bool,
         contract: HMIRContract,
@@ -92,7 +98,7 @@ impl HMIRFnSignature {
         self.stage
     }
 
-    pub fn params(&self) -> &[HMIRTypeID] {
+    pub fn params(&self) -> &[HMIRFnParam] {
         &self.params
     }
 
@@ -115,7 +121,7 @@ impl HMIRFunction {
         linkage: LinkageMode,
         body: HMIRBody,
         signature: HMIRFnSignature,
-        def: Option<HMIRFunctionDef>,
+        def: Option<HMIRFnDefinition>,
     ) -> Self {
         Self {
             symbol_name,
@@ -138,7 +144,35 @@ impl HMIRFunction {
         &self.signature
     }
 
-    pub fn def(&self) -> Option<&HMIRFunctionDef> {
+    pub fn def(&self) -> Option<&HMIRFnDefinition> {
         self.def.as_ref()
+    }
+}
+
+impl HMIRFnDefinition {
+    pub fn new(params: Box<[HMIRLocalID]>, root: HMIRExprID) -> Self {
+        Self { params, root }
+    }
+
+    pub fn params(&self) -> &[HMIRLocalID] {
+        &self.params
+    }
+
+    pub fn root(&self) -> HMIRExprID {
+        self.root
+    }    
+}
+
+impl HMIRFnParam {
+    pub fn new(comptime: bool, ty: HMIRExprID) -> Self {
+        Self { comptime, ty }
+    }
+
+    pub fn comptime(&self) -> bool {
+        self.comptime
+    }
+
+    pub fn ty(&self) -> HMIRExprID {
+        self.ty
     }
 }

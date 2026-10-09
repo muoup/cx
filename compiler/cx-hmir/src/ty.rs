@@ -19,11 +19,11 @@ dense_id!(NominalID, "nominal");
 pub struct HMIRType {
     id: HMIRTypeID,
     debug_name: Option<String>,
-    
+
     kind: HMIRTypeKind,
     semantics: HMIRMoveSemantics,
     unsafe_move: bool,
-    
+
     decl_span: TokenRange,
 }
 
@@ -76,7 +76,7 @@ impl HMIRType {
             kind,
             semantics,
             unsafe_move,
-            decl_span
+            decl_span,
         }
     }
 

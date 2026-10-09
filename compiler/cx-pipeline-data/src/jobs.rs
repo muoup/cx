@@ -60,19 +60,21 @@ pub enum CompilationStep {
      */
     Parse = 1 << 1,
 
+    HMIR = 1 << 2,
+
     /**
      *
      *  Requires: A fully type-checked AST.
      *
      *  Outputs: An analyzed MIR representation.
      */
-    MIRGen = 1 << 5,
+    MIR = 1 << 3,
 
     /** Lowers analyzed MIR into ABI- and layout-aware LMIR. */
-    LMIRGen = 1 << 3,
+    LMIR = 1 << 4,
 
     /** Compiles one LMIR unit into an object file. */
-    Codegen = 1 << 4,
+    Codegen = 1 << 5,
 }
 
 impl CompilationJob {
@@ -150,8 +152,8 @@ impl JobQueue {
         for step in [
             CompilationStep::PreParse,
             CompilationStep::Parse,
-            CompilationStep::MIRGen,
-            CompilationStep::LMIRGen,
+            CompilationStep::MIR,
+            CompilationStep::LMIR,
             CompilationStep::Codegen,
         ] {
             self.shallow_progress_map

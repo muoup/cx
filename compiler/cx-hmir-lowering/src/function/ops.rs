@@ -64,7 +64,9 @@ fn lower_binary_operands(
             let ty = rhs.ty();
             lower_pointer_offset(cx, rhs, lhs, *element, false, ty, span)
         }
-        (HMIRTypeKind::PointerTo(element), HMIRTypeKind::PointerTo(_)) if op == HMIRBinaryOp::Sub => {
+        (HMIRTypeKind::PointerTo(element), HMIRTypeKind::PointerTo(_))
+            if op == HMIRBinaryOp::Sub =>
+        {
             let element_ty = cx.mir(*element, span)?;
             let ty = cx.program.types_mut().int(HMIRIntWidth::I64, true);
             let lhs = lower_value(cx, lhs, span)?;

@@ -41,7 +41,10 @@ pub(crate) fn inspect(
     }
     match lower_expr(&mut lowering, 0, id, Expect::of(expect)) {
         Ok(value) => Ok(value.ty()),
-        Err(Stop::Diverged) => Ok(lowering.program.types_mut().intern(HMIRTypeKind::Unreachable)),
+        Err(Stop::Diverged) => Ok(lowering
+            .program
+            .types_mut()
+            .intern(HMIRTypeKind::Unreachable)),
         Err(Stop::Error(error)) => Err(error),
     }
 }
@@ -117,7 +120,10 @@ pub(super) fn check(
                 (
                     "defer".into(),
                     "a void expression".into(),
-                    Some(format!("'{}'", checking.program.types().display(value.ty()))),
+                    Some(format!(
+                        "'{}'",
+                        checking.program.types().display(value.ty())
+                    )),
                 ),
             ))
         }

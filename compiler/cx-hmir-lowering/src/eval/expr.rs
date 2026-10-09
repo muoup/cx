@@ -61,16 +61,13 @@ pub(crate) fn dereference(
     let value = eval(cx, frame, operand, None)?;
     let ty = eval_static_type(cx, &value, span)?;
     let ty = decay(cx.types_mut(), ty);
-    let inner = cx
-        .types()
-        .pointer_inner(ty)
-        .ok_or_else(|| {
-            staging_error(
-                span,
-                &typecheck::UNEXPECTED_KIND,
-                ("dereferenced value".into(), "a pointer".into()),
-            )
-        })?;
+    let inner = cx.types().pointer_inner(ty).ok_or_else(|| {
+        staging_error(
+            span,
+            &typecheck::UNEXPECTED_KIND,
+            ("dereferenced value".into(), "a pointer".into()),
+        )
+    })?;
     if cx.types().is_function(inner) {
         return Ok(value);
     }

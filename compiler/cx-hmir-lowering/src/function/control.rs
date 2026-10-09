@@ -610,8 +610,7 @@ fn lower_case_label(
     let value = match value {
         Some(case) => {
             let case_span = cx.span(frame, case);
-            let Some(value) = lower_eval(cx, frame, case, Expect::Type(condition))?.as_int()
-            else {
+            let Some(value) = lower_eval(cx, frame, case, Expect::Type(condition))?.as_int() else {
                 return cx.error(
                     &case_span,
                     &mir::EXPECTED_CONSTANT,

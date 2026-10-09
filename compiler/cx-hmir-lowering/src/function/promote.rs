@@ -84,7 +84,11 @@ fn lower_str_to_pointer(
         return Ok(Operand::value(value, ty));
     }
     let Some(reference) = operand.address() else {
-        return cx.error(span, &typecheck::NOT_ADDRESSABLE, "take a pointer to".into());
+        return cx.error(
+            span,
+            &typecheck::NOT_ADDRESSABLE,
+            "take a pointer to".into(),
+        );
     };
     let out = cx.register(ty, span)?;
     cx.intrinsic(

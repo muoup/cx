@@ -6,8 +6,8 @@ use cx_hir::ast::{
 };
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRComptimeGlobal, HMIRContract, HMIRDefKind,
-    HMIRExprID, HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRIntWidth,
-    HMIROp, HMIROwnershipOp, HMIRFnSignature, HMIRTypeDesc,
+    HMIRExprID, HMIRExprKind, HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal,
+    HMIRIntWidth, HMIROp, HMIROwnershipOp, HMIRTypeDesc,
 };
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;

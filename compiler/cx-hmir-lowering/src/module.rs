@@ -504,7 +504,10 @@ pub(crate) fn member_type(
             staging_error(
                 span,
                 &typecheck::UNEXPECTED_KIND,
-                (format!("'{}'", cx.types().display(ty)), "an aggregate".into()),
+                (
+                    format!("'{}'", cx.types().display(ty)),
+                    "an aggregate".into(),
+                ),
             )
         })
 }

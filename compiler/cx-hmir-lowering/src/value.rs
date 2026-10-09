@@ -348,7 +348,11 @@ pub(crate) fn promote_integer_type(types: &mut TypeTable, ty: HMIRTypeID) -> HMI
 }
 
 // C integer promotion followed by the usual arithmetic conversions
-pub(crate) fn arithmetic_type(types: &mut TypeTable, lhs: HMIRTypeID, rhs: HMIRTypeID) -> Option<HMIRTypeID> {
+pub(crate) fn arithmetic_type(
+    types: &mut TypeTable,
+    lhs: HMIRTypeID,
+    rhs: HMIRTypeID,
+) -> Option<HMIRTypeID> {
     let lhs = promote_integer_type(types, lhs);
     let rhs = promote_integer_type(types, rhs);
     match (types.kind(lhs).clone(), types.kind(rhs).clone()) {

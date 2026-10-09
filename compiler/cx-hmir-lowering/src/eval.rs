@@ -32,9 +32,7 @@ use crate::{
     function::{Expect, Stop, inspect::inspect},
     lower::{LowerContext, LowerOutput, lower},
     module::{member_type, variant_index},
-    program::{DefKey, Instance, Program, UnitID, def_body, untagged_name},
-    staging_error,
-    ty::{FunctionType, HMIRTypeID, HMIRTypeKind},
+    program::{Instance, Program, def_body, untagged_name},
     value::{FrameRef, Quote, QuoteRef, StaticValue, truncate_int},
 };
 
@@ -64,15 +62,6 @@ pub(crate) enum Flow {
     Yield(StaticValue),
     Break,
     Continue,
-}
-
-pub(crate) struct Signature {
-    runtime: Vec<HMIRLocalID>,
-    params: Vec<(Option<CXIdent>, HMIRTypeID)>,
-    ret: HMIRTypeID,
-    variadic: bool,
-    linkage: LinkageMode,
-    link_name: CXIdent,
 }
 
 impl RuntimeView {
@@ -306,8 +295,7 @@ fn static_length(
     let body = def_body(unit.def(frame.def.def())).expect("global has a body");
     Ok(match body.expr(initializer).kind() {
         HMIRExprKind::Native(HMIROp::AggregateOp(HMIRAggregateOp::Initialize {
-            fields,
-            ..
+            fields, ..
         })) => Some(fields.len() as u64),
         HMIRExprKind::Constant(HMIRConstant::Str(string)) => Some(string.len() as u64 + 1),
         _ => match eval(cx, frame, initializer, None)? {
@@ -358,7 +346,10 @@ fn read_global(
         None => Err(staging_error(
             span,
             &mir::COMPTIME_UNAVAILABLE,
-            format!("'{}', which has no initializer,", unit.def(key.def()).name()),
+            format!(
+                "'{}', which has no initializer,",
+                unit.def(key.def()).name()
+            ),
         )),
     }
 }
@@ -449,7 +440,8 @@ pub(crate) fn check_redeclaration(
 ) -> CXResult<()> {
     let unit = cx.unit(first.unit());
     let name = unit.def(first.def()).name();
-    let incompatible = || staging_error(span, &typecheck::INCOMPATIBLE_DECLARATION, name.to_string());
+    let incompatible =
+        || staging_error(span, &typecheck::INCOMPATIBLE_DECLARATION, name.to_string());
     let duplicate = || staging_error(span, &typecheck::REDEFINITION, name.to_string());
     match (unit.def(first.def()).kind(), unit.def(other.def()).kind()) {
         (HMIRDefKind::Function(left), HMIRDefKind::Function(right)) => {
@@ -523,7 +515,11 @@ pub(crate) fn equivalent_def(
             .map(|key| cx.def_name(*key).to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        return Err(staging_error(span, &typecheck::AMBIGUOUS_SYMBOL, candidates));
+        return Err(staging_error(
+            span,
+            &typecheck::AMBIGUOUS_SYMBOL,
+            candidates,
+        ));
     }
     Ok(definition.unwrap_or(keys[0]))
 }
@@ -640,7 +636,11 @@ pub(crate) fn call_static(
     let all = match all.iter().cloned().collect::<Option<Vec<_>>>() {
         Some(all) => all,
         None if curried => {
-            return Err(staging_error(span, &typecheck::CANNOT_INFER, "this type".into()));
+            return Err(staging_error(
+                span,
+                &typecheck::CANNOT_INFER,
+                "this type".into(),
+            ));
         }
         None => deduce_static(cx, def, all, span)?,
     };
@@ -899,11 +899,7 @@ pub(crate) fn exec_native(
                             return Err(staging_error(span, &typecheck::NORETURN_RETURN, ()));
                         }
                         if value.is_none() && !cx.types().is_void(ret) {
-                            return Err(staging_error(
-                                span,
-                                &typecheck::MISSING_RETURN_VALUE,
-                                (),
-                            ));
+                            return Err(staging_error(span, &typecheck::MISSING_RETURN_VALUE, ()));
                         }
                         if cx.types().is_void(ret) && returned != StaticValue::Unit {
                             return Err(staging_error(span, &typecheck::VOID_RETURN_VALUE, ()));
@@ -986,7 +982,11 @@ fn exec_aggregate(
             let ty = match eval_type_hint(cx, frame, *ty)? {
                 Some(ty) => ty,
                 None => expect.ok_or_else(|| {
-                    staging_error(span, &typecheck::CANNOT_INFER, "the initializer's type".into())
+                    staging_error(
+                        span,
+                        &typecheck::CANNOT_INFER,
+                        "the initializer's type".into(),
+                    )
                 })?,
             };
             static_initializer(cx, frame, ty, fields, span)
@@ -1034,7 +1034,9 @@ fn exec_aggregate(
                 .into_iter()
                 .find(|(field, _)| *field == index)
                 .map(|(_, value)| value)
-                .ok_or_else(|| staging_error(span, &mir::COMPTIME_UNSET, format!("member '{name}'")))
+                .ok_or_else(|| {
+                    staging_error(span, &mir::COMPTIME_UNSET, format!("member '{name}'"))
+                })
         }
         HMIRAggregateOp::Index { base, index } => {
             let base = eval(cx, frame, *base, None)?;
@@ -1165,15 +1167,13 @@ fn static_address(
         body.expr(inner).kind()
     {
         let base = static_address(cx, frame, *base, span)?;
-        let index = eval(cx, frame, *index, None)?
-            .as_int()
-            .ok_or_else(|| {
-                staging_error(
-                    span,
-                    &mir::EXPECTED_CONSTANT,
-                    ("index".into(), "integer".into()),
-                )
-            })?;
+        let index = eval(cx, frame, *index, None)?.as_int().ok_or_else(|| {
+            staging_error(
+                span,
+                &mir::EXPECTED_CONSTANT,
+                ("index".into(), "integer".into()),
+            )
+        })?;
         if let StaticValue::GlobalAddress { def, offset, ty } = base {
             let element = match cx.types().kind(ty).clone() {
                 HMIRTypeKind::PointerTo(array) => match cx.types().kind(array).clone() {
@@ -1238,7 +1238,10 @@ pub(crate) fn eval_quote_type(cx: &mut Program<'_>, quote: &Quote) -> Option<HMI
         .collect::<CXResult<Vec<_>>>()
         .ok()?;
     let result = type_hint(cx, &mut frame, quote.body())?;
-    Some(cx.types_mut().intern(HMIRTypeKind::StagedExpr { params, result }))
+    Some(
+        cx.types_mut()
+            .intern(HMIRTypeKind::StagedExpr { params, result }),
+    )
 }
 
 pub(crate) fn type_hint(
@@ -1260,14 +1263,13 @@ pub(crate) fn eval_static_type(
     match value {
         StaticValue::Function { def, args } => eval_function_type(cx, &(*def, args.clone()), span),
         StaticValue::Global(def) => eval_global_type(cx, *def, span),
-        StaticValue::Quote(quote) => eval_quote_type(cx, quote.get())
-            .ok_or_else(|| {
-                staging_error(
-                    span,
-                    &typecheck::CANNOT_INFER,
-                    "the quoted expression's type".into(),
-                )
-            }),
+        StaticValue::Quote(quote) => eval_quote_type(cx, quote.get()).ok_or_else(|| {
+            staging_error(
+                span,
+                &typecheck::CANNOT_INFER,
+                "the quoted expression's type".into(),
+            )
+        }),
         _ => unreachable!("simple_type covers the remaining values"),
     }
 }

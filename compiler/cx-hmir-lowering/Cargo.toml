@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 cx-hmir = { path = "../cx-hmir" }
+cx-mir = { path = "../cx-mir" }
 cx-intrinsics = { path = "../cx-intrinsics" }
 
 cx-pipeline-data = { path = "../cx-pipeline-data" }

@@ -1,7 +1,7 @@
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression, HIRUnOp};
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRCoerceMode, HMIRExprID, HMIRExprKind,
-    HMIROp, HMIROwnershipOp, HMIRUnaryOp,
+    HMIRAggregateOp, HMIRBinaryOp, HMIRBlockKind, HMIRCoerceMode, HMIRExprID, HMIRExprKind, HMIROp,
+    HMIROwnershipOp, HMIRUnaryOp,
 };
 use cx_log::catalogue::{mir, typecheck};
 use cx_tokens::TokenRange;
@@ -117,9 +117,8 @@ pub(crate) fn lower_unop(
     span: &TokenRange,
 ) -> HMIRExprID {
     let value = lower_expr(cx, operand);
-    let unary = |this: &mut BodyLowering<'_>, op| {
-        this.native(HMIROp::UnOp { op, operand: value }, span)
-    };
+    let unary =
+        |this: &mut BodyLowering<'_>, op| this.native(HMIROp::UnOp { op, operand: value }, span);
     match op {
         HIRUnOp::Dereference => cx.native(HMIROp::Dereference(value), span),
         HIRUnOp::AddressOf => cx.native(HMIROp::AddressOf(value), span),

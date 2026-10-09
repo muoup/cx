@@ -24,21 +24,13 @@ use crate::{
     value::StaticValue,
 };
 
-dense_id!(UnitID, "unit");
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct DefKey {
-    unit: UnitID,
-    def: HMIRDefID,
-}
-
 pub(crate) type Instance = (DefKey, Vec<StaticValue>);
 
 pub(crate) type ExternalLoader<'l> = dyn FnMut(&QualifiedName) -> Option<HMIRUnit> + 'l;
 
 pub(crate) struct Program<'l> {
     units: Vec<Rc<HMIRUnit>>,
-    
+
     names: Vec<HashMap<QualifiedName, HMIRDefID>>,
     externals: HashMap<QualifiedName, Option<DefKey>>,
 

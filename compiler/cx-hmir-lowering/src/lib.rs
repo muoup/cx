@@ -9,23 +9,16 @@ mod value;
 
 mod log;
 
-pub(crate) mod env;
+pub mod env;
 
 use cx_hmir::HMIRUnit;
-use cx_log::{
-    CXResult,
-    catalogue::ErrorDefinition,
-    error::{CXError, context::from_token_range},
-};
+use cx_log::CXResult;
 use cx_mir::MIRUnit;
-use cx_namespace::module::QualifiedName;
-use cx_target::ArchitectureConfig;
-use cx_tokens::TokenRange;
 
-use crate::{env::HMIREnvironment, module::lower_roots, program::Program};
+use crate::{env::HMIREnvironment, lower::lower_unit};
 
-pub fn generate_mir<'l>(mut env: HMIREnvironment) -> CXResult<MIRUnit> {
-    // TODO
+pub fn generate_mir<'l>(unit: &HMIRUnit, mut env: HMIREnvironment) -> CXResult<MIRUnit> {
+    lower_unit(unit, &mut env);
 
     Ok(env.finish())
 }

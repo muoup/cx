@@ -1,6 +1,7 @@
 use crate::CompilationUnit;
 use cx_hir::ast::HIR;
 use cx_hir::registry::GlobalSymbolRegistry;
+use cx_hmir::HMIRUnit;
 use cx_lmir::LMIRUnit;
 use cx_mir::MIRUnit;
 use cx_namespace::module::NamespacePath;
@@ -26,6 +27,7 @@ pub struct ModuleData {
     pub hir: ModuleMap<HIR>,
     pub base_mappings: ModuleMap<NamespacePath>,
 
+    pub hmir: ModuleMap<HMIRUnit>,
     pub mir: ModuleMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
 }
@@ -40,9 +42,10 @@ impl ModuleData {
 
             lex_tokens: ModuleMap::new(".cx-tokens"),
             preparse_base: ModuleMap::new(".cx-preparse"),
-            hir: ModuleMap::new(".cx-hir"),
-
             base_mappings: ModuleMap::new(".cx-structure-data"),
+
+            hir: ModuleMap::new(".cx-hir"),
+            hmir: ModuleMap::new(".cx-hmir"),
             mir: ModuleMap::new(".cx-mir"),
             lmir: ModuleMap::new(".cx-lmir"),
         }

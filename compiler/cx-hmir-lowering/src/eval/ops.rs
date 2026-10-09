@@ -27,7 +27,12 @@ pub(crate) fn fold_binary(
         staging_error(
             span,
             &mir::COMPTIME_INVALID_OPERATION,
-            format!("'{}' on {} and {}", op.path(), lhs.describe(), rhs.describe()),
+            format!(
+                "'{}' on {} and {}",
+                op.path(),
+                lhs.describe(),
+                rhs.describe()
+            ),
         )
     };
     match (&lhs, &rhs) {
@@ -55,10 +60,9 @@ pub(crate) fn fold_binary(
             let signed = cx.types().is_signed(ty);
             let left = normalize_int(*left, ty, cx.types());
             let right = normalize_int(*right, ty, cx.types());
-            let result = fold_int(op, left, right, signed)
-                .ok_or_else(|| {
-                    staging_error(span, &mir::COMPTIME_UNDEFINED_ARITHMETIC, op.path().into())
-                })?;
+            let result = fold_int(op, left, right, signed).ok_or_else(|| {
+                staging_error(span, &mir::COMPTIME_UNDEFINED_ARITHMETIC, op.path().into())
+            })?;
             if is_comparison(op) {
                 return Ok(StaticValue::bool(result != 0, cx.types_mut()));
             }
@@ -214,7 +218,9 @@ pub(crate) fn coerce_static(
                 StaticValue::int(normalize_int(value, ty, cx.types()), ty)
             }
         }
-        (StaticValue::Int { value, .. }, HMIRTypeKind::Float { .. }) => float_value(value as f64, ty),
+        (StaticValue::Int { value, .. }, HMIRTypeKind::Float { .. }) => {
+            float_value(value as f64, ty)
+        }
         (StaticValue::Float { value, .. }, HMIRTypeKind::Int { width, .. }) => {
             let value = f64::from(&value);
             if width == HMIRIntWidth::I1 {
@@ -233,13 +239,16 @@ pub(crate) fn coerce_static(
             StaticValue::GlobalAddress { def, offset, .. },
             HMIRTypeKind::PointerTo(_) | HMIRTypeKind::ReferenceTo(_),
         ) => StaticValue::GlobalAddress { def, offset, ty },
-        (StaticValue::LabelAddress { function, label, .. }, HMIRTypeKind::PointerTo(_)) => {
+        (
             StaticValue::LabelAddress {
-                function,
-                label,
-                ty,
-            }
-        }
+                function, label, ..
+            },
+            HMIRTypeKind::PointerTo(_),
+        ) => StaticValue::LabelAddress {
+            function,
+            label,
+            ty,
+        },
         (StaticValue::Global(def), HMIRTypeKind::PointerTo(element)) => {
             let global = eval_global_type(cx, def, span)?;
             if cx.types().is_array(global) || global == element {
@@ -256,16 +265,19 @@ pub(crate) fn coerce_static(
             value @ StaticValue::Str(_),
             HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Str | HMIRTypeKind::Array { .. },
         ) => value,
-        (value @ StaticValue::Function { .. }, HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Function(_)) => {
-            value
-        }
+        (
+            value @ StaticValue::Function { .. },
+            HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Function(_),
+        ) => value,
         (value @ StaticValue::Aggregate { ty: source, .. }, HMIRTypeKind::Nominal(_))
             if cx.types_mut().same_unqualified(source, ty) =>
         {
             value
         }
-        (StaticValue::Aggregate { ty: source, fields }, HMIRTypeKind::Array { element, length })
-            if matches!(cx.types().kind(source), HMIRTypeKind::Array { element: from, length: count }
+        (
+            StaticValue::Aggregate { ty: source, fields },
+            HMIRTypeKind::Array { element, length },
+        ) if matches!(cx.types().kind(source), HMIRTypeKind::Array { element: from, length: count }
                 if *from == element && (length == *count || length.is_none() || count.is_none())) =>
         {
             StaticValue::Aggregate { ty, fields }
@@ -296,11 +308,9 @@ pub(crate) fn fold_unary(
     span: &TokenRange,
 ) -> CXResult<StaticValue> {
     if op == HMIRUnaryOp::LNot {
-        let truthy = value
-            .is_truthy()
-            .ok_or_else(|| {
-                staging_error(span, &mir::COMPTIME_NO_TRUTH_VALUE, value.describe().into())
-            })?;
+        let truthy = value.is_truthy().ok_or_else(|| {
+            staging_error(span, &mir::COMPTIME_NO_TRUTH_VALUE, value.describe().into())
+        })?;
         return Ok(StaticValue::bool(!truthy, cx.types_mut()));
     }
     match value {

@@ -56,7 +56,11 @@ pub(crate) fn lower_call<'h>(
                     return cx.error(
                         &value.range,
                         &typecheck::INDEX_BOUNDS,
-                        ("pipe".into(), index.to_string(), Some(args.len().to_string())),
+                        (
+                            "pipe".into(),
+                            index.to_string(),
+                            Some(args.len().to_string()),
+                        ),
                     );
                 }
                 args.insert(index, (value, true));

@@ -232,7 +232,7 @@ impl<'a> Resolver<'a> {
                             .iter()
                             .map(ToString::to_string)
                             .collect::<Vec<_>>()
-                            .join(", ")
+                            .join(", "),
                     )),
                 }
             }
@@ -298,7 +298,9 @@ impl<'a> Resolver<'a> {
                     _ => HMIRFloatWidth::F64,
                 },
             },
-            HIRIntrinsicType::Opaque { size, alignment } => HMIRTypeDesc::Opaque { size, alignment },
+            HIRIntrinsicType::Opaque { size, alignment } => {
+                HMIRTypeDesc::Opaque { size, alignment }
+            }
         })
     }
 }

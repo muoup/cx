@@ -5,10 +5,10 @@ use cx_hir::ast::{
     types::{HIRTagKind, HIRType, HIRTypeKind},
 };
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBlockKind, HMIRBody, HMIRCoerceMode, HMIRConstant, HMIRContract,
-    HMIRControlOp, HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRError, HMIRExpr, HMIRExprID,
-    HMIRExprKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIROp,
-    HMIROwnershipOp, HMIRFnSignature, HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner, HMIRTypeOp,
+    HMIRAggregateOp, HMIRBody, HMIRCoerceMode, HMIRContract, HMIRControlOp, HMIRDef, HMIRDefID,
+    HMIRDefKind, HMIRDefRef, HMIRError, HMIRExpr, HMIRExprID, HMIRExprKind, HMIRFnSignature,
+    HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRHole, HMIRLocal, HMIRLocalID, HMIROp,
+    HMIROwnershipOp, HMIRTypeDesc, HMIRTypeID, HMIRTypeInterner, HMIRTypeOp,
 };
 use cx_log::catalogue::{ErrorDefinition, typecheck};
 use cx_namespace::module::{NamespacePath, QualifiedName};

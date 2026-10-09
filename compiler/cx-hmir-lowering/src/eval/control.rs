@@ -57,7 +57,11 @@ pub(super) fn check_condition(
 ) -> CXResult<()> {
     let span = frame.body().expr(condition).span().clone();
     if !static_condition(cx, frame, condition, &span)? {
-        return Err(staging_error(&span, &mir::COMPTIME_ASSERTION, Some(message.into())));
+        return Err(staging_error(
+            &span,
+            &mir::COMPTIME_ASSERTION,
+            Some(message.into()),
+        ));
     }
     Ok(())
 }

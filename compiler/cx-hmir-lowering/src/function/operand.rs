@@ -58,7 +58,11 @@ impl Operand {
         Self::value(MIRValue::Register(register), ty)
     }
 
-    pub(crate) fn reference(reg: MIRRegisterID, ty: HMIRTypeID, origin: Option<MIRPlaceID>) -> Self {
+    pub(crate) fn reference(
+        reg: MIRRegisterID,
+        ty: HMIRTypeID,
+        origin: Option<MIRPlaceID>,
+    ) -> Self {
         Self::new(
             OperandKind::Ref {
                 reg,

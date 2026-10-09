@@ -401,7 +401,10 @@ pub(crate) fn lower_convert(
             let length = *length;
             return lower_string_array(cx, operand, target, length, span);
         }
-        (HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) => {
+        (
+            HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_),
+            HMIRTypeKind::PointerTo(_),
+        ) => {
             let operand = lower_decay(cx, operand, span)?;
             return lower_convert(cx, operand, target, span);
         }

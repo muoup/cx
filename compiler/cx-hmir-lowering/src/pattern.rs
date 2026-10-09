@@ -35,9 +35,7 @@ pub(crate) fn match_cases<'a>(
             .as_ref()
             .is_some_and(|names| (0..names.len()).all(|index| cases.contains(&Some(index as i128))))
     };
-    let unreachable = || {
-        staging_error(span, &typecheck::UNREACHABLE_MATCH_ARM, ())
-    };
+    let unreachable = || staging_error(span, &typecheck::UNREACHABLE_MATCH_ARM, ());
     for pattern in patterns {
         if caught || covered(&cases) {
             return Err(unreachable());
@@ -49,16 +47,11 @@ pub(crate) fn match_cases<'a>(
                 continue;
             }
             HMIRPattern::Integer(value) if variants.is_none() => *value as i128,
-            HMIRPattern::Value(expected) if variants.is_none() => eval(
-                cx,
-                frame,
-                *expected,
-                Some(ty),
-            )?
-            .as_int()
-            .ok_or_else(|| {
-                staging_error(span, &typecheck::VALUE_PATTERN_CONSTANT, ())
-            })?,
+            HMIRPattern::Value(expected) if variants.is_none() => {
+                eval(cx, frame, *expected, Some(ty))?
+                    .as_int()
+                    .ok_or_else(|| staging_error(span, &typecheck::VALUE_PATTERN_CONSTANT, ()))?
+            }
             HMIRPattern::Variant { name, .. } if variants.is_some() => {
                 variant_index(cx, ty, name, span)? as i128
             }
@@ -83,7 +76,11 @@ pub(crate) fn match_cases<'a>(
             .filter_map(|(_, name)| name.as_ref().map(ToString::to_string))
             .collect::<Vec<_>>();
         let missing = (!missing.is_empty()).then(|| missing.join(", "));
-        return Err(staging_error(span, &typecheck::NONEXHAUSTIVE_MATCH, missing));
+        return Err(staging_error(
+            span,
+            &typecheck::NONEXHAUSTIVE_MATCH,
+            missing,
+        ));
     }
     Ok(cases)
 }

@@ -1,8 +1,7 @@
 use std::rc::Rc;
 
 use cx_hmir::{
-    HMIRBlockKind, HMIRExprID, HMIRExprKind, HMIRIntrinsic, HMIRLocalID, HMIROp,
-    HMIROwnershipOp,
+    HMIRBlockKind, HMIRExprID, HMIRExprKind, HMIRIntrinsic, HMIRLocalID, HMIROp, HMIROwnershipOp,
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
 use cx_log::catalogue::{mir, typecheck};
@@ -281,9 +280,7 @@ pub(crate) fn lower_native(
             value,
             target,
         } => lower_coerce(cx, frame, mode, value, target, span),
-        HMIROp::Assign { target, op, value } => {
-            lower_assign(cx, frame, target, op, value, span)
-        }
+        HMIROp::Assign { target, op, value } => lower_assign(cx, frame, target, op, value, span),
         HMIROp::AddressOf(inner) => lower_address_of(cx, frame, inner, expect, span),
         HMIROp::Dereference(inner) => {
             let operand = lower_expr(cx, frame, inner, Expect::Any)?;

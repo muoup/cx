@@ -4,7 +4,7 @@ pub mod expr;
 pub mod ty;
 pub mod unit;
 
-mod format;
+// mod format;
 
 pub use binding::{HMIRHole, HMIRHoleID, HMIRLocal, HMIRLocalID};
 pub use body::HMIRBody;

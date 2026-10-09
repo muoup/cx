@@ -50,10 +50,7 @@ pub fn generate_external_hmir(
         Some(HIRSymbolKind::Type(ty)) if is_forward_declaration(&bare.name, tag, &ty.base) => {
             (bare.namespace.clone(), DefSource::OpaqueType)
         }
-        Some(HIRSymbolKind::Type(ty)) => (
-            bare.namespace.clone(),
-            DefSource::Type { ty: &ty.base },
-        ),
+        Some(HIRSymbolKind::Type(ty)) => (bare.namespace.clone(), DefSource::Type { ty: &ty.base }),
         Some(HIRSymbolKind::AddressableGlobal {
             ty, symbol_naming, ..
         }) => (

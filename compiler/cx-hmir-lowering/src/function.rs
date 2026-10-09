@@ -443,7 +443,11 @@ impl<'p, 'l> FunctionLowering<'p, 'l> {
         Ok(self.program.types_mut().mir(ty, span)?)
     }
 
-    pub(crate) fn register(&mut self, ty: HMIRTypeID, span: &TokenRange) -> LowerResult<MIRRegisterID> {
+    pub(crate) fn register(
+        &mut self,
+        ty: HMIRTypeID,
+        span: &TokenRange,
+    ) -> LowerResult<MIRRegisterID> {
         let mir = self.mir(ty, span)?;
         Ok(self.body.add_register(mir, None))
     }
@@ -590,7 +594,11 @@ fn lower_cleanup_scope(
             cx.error(
                 &span,
                 &typecheck::TYPE_REQUIREMENT,
-                ("defer".into(), "a void expression".into(), Some(format!("'{found}'"))),
+                (
+                    "defer".into(),
+                    "a void expression".into(),
+                    Some(format!("'{found}'")),
+                ),
             )
         });
         let popped = cx.pop_scope(span);

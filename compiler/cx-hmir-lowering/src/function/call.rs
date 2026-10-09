@@ -84,7 +84,10 @@ fn lower_static_call(
         return cx.error(
             span,
             &typecheck::UNEXPECTED_KIND,
-            (format!("'{}'", unit.def(def.def()).name()), "a function".into()),
+            (
+                format!("'{}'", unit.def(def.def()).name()),
+                "a function".into(),
+            ),
         );
     };
     if function.stage() == HMIRFunctionStage::Runtime && !function.signature().contract().is_safe()
@@ -340,7 +343,12 @@ fn lower_emit_call(
 ) -> LowerResult<Operand> {
     let types = cx.program.types();
     let unreachable = types.is_unreachable(ret);
-    if cx.unevaluated && matches!(types.kind(ret), HMIRTypeKind::StagedExpr { .. } | HMIRTypeKind::Type) {
+    if cx.unevaluated
+        && matches!(
+            types.kind(ret),
+            HMIRTypeKind::StagedExpr { .. } | HMIRTypeKind::Type
+        )
+    {
         return Ok(inspect::binding(cx, ret, span)?);
     }
     let out = if types.is_void(ret) || unreachable {

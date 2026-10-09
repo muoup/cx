@@ -2,6 +2,7 @@ use cx_hmir::{
     HMIRAggregateKind, HMIRAggregateOp, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRLocalID,
     HMIROp, HMIRPattern, HMIRTypeOp,
 };
+use cx_log::catalogue::typecheck;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRConstant, MIRFloatIntrinsic,
     MIRInstructionKind, MIRIntIntrinsic, MIRIntType, MIRInternalIntrinsic, MIRRegisterID,
@@ -9,7 +10,6 @@ use cx_mir::{
     expr::instruction::MIRInvalidationKind,
     ty::layout::{MIRFieldLayout, calculate_field_layout},
 };
-use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -358,7 +358,11 @@ fn lower_initializer_type(
     if matches!(cx.kind(frame, ty), HMIRExprKind::Hole(_)) {
         return match expected {
             Some(expected) => Ok(expected),
-            None => cx.error(span, &typecheck::CANNOT_INFER, "the initialized type".into()),
+            None => cx.error(
+                span,
+                &typecheck::CANNOT_INFER,
+                "the initialized type".into(),
+            ),
         };
     }
     match lower_eval(cx, frame, ty, Expect::Any)? {
@@ -417,7 +421,8 @@ fn lower_is(
             subject
         }
         HMIRPattern::Float(expected) => {
-            let HMIRTypeKind::Float { width } = cx.program.types().kind(subject.ty()).clone() else {
+            let HMIRTypeKind::Float { width } = cx.program.types().kind(subject.ty()).clone()
+            else {
                 return cx.error(
                     span,
                     &typecheck::TYPE_REQUIREMENT,
@@ -637,7 +642,11 @@ fn lower_copy_binding(
         .as_ref()
         .map_or_else(|| "auto".to_string(), |name| format!("auto {name}"));
     if borrowed {
-        return cx.error(span, &typecheck::BINDING_BEHIND_REFERENCE, binding.to_string());
+        return cx.error(
+            span,
+            &typecheck::BINDING_BEHIND_REFERENCE,
+            binding.to_string(),
+        );
     }
     if !cx.program.types().is_pod(ty) {
         return cx.error(
@@ -727,7 +736,11 @@ pub(super) fn lower_address_of_operand(
     span: &TokenRange,
 ) -> LowerResult<Operand> {
     if operand.bitfield().is_some() {
-        return cx.error(span, &typecheck::BITFIELD_REFERENCE, "take the address of".into());
+        return cx.error(
+            span,
+            &typecheck::BITFIELD_REFERENCE,
+            "take the address of".into(),
+        );
     }
     let operand = lower_spill(cx, operand, span)?;
     let ty = cx.program.types_mut().pointer_to(operand.ty());
