@@ -1,11 +1,10 @@
-use cx_hmir::{HMIRBody, expr::constant::HMIRConstant};
+use cx_hmir::{HMIRBody, expr::constant::HMIRConstant, ty::HMIRTypeKind};
 use cx_log::CXResult;
-use cx_mir::{MIRTypeKind, MIRValue};
 use cx_tokens::TokenRange;
 
 use crate::{
     env::lowering::FnLoweringContext,
-    lower::{HMIRValue, HMIRValueKind},
+    lower::{HMIRValue, HMIRValueKind, emit::void_value},
 };
 
 pub(crate) fn lower_constant(
@@ -22,13 +21,29 @@ pub(crate) fn lower_constant(
         // In the future, we may want to introduce a runtime-friendly type info API, but for now, we will just error out.
         HMIRConstant::Type(_) => todo!("Error: unexpected type constant in runtime expression"),
 
-        HMIRConstant::Aggregate { ty, .. }
+        HMIRConstant::Unit => Ok(void_value(env, span)),
+
+        HMIRConstant::Str(_) => {
+            let ty = env.env().realize_type(HMIRTypeKind::Str, span);
+            Ok(HMIRValue::new(
+                ty,
+                HMIRValueKind::Constant(constant.clone()),
+            ))
+        }
+
+        HMIRConstant::Null(ty)
+        | HMIRConstant::Aggregate { ty, .. }
         | HMIRConstant::Int { ty, .. }
         | HMIRConstant::Float { ty, .. } => Ok(HMIRValue::new(
             *ty,
             HMIRValueKind::Constant(constant.clone()),
         )),
 
-        _ => todo!(),
+        HMIRConstant::Function { .. } => todo!("function constants"),
+        HMIRConstant::Quote(_) => todo!("quote constants"),
+        HMIRConstant::Global(_) | HMIRConstant::GlobalAddress { .. } => {
+            todo!("global constants: HMIRValueKind has no global place")
+        }
+        HMIRConstant::LabelAddress { .. } => todo!("label address constants"),
     }
 }

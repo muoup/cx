@@ -8,7 +8,6 @@ pub(crate) mod format;
 
 pub use format::MIRDisplay;
 
-pub use expr::body::MIRBody;
 pub use expr::instruction::{
     MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRScopeID, MIRStoreBitfield,
 };
@@ -23,10 +22,8 @@ pub use ty::{
     MIRTypeKind, MIRTypeLayout,
 };
 pub use unit::function::{MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID};
-pub use unit::{
-    MIRBasicBlockID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRPlaceDecl, MIRRegisterDecl,
-    MIRScopeDecl, MIRUnit,
-};
+pub use unit::body::{MIRBody, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl};
+pub use unit::{MIRBasicBlockID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit};
 pub use value::MIRRegisterID as MIRRegister;
 pub use value::{
     MIRBindable, MIRBlockTarget, MIRGlobalRef, MIRLivenessState, MIRPlaceID, MIRRegisterID,

@@ -20,8 +20,25 @@ pub struct HMIRSymbolEnv<'global, 'hmir> {
 }
 
 impl<'global, 'hmir> HMIRSymbolEnv<'global, 'hmir> {
-    fn allocate_external_id(&self) -> HMIRDefID {
-        HMIRDefID::new(self.external_def_counter | (1 << 63)) // Set the highest bit to indicate external
+    pub fn new(module_map: &'global ModuleMap<HMIRUnit>, local_unit: &'hmir HMIRUnit) -> Self {
+        Self {
+            module_map,
+            local_unit,
+
+            external_defs: HashMap::new(),
+            external_cache: HashMap::new(),
+            external_def_counter: 0,
+        }
+    }
+
+    pub fn local_unit(&self) -> &'hmir HMIRUnit {
+        self.local_unit
+    }
+
+    fn allocate_external_id(&mut self) -> HMIRDefID {
+        let id = HMIRDefID::new(self.external_def_counter | (1 << 63)); // Set the highest bit to indicate external
+        self.external_def_counter += 1;
+        id
     }
 
     fn is_external_id(&self, def_id: HMIRDefID) -> bool {

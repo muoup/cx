@@ -1,8 +1,4 @@
-mod deduce;
-mod eval;
-mod function;
 mod lower;
-mod pattern;
 
 mod log;
 
@@ -15,7 +11,7 @@ use cx_mir::MIRUnit;
 use crate::{env::HMIREnvironment, lower::lower_unit};
 
 pub fn generate_mir<'l>(unit: &HMIRUnit, mut env: HMIREnvironment) -> CXResult<MIRUnit> {
-    lower_unit(unit, &mut env);
+    lower_unit(unit, &mut env)?;
 
     Ok(env.finish())
 }

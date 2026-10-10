@@ -1358,8 +1358,8 @@ fn write_place_name(
     function: &MIRFunction,
     place: MIRPlaceID,
 ) -> fmt::Result {
-    if let Some(place) = function.body().and_then(|body| body.place(place))
-        && let Some(name) = &place.debug_name
+    if let Some(place) = function.body().map(|body| body.place(place))
+        && let Some(name) = place.debug_name()
     {
         return write!(f, "%{name}");
     }
@@ -1371,8 +1371,8 @@ fn write_register_name(
     function: &MIRFunction,
     register: MIRRegisterID,
 ) -> fmt::Result {
-    if let Some(register) = function.body().and_then(|body| body.register(register))
-        && let Some(name) = &register.debug_name
+    if let Some(register) = function.body().map(|body| body.register(register))
+        && let Some(name) = register.debug_name()
     {
         return write!(f, "%{name}");
     }

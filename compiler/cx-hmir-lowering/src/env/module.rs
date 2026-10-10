@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
 
-use cx_hmir::HMIRGlobal;
 use cx_mir::{
     MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
     MIRGlobalVariable, MIRType, MIRTypeID, MIRUnit, ty::registry::MIRTypeRegistry,
@@ -21,6 +20,9 @@ pub struct MIRModuleBuilder {
     functions: BTreeMap<MIRFunctionID, MIRFunction>,
     globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
+
+    function_names: HashMap<String, MIRFunctionID>,
+    global_names: HashMap<String, MIRGlobalID>,
 }
 
 impl MIRModuleBuilder {
@@ -32,6 +34,9 @@ impl MIRModuleBuilder {
             functions: BTreeMap::new(),
             globals: BTreeMap::new(),
             global_order: Vec::new(),
+
+            function_names: HashMap::new(),
+            global_names: HashMap::new(),
         }
     }
 
@@ -40,27 +45,58 @@ impl MIRModuleBuilder {
     }
 
     pub fn intern_type(&mut self, ty: MIRType) -> MIRTypeID {
-        todo!()
+        if let Some((id, _)) = self.types.iter().find(|(_, existing)| **existing == ty) {
+            return *id;
+        }
+
+        let id = MIRTypeID::new(self.types.len());
+        self.types.insert(id, ty);
+        id
     }
 
     pub fn declare_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
-        todo!()
+        let name = prototype.symbol_name.as_string();
+        if let Some(id) = self.function_names.get(&name) {
+            return *id;
+        }
+
+        let id = MIRFunctionID::new(self.functions.len());
+        self.functions.insert(id, MIRFunction::new(prototype, None));
+        self.function_names.insert(name, id);
+        id
     }
 
     pub fn define_function(&mut self, id: MIRFunctionID, body: MIRBody) {
-        todo!()
+        self.functions
+            .get_mut(&id)
+            .unwrap_or_else(|| panic!("Could not define unknown function id: {id}"))
+            .define(body);
     }
 
     pub fn function(&self, id: MIRFunctionID) -> &MIRFunction {
-        todo!()
+        self.functions
+            .get(&id)
+            .unwrap_or_else(|| panic!("Function not found in module: {id}"))
     }
 
     pub fn declare_global(&mut self, global: MIRGlobalVariable) -> MIRGlobalID {
-        todo!()
+        let name = global.name().as_string();
+        if let Some(id) = self.global_names.get(&name) {
+            return *id;
+        }
+
+        let id = MIRGlobalID::new(self.globals.len());
+        self.globals.insert(id, global);
+        self.global_names.insert(name, id);
+        self.global_order.push(id);
+        id
     }
 
     pub fn define_global(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
-        todo!()
+        self.globals
+            .get_mut(&id)
+            .unwrap_or_else(|| panic!("Could not define unknown global id: {id}"))
+            .define(state);
     }
 
     pub fn finish(self) -> MIRUnit {

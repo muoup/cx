@@ -143,6 +143,14 @@ impl HMIRFunction {
         &mut self.body
     }
 
+    pub fn linkage(&self) -> LinkageMode {
+        self.linkage
+    }
+
+    pub fn symbol_name(&self) -> &CXIdent {
+        &self.symbol_name
+    }
+
     pub fn signature(&self) -> &HMIRFnSignature {
         &self.signature
     }
