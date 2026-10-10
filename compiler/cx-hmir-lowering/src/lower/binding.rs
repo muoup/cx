@@ -2,6 +2,7 @@ use cx_hmir::{
     HMIRBody, HMIROp, HMIROwnershipOp,
     body::HMIRLocalID,
     expr::{HMIRExpr, HMIRExprID, HMIRExprKind},
+    ty::{HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::CXResult;
 use cx_mir::{MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRTarget};
@@ -9,27 +10,21 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::lowering::FnLoweringContext,
-    lower::{
-        HMIRValue,
-        coerce::convert,
-        dispatch::lower_expression,
-        emit::{diverges, drop_scope, rvalue, void_value},
-        shape::{TypeShape, is_nodrop, shape},
-    },
+    lower::{HMIRValue, coerce::convert, constant, dispatch::lower_expression, emit},
 };
 
 pub(crate) fn lower_local(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     local: HMIRLocalID,
 ) -> CXResult<HMIRValue> {
-    match cx.get_local(&local) {
+    match context.get_local(&local) {
         Some(value) => Ok(value.clone()),
         None => todo!("local {local} has no runtime binding (comptime local used at runtime)"),
     }
 }
 
 pub(crate) fn lower_let(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     local: HMIRLocalID,
@@ -40,8 +35,8 @@ pub(crate) fn lower_let(
         todo!("comptime let binding");
     }
 
-    let ty = cx.env().eval_type(body, decl.ty())?;
-    if shape(cx, ty) == TypeShape::Void {
+    let ty = context.env_mut().eval_type(body, decl.ty())?;
+    if matches!(context.env().resolve_type_id(ty).kind(), HMIRTypeKind::Void) {
         todo!("local of type void");
     }
 
@@ -54,21 +49,24 @@ pub(crate) fn lower_let(
 
     let value = match initializer {
         Some(initializer) if !allocates => {
-            let value = lower_expression(cx, body, body.expr(initializer))?;
-            if diverges(cx, &value) {
+            let initializer = body.expr(initializer);
+            let value = lower_expression(context, body, initializer)?;
+            if emit::terminated(context.builder()) {
                 return Ok(value);
             }
 
-            let init_span = body.expr(initializer).span();
-            Some(convert(cx, value, ty, init_span)?)
+            Some(convert(context, value, ty, initializer.span())?)
         }
         _ => None,
     };
 
-    let mir = cx.env().lower_type(ty, span)?;
-    let nodrop = is_nodrop(cx.env(), ty);
-    let scope = cx.builder().current_scope();
-    let place = cx.builder().allocate_place(MIRPlaceDecl::new(
+    let mir = context.env_mut().lower_type(ty, span)?;
+    let nodrop = todo!("nodrop should be a field on a local, not a type");
+    let scope = *context
+        .open_scopes()
+        .last()
+        .expect("Let binding lowered outside of a scope");
+    let place = context.builder_mut().allocate_place(MIRPlaceDecl::new(
         mir,
         decl.name().cloned(),
         scope,
@@ -77,81 +75,69 @@ pub(crate) fn lower_let(
     ));
 
     if let Some(value) = value {
-        let value = cx.materialize(&value, span)?;
-        cx.builder().emit(
-            MIRInstructionKind::Store {
-                target: MIRTarget::Place(place),
-                value,
-                ty: mir,
-                bitfield: None,
-            },
-            span,
+        let value = context.materialize(&value, span)?;
+        emit::store(
+            context.builder_mut(),
+            MIRTarget::Place(place),
+            value,
+            mir,
+            span.clone(),
         );
-        cx.builder().emit(
+        context.builder_mut().emit(
             MIRInstructionKind::Initialize {
                 place: MIRBindable::Place(place),
             },
-            span,
+            span.clone(),
         );
     }
 
-    cx.insert_local(local, HMIRValue::place(ty, place));
-    Ok(void_value(cx, span))
+    context.insert_local(local, HMIRValue::place(ty, place));
+    Ok(constant::unit(context, span))
 }
 
 pub(crate) fn lower_block(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     statements: &[HMIRExprID],
 ) -> CXResult<HMIRValue> {
-    let scope = cx.builder().push_scope(span);
+    emit::open_scope(context, span.clone());
 
     let mut result = None;
     for statement in statements {
-        let value = lower_expression(cx, body, body.expr(*statement))?;
-        let diverged = diverges(cx, &value);
-        result = Some(value);
-
-        if diverged {
+        result = Some(lower_expression(context, body, body.expr(*statement))?);
+        if emit::terminated(context.builder()) {
             break;
         }
     }
 
     let result = match result {
-        Some(value) if diverges(cx, &value) => value,
-        Some(value) => rvalue(cx, value, span)?,
-        None => void_value(cx, span),
+        Some(value) if emit::terminated(context.builder()) => value,
+        Some(value) => emit::read(context, value, span)?,
+        None => constant::unit(context, span),
     };
-
-    if !cx.builder().terminated() {
-        drop_scope(cx, scope, span);
-    }
-    cx.builder().pop_scope();
+    emit::close_scope(context, span.clone());
 
     Ok(result)
 }
 
 pub(crate) fn lower_scoped(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     expr: &HMIRExpr,
 ) -> CXResult<HMIRValue> {
     if matches!(expr.kind(), HMIRExprKind::Block { .. }) {
-        return lower_expression(cx, body, expr);
+        return lower_expression(context, body, expr);
     }
 
-    let scope = cx.builder().push_scope(expr.span());
-    let value = lower_expression(cx, body, expr)?;
-    let value = match diverges(cx, &value) {
+    emit::open_scope(context, expr.span().clone());
+
+    let value = lower_expression(context, body, expr)?;
+    let value = match emit::terminated(context.builder()) {
         true => value,
-        false => rvalue(cx, value, expr.span())?,
+        false => emit::read(context, value, expr.span())?,
     };
-
-    if !cx.builder().terminated() {
-        drop_scope(cx, scope, expr.span());
-    }
-    cx.builder().pop_scope();
+    emit::close_scope(context, expr.span().clone());
 
     Ok(value)
 }

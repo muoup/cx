@@ -1,14 +1,22 @@
-use cx_hmir::{HMIRBody, expr::constant::HMIRConstant, ty::HMIRTypeKind};
+use cx_hmir::{
+    HMIRBody,
+    expr::constant::HMIRConstant,
+    ty::{HMIRTypeKind, context::HMIRTypeContext},
+};
 use cx_log::CXResult;
+use cx_mir::MIRConstant;
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::lowering::FnLoweringContext,
-    lower::{HMIRValue, HMIRValueKind, emit::void_value},
+    env::{HMIREnvironment, lowering::FnLoweringContext},
+    lower::{
+        HMIRValue, HMIRValueKind,
+        types::{mir_float, mir_int},
+    },
 };
 
 pub(crate) fn lower_constant(
-    env: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     constant: &HMIRConstant,
@@ -21,12 +29,14 @@ pub(crate) fn lower_constant(
         // In the future, we may want to introduce a runtime-friendly type info API, but for now, we will just error out.
         HMIRConstant::Type(_) => todo!("Error: unexpected type constant in runtime expression"),
 
-        HMIRConstant::Unit => Ok(void_value(env, span)),
+        HMIRConstant::Unit => Ok(unit(context, span)),
 
         HMIRConstant::Str(_) => {
-            let ty = env.env().resolver()
+            let ty = context
+                .env_mut()
+                .resolver_mut()
                 .realize_type(HMIRTypeKind::Str, span);
-            
+
             Ok(HMIRValue::new(
                 ty,
                 HMIRValueKind::Constant(constant.clone()),
@@ -48,4 +58,42 @@ pub(crate) fn lower_constant(
         }
         HMIRConstant::LabelAddress { .. } => todo!("label address constants"),
     }
+}
+
+pub(crate) fn unit(context: &mut FnLoweringContext, span: &TokenRange) -> HMIRValue {
+    let ty = context
+        .env_mut()
+        .resolver_mut()
+        .realize_type(HMIRTypeKind::Void, span);
+
+    HMIRValue::constant(ty, HMIRConstant::Unit)
+}
+
+pub(crate) fn mir_constant(
+    env: &mut HMIREnvironment,
+    constant: &HMIRConstant,
+    span: &TokenRange,
+) -> CXResult<MIRConstant> {
+    Ok(match constant {
+        HMIRConstant::Unit => MIRConstant::Unit,
+        HMIRConstant::Int { value, ty } => match env.resolve_type_id(*ty).kind() {
+            HMIRTypeKind::Int(int) => MIRConstant::Integer {
+                ty: mir_int(int.width()),
+                value: *value,
+            },
+            other => todo!("integer constant of type {other:?}"),
+        },
+        HMIRConstant::Float { value, ty } => match env.resolve_type_id(*ty).kind() {
+            HMIRTypeKind::Float(float) => MIRConstant::Float {
+                value: *value,
+                ty: mir_float(float.width()),
+            },
+            other => todo!("float constant of type {other:?}"),
+        },
+        HMIRConstant::Null(ty) => MIRConstant::Nullptr {
+            ty: env.lower_type(*ty, span)?,
+        },
+        HMIRConstant::Str(value) => MIRConstant::String(value.clone()),
+        other => todo!("constant {other:?}"),
+    })
 }

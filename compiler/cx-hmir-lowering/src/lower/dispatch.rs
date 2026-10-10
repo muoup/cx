@@ -17,38 +17,42 @@ use crate::{
 };
 
 pub fn lower_expression(
-    env: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     expr: &HMIRExpr,
 ) -> CXResult<HMIRValue> {
     let span = expr.span();
 
     match expr.kind() {
-        HMIRExprKind::Constant(constant) => lower_constant(env, body, span, constant),
-        HMIRExprKind::Local(local) => lower_local(env, *local),
-        HMIRExprKind::Let { local, initializer } => lower_let(env, body, span, *local, *initializer),
-        HMIRExprKind::Block { statements } => lower_block(env, body, span, statements),
+        HMIRExprKind::Constant(constant) => lower_constant(context, body, span, constant),
+        HMIRExprKind::Local(local) => lower_local(context, *local),
+        HMIRExprKind::Let { local, initializer } => {
+            lower_let(context, body, span, *local, *initializer)
+        }
+        HMIRExprKind::Block { statements } => lower_block(context, body, span, statements),
 
         HMIRExprKind::If {
             condition,
             then_branch,
             else_branch,
-        } => lower_if(env, body, span, *condition, *then_branch, *else_branch),
+        } => lower_if(context, body, span, *condition, *then_branch, *else_branch),
         HMIRExprKind::While {
             condition,
             body: loop_body,
             pre_eval,
-        } => lower_while(env, body, span, *condition, *loop_body, *pre_eval),
+        } => lower_while(context, body, span, *condition, *loop_body, *pre_eval),
 
         HMIRExprKind::Op(op) => match op {
-            HMIROp::BinOp { op, lhs, rhs } => lower_binary(env, body, span, *op, *lhs, *rhs),
-            HMIROp::UnOp { op, operand } => lower_unary(env, body, span, *op, *operand),
+            HMIROp::BinOp { op, lhs, rhs } => lower_binary(context, body, span, *op, *lhs, *rhs),
+            HMIROp::UnOp { op, operand } => lower_unary(context, body, span, *op, *operand),
             HMIROp::Coerce {
                 mode,
                 value,
                 target,
-            } => lower_coerce(env, body, span, *mode, *value, *target),
-            HMIROp::Control(HMIRControlOp::Return(value)) => lower_return(env, body, span, *value),
+            } => lower_coerce(context, body, span, *mode, *value, *target),
+            HMIROp::Control(HMIRControlOp::Return(value)) => {
+                lower_return(context, body, span, *value)
+            }
 
             HMIROp::Assign { .. } => todo!("HMIROp::Assign"),
             HMIROp::AddressOf(_) => todo!("HMIROp::AddressOf"),

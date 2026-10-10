@@ -1,32 +1,26 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody, HMIRUnaryOp,
     expr::{HMIRExprID, constant::HMIRConstant},
-    ty::{HMIRTypeID, intrinsic::HMIRIntWidth},
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{
-    MIRBlockTarget, MIRFloatIntrinsic, MIRInstructionKind, MIRIntIntrinsic, MIRIntrinsic,
-    MIRPtrIntrinsic, MIRTarget, MIRValue,
+    MIRBlockTarget, MIRFloatIntrinsic, MIRIntIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget,
+    MIRValue, ty::layout::calculate_type_layout,
 };
 use cx_tokens::TokenRange;
-use cx_util::unsafe_float::FloatWrapper;
+use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
 use crate::{
     env::lowering::FnLoweringContext,
+    log::hmir_error,
     lower::{
         HMIRValue, HMIRValueKind,
         coerce::{convert, truthy},
+        constant,
         dispatch::lower_expression,
-        emit::{
-            diverges, emit_branch, emit_intrinsic, emit_jump, new_block, new_block_param,
-            new_register, rvalue,
-        },
-        shape::{
-            TypeShape, arithmetic_type, bool_type, describe, int_type, promote_type, shape,
-            size_of,
-        },
+        emit, promote, types,
     },
-    log::hmir_error,
 };
 
 fn is_comparison(op: HMIRBinaryOp) -> bool {
@@ -41,37 +35,61 @@ fn is_comparison(op: HMIRBinaryOp) -> bool {
     )
 }
 
-fn promote(
-    cx: &mut FnLoweringContext,
+fn kind(context: &FnLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
+    context.env().resolve_type_id(ty).kind().clone()
+}
+
+fn element_size(
+    context: &mut FnLoweringContext,
+    element: HMIRTypeID,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<MIRValue> {
+    let element = context.env_mut().lower_type(element, span)?;
+    let size = calculate_type_layout(context.env().module(), element).size();
+    let size = HMIRConstant::Int {
+        value: size as i128,
+        ty,
+    };
+
+    context.materialize(&HMIRValue::constant(ty, size), span)
+}
+
+fn promote_operand(
+    context: &mut FnLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    match shape(cx, value.ty()) {
-        TypeShape::Reference => todo!("reference operand: needs an indirect place value"),
-        TypeShape::Decays => todo!("array, string or function operand decay"),
+    match kind(context, value.ty()) {
+        HMIRTypeKind::ReferenceTo(_) => {
+            todo!("reference operand: needs an indirect place value")
+        }
+        HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_) => {
+            todo!("array, string or function operand decay")
+        }
         _ => {}
     }
 
-    let promoted = promote_type(cx, value.ty(), span);
-    convert(cx, value, promoted, span)
+    let promoted = promote::integer(context, value.ty(), span);
+    convert(context, value, promoted, span)
 }
 
 fn lower_operand(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     expr: HMIRExprID,
-) -> CXResult<Result<HMIRValue, HMIRValue>> {
-    let value = lower_expression(cx, body, body.expr(expr))?;
-    if diverges(cx, &value) {
-        return Ok(Err(value));
+) -> CXResult<Option<HMIRValue>> {
+    let value = lower_expression(context, body, body.expr(expr))?;
+    if emit::terminated(context.builder()) {
+        return Ok(None);
     }
 
-    Ok(Ok(promote(cx, value, span)?))
+    Ok(Some(promote_operand(context, value, span)?))
 }
 
 pub(crate) fn lower_binary(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     op: HMIRBinaryOp,
@@ -79,62 +97,58 @@ pub(crate) fn lower_binary(
     rhs: HMIRExprID,
 ) -> CXResult<HMIRValue> {
     if matches!(op, HMIRBinaryOp::LAnd | HMIRBinaryOp::LOr) {
-        return lower_short_circuit(cx, body, span, op, lhs, rhs);
+        return lower_short_circuit(context, body, span, op, lhs, rhs);
     }
 
-    let lhs = match lower_operand(cx, body, span, lhs)? {
-        Ok(value) => value,
-        Err(diverged) => return Ok(diverged),
+    let Some(lhs) = lower_operand(context, body, span, lhs)? else {
+        return Ok(constant::unit(context, span));
     };
-    let rhs = match lower_operand(cx, body, span, rhs)? {
-        Ok(value) => value,
-        Err(diverged) => return Ok(diverged),
+    let Some(rhs) = lower_operand(context, body, span, rhs)? else {
+        return Ok(constant::unit(context, span));
     };
 
-    match (shape(cx, lhs.ty()), shape(cx, rhs.ty())) {
-        (TypeShape::Pointer(element), TypeShape::Int(_))
+    match (kind(context, lhs.ty()), kind(context, rhs.ty())) {
+        (HMIRTypeKind::PointerTo(element), HMIRTypeKind::Int(_))
             if matches!(op, HMIRBinaryOp::Add | HMIRBinaryOp::Sub) =>
         {
             let subtract = op == HMIRBinaryOp::Sub;
-            lower_pointer_offset(cx, span, lhs, rhs, element, subtract)
+            lower_pointer_offset(context, span, lhs, rhs, element, subtract)
         }
-        (TypeShape::Int(_), TypeShape::Pointer(element)) if op == HMIRBinaryOp::Add => {
-            lower_pointer_offset(cx, span, rhs, lhs, element, false)
+        (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(element)) if op == HMIRBinaryOp::Add => {
+            lower_pointer_offset(context, span, rhs, lhs, element, false)
         }
-        (TypeShape::Pointer(element), TypeShape::Pointer(_)) if op == HMIRBinaryOp::Sub => {
-            let element_ty = cx.env().lower_type(element, span)?;
-            let ty = int_type(cx, HMIRIntWidth::I64, true, span);
-            let lhs = cx.materialize(&lhs, span)?;
-            let rhs = cx.materialize(&rhs, span)?;
-            let out = new_register(cx, ty, span)?;
+        (HMIRTypeKind::PointerTo(element), HMIRTypeKind::PointerTo(_))
+            if op == HMIRBinaryOp::Sub =>
+        {
+            let element_ty = context.env_mut().lower_type(element, span)?;
+            let ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
+            let lhs = context.materialize(&lhs, span)?;
+            let rhs = context.materialize(&rhs, span)?;
+            let register = emit::register(context, ty, span)?;
             let intrinsic = MIRPtrIntrinsic::Diff {
-                out: MIRTarget::Register(out),
+                out: MIRTarget::Register(register),
                 lhs,
                 rhs,
                 element_ty,
             };
-            emit_intrinsic(cx, intrinsic, span);
+            emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-            Ok(HMIRValue::register(ty, out))
+            Ok(HMIRValue::register(ty, register))
         }
-        (TypeShape::Pointer(_), _) | (_, TypeShape::Pointer(_)) if is_comparison(op) => {
-            let (lhs, rhs) = if matches!(shape(cx, lhs.ty()), TypeShape::Pointer(_)) {
-                let ty = lhs.ty();
-                let rhs = convert(cx, rhs, ty, span)?;
-                (lhs, rhs)
-            } else {
-                let ty = rhs.ty();
-                (convert(cx, lhs, ty, span)?, rhs)
-            };
-
-            lower_pointer_comparison(cx, span, op, lhs, rhs)
+        (HMIRTypeKind::PointerTo(_), _) if is_comparison(op) => {
+            let rhs = convert(context, rhs, lhs.ty(), span)?;
+            lower_pointer_comparison(context, span, op, lhs, rhs)
         }
-        _ => lower_arithmetic(cx, span, op, lhs, rhs),
+        (_, HMIRTypeKind::PointerTo(_)) if is_comparison(op) => {
+            let lhs = convert(context, lhs, rhs.ty(), span)?;
+            lower_pointer_comparison(context, span, op, lhs, rhs)
+        }
+        _ => lower_arithmetic(context, span, op, lhs, rhs),
     }
 }
 
 fn lower_arithmetic(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     span: &TokenRange,
     op: HMIRBinaryOp,
     lhs: HMIRValue,
@@ -142,59 +156,56 @@ fn lower_arithmetic(
 ) -> CXResult<HMIRValue> {
     let common = match op {
         HMIRBinaryOp::LShift | HMIRBinaryOp::RShift => {
-            arithmetic_type(cx, lhs.ty(), lhs.ty(), span)
+            promote::common(context, lhs.ty(), lhs.ty(), span)
         }
-        _ => arithmetic_type(cx, lhs.ty(), rhs.ty(), span),
+        _ => promote::common(context, lhs.ty(), rhs.ty(), span),
     };
     let Some(common) = common else {
-        let left = describe(cx, lhs.ty());
-        let right = describe(cx, rhs.ty());
         return Err(hmir_error(
             span,
             &typecheck::INVALID_BINARY_OPERANDS,
-            (op.path().into(), left, right),
+            (
+                op.path().into(),
+                todo!("type display"),
+                todo!("type display"),
+            ),
         ));
     };
 
-    let lhs = convert(cx, lhs, common, span)?;
-    let rhs = convert(cx, rhs, common, span)?;
-    let lhs = cx.materialize(&lhs, span)?;
-    let rhs = cx.materialize(&rhs, span)?;
+    let lhs = convert(context, lhs, common, span)?;
+    let rhs = convert(context, rhs, common, span)?;
+    let lhs = context.materialize(&lhs, span)?;
+    let rhs = context.materialize(&rhs, span)?;
 
-    let result = if is_comparison(op) {
-        bool_type(cx, span)
-    } else {
-        common
+    let result = match is_comparison(op) {
+        true => types::int(context.env_mut(), HMIRIntWidth::I1, false, span),
+        false => common,
     };
-    let out = new_register(cx, result, span)?;
-    let out_target = MIRTarget::Register(out);
+    let register = emit::register(context, result, span)?;
+    let out = MIRTarget::Register(register);
 
-    let intrinsic: MIRIntrinsic = match shape(cx, common) {
-        TypeShape::Float(_) => {
-            let (out, lhs, rhs) = (out_target, lhs, rhs);
-            match op {
-                HMIRBinaryOp::Add => MIRFloatIntrinsic::Add { out, lhs, rhs },
-                HMIRBinaryOp::Sub => MIRFloatIntrinsic::Sub { out, lhs, rhs },
-                HMIRBinaryOp::Mul => MIRFloatIntrinsic::Mul { out, lhs, rhs },
-                HMIRBinaryOp::Div => MIRFloatIntrinsic::Div { out, lhs, rhs },
-                HMIRBinaryOp::Eq => MIRFloatIntrinsic::Eq { out, lhs, rhs },
-                HMIRBinaryOp::Neq => MIRFloatIntrinsic::Neq { out, lhs, rhs },
-                HMIRBinaryOp::Lt => MIRFloatIntrinsic::Lt { out, lhs, rhs },
-                HMIRBinaryOp::Le => MIRFloatIntrinsic::Le { out, lhs, rhs },
-                HMIRBinaryOp::Gt => MIRFloatIntrinsic::Gt { out, lhs, rhs },
-                HMIRBinaryOp::Ge => MIRFloatIntrinsic::Geq { out, lhs, rhs },
-                _ => {
-                    return Err(hmir_error(
-                        span,
-                        &typecheck::FLOATING_OPERAND,
-                        op.path().into(),
-                    ));
-                }
+    let intrinsic: MIRIntrinsic = match kind(context, common) {
+        HMIRTypeKind::Float(_) => match op {
+            HMIRBinaryOp::Add => MIRFloatIntrinsic::Add { out, lhs, rhs },
+            HMIRBinaryOp::Sub => MIRFloatIntrinsic::Sub { out, lhs, rhs },
+            HMIRBinaryOp::Mul => MIRFloatIntrinsic::Mul { out, lhs, rhs },
+            HMIRBinaryOp::Div => MIRFloatIntrinsic::Div { out, lhs, rhs },
+            HMIRBinaryOp::Eq => MIRFloatIntrinsic::Eq { out, lhs, rhs },
+            HMIRBinaryOp::Neq => MIRFloatIntrinsic::Neq { out, lhs, rhs },
+            HMIRBinaryOp::Lt => MIRFloatIntrinsic::Lt { out, lhs, rhs },
+            HMIRBinaryOp::Le => MIRFloatIntrinsic::Le { out, lhs, rhs },
+            HMIRBinaryOp::Gt => MIRFloatIntrinsic::Gt { out, lhs, rhs },
+            HMIRBinaryOp::Ge => MIRFloatIntrinsic::Geq { out, lhs, rhs },
+            _ => {
+                return Err(hmir_error(
+                    span,
+                    &typecheck::FLOATING_OPERAND,
+                    op.path().into(),
+                ));
             }
-            .into()
         }
-        TypeShape::Int(int) => {
-            let (out, lhs, rhs) = (out_target, lhs, rhs);
+        .into(),
+        HMIRTypeKind::Int(int) => {
             let signed = int.signed();
             match op {
                 HMIRBinaryOp::Add => MIRIntIntrinsic::Add { out, lhs, rhs },
@@ -229,24 +240,24 @@ fn lower_arithmetic(
         }
         _ => unreachable!("arithmetic types are integral or floating"),
     };
+    emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    emit_intrinsic(cx, intrinsic, span);
-    Ok(HMIRValue::register(result, out))
+    Ok(HMIRValue::register(result, register))
 }
 
 fn lower_pointer_comparison(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     span: &TokenRange,
     op: HMIRBinaryOp,
     lhs: HMIRValue,
     rhs: HMIRValue,
 ) -> CXResult<HMIRValue> {
-    let lhs = cx.materialize(&lhs, span)?;
-    let rhs = cx.materialize(&rhs, span)?;
-    let bool_ty = bool_type(cx, span);
-    let register = new_register(cx, bool_ty, span)?;
+    let lhs = context.materialize(&lhs, span)?;
+    let rhs = context.materialize(&rhs, span)?;
+    let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
+    let register = emit::register(context, ty, span)?;
+    let out = MIRTarget::Register(register);
 
-    let (out, lhs, rhs) = (MIRTarget::Register(register), lhs, rhs);
     let intrinsic = match op {
         HMIRBinaryOp::Eq => MIRPtrIntrinsic::Eq { out, lhs, rhs },
         HMIRBinaryOp::Neq => MIRPtrIntrinsic::Neq { out, lhs, rhs },
@@ -256,96 +267,74 @@ fn lower_pointer_comparison(
         HMIRBinaryOp::Ge => MIRPtrIntrinsic::Geq { out, lhs, rhs },
         _ => unreachable!("pointer comparisons are comparisons"),
     };
+    emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    emit_intrinsic(cx, intrinsic, span);
-    Ok(HMIRValue::register(bool_ty, register))
+    Ok(HMIRValue::register(ty, register))
 }
 
 fn lower_pointer_offset(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     span: &TokenRange,
     pointer: HMIRValue,
     index: HMIRValue,
     element: HMIRTypeID,
     subtract: bool,
 ) -> CXResult<HMIRValue> {
-    let result = pointer.ty();
-    let size = size_of(cx, element) as i128;
-    let signed = matches!(shape(cx, index.ty()), TypeShape::Int(int) if int.signed());
-    let offset_ty = int_type(cx, HMIRIntWidth::I64, signed, span);
+    let ty = pointer.ty();
+    let signed = matches!(kind(context, index.ty()), HMIRTypeKind::Int(int) if int.signed());
+    let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, signed, span);
 
-    let index = convert(cx, index, offset_ty, span)?;
-    let index = cx.materialize(&index, span)?;
-    let pointer = cx.materialize(&pointer, span)?;
-    let size = HMIRValue::constant(
-        offset_ty,
-        HMIRConstant::Int {
-            value: size,
-            ty: offset_ty,
-        },
-    );
-    let size = cx.materialize(&size, span)?;
+    let index = convert(context, index, offset_ty, span)?;
+    let lhs = context.materialize(&index, span)?;
+    let rhs = element_size(context, element, offset_ty, span)?;
+    let ptr = context.materialize(&pointer, span)?;
 
-    let scaled = new_register(cx, offset_ty, span)?;
-    let scaled_target = MIRTarget::Register(scaled);
-    if signed {
-        let intrinsic = MIRIntIntrinsic::SMul {
-            out: scaled_target,
-            lhs: index,
-            rhs: size,
-        };
-        emit_intrinsic(cx, intrinsic, span);
-    } else {
-        let intrinsic = MIRIntIntrinsic::UMul {
-            out: scaled_target,
-            lhs: index,
-            rhs: size,
-        };
-        emit_intrinsic(cx, intrinsic, span);
-    }
+    let scaled = emit::register(context, offset_ty, span)?;
+    let out = MIRTarget::Register(scaled);
+    let scale = match signed {
+        true => MIRIntIntrinsic::SMul { out, lhs, rhs },
+        false => MIRIntIntrinsic::UMul { out, lhs, rhs },
+    };
+    emit::intrinsic(context.builder_mut(), scale, span.clone());
 
-    let out = new_register(cx, result, span)?;
-    let (out_target, offset) = (MIRTarget::Register(out), MIRValue::Register(scaled));
-    if subtract {
-        let intrinsic = MIRPtrIntrinsic::Sub {
-            out: out_target,
-            ptr: pointer,
-            offset,
-        };
-        emit_intrinsic(cx, intrinsic, span);
-    } else {
-        let intrinsic = MIRPtrIntrinsic::Add {
-            out: out_target,
-            ptr: pointer,
-            offset,
-        };
-        emit_intrinsic(cx, intrinsic, span);
-    }
+    let register = emit::register(context, ty, span)?;
+    let out = MIRTarget::Register(register);
+    let offset = MIRValue::Register(scaled);
+    let intrinsic = match subtract {
+        true => MIRPtrIntrinsic::Sub { out, ptr, offset },
+        false => MIRPtrIntrinsic::Add { out, ptr, offset },
+    };
+    emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    Ok(HMIRValue::register(result, out))
+    Ok(HMIRValue::register(ty, register))
 }
 
 fn lower_short_circuit(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     op: HMIRBinaryOp,
     lhs: HMIRExprID,
     rhs: HMIRExprID,
 ) -> CXResult<HMIRValue> {
-    let left = lower_expression(cx, body, body.expr(lhs))?;
-    if diverges(cx, &left) {
+    let left = lower_expression(context, body, body.expr(lhs))?;
+    if emit::terminated(context.builder()) {
         return Ok(left);
     }
 
-    let left = truthy(cx, left, span)?;
-    let left = rvalue(cx, left, span)?;
-    let left = cx.materialize(&left, span)?;
+    let left = truthy(context, left, span)?;
+    let left = emit::read(context, left, span)?;
+    let left = context.materialize(&left, span)?;
 
-    let bool_ty = bool_type(cx, span);
-    let rhs_block = new_block(cx, "logical.rhs");
-    let merge = new_block(cx, "logical.merge");
-    let result = new_block_param(cx, merge, bool_ty, span)?;
+    let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
+    let rhs_block = context
+        .builder_mut()
+        .add_block(Some(CXIdent::new("logical.rhs")));
+    let merge = context
+        .builder_mut()
+        .add_block(Some(CXIdent::new("logical.merge")));
+    let result = emit::register(context, ty, span)?;
+    context.builder_mut().add_block_param(merge, result);
 
     let rhs_target = MIRBlockTarget::new(rhs_block);
     let merge_target = MIRBlockTarget::with_args(merge, vec![left.clone()]);
@@ -353,77 +342,63 @@ fn lower_short_circuit(
         HMIRBinaryOp::LAnd => (rhs_target, merge_target),
         _ => (merge_target, rhs_target),
     };
-    emit_branch(cx, left, true_target, false_target, span);
+    emit::branch(
+        context.builder_mut(),
+        left,
+        true_target,
+        false_target,
+        span.clone(),
+    );
 
-    cx.builder().switch_to(rhs_block);
-    let right = lower_expression(cx, body, body.expr(rhs))?;
-    if !diverges(cx, &right) {
-        let right = truthy(cx, right, span)?;
-        let right = cx.materialize(&right, span)?;
-        emit_jump(cx, merge, vec![right], span);
+    context.builder_mut().switch_to(rhs_block);
+    let right = lower_expression(context, body, body.expr(rhs))?;
+    if !emit::terminated(context.builder()) {
+        let right = truthy(context, right, span)?;
+        let right = context.materialize(&right, span)?;
+        emit::jump(context.builder_mut(), merge, vec![right], span.clone());
     }
 
-    cx.builder().switch_to(merge);
-    Ok(result)
+    context.builder_mut().switch_to(merge);
+    Ok(HMIRValue::register(ty, result))
 }
 
 pub(crate) fn lower_unary(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     op: HMIRUnaryOp,
     operand: HMIRExprID,
 ) -> CXResult<HMIRValue> {
-    let value = lower_expression(cx, body, body.expr(operand))?;
-    if diverges(cx, &value) {
+    let value = lower_expression(context, body, body.expr(operand))?;
+    if emit::terminated(context.builder()) {
         return Ok(value);
     }
 
-    match op {
-        HMIRUnaryOp::PreIncrement => return lower_increment(cx, span, value, 1, true),
-        HMIRUnaryOp::PreDecrement => return lower_increment(cx, span, value, -1, true),
-        HMIRUnaryOp::PostIncrement => return lower_increment(cx, span, value, 1, false),
-        HMIRUnaryOp::PostDecrement => return lower_increment(cx, span, value, -1, false),
-        _ => {}
+    if matches!(
+        op,
+        HMIRUnaryOp::PreIncrement
+            | HMIRUnaryOp::PreDecrement
+            | HMIRUnaryOp::PostIncrement
+            | HMIRUnaryOp::PostDecrement
+    ) {
+        return lower_increment(context, span, op, value);
     }
 
-    if op == HMIRUnaryOp::LNot {
-        let value = truthy(cx, value, span)?;
-        let ty = value.ty();
-        let operand = cx.materialize(&value, span)?;
-        let out = new_register(cx, ty, span)?;
-        let intrinsic = MIRIntIntrinsic::LNot {
-            out: MIRTarget::Register(out),
-            value: operand,
-        };
-        emit_intrinsic(cx, intrinsic, span);
-
-        return Ok(HMIRValue::register(ty, out));
-    }
-
-    let value = promote(cx, value, span)?;
+    let value = match op {
+        HMIRUnaryOp::LNot => truthy(context, value, span)?,
+        _ => promote_operand(context, value, span)?,
+    };
     let ty = value.ty();
-    let operand = cx.materialize(&value, span)?;
-    let out = new_register(cx, ty, span)?;
-    let out_target = MIRTarget::Register(out);
+    let value = context.materialize(&value, span)?;
+    let register = emit::register(context, ty, span)?;
+    let out = MIRTarget::Register(register);
 
-    let intrinsic: MIRIntrinsic = match (op, shape(cx, ty)) {
-        (HMIRUnaryOp::Neg, TypeShape::Float(_)) => MIRFloatIntrinsic::Neg {
-            out: out_target,
-            value: operand,
-        }
-        .into(),
-        (HMIRUnaryOp::Neg, TypeShape::Int(_)) => MIRIntIntrinsic::Neg {
-            out: out_target,
-            value: operand,
-        }
-        .into(),
-        (HMIRUnaryOp::BNot, TypeShape::Int(_)) => MIRIntIntrinsic::BNot {
-            out: out_target,
-            value: operand,
-        }
-        .into(),
-        (_, TypeShape::Float(_)) => {
+    let intrinsic: MIRIntrinsic = match (op, kind(context, ty)) {
+        (HMIRUnaryOp::LNot, _) => MIRIntIntrinsic::LNot { out, value }.into(),
+        (HMIRUnaryOp::Neg, HMIRTypeKind::Float(_)) => MIRFloatIntrinsic::Neg { out, value }.into(),
+        (HMIRUnaryOp::Neg, HMIRTypeKind::Int(_)) => MIRIntIntrinsic::Neg { out, value }.into(),
+        (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => MIRIntIntrinsic::BNot { out, value }.into(),
+        (_, HMIRTypeKind::Float(_)) => {
             return Err(hmir_error(
                 span,
                 &typecheck::FLOATING_OPERAND,
@@ -431,25 +406,23 @@ pub(crate) fn lower_unary(
             ));
         }
         _ => {
-            let found = describe(cx, ty);
             return Err(hmir_error(
                 span,
                 &typecheck::INVALID_OPERAND,
-                (format!("apply '{}' to", op.path()), found),
+                (format!("apply '{}' to", op.path()), todo!("type display")),
             ));
         }
     };
+    emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    emit_intrinsic(cx, intrinsic, span);
-    Ok(HMIRValue::register(ty, out))
+    Ok(HMIRValue::register(ty, register))
 }
 
 fn lower_increment(
-    cx: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     span: &TokenRange,
+    op: HMIRUnaryOp,
     target: HMIRValue,
-    amount: i128,
-    prefix: bool,
 ) -> CXResult<HMIRValue> {
     let HMIRValueKind::Place(place) = *target.kind() else {
         return Err(hmir_error(
@@ -459,99 +432,74 @@ fn lower_increment(
         ));
     };
 
-    let ty = target.ty();
-    let current = rvalue(cx, target.clone(), span)?;
-    let lhs = cx.materialize(&current, span)?;
-    let out = new_register(cx, ty, span)?;
-    let out_target = MIRTarget::Register(out);
-    let subtract = amount < 0;
+    let subtract = matches!(op, HMIRUnaryOp::PreDecrement | HMIRUnaryOp::PostDecrement);
+    let prefix = matches!(op, HMIRUnaryOp::PreIncrement | HMIRUnaryOp::PreDecrement);
 
-    match shape(cx, ty) {
-        TypeShape::Int(_) => {
-            let step = HMIRValue::constant(ty, HMIRConstant::Int { value: 1, ty });
-            let rhs = cx.materialize(&step, span)?;
-            if subtract {
-                let intrinsic = MIRIntIntrinsic::Sub {
-                    out: out_target,
-                    lhs,
-                    rhs,
-                };
-                emit_intrinsic(cx, intrinsic, span);
-            } else {
-                let intrinsic = MIRIntIntrinsic::Add {
-                    out: out_target,
-                    lhs,
-                    rhs,
-                };
-                emit_intrinsic(cx, intrinsic, span);
+    let ty = target.ty();
+    let current = emit::read(context, target.clone(), span)?;
+    let lhs = context.materialize(&current, span)?;
+    let register = emit::register(context, ty, span)?;
+    let out = MIRTarget::Register(register);
+
+    let intrinsic: MIRIntrinsic = match kind(context, ty) {
+        HMIRTypeKind::Int(_) => {
+            let one = HMIRConstant::Int { value: 1, ty };
+            let rhs = context.materialize(&HMIRValue::constant(ty, one), span)?;
+            match subtract {
+                true => MIRIntIntrinsic::Sub { out, lhs, rhs },
+                false => MIRIntIntrinsic::Add { out, lhs, rhs },
             }
+            .into()
         }
-        TypeShape::Float(_) => {
+        HMIRTypeKind::Float(_) => {
             let one = HMIRConstant::Float {
                 value: FloatWrapper::from(1.0),
                 ty,
             };
-            let rhs = cx.materialize(&HMIRValue::constant(ty, one), span)?;
-            if subtract {
-                let intrinsic = MIRFloatIntrinsic::Sub {
-                    out: out_target,
-                    lhs,
-                    rhs,
-                };
-                emit_intrinsic(cx, intrinsic, span);
-            } else {
-                let intrinsic = MIRFloatIntrinsic::Add {
-                    out: out_target,
-                    lhs,
-                    rhs,
-                };
-                emit_intrinsic(cx, intrinsic, span);
+            let rhs = context.materialize(&HMIRValue::constant(ty, one), span)?;
+            match subtract {
+                true => MIRFloatIntrinsic::Sub { out, lhs, rhs },
+                false => MIRFloatIntrinsic::Add { out, lhs, rhs },
             }
+            .into()
         }
-        TypeShape::Pointer(element) => {
-            let size = size_of(cx, element) as i128;
-            let offset_ty = int_type(cx, HMIRIntWidth::I64, true, span);
-            let step = HMIRConstant::Int {
-                value: size,
-                ty: offset_ty,
-            };
-            let offset = cx.materialize(&HMIRValue::constant(offset_ty, step), span)?;
-            if subtract {
-                let intrinsic = MIRPtrIntrinsic::Sub {
-                    out: out_target,
+        HMIRTypeKind::PointerTo(element) => {
+            let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
+            let offset = element_size(context, element, offset_ty, span)?;
+            match subtract {
+                true => MIRPtrIntrinsic::Sub {
+                    out,
                     ptr: lhs,
                     offset,
-                };
-                emit_intrinsic(cx, intrinsic, span);
-            } else {
-                let intrinsic = MIRPtrIntrinsic::Add {
-                    out: out_target,
+                },
+                false => MIRPtrIntrinsic::Add {
+                    out,
                     ptr: lhs,
                     offset,
-                };
-                emit_intrinsic(cx, intrinsic, span);
+                },
             }
+            .into()
         }
-        TypeShape::Reference => todo!("increment of a reference: needs an indirect place value"),
+        HMIRTypeKind::ReferenceTo(_) => {
+            todo!("increment of a reference: needs an indirect place value")
+        }
         _ => {
-            let found = describe(cx, ty);
             return Err(hmir_error(
                 span,
                 &typecheck::INVALID_OPERAND,
-                ("increment".into(), found),
+                ("increment".into(), todo!("type display")),
             ));
         }
-    }
+    };
+    emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    let mir = cx.env().lower_type(ty, span)?;
-    cx.builder().emit(
-        MIRInstructionKind::Store {
-            target: MIRTarget::Place(place),
-            value: MIRValue::Register(out),
-            ty: mir,
-            bitfield: None,
-        },
-        span,
+    let mir = context.env_mut().lower_type(ty, span)?;
+    emit::store(
+        context.builder_mut(),
+        MIRTarget::Place(place),
+        MIRValue::Register(register),
+        mir,
+        span.clone(),
     );
 
     if prefix { Ok(target) } else { Ok(current) }

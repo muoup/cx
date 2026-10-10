@@ -1,30 +1,26 @@
 use crate::{
     env::{HMIREnvironment, lowering::FnLoweringContext},
-    lower::{
-        control::lower_return_value,
-        dispatch::lower_expression,
-    },
+    lower::{control::lower_return_value, dispatch::lower_expression},
 };
 use cx_hmir::{
-    HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
+    HMIRBody, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
     expr::{HMIRExprKind, constant::HMIRConstant},
-    ty::HMIRTypeID,
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
     unit::function::HMIRFnDefinition,
 };
 use cx_log::CXResult;
-use cx_mir::{
-    MIRBindable, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRInstructionKind, MIRPlaceDecl,
-    MIRPlaceID, MIRRegister,
-};
+use cx_mir::{MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister};
 use cx_tokens::TokenRange;
 
-mod emit;
 mod binding;
 mod coerce;
-mod constant;
+pub(crate) mod constant;
 mod control;
 mod dispatch;
+mod emit;
 mod op;
+mod promote;
+pub(crate) mod types;
 
 #[derive(Debug, Clone)]
 pub struct HMIRValue {
@@ -70,7 +66,10 @@ impl HMIRValue {
     }
 }
 
-pub fn lower_unit(unit: &HMIRUnit, env: &mut HMIREnvironment) -> CXResult<()> {
+pub fn lower_unit<'hmir>(
+    unit: &'hmir HMIRUnit,
+    env: &mut HMIREnvironment<'_, 'hmir>,
+) -> CXResult<()> {
     fn is_root(signature: &HMIRFunction) -> bool {
         signature.signature().stage() == HMIRFunctionStage::Runtime
             && !signature
@@ -105,111 +104,76 @@ pub fn lower_unit(unit: &HMIRUnit, env: &mut HMIREnvironment) -> CXResult<()> {
     Ok(())
 }
 
-pub fn lower_function(
-    function: &HMIRFunction,
+pub fn lower_function<'hmir>(
+    function: &'hmir HMIRFunction,
     def: &HMIRFnDefinition,
-    env: &mut HMIREnvironment,
+    env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
     let body = function.body();
     let signature = function.signature();
     let root = body.expr(def.root());
     let span = root.span();
 
-    let mut params = Vec::new();
-    let mut mir_params = Vec::new();
-    
-    for (param, local) in signature.params().iter().zip(def.params()) {
-        let ty = env.eval_type(body, param.ty())?;
-        let mir = env.lower_type(ty, body.expr(param.ty()).span())?;
-        let name = body.local(*local).name().cloned();
-        let nodrop = todo!("nodrop should be a field on a local, not a type"); 
+    let mut context = FnLoweringContext::new(env, signature);
+    let scope = emit::open_scope(&mut context, span.clone());
 
-        mir_params.push(MIRFnParam::new(name, mir, nodrop));
-        
-        params.push((ty, mir, nodrop));
-    }
+    for (index, (param, local)) in signature.params().iter().zip(def.params()).enumerate() {
+        let ty = context.env_mut().eval_type(body, param.ty())?;
+        let mir = &context.builder().prototype().signature.params()[index];
+        let decl = MIRPlaceDecl::new(mir.ty(), mir.name().cloned(), scope, mir.nodrop(), false);
+        let place = context.builder_mut().allocate_place(decl);
 
-    let return_ty = env.eval_type(body, signature.return_type())?;
-    let return_mir = env.lower_type(return_ty, body.expr(signature.return_type()).span())?;
-
-    let prototype = MIRFnPrototype::new(
-        MIRFnSignature::new(
-            mir_params,
-            return_mir,
-            signature.is_variadic(),
-            signature.contract().is_safe(),
-        ),
-        function.linkage(),
-        function.symbol_name().clone(),
-        None,
-    );
-    let id = env.module_mut().declare_function(prototype);
-
-    let mut cx = FnLoweringContext::new(env, signature);
-    cx.insert_local(
-        RETURN_SLOT,
-        HMIRValue::constant(return_ty, HMIRConstant::Unit),
-    );
-
-    let scope = cx.builder().push_scope(span);
-    for (local, (ty, mir, nodrop)) in def.params().iter().zip(params) {
-        let name = body.local(*local).name().cloned();
-        let place = cx
-            .builder()
-            .allocate_place(MIRPlaceDecl::new(mir, name, scope, nodrop, false));
-
-        cx.builder().add_parameter(place);
-        cx.builder().emit(
+        context.builder_mut().add_parameter(place);
+        context.builder_mut().emit(
             MIRInstructionKind::Initialize {
                 place: MIRBindable::Place(place),
             },
-            span,
+            span.clone(),
         );
-        cx.insert_local(*local, HMIRValue::place(ty, place));
+        context.insert_local(*local, HMIRValue::place(ty, place));
     }
 
-    let value = lower_expression(&mut cx, body, root)?;
-    if !cx.builder().terminated() {
+    let value = lower_expression(&mut context, body, root)?;
+    if !emit::terminated(context.builder()) {
         match root.kind() {
-            HMIRExprKind::Block { .. } => lower_fallthrough(&mut cx, return_ty, span)?,
-            _ => lower_return_value(&mut cx, Some(value), span)?,
+            HMIRExprKind::Block { .. } => lower_fallthrough(&mut context, body, span)?,
+            _ => lower_return_value(&mut context, body, Some(value), span)?,
         }
     }
 
-    cx.builder().pop_scope();
-    let mir_body = cx.finish();
-    env.module_mut().define_function(id, mir_body);
+    emit::close_scope(&mut context, span.clone());
+
+    let function = context.finish();
+    let id = env
+        .module_mut()
+        .declare_function(function.prototype().clone());
+    env.module_mut().define_function(id, function);
 
     Ok(())
 }
 
 fn lower_fallthrough(
-    cx: &mut FnLoweringContext,
-    return_ty: HMIRTypeID,
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
     span: &TokenRange,
 ) -> CXResult<()> {
-    let is_main = {
-        let function = cx.builder().function();
-        cx.env().module().function(function).prototype().symbol_name.as_str() == "main"
-    };
+    let return_type = context.signature().return_type();
+    let ty = context.env_mut().eval_type(body, return_type)?;
+    let is_main = context.builder().prototype().symbol_name.as_str() == "main";
 
-    match shape(cx, return_ty) {
-        TypeShape::Void => emit_return(cx, None, span),
-        TypeShape::Int(_) if is_main => {
-            let zero = HMIRValue::constant(
-                return_ty,
-                HMIRConstant::Int {
-                    value: 0,
-                    ty: return_ty,
-                },
-            );
-            let zero = cx.materialize(&zero, span)?;
-            emit_return(cx, Some(zero), span);
+    match context.env().resolve_type_id(ty).kind() {
+        HMIRTypeKind::Void => lower_return_value(context, body, None, span),
+        HMIRTypeKind::Int(_) if is_main => {
+            let zero = HMIRValue::constant(ty, HMIRConstant::Int { value: 0, ty });
+            lower_return_value(context, body, Some(zero), span)
         }
-        _ => cx.builder().emit(MIRInstructionKind::Unreachable, span),
+        _ => {
+            context
+                .builder_mut()
+                .emit(MIRInstructionKind::Unreachable, span.clone());
+            Ok(())
+        }
     }
-
-    Ok(())
 }
 
 pub fn lower_global(global: &HMIRGlobal, env: &mut HMIREnvironment) -> CXResult<()> {

@@ -10,7 +10,10 @@ use cx_mir::MIRUnit;
 
 use crate::{env::HMIREnvironment, lower::lower_unit};
 
-pub fn generate_mir<'l>(unit: &HMIRUnit, mut env: HMIREnvironment) -> CXResult<MIRUnit> {
+pub fn generate_mir<'hmir>(
+    unit: &'hmir HMIRUnit,
+    mut env: HMIREnvironment<'_, 'hmir>,
+) -> CXResult<MIRUnit> {
     lower_unit(unit, &mut env)?;
 
     Ok(env.finish())

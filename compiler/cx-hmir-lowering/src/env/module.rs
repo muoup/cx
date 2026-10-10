@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use cx_mir::{
     MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
-    MIRType, MIRTypeID, MIRUnit, ty::registry::MIRTypeRegistry,
+    MIRType, MIRTypeID, MIRTypeKind, MIRUnit,
+    ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_target::ArchitectureConfig;
 
@@ -45,8 +46,8 @@ impl MIRModuleBuilder {
     }
 
     pub fn intern_type(&mut self, ty: MIRType) -> MIRTypeID {
-        if let Some((id, _)) = self.types.iter().find(|(_, existing)| **existing == ty) {
-            return *id;
+        if let Some(id) = self.find(&ty) {
+            return id;
         }
 
         let id = MIRTypeID::new(self.types.len());
@@ -101,5 +102,31 @@ impl MIRModuleBuilder {
             self.globals,
             self.global_order,
         )
+    }
+}
+
+impl MTRegistry for MIRModuleBuilder {
+    fn architecture(&self) -> &ArchitectureConfig {
+        &self.architecture
+    }
+
+    fn definition(&self, id: MIRTypeID) -> Option<&MIRType> {
+        self.types.get(&id)
+    }
+
+    fn find(&self, ty: &MIRType) -> Option<MIRTypeID> {
+        self.types
+            .iter()
+            .find_map(|(id, definition)| (definition == ty).then_some(*id))
+    }
+
+    fn find_kind(&self, kind: &MIRTypeKind) -> Option<MIRTypeID> {
+        self.types
+            .iter()
+            .find_map(|(id, definition)| (definition.kind() == kind).then_some(*id))
+    }
+
+    fn debug_name(&self, _id: MIRTypeID) -> Option<&str> {
+        None
     }
 }

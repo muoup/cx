@@ -1,7 +1,7 @@
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
-    MIRInstruction, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl,
-    MIRScopeDecl, MIRScopeID,
+    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRInstruction,
+    MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl,
+    MIRScopeID,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -18,7 +18,6 @@ pub struct MIRFunctionBuilder {
     address_labels: Vec<(String, MIRBasicBlockID)>,
 
     current_block: MIRBasicBlockID,
-    scope_stack: Vec<MIRScopeID>,
 }
 
 impl MIRFunctionBuilder {
@@ -36,7 +35,6 @@ impl MIRFunctionBuilder {
             address_labels: Vec::new(),
 
             current_block: entry,
-            scope_stack: Vec::new(),
         }
     }
 
@@ -74,6 +72,10 @@ impl MIRFunctionBuilder {
         id
     }
 
+    pub fn add_block_param(&mut self, block: MIRBasicBlockID, param: MIRRegister) {
+        self.blocks[block.index()].push_param(param);
+    }
+
     pub fn current_block(&self) -> MIRBasicBlockID {
         self.current_block
     }
@@ -87,38 +89,22 @@ impl MIRFunctionBuilder {
         self.current_block = block;
     }
 
-    pub fn terminated(&self) -> bool {
-        self.blocks[self.current_block.index()]
+    pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
+        let block = &mut self.blocks[self.current_block.index()];
+        if block
             .last_instruction()
             .is_some_and(MIRInstruction::is_terminator)
-    }
-
-    pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
-        if self.terminated() {
+        {
             return;
         }
 
-        self.blocks[self.current_block.index()].push_instruction(MIRInstruction::new(kind, span));
+        block.push_instruction(MIRInstruction::new(kind, span));
     }
 
-    pub fn push_scope(&mut self, span: &TokenRange) -> MIRScopeID {
+    pub fn add_scope(&mut self, span: TokenRange) -> MIRScopeID {
         let id = MIRScopeID::new(self.scopes.len());
-        self.scopes.push(MIRScopeDecl::new(span.clone()));
-        self.scope_stack.push(id);
+        self.scopes.push(MIRScopeDecl::new(span));
         id
-    }
-
-    pub fn pop_scope(&mut self) -> MIRScopeID {
-        self.scope_stack
-            .pop()
-            .expect("Attempt to pop a scope when none is open")
-    }
-
-    pub fn current_scope(&self) -> MIRScopeID {
-        *self
-            .scope_stack
-            .last()
-            .expect("Attempt to read the current scope when none is open")
     }
 
     pub fn places(&self) -> &[MIRPlaceDecl] {

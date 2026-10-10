@@ -1,45 +1,47 @@
-use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind};
-use cx_log::CXResult;
-use cx_mir::{MIRTypeID, MIRTypeKind};
+use cx_hmir::ty::{
+    HMIRTypeID, HMIRTypeKind,
+    context::HMIRTypeContext,
+    intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
+};
+use cx_log::{CXResult, catalogue::typecheck};
+use cx_mir::{MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind};
 use cx_tokens::TokenRange;
 
-use crate::{env::lowering::FnLoweringContext, log::hmir_error};
+use crate::{env::HMIREnvironment, log::hmir_error};
 
-pub(super) fn lower_type(
-    env: &mut FnLoweringContext,
+pub(crate) fn lower_type(
+    env: &mut HMIREnvironment,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
-    let ty = types.unqualified(ty);
-
-    if let Some(id) = types.lowered.get(&ty) {
-        return Ok(*id);
+    if let Some(id) = env.resolver().lowered_type(ty) {
+        return Ok(id);
     }
 
-    let kind = match types.kind(ty).clone() {
+    let kind = match env.resolve_type_id(ty).kind().clone() {
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
         HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } => {
             return Err(hmir_error(
                 span,
                 &typecheck::COMPTIME_ONLY_TYPE,
-                types.display(ty),
+                todo!("type display"),
             ));
         }
         HMIRTypeKind::Str => MIRTypeKind::Str,
-        HMIRTypeKind::Int(ty) => MIRTypeKind::Integer {
-            ty: TypeTable::mir_int(width),
+        HMIRTypeKind::Int(int) => MIRTypeKind::Integer {
+            ty: mir_int(int.width()),
         },
-        HMIRTypeKind::Float(ty) => MIRTypeKind::Float {
-            ty: TypeTable::mir_float(width),
+        HMIRTypeKind::Float(float) => MIRTypeKind::Float {
+            ty: mir_float(float.width()),
         },
         HMIRTypeKind::PointerTo(inner) => MIRTypeKind::PointerTo {
-            inner: lower_type(types, inner, span)?,
+            inner: lower_type(env, inner, span)?,
         },
         HMIRTypeKind::ReferenceTo(inner) => MIRTypeKind::MemoryReference {
-            inner: lower_type(types, inner, span)?,
+            inner: lower_type(env, inner, span)?,
         },
         HMIRTypeKind::Array { element, length } => {
-            let inner = lower_type(types, element, span)?;
+            let inner = lower_type(env, element, span)?;
             match length {
                 Some(length) => MIRTypeKind::Array {
                     length: length as usize,
@@ -48,36 +50,43 @@ pub(super) fn lower_type(
                 None => MIRTypeKind::IncompleteArray { inner },
             }
         }
-        HMIRTypeKind::Function(function) => MIRTypeKind::Function {
-            signature: lower_signature(types, &function, span)?,
-        },
+        HMIRTypeKind::Function(_) => {
+            todo!("function type signatures hold expressions, which need the eval API")
+        }
         HMIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
 
         _ => todo!(),
     };
-    let id = types.mir.intern(MIRType::new(kind));
-    types.lowered.insert(ty, id);
+
+    let id = env.module_mut().intern_type(MIRType::new(kind));
+    env.resolver_mut().cache_lowered(ty, id);
     Ok(id)
 }
 
-fn lower_signature(
-    types: &mut TypeTable,
-    function: &FunctionType,
+pub(crate) fn int(
+    env: &mut HMIREnvironment,
+    width: HMIRIntWidth,
+    signed: bool,
     span: &TokenRange,
-) -> CXResult<MIRFnSignature> {
-    let params = function
-        .params()
-        .iter()
-        .map(|param| {
-            let ty = lower_type(types, *param, span)?;
-            Ok(MIRFnParam::new(None, ty, false))
-        })
-        .collect::<CXResult<Vec<_>>>()?;
-    let ret = lower_type(types, function.ret(), span)?;
-    Ok(MIRFnSignature::new(
-        params,
-        ret,
-        function.is_variadic(),
-        false,
-    ))
+) -> HMIRTypeID {
+    let kind = HMIRTypeKind::Int(HMIRIntType::new(width, signed));
+    env.resolver_mut().realize_type(kind, span)
+}
+
+pub(crate) fn mir_int(width: HMIRIntWidth) -> MIRIntType {
+    match width {
+        HMIRIntWidth::I1 => MIRIntType::I1,
+        HMIRIntWidth::I8 => MIRIntType::I8,
+        HMIRIntWidth::I16 => MIRIntType::I16,
+        HMIRIntWidth::I32 => MIRIntType::I32,
+        HMIRIntWidth::I64 => MIRIntType::I64,
+        HMIRIntWidth::I128 => MIRIntType::I128,
+    }
+}
+
+pub(crate) fn mir_float(width: HMIRFloatWidth) -> MIRFloatType {
+    match width {
+        HMIRFloatWidth::F32 => MIRFloatType::F32,
+        HMIRFloatWidth::F64 => MIRFloatType::F64,
+    }
 }

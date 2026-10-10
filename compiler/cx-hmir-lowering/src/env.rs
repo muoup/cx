@@ -6,20 +6,19 @@ pub(crate) mod symbols;
 
 use cx_hmir::{
     HMIRBody, HMIRUnit,
-    expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant},
-    ty::{
-        HMIRType, HMIRTypeID, HMIRTypeKind,
-        context::HMIRTypeContext,
-        intrinsic::{HMIRFloatWidth, HMIRIntWidth},
-    },
+    expr::HMIRExprID,
+    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::CXResult;
-use cx_mir::{MIRFloatType, MIRIntType, MIRTypeID, MIRUnit};
+use cx_mir::{MIRTypeID, MIRUnit};
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 
-use crate::env::{module::MIRModuleBuilder, resolver::HMIRResolver, symbols::HMIRSymbolEnv};
+use crate::{
+    env::{module::MIRModuleBuilder, resolver::HMIRResolver, symbols::HMIRSymbolEnv},
+    lower::types,
+};
 
 #[derive(Debug)]
 pub struct HMIREnvironment<'global, 'hmir> {
@@ -89,7 +88,7 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
     }
 
     pub fn lower_type(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CXResult<MIRTypeID> {
-        todo!("Integrate with lower_type API already defined in lower/types")
+        types::lower_type(self, ty, span)
     }
 
     pub fn module(&self) -> &MIRModuleBuilder {
@@ -131,31 +130,5 @@ impl HMIRTypeContext for HMIREnvironment<'_, '_> {
             Some(ty) => ty,
             None => self.symbols.local_unit().resolve_type(id),
         }
-    }
-}
-
-fn eval_length(body: &HMIRBody, expr: HMIRExprID) -> u64 {
-    match body.expr(expr).kind() {
-        HMIRExprKind::Constant(HMIRConstant::Int { value, .. }) => (*value).max(0) as u64,
-        HMIRExprKind::Comptime(inner) => eval_length(body, *inner),
-        other => todo!("eval_type: array length expression {other:?}"),
-    }
-}
-
-fn mir_int(width: HMIRIntWidth) -> MIRIntType {
-    match width {
-        HMIRIntWidth::I1 => MIRIntType::I1,
-        HMIRIntWidth::I8 => MIRIntType::I8,
-        HMIRIntWidth::I16 => MIRIntType::I16,
-        HMIRIntWidth::I32 => MIRIntType::I32,
-        HMIRIntWidth::I64 => MIRIntType::I64,
-        HMIRIntWidth::I128 => MIRIntType::I128,
-    }
-}
-
-fn mir_float(width: HMIRFloatWidth) -> MIRFloatType {
-    match width {
-        HMIRFloatWidth::F32 => MIRFloatType::F32,
-        HMIRFloatWidth::F64 => MIRFloatType::F64,
     }
 }
