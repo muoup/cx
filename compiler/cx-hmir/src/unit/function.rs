@@ -8,11 +8,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct HMIRFunction {
     body: HMIRBody,
-
-    linkage: LinkageMode,
-    symbol_name: CXIdent,
-    signature: HMIRFnSignature,
-
+    prototype: HMIRFnPrototype,
     def: Option<HMIRFnDefinition>,
 }
 
@@ -20,6 +16,13 @@ pub struct HMIRFunction {
 pub struct HMIRFnDefinition {
     params: Box<[HMIRLocalID]>,
     root: HMIRExprID,
+}
+
+#[derive(Debug, Clone)]
+pub struct HMIRFnPrototype {
+    symbol_name: CXIdent,
+    linkage: LinkageMode,
+    signature: HMIRFnSignature,
 }
 
 #[derive(Debug, Clone)]
@@ -50,34 +53,56 @@ pub enum HMIRFunctionStage {
     Comptime,
 }
 
-impl HMIRContract {
-    pub fn new(
-        safe: bool,
-        precondition: Option<HMIRExprID>,
-        postcondition: Option<(Option<HMIRLocalID>, HMIRExprID)>,
-    ) -> Self {
+impl HMIRFunction {
+    pub fn new(body: HMIRBody, prototype: HMIRFnPrototype, def: Option<HMIRFnDefinition>) -> Self {
         Self {
-            safe,
-            precondition,
-            postcondition,
+            body,
+            prototype,
+            def,
         }
     }
 
-    pub fn is_safe(&self) -> bool {
-        self.safe
+    pub fn body(&self) -> &HMIRBody {
+        &self.body
     }
 
-    pub fn precondition(&self) -> Option<HMIRExprID> {
-        self.precondition
+    pub fn prototype(&self) -> &HMIRFnPrototype {
+        &self.prototype
     }
 
-    pub fn postcondition(&self) -> Option<(Option<HMIRLocalID>, HMIRExprID)> {
-        self.postcondition
+    pub fn signature(&self) -> &HMIRFnSignature {
+        &self.prototype.signature
     }
 
-    pub fn is_empty(&self) -> bool {
-        !self.safe && self.precondition.is_none() && self.postcondition.is_none()
+    pub fn def(&self) -> Option<&HMIRFnDefinition> {
+        self.def.as_ref()
     }
+}
+
+impl HMIRFnPrototype {
+    pub fn new(
+        symbol_name: CXIdent,
+        linkage: LinkageMode,
+        signature: HMIRFnSignature,
+    ) -> Self {
+        Self {
+            symbol_name,
+            linkage,
+            signature,
+        }
+    }
+
+    pub fn symbol_name(&self) -> &CXIdent {
+        &self.symbol_name
+    }
+
+    pub fn linkage(&self) -> LinkageMode {
+        self.linkage
+    }
+
+    pub fn signature(&self) -> &HMIRFnSignature {
+        &self.signature
+    }    
 }
 
 impl HMIRFnSignature {
@@ -118,45 +143,33 @@ impl HMIRFnSignature {
     }
 }
 
-impl HMIRFunction {
+impl HMIRContract {
     pub fn new(
-        symbol_name: CXIdent,
-        linkage: LinkageMode,
-        body: HMIRBody,
-        signature: HMIRFnSignature,
-        def: Option<HMIRFnDefinition>,
+        safe: bool,
+        precondition: Option<HMIRExprID>,
+        postcondition: Option<(Option<HMIRLocalID>, HMIRExprID)>,
     ) -> Self {
         Self {
-            symbol_name,
-            linkage,
-            body,
-            signature,
-            def,
+            safe,
+            precondition,
+            postcondition,
         }
     }
 
-    pub fn body(&self) -> &HMIRBody {
-        &self.body
+    pub fn is_safe(&self) -> bool {
+        self.safe
     }
 
-    pub fn body_mut(&mut self) -> &mut HMIRBody {
-        &mut self.body
+    pub fn precondition(&self) -> Option<HMIRExprID> {
+        self.precondition
     }
 
-    pub fn linkage(&self) -> LinkageMode {
-        self.linkage
+    pub fn postcondition(&self) -> Option<(Option<HMIRLocalID>, HMIRExprID)> {
+        self.postcondition
     }
 
-    pub fn symbol_name(&self) -> &CXIdent {
-        &self.symbol_name
-    }
-
-    pub fn signature(&self) -> &HMIRFnSignature {
-        &self.signature
-    }
-
-    pub fn def(&self) -> Option<&HMIRFnDefinition> {
-        self.def.as_ref()
+    pub fn is_empty(&self) -> bool {
+        !self.safe && self.precondition.is_none() && self.postcondition.is_none()
     }
 }
 

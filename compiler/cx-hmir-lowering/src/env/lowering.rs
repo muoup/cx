@@ -82,7 +82,7 @@ impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
                 MIRValue::Constant(mir_constant(self.env, constant, span)?)
             }
             HMIRValueKind::Register(register) => MIRValue::Register(*register),
-            HMIRValueKind::Place(place) => MIRValue::PlaceRef(*place),
+            HMIRValueKind::PlaceRef(place) => MIRValue::PlaceRef(*place),
         })
     }
 

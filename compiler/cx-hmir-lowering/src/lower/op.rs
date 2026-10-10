@@ -424,7 +424,7 @@ fn lower_increment(
     op: HMIRUnaryOp,
     target: HMIRValue,
 ) -> CXResult<HMIRValue> {
-    let HMIRValueKind::Place(place) = *target.kind() else {
+    let HMIRValueKind::PlaceRef(place) = *target.kind() else {
         return Err(hmir_error(
             span,
             &typecheck::NOT_ADDRESSABLE,

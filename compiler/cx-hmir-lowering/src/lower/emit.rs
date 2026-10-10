@@ -98,7 +98,7 @@ pub fn read(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let HMIRValueKind::Place(place) = *value.kind() else {
+    let HMIRValueKind::PlaceRef(place) = *value.kind() else {
         return Ok(value);
     };
 

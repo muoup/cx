@@ -31,7 +31,7 @@ pub(crate) fn lower_let(
     initializer: Option<HMIRExprID>,
 ) -> CXResult<HMIRValue> {
     let decl = body.local(local);
-    if decl.is_comptime() {
+    if decl.comptime() {
         todo!("comptime let binding");
     }
 

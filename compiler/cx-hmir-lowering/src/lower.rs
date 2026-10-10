@@ -32,7 +32,8 @@ pub struct HMIRValue {
 pub enum HMIRValueKind {
     Constant(HMIRConstant),
     Register(MIRRegister),
-    Place(MIRPlaceID),
+    PlaceRef(MIRPlaceID),
+    Indirect(MIRRegister),
 }
 
 impl HMIRValue {
@@ -49,7 +50,7 @@ impl HMIRValue {
     }
 
     pub fn place(ty: HMIRTypeID, place: MIRPlaceID) -> Self {
-        Self::new(ty, HMIRValueKind::Place(place))
+        Self::new(ty, HMIRValueKind::PlaceRef(place))
     }
 
     pub fn ty(&self) -> HMIRTypeID {
@@ -70,9 +71,9 @@ pub fn lower_unit<'hmir>(
     unit: &'hmir HMIRUnit,
     env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
-    fn is_root(signature: &HMIRFunction) -> bool {
-        signature.signature().stage() == HMIRFunctionStage::Runtime
-            && !signature
+    fn is_root(function: &HMIRFunction) -> bool {
+        function.signature().stage() == HMIRFunctionStage::Runtime
+            && !function
                 .signature()
                 .params()
                 .iter()

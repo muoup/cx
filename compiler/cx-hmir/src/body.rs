@@ -17,8 +17,10 @@ pub struct HMIRBody {
 pub struct HMIRLocal {
     name: Option<CXIdent>,
     ty: HMIRExprID,
-    comptime: bool,
     span: TokenRange,
+
+    comptime: bool,
+    nodrop: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -27,12 +29,13 @@ pub struct HMIRHole {
 }
 
 impl HMIRLocal {
-    pub fn new(name: Option<CXIdent>, ty: HMIRExprID, comptime: bool, span: TokenRange) -> Self {
+    pub fn new(name: Option<CXIdent>, ty: HMIRExprID, span: TokenRange, comptime: bool, nodrop: bool) -> Self {
         Self {
             name,
             ty,
-            comptime,
             span,
+            comptime,
+            nodrop
         }
     }
 
@@ -44,16 +47,16 @@ impl HMIRLocal {
         self.ty
     }
 
-    pub fn set_ty(&mut self, ty: HMIRExprID) {
-        self.ty = ty;
+    pub fn span(&self) -> &TokenRange {
+        &self.span
     }
 
-    pub fn is_comptime(&self) -> bool {
+    pub fn comptime(&self) -> bool {
         self.comptime
     }
 
-    pub fn span(&self) -> &TokenRange {
-        &self.span
+    pub fn nodrop(&self) -> bool {
+        self.nodrop
     }
 }
 
