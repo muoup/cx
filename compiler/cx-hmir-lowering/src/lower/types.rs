@@ -1,27 +1,25 @@
-use cx_hmir::HMIRAggregateKind;
-use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::{MIRField, MIRFnParam, MIRFnSignature, MIRType, MIRTypeID, MIRTypeKind};
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind};
+use cx_log::CXResult;
+use cx_mir::{MIRTypeID, MIRTypeKind};
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
 
-use crate::{
-    staging_error,
-    ty::{FunctionType, NominalID, HMIRTypeID, HMIRTypeKind, TypeTable},
-};
+use crate::{env::lowering::FnLoweringContext, log::hmir_error};
 
 pub(super) fn lower_type(
-    types: &mut TypeTable,
+    env: &mut FnLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
     let ty = types.unqualified(ty);
+
     if let Some(id) = types.lowered.get(&ty) {
         return Ok(*id);
     }
+
     let kind = match types.kind(ty).clone() {
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
         HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } => {
-            return Err(staging_error(
+            return Err(hmir_error(
                 span,
                 &typecheck::COMPTIME_ONLY_TYPE,
                 types.display(ty),
@@ -54,7 +52,8 @@ pub(super) fn lower_type(
             signature: lower_signature(types, &function, span)?,
         },
         HMIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
-        HMIRTypeKind::Nominal(nominal) => return lower_nominal_type(types, ty, nominal, span),
+
+        _ => todo!(),
     };
     let id = types.mir.intern(MIRType::new(kind));
     types.lowered.insert(ty, id);
@@ -81,47 +80,4 @@ fn lower_signature(
         function.is_variadic(),
         false,
     ))
-}
-
-fn lower_nominal_type(
-    types: &mut TypeTable,
-    ty: HMIRTypeID,
-    nominal: NominalID,
-    span: &TokenRange,
-) -> CXResult<MIRTypeID> {
-    let nominal = types.nominal(nominal).clone();
-    let Some(fields) = nominal.fields else {
-        let id = types.mir.intern(MIRType::new(MIRTypeKind::Opaque {
-            size: 0,
-            alignment: 1,
-        }));
-        types.lowered.insert(ty, id);
-        return Ok(id);
-    };
-
-    let id = types.mir.reserve();
-    types.lowered.insert(ty, id);
-    let fields = fields
-        .iter()
-        .map(|field| {
-            let name = field.name().map(CXIdent::as_string);
-            let ty = lower_type(types, field.ty(), span)?;
-            Ok(match field.bit_width() {
-                Some(width) => MIRField::Bitfield {
-                    name,
-                    integer_type_id: ty,
-                    width,
-                },
-                None => MIRField::Standard { name, type_id: ty },
-            })
-        })
-        .collect::<CXResult<Vec<_>>>()?;
-    let kind = match nominal.kind {
-        HMIRAggregateKind::Struct => MIRTypeKind::Structured { fields },
-        HMIRAggregateKind::Union => MIRTypeKind::Union { variants: fields },
-        HMIRAggregateKind::TaggedUnion => MIRTypeKind::TaggedUnion { variants: fields },
-    };
-    types.mir.define(id, MIRType::new(kind));
-    types.mir.set_debug_name(id, nominal.name);
-    Ok(id)
 }

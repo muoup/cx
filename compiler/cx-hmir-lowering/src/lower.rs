@@ -11,6 +11,7 @@ use cx_mir::{MIRPlaceID, MIRRegister};
 
 mod constant;
 mod dispatch;
+mod types;
 
 pub struct HMIRValue {
     ty: HMIRTypeID,
