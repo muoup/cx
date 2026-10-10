@@ -1,6 +1,9 @@
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use crate::{binding::HMIRLocalID, body::HMIRBody, expr::HMIRExprID};
+use crate::{
+    body::{HMIRBody, HMIRLocalID},
+    expr::HMIRExprID,
+};
 
 #[derive(Debug, Clone)]
 pub struct HMIRFunction {
@@ -160,7 +163,7 @@ impl HMIRFnDefinition {
 
     pub fn root(&self) -> HMIRExprID {
         self.root
-    }    
+    }
 }
 
 impl HMIRFnParam {

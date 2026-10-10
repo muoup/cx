@@ -1,6 +1,6 @@
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
-use crate::{binding::HMIRLocalID, expr::HMIRExprID};
+use crate::{body::HMIRLocalID, expr::HMIRExprID};
 
 #[derive(Debug, Clone)]
 pub enum HMIRAggregateOp {

@@ -11,7 +11,6 @@ use crate::{
 };
 
 dense_id!(HMIRDefID, "def");
-dense_id!(UnitID, "unit");
 
 #[derive(Debug, Clone)]
 pub struct HMIRDef {

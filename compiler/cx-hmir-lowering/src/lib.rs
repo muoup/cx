@@ -2,10 +2,7 @@ mod deduce;
 mod eval;
 mod function;
 mod lower;
-mod module;
 mod pattern;
-mod program;
-mod value;
 
 mod log;
 

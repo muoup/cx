@@ -7,6 +7,7 @@ use cx_pipeline_data::db::ModuleData;
 
 use crate::env::{module::MIRModuleBuilder, symbols::HMIRSymbolEnv};
 
+#[derive(Debug)]
 pub struct HMIREnvironment<'global, 'hmir> {
     global: &'global ModuleData,
 

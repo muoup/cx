@@ -2,7 +2,11 @@ use cx_intrinsics::Intrinsic;
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
-use crate::{HMIRDefRef, HMIRHoleID, HMIRLocalID, HMIROp, HMIRPattern, expr::constant::HMIRConstant};
+use crate::{
+    HMIRDefRef, HMIROp, HMIRPattern,
+    body::{HMIRHoleID, HMIRLocalID},
+    expr::constant::HMIRConstant,
+};
 
 pub mod aggregate;
 pub mod constant;
