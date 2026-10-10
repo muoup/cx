@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use cx_mir::{
-    MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
-    MIRGlobalVariable, MIRType, MIRTypeID, MIRUnit, ty::registry::MIRTypeRegistry,
+    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable,
+    MIRType, MIRTypeID, MIRUnit, ty::registry::MIRTypeRegistry,
 };
 use cx_target::ArchitectureConfig;
 
@@ -66,17 +66,12 @@ impl MIRModuleBuilder {
         id
     }
 
-    pub fn define_function(&mut self, id: MIRFunctionID, body: MIRBody) {
-        self.functions
-            .get_mut(&id)
-            .unwrap_or_else(|| panic!("Could not define unknown function id: {id}"))
-            .define(body);
+    pub fn define_function(&mut self, id: MIRFunctionID, function: MIRFunction) {
+        *self.functions.get_mut(&id).unwrap() = function;
     }
 
     pub fn function(&self, id: MIRFunctionID) -> &MIRFunction {
-        self.functions
-            .get(&id)
-            .unwrap_or_else(|| panic!("Function not found in module: {id}"))
+        &self.functions[&id]
     }
 
     pub fn declare_global(&mut self, global: MIRGlobalVariable) -> MIRGlobalID {

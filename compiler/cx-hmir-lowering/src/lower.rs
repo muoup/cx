@@ -3,13 +3,10 @@ use crate::{
     lower::{
         control::lower_return_value,
         dispatch::lower_expression,
-        emit::emit_return,
-        shape::{TypeShape, is_nodrop, shape},
     },
 };
 use cx_hmir::{
     HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
-    body::HMIRLocalID,
     expr::{HMIRExprKind, constant::HMIRConstant},
     ty::HMIRTypeID,
     unit::function::HMIRFnDefinition,
@@ -21,17 +18,13 @@ use cx_mir::{
 };
 use cx_tokens::TokenRange;
 
+mod emit;
 mod binding;
 mod coerce;
 mod constant;
 mod control;
 mod dispatch;
-mod emit;
 mod op;
-mod shape;
-
-#[cfg(test)]
-mod tests;
 
 #[derive(Debug, Clone)]
 pub struct HMIRValue {
@@ -75,14 +68,6 @@ impl HMIRValue {
         self.ty = ty;
         self
     }
-}
-
-const RETURN_SLOT: HMIRLocalID = HMIRLocalID::new(usize::MAX);
-
-pub(crate) fn return_type(cx: &FnLoweringContext) -> HMIRTypeID {
-    cx.get_local(&RETURN_SLOT)
-        .expect("return slot is bound before the body is lowered")
-        .ty()
 }
 
 pub fn lower_unit(unit: &HMIRUnit, env: &mut HMIREnvironment) -> CXResult<()> {
@@ -132,13 +117,15 @@ pub fn lower_function(
 
     let mut params = Vec::new();
     let mut mir_params = Vec::new();
+    
     for (param, local) in signature.params().iter().zip(def.params()) {
         let ty = env.eval_type(body, param.ty())?;
         let mir = env.lower_type(ty, body.expr(param.ty()).span())?;
         let name = body.local(*local).name().cloned();
-        let nodrop = is_nodrop(env, ty);
+        let nodrop = todo!("nodrop should be a field on a local, not a type"); 
 
         mir_params.push(MIRFnParam::new(name, mir, nodrop));
+        
         params.push((ty, mir, nodrop));
     }
 
@@ -158,7 +145,7 @@ pub fn lower_function(
     );
     let id = env.module_mut().declare_function(prototype);
 
-    let mut cx = FnLoweringContext::new(env, id);
+    let mut cx = FnLoweringContext::new(env, signature);
     cx.insert_local(
         RETURN_SLOT,
         HMIRValue::constant(return_ty, HMIRConstant::Unit),

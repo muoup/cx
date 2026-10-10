@@ -1,13 +1,14 @@
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFunctionID, MIRInstruction, MIRInstructionKind,
-    MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl, MIRScopeID,
+    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
+    MIRInstruction, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl,
+    MIRScopeDecl, MIRScopeID,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 #[derive(Debug)]
 pub struct MIRFunctionBuilder {
-    function: MIRFunctionID,
+    prototype: MIRFnPrototype,
 
     parameters: Vec<MIRPlaceID>,
     blocks: Vec<MIRBasicBlock>,
@@ -21,11 +22,11 @@ pub struct MIRFunctionBuilder {
 }
 
 impl MIRFunctionBuilder {
-    pub fn new(function: MIRFunctionID) -> Self {
+    pub fn new(prototype: MIRFnPrototype) -> Self {
         let entry = MIRBasicBlockID::new(0);
 
         Self {
-            function,
+            prototype,
 
             parameters: Vec::new(),
             blocks: vec![MIRBasicBlock::new(entry, None)],
@@ -39,8 +40,8 @@ impl MIRFunctionBuilder {
         }
     }
 
-    pub fn function(&self) -> MIRFunctionID {
-        self.function
+    pub fn prototype(&self) -> &MIRFnPrototype {
+        &self.prototype
     }
 
     pub fn parameters(&self) -> &[MIRPlaceID] {
@@ -92,13 +93,12 @@ impl MIRFunctionBuilder {
             .is_some_and(MIRInstruction::is_terminator)
     }
 
-    pub fn emit(&mut self, kind: MIRInstructionKind, span: &TokenRange) {
+    pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
         if self.terminated() {
             return;
         }
 
-        self.blocks[self.current_block.index()]
-            .push_instruction(MIRInstruction::new(kind, span.clone()));
+        self.blocks[self.current_block.index()].push_instruction(MIRInstruction::new(kind, span));
     }
 
     pub fn push_scope(&mut self, span: &TokenRange) -> MIRScopeID {
@@ -149,15 +149,18 @@ impl MIRFunctionBuilder {
         id
     }
 
-    pub fn finish(self) -> MIRBody {
-        MIRBody::new(
-            MIRBasicBlockID::new(0),
-            self.blocks,
-            self.places,
-            self.parameters,
-            self.registers,
-            self.scopes,
-            self.address_labels,
+    pub fn finish(self) -> MIRFunction {
+        MIRFunction::new(
+            self.prototype,
+            Some(MIRBody::new(
+                MIRBasicBlockID::new(0),
+                self.blocks,
+                self.places,
+                self.parameters,
+                self.registers,
+                self.scopes,
+                self.address_labels,
+            )),
         )
     }
 }

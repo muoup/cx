@@ -24,7 +24,9 @@ pub(crate) fn lower_constant(
         HMIRConstant::Unit => Ok(void_value(env, span)),
 
         HMIRConstant::Str(_) => {
-            let ty = env.env().realize_type(HMIRTypeKind::Str, span);
+            let ty = env.env().resolver()
+                .realize_type(HMIRTypeKind::Str, span);
+            
             Ok(HMIRValue::new(
                 ty,
                 HMIRValueKind::Constant(constant.clone()),

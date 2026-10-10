@@ -25,16 +25,6 @@ impl MIRFunction {
     pub fn prototype(&self) -> &MIRFnPrototype {
         &self.prototype
     }
-
-    pub fn define(&mut self, def: MIRBody) {
-        assert!(
-            self.body.is_none(),
-            "Attempt to redefine function: {}",
-            self.prototype().display_name()
-        );
-
-        self.body = Some(def);
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use cx_hmir::body::HMIRLocalID;
+use cx_hmir::{HMIRFnSignature, body::HMIRLocalID};
 use cx_log::CXResult;
-use cx_mir::{MIRBody, MIRFunctionID, MIRValue};
+use cx_mir::{MIRBody, MIRFunction, MIRFunctionID, MIRValue};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -13,16 +13,20 @@ use crate::{
 #[derive(Debug)]
 pub struct FnLoweringContext<'env, 'global, 'hmir> {
     env: &'env mut HMIREnvironment<'global, 'hmir>,
+    signature: &'hmir HMIRFnSignature,
     builder: MIRFunctionBuilder,
 
     locals: HashMap<HMIRLocalID, HMIRValue>,
 }
 
 impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
-    pub fn new(env: &'env mut HMIREnvironment<'global, 'hmir>, function: MIRFunctionID) -> Self {
+    pub fn new(env: &'env mut HMIREnvironment<'global, 'hmir>, signature: &'hmir HMIRFnSignature) -> Self {
+        let mir_prototype = todo!("Lower prototype");
+
         Self {
             env,
-            builder: MIRFunctionBuilder::new(function),
+            signature,
+            builder: MIRFunctionBuilder::new(mir_prototype),
 
             locals: HashMap::new(),
         }
@@ -54,7 +58,7 @@ impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
         })
     }
 
-    pub fn finish(self) -> MIRBody {
+    pub fn finish(self) -> MIRFunction {
         self.builder.finish()
     }
 }

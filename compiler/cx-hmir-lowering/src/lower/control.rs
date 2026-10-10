@@ -4,19 +4,9 @@ use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, MIRValue};
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::lowering::FnLoweringContext,
-    lower::{
-        HMIRValue, return_type,
-        binding::lower_scoped,
-        coerce::{convert, truthy},
-        dispatch::lower_expression,
-        emit::{
-            diverges, emit_branch, emit_jump, emit_return, new_block, new_block_param, rvalue,
-            unreachable_value, void_value,
-        },
-        shape::{TypeShape, arithmetic_type, shape},
+    env::lowering::FnLoweringContext, log::hmir_error, lower::{
+        HMIRValue, binding::lower_scoped, coerce::{convert, truthy}, dispatch::lower_expression, emit,
     },
-    log::hmir_error,
 };
 
 fn lower_condition(
@@ -65,7 +55,7 @@ pub(crate) fn lower_if(
 
         cx.builder().switch_to(then_block);
         lower_scoped(cx, body, body.expr(then_branch))?;
-        emit_jump(cx, merge, Vec::new(), span);
+        emit::jump(cx.builder(), merge, Vec::new(), span.clone());
 
         cx.builder().switch_to(merge);
         return Ok(void_value(cx, span));
@@ -121,11 +111,7 @@ pub(crate) fn lower_if(
     }
 }
 
-fn merged_type(
-    cx: &mut FnLoweringContext,
-    arms: &[Arm],
-    span: &TokenRange,
-) -> Option<HMIRTypeID> {
+fn merged_type(cx: &mut FnLoweringContext, arms: &[Arm], span: &TokenRange) -> Option<HMIRTypeID> {
     let mut merged: Option<HMIRTypeID> = None;
 
     for arm in arms {
@@ -156,7 +142,11 @@ pub(crate) fn lower_while(
     let body_block = new_block(cx, "while.body");
     let exit = new_block(cx, "while.exit");
 
-    let entry = if pre_eval { condition_block } else { body_block };
+    let entry = if pre_eval {
+        condition_block
+    } else {
+        body_block
+    };
     emit_jump(cx, entry, Vec::new(), span);
 
     cx.builder().switch_to(condition_block);
