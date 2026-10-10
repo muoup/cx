@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
+use cx_hmir::HMIRGlobal;
 use cx_mir::{
-    MIRFnPrototype, MIRFunctionID, MIRGlobalID, MIRType, MIRTypeID, MIRUnit,
-    ty::registry::MIRTypeRegistry,
+    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable, MIRType, MIRTypeID, MIRUnit, ty::registry::MIRTypeRegistry,
 };
 use cx_target::ArchitectureConfig;
 
@@ -17,8 +17,8 @@ pub struct MIRModuleBuilder {
     architecture: ArchitectureConfig,
 
     types: HashMap<MIRTypeID, MIRType>,
-    functions: BTreeMap<MIRFunctionID, MIRFunctionBuilder>,
-    globals: BTreeMap<MIRGlobalID, MIRGlobalBuilder>,
+    functions: BTreeMap<MIRFunctionID, MIRFunction>,
+    globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
 }
 
@@ -40,7 +40,7 @@ impl MIRModuleBuilder {
 
     pub fn finish(self) -> MIRUnit {
         MIRUnit::new(
-            MIRTypeRegistry::new(config, self.types, HashMap::new()),
+            MIRTypeRegistry::new(self.architecture, self.types, HashMap::new()),
             self.functions,
             self.globals,
             self.global_order,

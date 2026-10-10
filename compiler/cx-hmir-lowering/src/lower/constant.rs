@@ -1,4 +1,4 @@
-use cx_hmir::expr::constant::HMIRConstant;
+use cx_hmir::{HMIRBody, expr::constant::HMIRConstant};
 use cx_log::CXResult;
 use cx_mir::{MIRTypeKind, MIRValue};
 use cx_tokens::TokenRange;
@@ -10,6 +10,7 @@ use crate::{
 
 pub(crate) fn lower_constant(
     env: &mut FnLoweringContext,
+    body: &HMIRBody,
     span: &TokenRange,
     constant: &HMIRConstant,
 ) -> CXResult<HMIRValue> {

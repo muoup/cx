@@ -1,16 +1,14 @@
 use std::collections::BTreeMap;
 
-use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent, linkage::LinkageMode};
 
 pub mod function;
+pub mod body;
 
 use crate::{
     constant::MIRConstant,
-    expr::instruction::MIRScopeID,
     ty::{MIRTypeID, registry::MIRTypeRegistry},
     unit::function::{MIRFunction, MIRFunctionID},
-    value::{MIRPlaceID, MIRRegisterID as MIRRegister},
 };
 
 dense_id!(MIRGlobalID, "global.");
@@ -70,29 +68,6 @@ impl MIRUnit {
     pub fn global(&self, id: MIRGlobalID) -> Option<&MIRGlobalVariable> {
         self.globals.get(&id)
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct MIRPlaceDecl {
-    pub id: MIRPlaceID,
-    pub ty: MIRTypeID,
-    pub debug_name: Option<CXIdent>,
-    pub nodrop: bool,
-    pub scope: MIRScopeID,
-    pub adopted: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct MIRScopeDecl {
-    pub id: MIRScopeID,
-    pub token_range: TokenRange,
-}
-
-#[derive(Debug, Clone)]
-pub struct MIRRegisterDecl {
-    pub id: MIRRegister,
-    pub ty: MIRTypeID,
-    pub debug_name: Option<CXIdent>,
 }
 
 #[derive(Debug, Clone)]

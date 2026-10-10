@@ -4,7 +4,6 @@ use cx_util::linkage::LinkageMode;
 
 use crate::{
     expr::{
-        body::MIRBody,
         instruction::{
             MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRInvalidationKind,
             MIRStoreBitfield,
@@ -19,6 +18,7 @@ use crate::{
         interface::MTRegistry,
     },
     unit::{
+        body::MIRBody,
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
         function::{MIRFnSignature, MIRFunction},
     },
@@ -391,21 +391,21 @@ fn write_body<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     f.write_str(" {\n")?;
-    for place in body.places() {
+    for (id, place) in body.places() {
         f.write_str("    let ")?;
-        write_place_name(f, unit, function, place.id)?;
+        write_place_name(f, unit, function, id)?;
         f.write_str(": ")?;
-        types.write(f, place.ty)?;
+        types.write(f, place.ty())?;
         f.write_str(";\n")?;
     }
-    for register in body.registers() {
+    for (id, register) in body.registers() {
         f.write_str("    let ")?;
-        write_register_name(f, function, register.id)?;
+        write_register_name(f, function, id)?;
         f.write_str(": ")?;
-        types.write(f, register.ty)?;
+        types.write(f, register.ty())?;
         f.write_str(";\n")?;
     }
-    for block in body.blocks() {
+    for (_, block) in body.blocks() {
         write_block(f, unit, function, block, types)?;
     }
     f.write_str("}")

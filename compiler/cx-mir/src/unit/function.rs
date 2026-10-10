@@ -1,6 +1,6 @@
 use cx_util::{dense_id, identifier::CXIdent, linkage::LinkageMode};
 
-use crate::{expr::body::MIRBody, ty::MIRTypeID};
+use crate::{ty::MIRTypeID, unit::body::MIRBody};
 
 dense_id!(MIRFunctionID, "@f");
 

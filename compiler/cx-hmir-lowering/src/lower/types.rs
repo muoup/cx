@@ -26,10 +26,10 @@ pub(super) fn lower_type(
             ));
         }
         HMIRTypeKind::Str => MIRTypeKind::Str,
-        HMIRTypeKind::Int { width, .. } => MIRTypeKind::Integer {
+        HMIRTypeKind::Int(ty) => MIRTypeKind::Integer {
             ty: TypeTable::mir_int(width),
         },
-        HMIRTypeKind::Float { width } => MIRTypeKind::Float {
+        HMIRTypeKind::Float(ty) => MIRTypeKind::Float {
             ty: TypeTable::mir_float(width),
         },
         HMIRTypeKind::PointerTo(inner) => MIRTypeKind::PointerTo {

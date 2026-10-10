@@ -78,15 +78,19 @@ pub fn lower_function(
     def: &HMIRFnDefinition,
     env: &mut HMIREnvironment,
 ) -> CXResult<()> {
-    let mut lowering_env = FnLoweringContext::new(env, function);
+    let prototype = todo!();
+    let mut lowering_env = FnLoweringContext::new(env, prototype);
 
     for param in def.params() {
         let param_ty = function.signature().params()[*param].ty();
-        let param_value = lowering_env.
-        lowering_env.insert_local(*param, param_value);
+        let param_value = lowering_env.lowering_env.insert_local(*param, param_value);
     }
 
-    lower_expression(&mut lowering_env, function.body().expr(def.root()))?;
+    lower_expression(
+        &mut lowering_env,
+        function.body(),
+        function.body().expr(def.root()),
+    )?;
 
     Ok(())
 }
