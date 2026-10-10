@@ -13,11 +13,13 @@ mod constant;
 mod dispatch;
 mod types;
 
+#[derive(Debug)]
 pub struct HMIRValue {
     ty: HMIRTypeID,
     value: HMIRValueKind,
 }
 
+#[derive(Debug)]
 pub enum HMIRValueKind {
     Constant(HMIRConstant),
     Register(MIRRegister),

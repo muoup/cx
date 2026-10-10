@@ -1,43 +1,62 @@
 use std::collections::HashMap;
 
 use cx_hmir::{HMIRFunction, body::HMIRLocalID};
+use cx_log::CXResult;
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRPlaceDecl, MIRPlaceID,
-    MIRRegisterDecl, MIRScopeDecl, MIRValue,
+    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFunctionID, MIRInstructionKind, MIRPlaceDecl,
+    MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl, MIRScopeID, MIRValue,
 };
+use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
-use crate::env::HMIREnvironment;
+use crate::{env::HMIREnvironment, lower::HMIRValue};
 
 #[derive(Debug)]
-pub struct FnLoweringContext<'global, 'hmir> {
-    env: &'hmir mut HMIREnvironment<'global, 'hmir>,
+pub struct FnLoweringContext<'env, 'global, 'hmir> {
+    env: &'env mut HMIREnvironment<'global, 'hmir>,
     builder: MIRFunctionBuilder,
-    
-    locals: HashMap<HMIRLocalID, MIRValue>,
+
+    locals: HashMap<HMIRLocalID, HMIRValue>,
 }
 
-impl<'global, 'hmir> FnLoweringContext<'global, 'hmir> {
-    pub fn new(env: &'hmir mut HMIREnvironment<'global, 'hmir>, prototype: MIRFnPrototype) -> Self {
+impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
+    pub fn new(env: &'env mut HMIREnvironment<'global, 'hmir>, function: MIRFunctionID) -> Self {
         Self {
             env,
-            builder: MIRFunctionBuilder::new(prototype),
-            
+            builder: MIRFunctionBuilder::new(function),
+
             locals: HashMap::new(),
         }
     }
 
-    pub fn insert_local(&mut self, id: HMIRLocalID, value: MIRValue) {
+    pub fn env(&mut self) -> &mut HMIREnvironment<'global, 'hmir> {
+        self.env
+    }
+
+    pub fn builder(&mut self) -> &mut MIRFunctionBuilder {
+        &mut self.builder
+    }
+
+    pub fn insert_local(&mut self, id: HMIRLocalID, value: HMIRValue) {
         self.locals.insert(id, value);
     }
 
-    pub fn get_local(&self, id: &HMIRLocalID) -> Option<&MIRValue> {
+    pub fn get_local(&self, id: &HMIRLocalID) -> Option<&HMIRValue> {
         self.locals.get(id)
+    }
+
+    pub fn materialize(&mut self, value: &HMIRValue, span: &TokenRange) -> CXResult<MIRValue> {
+        todo!()
+    }
+
+    pub fn finish(self) -> MIRBody {
+        self.builder.finish()
     }
 }
 
 #[derive(Debug)]
 pub struct MIRFunctionBuilder {
-    prototype: MIRFnPrototype,
+    function: MIRFunctionID,
 
     parameters: Vec<MIRPlaceID>,
     blocks: Vec<MIRBasicBlock>,
@@ -48,10 +67,10 @@ pub struct MIRFunctionBuilder {
 }
 
 impl MIRFunctionBuilder {
-    pub fn new(prototype: MIRFnPrototype) -> Self {
+    pub fn new(function: MIRFunctionID) -> Self {
         Self {
-            prototype,
-            
+            function,
+
             parameters: Vec::new(),
             blocks: Vec::new(),
             registers: Vec::new(),
@@ -61,6 +80,10 @@ impl MIRFunctionBuilder {
         }
     }
     
+    pub fn function(&self) -> MIRFunctionID {
+        self.function
+    }
+
     pub fn parameters(&self) -> &[MIRPlaceID] {
         &self.parameters
     }
@@ -85,10 +108,38 @@ impl MIRFunctionBuilder {
         self.blocks.get_mut(id.index())
     }
 
-    pub fn add_block(&mut self, block: MIRBasicBlock) -> MIRBasicBlockID {
+    pub fn add_block(&mut self, debug_name: Option<CXIdent>) -> MIRBasicBlockID {
         let id = MIRBasicBlockID::new(self.blocks.len());
-        self.blocks.push(block);
+        self.blocks.push(MIRBasicBlock::new(id, debug_name));
         id
+    }
+
+    pub fn current_block(&self) -> MIRBasicBlockID {
+        todo!()
+    }
+
+    pub fn switch_to(&mut self, block: MIRBasicBlockID) {
+        todo!()
+    }
+
+    pub fn terminated(&self) -> bool {
+        todo!()
+    }
+
+    pub fn emit(&mut self, kind: MIRInstructionKind, span: &TokenRange) {
+        todo!()
+    }
+
+    pub fn push_scope(&mut self, span: &TokenRange) -> MIRScopeID {
+        todo!()
+    }
+
+    pub fn pop_scope(&mut self) -> MIRScopeID {
+        todo!()
+    }
+
+    pub fn current_scope(&self) -> MIRScopeID {
+        todo!()
     }
 
     pub fn places(&self) -> &[MIRPlaceDecl] {
@@ -119,18 +170,15 @@ impl MIRFunctionBuilder {
         id
     }
 
-    pub fn finish(self) -> MIRFunction {
-        MIRFunction::new(
-            self.prototype,
-            Some(MIRBody::new(
-                MIRBasicBlockID::new(0),
-                self.blocks,
-                self.places,
-                self.parameters,
-                self.registers,
-                self.scopes,
-                self.address_labels,
-            )),
+    pub fn finish(self) -> MIRBody {
+        MIRBody::new(
+            MIRBasicBlockID::new(0),
+            self.blocks,
+            self.places,
+            self.parameters,
+            self.registers,
+            self.scopes,
+            self.address_labels,
         )
     }
 }

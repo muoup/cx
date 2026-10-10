@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use cx_hmir::HMIRGlobal;
 use cx_mir::{
-    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalVariable, MIRType, MIRTypeID, MIRUnit, ty::registry::MIRTypeRegistry,
+    MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState,
+    MIRGlobalVariable, MIRType, MIRTypeID, MIRUnit, ty::registry::MIRTypeRegistry,
 };
 use cx_target::ArchitectureConfig;
 
@@ -36,6 +37,30 @@ impl MIRModuleBuilder {
 
     pub fn resolve_type(&self, ty: MIRTypeID) -> &MIRType {
         self.types.get(&ty).expect("Type not found in registry")
+    }
+
+    pub fn intern_type(&mut self, ty: MIRType) -> MIRTypeID {
+        todo!()
+    }
+
+    pub fn declare_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
+        todo!()
+    }
+
+    pub fn define_function(&mut self, id: MIRFunctionID, body: MIRBody) {
+        todo!()
+    }
+
+    pub fn function(&self, id: MIRFunctionID) -> &MIRFunction {
+        todo!()
+    }
+
+    pub fn declare_global(&mut self, global: MIRGlobalVariable) -> MIRGlobalID {
+        todo!()
+    }
+
+    pub fn define_global(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
+        todo!()
     }
 
     pub fn finish(self) -> MIRUnit {
