@@ -18,7 +18,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::{function::MIRFunctionBuilder, lowering::FnLoweringContext},
+    env::{function::MIRFunctionBuilder, function::FnLoweringContext},
 };
 
 pub fn terminated(builder: &MIRFunctionBuilder) -> bool {

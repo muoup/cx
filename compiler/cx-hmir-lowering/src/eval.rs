@@ -13,7 +13,7 @@ use cx_log::CXResult;
 use cx_mir::MIRFunction;
 use cx_tokens::TokenRange;
 
-use crate::env::{HMIREnvironment, lowering::FnLoweringContext};
+use crate::env::{HMIREnvironment, function::FnLoweringContext};
 
 pub(crate) fn lower_runtime_function(
     _env: &mut HMIREnvironment,

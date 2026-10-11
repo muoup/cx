@@ -1,6 +1,6 @@
 pub(crate) mod comptime;
 pub(crate) mod function;
-pub(crate) mod lowering;
+pub(crate) mod function;
 pub(crate) mod module;
 pub(crate) mod resolver;
 pub(crate) mod runtime;

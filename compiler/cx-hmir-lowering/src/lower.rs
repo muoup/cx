@@ -1,4 +1,4 @@
-use crate::env::{HMIREnvironment, lowering::FnLoweringContext};
+use crate::env::{HMIREnvironment, function::FnLoweringContext};
 use cx_hmir::{
     HMIRBody, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
     expr::{HMIRExprKind, constant::HMIRConstant},

@@ -1,152 +1,100 @@
-use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRInstruction,
-    MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl,
-    MIRScopeID,
-};
-use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
+use cx_hmir::{HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, value::HMIRValue};
+
+pub mod comptime;
+pub mod runtime;
+
+use crate::env::HMIREnvironment;
+
+pub use crate::env::{comptime::ComptimeContext, runtime::RuntimeContext};
 
 #[derive(Debug)]
-pub struct MIRFunctionBuilder {
-    prototype: MIRFnPrototype,
-
-    parameters: Vec<MIRPlaceID>,
-    blocks: Vec<MIRBasicBlock>,
-    registers: Vec<MIRRegisterDecl>,
-    places: Vec<MIRPlaceDecl>,
-    scopes: Vec<MIRScopeDecl>,
-    address_labels: Vec<(String, MIRBasicBlockID)>,
-
-    current_block: MIRBasicBlockID,
+pub struct FnLoweringContext<'env, 'global, 'hmir> {
+    env: &'env mut HMIREnvironment<'global, 'hmir>,
+    signature: &'hmir HMIRFnSignature,
+    context: FnContext,
 }
 
-impl MIRFunctionBuilder {
-    pub fn new(prototype: MIRFnPrototype) -> Self {
-        let entry = MIRBasicBlockID::new(0);
+#[derive(Debug)]
+pub enum FnContext {
+    Runtime(RuntimeContext),
+    Comptime(ComptimeContext),
+}
+
+impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
+    pub fn new(
+        env: &'env mut HMIREnvironment<'global, 'hmir>,
+        signature: &'hmir HMIRFnSignature,
+        context: FnContext,
+    ) -> Self {
+        assert_eq!(signature.stage(), context.stage());
 
         Self {
-            prototype,
-
-            parameters: Vec::new(),
-            blocks: vec![MIRBasicBlock::new(entry, None)],
-            registers: Vec::new(),
-            places: Vec::new(),
-            scopes: Vec::new(),
-            address_labels: Vec::new(),
-
-            current_block: entry,
+            env,
+            signature,
+            context,
         }
     }
 
-    pub fn prototype(&self) -> &MIRFnPrototype {
-        &self.prototype
-    }
-
-    pub fn parameters(&self) -> &[MIRPlaceID] {
-        &self.parameters
-    }
-
-    pub fn parameter(&self, index: usize) -> Option<MIRPlaceID> {
-        self.parameters.get(index).copied()
-    }
-
-    pub fn add_parameter(&mut self, param: MIRPlaceID) {
-        self.parameters.push(param);
-    }
-
-    pub fn blocks(&self) -> &[MIRBasicBlock] {
-        &self.blocks
-    }
-
-    pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
-        self.blocks.get(id.index())
-    }
-
-    pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
-        self.blocks.get_mut(id.index())
-    }
-
-    pub fn add_block(&mut self, debug_name: Option<CXIdent>) -> MIRBasicBlockID {
-        let id = MIRBasicBlockID::new(self.blocks.len());
-        self.blocks.push(MIRBasicBlock::new(id, debug_name));
-        id
-    }
-
-    pub fn add_block_param(&mut self, block: MIRBasicBlockID, param: MIRRegister) {
-        self.blocks[block.index()].push_param(param);
-    }
-
-    pub fn current_block(&self) -> MIRBasicBlockID {
-        self.current_block
-    }
-
-    pub fn switch_to(&mut self, block: MIRBasicBlockID) {
-        assert!(
-            block.index() < self.blocks.len(),
-            "Attempt to switch to unknown block {block}"
-        );
-
-        self.current_block = block;
-    }
-
-    pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
-        let block = &mut self.blocks[self.current_block.index()];
-        if block
-            .last_instruction()
-            .is_some_and(MIRInstruction::is_terminator)
-        {
-            return;
+    pub fn child<'parent>(
+        parent: &'parent mut Self,
+        signature: Option<&'hmir HMIRFnSignature>,
+        context: ComptimeContext,
+    ) -> FnLoweringContext<'parent, 'global, 'hmir> {
+        if let Some(signature) = signature {
+            assert_eq!(signature.stage(), HMIRFunctionStage::Comptime);
         }
 
-        block.push_instruction(MIRInstruction::new(kind, span));
+        FnLoweringContext {
+            env: &mut *parent.env,
+            signature: signature.unwrap_or(parent.signature),
+            context: FnContext::Comptime(context),
+        }
     }
 
-    pub fn add_scope(&mut self, span: TokenRange) -> MIRScopeID {
-        let id = MIRScopeID::new(self.scopes.len());
-        self.scopes.push(MIRScopeDecl::new(span));
-        id
+    pub fn env(&self) -> &HMIREnvironment<'global, 'hmir> {
+        self.env
     }
 
-    pub fn places(&self) -> &[MIRPlaceDecl] {
-        &self.places
+    pub fn env_mut(&mut self) -> &mut HMIREnvironment<'global, 'hmir> {
+        self.env
     }
 
-    pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
-        self.places.get(id.index())
+    pub fn signature(&self) -> &'hmir HMIRFnSignature {
+        self.signature
     }
 
-    pub fn allocate_place(&mut self, place: MIRPlaceDecl) -> MIRPlaceID {
-        let id = MIRPlaceID::new(self.places.len());
-        self.places.push(place);
-        id
+    pub fn context(&self) -> &FnContext {
+        &self.context
     }
 
-    pub fn scopes(&self) -> &[MIRScopeDecl] {
-        &self.scopes
+    pub fn context_mut(&mut self) -> &mut FnContext {
+        &mut self.context
     }
 
-    pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
-        self.registers.get(id.index())
+    pub fn into_context(self) -> FnContext {
+        self.context
     }
 
-    pub fn allocate_register(&mut self, register: MIRRegisterDecl) -> MIRRegister {
-        let id = MIRRegister::new(self.registers.len());
-        self.registers.push(register);
-        id
+    pub fn insert_local(&mut self, id: HMIRLocalID, value: HMIRValue) {
+        match &mut self.context {
+            FnContext::Runtime(context) => context.set_local(id, value),
+            FnContext::Comptime(context) => context.set_local(id, value),
+        };
     }
 
-    pub fn finish(self) -> MIRFunction {
-        MIRFunction::new(
-            self.prototype,
-            Some(MIRBody::new(
-                MIRBasicBlockID::new(0),
-                self.blocks,
-                self.places,
-                self.parameters,
-                self.registers,
-                self.scopes,
-                self.address_labels,
-            )),
-        )
+    pub fn get_local(&self, id: &HMIRLocalID) -> Option<&HMIRValue> {
+        match &self.context {
+            FnContext::Runtime(context) => context.local(*id),
+            FnContext::Comptime(context) => context.local(*id),
+        }
+    }
+}
+
+impl FnContext {
+    pub fn stage(&self) -> HMIRFunctionStage {
+        match self {
+            Self::Runtime(_) => HMIRFunctionStage::Runtime,
+            Self::Comptime(_) => HMIRFunctionStage::Comptime,
+        }
     }
 }
