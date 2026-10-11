@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
-use crate::{HMIRDefID, expr::HMIRExprID, ty::HMIRTypeID};
+use crate::{HMIRDefID, expr::HMIRExprID, ty::HMIRTypeID, value::HMIRPlace};
 
 #[derive(Debug, Clone)]
 pub enum HMIRConstant {
@@ -28,11 +28,10 @@ pub enum HMIRConstant {
         ty: HMIRTypeID,
         fields: Vec<(usize, Box<HMIRConstant>)>,
     },
-    // Designates a runtime global; only its address can be taken statically
-    Global(HMIRDefID),
-    GlobalAddress {
-        def: HMIRDefID,
-        offset: i64,
+    // The address of a place, or of the subobject that the field and element indices of 'path' lead to
+    Address {
+        place: HMIRPlace,
+        path: Vec<usize>,
         ty: HMIRTypeID,
     },
     // The address of a label of a runtime function

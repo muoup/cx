@@ -5,11 +5,12 @@ use crate::{
 use cx_hmir::{
     HMIRBody, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
     expr::{HMIRExprKind, constant::HMIRConstant},
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::{HMIRTypeKind, context::HMIRTypeContext},
     unit::function::HMIRFnDefinition,
+    value::HMIRValue,
 };
 use cx_log::CXResult;
-use cx_mir::{MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister};
+use cx_mir::{MIRBindable, MIRInstructionKind, MIRPlaceDecl};
 use cx_tokens::TokenRange;
 
 mod binding;
@@ -19,53 +20,9 @@ mod control;
 mod dispatch;
 mod emit;
 mod op;
+mod place;
 mod promote;
 pub(crate) mod types;
-
-#[derive(Debug, Clone)]
-pub struct HMIRValue {
-    ty: HMIRTypeID,
-    value: HMIRValueKind,
-}
-
-#[derive(Debug, Clone)]
-pub enum HMIRValueKind {
-    Constant(HMIRConstant),
-    Register(MIRRegister),
-    PlaceRef(MIRPlaceID),
-    Indirect(MIRRegister),
-}
-
-impl HMIRValue {
-    pub fn new(ty: HMIRTypeID, value: HMIRValueKind) -> Self {
-        Self { ty, value }
-    }
-
-    pub fn constant(ty: HMIRTypeID, constant: HMIRConstant) -> Self {
-        Self::new(ty, HMIRValueKind::Constant(constant))
-    }
-
-    pub fn register(ty: HMIRTypeID, register: MIRRegister) -> Self {
-        Self::new(ty, HMIRValueKind::Register(register))
-    }
-
-    pub fn place(ty: HMIRTypeID, place: MIRPlaceID) -> Self {
-        Self::new(ty, HMIRValueKind::PlaceRef(place))
-    }
-
-    pub fn ty(&self) -> HMIRTypeID {
-        self.ty
-    }
-
-    pub fn kind(&self) -> &HMIRValueKind {
-        &self.value
-    }
-
-    pub fn with_ty(mut self, ty: HMIRTypeID) -> Self {
-        self.ty = ty;
-        self
-    }
-}
 
 pub fn lower_unit<'hmir>(
     unit: &'hmir HMIRUnit,
@@ -137,7 +94,8 @@ pub fn lower_function<'hmir>(
             },
             span.clone(),
         );
-        context.insert_local(*local, HMIRValue::place(ty, place));
+        let value = context.bind(ty, MIRBindable::Place(place));
+        context.insert_local(*local, value);
     }
 
     let value = lower_expression(&mut context, body, root)?;

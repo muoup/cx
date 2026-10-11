@@ -3,19 +3,19 @@
 //
 // Avoid any routines in here that are hyper-specific and would only feasibly be used in one place
 
-use cx_hmir::ty::HMIRTypeID;
+use cx_hmir::{
+    ty::{HMIRTypeID, context::HMIRTypeContext},
+    value::HMIRValue,
+};
 use cx_log::CXResult;
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRInstruction,
-    MIRInstructionKind, MIRIntrinsic, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeID,
-    MIRTarget, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
+    MIRInstructionKind, MIRIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl,
+    MIRScopeID, MIRTarget, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 
-use crate::{
-    env::{function::MIRFunctionBuilder, lowering::FnLoweringContext},
-    lower::{HMIRValue, HMIRValueKind},
-};
+use crate::env::{function::MIRFunctionBuilder, lowering::FnLoweringContext};
 
 pub fn terminated(builder: &MIRFunctionBuilder) -> bool {
     builder
@@ -98,22 +98,72 @@ pub fn read(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let HMIRValueKind::PlaceRef(place) = *value.kind() else {
+    if context.target(&value).is_none() {
         return Ok(value);
-    };
+    }
 
     let ty = context.env_mut().lower_type(value.ty(), span)?;
+    let source = context.materialize(&value, span)?;
     let out = register(context, value.ty(), span)?;
 
     store(
         context.builder_mut(),
         MIRTarget::Register(out),
-        MIRValue::PlaceRef(place),
+        source,
         ty,
         span.clone(),
     );
 
-    Ok(HMIRValue::register(value.ty(), out))
+    Ok(context.bind(value.ty(), MIRBindable::Register(out)))
+}
+
+pub fn spill(
+    context: &mut FnLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    if context.target(&value).is_some() {
+        return Ok(value);
+    }
+
+    let ty = context.env_mut().lower_type(value.ty(), span)?;
+    let source = context.materialize(&value, span)?;
+    let scope = *context
+        .open_scopes()
+        .last()
+        .expect("Value spilled outside of a scope");
+    let place = context
+        .builder_mut()
+        .allocate_place(MIRPlaceDecl::new(ty, None, scope, false, false));
+
+    store(
+        context.builder_mut(),
+        MIRTarget::Place(place),
+        source,
+        ty,
+        span.clone(),
+    );
+    context.builder_mut().emit(
+        MIRInstructionKind::Initialize {
+            place: MIRBindable::Place(place),
+        },
+        span.clone(),
+    );
+
+    Ok(context.bind(value.ty(), MIRBindable::Place(place)))
+}
+
+pub fn referent(
+    context: &mut FnLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let Some(inner) = context.env().reference_inner(&value.ty()) else {
+        return Ok(value);
+    };
+
+    let reference = read(context, value, span)?;
+    Ok(HMIRValue::indirect(inner, reference))
 }
 
 pub fn open_scope(context: &mut FnLoweringContext, span: TokenRange) -> MIRScopeID {

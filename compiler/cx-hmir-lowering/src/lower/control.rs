@@ -2,9 +2,10 @@ use cx_hmir::{
     HMIRBody,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    value::HMIRValue,
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, MIRValue};
+use cx_mir::{MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRInstructionKind, MIRValue};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -12,7 +13,6 @@ use crate::{
     env::lowering::FnLoweringContext,
     log::hmir_error,
     lower::{
-        HMIRValue,
         binding::lower_scoped,
         coerce::{convert, truthy},
         constant,
@@ -126,7 +126,7 @@ pub(crate) fn lower_if(
     }
 
     context.builder_mut().switch_to(merge);
-    Ok(HMIRValue::register(ty, result))
+    Ok(context.bind(ty, MIRBindable::Register(result)))
 }
 
 fn merged_type(

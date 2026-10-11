@@ -2,11 +2,12 @@ use cx_hmir::{
     HMIRBinaryOp, HMIRBody, HMIRUnaryOp,
     expr::{HMIRExprID, constant::HMIRConstant},
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    value::HMIRValue,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{
-    MIRBlockTarget, MIRFloatIntrinsic, MIRIntIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget,
-    MIRValue, ty::layout::calculate_type_layout,
+    MIRBindable, MIRBlockTarget, MIRFloatIntrinsic, MIRIntIntrinsic, MIRIntrinsic, MIRPtrIntrinsic,
+    MIRTarget, MIRValue, ty::layout::calculate_type_layout,
 };
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
@@ -15,7 +16,6 @@ use crate::{
     env::lowering::FnLoweringContext,
     log::hmir_error,
     lower::{
-        HMIRValue, HMIRValueKind,
         coerce::{convert, truthy},
         constant,
         dispatch::lower_expression,
@@ -55,26 +55,24 @@ fn element_size(
     context.materialize(&HMIRValue::constant(ty, size), span)
 }
 
-fn promote_operand(
+pub(crate) fn promote_operand(
     context: &mut FnLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    match kind(context, value.ty()) {
-        HMIRTypeKind::ReferenceTo(_) => {
-            todo!("reference operand: needs an indirect place value")
-        }
-        HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_) => {
-            todo!("array, string or function operand decay")
-        }
-        _ => {}
+    let value = emit::referent(context, value, span)?;
+    if matches!(
+        kind(context, value.ty()),
+        HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_)
+    ) {
+        todo!("array, string or function operand decay")
     }
 
     let promoted = promote::integer(context, value.ty(), span);
     convert(context, value, promoted, span)
 }
 
-fn lower_operand(
+pub(crate) fn lower_operand(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
@@ -107,6 +105,16 @@ pub(crate) fn lower_binary(
         return Ok(constant::unit(context, span));
     };
 
+    lower_binary_operands(context, span, op, lhs, rhs)
+}
+
+pub(crate) fn lower_binary_operands(
+    context: &mut FnLoweringContext,
+    span: &TokenRange,
+    op: HMIRBinaryOp,
+    lhs: HMIRValue,
+    rhs: HMIRValue,
+) -> CXResult<HMIRValue> {
     match (kind(context, lhs.ty()), kind(context, rhs.ty())) {
         (HMIRTypeKind::PointerTo(element), HMIRTypeKind::Int(_))
             if matches!(op, HMIRBinaryOp::Add | HMIRBinaryOp::Sub) =>
@@ -133,7 +141,7 @@ pub(crate) fn lower_binary(
             };
             emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-            Ok(HMIRValue::register(ty, register))
+            Ok(context.bind(ty, MIRBindable::Register(register)))
         }
         (HMIRTypeKind::PointerTo(_), _) if is_comparison(op) => {
             let rhs = convert(context, rhs, lhs.ty(), span)?;
@@ -242,7 +250,7 @@ fn lower_arithmetic(
     };
     emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    Ok(HMIRValue::register(result, register))
+    Ok(context.bind(result, MIRBindable::Register(register)))
 }
 
 fn lower_pointer_comparison(
@@ -269,7 +277,7 @@ fn lower_pointer_comparison(
     };
     emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    Ok(HMIRValue::register(ty, register))
+    Ok(context.bind(ty, MIRBindable::Register(register)))
 }
 
 fn lower_pointer_offset(
@@ -306,7 +314,7 @@ fn lower_pointer_offset(
     };
     emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    Ok(HMIRValue::register(ty, register))
+    Ok(context.bind(ty, MIRBindable::Register(register)))
 }
 
 fn lower_short_circuit(
@@ -359,7 +367,7 @@ fn lower_short_circuit(
     }
 
     context.builder_mut().switch_to(merge);
-    Ok(HMIRValue::register(ty, result))
+    Ok(context.bind(ty, MIRBindable::Register(result)))
 }
 
 pub(crate) fn lower_unary(
@@ -415,7 +423,7 @@ pub(crate) fn lower_unary(
     };
     emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    Ok(HMIRValue::register(ty, register))
+    Ok(context.bind(ty, MIRBindable::Register(register)))
 }
 
 fn lower_increment(
@@ -424,7 +432,8 @@ fn lower_increment(
     op: HMIRUnaryOp,
     target: HMIRValue,
 ) -> CXResult<HMIRValue> {
-    let HMIRValueKind::PlaceRef(place) = *target.kind() else {
+    let target = emit::referent(context, target, span)?;
+    let Some(destination) = context.target(&target) else {
         return Err(hmir_error(
             span,
             &typecheck::NOT_ADDRESSABLE,
@@ -480,9 +489,6 @@ fn lower_increment(
             }
             .into()
         }
-        HMIRTypeKind::ReferenceTo(_) => {
-            todo!("increment of a reference: needs an indirect place value")
-        }
         _ => {
             return Err(hmir_error(
                 span,
@@ -496,7 +502,7 @@ fn lower_increment(
     let mir = context.env_mut().lower_type(ty, span)?;
     emit::store(
         context.builder_mut(),
-        MIRTarget::Place(place),
+        destination,
         MIRValue::Register(register),
         mir,
         span.clone(),

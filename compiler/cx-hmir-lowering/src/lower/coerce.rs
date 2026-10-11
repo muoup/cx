@@ -2,11 +2,12 @@ use cx_hmir::{
     HMIRBody, HMIRCoerceMode,
     expr::{HMIRExprID, constant::HMIRConstant},
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{
-    MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic,
-    MIRTarget,
+    MIRBindable, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic,
+    MIRPtrIntrinsic, MIRTarget,
 };
 use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
@@ -15,9 +16,10 @@ use crate::{
     env::lowering::FnLoweringContext,
     log::hmir_error,
     lower::{
-        HMIRValue, constant,
+        constant,
         dispatch::lower_expression,
         emit,
+        place::dereference,
         types::{self, mir_float, mir_int},
     },
 };
@@ -48,6 +50,7 @@ pub(crate) fn truthy(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
+    let value = emit::referent(context, value, span)?;
     let ty = value.ty();
     let kind = context.env().resolve_type_id(ty).kind().clone();
 
@@ -59,7 +62,6 @@ pub(crate) fn truthy(
             ty,
         },
         HMIRTypeKind::PointerTo(_) => HMIRConstant::Null(ty),
-        HMIRTypeKind::ReferenceTo(_) => todo!("truthiness of a reference"),
         HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_) => {
             todo!("truthiness of an array, string or function")
         }
@@ -85,7 +87,45 @@ pub(crate) fn truthy(
     };
     emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    Ok(HMIRValue::register(bool_ty, register))
+    Ok(context.bind(bool_ty, MIRBindable::Register(register)))
+}
+
+fn bind_reference(
+    context: &mut FnLoweringContext,
+    value: HMIRValue,
+    inner: HMIRTypeID,
+    target: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let pointee = context.env().pointer_inner(&value.ty());
+    let value = match pointee {
+        Some(pointee) if context.env().same_type(pointee, inner) => {
+            dereference(context, value, span)?
+        }
+        _ => value,
+    };
+
+    if !context.env().same_type(value.ty(), inner) {
+        return Err(hmir_error(
+            span,
+            &typecheck::INVALID_CONVERSION,
+            (todo!("type display"), todo!("type display")),
+        ));
+    }
+
+    let value = emit::spill(context, value, span)?;
+    Ok(match value.kind() {
+        HMIRValueKind::Place(place) => HMIRValue::constant(
+            target,
+            HMIRConstant::Address {
+                place: *place,
+                path: Vec::new(),
+                ty: target,
+            },
+        ),
+        HMIRValueKind::Indirect(reference) => reference.as_ref().clone().with_ty(target),
+        HMIRValueKind::Constant(_) => unreachable!("a spilled value is addressable"),
+    })
 }
 
 pub(crate) fn convert(
@@ -114,8 +154,12 @@ pub(crate) fn convert(
             return Ok(truthy(context, value, span)?.with_ty(target));
         }
 
-        (HMIRTypeKind::ReferenceTo(_), _) | (_, HMIRTypeKind::ReferenceTo(_)) => {
-            todo!("conversion involving a reference: needs an indirect place value")
+        (HMIRTypeKind::ReferenceTo(_), _) => {
+            let value = emit::referent(context, value, span)?;
+            return convert(context, value, target, span);
+        }
+        (_, HMIRTypeKind::ReferenceTo(inner)) => {
+            return bind_reference(context, value, *inner, target, span);
         }
         (HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_), _)
         | (_, HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_)) => {
@@ -194,5 +238,5 @@ pub(crate) fn convert(
     };
     emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    Ok(HMIRValue::register(target, register))
+    Ok(context.bind(target, MIRBindable::Register(register)))
 }

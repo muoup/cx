@@ -1,18 +1,19 @@
 use cx_hmir::{
     HMIRBody, HMIRControlOp, HMIROp,
     expr::{HMIRExpr, HMIRExprKind},
+    value::HMIRValue,
 };
 use cx_log::CXResult;
 
 use crate::{
     env::lowering::FnLoweringContext,
     lower::{
-        HMIRValue,
         binding::{lower_block, lower_let, lower_local},
         coerce::lower_coerce,
         constant::lower_constant,
         control::{lower_if, lower_return, lower_while},
         op::{lower_binary, lower_unary},
+        place::{lower_address_of, lower_assign, lower_dereference},
     },
 };
 
@@ -25,7 +26,7 @@ pub fn lower_expression(
 
     match expr.kind() {
         HMIRExprKind::Constant(constant) => lower_constant(context, body, span, constant),
-        HMIRExprKind::Local(local) => lower_local(context, *local),
+        HMIRExprKind::Local(local) => lower_local(context, span, *local),
         HMIRExprKind::Let { local, initializer } => {
             lower_let(context, body, span, *local, *initializer)
         }
@@ -54,9 +55,12 @@ pub fn lower_expression(
                 lower_return(context, body, span, *value)
             }
 
-            HMIROp::Assign { .. } => todo!("HMIROp::Assign"),
-            HMIROp::AddressOf(_) => todo!("HMIROp::AddressOf"),
-            HMIROp::Dereference(_) => todo!("HMIROp::Dereference"),
+            HMIROp::Assign { target, op, value } => {
+                lower_assign(context, body, span, *target, *op, *value)
+            }
+            HMIROp::AddressOf(operand) => lower_address_of(context, body, span, *operand),
+            HMIROp::Dereference(pointer) => lower_dereference(context, body, span, *pointer),
+
             HMIROp::Type(_) => todo!("HMIROp::Type"),
             HMIROp::Control(control) => todo!("HMIROp::Control({})", control.path()),
             HMIROp::OwnershipOp(ownership) => {

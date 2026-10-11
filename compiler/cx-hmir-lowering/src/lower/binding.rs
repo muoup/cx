@@ -3,6 +3,7 @@ use cx_hmir::{
     body::HMIRLocalID,
     expr::{HMIRExpr, HMIRExprID, HMIRExprKind},
     ty::{HMIRTypeKind, context::HMIRTypeContext},
+    value::HMIRValue,
 };
 use cx_log::CXResult;
 use cx_mir::{MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRTarget};
@@ -10,17 +11,19 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::lowering::FnLoweringContext,
-    lower::{HMIRValue, coerce::convert, constant, dispatch::lower_expression, emit},
+    lower::{coerce::convert, constant, dispatch::lower_expression, emit},
 };
 
 pub(crate) fn lower_local(
     context: &mut FnLoweringContext,
+    span: &TokenRange,
     local: HMIRLocalID,
 ) -> CXResult<HMIRValue> {
-    match context.get_local(&local) {
-        Some(value) => Ok(value.clone()),
-        None => todo!("local {local} has no runtime binding (comptime local used at runtime)"),
-    }
+    let Some(value) = context.get_local(&local).cloned() else {
+        todo!("local {local} has no runtime binding (comptime local used at runtime)")
+    };
+
+    emit::referent(context, value, span)
 }
 
 pub(crate) fn lower_let(
@@ -90,7 +93,8 @@ pub(crate) fn lower_let(
         );
     }
 
-    context.insert_local(local, HMIRValue::place(ty, place));
+    let binding = context.bind(ty, MIRBindable::Place(place));
+    context.insert_local(local, binding);
     Ok(constant::unit(context, span))
 }
 

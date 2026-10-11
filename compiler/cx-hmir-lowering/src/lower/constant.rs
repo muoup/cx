@@ -2,6 +2,7 @@ use cx_hmir::{
     HMIRBody,
     expr::constant::HMIRConstant,
     ty::{HMIRTypeKind, context::HMIRTypeContext},
+    value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::CXResult;
 use cx_mir::MIRConstant;
@@ -9,10 +10,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::{HMIREnvironment, lowering::FnLoweringContext},
-    lower::{
-        HMIRValue, HMIRValueKind,
-        types::{mir_float, mir_int},
-    },
+    lower::types::{mir_float, mir_int},
 };
 
 pub(crate) fn lower_constant(
@@ -46,16 +44,14 @@ pub(crate) fn lower_constant(
         HMIRConstant::Null(ty)
         | HMIRConstant::Aggregate { ty, .. }
         | HMIRConstant::Int { ty, .. }
-        | HMIRConstant::Float { ty, .. } => Ok(HMIRValue::new(
+        | HMIRConstant::Float { ty, .. }
+        | HMIRConstant::Address { ty, .. } => Ok(HMIRValue::new(
             *ty,
             HMIRValueKind::Constant(constant.clone()),
         )),
 
         HMIRConstant::Function { .. } => todo!("function constants"),
         HMIRConstant::Quote(_) => todo!("quote constants"),
-        HMIRConstant::Global(_) | HMIRConstant::GlobalAddress { .. } => {
-            todo!("global constants: HMIRValueKind has no global place")
-        }
         HMIRConstant::LabelAddress { .. } => todo!("label address constants"),
     }
 }
