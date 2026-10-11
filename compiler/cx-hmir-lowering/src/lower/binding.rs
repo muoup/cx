@@ -61,7 +61,6 @@ pub(crate) fn lower_let(
     };
 
     let mir = context.env_mut().lower_type(ty, span)?;
-    let nodrop = todo!("nodrop should be a field on a local, not a type");
     let scope = *context
         .open_scopes()
         .last()
@@ -70,7 +69,7 @@ pub(crate) fn lower_let(
         mir,
         decl.name().cloned(),
         scope,
-        nodrop,
+        decl.nodrop(),
         false,
     ));
 

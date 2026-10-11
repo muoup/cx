@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
-use cx_hmir::{HMIRFnSignature, body::HMIRLocalID};
+use cx_hmir::{HMIRBody, HMIRFnSignature, body::HMIRLocalID, unit::function::HMIRFnPrototype};
 use cx_log::CXResult;
 use cx_mir::{MIRFunction, MIRScopeID, MIRValue};
 use cx_tokens::TokenRange;
 
 use crate::{
     env::{HMIREnvironment, function::MIRFunctionBuilder},
-    lower::{HMIRValue, HMIRValueKind, constant::mir_constant},
+    lower::{HMIRValue, HMIRValueKind, constant::mir_constant, types::lower_prototype},
 };
 
 #[derive(Debug)]
@@ -21,17 +21,21 @@ pub struct FnLoweringContext<'env, 'global, 'hmir> {
 }
 
 impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
-    pub fn new(env: &'env mut HMIREnvironment<'global, 'hmir>, signature: &'hmir HMIRFnSignature) -> Self {
-        let mir_prototype = todo!("Lower prototype");
+    pub fn new(
+        env: &'env mut HMIREnvironment<'global, 'hmir>,
+        body: &HMIRBody,
+        prototype: &'hmir HMIRFnPrototype,
+    ) -> CXResult<Self> {
+        let mir_prototype = lower_prototype(env, body, prototype)?;
 
-        Self {
+        Ok(Self {
             env,
-            signature,
+            signature: prototype.signature(),
             builder: MIRFunctionBuilder::new(mir_prototype),
 
             locals: HashMap::new(),
             open_scopes: Vec::new(),
-        }
+        })
     }
 
     pub fn env(&self) -> &HMIREnvironment<'global, 'hmir> {
@@ -83,6 +87,7 @@ impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
             }
             HMIRValueKind::Register(register) => MIRValue::Register(*register),
             HMIRValueKind::PlaceRef(place) => MIRValue::PlaceRef(*place),
+            HMIRValueKind::Indirect(_) => todo!("materialize an indirect value"),
         })
     }
 

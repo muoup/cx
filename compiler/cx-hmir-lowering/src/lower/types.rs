@@ -1,13 +1,51 @@
-use cx_hmir::ty::{
-    HMIRTypeID, HMIRTypeKind,
-    context::HMIRTypeContext,
-    intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
+use cx_hmir::{
+    HMIRBody,
+    ty::{
+        HMIRTypeID, HMIRTypeKind,
+        context::HMIRTypeContext,
+        intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
+    },
+    unit::function::HMIRFnPrototype,
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::{MIRFloatType, MIRIntType, MIRType, MIRTypeID, MIRTypeKind};
+use cx_mir::{
+    MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRType, MIRTypeID,
+    MIRTypeKind,
+};
 use cx_tokens::TokenRange;
 
 use crate::{env::HMIREnvironment, log::hmir_error};
+
+pub(crate) fn lower_prototype(
+    env: &mut HMIREnvironment,
+    body: &HMIRBody,
+    prototype: &HMIRFnPrototype,
+) -> CXResult<MIRFnPrototype> {
+    let signature = prototype.signature();
+
+    let mut params = Vec::with_capacity(signature.params().len());
+    for param in signature.params() {
+        let ty = env.eval_type(body, param.ty())?;
+        let ty = env.lower_type(ty, body.expr(param.ty()).span())?;
+
+        params.push(MIRFnParam::new(None, ty, false));
+    }
+
+    let return_type = env.eval_type(body, signature.return_type())?;
+    let return_type = env.lower_type(return_type, body.expr(signature.return_type()).span())?;
+
+    Ok(MIRFnPrototype::new(
+        MIRFnSignature::new(
+            params,
+            return_type,
+            signature.is_variadic(),
+            signature.contract().is_safe(),
+        ),
+        prototype.linkage(),
+        prototype.symbol_name().clone(),
+        None,
+    ))
+}
 
 pub(crate) fn lower_type(
     env: &mut HMIREnvironment,

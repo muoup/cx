@@ -115,14 +115,20 @@ pub fn lower_function<'hmir>(
     let root = body.expr(def.root());
     let span = root.span();
 
-    let mut context = FnLoweringContext::new(env, signature);
+    let mut context = FnLoweringContext::new(env, body, function.prototype())?;
     let scope = emit::open_scope(&mut context, span.clone());
 
-    for (index, (param, local)) in signature.params().iter().zip(def.params()).enumerate() {
+    for (param, local) in signature.params().iter().zip(def.params()) {
+        let decl = body.local(*local);
         let ty = context.env_mut().eval_type(body, param.ty())?;
-        let mir = &context.builder().prototype().signature.params()[index];
-        let decl = MIRPlaceDecl::new(mir.ty(), mir.name().cloned(), scope, mir.nodrop(), false);
-        let place = context.builder_mut().allocate_place(decl);
+        let mir = context.env_mut().lower_type(ty, decl.span())?;
+        let place = context.builder_mut().allocate_place(MIRPlaceDecl::new(
+            mir,
+            decl.name().cloned(),
+            scope,
+            decl.nodrop(),
+            false,
+        ));
 
         context.builder_mut().add_parameter(place);
         context.builder_mut().emit(
