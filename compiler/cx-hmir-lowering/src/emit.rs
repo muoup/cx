@@ -19,7 +19,6 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::{function::MIRFunctionBuilder, lowering::FnLoweringContext},
-    lower::{constant::mir_constant, types},
 };
 
 pub fn terminated(builder: &MIRFunctionBuilder) -> bool {

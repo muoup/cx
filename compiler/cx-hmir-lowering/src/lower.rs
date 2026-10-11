@@ -1,7 +1,4 @@
-use crate::{
-    env::{HMIREnvironment, lowering::FnLoweringContext},
-    lower::{control::lower_return_value, dispatch::lower_expression},
-};
+use crate::env::{HMIREnvironment, lowering::FnLoweringContext};
 use cx_hmir::{
     HMIRBody, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
     expr::{HMIRExprKind, constant::HMIRConstant},
@@ -12,17 +9,6 @@ use cx_hmir::{
 use cx_log::CXResult;
 use cx_mir::{MIRBindable, MIRInstructionKind, MIRPlaceDecl};
 use cx_tokens::TokenRange;
-
-mod binding;
-mod coerce;
-pub(crate) mod constant;
-mod control;
-mod dispatch;
-mod emit;
-mod op;
-mod place;
-mod promote;
-pub(crate) mod types;
 
 pub fn lower_unit<'hmir>(
     unit: &'hmir HMIRUnit,

@@ -1,5 +1,6 @@
+mod eval;
+mod emit;
 mod lower;
-
 mod log;
 
 pub mod env;

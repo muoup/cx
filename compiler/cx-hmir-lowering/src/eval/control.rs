@@ -1,114 +1,281 @@
-use cx_hmir::{HMIRBlockKind, HMIRExprID};
-use cx_log::{CXResult, catalogue::mir};
+use cx_hmir::{
+    HMIRBody,
+    expr::HMIRExprID,
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    value::HMIRValue,
+};
+use cx_log::{CXResult, catalogue::typecheck};
+use cx_mir::{MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRInstructionKind, MIRValue};
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::{
-    eval::{EvalFrame, Flow, LOOP_LIMIT, eval, exec, static_condition},
-    program::Program,
-    staging_error,
-    ty::HMIRTypeID,
-    value::StaticValue,
+    env::lowering::FnLoweringContext,
+    log::hmir_error,
+    lower::{
+        binding::lower_scoped,
+        coerce::{convert, truthy},
+        constant,
+        dispatch::lower_expression,
+        emit, promote,
+    },
 };
 
-pub(crate) fn block(
-    cx: &mut Program<'_>,
-    frame: &mut EvalFrame,
-    kind: HMIRBlockKind,
-    statements: &[HMIRExprID],
-    tail: Option<HMIRExprID>,
-) -> CXResult<Flow> {
-    let mut last = StaticValue::Unit;
-    for statement in statements.iter().copied().chain(tail) {
-        match exec(cx, frame, statement, None)? {
-            Flow::Normal(value) => last = value,
-            Flow::Yield(value) if kind == HMIRBlockKind::Yield => return Ok(Flow::Normal(value)),
-            flow => return Ok(flow),
-        }
+fn lower_condition(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    condition: HMIRExprID,
+) -> CXResult<Option<MIRValue>> {
+    let value = lower_expression(context, body, body.expr(condition))?;
+    if emit::terminated(context.builder()) {
+        return Ok(None);
     }
-    Ok(Flow::Normal(if tail.is_some() {
-        last
-    } else {
-        StaticValue::Unit
-    }))
+
+    let value = truthy(context, value, span)?;
+    Ok(Some(emit::materialize(context, &value, span)?))
 }
 
-pub(crate) fn conditional(
-    cx: &mut Program<'_>,
-    frame: &mut EvalFrame,
+struct Arm {
+    block: MIRBasicBlockID,
+    value: HMIRValue,
+}
+
+pub(crate) fn lower_if(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
     condition: HMIRExprID,
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
-    expect: Option<HMIRTypeID>,
+) -> CXResult<HMIRValue> {
+    let Some(condition) = lower_condition(context, body, span, condition)? else {
+        return Ok(constant::unit(context, span));
+    };
+
+    let then_block = context
+        .builder_mut()
+        .add_block(Some(CXIdent::new("if.then")));
+
+    let Some(else_branch) = else_branch else {
+        let merge = context
+            .builder_mut()
+            .add_block(Some(CXIdent::new("if.merge")));
+        emit::branch(
+            context.builder_mut(),
+            condition,
+            MIRBlockTarget::new(then_block),
+            MIRBlockTarget::new(merge),
+            span.clone(),
+        );
+
+        context.builder_mut().switch_to(then_block);
+        lower_scoped(context, body, body.expr(then_branch))?;
+        emit::jump(context.builder_mut(), merge, Vec::new(), span.clone());
+
+        context.builder_mut().switch_to(merge);
+        return Ok(constant::unit(context, span));
+    };
+
+    let else_block = context
+        .builder_mut()
+        .add_block(Some(CXIdent::new("if.else")));
+    emit::branch(
+        context.builder_mut(),
+        condition,
+        MIRBlockTarget::new(then_block),
+        MIRBlockTarget::new(else_block),
+        span.clone(),
+    );
+
+    let mut arms = Vec::new();
+    for (block, branch) in [(then_block, then_branch), (else_block, else_branch)] {
+        context.builder_mut().switch_to(block);
+        let value = lower_scoped(context, body, body.expr(branch))?;
+        if !emit::terminated(context.builder()) {
+            let block = context.builder().current_block();
+            arms.push(Arm { block, value });
+        }
+    }
+
+    if arms.is_empty() {
+        return Ok(constant::unit(context, span));
+    }
+
+    let merge = context
+        .builder_mut()
+        .add_block(Some(CXIdent::new("if.merge")));
+    let Some(ty) = merged_type(context, &arms, span) else {
+        for arm in arms {
+            context.builder_mut().switch_to(arm.block);
+            emit::jump(context.builder_mut(), merge, Vec::new(), span.clone());
+        }
+
+        context.builder_mut().switch_to(merge);
+        return Ok(constant::unit(context, span));
+    };
+
+    let result = emit::register(context, ty, span)?;
+    context.builder_mut().add_block_param(merge, result);
+
+    for arm in arms {
+        context.builder_mut().switch_to(arm.block);
+        let value = convert(context, arm.value, ty, span)?;
+        let value = emit::materialize(context, &value, span)?;
+        emit::jump(context.builder_mut(), merge, vec![value], span.clone());
+    }
+
+    context.builder_mut().switch_to(merge);
+    Ok(context.bind(ty, MIRBindable::Register(result)))
+}
+
+fn merged_type(
+    context: &mut FnLoweringContext,
+    arms: &[Arm],
     span: &TokenRange,
-) -> CXResult<Flow> {
-    let taken = static_condition(cx, frame, condition, span)?;
-    match (taken, else_branch) {
-        (true, _) => exec(cx, frame, then_branch, expect),
-        (false, Some(branch)) => exec(cx, frame, branch, expect),
-        (false, None) => Ok(Flow::Normal(StaticValue::Unit)),
+) -> Option<HMIRTypeID> {
+    let mut merged: Option<HMIRTypeID> = None;
+
+    for arm in arms {
+        let ty = arm.value.ty();
+        if matches!(context.env().resolve_type_id(ty).kind(), HMIRTypeKind::Void) {
+            return None;
+        }
+
+        merged = Some(match merged {
+            None => ty,
+            Some(current) if context.env().same_type(current, ty) => current,
+            Some(current) => promote::common(context, current, ty, span).unwrap_or(current),
+        });
     }
+
+    merged
 }
 
-pub(super) fn check_condition(
-    cx: &mut Program<'_>,
-    frame: &mut EvalFrame,
+pub(crate) fn lower_while(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
     condition: HMIRExprID,
-    message: &str,
-) -> CXResult<()> {
-    let span = frame.body().expr(condition).span().clone();
-    if !static_condition(cx, frame, condition, &span)? {
-        return Err(staging_error(
-            &span,
-            &mir::COMPTIME_ASSERTION,
-            Some(message.into()),
-        ));
-    }
-    Ok(())
-}
-
-pub(crate) fn while_loop(
-    cx: &mut Program<'_>,
-    frame: &mut EvalFrame,
-    condition: HMIRExprID,
-    body: HMIRExprID,
+    loop_body: HMIRExprID,
     pre_eval: bool,
-    span: &TokenRange,
-) -> CXResult<Flow> {
-    let mut first = !pre_eval;
-    for _ in 0..LOOP_LIMIT {
-        if !first && !static_condition(cx, frame, condition, span)? {
-            return Ok(Flow::Normal(StaticValue::Unit));
+) -> CXResult<HMIRValue> {
+    let condition_block = context
+        .builder_mut()
+        .add_block(Some(CXIdent::new("while.condition")));
+    let body_block = context
+        .builder_mut()
+        .add_block(Some(CXIdent::new("while.body")));
+    let exit = context
+        .builder_mut()
+        .add_block(Some(CXIdent::new("while.exit")));
+
+    let entry = if pre_eval {
+        condition_block
+    } else {
+        body_block
+    };
+    emit::jump(context.builder_mut(), entry, Vec::new(), span.clone());
+
+    context.builder_mut().switch_to(condition_block);
+    let Some(condition) = lower_condition(context, body, span, condition)? else {
+        for block in [body_block, exit] {
+            context.builder_mut().switch_to(block);
+            context
+                .builder_mut()
+                .emit(MIRInstructionKind::Unreachable, span.clone());
         }
-        first = false;
-        match exec(cx, frame, body, None)? {
-            Flow::Break => return Ok(Flow::Normal(StaticValue::Unit)),
-            Flow::Normal(_) | Flow::Continue => {}
-            flow => return Ok(flow),
-        }
-    }
-    Err(staging_error(span, &mir::COMPTIME_LOOP_LIMIT, LOOP_LIMIT))
+
+        return Ok(constant::unit(context, span));
+    };
+
+    emit::branch(
+        context.builder_mut(),
+        condition,
+        MIRBlockTarget::new(body_block),
+        MIRBlockTarget::new(exit),
+        span.clone(),
+    );
+
+    context.builder_mut().switch_to(body_block);
+    lower_scoped(context, body, body.expr(loop_body))?;
+    emit::jump(
+        context.builder_mut(),
+        condition_block,
+        Vec::new(),
+        span.clone(),
+    );
+
+    context.builder_mut().switch_to(exit);
+    Ok(constant::unit(context, span))
 }
 
-pub(crate) fn for_loop(
-    cx: &mut Program<'_>,
-    frame: &mut EvalFrame,
-    init: HMIRExprID,
-    condition: HMIRExprID,
-    increment: HMIRExprID,
-    body: HMIRExprID,
+pub(crate) fn lower_return(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
     span: &TokenRange,
-) -> CXResult<Flow> {
-    eval(cx, frame, init, None)?;
-    for _ in 0..LOOP_LIMIT {
-        if !static_condition(cx, frame, condition, span)? {
-            return Ok(Flow::Normal(StaticValue::Unit));
+    value: Option<HMIRExprID>,
+) -> CXResult<HMIRValue> {
+    let value = match value {
+        Some(value) => {
+            let value = lower_expression(context, body, body.expr(value))?;
+            if emit::terminated(context.builder()) {
+                return Ok(value);
+            }
+
+            Some(value)
         }
-        match exec(cx, frame, body, None)? {
-            Flow::Break => return Ok(Flow::Normal(StaticValue::Unit)),
-            Flow::Normal(_) | Flow::Continue => {}
-            flow => return Ok(flow),
+        None => None,
+    };
+
+    lower_return_value(context, body, value, span)?;
+    Ok(constant::unit(context, span))
+}
+
+pub(crate) fn lower_return_value(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    value: Option<HMIRValue>,
+    span: &TokenRange,
+) -> CXResult<()> {
+    let return_type = context.signature().return_type();
+    let ty = context.env_mut().eval_type(body, return_type)?;
+    let returns_void = match context.env().resolve_type_id(ty).kind() {
+        HMIRTypeKind::Unreachable => {
+            return Err(hmir_error(span, &typecheck::NORETURN_RETURN, ()));
         }
-        eval(cx, frame, increment, None)?;
+        HMIRTypeKind::Void => true,
+        _ => false,
+    };
+
+    let value = match value {
+        Some(value) if returns_void => {
+            if !matches!(
+                context.env().resolve_type_id(value.ty()).kind(),
+                HMIRTypeKind::Void
+            ) {
+                return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()));
+            }
+
+            None
+        }
+        Some(value) => {
+            let value = convert(context, value, ty, span)?;
+            let value = emit::read(context, value, span)?;
+            Some(emit::materialize(context, &value, span)?)
+        }
+        None if returns_void => None,
+        None => return Err(hmir_error(span, &typecheck::MISSING_RETURN_VALUE, ())),
+    };
+
+    let scopes = context.open_scopes().to_vec();
+    for scope in scopes.into_iter().rev() {
+        emit::drop_scope(context.builder_mut(), scope, span.clone());
     }
-    Err(staging_error(span, &mir::COMPTIME_LOOP_LIMIT, LOOP_LIMIT))
+
+    context
+        .builder_mut()
+        .emit(MIRInstructionKind::Return { value }, span.clone());
+
+    Ok(())
 }

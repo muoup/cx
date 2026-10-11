@@ -1,15 +1,15 @@
+pub(crate) mod comptime;
 pub(crate) mod function;
 pub(crate) mod lowering;
 pub(crate) mod module;
 pub(crate) mod resolver;
+pub(crate) mod runtime;
 pub(crate) mod symbols;
 
 use cx_hmir::{
-    HMIRBody, HMIRUnit,
-    expr::HMIRExprID,
+    HMIRUnit,
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
-use cx_log::CXResult;
 use cx_mir::MIRUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
@@ -77,10 +77,6 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
 
             _ => false,
         }
-    }
-
-    pub fn eval_type(&mut self, body: &HMIRBody, expr: HMIRExprID) -> CXResult<HMIRTypeID> {
-        todo!("Point to new API defined in eval/ module")
     }
 
     pub fn module(&self) -> &MIRModuleBuilder {

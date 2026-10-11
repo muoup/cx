@@ -1,40 +1,50 @@
-use std::collections::HashMap;
+use cx_hmir::{HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, value::HMIRValue};
 
-use cx_hmir::{
-    HMIRFnSignature,
-    body::HMIRLocalID,
-    ty::HMIRTypeID,
-    value::{HMIRPlace, HMIRSlotID, HMIRValue},
-};
-use cx_mir::{MIRBindable, MIRFnPrototype, MIRFunction, MIRScopeID};
+use crate::env::HMIREnvironment;
 
-use crate::env::{HMIREnvironment, function::MIRFunctionBuilder};
+pub use crate::env::{comptime::ComptimeContext, runtime::RuntimeContext};
 
 #[derive(Debug)]
 pub struct FnLoweringContext<'env, 'global, 'hmir> {
     env: &'env mut HMIREnvironment<'global, 'hmir>,
     signature: &'hmir HMIRFnSignature,
-    builder: MIRFunctionBuilder,
+    context: FnContext,
+}
 
-    locals: HashMap<HMIRLocalID, HMIRValue>,
-    slots: Vec<MIRBindable>,
-    open_scopes: Vec<MIRScopeID>,
+#[derive(Debug)]
+pub enum FnContext {
+    Runtime(RuntimeContext),
+    Comptime(ComptimeContext),
 }
 
 impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
     pub fn new(
         env: &'env mut HMIREnvironment<'global, 'hmir>,
         signature: &'hmir HMIRFnSignature,
-        prototype: MIRFnPrototype,
+        context: FnContext,
     ) -> Self {
+        assert_eq!(signature.stage(), context.stage());
+
         Self {
             env,
             signature,
-            builder: MIRFunctionBuilder::new(prototype),
+            context,
+        }
+    }
 
-            locals: HashMap::new(),
-            slots: Vec::new(),
-            open_scopes: Vec::new(),
+    pub fn child<'parent>(
+        parent: &'parent mut Self,
+        signature: Option<&'hmir HMIRFnSignature>,
+        context: ComptimeContext,
+    ) -> FnLoweringContext<'parent, 'global, 'hmir> {
+        if let Some(signature) = signature {
+            assert_eq!(signature.stage(), HMIRFunctionStage::Comptime);
+        }
+
+        FnLoweringContext {
+            env: &mut *parent.env,
+            signature: signature.unwrap_or(parent.signature),
+            context: FnContext::Comptime(context),
         }
     }
 
@@ -50,48 +60,38 @@ impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
         self.signature
     }
 
-    pub fn builder(&self) -> &MIRFunctionBuilder {
-        &self.builder
+    pub fn context(&self) -> &FnContext {
+        &self.context
     }
 
-    pub fn builder_mut(&mut self) -> &mut MIRFunctionBuilder {
-        &mut self.builder
+    pub fn context_mut(&mut self) -> &mut FnContext {
+        &mut self.context
+    }
+
+    pub fn into_context(self) -> FnContext {
+        self.context
     }
 
     pub fn insert_local(&mut self, id: HMIRLocalID, value: HMIRValue) {
-        self.locals.insert(id, value);
+        match &mut self.context {
+            FnContext::Runtime(context) => context.set_local(id, value),
+            FnContext::Comptime(context) => context.set_local(id, value),
+        };
     }
 
     pub fn get_local(&self, id: &HMIRLocalID) -> Option<&HMIRValue> {
-        self.locals.get(id)
+        match &self.context {
+            FnContext::Runtime(context) => context.local(*id),
+            FnContext::Comptime(context) => context.local(*id),
+        }
     }
+}
 
-    pub fn bind(&mut self, ty: HMIRTypeID, binding: MIRBindable) -> HMIRValue {
-        self.slots.push(binding);
-        let slot = HMIRSlotID::new(self.slots.len() - 1);
-
-        HMIRValue::place(ty, HMIRPlace::Local(slot))
-    }
-
-    pub fn slot(&self, slot: HMIRSlotID) -> &MIRBindable {
-        &self.slots[slot.index()]
-    }
-
-    pub fn open_scopes(&self) -> &[MIRScopeID] {
-        &self.open_scopes
-    }
-
-    pub fn push_scope(&mut self, scope: MIRScopeID) {
-        self.open_scopes.push(scope);
-    }
-
-    pub fn pop_scope(&mut self) -> MIRScopeID {
-        self.open_scopes
-            .pop()
-            .expect("Attempt to pop a scope when none is open")
-    }
-
-    pub fn finish(self) -> MIRFunction {
-        self.builder.finish()
+impl FnContext {
+    pub fn stage(&self) -> HMIRFunctionStage {
+        match self {
+            Self::Runtime(_) => HMIRFunctionStage::Runtime,
+            Self::Comptime(_) => HMIRFunctionStage::Comptime,
+        }
     }
 }
