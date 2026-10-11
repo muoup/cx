@@ -45,7 +45,7 @@ fn element_size(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRValue> {
-    let element = context.env_mut().lower_type(element, span)?;
+    let element = types::lower_type(context.env_mut(), element, span)?;
     let size = calculate_type_layout(context.env().module(), element).size();
     let size = HMIRConstant::Int {
         value: size as i128,
@@ -128,7 +128,7 @@ pub(crate) fn lower_binary_operands(
         (HMIRTypeKind::PointerTo(element), HMIRTypeKind::PointerTo(_))
             if op == HMIRBinaryOp::Sub =>
         {
-            let element_ty = context.env_mut().lower_type(element, span)?;
+            let element_ty = types::lower_type(context.env_mut(), element, span)?;
             let ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
             let lhs = emit::materialize(context, &lhs, span)?;
             let rhs = emit::materialize(context, &rhs, span)?;
@@ -499,7 +499,7 @@ fn lower_increment(
     };
     emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
 
-    let mir = context.env_mut().lower_type(ty, span)?;
+    let mir = types::lower_type(context.env_mut(), ty, span)?;
     emit::store(
         context.builder_mut(),
         destination,

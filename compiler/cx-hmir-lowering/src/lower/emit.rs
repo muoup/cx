@@ -19,7 +19,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::{function::MIRFunctionBuilder, lowering::FnLoweringContext},
-    lower::constant::mir_constant,
+    lower::{constant::mir_constant, types},
 };
 
 pub fn terminated(builder: &MIRFunctionBuilder) -> bool {
@@ -91,7 +91,7 @@ pub fn register(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRRegister> {
-    let ty = context.env_mut().lower_type(ty, span)?;
+    let ty = types::lower_type(context.env_mut(), ty, span)?;
 
     Ok(context
         .builder_mut()
@@ -194,7 +194,7 @@ pub fn read(
         return Ok(value);
     }
 
-    let ty = context.env_mut().lower_type(value.ty(), span)?;
+    let ty = types::lower_type(context.env_mut(), value.ty(), span)?;
     let source = materialize(context, &value, span)?;
     let out = register(context, value.ty(), span)?;
 
@@ -218,7 +218,7 @@ pub fn spill(
         return Ok(value);
     }
 
-    let ty = context.env_mut().lower_type(value.ty(), span)?;
+    let ty = types::lower_type(context.env_mut(), value.ty(), span)?;
     let source = materialize(context, &value, span)?;
     let scope = *context
         .open_scopes()

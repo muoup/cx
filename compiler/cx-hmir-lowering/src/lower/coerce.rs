@@ -169,8 +169,8 @@ pub(crate) fn convert(
         _ => {}
     }
 
-    let source_mir = context.env_mut().lower_type(source, span)?;
-    let target_mir = context.env_mut().lower_type(target, span)?;
+    let source_mir = types::lower_type(context.env_mut(), source, span)?;
+    let target_mir = types::lower_type(context.env_mut(), target, span)?;
     if source_mir == target_mir {
         return Ok(emit::read(context, value, span)?.with_ty(target));
     }

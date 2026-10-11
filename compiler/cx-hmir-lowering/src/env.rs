@@ -10,15 +10,11 @@ use cx_hmir::{
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::CXResult;
-use cx_mir::{MIRTypeID, MIRUnit};
+use cx_mir::MIRUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
-use cx_tokens::TokenRange;
 
-use crate::{
-    env::{module::MIRModuleBuilder, resolver::HMIRResolver, symbols::HMIRSymbolEnv},
-    lower::types,
-};
+use crate::env::{module::MIRModuleBuilder, resolver::HMIRResolver, symbols::HMIRSymbolEnv};
 
 #[derive(Debug)]
 pub struct HMIREnvironment<'global, 'hmir> {
@@ -85,10 +81,6 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
 
     pub fn eval_type(&mut self, body: &HMIRBody, expr: HMIRExprID) -> CXResult<HMIRTypeID> {
         todo!("Point to new API defined in eval/ module")
-    }
-
-    pub fn lower_type(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CXResult<MIRTypeID> {
-        types::lower_type(self, ty, span)
     }
 
     pub fn module(&self) -> &MIRModuleBuilder {

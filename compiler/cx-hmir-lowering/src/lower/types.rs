@@ -26,13 +26,13 @@ pub(crate) fn lower_prototype(
     let mut params = Vec::with_capacity(signature.params().len());
     for param in signature.params() {
         let ty = env.eval_type(body, param.ty())?;
-        let ty = env.lower_type(ty, body.expr(param.ty()).span())?;
+        let ty = lower_type(env, ty, body.expr(param.ty()).span())?;
 
         params.push(MIRFnParam::new(None, ty, false));
     }
 
     let return_type = env.eval_type(body, signature.return_type())?;
-    let return_type = env.lower_type(return_type, body.expr(signature.return_type()).span())?;
+    let return_type = lower_type(env, return_type, body.expr(signature.return_type()).span())?;
 
     Ok(MIRFnPrototype::new(
         MIRFnSignature::new(

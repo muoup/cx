@@ -11,7 +11,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::lowering::FnLoweringContext,
-    lower::{coerce::convert, constant, dispatch::lower_expression, emit},
+    lower::{coerce::convert, constant, dispatch::lower_expression, emit, types},
 };
 
 pub(crate) fn lower_local(
@@ -63,7 +63,7 @@ pub(crate) fn lower_let(
         _ => None,
     };
 
-    let mir = context.env_mut().lower_type(ty, span)?;
+    let mir = types::lower_type(context.env_mut(), ty, span)?;
     let scope = *context
         .open_scopes()
         .last()

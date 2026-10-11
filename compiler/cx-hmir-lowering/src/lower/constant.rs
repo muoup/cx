@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::{HMIREnvironment, lowering::FnLoweringContext},
-    lower::types::{mir_float, mir_int},
+    lower::types::{lower_type, mir_float, mir_int},
 };
 
 pub(crate) fn lower_constant(
@@ -87,7 +87,7 @@ pub(crate) fn mir_constant(
             other => todo!("float constant of type {other:?}"),
         },
         HMIRConstant::Null(ty) => MIRConstant::Nullptr {
-            ty: env.lower_type(*ty, span)?,
+            ty: lower_type(env, *ty, span)?,
         },
         HMIRConstant::Str(value) => MIRConstant::String(value.clone()),
         other => todo!("constant {other:?}"),

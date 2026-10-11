@@ -69,7 +69,7 @@ pub(crate) fn lower_assign(
     let value = convert(context, value, ty, span)?;
     let value = emit::read(context, value, span)?;
     let value = emit::materialize(context, &value, span)?;
-    let mir = context.env_mut().lower_type(ty, span)?;
+    let mir = types::lower_type(context.env_mut(), ty, span)?;
 
     if let MIRTarget::Place(place) = destination {
         let place = MIRBindable::Place(place);
@@ -189,7 +189,7 @@ pub(crate) fn dereference(
     let value = emit::materialize(context, &pointer, span)?;
 
     let null = MIRConstant::Nullptr {
-        ty: context.env_mut().lower_type(pointer.ty(), span)?,
+        ty: types::lower_type(context.env_mut(), pointer.ty(), span)?,
     };
     let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let condition = emit::register(context, bool_ty, span)?;
@@ -209,7 +209,7 @@ pub(crate) fn dereference(
         .env_mut()
         .resolver_mut()
         .realize_type(HMIRTypeKind::ReferenceTo(inner), span);
-    let target_ty = context.env_mut().lower_type(reference_ty, span)?;
+    let target_ty = types::lower_type(context.env_mut(), reference_ty, span)?;
     let out = emit::register(context, reference_ty, span)?;
     let bitcast = MIRInternalIntrinsic::Bitcast {
         out: MIRTarget::Register(out),
