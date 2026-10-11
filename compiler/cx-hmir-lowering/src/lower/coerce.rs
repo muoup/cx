@@ -75,8 +75,8 @@ pub(crate) fn truthy(
     };
 
     let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    let lhs = context.materialize(&value, span)?;
-    let rhs = context.materialize(&HMIRValue::constant(ty, zero), span)?;
+    let lhs = emit::materialize(context, &value, span)?;
+    let rhs = emit::materialize(context, &HMIRValue::constant(ty, zero), span)?;
     let register = emit::register(context, bool_ty, span)?;
     let out = MIRTarget::Register(register);
 
@@ -175,7 +175,7 @@ pub(crate) fn convert(
         return Ok(emit::read(context, value, span)?.with_ty(target));
     }
 
-    let operand = context.materialize(&value, span)?;
+    let operand = emit::materialize(context, &value, span)?;
     let register = emit::register(context, target, span)?;
     let out = MIRTarget::Register(register);
 

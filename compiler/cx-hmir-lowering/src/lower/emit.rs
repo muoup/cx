@@ -4,18 +4,23 @@
 // Avoid any routines in here that are hyper-specific and would only feasibly be used in one place
 
 use cx_hmir::{
-    ty::{HMIRTypeID, context::HMIRTypeContext},
-    value::HMIRValue,
+    expr::constant::HMIRConstant,
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 use cx_log::CXResult;
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRInstruction,
-    MIRInstructionKind, MIRIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl,
-    MIRScopeID, MIRTarget, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
+    MIRInstructionKind, MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRRegister,
+    MIRRegisterDecl, MIRScopeID, MIRTarget, MIRTypeID, MIRValue,
+    expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 
-use crate::env::{function::MIRFunctionBuilder, lowering::FnLoweringContext};
+use crate::{
+    env::{function::MIRFunctionBuilder, lowering::FnLoweringContext},
+    lower::constant::mir_constant,
+};
 
 pub fn terminated(builder: &MIRFunctionBuilder) -> bool {
     builder
@@ -93,17 +98,104 @@ pub fn register(
         .allocate_register(MIRRegisterDecl::new(ty, None)))
 }
 
+pub fn materialize(
+    context: &mut FnLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<MIRValue> {
+    Ok(match value.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => {
+            address(context, *place, path, value.ty(), span)?
+        }
+        HMIRValueKind::Constant(constant) => {
+            MIRValue::Constant(mir_constant(context.env_mut(), constant, span)?)
+        }
+        HMIRValueKind::Place(HMIRPlace::Local(slot)) => match context.slot(*slot) {
+            MIRBindable::Register(register) => MIRValue::Register(*register),
+            MIRBindable::Place(place) => MIRValue::PlaceRef(*place),
+        },
+        HMIRValueKind::Place(HMIRPlace::Global(_)) => {
+            todo!("global places: globals are not lowered yet")
+        }
+        HMIRValueKind::Indirect(pointer) => MIRValue::Register(reference(context, pointer)),
+    })
+}
+
+pub fn target(context: &FnLoweringContext, value: &HMIRValue) -> Option<MIRTarget> {
+    match value.kind() {
+        HMIRValueKind::Constant(_) => None,
+        HMIRValueKind::Place(HMIRPlace::Local(slot)) => match context.slot(*slot) {
+            MIRBindable::Register(_) => None,
+            MIRBindable::Place(place) => Some(MIRTarget::Place(*place)),
+        },
+        HMIRValueKind::Place(HMIRPlace::Global(_)) => {
+            todo!("global places: globals are not lowered yet")
+        }
+        HMIRValueKind::Indirect(pointer) => Some(MIRTarget::Indirect(reference(context, pointer))),
+    }
+}
+
+fn reference(context: &FnLoweringContext, pointer: &HMIRValue) -> MIRRegister {
+    match pointer.kind() {
+        HMIRValueKind::Place(HMIRPlace::Local(slot)) => match context.slot(*slot) {
+            MIRBindable::Register(register) => *register,
+            MIRBindable::Place(_) => {
+                unreachable!("an indirect value addresses through a register")
+            }
+        },
+        _ => todo!("indirect value through a subobject or global address"),
+    }
+}
+
+fn address(
+    context: &mut FnLoweringContext,
+    place: HMIRPlace,
+    path: &[usize],
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<MIRValue> {
+    if !path.is_empty() {
+        todo!("address of a subobject: aggregates are not lowered yet");
+    }
+
+    let HMIRPlace::Local(slot) = place else {
+        todo!("global places: globals are not lowered yet");
+    };
+    let MIRBindable::Place(place) = *context.slot(slot) else {
+        unreachable!("only a place has an address");
+    };
+
+    if matches!(
+        context.env().resolve_type_id(ty).kind(),
+        HMIRTypeKind::ReferenceTo(_)
+    ) {
+        return Ok(MIRValue::PlaceRef(place));
+    }
+
+    let out = register(context, ty, span)?;
+    intrinsic(
+        context.builder_mut(),
+        MIRInternalIntrinsic::PlaceAddress {
+            out: MIRTarget::Register(out),
+            place,
+        },
+        span.clone(),
+    );
+
+    Ok(MIRValue::Register(out))
+}
+
 pub fn read(
     context: &mut FnLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if context.target(&value).is_none() {
+    if target(context, &value).is_none() {
         return Ok(value);
     }
 
     let ty = context.env_mut().lower_type(value.ty(), span)?;
-    let source = context.materialize(&value, span)?;
+    let source = materialize(context, &value, span)?;
     let out = register(context, value.ty(), span)?;
 
     store(
@@ -122,12 +214,12 @@ pub fn spill(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if context.target(&value).is_some() {
+    if target(context, &value).is_some() {
         return Ok(value);
     }
 
     let ty = context.env_mut().lower_type(value.ty(), span)?;
-    let source = context.materialize(&value, span)?;
+    let source = materialize(context, &value, span)?;
     let scope = *context
         .open_scopes()
         .last()

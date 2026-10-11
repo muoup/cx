@@ -77,7 +77,7 @@ pub(crate) fn lower_let(
     ));
 
     if let Some(value) = value {
-        let value = context.materialize(&value, span)?;
+        let value = emit::materialize(context, &value, span)?;
         emit::store(
             context.builder_mut(),
             MIRTarget::Place(place),

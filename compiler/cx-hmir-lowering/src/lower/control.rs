@@ -33,7 +33,7 @@ fn lower_condition(
     }
 
     let value = truthy(context, value, span)?;
-    Ok(Some(context.materialize(&value, span)?))
+    Ok(Some(emit::materialize(context, &value, span)?))
 }
 
 struct Arm {
@@ -121,7 +121,7 @@ pub(crate) fn lower_if(
     for arm in arms {
         context.builder_mut().switch_to(arm.block);
         let value = convert(context, arm.value, ty, span)?;
-        let value = context.materialize(&value, span)?;
+        let value = emit::materialize(context, &value, span)?;
         emit::jump(context.builder_mut(), merge, vec![value], span.clone());
     }
 
@@ -262,7 +262,7 @@ pub(crate) fn lower_return_value(
         Some(value) => {
             let value = convert(context, value, ty, span)?;
             let value = emit::read(context, value, span)?;
-            Some(context.materialize(&value, span)?)
+            Some(emit::materialize(context, &value, span)?)
         }
         None if returns_void => None,
         None => return Err(hmir_error(span, &typecheck::MISSING_RETURN_VALUE, ())),

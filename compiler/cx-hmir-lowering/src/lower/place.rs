@@ -38,7 +38,7 @@ pub(crate) fn lower_assign(
     }
 
     let target = emit::referent(context, target, span)?;
-    let Some(destination) = context.target(&target) else {
+    let Some(destination) = emit::target(context, &target) else {
         return Err(hmir_error(
             span,
             &typecheck::NOT_ADDRESSABLE,
@@ -68,7 +68,7 @@ pub(crate) fn lower_assign(
 
     let value = convert(context, value, ty, span)?;
     let value = emit::read(context, value, span)?;
-    let value = context.materialize(&value, span)?;
+    let value = emit::materialize(context, &value, span)?;
     let mir = context.env_mut().lower_type(ty, span)?;
 
     if let MIRTarget::Place(place) = destination {
@@ -124,7 +124,7 @@ pub(crate) fn lower_address_of(
             },
         )),
         HMIRValueKind::Indirect(reference) => {
-            let reference = context.materialize(reference, span)?;
+            let reference = emit::materialize(context, reference, span)?;
             let out = emit::register(context, ty, span)?;
             let intrinsic = MIRInternalIntrinsic::ReferenceAddress {
                 out: MIRTarget::Register(out),
@@ -186,7 +186,7 @@ pub(crate) fn dereference(
     }
 
     let pointer = emit::read(context, pointer, span)?;
-    let value = context.materialize(&pointer, span)?;
+    let value = emit::materialize(context, &pointer, span)?;
 
     let null = MIRConstant::Nullptr {
         ty: context.env_mut().lower_type(pointer.ty(), span)?,

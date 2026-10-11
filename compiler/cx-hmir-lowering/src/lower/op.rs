@@ -52,7 +52,7 @@ fn element_size(
         ty,
     };
 
-    context.materialize(&HMIRValue::constant(ty, size), span)
+    emit::materialize(context, &HMIRValue::constant(ty, size), span)
 }
 
 pub(crate) fn promote_operand(
@@ -130,8 +130,8 @@ pub(crate) fn lower_binary_operands(
         {
             let element_ty = context.env_mut().lower_type(element, span)?;
             let ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
-            let lhs = context.materialize(&lhs, span)?;
-            let rhs = context.materialize(&rhs, span)?;
+            let lhs = emit::materialize(context, &lhs, span)?;
+            let rhs = emit::materialize(context, &rhs, span)?;
             let register = emit::register(context, ty, span)?;
             let intrinsic = MIRPtrIntrinsic::Diff {
                 out: MIRTarget::Register(register),
@@ -182,8 +182,8 @@ fn lower_arithmetic(
 
     let lhs = convert(context, lhs, common, span)?;
     let rhs = convert(context, rhs, common, span)?;
-    let lhs = context.materialize(&lhs, span)?;
-    let rhs = context.materialize(&rhs, span)?;
+    let lhs = emit::materialize(context, &lhs, span)?;
+    let rhs = emit::materialize(context, &rhs, span)?;
 
     let result = match is_comparison(op) {
         true => types::int(context.env_mut(), HMIRIntWidth::I1, false, span),
@@ -260,8 +260,8 @@ fn lower_pointer_comparison(
     lhs: HMIRValue,
     rhs: HMIRValue,
 ) -> CXResult<HMIRValue> {
-    let lhs = context.materialize(&lhs, span)?;
-    let rhs = context.materialize(&rhs, span)?;
+    let lhs = emit::materialize(context, &lhs, span)?;
+    let rhs = emit::materialize(context, &rhs, span)?;
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let register = emit::register(context, ty, span)?;
     let out = MIRTarget::Register(register);
@@ -293,9 +293,9 @@ fn lower_pointer_offset(
     let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, signed, span);
 
     let index = convert(context, index, offset_ty, span)?;
-    let lhs = context.materialize(&index, span)?;
+    let lhs = emit::materialize(context, &index, span)?;
     let rhs = element_size(context, element, offset_ty, span)?;
-    let ptr = context.materialize(&pointer, span)?;
+    let ptr = emit::materialize(context, &pointer, span)?;
 
     let scaled = emit::register(context, offset_ty, span)?;
     let out = MIRTarget::Register(scaled);
@@ -332,7 +332,7 @@ fn lower_short_circuit(
 
     let left = truthy(context, left, span)?;
     let left = emit::read(context, left, span)?;
-    let left = context.materialize(&left, span)?;
+    let left = emit::materialize(context, &left, span)?;
 
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let rhs_block = context
@@ -362,7 +362,7 @@ fn lower_short_circuit(
     let right = lower_expression(context, body, body.expr(rhs))?;
     if !emit::terminated(context.builder()) {
         let right = truthy(context, right, span)?;
-        let right = context.materialize(&right, span)?;
+        let right = emit::materialize(context, &right, span)?;
         emit::jump(context.builder_mut(), merge, vec![right], span.clone());
     }
 
@@ -397,7 +397,7 @@ pub(crate) fn lower_unary(
         _ => promote_operand(context, value, span)?,
     };
     let ty = value.ty();
-    let value = context.materialize(&value, span)?;
+    let value = emit::materialize(context, &value, span)?;
     let register = emit::register(context, ty, span)?;
     let out = MIRTarget::Register(register);
 
@@ -433,7 +433,7 @@ fn lower_increment(
     target: HMIRValue,
 ) -> CXResult<HMIRValue> {
     let target = emit::referent(context, target, span)?;
-    let Some(destination) = context.target(&target) else {
+    let Some(destination) = emit::target(context, &target) else {
         return Err(hmir_error(
             span,
             &typecheck::NOT_ADDRESSABLE,
@@ -446,14 +446,14 @@ fn lower_increment(
 
     let ty = target.ty();
     let current = emit::read(context, target.clone(), span)?;
-    let lhs = context.materialize(&current, span)?;
+    let lhs = emit::materialize(context, &current, span)?;
     let register = emit::register(context, ty, span)?;
     let out = MIRTarget::Register(register);
 
     let intrinsic: MIRIntrinsic = match kind(context, ty) {
         HMIRTypeKind::Int(_) => {
             let one = HMIRConstant::Int { value: 1, ty };
-            let rhs = context.materialize(&HMIRValue::constant(ty, one), span)?;
+            let rhs = emit::materialize(context, &HMIRValue::constant(ty, one), span)?;
             match subtract {
                 true => MIRIntIntrinsic::Sub { out, lhs, rhs },
                 false => MIRIntIntrinsic::Add { out, lhs, rhs },
@@ -465,7 +465,7 @@ fn lower_increment(
                 value: FloatWrapper::from(1.0),
                 ty,
             };
-            let rhs = context.materialize(&HMIRValue::constant(ty, one), span)?;
+            let rhs = emit::materialize(context, &HMIRValue::constant(ty, one), span)?;
             match subtract {
                 true => MIRFloatIntrinsic::Sub { out, lhs, rhs },
                 false => MIRFloatIntrinsic::Add { out, lhs, rhs },
