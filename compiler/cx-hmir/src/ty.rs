@@ -5,7 +5,7 @@ pub mod intrinsic;
 use crate::{
     HMIRFnSignature,
     ty::{
-        aggregate::{HMIRFieldDef, HMIRMoveSemantics},
+        aggregate::{HMIRFieldDef, HMIRTypeSemantics},
         intrinsic::{HMIRFloatType, HMIRIntType},
     },
 };
@@ -17,14 +17,11 @@ dense_id!(NominalID, "nominal");
 
 #[derive(Debug, Clone)]
 pub struct HMIRType {
-    id: HMIRTypeID,
     debug_name: Option<String>,
+    decl_span: TokenRange,
 
     kind: HMIRTypeKind,
-    semantics: HMIRMoveSemantics,
-    unsafe_move: bool,
-
-    decl_span: TokenRange,
+    semantics: HMIRTypeSemantics,
 }
 
 #[derive(Debug, Clone)]
@@ -63,37 +60,25 @@ pub enum HMIRTypeKind {
 
 impl HMIRType {
     pub fn new(
-        id: HMIRTypeID,
         debug_name: Option<String>,
-        kind: HMIRTypeKind,
-        semantics: HMIRMoveSemantics,
-        unsafe_move: bool,
         decl_span: TokenRange,
+        kind: HMIRTypeKind,
+        semantics: HMIRTypeSemantics,
     ) -> Self {
         Self {
-            id,
             debug_name,
             kind,
             semantics,
-            unsafe_move,
             decl_span,
         }
-    }
-
-    pub fn id(&self) -> HMIRTypeID {
-        self.id
     }
 
     pub fn kind(&self) -> &HMIRTypeKind {
         &self.kind
     }
 
-    pub fn semantics(&self) -> &HMIRMoveSemantics {
+    pub fn semantics(&self) -> &HMIRTypeSemantics {
         &self.semantics
-    }
-
-    pub fn unsafe_move(&self) -> bool {
-        self.unsafe_move
     }
 
     pub fn decl_span(&self) -> &TokenRange {

@@ -9,7 +9,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::FnLoweringContext,
+    env::function::LocalLoweringContext,
     eval::{
         EvalResult,
         coerce::convert,
@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub(crate) fn eval_assign(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     target: HMIRExprID,
@@ -50,7 +50,7 @@ pub(crate) fn eval_assign(
 }
 
 pub(crate) fn eval_address_of(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     operand: HMIRExprID,
@@ -74,7 +74,7 @@ pub(crate) fn eval_address_of(
 }
 
 pub(crate) fn eval_dereference(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     pointer: HMIRExprID,
@@ -86,7 +86,7 @@ pub(crate) fn eval_dereference(
 }
 
 pub(crate) fn dereference(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {

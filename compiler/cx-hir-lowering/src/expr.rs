@@ -143,7 +143,7 @@ pub(crate) fn lower_expr(
             name,
             initial_value,
             linkage: linkage @ (LinkageMode::Static | LinkageMode::Extern),
-        } if !context.is_comptime() => {
+        } if !context.comptime() => {
             lower_static(context, name, ty, initial_value.as_deref(), *linkage, span)?;
             context.push(HMIRExprKind::Constant(HMIRConstant::Unit), span)
         }
@@ -274,7 +274,7 @@ pub(crate) fn lower_identifier(
     Ok(match context.lookup(name, None, span)? {
         Symbol::Local(binding) => {
             let local = context.push(HMIRExprKind::Local(binding.local()), span);
-            if !binding.is_quoted() || context.is_comptime() {
+            if !binding.is_quoted() || context.comptime() {
                 return Ok(local);
             }
 

@@ -5,10 +5,10 @@ use cx_hmir::ty::{
 };
 use cx_tokens::TokenRange;
 
-use crate::{env::function::FnLoweringContext, eval::types};
+use crate::{env::function::LocalLoweringContext, eval::types};
 
 pub(crate) fn integer(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> HMIRTypeID {
@@ -21,7 +21,7 @@ pub(crate) fn integer(
 }
 
 pub(crate) fn common(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     lhs: HMIRTypeID,
     rhs: HMIRTypeID,
     span: &TokenRange,

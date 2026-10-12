@@ -2,6 +2,13 @@ use cx_util::identifier::CXIdent;
 
 use crate::expr::HMIRExprID;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HMIRTypeSemantics {
+    pub constant: bool,
+    pub unsafe_move: bool,
+    pub move_semantics: HMIRMoveSemantics,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum HMIRMoveSemantics {
     #[default]
@@ -15,6 +22,26 @@ pub struct HMIRFieldDef {
     name: Option<CXIdent>,
     ty: HMIRExprID,
     bit_width: Option<usize>,
+}
+
+impl HMIRMoveSemantics {
+    pub fn is_nocopy(&self) -> bool {
+        matches!(self, HMIRMoveSemantics::Nocopy | HMIRMoveSemantics::Nodrop)
+    }
+
+    pub fn is_nodrop(&self) -> bool {
+        matches!(self, HMIRMoveSemantics::Nodrop)
+    }
+}
+
+impl Default for HMIRTypeSemantics {
+    fn default() -> Self {
+        Self {
+            constant: false,
+            unsafe_move: false,
+            move_semantics: HMIRMoveSemantics::POD,
+        }
+    }
 }
 
 impl HMIRFieldDef {

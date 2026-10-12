@@ -10,13 +10,13 @@ use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
     emit,
-    env::function::FnLoweringContext,
+    env::function::LocalLoweringContext,
     eval::{EvalResult, constant, eval, eval_type, place::dereference, types},
     log::hmir_error,
 };
 
 pub(crate) fn eval_coerce(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     mode: HMIRCoerceMode,
@@ -33,7 +33,7 @@ pub(crate) fn eval_coerce(
 }
 
 pub(crate) fn truthy(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
@@ -66,7 +66,7 @@ pub(crate) fn truthy(
 }
 
 fn bind_reference(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: HMIRValue,
     inner: HMIRTypeID,
     target: HMIRTypeID,
@@ -104,7 +104,7 @@ fn bind_reference(
 }
 
 pub(crate) fn convert(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: HMIRValue,
     target: HMIRTypeID,
     span: &TokenRange,

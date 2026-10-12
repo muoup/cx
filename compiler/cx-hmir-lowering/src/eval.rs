@@ -2,13 +2,12 @@ mod binding;
 mod coerce;
 mod constant;
 mod control;
-mod flow;
 mod op;
 mod place;
 mod promote;
-pub(crate) mod types;
 
-pub(crate) use flow::EvalResult;
+pub(crate) mod flow;
+pub(crate) mod types;
 
 use cx_hmir::{
     HMIRBody, HMIRControlOp, HMIRFunction, HMIROp,
@@ -26,7 +25,7 @@ use crate::{
     emit::{self, runtime},
     env::{
         HMIREnvironment,
-        function::{FnContext, FnLoweringContext, RuntimeContext},
+        function::{ComptimeContext, FnContext, LocalLoweringContext, RuntimeContext},
     },
     eval::{
         binding::{eval_block, eval_let, eval_local},
@@ -50,7 +49,11 @@ pub(crate) fn lower_runtime_function<'hmir>(
         .expect("Runtime function lowered without a definition");
     let span = body.expr(def.root()).span();
 
-    let mut staging = FnLoweringContext::for_signature(env, signature);
+    let mut staging = LocalLoweringContext::new(
+        env,
+        Some(signature),
+        FnContext::Comptime(ComptimeContext::new()),
+    );
     let prototype = flow::top(types::lower_prototype(
         &mut staging,
         body,
@@ -58,7 +61,7 @@ pub(crate) fn lower_runtime_function<'hmir>(
     ))?;
 
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
-    let mut context = FnLoweringContext::new(env, signature, runtime);
+    let mut context = staging.child(Some(signature), runtime);
 
     emit::open_scope(&mut context, span.clone());
     let completion = runtime_definition(&mut context, function, def);
@@ -67,19 +70,22 @@ pub(crate) fn lower_runtime_function<'hmir>(
 
     match context.into_context() {
         FnContext::Runtime(runtime) => Ok(runtime.finish()),
-        FnContext::Comptime(_) => unreachable!("runtime function lowered in a comptime context"),
+        _ => unreachable!("runtime function lowered into a non-runtime context"),
     }
 }
 
 fn runtime_definition(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     function: &HMIRFunction,
     def: &HMIRFnDefinition,
 ) -> EvalResult<HMIRValue> {
     let body = function.body();
     let root = body.expr(def.root());
+    let Some(signature) = context.signature() else {
+        unreachable!("runtime function lowered without a signature")
+    };
 
-    for (param, local) in context.signature().params().iter().zip(def.params()) {
+    for (param, local) in signature.params().iter().zip(def.params()) {
         let decl = body.local(*local);
         let ty = eval_type(context, body, param.ty())?;
         let value = runtime::parameter(
@@ -104,7 +110,7 @@ fn runtime_definition(
 }
 
 pub(crate) fn eval_comptime_function<'hmir>(
-    _parent: &mut FnLoweringContext<'_, '_, 'hmir>,
+    _parent: &mut LocalLoweringContext<'_, '_, 'hmir>,
     _function: &'hmir HMIRFunction,
     _args: &[HMIRConstant],
 ) -> CXResult<HMIRConstant> {
@@ -112,7 +118,7 @@ pub(crate) fn eval_comptime_function<'hmir>(
 }
 
 pub(crate) fn eval(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     expr: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
@@ -190,7 +196,7 @@ pub(crate) fn eval(
 }
 
 pub(crate) fn eval_comptime(
-    _context: &mut FnLoweringContext,
+    _context: &mut LocalLoweringContext,
     _body: &HMIRBody,
     _expr: HMIRExprID,
 ) -> CXResult<HMIRConstant> {
@@ -198,7 +204,7 @@ pub(crate) fn eval_comptime(
 }
 
 pub(crate) fn eval_type(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     expr: HMIRExprID,
 ) -> EvalResult<HMIRTypeID> {
@@ -212,7 +218,7 @@ pub(crate) fn eval_type(
 }
 
 pub(crate) fn operand(
-    _context: &mut FnLoweringContext,
+    _context: &mut LocalLoweringContext,
     _result: EvalResult<HMIRValue>,
     _span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
@@ -220,7 +226,7 @@ pub(crate) fn operand(
 }
 
 pub(crate) fn quote(
-    _context: &mut FnLoweringContext,
+    _context: &mut LocalLoweringContext,
     _body: &HMIRBody,
     _params: &[HMIRLocalID],
     _root: HMIRExprID,
@@ -229,7 +235,7 @@ pub(crate) fn quote(
 }
 
 pub(crate) fn splice(
-    _context: &mut FnLoweringContext,
+    _context: &mut LocalLoweringContext,
     _quote: HMIRValue,
     _args: &[HMIRValue],
 ) -> EvalResult<HMIRValue> {

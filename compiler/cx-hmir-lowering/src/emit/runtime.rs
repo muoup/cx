@@ -20,22 +20,22 @@ use cx_util::identifier::CXIdent;
 use crate::{
     emit::{self, runtime}, env::{
         HMIREnvironment,
-        function::{FnLoweringContext, runtime::Emission},
+        function::{LocalLoweringContext, runtime::Emission},
     }, eval::types::{self, mir_float, mir_int},
 };
 
-pub fn block(context: &mut FnLoweringContext, name: &str) -> MIRBasicBlockID {
+pub fn block(context: &mut LocalLoweringContext, name: &str) -> MIRBasicBlockID {
     context
         .runtime_mut()
         .builder_mut()
         .add_block(Some(CXIdent::new(name)))
 }
 
-pub fn current_block(context: &mut FnLoweringContext) -> MIRBasicBlockID {
+pub fn current_block(context: &mut LocalLoweringContext) -> MIRBasicBlockID {
     context.runtime().builder().current_block()
 }
 
-pub fn switch_to(context: &mut FnLoweringContext, block: MIRBasicBlockID) {
+pub fn switch_to(context: &mut LocalLoweringContext, block: MIRBasicBlockID) {
     let runtime = context.runtime_mut();
 
     runtime.builder_mut().switch_to(block);
@@ -43,7 +43,7 @@ pub fn switch_to(context: &mut FnLoweringContext, block: MIRBasicBlockID) {
 }
 
 pub fn block_param(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     block: MIRBasicBlockID,
     ty: HMIRTypeID,
     span: &TokenRange,
@@ -56,7 +56,7 @@ pub fn block_param(
 }
 
 pub fn jump(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     target: MIRBasicBlockID,
     args: Vec<MIRValue>,
     span: TokenRange,
@@ -70,7 +70,7 @@ pub fn jump(
 }
 
 pub fn branch(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     cond: MIRValue,
     true_target: MIRBlockTarget,
     false_target: MIRBlockTarget,
@@ -87,7 +87,7 @@ pub fn branch(
 }
 
 fn intrinsic(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     intrinsic: impl Into<MIRIntrinsic>,
     span: TokenRange,
 ) {
@@ -97,7 +97,7 @@ fn intrinsic(
 }
 
 fn store(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     target: MIRTarget,
     value: MIRValue,
     ty: MIRTypeID,
@@ -115,7 +115,7 @@ fn store(
 }
 
 fn register(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRRegister> {
@@ -128,7 +128,7 @@ fn register(
 }
 
 fn output(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<(MIRTarget, HMIRValue)> {
@@ -171,7 +171,7 @@ fn constant(
 }
 
 pub fn materialize(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<MIRValue> {
@@ -195,7 +195,7 @@ pub fn materialize(
     })
 }
 
-fn target(context: &mut FnLoweringContext, value: &HMIRValue) -> Option<MIRTarget> {
+fn target(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<MIRTarget> {
     match value.kind() {
         HMIRValueKind::Constant(_) => None,
         HMIRValueKind::Place(HMIRPlace::Local(slot)) => {
@@ -211,7 +211,7 @@ fn target(context: &mut FnLoweringContext, value: &HMIRValue) -> Option<MIRTarge
     }
 }
 
-fn reference(context: &mut FnLoweringContext, pointer: &HMIRValue) -> MIRRegister {
+fn reference(context: &mut LocalLoweringContext, pointer: &HMIRValue) -> MIRRegister {
     match pointer.kind() {
         HMIRValueKind::Place(HMIRPlace::Local(slot)) => {
             match context.context_mut().runtime().slot(*slot) {
@@ -226,7 +226,7 @@ fn reference(context: &mut FnLoweringContext, pointer: &HMIRValue) -> MIRRegiste
 }
 
 fn place_address(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     place: HMIRPlace,
     path: &[usize],
     ty: HMIRTypeID,
@@ -263,20 +263,20 @@ fn place_address(
     Ok(MIRValue::Register(out))
 }
 
-pub fn open_scope(context: &mut FnLoweringContext, span: TokenRange) {
+pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     let runtime = context.runtime_mut();
     let scope = runtime.builder_mut().add_scope(span);
 
     runtime.push_scope(scope);
 }
 
-pub fn close_scope(context: &mut FnLoweringContext, span: TokenRange) {
+pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     let scope = context.runtime_mut().pop_scope();
 
     drop_scope(context, scope, &span);
 }
 
-pub fn drop_scopes(context: &mut FnLoweringContext, span: &TokenRange) {
+pub fn drop_scopes(context: &mut LocalLoweringContext, span: &TokenRange) {
     let scopes = context.runtime_mut().open_scopes().to_vec();
 
     for scope in scopes.into_iter().rev() {
@@ -284,7 +284,7 @@ pub fn drop_scopes(context: &mut FnLoweringContext, span: &TokenRange) {
     }
 }
 
-fn drop_scope(context: &mut FnLoweringContext, scope: MIRScopeID, span: &TokenRange) {
+fn drop_scope(context: &mut LocalLoweringContext, scope: MIRScopeID, span: &TokenRange) {
     let places = context
         .runtime()
         .builder()
@@ -307,7 +307,7 @@ fn drop_scope(context: &mut FnLoweringContext, scope: MIRScopeID, span: &TokenRa
 }
 
 fn place(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     name: Option<CXIdent>,
     nodrop: bool,
@@ -326,7 +326,7 @@ fn place(
 }
 
 pub fn allocate(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     name: Option<CXIdent>,
     nodrop: bool,
@@ -338,7 +338,7 @@ pub fn allocate(
 }
 
 pub fn parameter(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     name: Option<CXIdent>,
     nodrop: bool,
@@ -358,12 +358,12 @@ pub fn parameter(
     Ok(context.runtime_mut().bind(ty, MIRBindable::Place(place)))
 }
 
-pub fn addressable(context: &mut FnLoweringContext, value: &HMIRValue) -> bool {
+pub fn addressable(context: &mut LocalLoweringContext, value: &HMIRValue) -> bool {
     target(context, value).is_some()
 }
 
 pub fn read(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
@@ -380,7 +380,7 @@ pub fn read(
 }
 
 pub fn write(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     target: &HMIRValue,
     value: HMIRValue,
     initialize: bool,
@@ -427,7 +427,7 @@ pub fn write(
 }
 
 pub fn address(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     reference: &HMIRValue,
     ty: HMIRTypeID,
     span: &TokenRange,
@@ -444,7 +444,7 @@ pub fn address(
 }
 
 pub fn dereference(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     inner: HMIRTypeID,
     span: &TokenRange,

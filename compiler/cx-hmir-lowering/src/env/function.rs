@@ -1,34 +1,34 @@
 use cx_hmir::{HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, value::HMIRValue};
-use cx_mir::MIRInstructionKind;
-use cx_tokens::TokenRange;
 
 pub mod comptime;
 pub mod runtime;
 
-use crate::env::{HMIREnvironment, function::runtime::Emission};
+use crate::env::HMIREnvironment;
 
 pub use self::{comptime::ComptimeContext, runtime::RuntimeContext};
 
 #[derive(Debug)]
-pub struct FnLoweringContext<'env, 'global, 'hmir> {
+pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     env: &'env mut HMIREnvironment<'global, 'hmir>,
-    signature: &'hmir HMIRFnSignature,
+    signature: Option<&'hmir HMIRFnSignature>,
     context: FnContext,
 }
 
 #[derive(Debug)]
 pub enum FnContext {
     Runtime(RuntimeContext),
-    Comptime(ComptimeContext),
+    Comptime(ComptimeContext)
 }
 
-impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
+impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
     pub fn new(
         env: &'env mut HMIREnvironment<'global, 'hmir>,
-        signature: &'hmir HMIRFnSignature,
+        signature: Option<&'hmir HMIRFnSignature>,
         context: FnContext,
     ) -> Self {
-        assert_eq!(signature.stage(), context.stage());
+        if let Some(signature) = signature {
+            assert_eq!(signature.stage(), context.stage());
+        }
 
         Self {
             env,
@@ -38,29 +38,18 @@ impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
     }
 
     pub fn child<'parent>(
-        parent: &'parent mut Self,
+        &'parent mut self,
         signature: Option<&'hmir HMIRFnSignature>,
-        context: ComptimeContext,
-    ) -> FnLoweringContext<'parent, 'global, 'hmir> {
+        context: FnContext,
+    ) -> LocalLoweringContext<'parent, 'global, 'hmir> {
         if let Some(signature) = signature {
-            assert_eq!(signature.stage(), HMIRFunctionStage::Comptime);
+            assert_eq!(signature.stage(), context.stage());
         }
 
-        FnLoweringContext {
-            env: &mut *parent.env,
-            signature: signature.unwrap_or(parent.signature),
-            context: FnContext::Comptime(context),
-        }
-    }
-
-    pub fn for_signature(
-        env: &'env mut HMIREnvironment<'global, 'hmir>,
-        signature: &'hmir HMIRFnSignature,
-    ) -> Self {
-        Self {
-            env,
+        LocalLoweringContext {
+            env: &mut *self.env,
             signature,
-            context: FnContext::Comptime(ComptimeContext::new()),
+            context,
         }
     }
 
@@ -72,7 +61,7 @@ impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
         self.env
     }
 
-    pub fn signature(&self) -> &'hmir HMIRFnSignature {
+    pub fn signature(&self) -> Option<&'hmir HMIRFnSignature> {
         self.signature
     }
 
@@ -87,27 +76,35 @@ impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
     pub fn runtime(&self) -> &RuntimeContext {
         match self.context() {
             FnContext::Runtime(context) => context,
-            FnContext::Comptime(_) => unreachable!("runtime context requested in a comptime context"),
+            FnContext::Comptime(_) => {
+                unreachable!("runtime context requested in a comptime context")
+            }
         }
     }
 
     pub fn runtime_mut(&mut self) -> &mut RuntimeContext {
         match self.context_mut() {
             FnContext::Runtime(context) => context,
-            FnContext::Comptime(_) => unreachable!("runtime context requested in a comptime context"),
+            FnContext::Comptime(_) => {
+                unreachable!("runtime context requested in a comptime context")
+            }
         }
     }
 
     pub fn comptime(&self) -> &ComptimeContext {
         match self.context() {
-            FnContext::Runtime(_) => unreachable!("comptime context requested in a runtime context"),
+            FnContext::Runtime(_) => {
+                unreachable!("comptime context requested in a runtime context")
+            }
             FnContext::Comptime(context) => context,
         }
     }
 
     pub fn comptime_mut(&mut self) -> &mut ComptimeContext {
         match self.context_mut() {
-            FnContext::Runtime(_) => unreachable!("comptime context requested in a runtime context"),
+            FnContext::Runtime(_) => {
+                unreachable!("comptime context requested in a runtime context")
+            }
             FnContext::Comptime(context) => context,
         }
     }

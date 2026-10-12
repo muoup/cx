@@ -16,16 +16,16 @@ use cx_log::CXResult;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use crate::env::function::{FnContext, FnLoweringContext};
+use crate::env::function::{FnContext, LocalLoweringContext};
 
-pub fn open_scope(context: &mut FnLoweringContext, span: TokenRange) {
+pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     match context.context() {
         FnContext::Runtime(_) => runtime::open_scope(context, span),
         FnContext::Comptime(_) => {}
     }
 }
 
-pub fn close_scope(context: &mut FnLoweringContext, span: TokenRange) {
+pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     match context.context() {
         FnContext::Runtime(_) => runtime::close_scope(context, span),
         FnContext::Comptime(_) => {}
@@ -33,7 +33,7 @@ pub fn close_scope(context: &mut FnLoweringContext, span: TokenRange) {
 }
 
 pub fn allocate(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     name: Option<CXIdent>,
     nodrop: bool,
@@ -45,7 +45,7 @@ pub fn allocate(
     }
 }
 
-pub fn addressable(context: &mut FnLoweringContext, value: &HMIRValue) -> bool {
+pub fn addressable(context: &mut LocalLoweringContext, value: &HMIRValue) -> bool {
     match context.context() {
         FnContext::Runtime(_) => runtime::addressable(context, value),
         FnContext::Comptime(_) => !matches!(value.kind(), HMIRValueKind::Constant(_)),
@@ -53,7 +53,7 @@ pub fn addressable(context: &mut FnLoweringContext, value: &HMIRValue) -> bool {
 }
 
 pub fn read(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
@@ -64,7 +64,7 @@ pub fn read(
 }
 
 pub fn write(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     target: &HMIRValue,
     value: HMIRValue,
     initialize: bool,
@@ -77,7 +77,7 @@ pub fn write(
 }
 
 pub fn spill(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
@@ -92,7 +92,7 @@ pub fn spill(
 }
 
 pub fn referent(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
@@ -105,7 +105,7 @@ pub fn referent(
 }
 
 pub fn address(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: &HMIRValue,
     ty: HMIRTypeID,
     span: &TokenRange,
@@ -128,7 +128,7 @@ pub fn address(
 }
 
 pub fn dereference(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     inner: HMIRTypeID,
     span: &TokenRange,
@@ -147,7 +147,7 @@ pub fn dereference(
 }
 
 pub fn binary(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     op: HMIRBinaryOp,
     lhs: &HMIRValue,
     rhs: &HMIRValue,
@@ -161,7 +161,7 @@ pub fn binary(
 }
 
 pub fn unary(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     op: HMIRUnaryOp,
     value: &HMIRValue,
     span: &TokenRange,
@@ -173,7 +173,7 @@ pub fn unary(
 }
 
 pub fn cast(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: &HMIRValue,
     target: HMIRTypeID,
     span: &TokenRange,
@@ -185,7 +185,7 @@ pub fn cast(
 }
 
 pub fn offset(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     pointer: &HMIRValue,
     index: &HMIRValue,
     element: HMIRTypeID,
@@ -199,7 +199,7 @@ pub fn offset(
 }
 
 pub fn difference(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     lhs: &HMIRValue,
     rhs: &HMIRValue,
     element: HMIRTypeID,

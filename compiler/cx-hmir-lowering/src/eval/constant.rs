@@ -5,10 +5,10 @@ use cx_hmir::{
 };
 use cx_tokens::TokenRange;
 
-use crate::{env::function::FnLoweringContext, eval::EvalResult};
+use crate::{env::function::LocalLoweringContext, eval::flow::EvalResult};
 
 pub(crate) fn eval_constant(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     span: &TokenRange,
     constant: &HMIRConstant,
 ) -> EvalResult<HMIRValue> {
@@ -49,7 +49,7 @@ pub(crate) fn eval_constant(
     }
 }
 
-pub(crate) fn unit(context: &mut FnLoweringContext, span: &TokenRange) -> HMIRValue {
+pub(crate) fn unit(context: &mut LocalLoweringContext, span: &TokenRange) -> HMIRValue {
     let ty = context
         .env_mut()
         .resolver_mut()

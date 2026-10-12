@@ -17,16 +17,16 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::FnLoweringContext,
+    env::function::LocalLoweringContext,
     eval::{EvalResult, coerce::convert, eval, promote},
 };
 
-fn kind(context: &FnLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
+fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
     context.env().resolve_type_id(ty).kind().clone()
 }
 
 pub(crate) fn promote_operand(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
@@ -43,7 +43,7 @@ pub(crate) fn promote_operand(
 }
 
 pub(crate) fn eval_operand(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     expr: HMIRExprID,

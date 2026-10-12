@@ -6,21 +6,21 @@ use cx_hmir::{
 use cx_log::CXResult;
 
 use crate::env::function::{
-    ComptimeContext, FnContext, FnLoweringContext, comptime::ComptimeSlotState,
+    ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeSlotState,
 };
 
-fn comptime<'a>(context: &'a mut FnLoweringContext<'_, '_, '_>) -> &'a mut ComptimeContext {
+fn comptime<'a>(context: &'a mut LocalLoweringContext<'_, '_, '_>) -> &'a mut ComptimeContext {
     match context.context_mut() {
         FnContext::Comptime(comptime) => comptime,
         FnContext::Runtime(_) => unreachable!("comptime evaluation in a runtime context"),
     }
 }
 
-pub fn allocate(context: &mut FnLoweringContext, ty: HMIRTypeID) -> HMIRValue {
+pub fn allocate(context: &mut LocalLoweringContext, ty: HMIRTypeID) -> HMIRValue {
     comptime(context).allocate(ty)
 }
 
-pub fn read(context: &mut FnLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
+pub fn read(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
     let slot = match value.kind() {
         HMIRValueKind::Constant(_) => return Ok(value),
         HMIRValueKind::Place(HMIRPlace::Local(slot)) => *slot,
@@ -37,7 +37,7 @@ pub fn read(context: &mut FnLoweringContext, value: HMIRValue) -> CXResult<HMIRV
 }
 
 pub fn write(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     target: &HMIRValue,
     value: HMIRValue,
 ) -> CXResult<()> {
@@ -74,7 +74,7 @@ pub fn address(pointer: &HMIRValue, ty: HMIRTypeID) -> HMIRValue {
 }
 
 pub fn dereference(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     inner: HMIRTypeID,
 ) -> CXResult<HMIRValue> {

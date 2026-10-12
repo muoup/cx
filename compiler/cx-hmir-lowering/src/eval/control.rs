@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::{self, runtime},
-    env::function::{FnContext, FnLoweringContext},
+    env::function::{FnContext, LocalLoweringContext},
     eval::{
         EvalResult,
         binding::eval_scoped,
@@ -23,7 +23,7 @@ use crate::{
 };
 
 fn eval_condition(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRExprID,
@@ -34,7 +34,7 @@ fn eval_condition(
 }
 
 fn comptime_truth(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     condition: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<bool> {
@@ -47,7 +47,7 @@ fn comptime_truth(
 }
 
 pub(crate) fn eval_if(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRExprID,
@@ -67,7 +67,7 @@ pub(crate) fn eval_if(
 }
 
 fn comptime_if(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRValue,
@@ -91,7 +91,7 @@ struct Arm {
 }
 
 fn runtime_if(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRValue,
@@ -165,7 +165,7 @@ fn runtime_if(
 }
 
 fn merged_type(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     arms: &[Arm],
     span: &TokenRange,
 ) -> Option<HMIRTypeID> {
@@ -188,7 +188,7 @@ fn merged_type(
 }
 
 pub(crate) fn eval_while(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRExprID,
@@ -204,7 +204,7 @@ pub(crate) fn eval_while(
 }
 
 fn comptime_while(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRExprID,
@@ -233,7 +233,7 @@ fn comptime_while(
 }
 
 fn runtime_while(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRExprID,
@@ -282,7 +282,7 @@ fn runtime_while(
 }
 
 pub(crate) fn eval_short_circuit(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     op: HMIRBinaryOp,
@@ -307,7 +307,7 @@ pub(crate) fn eval_short_circuit(
 }
 
 fn runtime_short_circuit(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     op: HMIRBinaryOp,
@@ -340,7 +340,7 @@ fn runtime_short_circuit(
 }
 
 pub(crate) fn eval_loop_exit(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     stop: ComptimeStop,
 ) -> EvalResult<HMIRValue> {
     match context.context() {
@@ -350,7 +350,7 @@ pub(crate) fn eval_loop_exit(
 }
 
 pub(crate) fn eval_return(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     value: Option<HMIRExprID>,
@@ -365,12 +365,14 @@ pub(crate) fn eval_return(
 
 // Always stops evaluation: a runtime return diverges, and a comptime return carries its value to the caller
 pub(crate) fn return_value(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     value: Option<HMIRValue>,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
-    let return_type = context.signature().return_type();
+    let Some(return_type) = context.signature().map(|sig| sig.return_type()) else {
+        unreachable!("return statement in a context without a signature")
+    };
     let ty = eval_type(context, body, return_type)?;
     let returns_void = match context.env().resolve_type_id(ty).kind() {
         HMIRTypeKind::Unreachable => {
@@ -420,12 +422,14 @@ pub(crate) fn return_value(
 }
 
 pub(crate) fn fallthrough(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     is_main: bool,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
-    let return_type = context.signature().return_type();
+    let Some(return_type) = context.signature().map(|sig| sig.return_type()) else {
+        unreachable!("fallthrough in a context without a signature")
+    };
     let ty = eval_type(context, body, return_type)?;
 
     match context.env().resolve_type_id(ty).kind() {

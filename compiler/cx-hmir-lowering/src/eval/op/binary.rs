@@ -9,7 +9,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::FnLoweringContext,
+    env::function::LocalLoweringContext,
     eval::{
         EvalResult,
         coerce::convert,
@@ -33,7 +33,7 @@ fn is_comparison(op: HMIRBinaryOp) -> bool {
 }
 
 pub(crate) fn eval_binary(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     op: HMIRBinaryOp,
@@ -51,7 +51,7 @@ pub(crate) fn eval_binary(
 }
 
 pub(crate) fn binary_operands(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     span: &TokenRange,
     op: HMIRBinaryOp,
     lhs: HMIRValue,
@@ -88,7 +88,7 @@ pub(crate) fn binary_operands(
 }
 
 fn arithmetic(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     span: &TokenRange,
     op: HMIRBinaryOp,
     lhs: HMIRValue,
@@ -140,7 +140,7 @@ fn arithmetic(
 }
 
 fn pointer_offset(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     span: &TokenRange,
     pointer: HMIRValue,
     index: HMIRValue,

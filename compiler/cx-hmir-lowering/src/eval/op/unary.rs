@@ -10,7 +10,7 @@ use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
     emit,
-    env::function::FnLoweringContext,
+    env::function::LocalLoweringContext,
     eval::{
         EvalResult,
         coerce::truthy,
@@ -22,7 +22,7 @@ use crate::{
 };
 
 pub(crate) fn eval_unary(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     op: HMIRUnaryOp,
@@ -62,7 +62,7 @@ pub(crate) fn eval_unary(
 }
 
 fn increment(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     span: &TokenRange,
     op: HMIRUnaryOp,
     target: HMIRValue,

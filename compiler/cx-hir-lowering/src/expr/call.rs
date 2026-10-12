@@ -132,7 +132,7 @@ fn lower_callee_call(
                     // every other argument is quoted by the caller with 'emit'
                     let quote = subjects[index]
                         && staged.get(index).copied().unwrap_or(false)
-                        && !context.is_comptime()
+                        && !context.comptime()
                         && !matches!(arg.kind, HIRExprKind::Emit { .. });
                     if quote {
                         lower_quote(context, &[], arg, &arg.range)
@@ -181,7 +181,7 @@ fn lower_comptime_call(
     span: &TokenRange,
 ) -> HMIRExprID {
     let call = context.push(HMIRExprKind::Call { callee, args }, span);
-    if context.is_comptime() {
+    if context.comptime() {
         return call;
     }
 

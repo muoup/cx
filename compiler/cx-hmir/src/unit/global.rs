@@ -6,7 +6,7 @@ use crate::{body::HMIRBody, expr::HMIRExprID};
 pub struct HMIRGlobal {
     body: HMIRBody,
     
-    link_name: CXIdent,
+    symbol_name: CXIdent,
     linkage: LinkageMode,
 
     ty: HMIRExprID,
@@ -27,14 +27,14 @@ impl HMIRGlobal {
         ty: HMIRExprID,
         initializer: Option<HMIRExprID>,
         linkage: LinkageMode,
-        link_name: CXIdent,
+        symbol_name: CXIdent,
     ) -> Self {
         Self {
             body,
             ty,
             initializer,
             linkage,
-            link_name,
+            symbol_name,
         }
     }
 
@@ -54,8 +54,8 @@ impl HMIRGlobal {
         self.linkage
     }
 
-    pub fn link_name(&self) -> &CXIdent {
-        &self.link_name
+    pub fn symbol_name(&self) -> &CXIdent {
+        &self.symbol_name
     }
 }
 

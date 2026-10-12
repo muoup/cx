@@ -45,17 +45,8 @@ impl HMIRUnitBuilder {
 
 impl HMIRTypeBuilder {
     // Declares a type of its own; structurally equal declarations stay distinct
-    pub(crate) fn declare(
-        &mut self,
-        debug_name: Option<String>,
-        kind: HMIRTypeKind,
-        semantics: HMIRMoveSemantics,
-        unsafe_move: bool,
-        span: &TokenRange,
-    ) -> HMIRTypeID {
+    pub(crate) fn declare(&mut self, ty: HMIRType) -> HMIRTypeID {
         let id = HMIRTypeID::new(self.types.len());
-        let ty = HMIRType::new(id, debug_name, kind, semantics, unsafe_move, span.clone());
-
         self.types.insert(id, ty);
         id
     }
@@ -70,7 +61,13 @@ impl HMIRTypeBuilder {
         }
 
         let span = TokenRange::internal();
-        let id = self.declare(None, kind, HMIRMoveSemantics::POD, false, &span);
+        let id = self.declare(HMIRType::new(
+            None,
+            kind,
+            HMIRMoveSemantics::POD,
+            false,
+            &span,
+        ));
 
         self.primitives.push(id);
         id

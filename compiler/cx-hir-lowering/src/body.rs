@@ -10,7 +10,7 @@ use cx_hmir::{
     HMIROwnershipOp,
     body::{HMIRHole, HMIRLocal, HMIRLocalID},
     expr::{HMIRExpr, HMIRExprID, HMIRExprKind, constant::HMIRConstant, op::HMIRTypeOp},
-    ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRMoveSemantics, intrinsic::HMIRIntType},
+    ty::{HMIRTypeID, HMIRTypeKind, intrinsic::HMIRIntType},
     unit::function::{HMIRFnDefinition, HMIRFnParam, HMIRFnPrototype},
 };
 use cx_log::{CXResult, catalogue::typecheck};
@@ -194,24 +194,12 @@ impl<'a> BodyLowering<'a> {
         self.types.primitive(kind)
     }
 
-    pub(crate) fn declare_type(
-        &mut self,
-        debug_name: Option<String>,
-        kind: HMIRTypeKind,
-        semantics: HMIRMoveSemantics,
-        unsafe_move: bool,
-        span: &TokenRange,
-    ) -> HMIRTypeID {
-        self.types
-            .declare(debug_name, kind, semantics, unsafe_move, span)
-    }
-
     pub(crate) fn type_constant(&mut self, kind: HMIRTypeKind, span: &TokenRange) -> HMIRExprID {
         let ty = self.primitive(kind);
         self.push(HMIRExprKind::Constant(HMIRConstant::Type(ty)), span)
     }
 
-    pub(crate) fn is_comptime(&self) -> bool {
+    pub(crate) fn comptime(&self) -> bool {
         self.comptime
     }
 

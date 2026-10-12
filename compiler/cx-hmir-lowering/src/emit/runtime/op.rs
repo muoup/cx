@@ -13,16 +13,16 @@ use cx_tokens::TokenRange;
 
 use super::{intrinsic, materialize, output, register};
 use crate::{
-    env::function::FnLoweringContext,
+    env::function::LocalLoweringContext,
     eval::types::{self, mir_float, mir_int},
 };
 
-fn kind(context: &FnLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
+fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
     context.env().resolve_type_id(ty).kind().clone()
 }
 
 pub fn binary(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     op: HMIRBinaryOp,
     lhs: &HMIRValue,
     rhs: &HMIRValue,
@@ -100,7 +100,7 @@ pub fn binary(
 }
 
 pub fn unary(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     op: HMIRUnaryOp,
     value: &HMIRValue,
     span: &TokenRange,
@@ -122,7 +122,7 @@ pub fn unary(
 }
 
 pub fn cast(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     value: &HMIRValue,
     target: HMIRTypeID,
     span: &TokenRange,
@@ -189,7 +189,7 @@ pub fn cast(
 }
 
 fn element_size(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     element: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<i128> {
@@ -199,7 +199,7 @@ fn element_size(
 }
 
 pub fn offset(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     pointer: &HMIRValue,
     index: &HMIRValue,
     element: HMIRTypeID,
@@ -246,7 +246,7 @@ pub fn offset(
 }
 
 pub fn difference(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     lhs: &HMIRValue,
     rhs: &HMIRValue,
     element: HMIRTypeID,

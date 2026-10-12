@@ -135,7 +135,7 @@ fn write_global(
     write_linkage(f, global.linkage())?;
     write!(f, "global @{}: ", def.name())?;
     printer.expr(f, global.ty(), 0)?;
-    write_link_name(f, def, global.link_name())?;
+    write_link_name(f, def, global.symbol_name())?;
     if let Some(initializer) = global.initializer() {
         f.write_str(" = ")?;
         printer.expr(f, initializer, 0)?;

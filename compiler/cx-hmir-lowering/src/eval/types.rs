@@ -15,11 +15,13 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::{HMIREnvironment, function::FnLoweringContext}, eval::{EvalResult, eval_type}, log::{hmir_error, log_hmir_error},
+    env::{HMIREnvironment, function::LocalLoweringContext},
+    eval::{EvalResult, eval_type},
+    log::{hmir_error, log_hmir_error},
 };
 
 pub(crate) fn lower_prototype(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     prototype: &HMIRFnPrototype,
 ) -> EvalResult<MIRFnPrototype> {

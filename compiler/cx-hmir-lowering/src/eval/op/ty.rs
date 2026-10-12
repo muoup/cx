@@ -6,12 +6,12 @@ use cx_hmir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::FnLoweringContext,
+    env::function::LocalLoweringContext,
     eval::{EvalResult, eval_comptime, eval_type},
 };
 
 pub(crate) fn eval_type_op(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     op: &HMIRTypeOp,
@@ -38,7 +38,7 @@ pub(crate) fn eval_type_op(
 }
 
 fn array_length(
-    context: &mut FnLoweringContext,
+    context: &mut LocalLoweringContext,
     body: &HMIRBody,
     length: HMIRExprID,
 ) -> EvalResult<u64> {

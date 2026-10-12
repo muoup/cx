@@ -1,6 +1,13 @@
-use crate::{env::HMIREnvironment, eval};
+use crate::{
+    env::{
+        HMIREnvironment,
+        function::{ComptimeContext, FnContext, LocalLoweringContext},
+    },
+    eval::{self, eval_type, flow, types::lower_type},
+};
 use cx_hmir::{HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit};
 use cx_log::CXResult;
+use cx_mir::MIRGlobalVariable;
 
 pub fn lower_unit<'hmir>(
     unit: &'hmir HMIRUnit,
@@ -50,5 +57,16 @@ pub fn lower_function<'hmir>(
 }
 
 pub fn lower_global(global: &HMIRGlobal, env: &mut HMIREnvironment) -> CXResult<()> {
+    let mut context =
+        LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
+    
+    let ty = flow::top(eval_type(&mut context, global.body(), global.ty()))?;
+    let mir_ty = flow::top(lower_type(context.env_mut(), ty, &TokenRange::internal()))?;
+
+    // let global = MIRGlobalVariable::new(
+    //     global.symbol_name(),
+    //     mir_ty,
+    // );
+
     todo!()
 }
