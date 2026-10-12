@@ -1,6 +1,6 @@
 use cx_hmir::{
     expr::constant::HMIRConstant,
-    ty::HMIRTypeKind,
+    ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics},
     value::{HMIRValue, HMIRValueKind},
 };
 use cx_tokens::TokenRange;
@@ -23,10 +23,12 @@ pub(crate) fn eval_constant(
         HMIRConstant::Unit => Ok(unit(context, span)),
 
         HMIRConstant::Str(_) => {
-            let ty = context
-                .env_mut()
-                .resolver_mut()
-                .realize_type(HMIRTypeKind::Str, span);
+            let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+                HMIRTypeKind::Str,
+                HMIRTypeSemantics::default(),
+                span.clone(),
+                None,
+            ));
 
             Ok(HMIRValue::new(
                 ty,
@@ -50,10 +52,12 @@ pub(crate) fn eval_constant(
 }
 
 pub(crate) fn unit(context: &mut LocalLoweringContext, span: &TokenRange) -> HMIRValue {
-    let ty = context
-        .env_mut()
-        .resolver_mut()
-        .realize_type(HMIRTypeKind::Void, span);
+    let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::Void,
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ));
 
     HMIRValue::constant(ty, HMIRConstant::Unit)
 }

@@ -40,14 +40,12 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
     }
 
     pub fn same_type(&self, a: HMIRTypeID, b: HMIRTypeID) -> bool {
+        let (a, b) = (self.underlying(a), self.underlying(b));
         if a == b {
             return true;
         }
 
-        match (
-            self.resolve_type_id(a).kind(),
-            self.resolve_type_id(b).kind(),
-        ) {
+        match (self.resolve_kind(a), self.resolve_kind(b)) {
             (HMIRTypeKind::Void, HMIRTypeKind::Void)
             | (HMIRTypeKind::Unreachable, HMIRTypeKind::Unreachable)
             | (HMIRTypeKind::Type, HMIRTypeKind::Type)

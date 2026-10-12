@@ -9,15 +9,17 @@ mod promote;
 pub(crate) mod flow;
 pub(crate) mod types;
 
+pub(crate) use flow::EvalResult;
+
 use cx_hmir::{
-    HMIRBody, HMIRControlOp, HMIRFunction, HMIROp,
+    HMIRBody, HMIRControlOp, HMIRDefKind, HMIRDefRef, HMIRFunction, HMIROp,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant},
     ty::HMIRTypeID,
     unit::function::HMIRFnDefinition,
     value::HMIRValue,
 };
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::MIRFunction;
 use cx_tokens::TokenRange;
 
@@ -36,6 +38,7 @@ use crate::{
         op::{eval_binary, eval_type_op, eval_unary},
         place::{eval_address_of, eval_assign, eval_dereference},
     },
+    log::hmir_error,
 };
 
 pub(crate) fn lower_runtime_function<'hmir>(
@@ -213,7 +216,39 @@ pub(crate) fn eval_type(
     match expr.kind() {
         HMIRExprKind::Constant(HMIRConstant::Type(ty)) => Ok(*ty),
         HMIRExprKind::Op(HMIROp::Type(op)) => eval_type_op(context, body, expr.span(), op),
+        HMIRExprKind::Def(def) => eval_type_def(context, expr.span(), def),
         _ => todo!("Evaluate a type expression using the available comptime bindings"),
+    }
+}
+
+// A type definition is evaluated in a context of its own, which sees nothing of the referring one
+fn eval_type_def(
+    context: &mut LocalLoweringContext,
+    span: &TokenRange,
+    def: &HMIRDefRef,
+) -> EvalResult<HMIRTypeID> {
+    let HMIRDefRef::Local(id) = def else {
+        todo!("type reference to an external definition")
+    };
+    let def = context
+        .env()
+        .symbols()
+        .local_unit()
+        .resolve_def(*id)
+        .expect("Local symbol not found");
+
+    match def.kind() {
+        HMIRDefKind::Type(ty) => Ok(*ty),
+        HMIRDefKind::ComptimeGlobal(global) => {
+            let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
+            eval_type(&mut child, global.body(), global.initializer())
+        }
+        HMIRDefKind::Function(_) | HMIRDefKind::Global(_) => Err(hmir_error(
+            span,
+            &typecheck::EXPECTED_TYPE,
+            format!("'{}'", def.name()),
+        )
+        .into()),
     }
 }
 

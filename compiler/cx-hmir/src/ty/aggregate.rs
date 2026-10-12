@@ -34,6 +34,16 @@ impl HMIRMoveSemantics {
     }
 }
 
+impl HMIRTypeSemantics {
+    pub fn apply(self, specifiers: Self) -> Self {
+        Self {
+            constant: self.constant || specifiers.constant,
+            unsafe_move: self.unsafe_move || specifiers.unsafe_move,
+            move_semantics: self.move_semantics.max(specifiers.move_semantics),
+        }
+    }
+}
+
 impl Default for HMIRTypeSemantics {
     fn default() -> Self {
         Self {

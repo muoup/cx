@@ -40,7 +40,7 @@ pub(crate) fn truthy(
     let value = emit::referent(context, value, span)?;
     let ty = value.ty();
 
-    let zero = match context.env().resolve_type_id(ty).kind() {
+    let zero = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I1 => return Ok(value),
         HMIRTypeKind::Int(_) => HMIRConstant::Int { value: 0, ty },
         HMIRTypeKind::Float(_) => HMIRConstant::Float {
@@ -115,8 +115,8 @@ pub(crate) fn convert(
     }
 
     let kinds = (
-        context.env().resolve_type_id(source).kind().clone(),
-        context.env().resolve_type_id(target).kind().clone(),
+        context.env().resolve_kind(source).clone(),
+        context.env().resolve_kind(target).clone(),
     );
 
     match &kinds {

@@ -1,7 +1,9 @@
 use cx_hmir::{
     HMIRBody,
     expr::{HMIRExprID, constant::HMIRConstant, op::HMIRTypeOp},
-    ty::{HMIRTypeID, HMIRTypeKind},
+    ty::{
+        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+    },
 };
 use cx_tokens::TokenRange;
 
@@ -30,11 +32,47 @@ pub(crate) fn eval_type_op(
             HMIRTypeKind::Array { element, length }
         }
 
-        HMIRTypeOp::Const(_) => todo!("HMIRType has no const qualifier to realize 'type.const'"),
+        HMIRTypeOp::Const(inner) => {
+            let inner = eval_type(context, body, *inner)?;
+            let specifiers = HMIRTypeSemantics {
+                constant: true,
+                ..HMIRTypeSemantics::default()
+            };
+
+            return Ok(specify(context, inner, specifiers, span));
+        }
         _ => todo!("HMIRTypeOp: {}", op.path()),
     };
 
-    Ok(context.env_mut().resolver_mut().realize_type(kind, span))
+    Ok(context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        kind,
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    )))
+}
+
+// Specifiers only accumulate, so a type that already carries them stands for itself
+fn specify(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    specifiers: HMIRTypeSemantics,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    let env = context.env_mut();
+    let current = *env.resolve_type_id(ty).semantics();
+    let semantics = current.apply(specifiers);
+    if semantics == current {
+        return ty;
+    }
+
+    let kind = HMIRTypeKind::Nominal(env.underlying(ty));
+    env.resolver_mut().realize_type(HMIRType::new(
+        kind,
+        semantics,
+        span.clone(),
+        None
+    ))
 }
 
 fn array_length(

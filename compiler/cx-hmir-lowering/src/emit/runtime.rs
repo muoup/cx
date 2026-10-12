@@ -4,7 +4,10 @@ pub use op::{binary, cast, difference, offset, unary};
 
 use cx_hmir::{
     expr::constant::HMIRConstant,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{
+        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+        intrinsic::HMIRIntWidth,
+    },
     value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 use cx_log::CXResult;
@@ -18,10 +21,12 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    emit::{self, runtime}, env::{
+    emit::{self, runtime},
+    env::{
         HMIREnvironment,
         function::{LocalLoweringContext, runtime::Emission},
-    }, eval::types::{self, mir_float, mir_int},
+    },
+    eval::types::{self, mir_float, mir_int},
 };
 
 pub fn block(context: &mut LocalLoweringContext, name: &str) -> MIRBasicBlockID {
@@ -148,14 +153,14 @@ fn constant(
 ) -> CXResult<MIRConstant> {
     Ok(match constant {
         HMIRConstant::Unit => MIRConstant::Unit,
-        HMIRConstant::Int { value, ty } => match env.resolve_type_id(*ty).kind() {
+        HMIRConstant::Int { value, ty } => match env.resolve_kind(*ty) {
             HMIRTypeKind::Int(int) => MIRConstant::Integer {
                 ty: mir_int(int.width()),
                 value: *value,
             },
             other => todo!("integer constant of type {other:?}"),
         },
-        HMIRConstant::Float { value, ty } => match env.resolve_type_id(*ty).kind() {
+        HMIRConstant::Float { value, ty } => match env.resolve_kind(*ty) {
             HMIRTypeKind::Float(float) => MIRConstant::Float {
                 value: *value,
                 ty: mir_float(float.width()),
@@ -243,10 +248,7 @@ fn place_address(
         unreachable!("only a place has an address");
     };
 
-    if matches!(
-        context.env().resolve_type_id(ty).kind(),
-        HMIRTypeKind::ReferenceTo(_)
-    ) {
+    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::ReferenceTo(_)) {
         return Ok(MIRValue::PlaceRef(place));
     }
 
@@ -475,10 +477,12 @@ pub fn dereference(
         span.clone(),
     );
 
-    let reference_ty = context
-        .env_mut()
-        .resolver_mut()
-        .realize_type(HMIRTypeKind::ReferenceTo(inner), span);
+    let reference_ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::ReferenceTo(inner),
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ));
     let target_ty = types::lower_type(context.env_mut(), reference_ty, span)?;
     let (out, reference) = output(context, reference_ty, span)?;
     intrinsic(

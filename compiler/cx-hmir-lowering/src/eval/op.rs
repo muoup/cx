@@ -22,7 +22,7 @@ use crate::{
 };
 
 fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
-    context.env().resolve_type_id(ty).kind().clone()
+    context.env().resolve_kind(ty).clone()
 }
 
 pub(crate) fn promote_operand(

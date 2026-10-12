@@ -173,7 +173,7 @@ fn merged_type(
 
     for arm in arms {
         let ty = arm.value.ty();
-        if matches!(context.env().resolve_type_id(ty).kind(), HMIRTypeKind::Void) {
+        if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Void) {
             return None;
         }
 
@@ -374,7 +374,7 @@ pub(crate) fn return_value(
         unreachable!("return statement in a context without a signature")
     };
     let ty = eval_type(context, body, return_type)?;
-    let returns_void = match context.env().resolve_type_id(ty).kind() {
+    let returns_void = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Unreachable => {
             return Err(hmir_error(span, &typecheck::NORETURN_RETURN, ()).into());
         }
@@ -385,7 +385,7 @@ pub(crate) fn return_value(
     let value = match value {
         Some(value) if returns_void => {
             if !matches!(
-                context.env().resolve_type_id(value.ty()).kind(),
+                context.env().resolve_kind(value.ty()),
                 HMIRTypeKind::Void
             ) {
                 return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()).into());
@@ -432,7 +432,7 @@ pub(crate) fn fallthrough(
     };
     let ty = eval_type(context, body, return_type)?;
 
-    match context.env().resolve_type_id(ty).kind() {
+    match context.env().resolve_kind(ty) {
         HMIRTypeKind::Void => return_value(context, body, None, span),
         HMIRTypeKind::Int(_) if is_main => {
             let zero = HMIRValue::constant(ty, HMIRConstant::Int { value: 0, ty });

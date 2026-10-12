@@ -5,9 +5,13 @@ use crate::{
     },
     eval::{self, eval_type, flow, types::lower_type},
 };
-use cx_hmir::{HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit};
+use cx_hmir::{
+    HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
+    ty::context::HMIRTypeContext,
+};
 use cx_log::CXResult;
-use cx_mir::MIRGlobalVariable;
+use cx_mir::{MIRGlobalID, MIRGlobalState, MIRGlobalVariable};
+use cx_util::linkage::LinkageMode;
 
 pub fn lower_unit<'hmir>(
     unit: &'hmir HMIRUnit,
@@ -22,6 +26,11 @@ pub fn lower_unit<'hmir>(
                 .any(|param| param.comptime())
     }
 
+    // A declaration of storage defined elsewhere is lowered only once something refers to it
+    fn is_declaration(global: &HMIRGlobal) -> bool {
+        global.linkage() == LinkageMode::Extern && global.initializer().is_none()
+    }
+
     for (_, def) in unit.defs() {
         match def.kind() {
             HMIRDefKind::Function(func) => {
@@ -33,6 +42,10 @@ pub fn lower_unit<'hmir>(
             }
 
             HMIRDefKind::Global(global) => {
+                if is_declaration(global) {
+                    continue;
+                }
+
                 lower_global(global, env)?;
             }
 
@@ -56,17 +69,29 @@ pub fn lower_function<'hmir>(
     Ok(())
 }
 
-pub fn lower_global(global: &HMIRGlobal, env: &mut HMIREnvironment) -> CXResult<()> {
+pub fn lower_global(global: &HMIRGlobal, env: &mut HMIREnvironment) -> CXResult<MIRGlobalID> {
     let mut context =
         LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
-    
+    let span = global.body().expr(global.ty()).span();
+
     let ty = flow::top(eval_type(&mut context, global.body(), global.ty()))?;
-    let mir_ty = flow::top(lower_type(context.env_mut(), ty, &TokenRange::internal()))?;
+    let mir_ty = lower_type(context.env_mut(), ty, span)?;
+    let is_mutable = !context.env().resolve_type_id(ty).semantics().constant;
 
-    // let global = MIRGlobalVariable::new(
-    //     global.symbol_name(),
-    //     mir_ty,
-    // );
+    let state = match (global.initializer(), global.linkage()) {
+        (Some(_), _) => todo!("global initializers: comptime evaluation to the global's type"),
+        (None, LinkageMode::Extern) => MIRGlobalState::External,
+        (None, _) => MIRGlobalState::ZeroInitialized,
+    };
 
-    todo!()
+    Ok(context
+        .env_mut()
+        .module_mut()
+        .declare_global(MIRGlobalVariable::new(
+            global.symbol_name().clone(),
+            global.linkage(),
+            mir_ty,
+            state,
+            is_mutable,
+        )))
 }

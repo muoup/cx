@@ -1,7 +1,8 @@
 use cx_hmir::{
     HMIRBody,
     ty::{
-        HMIRTypeID, HMIRTypeKind,
+        HMIRType, HMIRTypeID, HMIRTypeKind,
+        aggregate::HMIRTypeSemantics,
         context::HMIRTypeContext,
         intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
     },
@@ -17,7 +18,7 @@ use cx_tokens::TokenRange;
 use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{EvalResult, eval_type},
-    log::{hmir_error, log_hmir_error},
+    log::log_hmir_error,
 };
 
 pub(crate) fn lower_prototype(
@@ -64,7 +65,7 @@ pub(crate) fn lower_type(
         return Ok(id);
     }
 
-    let kind = match env.resolve_type_id(ty).kind().clone() {
+    let kind = match env.resolve_kind(ty).clone() {
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
         HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } => {
             return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, todo!("type display"));
@@ -112,7 +113,12 @@ pub(crate) fn int(
     span: &TokenRange,
 ) -> HMIRTypeID {
     let kind = HMIRTypeKind::Int(HMIRIntType::new(width, signed));
-    env.resolver_mut().realize_type(kind, span)
+    env.resolver_mut().realize_type(HMIRType::new(
+        kind,
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ))
 }
 
 pub(crate) fn mir_int(width: HMIRIntWidth) -> MIRIntType {

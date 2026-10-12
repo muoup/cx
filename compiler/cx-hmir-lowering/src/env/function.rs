@@ -26,8 +26,13 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         signature: Option<&'hmir HMIRFnSignature>,
         context: FnContext,
     ) -> Self {
+        // A comptime context may stage a runtime signature, as prototype resolution does
         if let Some(signature) = signature {
-            assert_eq!(signature.stage(), context.stage());
+            assert!(
+                context.stage() == HMIRFunctionStage::Comptime
+                    || signature.stage() == HMIRFunctionStage::Runtime,
+                "comptime signature evaluated in a runtime context"
+            );
         }
 
         Self {
@@ -42,15 +47,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         signature: Option<&'hmir HMIRFnSignature>,
         context: FnContext,
     ) -> LocalLoweringContext<'parent, 'global, 'hmir> {
-        if let Some(signature) = signature {
-            assert_eq!(signature.stage(), context.stage());
-        }
-
-        LocalLoweringContext {
-            env: &mut *self.env,
-            signature,
-            context,
-        }
+        LocalLoweringContext::new(&mut *self.env, signature, context)
     }
 
     pub fn env(&self) -> &HMIREnvironment<'global, 'hmir> {

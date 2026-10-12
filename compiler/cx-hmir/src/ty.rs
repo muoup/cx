@@ -56,14 +56,16 @@ pub enum HMIRTypeKind {
         size: usize,
         alignment: usize,
     },
+    // A transparent reference to another type, whose semantics only ever add specifiers to it
+    Nominal(HMIRTypeID),
 }
 
 impl HMIRType {
     pub fn new(
-        debug_name: Option<String>,
-        decl_span: TokenRange,
         kind: HMIRTypeKind,
         semantics: HMIRTypeSemantics,
+        decl_span: TokenRange,
+        debug_name: Option<String>,
     ) -> Self {
         Self {
             debug_name,
@@ -71,6 +73,10 @@ impl HMIRType {
             semantics,
             decl_span,
         }
+    }
+
+    pub fn debug_name(&self) -> Option<&str> {
+        self.debug_name.as_deref()
     }
 
     pub fn kind(&self) -> &HMIRTypeKind {

@@ -38,7 +38,7 @@ pub(crate) fn eval_let(
     }
 
     let ty = eval_type(context, body, decl.ty())?;
-    if matches!(context.env().resolve_type_id(ty).kind(), HMIRTypeKind::Void) {
+    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Void) {
         todo!("local of type void");
     }
 

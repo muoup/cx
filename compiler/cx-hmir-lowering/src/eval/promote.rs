@@ -1,5 +1,6 @@
 use cx_hmir::ty::{
-    HMIRTypeID, HMIRTypeKind,
+    HMIRType, HMIRTypeID, HMIRTypeKind,
+    aggregate::HMIRTypeSemantics,
     context::HMIRTypeContext,
     intrinsic::{HMIRFloatType, HMIRIntWidth},
 };
@@ -12,7 +13,7 @@ pub(crate) fn integer(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> HMIRTypeID {
-    match context.env().resolve_type_id(ty).kind() {
+    match context.env().resolve_kind(ty) {
         HMIRTypeKind::Int(int) if int.width() < HMIRIntWidth::I32 => {
             types::int(context.env_mut(), HMIRIntWidth::I32, true, span)
         }
@@ -30,15 +31,20 @@ pub(crate) fn common(
     let rhs = integer(context, rhs, span);
 
     let kinds = (
-        context.env().resolve_type_id(lhs).kind().clone(),
-        context.env().resolve_type_id(rhs).kind().clone(),
+        context.env().resolve_kind(lhs).clone(),
+        context.env().resolve_kind(rhs).clone(),
     );
 
     match kinds {
         (HMIRTypeKind::Float(left), HMIRTypeKind::Float(right)) => {
             let width = left.width().max(right.width());
             let kind = HMIRTypeKind::Float(HMIRFloatType::new(width));
-            Some(context.env_mut().resolver_mut().realize_type(kind, span))
+            Some(context.env_mut().resolver_mut().realize_type(HMIRType::new(
+                kind,
+                HMIRTypeSemantics::default(),
+                span.clone(),
+                None,
+            )))
         }
         (HMIRTypeKind::Float(_), HMIRTypeKind::Int(_)) => Some(lhs),
         (HMIRTypeKind::Int(_), HMIRTypeKind::Float(_)) => Some(rhs),

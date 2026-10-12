@@ -10,8 +10,8 @@ use cx_hmir::{
     HMIRDefRef,
     expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant, op::HMIRTypeOp},
     ty::{
-        HMIRTypeKind,
-        aggregate::{HMIRFieldDef, HMIRMoveSemantics},
+        HMIRType, HMIRTypeKind,
+        aggregate::{HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
     },
 };
 use cx_log::{CXResult, catalogue::typecheck};
@@ -241,18 +241,21 @@ fn lower_aggregate_type(
         return log_hir_error(span, &typecheck::UNSUPPORTED_FEATURE, "@copy_traits".into());
     }
 
-    let semantics = match attributes.semantics {
-        HIRMoveSemantics::POD => HMIRMoveSemantics::POD,
-        HIRMoveSemantics::Nocopy => HMIRMoveSemantics::Nocopy,
-        HIRMoveSemantics::Nodrop => HMIRMoveSemantics::Nodrop,
+    let semantics = HMIRTypeSemantics {
+        constant: false,
+        unsafe_move: attributes.unsafe_move,
+        move_semantics: match attributes.semantics {
+            HIRMoveSemantics::POD => HMIRMoveSemantics::POD,
+            HIRMoveSemantics::Nocopy => HMIRMoveSemantics::Nocopy,
+            HIRMoveSemantics::Nodrop => HMIRMoveSemantics::Nodrop,
+        },
     };
-    let ty = context.declare_type(
-        name.map(ToString::to_string),
+    let ty = context.declare_type(HMIRType::new(
         kind,
         semantics,
-        attributes.unsafe_move,
-        span,
-    );
+        span.clone(),
+        name.map(ToString::to_string),
+    ));
 
     Ok(context.push(HMIRExprKind::Constant(HMIRConstant::Type(ty)), span))
 }

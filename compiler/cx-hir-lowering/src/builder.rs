@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use cx_hmir::{
     HMIRDef, HMIRDefID, HMIRUnit,
-    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRMoveSemantics},
+    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics},
 };
 use cx_namespace::module::NamespacePath;
 use cx_tokens::TokenRange;
@@ -60,13 +60,11 @@ impl HMIRTypeBuilder {
             return *existing;
         }
 
-        let span = TokenRange::internal();
         let id = self.declare(HMIRType::new(
-            None,
             kind,
-            HMIRMoveSemantics::POD,
-            false,
-            &span,
+            HMIRTypeSemantics::default(),
+            TokenRange::internal(),
+            None,
         ));
 
         self.primitives.push(id);

@@ -1,8 +1,5 @@
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBody,
-    expr::HMIRExprID,
-    ty::{HMIRTypeKind, context::HMIRTypeContext},
-    value::HMIRValue,
+    HMIRBinaryOp, HMIRBody, expr::HMIRExprID, ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext}, value::HMIRValue,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -58,17 +55,19 @@ pub(crate) fn eval_address_of(
     let value = eval(context, body, operand)?;
     let value = emit::referent(context, value, span)?;
     if matches!(
-        context.env().resolve_type_id(value.ty()).kind(),
+        context.env().resolve_kind(value.ty()),
         HMIRTypeKind::Str | HMIRTypeKind::Function(_)
     ) {
         todo!("address of a string or function")
     }
 
     let value = emit::spill(context, value, span)?;
-    let ty = context
-        .env_mut()
-        .resolver_mut()
-        .realize_type(HMIRTypeKind::PointerTo(value.ty()), span);
+    let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::PointerTo(value.ty()),
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ));
 
     Ok(emit::address(context, &value, ty, span)?)
 }
@@ -90,7 +89,7 @@ pub(crate) fn dereference(
     pointer: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let inner = match context.env().resolve_type_id(pointer.ty()).kind() {
+    let inner = match context.env().resolve_kind(pointer.ty()) {
         HMIRTypeKind::PointerTo(inner) => *inner,
         HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_) => {
             todo!("array, string or function operand decay")
@@ -103,10 +102,7 @@ pub(crate) fn dereference(
             ));
         }
     };
-    if matches!(
-        context.env().resolve_type_id(inner).kind(),
-        HMIRTypeKind::Function(_)
-    ) {
+    if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Function(_)) {
         todo!("dereference of a function pointer")
     }
 

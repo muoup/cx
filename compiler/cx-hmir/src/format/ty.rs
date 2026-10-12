@@ -101,6 +101,12 @@ pub(super) fn write_type(f: &mut Formatter<'_>, unit: &HMIRUnit, id: HMIRTypeID)
             write_type(f, unit, *result)
         }
         HMIRTypeKind::Opaque { size, alignment } => write!(f, "opaque({size}, {alignment})"),
+        HMIRTypeKind::Nominal(inner) => {
+            if unit.resolve_type(id).semantics().constant {
+                f.write_str("const ")?;
+            }
+            write_type(f, unit, *inner)
+        }
     }
 }
 

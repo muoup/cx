@@ -9,8 +9,8 @@ use cx_hmir::{
     HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp, HMIROwnershipOp,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
-        HMIRTypeKind,
-        aggregate::HMIRMoveSemantics,
+        HMIRType, HMIRTypeKind,
+        aggregate::HMIRTypeSemantics,
         intrinsic::{HMIRIntType, HMIRIntWidth},
     },
     unit::function::HMIRFnPrototype,
@@ -36,8 +36,12 @@ pub(crate) fn lower_def(mut context: BodyLowering<'_>, plan: &PlannedDef) -> CXR
                 size: 0,
                 alignment: 1,
             };
-            let name = Some(plan.name().to_string());
-            let ty = context.declare_type(name, kind, HMIRMoveSemantics::POD, false, span);
+            let ty = context.declare_type(HMIRType::new(
+                kind,
+                HMIRTypeSemantics::default(),
+                span.clone(),
+                Some(plan.name().to_string()),
+            ));
 
             Ok(HMIRDefKind::Type(ty))
         }
