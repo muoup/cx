@@ -1,48 +1,35 @@
 use cx_hmir::{
-    HMIRBody, HMIRCoerceMode,
+    HMIRBinaryOp, HMIRBody, HMIRCoerceMode,
     expr::{HMIRExprID, constant::HMIRConstant},
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
     value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::{
-    MIRBindable, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic,
-    MIRPtrIntrinsic, MIRTarget,
-};
 use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
-    env::lowering::FnLoweringContext,
+    emit,
+    env::function::FnLoweringContext,
+    eval::{EvalResult, constant, eval, eval_type, place::dereference, types},
     log::hmir_error,
-    lower::{
-        constant,
-        dispatch::lower_expression,
-        emit,
-        place::dereference,
-        types::{self, mir_float, mir_int},
-    },
 };
 
-pub(crate) fn lower_coerce(
+pub(crate) fn eval_coerce(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     mode: HMIRCoerceMode,
     value: HMIRExprID,
     target: HMIRExprID,
-) -> CXResult<HMIRValue> {
-    let value = lower_expression(context, body, body.expr(value))?;
-    if emit::terminated(context.builder()) {
-        return Ok(value);
-    }
-
+) -> EvalResult<HMIRValue> {
+    let value = eval(context, body, value)?;
     if mode == HMIRCoerceMode::Truthy {
-        return truthy(context, value, span);
+        return Ok(truthy(context, value, span)?);
     }
 
-    let target = context.env_mut().eval_type(body, target)?;
-    convert(context, value, target, span)
+    let target = eval_type(context, body, target)?;
+    Ok(convert(context, value, target, span)?)
 }
 
 pub(crate) fn truthy(
@@ -52,9 +39,8 @@ pub(crate) fn truthy(
 ) -> CXResult<HMIRValue> {
     let value = emit::referent(context, value, span)?;
     let ty = value.ty();
-    let kind = context.env().resolve_type_id(ty).kind().clone();
 
-    let zero = match kind {
+    let zero = match context.env().resolve_type_id(ty).kind() {
         HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I1 => return Ok(value),
         HMIRTypeKind::Int(_) => HMIRConstant::Int { value: 0, ty },
         HMIRTypeKind::Float(_) => HMIRConstant::Float {
@@ -74,20 +60,9 @@ pub(crate) fn truthy(
         }
     };
 
+    let zero = HMIRValue::constant(ty, zero);
     let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    let lhs = emit::materialize(context, &value, span)?;
-    let rhs = emit::materialize(context, &HMIRValue::constant(ty, zero), span)?;
-    let register = emit::register(context, bool_ty, span)?;
-    let out = MIRTarget::Register(register);
-
-    let intrinsic: MIRIntrinsic = match kind {
-        HMIRTypeKind::Float(_) => MIRFloatIntrinsic::Neq { out, lhs, rhs }.into(),
-        HMIRTypeKind::PointerTo(_) => MIRPtrIntrinsic::Neq { out, lhs, rhs }.into(),
-        _ => MIRIntIntrinsic::Neq { out, lhs, rhs }.into(),
-    };
-    emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
-
-    Ok(context.bind(bool_ty, MIRBindable::Register(register)))
+    emit::binary(context, HMIRBinaryOp::Neq, &value, &zero, bool_ty, span)
 }
 
 fn bind_reference(
@@ -175,68 +150,19 @@ pub(crate) fn convert(
         return Ok(emit::read(context, value, span)?.with_ty(target));
     }
 
-    let operand = emit::materialize(context, &value, span)?;
-    let register = emit::register(context, target, span)?;
-    let out = MIRTarget::Register(register);
-
-    let intrinsic: MIRIntrinsic = match kinds {
-        (HMIRTypeKind::Int(from), HMIRTypeKind::Int(to)) => MIRIntIntrinsic::IntCast {
-            out,
-            value: operand,
-            target: mir_int(to.width()),
-            sign_extend: from.signed() && from.width() != HMIRIntWidth::I1,
+    match kinds {
+        (
+            HMIRTypeKind::Int(_),
+            HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_),
+        )
+        | (HMIRTypeKind::Float(_), HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_))
+        | (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_) | HMIRTypeKind::PointerTo(_)) => {
+            emit::cast(context, &value, target, span)
         }
-        .into(),
-        (HMIRTypeKind::Int(from), HMIRTypeKind::Float(to)) => MIRIntIntrinsic::ToFloat {
-            out,
-            value: operand,
-            target: mir_float(to.width()),
-            signed: from.signed(),
-        }
-        .into(),
-        (HMIRTypeKind::Int(from), HMIRTypeKind::PointerTo(_)) => MIRIntIntrinsic::ToPtr {
-            out,
-            value: operand,
-            sign_extend: from.signed(),
-        }
-        .into(),
-
-        (HMIRTypeKind::Float(_), HMIRTypeKind::Int(to)) => MIRFloatIntrinsic::ToInt {
-            out,
-            value: operand,
-            target_ty: target_mir,
-            signed: to.signed(),
-        }
-        .into(),
-        (HMIRTypeKind::Float(_), HMIRTypeKind::Float(to)) => MIRFloatIntrinsic::FloatCast {
-            out,
-            value: operand,
-            float_ty: mir_float(to.width()),
-        }
-        .into(),
-
-        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)) => MIRPtrIntrinsic::ToInt {
-            out,
-            ptr: operand,
-            target_ty: target_mir,
-        }
-        .into(),
-        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => MIRInternalIntrinsic::Bitcast {
-            out,
-            value: operand,
-            target_ty: target_mir,
-        }
-        .into(),
-
-        _ => {
-            return Err(hmir_error(
-                span,
-                &typecheck::INVALID_CONVERSION,
-                (todo!("type display"), todo!("type display")),
-            ));
-        }
-    };
-    emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
-
-    Ok(context.bind(target, MIRBindable::Register(register)))
+        _ => Err(hmir_error(
+            span,
+            &typecheck::INVALID_CONVERSION,
+            (todo!("type display"), todo!("type display")),
+        )),
+    }
 }

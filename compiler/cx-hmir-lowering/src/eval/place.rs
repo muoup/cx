@@ -1,105 +1,61 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody,
-    expr::{HMIRExprID, constant::HMIRConstant},
-    ty::{HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
-    value::{HMIRValue, HMIRValueKind},
+    expr::HMIRExprID,
+    ty::{HMIRTypeKind, context::HMIRTypeContext},
+    value::HMIRValue,
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::{
-    MIRBindable, MIRConstant, MIRInstructionKind, MIRInternalIntrinsic, MIRPtrIntrinsic, MIRTarget,
-    MIRValue, expr::instruction::MIRInvalidationKind,
-};
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::lowering::FnLoweringContext,
-    log::hmir_error,
-    lower::{
+    emit,
+    env::function::FnLoweringContext,
+    eval::{
+        EvalResult,
         coerce::convert,
-        constant,
-        dispatch::lower_expression,
-        emit,
-        op::{lower_binary_operands, lower_operand, promote_operand},
-        types,
+        eval,
+        op::{binary_operands, eval_operand, promote_operand},
     },
+    log::hmir_error,
 };
 
-pub(crate) fn lower_assign(
+pub(crate) fn eval_assign(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     target: HMIRExprID,
     op: Option<HMIRBinaryOp>,
     value: HMIRExprID,
-) -> CXResult<HMIRValue> {
-    let target = lower_expression(context, body, body.expr(target))?;
-    if emit::terminated(context.builder()) {
-        return Ok(target);
-    }
-
+) -> EvalResult<HMIRValue> {
+    let target = eval(context, body, target)?;
     let target = emit::referent(context, target, span)?;
-    let Some(destination) = emit::target(context, &target) else {
-        return Err(hmir_error(
-            span,
-            &typecheck::NOT_ADDRESSABLE,
-            "assign to".into(),
-        ));
-    };
-    let ty = target.ty();
+    if !emit::addressable(context, &target) {
+        return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "assign to".into()).into());
+    }
 
     let value = match op {
         Some(op) => {
             let current = promote_operand(context, target.clone(), span)?;
-            let Some(operand) = lower_operand(context, body, span, value)? else {
-                return Ok(constant::unit(context, span));
-            };
+            let operand = eval_operand(context, body, span, value)?;
 
-            lower_binary_operands(context, span, op, current, operand)?
+            binary_operands(context, span, op, current, operand)?
         }
-        None => {
-            let value = lower_expression(context, body, body.expr(value))?;
-            if emit::terminated(context.builder()) {
-                return Ok(value);
-            }
-
-            value
-        }
+        None => eval(context, body, value)?,
     };
 
-    let value = convert(context, value, ty, span)?;
-    let value = emit::read(context, value, span)?;
-    let value = emit::materialize(context, &value, span)?;
-    let mir = types::lower_type(context.env_mut(), ty, span)?;
-
-    if let MIRTarget::Place(place) = destination {
-        let place = MIRBindable::Place(place);
-        context.builder_mut().emit(
-            MIRInstructionKind::Invalidate {
-                place: place.clone(),
-                kind: MIRInvalidationKind::Drop,
-            },
-            span.clone(),
-        );
-        context
-            .builder_mut()
-            .emit(MIRInstructionKind::Initialize { place }, span.clone());
-    }
-    emit::store(context.builder_mut(), destination, value, mir, span.clone());
+    let value = convert(context, value, target.ty(), span)?;
+    emit::write(context, &target, value, false, span)?;
 
     Ok(target)
 }
 
-pub(crate) fn lower_address_of(
+pub(crate) fn eval_address_of(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     operand: HMIRExprID,
-) -> CXResult<HMIRValue> {
-    let value = lower_expression(context, body, body.expr(operand))?;
-    if emit::terminated(context.builder()) {
-        return Ok(value);
-    }
-
+) -> EvalResult<HMIRValue> {
+    let value = eval(context, body, operand)?;
     let value = emit::referent(context, value, span)?;
     if matches!(
         context.env().resolve_type_id(value.ty()).kind(),
@@ -114,43 +70,19 @@ pub(crate) fn lower_address_of(
         .resolver_mut()
         .realize_type(HMIRTypeKind::PointerTo(value.ty()), span);
 
-    match value.kind() {
-        HMIRValueKind::Place(place) => Ok(HMIRValue::constant(
-            ty,
-            HMIRConstant::Address {
-                place: *place,
-                path: Vec::new(),
-                ty,
-            },
-        )),
-        HMIRValueKind::Indirect(reference) => {
-            let reference = emit::materialize(context, reference, span)?;
-            let out = emit::register(context, ty, span)?;
-            let intrinsic = MIRInternalIntrinsic::ReferenceAddress {
-                out: MIRTarget::Register(out),
-                reference,
-            };
-            emit::intrinsic(context.builder_mut(), intrinsic, span.clone());
-
-            Ok(context.bind(ty, MIRBindable::Register(out)))
-        }
-        HMIRValueKind::Constant(_) => unreachable!("a spilled value is addressable"),
-    }
+    Ok(emit::address(context, &value, ty, span)?)
 }
 
-pub(crate) fn lower_dereference(
+pub(crate) fn eval_dereference(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     pointer: HMIRExprID,
-) -> CXResult<HMIRValue> {
-    let value = lower_expression(context, body, body.expr(pointer))?;
-    if emit::terminated(context.builder()) {
-        return Ok(value);
-    }
-
+) -> EvalResult<HMIRValue> {
+    let value = eval(context, body, pointer)?;
     let value = emit::referent(context, value, span)?;
-    dereference(context, value, span)
+
+    Ok(dereference(context, value, span)?)
 }
 
 pub(crate) fn dereference(
@@ -178,46 +110,5 @@ pub(crate) fn dereference(
         todo!("dereference of a function pointer")
     }
 
-    if matches!(
-        pointer.kind(),
-        HMIRValueKind::Constant(HMIRConstant::Address { .. })
-    ) {
-        return Ok(HMIRValue::indirect(inner, pointer));
-    }
-
-    let pointer = emit::read(context, pointer, span)?;
-    let value = emit::materialize(context, &pointer, span)?;
-
-    let null = MIRConstant::Nullptr {
-        ty: types::lower_type(context.env_mut(), pointer.ty(), span)?,
-    };
-    let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    let condition = emit::register(context, bool_ty, span)?;
-    let nonnull = MIRPtrIntrinsic::Neq {
-        out: MIRTarget::Register(condition),
-        lhs: value.clone(),
-        rhs: MIRValue::Constant(null),
-    };
-    emit::intrinsic(context.builder_mut(), nonnull, span.clone());
-    let assert = MIRInternalIntrinsic::Assert {
-        condition: MIRValue::Register(condition),
-        message: Some("dereferenced a null pointer".into()),
-    };
-    emit::intrinsic(context.builder_mut(), assert, span.clone());
-
-    let reference_ty = context
-        .env_mut()
-        .resolver_mut()
-        .realize_type(HMIRTypeKind::ReferenceTo(inner), span);
-    let target_ty = types::lower_type(context.env_mut(), reference_ty, span)?;
-    let out = emit::register(context, reference_ty, span)?;
-    let bitcast = MIRInternalIntrinsic::Bitcast {
-        out: MIRTarget::Register(out),
-        value,
-        target_ty,
-    };
-    emit::intrinsic(context.builder_mut(), bitcast, span.clone());
-
-    let reference = context.bind(reference_ty, MIRBindable::Register(out));
-    Ok(HMIRValue::indirect(inner, reference))
+    emit::dereference(context, pointer, inner, span)
 }

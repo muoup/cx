@@ -1,44 +1,43 @@
 use cx_hmir::{
     HMIRBody, HMIROp, HMIROwnershipOp,
     body::HMIRLocalID,
-    expr::{HMIRExpr, HMIRExprID, HMIRExprKind},
+    expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRTypeKind, context::HMIRTypeContext},
     value::HMIRValue,
 };
-use cx_log::CXResult;
-use cx_mir::{MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRTarget};
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::lowering::FnLoweringContext,
-    lower::{coerce::convert, constant, dispatch::lower_expression, emit, types},
+    emit,
+    env::function::{FnContext, FnLoweringContext},
+    eval::{EvalResult, coerce::convert, constant, eval, eval_type},
 };
 
-pub(crate) fn lower_local(
+pub(crate) fn eval_local(
     context: &mut FnLoweringContext,
     span: &TokenRange,
     local: HMIRLocalID,
-) -> CXResult<HMIRValue> {
+) -> EvalResult<HMIRValue> {
     let Some(value) = context.get_local(&local).cloned() else {
-        todo!("local {local} has no runtime binding (comptime local used at runtime)")
+        todo!("local {local} has no binding in the evaluating context")
     };
 
-    emit::referent(context, value, span)
+    Ok(emit::referent(context, value, span)?)
 }
 
-pub(crate) fn lower_let(
+pub(crate) fn eval_let(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     local: HMIRLocalID,
     initializer: Option<HMIRExprID>,
-) -> CXResult<HMIRValue> {
+) -> EvalResult<HMIRValue> {
     let decl = body.local(local);
-    if decl.comptime() {
-        todo!("comptime let binding");
+    if decl.comptime() && matches!(context.context(), FnContext::Runtime(_)) {
+        todo!("comptime let binding in a runtime context");
     }
 
-    let ty = context.env_mut().eval_type(body, decl.ty())?;
+    let ty = eval_type(context, body, decl.ty())?;
     if matches!(context.env().resolve_type_id(ty).kind(), HMIRTypeKind::Void) {
         todo!("local of type void");
     }
@@ -52,95 +51,60 @@ pub(crate) fn lower_let(
 
     let value = match initializer {
         Some(initializer) if !allocates => {
-            let initializer = body.expr(initializer);
-            let value = lower_expression(context, body, initializer)?;
-            if emit::terminated(context.builder()) {
-                return Ok(value);
-            }
-
-            Some(convert(context, value, ty, initializer.span())?)
+            let value = eval(context, body, initializer)?;
+            Some(convert(context, value, ty, body.expr(initializer).span())?)
         }
         _ => None,
     };
 
-    let mir = types::lower_type(context.env_mut(), ty, span)?;
-    let scope = *context
-        .open_scopes()
-        .last()
-        .expect("Let binding lowered outside of a scope");
-    let place = context.builder_mut().allocate_place(MIRPlaceDecl::new(
-        mir,
-        decl.name().cloned(),
-        scope,
-        decl.nodrop(),
-        false,
-    ));
-
+    let place = emit::allocate(context, ty, decl.name().cloned(), decl.nodrop(), span)?;
     if let Some(value) = value {
-        let value = emit::materialize(context, &value, span)?;
-        emit::store(
-            context.builder_mut(),
-            MIRTarget::Place(place),
-            value,
-            mir,
-            span.clone(),
-        );
-        context.builder_mut().emit(
-            MIRInstructionKind::Initialize {
-                place: MIRBindable::Place(place),
-            },
-            span.clone(),
-        );
+        emit::write(context, &place, value, true, span)?;
     }
 
-    let binding = context.bind(ty, MIRBindable::Place(place));
-    context.insert_local(local, binding);
+    context.insert_local(local, place);
     Ok(constant::unit(context, span))
 }
 
-pub(crate) fn lower_block(
+pub(crate) fn eval_block(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     statements: &[HMIRExprID],
-) -> CXResult<HMIRValue> {
+) -> EvalResult<HMIRValue> {
     emit::open_scope(context, span.clone());
-
-    let mut result = None;
-    for statement in statements {
-        result = Some(lower_expression(context, body, body.expr(*statement))?);
-        if emit::terminated(context.builder()) {
-            break;
-        }
-    }
-
-    let result = match result {
-        Some(value) if emit::terminated(context.builder()) => value,
-        Some(value) => emit::read(context, value, span)?,
-        None => constant::unit(context, span),
-    };
+    let result = eval_statements(context, body, span, statements);
     emit::close_scope(context, span.clone());
 
-    Ok(result)
+    result
 }
 
-pub(crate) fn lower_scoped(
+fn eval_statements(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
-    expr: &HMIRExpr,
-) -> CXResult<HMIRValue> {
-    if matches!(expr.kind(), HMIRExprKind::Block { .. }) {
-        return lower_expression(context, body, expr);
+    span: &TokenRange,
+    statements: &[HMIRExprID],
+) -> EvalResult<HMIRValue> {
+    let mut result = None;
+    for statement in statements {
+        result = Some(eval(context, body, *statement)?);
     }
 
-    emit::open_scope(context, expr.span().clone());
+    match result {
+        Some(value) => Ok(emit::read(context, value, span)?),
+        None => Ok(constant::unit(context, span)),
+    }
+}
 
-    let value = lower_expression(context, body, expr)?;
-    let value = match emit::terminated(context.builder()) {
-        true => value,
-        false => emit::read(context, value, expr.span())?,
-    };
-    emit::close_scope(context, expr.span().clone());
+pub(crate) fn eval_scoped(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    expr: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    let node = body.expr(expr);
+    if matches!(node.kind(), HMIRExprKind::Block { .. }) {
+        return eval(context, body, expr);
+    }
 
-    Ok(value)
+    eval_block(context, body, node.span(), &[expr])
 }

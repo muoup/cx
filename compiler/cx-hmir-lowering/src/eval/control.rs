@@ -1,39 +1,88 @@
 use cx_hmir::{
-    HMIRBody,
-    expr::HMIRExprID,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
-    value::HMIRValue,
+    HMIRBinaryOp, HMIRBody,
+    expr::{HMIRExprID, constant::HMIRConstant},
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::{MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRInstructionKind, MIRValue};
+use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind};
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
 
 use crate::{
-    env::lowering::FnLoweringContext,
-    log::hmir_error,
-    lower::{
-        binding::lower_scoped,
+    emit::{self, runtime},
+    env::function::{FnContext, FnLoweringContext},
+    eval::{
+        EvalResult,
+        binding::eval_scoped,
         coerce::{convert, truthy},
-        constant,
-        dispatch::lower_expression,
-        emit, promote,
+        constant, eval, eval_type,
+        flow::{self, ComptimeStop, EvalStop, RuntimeStop},
+        promote, types,
     },
+    log::hmir_error,
 };
 
-fn lower_condition(
+fn eval_condition(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRExprID,
-) -> CXResult<Option<MIRValue>> {
-    let value = lower_expression(context, body, body.expr(condition))?;
-    if emit::terminated(context.builder()) {
-        return Ok(None);
-    }
+) -> EvalResult<HMIRValue> {
+    let value = eval(context, body, condition)?;
 
-    let value = truthy(context, value, span)?;
-    Ok(Some(emit::materialize(context, &value, span)?))
+    Ok(truthy(context, value, span)?)
+}
+
+fn comptime_truth(
+    context: &mut FnLoweringContext,
+    condition: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<bool> {
+    let condition = emit::read(context, condition, span)?;
+
+    match condition.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) => Ok(*value != 0),
+        _ => unreachable!("a comptime condition reads as an integer constant"),
+    }
+}
+
+pub(crate) fn eval_if(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    condition: HMIRExprID,
+    then_branch: HMIRExprID,
+    else_branch: Option<HMIRExprID>,
+) -> EvalResult<HMIRValue> {
+    let condition = eval_condition(context, body, span, condition)?;
+
+    match context.context() {
+        FnContext::Runtime(_) => {
+            runtime_if(context, body, span, condition, then_branch, else_branch)
+        }
+        FnContext::Comptime(_) => {
+            comptime_if(context, body, span, condition, then_branch, else_branch)
+        }
+    }
+}
+
+fn comptime_if(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    condition: HMIRValue,
+    then_branch: HMIRExprID,
+    else_branch: Option<HMIRExprID>,
+) -> EvalResult<HMIRValue> {
+    match (comptime_truth(context, condition, span)?, else_branch) {
+        (true, Some(_)) => eval_scoped(context, body, then_branch),
+        (true, None) => {
+            eval_scoped(context, body, then_branch)?;
+            Ok(constant::unit(context, span))
+        }
+        (false, Some(else_branch)) => eval_scoped(context, body, else_branch),
+        (false, None) => Ok(constant::unit(context, span)),
+    }
 }
 
 struct Arm {
@@ -41,47 +90,38 @@ struct Arm {
     value: HMIRValue,
 }
 
-pub(crate) fn lower_if(
+fn runtime_if(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
-    condition: HMIRExprID,
+    condition: HMIRValue,
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
-) -> CXResult<HMIRValue> {
-    let Some(condition) = lower_condition(context, body, span, condition)? else {
-        return Ok(constant::unit(context, span));
-    };
-
-    let then_block = context
-        .builder_mut()
-        .add_block(Some(CXIdent::new("if.then")));
+) -> EvalResult<HMIRValue> {
+    let condition = runtime::materialize(context, &condition, span)?;
+    let then_block = runtime::block(context, "if.then");
 
     let Some(else_branch) = else_branch else {
-        let merge = context
-            .builder_mut()
-            .add_block(Some(CXIdent::new("if.merge")));
-        emit::branch(
-            context.builder_mut(),
+        let merge = runtime::block(context, "if.merge");
+        runtime::branch(
+            context,
             condition,
             MIRBlockTarget::new(then_block),
             MIRBlockTarget::new(merge),
             span.clone(),
         );
 
-        context.builder_mut().switch_to(then_block);
-        lower_scoped(context, body, body.expr(then_branch))?;
-        emit::jump(context.builder_mut(), merge, Vec::new(), span.clone());
+        runtime::switch_to(context, then_block);
+        flow::catch_diverged(eval_scoped(context, body, then_branch))?;
+        runtime::jump(context, merge, Vec::new(), span.clone());
 
-        context.builder_mut().switch_to(merge);
+        runtime::switch_to(context, merge);
         return Ok(constant::unit(context, span));
     };
 
-    let else_block = context
-        .builder_mut()
-        .add_block(Some(CXIdent::new("if.else")));
-    emit::branch(
-        context.builder_mut(),
+    let else_block = runtime::block(context, "if.else");
+    runtime::branch(
+        context,
         condition,
         MIRBlockTarget::new(then_block),
         MIRBlockTarget::new(else_block),
@@ -90,43 +130,38 @@ pub(crate) fn lower_if(
 
     let mut arms = Vec::new();
     for (block, branch) in [(then_block, then_branch), (else_block, else_branch)] {
-        context.builder_mut().switch_to(block);
-        let value = lower_scoped(context, body, body.expr(branch))?;
-        if !emit::terminated(context.builder()) {
-            let block = context.builder().current_block();
+        runtime::switch_to(context, block);
+        if let Some(value) = flow::catch_diverged(eval_scoped(context, body, branch))? {
+            let block = runtime::current_block(context);
             arms.push(Arm { block, value });
         }
     }
 
     if arms.is_empty() {
-        return Ok(constant::unit(context, span));
+        return Err(RuntimeStop::Diverged.into());
     }
 
-    let merge = context
-        .builder_mut()
-        .add_block(Some(CXIdent::new("if.merge")));
+    let merge = runtime::block(context, "if.merge");
     let Some(ty) = merged_type(context, &arms, span) else {
         for arm in arms {
-            context.builder_mut().switch_to(arm.block);
-            emit::jump(context.builder_mut(), merge, Vec::new(), span.clone());
+            runtime::switch_to(context, arm.block);
+            runtime::jump(context, merge, Vec::new(), span.clone());
         }
 
-        context.builder_mut().switch_to(merge);
+        runtime::switch_to(context, merge);
         return Ok(constant::unit(context, span));
     };
 
-    let result = emit::register(context, ty, span)?;
-    context.builder_mut().add_block_param(merge, result);
-
+    let result = runtime::block_param(context, merge, ty, span)?;
     for arm in arms {
-        context.builder_mut().switch_to(arm.block);
+        runtime::switch_to(context, arm.block);
         let value = convert(context, arm.value, ty, span)?;
-        let value = emit::materialize(context, &value, span)?;
-        emit::jump(context.builder_mut(), merge, vec![value], span.clone());
+        let value = runtime::materialize(context, &value, span)?;
+        runtime::jump(context, merge, vec![value], span.clone());
     }
 
-    context.builder_mut().switch_to(merge);
-    Ok(context.bind(ty, MIRBindable::Register(result)))
+    runtime::switch_to(context, merge);
+    Ok(result)
 }
 
 fn merged_type(
@@ -152,97 +187,192 @@ fn merged_type(
     merged
 }
 
-pub(crate) fn lower_while(
+pub(crate) fn eval_while(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRExprID,
     loop_body: HMIRExprID,
     pre_eval: bool,
-) -> CXResult<HMIRValue> {
-    let condition_block = context
-        .builder_mut()
-        .add_block(Some(CXIdent::new("while.condition")));
-    let body_block = context
-        .builder_mut()
-        .add_block(Some(CXIdent::new("while.body")));
-    let exit = context
-        .builder_mut()
-        .add_block(Some(CXIdent::new("while.exit")));
+) -> EvalResult<HMIRValue> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime_while(context, body, span, condition, loop_body, pre_eval),
+        FnContext::Comptime(_) => {
+            comptime_while(context, body, span, condition, loop_body, pre_eval)
+        }
+    }
+}
+
+fn comptime_while(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    condition: HMIRExprID,
+    loop_body: HMIRExprID,
+    pre_eval: bool,
+) -> EvalResult<HMIRValue> {
+    let mut checks = pre_eval;
+
+    loop {
+        if checks {
+            let condition = eval_condition(context, body, span, condition)?;
+            if !comptime_truth(context, condition, span)? {
+                break;
+            }
+        }
+        checks = true;
+
+        match eval_scoped(context, body, loop_body) {
+            Ok(_) | Err(EvalStop::Comptime(ComptimeStop::Continue)) => {}
+            Err(EvalStop::Comptime(ComptimeStop::Break)) => break,
+            Err(stop) => return Err(stop),
+        }
+    }
+
+    Ok(constant::unit(context, span))
+}
+
+fn runtime_while(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    condition: HMIRExprID,
+    loop_body: HMIRExprID,
+    pre_eval: bool,
+) -> EvalResult<HMIRValue> {
+    let condition_block = runtime::block(context, "while.condition");
+    let body_block = runtime::block(context, "while.body");
+    let exit = runtime::block(context, "while.exit");
 
     let entry = if pre_eval {
         condition_block
     } else {
         body_block
     };
-    emit::jump(context.builder_mut(), entry, Vec::new(), span.clone());
+    runtime::jump(context, entry, Vec::new(), span.clone());
 
-    context.builder_mut().switch_to(condition_block);
-    let Some(condition) = lower_condition(context, body, span, condition)? else {
+    runtime::switch_to(context, condition_block);
+    let condition = flow::catch_diverged(eval_condition(context, body, span, condition))?;
+    let Some(condition) = condition else {
         for block in [body_block, exit] {
-            context.builder_mut().switch_to(block);
-            context
-                .builder_mut()
-                .emit(MIRInstructionKind::Unreachable, span.clone());
+            runtime::switch_to(context, block);
+            runtime::emit(context, MIRInstructionKind::Unreachable, span.clone());
         }
 
-        return Ok(constant::unit(context, span));
+        return Err(RuntimeStop::Diverged.into());
     };
 
-    emit::branch(
-        context.builder_mut(),
+    let condition = runtime::materialize(context, &condition, span)?;
+    runtime::branch(
+        context,
         condition,
         MIRBlockTarget::new(body_block),
         MIRBlockTarget::new(exit),
         span.clone(),
     );
 
-    context.builder_mut().switch_to(body_block);
-    lower_scoped(context, body, body.expr(loop_body))?;
-    emit::jump(
-        context.builder_mut(),
-        condition_block,
-        Vec::new(),
-        span.clone(),
-    );
+    runtime::switch_to(context, body_block);
+    flow::catch_diverged(eval_scoped(context, body, loop_body))?;
+    runtime::jump(context, condition_block, Vec::new(), span.clone());
 
-    context.builder_mut().switch_to(exit);
+    runtime::switch_to(context, exit);
     Ok(constant::unit(context, span))
 }
 
-pub(crate) fn lower_return(
+pub(crate) fn eval_short_circuit(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    op: HMIRBinaryOp,
+    lhs: HMIRExprID,
+    rhs: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    let left = eval_condition(context, body, span, lhs)?;
+    let left = emit::read(context, left, span)?;
+
+    match context.context() {
+        FnContext::Runtime(_) => runtime_short_circuit(context, body, span, op, left, rhs),
+        FnContext::Comptime(_) => {
+            let truth = comptime_truth(context, left.clone(), span)?;
+            if truth == (op == HMIRBinaryOp::LOr) {
+                return Ok(left);
+            }
+
+            let right = eval_condition(context, body, span, rhs)?;
+            Ok(emit::read(context, right, span)?)
+        }
+    }
+}
+
+fn runtime_short_circuit(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    op: HMIRBinaryOp,
+    left: HMIRValue,
+    rhs: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    let left = runtime::materialize(context, &left, span)?;
+
+    let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
+    let rhs_block = runtime::block(context, "logical.rhs");
+    let merge = runtime::block(context, "logical.merge");
+    let result = runtime::block_param(context, merge, ty, span)?;
+
+    let rhs_target = MIRBlockTarget::new(rhs_block);
+    let merge_target = MIRBlockTarget::with_args(merge, vec![left.clone()]);
+    let (true_target, false_target) = match op {
+        HMIRBinaryOp::LAnd => (rhs_target, merge_target),
+        _ => (merge_target, rhs_target),
+    };
+    runtime::branch(context, left, true_target, false_target, span.clone());
+
+    runtime::switch_to(context, rhs_block);
+    if let Some(right) = flow::catch_diverged(eval_condition(context, body, span, rhs))? {
+        let right = runtime::materialize(context, &right, span)?;
+        runtime::jump(context, merge, vec![right], span.clone());
+    }
+
+    runtime::switch_to(context, merge);
+    Ok(result)
+}
+
+pub(crate) fn eval_loop_exit(
+    context: &mut FnLoweringContext,
+    stop: ComptimeStop,
+) -> EvalResult<HMIRValue> {
+    match context.context() {
+        FnContext::Runtime(_) => todo!("break and continue need runtime loop targets"),
+        FnContext::Comptime(_) => Err(stop.into()),
+    }
+}
+
+pub(crate) fn eval_return(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     value: Option<HMIRExprID>,
-) -> CXResult<HMIRValue> {
+) -> EvalResult<HMIRValue> {
     let value = match value {
-        Some(value) => {
-            let value = lower_expression(context, body, body.expr(value))?;
-            if emit::terminated(context.builder()) {
-                return Ok(value);
-            }
-
-            Some(value)
-        }
+        Some(value) => Some(eval(context, body, value)?),
         None => None,
     };
 
-    lower_return_value(context, body, value, span)?;
-    Ok(constant::unit(context, span))
+    return_value(context, body, value, span)
 }
 
-pub(crate) fn lower_return_value(
+// Always stops evaluation: a runtime return diverges, and a comptime return carries its value to the caller
+pub(crate) fn return_value(
     context: &mut FnLoweringContext,
     body: &HMIRBody,
     value: Option<HMIRValue>,
     span: &TokenRange,
-) -> CXResult<()> {
+) -> EvalResult<HMIRValue> {
     let return_type = context.signature().return_type();
-    let ty = context.env_mut().eval_type(body, return_type)?;
+    let ty = eval_type(context, body, return_type)?;
     let returns_void = match context.env().resolve_type_id(ty).kind() {
         HMIRTypeKind::Unreachable => {
-            return Err(hmir_error(span, &typecheck::NORETURN_RETURN, ()));
+            return Err(hmir_error(span, &typecheck::NORETURN_RETURN, ()).into());
         }
         HMIRTypeKind::Void => true,
         _ => false,
@@ -254,28 +384,55 @@ pub(crate) fn lower_return_value(
                 context.env().resolve_type_id(value.ty()).kind(),
                 HMIRTypeKind::Void
             ) {
-                return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()));
+                return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()).into());
             }
 
             None
         }
         Some(value) => {
             let value = convert(context, value, ty, span)?;
-            let value = emit::read(context, value, span)?;
-            Some(emit::materialize(context, &value, span)?)
+            Some(emit::read(context, value, span)?)
         }
         None if returns_void => None,
-        None => return Err(hmir_error(span, &typecheck::MISSING_RETURN_VALUE, ())),
+        None => return Err(hmir_error(span, &typecheck::MISSING_RETURN_VALUE, ()).into()),
     };
 
-    let scopes = context.open_scopes().to_vec();
-    for scope in scopes.into_iter().rev() {
-        emit::drop_scope(context.builder_mut(), scope, span.clone());
+    match context.context() {
+        FnContext::Runtime(_) => {
+            let value = match &value {
+                Some(value) => Some(runtime::materialize(context, value, span)?),
+                None => None,
+            };
+
+            runtime::drop_scopes(context, span);
+            runtime::emit(context, MIRInstructionKind::Return { value }, span.clone());
+            Err(RuntimeStop::Diverged.into())
+        }
+        FnContext::Comptime(_) => {
+            let value = value.unwrap_or_else(|| constant::unit(context, span));
+            Err(ComptimeStop::Return(value).into())
+        }
     }
+}
 
-    context
-        .builder_mut()
-        .emit(MIRInstructionKind::Return { value }, span.clone());
+pub(crate) fn fallthrough(
+    context: &mut FnLoweringContext,
+    body: &HMIRBody,
+    is_main: bool,
+    span: &TokenRange,
+) -> EvalResult<HMIRValue> {
+    let return_type = context.signature().return_type();
+    let ty = eval_type(context, body, return_type)?;
 
-    Ok(())
+    match context.env().resolve_type_id(ty).kind() {
+        HMIRTypeKind::Void => return_value(context, body, None, span),
+        HMIRTypeKind::Int(_) if is_main => {
+            let zero = HMIRValue::constant(ty, HMIRConstant::Int { value: 0, ty });
+            return_value(context, body, Some(zero), span)
+        }
+        _ => {
+            runtime::emit(context, MIRInstructionKind::Unreachable, span.clone());
+            Err(RuntimeStop::Diverged.into())
+        }
+    }
 }

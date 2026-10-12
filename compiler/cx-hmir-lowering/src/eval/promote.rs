@@ -5,7 +5,7 @@ use cx_hmir::ty::{
 };
 use cx_tokens::TokenRange;
 
-use crate::{env::lowering::FnLoweringContext, lower::types};
+use crate::{env::function::FnLoweringContext, eval::types};
 
 pub(crate) fn integer(
     context: &mut FnLoweringContext,

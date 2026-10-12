@@ -1,5 +1,5 @@
 use cx_hmir::{HMIRFunctionStage, value::HMIRValue};
-use cx_log::error::CXError;
+use cx_log::{CXResult, error::CXError};
 
 use crate::env::function::FnContext;
 
@@ -31,6 +31,26 @@ impl EvalStop {
             Self::Runtime(_) => assert_eq!(context.stage(), HMIRFunctionStage::Runtime),
             Self::Diagnostic(_) => {}
         }
+    }
+}
+
+// A runtime boundary that resumes in another block absorbs divergence; every other stop keeps propagating
+pub(crate) fn catch_diverged<T>(result: EvalResult<T>) -> EvalResult<Option<T>> {
+    match result {
+        Err(EvalStop::Runtime(RuntimeStop::Diverged)) => Ok(None),
+        
+        Ok(value) => Ok(Some(value)),
+        Err(stop) => Err(stop),
+    }
+}
+
+// The top of an evaluation, where only diagnostics may remain uncaught
+pub(crate) fn top<T>(result: EvalResult<T>) -> CXResult<T> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(EvalStop::Diagnostic(error)) => Err(error),
+        Err(EvalStop::Comptime(stop)) => unreachable!("uncaught comptime stop: {stop:?}"),
+        Err(EvalStop::Runtime(stop)) => unreachable!("uncaught runtime stop: {stop:?}"),
     }
 }
 

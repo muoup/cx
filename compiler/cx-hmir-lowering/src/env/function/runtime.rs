@@ -8,7 +8,7 @@ use cx_hmir::{
 use cx_mir::{MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRScopeID};
 use cx_tokens::TokenRange;
 
-use crate::env::function::MIRFunctionBuilder;
+use crate::env::module::MIRFunctionBuilder;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Emission {
@@ -53,8 +53,15 @@ impl RuntimeContext {
     }
 
     pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
-        if self.emission == Emission::Enabled {
-            self.builder.emit(kind, span);
+        if self.emission == Emission::Suppressed {
+            return;
+        }
+        
+        let terminator = kind.is_terminator();
+        self.builder.emit(kind, span);
+        
+        if terminator {
+            self.set_emission(Emission::Suppressed);
         }
     }
 

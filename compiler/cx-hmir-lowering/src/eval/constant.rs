@@ -1,24 +1,17 @@
 use cx_hmir::{
-    HMIRBody,
     expr::constant::HMIRConstant,
-    ty::{HMIRTypeKind, context::HMIRTypeContext},
+    ty::HMIRTypeKind,
     value::{HMIRValue, HMIRValueKind},
 };
-use cx_log::CXResult;
-use cx_mir::MIRConstant;
 use cx_tokens::TokenRange;
 
-use crate::{
-    env::{HMIREnvironment, lowering::FnLoweringContext},
-    lower::types::{lower_type, mir_float, mir_int},
-};
+use crate::{env::function::FnLoweringContext, eval::EvalResult};
 
-pub(crate) fn lower_constant(
+pub(crate) fn eval_constant(
     context: &mut FnLoweringContext,
-    body: &HMIRBody,
     span: &TokenRange,
     constant: &HMIRConstant,
-) -> CXResult<HMIRValue> {
+) -> EvalResult<HMIRValue> {
     match constant {
         // Note: because lowering refers to runtime expressions, where comptime expressions are "evaluated", there
         // is not a need to handle HMIRConstant::Comptime here. A type reaching this path would indicate that we are
@@ -63,33 +56,4 @@ pub(crate) fn unit(context: &mut FnLoweringContext, span: &TokenRange) -> HMIRVa
         .realize_type(HMIRTypeKind::Void, span);
 
     HMIRValue::constant(ty, HMIRConstant::Unit)
-}
-
-pub(crate) fn mir_constant(
-    env: &mut HMIREnvironment,
-    constant: &HMIRConstant,
-    span: &TokenRange,
-) -> CXResult<MIRConstant> {
-    Ok(match constant {
-        HMIRConstant::Unit => MIRConstant::Unit,
-        HMIRConstant::Int { value, ty } => match env.resolve_type_id(*ty).kind() {
-            HMIRTypeKind::Int(int) => MIRConstant::Integer {
-                ty: mir_int(int.width()),
-                value: *value,
-            },
-            other => todo!("integer constant of type {other:?}"),
-        },
-        HMIRConstant::Float { value, ty } => match env.resolve_type_id(*ty).kind() {
-            HMIRTypeKind::Float(float) => MIRConstant::Float {
-                value: *value,
-                ty: mir_float(float.width()),
-            },
-            other => todo!("float constant of type {other:?}"),
-        },
-        HMIRConstant::Null(ty) => MIRConstant::Nullptr {
-            ty: lower_type(env, *ty, span)?,
-        },
-        HMIRConstant::Str(value) => MIRConstant::String(value.clone()),
-        other => todo!("constant {other:?}"),
-    })
 }
