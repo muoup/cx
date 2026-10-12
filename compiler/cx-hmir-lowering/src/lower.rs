@@ -6,7 +6,7 @@ use crate::{
     eval::{self, eval_type, flow, types::lower_type},
 };
 use cx_hmir::{
-    HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
+    HMIRDef, HMIRDefID, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
     ty::context::HMIRTypeContext,
 };
 use cx_log::CXResult;
@@ -17,43 +17,68 @@ pub fn lower_unit<'hmir>(
     unit: &'hmir HMIRUnit,
     env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
-    fn is_root(function: &HMIRFunction) -> bool {
-        function.signature().stage() == HMIRFunctionStage::Runtime
-            && !function
+    let mut roots = unit
+        .defs()
+        .filter(|(_, def)| is_root(def))
+        .map(|(id, _)| *id)
+        .collect::<Vec<_>>();
+    roots.sort();
+
+    for root in roots {
+        env.generation_mut().request(root);
+    }
+
+    while let Some(id) = env.generation_mut().next() {
+        generate(id, env)?;
+    }
+
+    Ok(())
+}
+
+// What other units may link against is generated regardless of use; everything else waits for a reference
+fn is_root(def: &HMIRDef) -> bool {
+    match def.kind() {
+        HMIRDefKind::Function(function) => {
+            function.def().is_some() && function.prototype().linkage() != LinkageMode::Static
+        }
+        HMIRDefKind::Global(global) => match global.linkage() {
+            LinkageMode::Standard => true,
+            LinkageMode::Extern => global.initializer().is_some(),
+            LinkageMode::Static => false,
+        },
+        HMIRDefKind::ComptimeGlobal(_) | HMIRDefKind::Type(_) => false,
+    }
+}
+
+fn generate<'hmir>(id: HMIRDefID, env: &mut HMIREnvironment<'_, 'hmir>) -> CXResult<()> {
+    fn is_staged(function: &HMIRFunction) -> bool {
+        function.signature().stage() == HMIRFunctionStage::Comptime
+            || function
                 .signature()
                 .params()
                 .iter()
                 .any(|param| param.comptime())
     }
 
-    // A declaration of storage defined elsewhere is lowered only once something refers to it
-    fn is_declaration(global: &HMIRGlobal) -> bool {
-        global.linkage() == LinkageMode::Extern && global.initializer().is_none()
-    }
+    let def = env
+        .symbols()
+        .local_unit()
+        .resolve_def(id)
+        .expect("Local symbol not found");
 
-    for (_, def) in unit.defs() {
-        match def.kind() {
-            HMIRDefKind::Function(func) => {
-                if func.def().is_none() || !is_root(func) {
-                    continue;
-                }
-
-                lower_function(func, env)?;
+    match def.kind() {
+        HMIRDefKind::Function(function) => {
+            if function.def().is_none() || is_staged(function) {
+                return Ok(());
             }
 
-            HMIRDefKind::Global(global) => {
-                if is_declaration(global) {
-                    continue;
-                }
-
-                lower_global(global, env)?;
-            }
-
-            _ => {}
+            lower_function(function, env)
+        }
+        HMIRDefKind::Global(global) => lower_global(global, env).map(|_| ()),
+        HMIRDefKind::ComptimeGlobal(_) | HMIRDefKind::Type(_) => {
+            unreachable!("generation requested for a definition that is never emitted")
         }
     }
-
-    Ok(())
 }
 
 pub fn lower_function<'hmir>(

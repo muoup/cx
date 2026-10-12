@@ -1,17 +1,21 @@
 pub(crate) mod function;
+pub(crate) mod generation;
 pub(crate) mod module;
 pub(crate) mod resolver;
 pub(crate) mod symbols;
 
 use cx_hmir::{
-    HMIRUnit,
+    HMIRDef, HMIRDefKind, HMIRDefRef, HMIRUnit,
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_mir::MIRUnit;
 use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
 
-use crate::env::{module::MIRModuleBuilder, resolver::HMIRResolver, symbols::HMIRSymbolEnv};
+use crate::env::{
+    generation::GenerationQueue, module::MIRModuleBuilder, resolver::HMIRResolver,
+    symbols::HMIRSymbolEnv,
+};
 
 #[derive(Debug)]
 pub struct HMIREnvironment<'global, 'hmir> {
@@ -21,6 +25,7 @@ pub struct HMIREnvironment<'global, 'hmir> {
     module: MIRModuleBuilder,
     symbols: HMIRSymbolEnv<'global, 'hmir>,
     resolver: HMIRResolver,
+    generation: GenerationQueue,
 }
 
 impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
@@ -36,6 +41,7 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
             module: MIRModuleBuilder::new(architecture),
             symbols: HMIRSymbolEnv::new(&global.hmir, unit),
             resolver: HMIRResolver::new(),
+            generation: GenerationQueue::new(),
         }
     }
 
@@ -74,6 +80,27 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
         }
     }
 
+    // A reference to a function or global is what requests its generation
+    pub fn resolve_def(&mut self, def: &HMIRDefRef) -> &'hmir HMIRDef {
+        let HMIRDefRef::Local(id) = def else {
+            todo!("reference to an external definition")
+        };
+        let def = self
+            .symbols
+            .local_unit()
+            .resolve_def(*id)
+            .expect("Local symbol not found");
+
+        if matches!(
+            def.kind(),
+            HMIRDefKind::Function(_) | HMIRDefKind::Global(_)
+        ) {
+            self.generation.request(*id);
+        }
+
+        def
+    }
+
     pub fn module(&self) -> &MIRModuleBuilder {
         &self.module
     }
@@ -96,6 +123,14 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
 
     pub fn resolver_mut(&mut self) -> &mut HMIRResolver {
         &mut self.resolver
+    }
+
+    pub fn generation(&self) -> &GenerationQueue {
+        &self.generation
+    }
+
+    pub fn generation_mut(&mut self) -> &mut GenerationQueue {
+        &mut self.generation
     }
 
     pub fn finish(self) -> MIRUnit {

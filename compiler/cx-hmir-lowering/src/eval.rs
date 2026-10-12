@@ -227,15 +227,7 @@ fn eval_type_def(
     span: &TokenRange,
     def: &HMIRDefRef,
 ) -> EvalResult<HMIRTypeID> {
-    let HMIRDefRef::Local(id) = def else {
-        todo!("type reference to an external definition")
-    };
-    let def = context
-        .env()
-        .symbols()
-        .local_unit()
-        .resolve_def(*id)
-        .expect("Local symbol not found");
+    let def = context.env_mut().resolve_def(def);
 
     match def.kind() {
         HMIRDefKind::Type(ty) => Ok(*ty),
