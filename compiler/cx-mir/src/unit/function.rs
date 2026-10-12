@@ -27,7 +27,7 @@ impl MIRFunction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MIRFnParam {
     name: Option<CXIdent>,
     ty: MIRTypeID,
@@ -52,7 +52,7 @@ impl MIRFnParam {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MIRFnSignature {
     return_type: MIRTypeID,
     params: Vec<MIRFnParam>,

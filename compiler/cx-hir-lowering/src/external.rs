@@ -4,6 +4,7 @@ use cx_hir::{
     symbols::{HIRSymbol, HIRSymbolKind},
 };
 use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit};
+use cx_log::CXResult;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
@@ -11,6 +12,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     body::BodyLowering,
+    builder::HMIRUnitBuilder,
     def::lower_def,
     plan::{DefSource, PlannedDef, is_forward_declaration},
     resolve::{Resolver, constructor_payload},
@@ -24,7 +26,7 @@ pub fn generate_external_hmir(
     registry: &GlobalSymbolRegistry,
     architecture: ArchitectureConfig,
     name: &QualifiedName,
-) -> Option<HMIRUnit> {
+) -> CXResult<Option<HMIRUnit>> {
     let (tag, bare) = split_tag(name);
     let symbols = registry
         .resolve(&bare, tag.is_some())
@@ -39,7 +41,7 @@ pub fn generate_external_hmir(
     let span = TokenRange::internal();
     let (namespace, source) = match preferred_symbol(&symbols, &bare).map(|symbol| &symbol.kind) {
         None if incomplete => (bare.namespace.clone(), DefSource::OpaqueType),
-        None => return None,
+        None => return Ok(None),
         Some(HIRSymbolKind::Function(function)) => (
             lexical_namespace(&bare, &function.base.kind),
             DefSource::Function {
@@ -57,7 +59,6 @@ pub fn generate_external_hmir(
             bare.namespace.clone(),
             DefSource::Global {
                 ty,
-                mutable: true,
                 initializer: None,
                 linkage: LinkageMode::Extern,
                 naming: *symbol_naming,
@@ -67,7 +68,10 @@ pub fn generate_external_hmir(
             enum_block_idx,
             variant_index,
         }) => {
-            enum_block = registry.enum_block(&bare.namespace, *enum_block_idx)?;
+            let Some(block) = registry.enum_block(&bare.namespace, *enum_block_idx) else {
+                return Ok(None);
+            };
+            enum_block = block;
             (
                 bare.namespace.clone(),
                 DefSource::EnumVariant {
@@ -76,29 +80,36 @@ pub fn generate_external_hmir(
                 },
             )
         }
-        Some(HIRSymbolKind::TypeConstructor(constructor)) => (
-            bare.namespace
-                .clone()
-                .parent()
-                .unwrap_or_else(NamespacePath::root),
-            DefSource::Constructor {
-                union_type: &constructor.base.union_type,
-                payload: constructor_payload(registry, &constructor.base)?,
-            },
-        ),
+        Some(HIRSymbolKind::TypeConstructor(constructor)) => {
+            let Some(payload) = constructor_payload(registry, &constructor.base) else {
+                return Ok(None);
+            };
+            (
+                bare.namespace
+                    .clone()
+                    .parent()
+                    .unwrap_or_else(NamespacePath::root),
+                DefSource::Constructor {
+                    union_type: &constructor.base.union_type,
+                    payload,
+                },
+            )
+        }
     };
 
     let plan = PlannedDef::new(name.clone(), namespace.clone(), span.clone(), source);
     let resolver = Resolver::new(registry, architecture, 1);
-    let mut unit = HMIRUnit::new(namespace);
-    let cx = BodyLowering::new(&resolver, unit.types_mut(), plan.namespace().clone(), false)
+    let mut unit = HMIRUnitBuilder::new(namespace.clone());
+    let context = BodyLowering::new(&resolver, unit.types_mut(), namespace, false)
         .owned_by(HMIRDefID::new(0));
-    let kind = lower_def(cx, &plan);
+    let kind = lower_def(context, &plan)?;
+
     unit.push_def(HMIRDef::new(name.clone(), span, kind));
     for def in resolver.take_statics() {
         unit.push_def(def);
     }
-    Some(unit)
+
+    Ok(Some(unit.finish()))
 }
 
 fn split_tag(name: &QualifiedName) -> (Option<HIRTagKind>, QualifiedName) {

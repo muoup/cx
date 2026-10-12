@@ -14,7 +14,7 @@ use crate::{
     eval::{
         EvalResult,
         binding::eval_scoped,
-        coerce::{convert, truthy},
+        coerce::{self, convert},
         constant, eval, eval_type,
         flow::{self, ComptimeStop, EvalStop, RuntimeStop},
         promote, types,
@@ -30,7 +30,7 @@ fn eval_condition(
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, condition)?;
 
-    Ok(truthy(context, value, span)?)
+    Ok(coerce::truthy(context, value, span)?)
 }
 
 fn comptime_truth(
@@ -256,7 +256,9 @@ fn runtime_while(
     let Some(condition) = condition else {
         for block in [body_block, exit] {
             runtime::switch_to(context, block);
-            runtime::emit(context, MIRInstructionKind::Unreachable, span.clone());
+            context
+                .runtime_mut()
+                .emit(MIRInstructionKind::Unreachable, span.clone());
         }
 
         return Err(RuntimeStop::Diverged.into());
@@ -405,7 +407,9 @@ pub(crate) fn return_value(
             };
 
             runtime::drop_scopes(context, span);
-            runtime::emit(context, MIRInstructionKind::Return { value }, span.clone());
+            context
+                .runtime_mut()
+                .emit(MIRInstructionKind::Return { value }, span.clone());
             Err(RuntimeStop::Diverged.into())
         }
         FnContext::Comptime(_) => {
@@ -431,7 +435,9 @@ pub(crate) fn fallthrough(
             return_value(context, body, Some(zero), span)
         }
         _ => {
-            runtime::emit(context, MIRInstructionKind::Unreachable, span.clone());
+            context
+                .runtime_mut()
+                .emit(MIRInstructionKind::Unreachable, span.clone());
             Err(RuntimeStop::Diverged.into())
         }
     }

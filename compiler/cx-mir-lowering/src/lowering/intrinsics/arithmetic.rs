@@ -264,8 +264,8 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
 
 fn operand_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> Option<cx_mir::MIRTypeID> {
     match value {
-        MIRValue::Register(id) => Some(context.body.register(*id).unwrap().ty),
-        MIRValue::PlaceRef(id) => Some(context.body.place(*id).unwrap().ty),
+        MIRValue::Register(id) => Some(context.body.register(*id).ty()),
+        MIRValue::PlaceRef(id) => Some(context.body.place(*id).ty()),
         MIRValue::Constant(MIRConstant::GlobalRef(reference)) => Some(reference.ty),
         _ => None,
     }

@@ -91,7 +91,7 @@ impl Values {
     ) -> HashMap<MIRBindable, i128> {
         let mut state = self.known.clone();
         let body = env.body();
-        let block = body.block(target.block).expect("unknown target block");
+        let block = body.block(target.block);
         for (parameter, argument) in block.params().iter().zip(&target.args) {
             let value = self.value(argument);
             let key = MIRBindable::Register(*parameter);
@@ -120,11 +120,11 @@ impl AnalysisPass for Values {
 
     fn finish(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
         let body = env.body();
-        for block in body.blocks() {
-            let state = if block.id() == body.entry() {
+        for (id, block) in body.blocks() {
+            let state = if id == body.entry() {
                 Some(HashMap::new())
             } else {
-                self.blocks.get(&block.id()).cloned().flatten()
+                self.blocks.get(&id).cloned().flatten()
             };
             let Some(state) = state else {
                 continue;

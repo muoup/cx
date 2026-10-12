@@ -70,7 +70,18 @@ impl BodyPrinter<'_> {
                 f.write_str(")")
             }
 
-            HMIRExprKind::Block { statements } => self.block(f, statements, None, depth),
+            HMIRExprKind::Block {
+                statements,
+                scoped,
+                yields,
+            } => {
+                f.write_str(match (scoped, yields) {
+                    (_, true) => "yield {\n",
+                    (true, false) => "{\n",
+                    (false, false) => "seq {\n",
+                })?;
+                self.block(f, statements, depth)
+            }
 
             HMIRExprKind::If {
                 condition,

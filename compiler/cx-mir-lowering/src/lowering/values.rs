@@ -41,7 +41,7 @@ pub(crate) fn lower_rvalue(
     let address = match value {
         MIRValue::PlaceRef(place) => Some((
             context.places[place].clone(),
-            context.body.place(*place).unwrap().ty,
+            context.body.place(*place).ty(),
         )),
         MIRValue::Constant(MIRConstant::GlobalRef(reference)) => {
             Some((global_address(context, *reference), reference.ty))
@@ -84,7 +84,7 @@ fn loads_through(
     ) {
         return true;
     }
-    let register_type = context.body.register(register).unwrap().ty;
+    let register_type = context.body.register(register).ty();
     match types.definition(register_type).unwrap().kind() {
         MIRTypeKind::MemoryReference { inner } => {
             !types.same_type(register_type, expected) && types.same_type(*inner, expected)
@@ -99,7 +99,7 @@ pub(super) fn lower_read(context: &mut FunctionContext<'_, '_>, value: &MIRValue
         return memory::load(context, address, reference.ty);
     }
     if let MIRValue::PlaceRef(place) = value {
-        let ty = context.body.place(*place).unwrap().ty;
+        let ty = context.body.place(*place).ty();
         return memory::load(context, context.places[place].clone(), ty);
     }
     if let MIRValue::Register(register) = value {
@@ -114,7 +114,7 @@ fn read_through_reference(
     context: &mut FunctionContext<'_, '_>,
     register: MIRRegister,
 ) -> Option<LMIRValue> {
-    let ty = context.body.register(register).unwrap().ty;
+    let ty = context.body.register(register).ty();
     let MIRTypeKind::MemoryReference { inner } = context.types().definition(ty).unwrap().kind()
     else {
         return None;
@@ -280,21 +280,11 @@ pub(super) fn tagged_union_tag_offset(context: &FunctionContext<'_, '_>, ty: MIR
 
 pub(super) fn target_type(context: &FunctionContext<'_, '_>, target: MIRTarget) -> MIRTypeID {
     match target {
-        MIRTarget::Register(id) => {
-            context
-                .body
-                .register(id)
-                .expect("unknown target register")
-                .ty
-        }
-        MIRTarget::Place(id) => context.body.place(id).expect("unknown target place").ty,
+        MIRTarget::Register(id) => context.body.register(id).ty(),
+        MIRTarget::Place(id) => context.body.place(id).ty(),
         MIRTarget::Global(reference) => reference.ty,
         MIRTarget::Indirect(id) => {
-            let pointer = context
-                .body
-                .register(id)
-                .expect("unknown indirect target")
-                .ty;
+            let pointer = context.body.register(id).ty();
             match context.types().definition(pointer).unwrap().kind() {
                 MIRTypeKind::MemoryReference { inner, .. } | MIRTypeKind::PointerTo { inner } => {
                     *inner

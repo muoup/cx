@@ -1,6 +1,6 @@
 use cx_log::{CXMaybeRawResult, CXResult, catalogue::analysis};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRLivenessState, MIRPlaceID,
+    MIRBasicBlockID, MIRBindable, MIRBody, MIRInstruction, MIRInstructionKind, MIRLivenessState, MIRPlaceID,
     MIRRegisterID, MIRTarget,
     expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
 };
@@ -16,6 +16,19 @@ pub struct Liveness {
 
     // Registers occupy the first `register_count` table slots, places the rest
     register_count: usize,
+}
+
+fn debug_name(body: &MIRBody, bindable: &MIRBindable) -> (String, bool) {
+    let debug_name = match bindable {
+        MIRBindable::Place(id) => body.place(*id).debug_name(),
+        MIRBindable::Register(id) => body.register(*id).debug_name(),
+    };
+    let name = debug_name
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("{bindable:?}"));
+    let discarded = debug_name.is_some_and(|name| name.as_str() == "_");
+
+    (name, discarded)
 }
 
 impl Liveness {
@@ -53,7 +66,7 @@ impl Liveness {
             return Ok(());
         }
 
-        let (name, discarded) = env.body().bindable_debug_name(bindable);
+        let (name, discarded) = debug_name(env.body(), bindable);
         let args = (
             env.function().prototype().display_name().to_string(),
             name,
@@ -73,10 +86,10 @@ impl Liveness {
         incoming: MIRLivenessState,
     ) -> CXMaybeRawResult<MIRLivenessState> {
         if let MIRBindable::Place(place) = bindable
-            && env.body().place(place).is_some_and(|place| place.nodrop)
+            && env.body().place(place).nodrop()
             && (existing == MIRLivenessState::Available || incoming == MIRLivenessState::Available)
         {
-            let (name, discarded) = env.body().bindable_debug_name(&bindable);
+            let (name, discarded) = debug_name(env.body(), &bindable);
             return Err(analysis::PARTIAL_MOVE
                 .bind((
                     env.function().prototype().display_name().to_string(),
@@ -98,20 +111,18 @@ impl Liveness {
 impl AnalysisPass for Liveness {
     fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
         let body = env.body();
-        self.register_count = body.registers().len();
+        self.register_count = body.registers().count();
         self.table.reset(
             MIRLivenessState::Uninitialized,
-            body.registers().len() + body.places().len(),
-            body.blocks().len(),
+            self.register_count + body.places().count(),
+            body.blocks().count(),
         );
         Ok(())
     }
 
     fn block_entry(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
-        if let Some(block) = env.body().block(block) {
-            for register in block.params() {
-                self.set(&MIRBindable::Register(*register), MIRLivenessState::Available);
-            }
+        for register in env.body().block(block).params() {
+            self.set(&MIRBindable::Register(*register), MIRLivenessState::Available);
         }
         Ok(())
     }
@@ -139,8 +150,8 @@ impl AnalysisPass for Liveness {
                 if *kind == MIRInvalidationKind::Drop {
                     if self.get(place) == Some(MIRLivenessState::Available) {
                         if let MIRBindable::Place(id) = place {
-                            if env.body().place(*id).is_some_and(|place| place.nodrop) {
-                                let (name, discarded) = env.body().bindable_debug_name(place);
+                            if env.body().place(*id).nodrop() {
+                                let (name, discarded) = debug_name(env.body(), place);
                                 return log_analysis_error(
                                     &instruction.token_range,
                                     (

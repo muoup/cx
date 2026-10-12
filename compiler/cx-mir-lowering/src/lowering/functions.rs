@@ -20,11 +20,11 @@ pub(super) fn lower_function<'mir>(
 ) -> CXResult<LMIRFunction> {
     let prototype = convert_prototype(function.prototype(), global.unit.types());
     let mut context = FunctionContext::new(global, function, body, prototype);
-    for block in body.blocks() {
+    for (id, block) in body.blocks() {
         let params = block
             .params()
             .iter()
-            .filter(|id| !context.ty(body.register(**id).unwrap().ty).is_void())
+            .filter(|id| !context.ty(body.register(**id).ty()).is_void())
             .map(|id| {
                 let LMIRValue::Register { register, ty } = context.reg(*id) else {
                     unreachable!()
@@ -33,31 +33,29 @@ pub(super) fn lower_function<'mir>(
             })
             .collect();
         let index = context.blocks.len();
-        context.block_indices.insert(block.id(), index);
+        context.block_indices.insert(id, index);
         context.blocks.push(LMIRBasicBlock {
-            id: block_id(block.id()),
+            id: block_id(id),
             debug_name: block.debug_name().cloned(),
             params,
             body: Vec::new(),
         });
     }
     context.current_block = context.block_indices[&body.entry()];
-    for (index, place) in body.places().iter().enumerate() {
-        let address = if place.adopted {
+    for (id, place) in body.places() {
+        let address = if place.adopted() {
             LMIRValue::Register {
-                register: LMIRRegister::new(format!("mir.place.{}", place.id.index())),
+                register: LMIRRegister::new(format!("mir.place.{}", id.index())),
                 ty: context.pointer(),
             }
         } else {
-            memory::allocate(&mut context, place.ty)
+            memory::allocate(&mut context, place.ty())
         };
-        context
-            .places
-            .insert(cx_mir::MIRPlaceID::new(index), address);
+        context.places.insert(id, address);
     }
     lower_parameters(&mut context);
-    for block in body.blocks() {
-        context.current_block = context.block_indices[&block.id()];
+    for (id, block) in body.blocks() {
+        context.current_block = context.block_indices[&id];
         for instruction in block.instructions() {
             lower_instruction(&mut context, instruction);
         }
@@ -67,13 +65,12 @@ pub(super) fn lower_function<'mir>(
 
 fn lower_parameters(context: &mut FunctionContext<'_, '_>) {
     let mut abi_index = u32::from(context.prototype.signature.has_indirect_return_param());
-    for (place, param) in context
+    for ((place, decl), param) in context
         .body
         .parameters()
-        .iter()
         .zip(context.prototype.signature.params.clone())
     {
-        let address = context.places[place].clone();
+        let address = context.places[&place].clone();
         match param.abi {
             LMIRParameterABI::Direct { slots } => {
                 for slot in slots {
@@ -90,11 +87,7 @@ fn lower_parameters(context: &mut FunctionContext<'_, '_>) {
                 }
             }
             LMIRParameterABI::Indirect { alignment } | LMIRParameterABI::ByValue { alignment } => {
-                let ty = context
-                    .body
-                    .place(*place)
-                    .expect("invalid MIR parameter")
-                    .ty;
+                let ty = decl.ty();
                 let size = calculate_type_layout(context.types(), ty).size();
                 memory::void(
                     context,

@@ -62,8 +62,8 @@ fn write_function(
     let printer = BodyPrinter::new(unit, function.body());
     let signature = function.signature();
 
-    write_linkage(f, signature.linkage())?;
-    let stage = match function.stage() {
+    write_linkage(f, function.prototype().linkage())?;
+    let stage = match signature.stage() {
         HMIRFunctionStage::Runtime => "runtime",
         HMIRFunctionStage::Comptime => "comptime",
     };
@@ -72,7 +72,15 @@ fn write_function(
         if index != 0 {
             f.write_str(", ")?;
         }
-        printer.param_decl(f, *param)?;
+        match function.def().and_then(|def| def.params().get(index)) {
+            Some(local) => printer.param_decl(f, *local)?,
+            None => {
+                if param.comptime() {
+                    f.write_str("comptime ")?;
+                }
+                printer.expr(f, param.ty(), 0)?;
+            }
+        }
     }
     if signature.is_variadic() {
         f.write_str(if signature.params().is_empty() {
@@ -83,7 +91,7 @@ fn write_function(
     }
     f.write_str(") -> ")?;
     printer.expr(f, signature.return_type(), 0)?;
-    write_link_name(f, def, signature.link_name())?;
+    write_link_name(f, def, function.prototype().symbol_name())?;
 
     let contract = signature.contract();
     if !contract.is_empty() {
@@ -107,11 +115,11 @@ fn write_function(
         }
     }
 
-    match function.root() {
+    match function.def() {
         None => f.write_str(";"),
-        Some(root) => {
+        Some(def) => {
             f.write_str(" ")?;
-            printer.expr(f, root, 0)
+            printer.expr(f, def.root(), 0)
         }
     }
 }
@@ -125,12 +133,7 @@ fn write_global(
     let printer = BodyPrinter::new(unit, global.body());
 
     write_linkage(f, global.linkage())?;
-    f.write_str(if global.is_mutable() {
-        "global mut"
-    } else {
-        "global"
-    })?;
-    write!(f, " @{}: ", def.name())?;
+    write!(f, "global @{}: ", def.name())?;
     printer.expr(f, global.ty(), 0)?;
     write_link_name(f, def, global.link_name())?;
     if let Some(initializer) = global.initializer() {

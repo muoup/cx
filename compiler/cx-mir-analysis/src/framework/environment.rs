@@ -56,12 +56,9 @@ impl<'mir> AnalysisEnvironment<'mir> {
 
 fn run(env: &AnalysisEnvironment<'_>, pipeline: &mut Pipeline) -> CXResult<()> {
     let body = env.body();
-    if body.block(body.entry()).is_none() {
-        return Ok(());
-    }
 
     let mut worklist = Vec::new();
-    let mut queued = vec![false; body.blocks().len()];
+    let mut queued = vec![false; body.blocks().count()];
 
     pipeline.function_entry(env)?;
 
@@ -69,7 +66,7 @@ fn run(env: &AnalysisEnvironment<'_>, pipeline: &mut Pipeline) -> CXResult<()> {
     while let Some(block_id) = current {
         pipeline.block_entry(env, block_id)?;
 
-        for instruction in body.block(block_id).unwrap().instructions() {
+        for instruction in body.block(block_id).instructions() {
             pipeline.analyze_instruction(env, instruction)?;
 
             for successor in successors(instruction) {

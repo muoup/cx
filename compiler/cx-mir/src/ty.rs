@@ -11,7 +11,7 @@ use crate::unit::function::MIRFnSignature;
 
 dense_id!(MIRTypeID, "t");
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MIRType {
     kind: MIRTypeKind,
 }
@@ -150,7 +150,7 @@ pub struct MIRBitfieldAccess {
     pub signed: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRTypeKind {
     Void,
     Integer { ty: MIRIntType },

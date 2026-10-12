@@ -1,22 +1,28 @@
-use cx_hmir::{HMIRConstant, HMIRExprID, HMIRExprKind, HMIRFloatWidth, HMIRIntWidth, HMIRTypeDesc};
-use cx_log::catalogue::typecheck;
+use cx_hmir::{
+    expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant},
+    ty::{
+        HMIRTypeKind,
+        intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
+    },
+};
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::{
     TokenRange,
     token::{FloatSuffix, IntegerBase, IntegerLength, IntegerSuffix},
 };
 use cx_util::unsafe_float::FloatWrapper;
 
-use crate::body::BodyLowering;
+use crate::{body::BodyLowering, log::log_hir_error};
 
 // C's literal typing: the first candidate that represents the magnitude, where
 // non-decimal literals may also take the unsigned type of each width
 pub(crate) fn lower_int_literal(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     magnitude: u64,
     base: IntegerBase,
     suffix: IntegerSuffix,
     span: &TokenRange,
-) -> HMIRExprID {
+) -> CXResult<HMIRExprID> {
     let start = match suffix.length {
         IntegerLength::Default => HMIRIntWidth::I32,
         _ => HMIRIntWidth::I64,
@@ -35,27 +41,29 @@ pub(crate) fn lower_int_literal(
             bits == 64 || magnitude < 1u64 << bits
         });
     let Some((width, signed)) = candidate else {
-        return cx.error(span, &typecheck::INTEGER_LITERAL_RANGE, ());
+        return log_hir_error(span, &typecheck::INTEGER_LITERAL_RANGE, ());
     };
-    cx.int_constant(HMIRTypeDesc::Int { width, signed }, magnitude as i128, span)
+
+    Ok(context.int_constant(HMIRIntType::new(width, signed), magnitude as i128, span))
 }
 
 pub(crate) fn lower_float_literal(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     value: FloatWrapper,
     suffix: FloatSuffix,
     span: &TokenRange,
-) -> HMIRExprID {
+) -> CXResult<HMIRExprID> {
     let width = match suffix {
         FloatSuffix::Float => HMIRFloatWidth::F32,
         FloatSuffix::Default => HMIRFloatWidth::F64,
         FloatSuffix::LongDouble => {
-            return cx.error(span, &typecheck::UNSUPPORTED_LITERAL, "long double".into());
+            return log_hir_error(span, &typecheck::UNSUPPORTED_LITERAL, "long double".into());
         }
     };
-    let ty = cx.intern(HMIRTypeDesc::Float { width });
-    cx.push(
+    let ty = context.primitive(HMIRTypeKind::Float(HMIRFloatType::new(width)));
+
+    Ok(context.push(
         HMIRExprKind::Constant(HMIRConstant::Float { value, ty }),
         span,
-    )
+    ))
 }

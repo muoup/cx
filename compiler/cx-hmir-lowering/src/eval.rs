@@ -34,7 +34,7 @@ use crate::{
         constant::eval_constant,
         control::{eval_if, eval_loop_exit, eval_return, eval_while},
         flow::ComptimeStop,
-        op::{eval_binary, eval_unary},
+        op::{eval_binary, eval_type_op, eval_unary},
         place::{eval_address_of, eval_assign, eval_dereference},
     },
 };
@@ -65,7 +65,10 @@ pub(crate) fn lower_runtime_function<'hmir>(
     emit::close_scope(&mut context, span.clone());
     flow::top(flow::catch_diverged(completion))?;
 
-    Ok(runtime::finish(context))
+    match context.into_context() {
+        FnContext::Runtime(runtime) => Ok(runtime.finish()),
+        FnContext::Comptime(_) => unreachable!("runtime function lowered in a comptime context"),
+    }
 }
 
 fn runtime_definition(
@@ -122,7 +125,11 @@ pub(crate) fn eval(
         HMIRExprKind::Let { local, initializer } => {
             eval_let(context, body, span, *local, *initializer)
         }
-        HMIRExprKind::Block { statements } => eval_block(context, body, span, statements),
+        HMIRExprKind::Block {
+            statements,
+            scoped,
+            yields: _,
+        } => eval_block(context, body, span, statements, *scoped),
 
         HMIRExprKind::If {
             condition,
@@ -191,12 +198,15 @@ pub(crate) fn eval_comptime(
 }
 
 pub(crate) fn eval_type(
-    _context: &mut FnLoweringContext,
+    context: &mut FnLoweringContext,
     body: &HMIRBody,
     expr: HMIRExprID,
 ) -> EvalResult<HMIRTypeID> {
-    match body.expr(expr).kind() {
+    let expr = body.expr(expr);
+
+    match expr.kind() {
         HMIRExprKind::Constant(HMIRConstant::Type(ty)) => Ok(*ty),
+        HMIRExprKind::Op(HMIROp::Type(op)) => eval_type_op(context, body, expr.span(), op),
         _ => todo!("Evaluate a type expression using the available comptime bindings"),
     }
 }

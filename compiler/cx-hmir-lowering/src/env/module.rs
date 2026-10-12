@@ -18,6 +18,7 @@ pub struct MIRModuleBuilder {
     architecture: ArchitectureConfig,
 
     types: HashMap<MIRTypeID, MIRType>,
+    interned: HashMap<MIRType, MIRTypeID>,
     functions: BTreeMap<MIRFunctionID, MIRFunction>,
     globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
@@ -32,6 +33,7 @@ impl MIRModuleBuilder {
             architecture,
 
             types: HashMap::new(),
+            interned: HashMap::new(),
             functions: BTreeMap::new(),
             globals: BTreeMap::new(),
             global_order: Vec::new(),
@@ -51,7 +53,8 @@ impl MIRModuleBuilder {
         }
 
         let id = MIRTypeID::new(self.types.len());
-        self.types.insert(id, ty);
+        self.types.insert(id, ty.clone());
+        self.interned.insert(ty, id);
         id
     }
 
@@ -115,15 +118,11 @@ impl MTRegistry for MIRModuleBuilder {
     }
 
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID> {
-        self.types
-            .iter()
-            .find_map(|(id, definition)| (definition == ty).then_some(*id))
+        self.interned.get(ty).copied()
     }
 
     fn find_kind(&self, kind: &MIRTypeKind) -> Option<MIRTypeID> {
-        self.types
-            .iter()
-            .find_map(|(id, definition)| (definition.kind() == kind).then_some(*id))
+        self.find(&MIRType::new(kind.clone()))
     }
 
     fn debug_name(&self, _id: MIRTypeID) -> Option<&str> {

@@ -16,6 +16,7 @@ pub struct HMIRFunction {
 pub struct HMIRFnDefinition {
     params: Box<[HMIRLocalID]>,
     root: HMIRExprID,
+    address_labels: Vec<CXIdent>,
 }
 
 #[derive(Debug, Clone)]
@@ -174,8 +175,12 @@ impl HMIRContract {
 }
 
 impl HMIRFnDefinition {
-    pub fn new(params: Box<[HMIRLocalID]>, root: HMIRExprID) -> Self {
-        Self { params, root }
+    pub fn new(params: Box<[HMIRLocalID]>, root: HMIRExprID, address_labels: Vec<CXIdent>) -> Self {
+        Self {
+            params,
+            root,
+            address_labels,
+        }
     }
 
     pub fn params(&self) -> &[HMIRLocalID] {
@@ -184,6 +189,10 @@ impl HMIRFnDefinition {
 
     pub fn root(&self) -> HMIRExprID {
         self.root
+    }
+
+    pub fn address_labels(&self) -> &[CXIdent] {
+        &self.address_labels
     }
 }
 

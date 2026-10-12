@@ -2,8 +2,8 @@ use crate::backends::{cranelift_compile, llvm_compile};
 use crate::pipeline_error;
 use crate::progress::ProgressReporter;
 use cx_hir::intrinsic_types::INTRINSIC_IMPORTS;
-use cx_hir_lowering::{generate_external_hmir, generate_hmir};
-use cx_hmir_lowering::generate_mir;
+use cx_hir_lowering::generate_hmir;
+use cx_hmir_lowering::{env::HMIREnvironment, generate_mir};
 use cx_log::catalogue::driver as catalogue;
 use cx_log::{CXResult, error::CXError};
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
@@ -495,7 +495,7 @@ pub(crate) fn perform_job(
                 job.unit.namespace().clone(),
                 registry,
                 architecture,
-            );
+            )?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&hmir);
@@ -508,8 +508,11 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::MIR => {
-            let env = HMIREnvironment::new();
-            let mir = generate_mir(env)?;
+            let hmir = context.module_db.hmir.get(job.unit.namespace());
+            let architecture = context.config.architecture;
+
+            let env = HMIREnvironment::new(&context.module_db, hmir.as_ref(), architecture);
+            let mir = generate_mir(hmir.as_ref(), env)?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir);

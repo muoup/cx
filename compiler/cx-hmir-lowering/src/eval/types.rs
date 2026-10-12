@@ -15,9 +15,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::{HMIREnvironment, function::FnLoweringContext},
-    eval::{EvalResult, eval_type},
-    log::hmir_error,
+    env::{HMIREnvironment, function::FnLoweringContext}, eval::{EvalResult, eval_type}, log::{hmir_error, log_hmir_error},
 };
 
 pub(crate) fn lower_prototype(
@@ -67,11 +65,7 @@ pub(crate) fn lower_type(
     let kind = match env.resolve_type_id(ty).kind().clone() {
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
         HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } => {
-            return Err(hmir_error(
-                span,
-                &typecheck::COMPTIME_ONLY_TYPE,
-                todo!("type display"),
-            ));
+            return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, todo!("type display"));
         }
         HMIRTypeKind::Str => MIRTypeKind::Str,
         HMIRTypeKind::Int(int) => MIRTypeKind::Integer {

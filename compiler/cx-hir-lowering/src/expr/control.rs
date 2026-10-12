@@ -2,69 +2,85 @@ use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
     pattern::HIRPattern,
 };
-use cx_hmir::{HMIRCoerceMode, HMIRConstant, HMIRExprID, HMIRExprKind, HMIRIntWidth, HMIRTypeDesc};
-use cx_log::catalogue::typecheck;
+use cx_hmir::{
+    HMIRCoerceMode,
+    expr::{HMIRExprID, HMIRExprKind},
+    ty::{
+        HMIRTypeKind,
+        intrinsic::{HMIRIntType, HMIRIntWidth},
+    },
+};
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
-use crate::{expr::lower_expr, expr::pattern::lower_pattern};
-
-use crate::body::{BodyLowering, ScopeKind};
+use crate::{
+    body::{BodyLowering, ScopeKind},
+    expr::{lower_expr, pattern::lower_pattern},
+    log::log_hir_error,
+};
 
 pub(crate) fn lower_if(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     condition: &HIRExpression,
     then_branch: &HIRExpression,
     else_branch: Option<&HIRExpression>,
     span: &TokenRange,
-) -> HMIRExprID {
-    let (condition, then_branch) = cx.scoped(|this| {
-        let condition = lower_condition(this, condition);
-        (condition, this.scoped(|this| lower_expr(this, then_branch)))
-    });
-    let else_branch = else_branch.map(|branch| cx.scoped(|this| lower_expr(this, branch)));
-    cx.push(
+) -> CXResult<HMIRExprID> {
+    let (condition, then_branch) = context.scoped(|this| -> CXResult<_> {
+        let condition = lower_condition(this, condition)?;
+        let then_branch = this.scoped(|this| lower_expr(this, then_branch))?;
+
+        Ok((condition, then_branch))
+    })?;
+    let else_branch = else_branch
+        .map(|branch| context.scoped(|this| lower_expr(this, branch)))
+        .transpose()?;
+
+    Ok(context.push(
         HMIRExprKind::If {
             condition,
             then_branch,
             else_branch,
         },
         span,
-    )
+    ))
 }
 
 pub(crate) fn lower_while(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     condition: &HIRExpression,
     body: &HIRExpression,
     pre_eval: bool,
     span: &TokenRange,
-) -> HMIRExprID {
-    let condition = lower_condition(cx, condition);
-    let body = cx.scoped(|this| lower_expr(this, body));
-    cx.push(
+) -> CXResult<HMIRExprID> {
+    let condition = lower_condition(context, condition)?;
+    let body = context.scoped(|this| lower_expr(this, body))?;
+
+    Ok(context.push(
         HMIRExprKind::While {
             condition,
             body,
             pre_eval,
         },
         span,
-    )
+    ))
 }
 
 pub(crate) fn lower_for(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     init: &HIRExpression,
     condition: &HIRExpression,
     increment: &HIRExpression,
     body: &HIRExpression,
     span: &TokenRange,
-) -> HMIRExprID {
-    cx.scoped(|this| {
-        let init = lower_expr(this, init);
-        let condition = lower_condition(this, condition);
-        let increment = lower_expr(this, increment);
-        let body = this.scoped(|this| lower_expr(this, body));
-        this.push(
+) -> CXResult<HMIRExprID> {
+    context.scoped(|this| {
+        let init = lower_expr(this, init)?;
+        let condition = lower_condition(this, condition)?;
+        let increment = lower_expr(this, increment)?;
+        let body = this.scoped(|this| lower_expr(this, body))?;
+
+        Ok(this.push(
             HMIRExprKind::For {
                 init,
                 condition,
@@ -72,90 +88,94 @@ pub(crate) fn lower_for(
                 body,
             },
             span,
-        )
+        ))
     })
 }
 
 pub(crate) fn lower_match(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     condition: &HIRExpression,
     arms: &[(HIRPattern, HIRExpression)],
     span: &TokenRange,
-) -> HMIRExprID {
-    let scrutinee = lower_expr(cx, condition);
-    let subject_ty = cx.hole(span);
-    let subject = cx.declare_local(None, subject_ty, span);
+) -> CXResult<HMIRExprID> {
+    let scrutinee = lower_expr(context, condition)?;
+    let subject_ty = context.hole(span);
+    let subject = context.declare_local(None, subject_ty, span);
     let arms = arms
         .iter()
         .map(|(pattern, body)| {
-            cx.scoped(|this| {
-                let pattern = lower_pattern(this, pattern, &body.range);
-                (pattern, lower_expr(this, body))
+            context.scoped(|this| {
+                let pattern = lower_pattern(this, pattern, &body.range)?;
+                Ok((pattern, lower_expr(this, body)?))
             })
         })
-        .collect();
-    cx.push(
+        .collect::<CXResult<_>>()?;
+
+    Ok(context.push(
         HMIRExprKind::Match {
             scrutinee,
             subject,
             arms,
         },
         span,
-    )
+    ))
 }
 
 pub(crate) fn lower_switch(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     condition: &HIRExpression,
     body: &HIRExpression,
     span: &TokenRange,
-) -> HMIRExprID {
-    let condition = lower_expr(cx, condition);
+) -> CXResult<HMIRExprID> {
+    let condition = lower_expr(context, condition)?;
     let scope = ScopeKind::Switch { has_default: false };
-    let body = cx.scoped_as(scope, |this| lower_expr(this, body));
-    cx.push(HMIRExprKind::Switch { condition, body }, span)
+    let body = context.scoped_as(scope, |this| lower_expr(this, body))?;
+
+    Ok(context.push(HMIRExprKind::Switch { condition, body }, span))
 }
 
 pub(crate) fn lower_case(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     value: Option<&HIRExpression>,
     statement: &HIRExpression,
     span: &TokenRange,
-) -> HMIRExprID {
-    if !cx.in_switch() {
-        return cx.error(
+) -> CXResult<HMIRExprID> {
+    if !context.in_switch() {
+        return log_hir_error(
             span,
             &typecheck::REQUIRED_CONTEXT,
             ("case label".into(), "a switch".into()),
         );
     }
     let value = match value {
-        Some(value) => Some(lower_expr(cx, value)),
-        None if cx.declare_switch_default() => None,
+        Some(value) => Some(lower_expr(context, value)?),
+        None if context.declare_switch_default() => None,
         None => {
-            return cx.error(
+            return log_hir_error(
                 span,
                 &typecheck::DUPLICATE_ITEM,
                 ("default label".into(), "switch statement".into()),
             );
         }
     };
-    let body = lower_expr(cx, statement);
-    cx.push(HMIRExprKind::Case { value, body }, span)
+    let body = lower_expr(context, statement)?;
+
+    Ok(context.push(HMIRExprKind::Case { value, body }, span))
 }
 
-fn lower_condition(cx: &mut BodyLowering<'_>, condition: &HIRExpression) -> HMIRExprID {
+// An omitted condition, as in 'for (;;)', always holds
+fn lower_condition(
+    context: &mut BodyLowering<'_>,
+    condition: &HIRExpression,
+) -> CXResult<HMIRExprID> {
     let span = &condition.range;
+    let bool_ty = HMIRIntType::new(HMIRIntWidth::I1, false);
     if matches!(condition.kind, HIRExprKind::Void) {
-        return cx.push(HMIRExprKind::Constant(HMIRConstant::Bool(true)), span);
+        return Ok(context.int_constant(bool_ty, 1, span));
     }
-    let value = lower_expr(cx, condition);
-    let target = cx.type_constant(
-        HMIRTypeDesc::Int {
-            width: HMIRIntWidth::I1,
-            signed: false,
-        },
-        span,
-    );
-    cx.coerce(HMIRCoerceMode::Truthy, value, target, span)
+
+    let value = lower_expr(context, condition)?;
+    let target = context.type_constant(HMIRTypeKind::Int(bool_ty), span);
+
+    Ok(context.coerce(HMIRCoerceMode::Truthy, value, target, span))
 }

@@ -171,8 +171,8 @@ pub(super) fn lower_instruction(
 
 fn case_integer_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> Option<MIRIntType> {
     let mut ty = match value {
-        MIRValue::Register(register) => context.body.register(*register)?.ty,
-        MIRValue::PlaceRef(place) => context.body.place(*place)?.ty,
+        MIRValue::Register(register) => context.body.register(*register).ty(),
+        MIRValue::PlaceRef(place) => context.body.place(*place).ty(),
         MIRValue::Constant(MIRConstant::GlobalRef(reference)) => reference.ty,
         MIRValue::Constant(MIRConstant::Integer { .. }) => return None,
         MIRValue::Constant(_) => return None,

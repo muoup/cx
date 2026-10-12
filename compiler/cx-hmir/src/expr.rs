@@ -54,6 +54,8 @@ pub enum HMIRExprKind {
 
     Block {
         statements: Vec<HMIRExprID>,
+        scoped: bool,
+        yields: bool,
     },
     If {
         condition: HMIRExprID,

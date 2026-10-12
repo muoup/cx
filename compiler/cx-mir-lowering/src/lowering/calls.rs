@@ -21,7 +21,7 @@ pub(super) fn lower_call(
     let mut lowered = Vec::new();
     let sret = if matches!(signature.return_abi, LMIRReturnABI::IndirectSret { .. }) {
         let result = out.expect("indirect return has no MIR result");
-        let ty = context.body.register(result).unwrap().ty;
+        let ty = context.body.register(result).ty();
         let address = memory::allocate(context, ty);
         lowered.push(address.clone());
         Some(address)
@@ -95,10 +95,10 @@ pub(super) fn lower_call(
                 LMIRInstructionKind::Alias { value: address },
             );
         } else if context
-            .ty(context.body.register(result).unwrap().ty)
+            .ty(context.body.register(result).ty())
             .is_memory_resident()
         {
-            let ty = context.body.register(result).unwrap().ty;
+            let ty = context.body.register(result).ty();
             let returned = memory::temp(context, kind, context.ty(ty));
             let address = memory::allocate(context, ty);
             memory::void(
@@ -178,8 +178,8 @@ fn parameter_type(context: &FunctionContext<'_, '_>, callee: &MIRValue, index: u
 
 fn callee_type(context: &FunctionContext<'_, '_>, callee: &MIRValue) -> MIRTypeID {
     match callee {
-        MIRValue::Register(id) => context.body.register(*id).unwrap().ty,
-        MIRValue::PlaceRef(id) => context.body.place(*id).unwrap().ty,
+        MIRValue::Register(id) => context.body.register(*id).ty(),
+        MIRValue::PlaceRef(id) => context.body.place(*id).ty(),
         MIRValue::Constant(MIRConstant::GlobalRef(reference)) => reference.ty,
         _ => panic!("indirect call has no function type"),
     }

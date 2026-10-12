@@ -10,18 +10,23 @@ use cx_hir::{
     symbols::{HIRSymbol, HIRSymbolKind, TypeConstructorData},
 };
 use cx_hmir::{
-    HMIRDef, HMIRDefID, HMIRDefRef, HMIRError, HMIRFloatWidth, HMIRIntWidth, HMIRTypeDesc,
+    HMIRDef, HMIRDefID, HMIRDefRef,
+    ty::{
+        HMIRTypeKind,
+        intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
+    },
 };
-use cx_log::catalogue::typecheck;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_namespace::{
     lookup::{QualifiedLookup, QualifiedLookupResult},
     mangling::mangle_namespace_symbol,
     module::{NamespacePath, QualifiedName},
 };
 use cx_target::ArchitectureConfig;
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use crate::body::hmir_error;
+use crate::log::log_hir_error;
 
 pub(crate) struct Resolver<'a> {
     registry: &'a GlobalSymbolRegistry,
@@ -39,8 +44,7 @@ pub(crate) enum GlobalSymbol {
     // of its parameters take code
     ComptimeFunction(HMIRDefRef, bool, Vec<bool>),
     Constructor(TypeConstructorData, CXIdent, HMIRDefRef),
-    Primitive(HMIRTypeDesc),
-    Invalid(HMIRError),
+    Primitive(HMIRTypeKind),
 }
 
 struct RegistryLookup<'a> {
@@ -170,12 +174,13 @@ impl<'a> Resolver<'a> {
         namespace: &NamespacePath,
         name: &QualifiedName,
         tag: Option<HIRTagKind>,
-    ) -> GlobalSymbol {
+        span: &TokenRange,
+    ) -> CXResult<GlobalSymbol> {
         let lookup = RegistryLookup {
             registry: self.registry,
             tag,
         };
-        match lookup.qualified_lookup(namespace, name) {
+        Ok(match lookup.qualified_lookup(namespace, name) {
             QualifiedLookupResult::Found {
                 resolved_name,
                 value,
@@ -183,10 +188,11 @@ impl<'a> Resolver<'a> {
                 if let Some(tag) = tag
                     && value.iter().any(|symbol| symbol.tag != Some(tag))
                 {
-                    return GlobalSymbol::Invalid(hmir_error(
+                    return log_hir_error(
+                        span,
                         &typecheck::INCOMPATIBLE_TAG,
                         resolved_name.to_string(),
-                    ));
+                    );
                 }
                 self.symbol(resolved_name, value)
             }
@@ -195,7 +201,7 @@ impl<'a> Resolver<'a> {
                     && name.namespace.is_root()
                     && let Some(primitive) = self.primitive(name.name.as_str())
                 {
-                    return GlobalSymbol::Primitive(primitive);
+                    return Ok(GlobalSymbol::Primitive(primitive));
                 }
                 GlobalSymbol::Def(self.def_ref(def_name(name.clone(), tag)))
             }
@@ -226,17 +232,20 @@ impl<'a> Resolver<'a> {
                     {
                         GlobalSymbol::Def(HMIRDefRef::Candidates(defs))
                     }
-                    _ => GlobalSymbol::Invalid(hmir_error(
-                        &typecheck::AMBIGUOUS_SYMBOL,
-                        candidates
-                            .iter()
-                            .map(ToString::to_string)
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    )),
+                    _ => {
+                        return log_hir_error(
+                            span,
+                            &typecheck::AMBIGUOUS_SYMBOL,
+                            candidates
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        );
+                    }
                 }
             }
-        }
+        })
     }
 
     fn symbol(&self, resolved_name: QualifiedName, value: Vec<HIRSymbol>) -> GlobalSymbol {
@@ -270,36 +279,34 @@ impl<'a> Resolver<'a> {
         constructor_payload(self.registry, data)
     }
 
-    fn primitive(&self, name: &str) -> Option<HMIRTypeDesc> {
+    fn primitive(&self, name: &str) -> Option<HMIRTypeKind> {
         let (_, kind) = INTRINSIC_TYPES
             .iter()
             .find(|(intrinsic, _)| *intrinsic == name)?;
 
         Some(match kind(&self.architecture)? {
-            HIRIntrinsicType::Void => HMIRTypeDesc::Void,
-            HIRIntrinsicType::Unreachable => HMIRTypeDesc::Unreachable,
-            HIRIntrinsicType::Str => HMIRTypeDesc::Str,
-            HIRIntrinsicType::Bool => HMIRTypeDesc::Int {
-                width: HMIRIntWidth::I1,
-                signed: false,
-            },
-            HIRIntrinsicType::Integer { signed, bytes } => HMIRTypeDesc::Int {
-                width: match bytes {
+            HIRIntrinsicType::Void => HMIRTypeKind::Void,
+            HIRIntrinsicType::Unreachable => HMIRTypeKind::Unreachable,
+            HIRIntrinsicType::Str => HMIRTypeKind::Str,
+            HIRIntrinsicType::Bool => HMIRTypeKind::Int(HMIRIntType::new(HMIRIntWidth::I1, false)),
+            HIRIntrinsicType::Integer { signed, bytes } => {
+                let width = match bytes {
                     1 => HMIRIntWidth::I8,
                     2 => HMIRIntWidth::I16,
                     4 => HMIRIntWidth::I32,
                     _ => HMIRIntWidth::I64,
-                },
-                signed,
-            },
-            HIRIntrinsicType::Float { bytes } => HMIRTypeDesc::Float {
-                width: match bytes {
+                };
+                HMIRTypeKind::Int(HMIRIntType::new(width, signed))
+            }
+            HIRIntrinsicType::Float { bytes } => {
+                let width = match bytes {
                     4 => HMIRFloatWidth::F32,
                     _ => HMIRFloatWidth::F64,
-                },
-            },
+                };
+                HMIRTypeKind::Float(HMIRFloatType::new(width))
+            }
             HIRIntrinsicType::Opaque { size, alignment } => {
-                HMIRTypeDesc::Opaque { size, alignment }
+                HMIRTypeKind::Opaque { size, alignment }
             }
         })
     }

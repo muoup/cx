@@ -71,7 +71,12 @@ pub(crate) fn eval_block(
     body: &HMIRBody,
     span: &TokenRange,
     statements: &[HMIRExprID],
+    scoped: bool,
 ) -> EvalResult<HMIRValue> {
+    if !scoped {
+        return eval_statements(context, body, span, statements);
+    }
+
     emit::open_scope(context, span.clone());
     let result = eval_statements(context, body, span, statements);
     emit::close_scope(context, span.clone());
@@ -102,9 +107,9 @@ pub(crate) fn eval_scoped(
     expr: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
     let node = body.expr(expr);
-    if matches!(node.kind(), HMIRExprKind::Block { .. }) {
+    if matches!(node.kind(), HMIRExprKind::Block { scoped: true, .. }) {
         return eval(context, body, expr);
     }
 
-    eval_block(context, body, node.span(), &[expr])
+    eval_block(context, body, node.span(), &[expr], true)
 }

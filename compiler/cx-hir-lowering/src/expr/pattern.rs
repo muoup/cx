@@ -2,53 +2,56 @@ use cx_hir::ast::{
     expression::HIRExprKind,
     pattern::{HIRBindingMode, HIRPattern},
 };
-use cx_hmir::{HMIRExprID, HMIRLocalID, HMIRPattern, HMIRTypeOp};
+use cx_hmir::{
+    HMIRPattern,
+    body::HMIRLocalID,
+    expr::{HMIRExprID, op::HMIRTypeOp},
+};
+use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{body::BodyLowering, expr::lower_expr, ty::lower_type};
 
 pub(crate) fn lower_pattern(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     pattern: &HIRPattern,
     span: &TokenRange,
-) -> HMIRPattern {
-    match pattern {
+) -> CXResult<HMIRPattern> {
+    Ok(match pattern {
         HIRPattern::Wildcard => {
-            let ty = lower_binding_type(cx, HIRBindingMode::Reference, span);
-            HMIRPattern::Binding(cx.declare_local(None, ty, span))
+            let ty = lower_binding_type(context, HIRBindingMode::Reference, span);
+            HMIRPattern::Binding(context.declare_local(None, ty, span))
         }
         HIRPattern::Binding { name, mode } => {
-            let ty = lower_binding_type(cx, *mode, span);
-            HMIRPattern::Binding(cx.declare_local(Some(name), ty, span))
+            let ty = lower_binding_type(context, *mode, span);
+            HMIRPattern::Binding(context.declare_local(Some(name), ty, span))
         }
         HIRPattern::Integer(value) => HMIRPattern::Integer(*value),
         HIRPattern::Float(value) => HMIRPattern::Float(*value),
-        HIRPattern::Value(value) => HMIRPattern::Value(lower_expr(cx, value)),
+        HIRPattern::Value(value) => HMIRPattern::Value(lower_expr(context, value)?),
         HIRPattern::Variant {
             qualifier,
             name,
             inner,
         } => {
-            let sum = qualifier
-                .as_deref()
-                .and_then(|qualifier| match &qualifier.kind {
-                    HIRExprKind::Type(ty) => Some(lower_type(cx, ty)),
-                    _ => None,
-                });
+            let sum = match qualifier.as_deref().map(|qualifier| &qualifier.kind) {
+                Some(HIRExprKind::Type(ty)) => Some(lower_type(context, ty)?),
+                _ => None,
+            };
             let inner = inner
                 .as_deref()
-                .map(|inner| lower_variant_payload(cx, inner, span));
+                .map(|inner| lower_variant_payload(context, inner, span));
             HMIRPattern::Variant {
                 sum,
                 name: name.clone(),
                 inner,
             }
         }
-    }
+    })
 }
 
 fn lower_variant_payload(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     pattern: &HIRPattern,
     span: &TokenRange,
 ) -> HMIRLocalID {
@@ -56,24 +59,24 @@ fn lower_variant_payload(
         HIRPattern::Binding { name, mode } => (Some(name), *mode),
         _ => (None, HIRBindingMode::Reference),
     };
-    let ty = lower_binding_type(cx, mode, span);
-    cx.declare_local(name, ty, span)
+    let ty = lower_binding_type(context, mode, span);
+    context.declare_local(name, ty, span)
 }
 
 // 'auto x' takes the matched value, 'auto& x' refers to it where it is; a binding that is
 // never named takes nothing
 fn lower_binding_type(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     mode: HIRBindingMode,
     span: &TokenRange,
 ) -> HMIRExprID {
-    let hole = cx.hole(span);
+    let hole = context.hole(span);
     match mode {
         HIRBindingMode::Owned => hole,
-        HIRBindingMode::Reference => cx.type_op(HMIRTypeOp::Reference(hole), span),
+        HIRBindingMode::Reference => context.type_op(HMIRTypeOp::Reference(hole), span),
         HIRBindingMode::ConstReference => {
-            let inner = cx.type_op(HMIRTypeOp::Const(hole), span);
-            cx.type_op(HMIRTypeOp::Reference(inner), span)
+            let inner = context.type_op(HMIRTypeOp::Const(hole), span);
+            context.type_op(HMIRTypeOp::Reference(inner), span)
         }
     }
 }

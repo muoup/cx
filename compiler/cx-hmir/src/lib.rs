@@ -4,7 +4,7 @@ pub mod ty;
 pub mod unit;
 pub mod value;
 
-// mod format;
+mod format;
 
 pub use body::HMIRBody;
 pub use expr::aggregate::{HMIRAggregateOp, HMIRPattern};

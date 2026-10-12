@@ -1,8 +1,7 @@
 use std::fmt::{self, Formatter};
 
 use crate::{
-    binding::HMIRLocalID,
-    body::HMIRBody,
+    body::{HMIRBody, HMIRLocalID},
     expr::{HMIRExprID, HMIRExprKind},
     unit::HMIRUnit,
 };
@@ -34,7 +33,7 @@ impl<'a> BodyPrinter<'a> {
 
     pub(super) fn local(&self, f: &mut Formatter<'_>, id: HMIRLocalID) -> fmt::Result {
         let local = self.body.local(id);
-        f.write_str(if local.is_comptime() { "$" } else { "%" })?;
+        f.write_str(if local.comptime() { "$" } else { "%" })?;
         match local.name() {
             Some(name) => write!(f, "{name}"),
             None => write!(f, "{}", id.index()),
@@ -48,7 +47,7 @@ impl<'a> BodyPrinter<'a> {
     }
 
     pub(super) fn param_decl(&self, f: &mut Formatter<'_>, id: HMIRLocalID) -> fmt::Result {
-        if self.body.local(id).is_comptime() {
+        if self.body.local(id).comptime() {
             f.write_str("comptime ")?;
         }
         self.local_decl(f, id)
@@ -74,15 +73,9 @@ impl<'a> BodyPrinter<'a> {
         &self,
         f: &mut Formatter<'_>,
         statements: &[HMIRExprID],
-        tail: Option<HMIRExprID>,
         depth: usize,
     ) -> fmt::Result {
         self.statements(f, statements, depth + 1)?;
-        if let Some(tail) = tail {
-            indent(f, depth + 1)?;
-            self.statement(f, tail, depth + 1)?;
-            f.write_str("\n")?;
-        }
         indent(f, depth)?;
         f.write_str("}")
     }

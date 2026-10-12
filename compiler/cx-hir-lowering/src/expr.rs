@@ -8,15 +8,19 @@ use std::rc::Rc;
 
 use cx_hir::ast::expression::{
     HIRBinOp, HIRBlockKind, HIRClosureParam, HIRExprKind, HIRExpression, HIRInitIndex,
-    HIRMemberDesignator, HIRUnpackBinding,
+    HIRUnpackBinding,
 };
 use cx_hir::ast::types::HIRType;
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBlockKind, HMIRConstant, HMIRControlOp, HMIRExprID, HMIRExprKind,
-    HMIRMemberStep, HMIROp, HMIROwnershipOp, HMIRTypeOp,
+    HMIRAggregateOp, HMIRControlOp, HMIROwnershipOp,
+    expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant, op::HMIRTypeOp},
+    ty::intrinsic::{HMIRIntType, HMIRIntWidth},
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
-use cx_log::catalogue::{mir, typecheck};
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -28,101 +32,110 @@ use crate::{
     expr::control::{lower_case, lower_for, lower_if, lower_match, lower_switch, lower_while},
     expr::literal::{lower_float_literal, lower_int_literal},
     expr::op::{lower_binop, lower_unop},
+    log::log_hir_error,
     resolve::GlobalSymbol,
     ty::{lower_constructor_sum, lower_type, staged_signature},
 };
 
-pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMIRExprID {
+pub(crate) fn lower_expr(
+    context: &mut BodyLowering<'_>,
+    expr: &HIRExpression,
+) -> CXResult<HMIRExprID> {
     let span = &expr.range;
-    match &expr.kind {
-        HIRExprKind::Taken => cx.error(span, &mir::MALFORMED_HIR, "expression was taken".into()),
-        HIRExprKind::Then if !cx.in_block() => cx.error(
-            span,
-            &typecheck::INVALID_CONTEXT,
-            (
-                "then expression".into(),
-                "a scope that is not a block".into(),
-            ),
-        ),
-        HIRExprKind::Then => {
-            let statements = cx.lower_block_statements();
-            cx.block(HMIRBlockKind::Sequence, statements, span)
+    Ok(match &expr.kind {
+        HIRExprKind::Taken => {
+            return log_hir_error(span, &mir::MALFORMED_HIR, "expression was taken".into());
         }
-        HIRExprKind::Void => cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span),
+        HIRExprKind::Then if !context.in_block() => {
+            return log_hir_error(
+                span,
+                &typecheck::INVALID_CONTEXT,
+                (
+                    "then expression".into(),
+                    "a scope that is not a block".into(),
+                ),
+            );
+        }
+        HIRExprKind::Then => {
+            let statements = context.lower_block_statements()?;
+            context.block(statements, false, false, span)
+        }
+        HIRExprKind::Void => context.push(HMIRExprKind::Constant(HMIRConstant::Unit), span),
 
-        HIRExprKind::Identifier { name } => lower_identifier(cx, name, span),
-        HIRExprKind::Type(ty) => lower_type(cx, ty),
-        HIRExprKind::Hole => cx.hole(span),
+        HIRExprKind::Identifier { name } => lower_identifier(context, name, span)?,
+        HIRExprKind::Type(ty) => lower_type(context, ty)?,
+        HIRExprKind::Hole => context.hole(span),
         HIRExprKind::ScopeAccess { base, member } => {
-            let sum = lower_scope_base(cx, base);
-            lower_variant_constructor(cx, sum, member, span)
+            let sum = lower_scope_base(context, base)?;
+            lower_variant_constructor(context, sum, member, span)
         }
         HIRExprKind::IntLiteral {
             magnitude,
             base,
             suffix,
-        } => lower_int_literal(cx, *magnitude, *base, *suffix, span),
+        } => lower_int_literal(context, *magnitude, *base, *suffix, span)?,
         HIRExprKind::BoolLiteral(value) => {
-            cx.push(HMIRExprKind::Constant(HMIRConstant::Bool(*value)), span)
+            let ty = HMIRIntType::new(HMIRIntWidth::I1, false);
+            context.int_constant(ty, *value as i128, span)
         }
-        HIRExprKind::FloatLiteral { val, suffix } => lower_float_literal(cx, *val, *suffix, span),
+        HIRExprKind::FloatLiteral { val, suffix } => {
+            lower_float_literal(context, *val, *suffix, span)?
+        }
         HIRExprKind::StringLiteral { val } => {
-            cx.push(HMIRExprKind::Constant(HMIRConstant::Str(val.clone())), span)
+            context.push(HMIRExprKind::Constant(HMIRConstant::Str(val.clone())), span)
         }
 
         HIRExprKind::If {
             condition,
             then_branch,
             else_branch,
-        } => lower_if(cx, condition, then_branch, else_branch.as_deref(), span),
+        } => lower_if(
+            context,
+            condition,
+            then_branch,
+            else_branch.as_deref(),
+            span,
+        )?,
         HIRExprKind::Ternary {
             condition,
             then_branch,
             else_branch,
-        } => lower_if(cx, condition, then_branch, Some(else_branch), span),
+        } => lower_if(context, condition, then_branch, Some(else_branch), span)?,
         HIRExprKind::While {
             condition,
             body,
             pre_eval,
-        } => lower_while(cx, condition, body, *pre_eval, span),
+        } => lower_while(context, condition, body, *pre_eval, span)?,
         HIRExprKind::For {
             init,
             condition,
             increment,
             body,
-        } => lower_for(cx, init, condition, increment, body, span),
-        HIRExprKind::Match { condition, arms } => lower_match(cx, condition, arms, span),
-        HIRExprKind::Switch { condition, body } => lower_switch(cx, condition, body, span),
-        HIRExprKind::Case { value, statement } => lower_case(cx, value.as_deref(), statement, span),
+        } => lower_for(context, init, condition, increment, body, span)?,
+        HIRExprKind::Match { condition, arms } => lower_match(context, condition, arms, span)?,
+        HIRExprKind::Switch { condition, body } => lower_switch(context, condition, body, span)?,
+        HIRExprKind::Case { value, statement } => {
+            lower_case(context, value.as_deref(), statement, span)?
+        }
 
         HIRExprKind::SizeOfExpr { expr: operand } => {
-            let operand = lower_expr(cx, operand);
-            cx.native(HMIROp::Type(HMIRTypeOp::SizeOf(operand)), span)
+            let operand = lower_expr(context, operand)?;
+            context.type_op(HMIRTypeOp::SizeOf(operand), span)
         }
         HIRExprKind::SizeOfType { ty } => {
-            let ty = lower_type(cx, ty);
-            cx.native(HMIROp::Type(HMIRTypeOp::SizeOf(ty)), span)
+            let ty = lower_type(context, ty)?;
+            context.type_op(HMIRTypeOp::SizeOf(ty), span)
         }
         HIRExprKind::AlignOfExpr { expr: operand } => {
-            let operand = lower_expr(cx, operand);
-            cx.native(HMIROp::Type(HMIRTypeOp::AlignOf(operand)), span)
+            let operand = lower_expr(context, operand)?;
+            context.type_op(HMIRTypeOp::AlignOf(operand), span)
         }
         HIRExprKind::AlignOfType { ty } => {
-            let ty = lower_type(cx, ty);
-            cx.native(HMIROp::Type(HMIRTypeOp::AlignOf(ty)), span)
+            let ty = lower_type(context, ty)?;
+            context.type_op(HMIRTypeOp::AlignOf(ty), span)
         }
-        HIRExprKind::OffsetOf { ty, member } => {
-            let ty = lower_type(cx, ty);
-            let member = member
-                .iter()
-                .map(|step| match step {
-                    HIRMemberDesignator::Field(name) => HMIRMemberStep::Field(name.clone()),
-                    HIRMemberDesignator::Index(index) => {
-                        HMIRMemberStep::Index(lower_expr(cx, index))
-                    }
-                })
-                .collect();
-            cx.type_op(HMIRTypeOp::OffsetOf { ty, member }, span)
+        HIRExprKind::OffsetOf { .. } => {
+            return log_hir_error(span, &typecheck::UNSUPPORTED_FEATURE, "offsetof".into());
         }
 
         HIRExprKind::VarDeclaration {
@@ -130,240 +143,251 @@ pub(crate) fn lower_expr(cx: &mut BodyLowering<'_>, expr: &HIRExpression) -> HMI
             name,
             initial_value,
             linkage: linkage @ (LinkageMode::Static | LinkageMode::Extern),
-        } if !cx.is_comptime() => {
-            lower_static(cx, name, ty, initial_value.as_deref(), *linkage, span);
-            cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span)
+        } if !context.is_comptime() => {
+            lower_static(context, name, ty, initial_value.as_deref(), *linkage, span)?;
+            context.push(HMIRExprKind::Constant(HMIRConstant::Unit), span)
         }
         HIRExprKind::VarDeclaration {
             ty,
             name,
             initial_value,
             ..
-        } => lower_declaration(cx, ty, name, initial_value.as_deref(), span),
+        } => lower_declaration(context, ty, name, initial_value.as_deref(), span)?,
         HIRExprKind::BinOp {
             op: HIRBinOp::MethodCall | HIRBinOp::Pipe(_) | HIRBinOp::BackwardPipe,
             ..
-        } => cx.scoped_as(ScopeKind::Arguments, |this| {
+        } => context.scoped_as(ScopeKind::Arguments, |this| {
             lower_call(this, expr, Vec::new(), Vec::new())
-        }),
-        HIRExprKind::BinOp { lhs, rhs, op } => lower_binop(cx, op, lhs, rhs, span),
-        HIRExprKind::UnOp { operand, operator } => lower_unop(cx, operator, operand, span),
+        })?,
+        HIRExprKind::BinOp { lhs, rhs, op } => lower_binop(context, op, lhs, rhs, span)?,
+        HIRExprKind::UnOp { operand, operator } => lower_unop(context, operator, operand, span)?,
 
-        HIRExprKind::Block { exprs, kind } => lower_block(cx, exprs, *kind, span),
+        HIRExprKind::Block { exprs, kind } => lower_block(context, exprs, *kind, span)?,
 
         HIRExprKind::Defer { expr: inner } => {
-            let inner = lower_expr(cx, inner);
-            cx.control(HMIRControlOp::Defer(inner), span)
+            let inner = lower_expr(context, inner)?;
+            context.control(HMIRControlOp::Defer(inner), span)
         }
         HIRExprKind::Unsafe { expr: inner } => {
-            let inner = lower_expr(cx, inner);
-            cx.control(HMIRControlOp::Unsafe(inner), span)
+            let inner = lower_expr(context, inner)?;
+            context.control(HMIRControlOp::Unsafe(inner), span)
         }
-        HIRExprKind::Closure { params, body } => lower_closure(cx, params, body, span),
-        HIRExprKind::Emit { expr: inner } => lower_quote(cx, &[], inner, span),
+        HIRExprKind::Closure { params, body } => lower_closure(context, params, body, span)?,
+        HIRExprKind::Emit { expr: inner } => lower_quote(context, &[], inner, span)?,
 
-        HIRExprKind::Break => cx.control(HMIRControlOp::Break, span),
-        HIRExprKind::Continue => cx.control(HMIRControlOp::Continue, span),
-        HIRExprKind::Goto { name } => cx.control(HMIRControlOp::Goto(name.clone()), span),
+        HIRExprKind::Break => context.control(HMIRControlOp::Break, span),
+        HIRExprKind::Continue => context.control(HMIRControlOp::Continue, span),
+        HIRExprKind::Goto { name } => context.control(HMIRControlOp::Goto(name.clone()), span),
         HIRExprKind::IndirectGoto { target } => {
-            let target = lower_expr(cx, target);
-            cx.control(HMIRControlOp::IndirectGoto(target), span)
+            let target = lower_expr(context, target)?;
+            context.control(HMIRControlOp::IndirectGoto(target), span)
         }
-        HIRExprKind::LabelAddress { name } => cx.label_address(name, span),
+        HIRExprKind::LabelAddress { name } => context.label_address(name, span),
         HIRExprKind::Label { name, statement } => {
-            let body = lower_expr(cx, statement);
-            cx.push(
-                HMIRExprKind::Label {
-                    name: name.clone(),
-                    body,
-                },
-                span,
-            )
+            let name = name.clone();
+            let body = lower_expr(context, statement)?;
+            context.push(HMIRExprKind::Label { name, body }, span)
         }
         HIRExprKind::Return { value } => {
-            let value = value.as_deref().map(|value| lower_expr(cx, value));
-            cx.control(HMIRControlOp::Return(value), span)
+            let value = lower_optional(context, value.as_deref())?;
+            context.control(HMIRControlOp::Return(value), span)
         }
         HIRExprKind::Yield { value } => {
-            let value = value.as_deref().map(|value| lower_expr(cx, value));
-            cx.control(HMIRControlOp::Yield(value), span)
+            let value = lower_optional(context, value.as_deref())?;
+            context.control(HMIRControlOp::Yield(value), span)
         }
 
         HIRExprKind::Leak { expr: inner } => {
-            let inner = lower_expr(cx, inner);
-            cx.ownership(HMIROwnershipOp::Leak(inner), span)
+            let inner = lower_expr(context, inner)?;
+            context.ownership(HMIROwnershipOp::Leak(inner), span)
         }
-        HIRExprKind::Reify { signature, value } => lower_reify(cx, signature, value, span),
+        HIRExprKind::Reify { signature, value } => lower_reify(context, signature, value, span)?,
         HIRExprKind::Adopt { expr: inner } => {
-            let inner = lower_expr(cx, inner);
-            cx.ownership(HMIROwnershipOp::Adopt(inner), span)
+            let inner = lower_expr(context, inner)?;
+            context.ownership(HMIROwnershipOp::Adopt(inner), span)
         }
         HIRExprKind::Unpack {
             expr: inner,
             bindings,
-        } => lower_unpack(cx, inner, bindings, span),
+        } => lower_unpack(context, inner, bindings, span)?,
 
-        HIRExprKind::InitializerList { indices } => lower_initializer(cx, None, indices, span),
+        HIRExprKind::InitializerList { indices } => {
+            lower_initializer(context, None, indices, span)?
+        }
 
         HIRExprKind::VaArg { list, ty } => {
-            let list = lower_expr(cx, list);
-            let ty = lower_type(cx, ty);
-            cx.push(
+            let list = lower_expr(context, list)?;
+            let ty = lower_type(context, ty)?;
+            context.push(
                 HMIRExprKind::Intrinsic(Intrinsic::VA(VAIntrinsic::Arg { list, ty })),
                 span,
             )
         }
-    }
+    })
+}
+
+fn lower_optional(
+    context: &mut BodyLowering<'_>,
+    expr: Option<&HIRExpression>,
+) -> CXResult<Option<HMIRExprID>> {
+    expr.map(|expr| lower_expr(context, expr)).transpose()
 }
 
 fn lower_block(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     exprs: &Rc<[HIRExpression]>,
     kind: HIRBlockKind,
     span: &TokenRange,
-) -> HMIRExprID {
-    let kind = match kind {
+) -> CXResult<HMIRExprID> {
+    let yields = match kind {
         HIRBlockKind::Sequence => {
-            let statements = exprs.iter().map(|expr| lower_expr(cx, expr)).collect();
-            return cx.block(HMIRBlockKind::Sequence, statements, span);
+            let statements = exprs
+                .iter()
+                .map(|expr| lower_expr(context, expr))
+                .collect::<CXResult<_>>()?;
+            return Ok(context.block(statements, false, false, span));
         }
-        HIRBlockKind::Statement => HMIRBlockKind::Scope,
-        HIRBlockKind::Expression => HMIRBlockKind::Yield,
+        HIRBlockKind::Statement => false,
+        HIRBlockKind::Expression => true,
     };
-    let statements = lower_scope_statements(cx, exprs);
-    cx.block(kind, statements, span)
+    let statements = lower_scope_statements(context, exprs)?;
+
+    Ok(context.block(statements, true, yields, span))
 }
 
 pub(crate) fn lower_scope_statements(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     statements: &Rc<[HIRExpression]>,
-) -> Vec<HMIRExprID> {
+) -> CXResult<Vec<HMIRExprID>> {
     let scope = ScopeKind::Block {
         statements: statements.clone(),
         next: 0,
     };
-    cx.scoped_as(scope, BodyLowering::lower_block_statements)
+    context.scoped_as(scope, BodyLowering::lower_block_statements)
 }
 
 pub(crate) fn lower_identifier(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     name: &QualifiedName,
     span: &TokenRange,
-) -> HMIRExprID {
-    match cx.lookup(name, None) {
+) -> CXResult<HMIRExprID> {
+    Ok(match context.lookup(name, None, span)? {
         Symbol::Local(binding) => {
-            let local = cx.push(HMIRExprKind::Local(binding.local()), span);
-            if !binding.is_quoted() || cx.is_comptime() {
-                local
-            } else {
-                cx.push(
-                    HMIRExprKind::Splice {
-                        quote: local,
-                        args: Vec::new(),
-                    },
-                    span,
-                )
+            let local = context.push(HMIRExprKind::Local(binding.local()), span);
+            if !binding.is_quoted() || context.is_comptime() {
+                return Ok(local);
             }
+
+            let args = Vec::new();
+            context.push(HMIRExprKind::Splice { quote: local, args }, span)
         }
-        Symbol::Global(GlobalSymbol::Primitive(desc)) => cx.type_constant(desc, span),
+        Symbol::Global(GlobalSymbol::Primitive(kind)) => context.type_constant(kind, span),
         Symbol::Global(
             GlobalSymbol::Def(def)
             | GlobalSymbol::Function(def)
             | GlobalSymbol::ComptimeFunction(def, ..),
-        ) => cx.push(HMIRExprKind::Def(def), span),
-        Symbol::Global(GlobalSymbol::Invalid(error)) => cx.push(HMIRExprKind::Error(error), span),
+        ) => context.push(HMIRExprKind::Def(def), span),
         Symbol::Global(GlobalSymbol::Constructor(data, variant, def)) => {
-            let payload = cx.resolver().constructor_payload(&data);
-            if payload.is_none_or(|payload| is_void(cx, &payload)) {
-                let unit = cx.push(HMIRExprKind::Constant(HMIRConstant::Unit), span);
-                let sum = lower_constructor_sum(cx, &data.union_type, span);
-                return lower_construct(cx, sum, variant, unit, span);
+            let carries_payload = match context.resolver().constructor_payload(&data) {
+                Some(payload) => !is_void(context, &payload)?,
+                None => false,
+            };
+            if carries_payload {
+                return Ok(context.push(HMIRExprKind::Def(def), span));
             }
-            cx.push(HMIRExprKind::Def(def), span)
+
+            let unit = context.push(HMIRExprKind::Constant(HMIRConstant::Unit), span);
+            let sum = lower_constructor_sum(context, &data.union_type, span)?;
+            lower_construct(context, sum, variant, unit, span)
         }
-    }
+    })
 }
 
 fn lower_declaration(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     ty: &HIRType,
     name: &CXIdent,
     initial_value: Option<&HIRExpression>,
     span: &TokenRange,
-) -> HMIRExprID {
-    let local_ty = lower_type(cx, ty);
-    let initializer = initial_value.map(|value| lower_initial_value(cx, local_ty, value));
-    let local = cx.declare_local(Some(name), local_ty, span);
-    cx.push(HMIRExprKind::Let { local, initializer }, span)
+) -> CXResult<HMIRExprID> {
+    let local_ty = lower_type(context, ty)?;
+    let initializer = initial_value
+        .map(|value| lower_initial_value(context, local_ty, value))
+        .transpose()?;
+    let local = context.declare_local(Some(name), local_ty, span);
+
+    Ok(context.push(HMIRExprKind::Let { local, initializer }, span))
 }
 
 // An initializer list shares the lowered type of its declaration: lowering an aggregate declared
 // in place a second time would make a distinct type of it
 pub(crate) fn lower_initial_value(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     ty: HMIRExprID,
     value: &HIRExpression,
-) -> HMIRExprID {
+) -> CXResult<HMIRExprID> {
     match &value.kind {
         HIRExprKind::InitializerList { indices } => {
-            lower_initializer(cx, Some(ty), indices, &value.range)
+            lower_initializer(context, Some(ty), indices, &value.range)
         }
-        _ => lower_expr(cx, value),
+        _ => lower_expr(context, value),
     }
 }
 
 fn lower_initializer(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     ty: Option<HMIRExprID>,
     indices: &[HIRInitIndex],
     span: &TokenRange,
-) -> HMIRExprID {
-    let ty = ty.unwrap_or_else(|| cx.hole(span));
+) -> CXResult<HMIRExprID> {
+    let ty = ty.unwrap_or_else(|| context.hole(span));
     let fields = indices
         .iter()
         .map(|index| {
             let value = match &index.value.kind {
                 HIRExprKind::InitializerList { indices } => {
-                    lower_initializer(cx, None, indices, &index.value.range)
+                    lower_initializer(context, None, indices, &index.value.range)?
                 }
-                _ => lower_expr(cx, &index.value),
+                _ => lower_expr(context, &index.value)?,
             };
-            (index.name.as_deref().map(CXIdent::from), value)
+            Ok((index.name.as_deref().map(CXIdent::from), value))
         })
-        .collect();
-    cx.aggregate_op(HMIRAggregateOp::Initialize { ty, fields }, span)
+        .collect::<CXResult<_>>()?;
+
+    Ok(context.aggregate_op(HMIRAggregateOp::Initialize { ty, fields }, span))
 }
 
 fn lower_unpack(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     inner: &HIRExpression,
     bindings: &[HIRUnpackBinding],
     span: &TokenRange,
-) -> HMIRExprID {
-    let value = lower_expr(cx, inner);
+) -> CXResult<HMIRExprID> {
+    let value = lower_expr(context, inner)?;
     let bindings = bindings
         .iter()
         .map(|binding| {
-            let ty = cx.hole(span);
-            let local = cx.declare_local(Some(&binding.binding), ty, span);
+            let ty = context.hole(span);
+            let local = context.declare_local(Some(&binding.binding), ty, span);
             (binding.field.clone(), local)
         })
         .collect();
-    cx.aggregate_op(HMIRAggregateOp::Unpack { value, bindings }, span)
+
+    Ok(context.aggregate_op(HMIRAggregateOp::Unpack { value, bindings }, span))
 }
 
 // A closure is an anonymous comptime function; the code it produces is its 'emit'
 fn lower_closure(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     params: &[HIRClosureParam],
     body: &HIRExpression,
     span: &TokenRange,
-) -> HMIRExprID {
+) -> CXResult<HMIRExprID> {
     match &body.kind {
-        HIRExprKind::Emit { expr } => lower_quote(cx, params, expr, span),
+        HIRExprKind::Emit { expr } => lower_quote(context, params, expr, span),
         // 'then' emits the rest of the enclosing block
-        HIRExprKind::Then => lower_quote(cx, params, body, span),
-        _ => cx.error(
+        HIRExprKind::Then => lower_quote(context, params, body, span),
+        _ => log_hir_error(
             span,
             &typecheck::TYPE_REQUIREMENT,
             (
@@ -376,31 +400,33 @@ fn lower_closure(
 }
 
 pub(crate) fn lower_quote(
-    cx: &mut BodyLowering<'_>,
+    context: &mut BodyLowering<'_>,
     params: &[HIRClosureParam],
     body: &HIRExpression,
     span: &TokenRange,
-) -> HMIRExprID {
+) -> CXResult<HMIRExprID> {
     // Parameter types are written in the stage the closure appears in
     let types = params
         .iter()
         .map(|param| match &param.ty {
             Some(ty) => match staged_signature(ty) {
-                Some((_, carried)) => lower_type(cx, carried),
-                None => lower_type(cx, ty),
+                Some((_, carried)) => lower_type(context, carried),
+                None => lower_type(context, ty),
             },
-            None => cx.hole(span),
+            None => Ok(context.hole(span)),
         })
-        .collect::<Vec<_>>();
-    cx.with_stage(false, |this| {
+        .collect::<CXResult<Vec<_>>>()?;
+
+    context.with_stage(false, |this| {
         this.scoped_as(ScopeKind::Staged, |this| {
             let params = params
                 .iter()
                 .zip(types)
                 .map(|(param, ty)| this.declare_local(Some(&param.name), ty, span))
                 .collect();
-            let body = lower_expr(this, body);
-            this.push(HMIRExprKind::Quote { params, body }, span)
+            let body = lower_expr(this, body)?;
+
+            Ok(this.push(HMIRExprKind::Quote { params, body }, span))
         })
     })
 }

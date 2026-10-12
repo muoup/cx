@@ -25,7 +25,6 @@ pub(crate) enum DefSource<'h> {
     },
     Global {
         ty: &'h HIRType,
-        mutable: bool,
         initializer: Option<&'h HIRExpression>,
         linkage: LinkageMode,
         naming: HIRSymbolNameScheme,
@@ -193,16 +192,15 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                 HIRGlobalVariable::Standard {
                     name,
                     ty,
-                    is_mutable,
                     initializer,
                     linkage,
                     symbol_name_scheme,
+                    ..
                 } => plan(
                     QualifiedName::new(base.clone(), name.clone()),
                     &ty.range,
                     DefSource::Global {
                         ty,
-                        mutable: *is_mutable,
                         initializer: initializer.as_ref(),
                         linkage: *linkage,
                         naming: *symbol_name_scheme,

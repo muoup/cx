@@ -129,7 +129,7 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
     pub fn reg(&self, id: MIRRegister) -> LMIRValue {
         LMIRValue::Register {
             register: LMIRRegister::new(format!("mir.{}", id.index())),
-            ty: self.ty(self.body.register(id).expect("unknown MIR register").ty),
+            ty: self.ty(self.body.register(id).ty()),
         }
     }
 
@@ -153,14 +153,13 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
         let params = self
             .body
             .block(target.block)
-            .expect("unknown MIR target block")
             .params();
         let args = target
             .args
             .iter()
             .zip(params)
             .filter_map(|(arg, parameter)| {
-                let ty = self.body.register(*parameter).unwrap().ty;
+                let ty = self.body.register(*parameter).ty();
                 if self.ty(ty).is_void() {
                     return None;
                 }

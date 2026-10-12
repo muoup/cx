@@ -18,12 +18,10 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    emit,
-    env::{
+    emit::{self, runtime}, env::{
         HMIREnvironment,
         function::{FnLoweringContext, runtime::Emission},
-    },
-    eval::types::{self, mir_float, mir_int},
+    }, eval::types::{self, mir_float, mir_int},
 };
 
 pub fn block(context: &mut FnLoweringContext, name: &str) -> MIRBasicBlockID {
@@ -50,7 +48,7 @@ pub fn block_param(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let register = register(context, ty, span)?;
+    let register = runtime::register(context, ty, span)?;
     let runtime = context.runtime_mut();
 
     runtime.builder_mut().add_block_param(block, register);
@@ -374,9 +372,9 @@ pub fn read(
     }
 
     let ty = types::lower_type(context.env_mut(), value.ty(), span)?;
-    let source = materialize(context, &value, span)?;
-    let (out, result) = output(context, value.ty(), span)?;
-    store(context, out, source, ty, span.clone());
+    let source = runtime::materialize(context, &value, span)?;
+    let (out, result) = runtime::output(context, value.ty(), span)?;
+    runtime::store(context, out, source, ty, span.clone());
 
     Ok(result)
 }

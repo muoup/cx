@@ -12,7 +12,10 @@ pub(super) fn write_def_ref(
     def: &HMIRDefRef,
 ) -> fmt::Result {
     match def {
-        HMIRDefRef::Local(id) => write!(f, "@{}", unit.resolve_def(*id).name()),
+        HMIRDefRef::Local(id) => match unit.resolve_def(*id) {
+            Some(def) => write!(f, "@{}", def.name()),
+            None => write!(f, "@{id}"),
+        },
         HMIRDefRef::External(name) => write!(f, "@{name}"),
         HMIRDefRef::Candidates(candidates) => {
             for (index, candidate) in candidates.iter().enumerate() {
@@ -33,7 +36,6 @@ pub(super) fn write_constant(
 ) -> fmt::Result {
     match constant {
         HMIRConstant::Unit => f.write_str("()"),
-        HMIRConstant::Bool(value) => write!(f, "{value}"),
         HMIRConstant::Int { value, ty } => {
             write!(f, "{value}:")?;
             write_type(f, unit, *ty)
@@ -48,6 +50,7 @@ pub(super) fn write_constant(
             write_type(f, unit, *ty)
         }
         HMIRConstant::Type(ty) => write_type(f, unit, *ty),
+        other => write!(f, "{other:?}"),
     }
 }
 
@@ -82,18 +85,15 @@ pub(super) fn write_type(f: &mut Formatter<'_>, unit: &HMIRUnit, id: HMIRTypeID)
             }
         }
         HMIRTypeKind::Function(signature) => {
-            f.write_str("fn(")?;
-            write_type_list(f, unit, signature.params())?;
+            write!(f, "fn/{}", signature.params().len())?;
             if signature.is_variadic() {
-                f.write_str(if signature.params().is_empty() {
-                    "..."
-                } else {
-                    ", ..."
-                })?;
+                f.write_str("...")?;
             }
-            f.write_str(") -> ")?;
-            write_type(f, unit, signature.return_type())
+            Ok(())
         }
+        HMIRTypeKind::Struct { fields } => write!(f, "struct/{}", fields.len()),
+        HMIRTypeKind::Union { fields } => write!(f, "union/{}", fields.len()),
+        HMIRTypeKind::TaggedUnion { fields } => write!(f, "enum union/{}", fields.len()),
         HMIRTypeKind::StagedExpr { params, result } => {
             f.write_str("expr(")?;
             write_type_list(f, unit, params)?;

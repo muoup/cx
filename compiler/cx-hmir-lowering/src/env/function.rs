@@ -112,16 +112,6 @@ impl<'env, 'global, 'hmir> FnLoweringContext<'env, 'global, 'hmir> {
         }
     }
 
-    // A terminator suppresses emission until evaluation resumes in another block
-    pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
-        let terminator = kind.is_terminator();
-    
-        self.emit(kind, span);
-        if terminator {
-            self.set_emission(Emission::Suppressed);
-        }
-    }
-
     pub fn into_context(self) -> FnContext {
         self.context
     }
