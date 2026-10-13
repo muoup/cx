@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use cx_tokens::TokenRange;
-use cx_util::{dense_id, identifier::CXIdent};
+use cx_util::identifier::CXIdent;
 
 use crate::expr::{HMIRExpr, HMIRExprID};
 
@@ -9,11 +9,39 @@ thread_local! {
     static NEXT_BODY: Cell<usize> = Cell::new(0);
 }
 
-dense_id!(HMIRLocalID, "%");
-dense_id!(HMIRHoleID, "?");
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HMIRBodyID(u32);
+
+// An index into one of a body's tables, stamped with the body it belongs to
+macro_rules! body_id {
+    ($name:ident) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name {
+            body: HMIRBodyID,
+            index: u32,
+        }
+
+        impl $name {
+            pub const fn new(body: HMIRBodyID, index: usize) -> Self {
+                Self {
+                    body,
+                    index: index as u32,
+                }
+            }
+
+            pub const fn body(self) -> HMIRBodyID {
+                self.body
+            }
+
+            pub const fn index(self) -> usize {
+                self.index as usize
+            }
+        }
+    };
+}
+
+body_id!(HMIRLocalID);
+body_id!(HMIRHoleID);
 
 #[derive(Debug, Clone)]
 pub struct HMIRBody {
@@ -111,12 +139,12 @@ impl HMIRBody {
 
     pub fn declare_local(&mut self, local: HMIRLocal) -> HMIRLocalID {
         self.locals.push(local);
-        HMIRLocalID::new(self.locals.len() - 1)
+        HMIRLocalID::new(self.id, self.locals.len() - 1)
     }
 
     pub fn declare_hole(&mut self, hole: HMIRHole) -> HMIRHoleID {
         self.holes.push(hole);
-        HMIRHoleID::new(self.holes.len() - 1)
+        HMIRHoleID::new(self.id, self.holes.len() - 1)
     }
 
     pub fn expr(&self, id: HMIRExprID) -> &HMIRExpr {
@@ -130,14 +158,17 @@ impl HMIRBody {
     }
 
     pub fn local(&self, id: HMIRLocalID) -> &HMIRLocal {
+        debug_assert_eq!(id.body(), self.id, "local used outside of its body");
         &self.locals[id.index()]
     }
 
     pub fn local_mut(&mut self, id: HMIRLocalID) -> &mut HMIRLocal {
+        debug_assert_eq!(id.body(), self.id, "local used outside of its body");
         &mut self.locals[id.index()]
     }
 
     pub fn hole(&self, id: HMIRHoleID) -> &HMIRHole {
+        debug_assert_eq!(id.body(), self.id, "hole used outside of its body");
         &self.holes[id.index()]
     }
 }

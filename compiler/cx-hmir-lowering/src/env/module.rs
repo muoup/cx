@@ -19,6 +19,7 @@ pub struct MIRModuleBuilder {
 
     types: HashMap<MIRTypeID, MIRType>,
     interned: HashMap<MIRType, MIRTypeID>,
+    debug_names: HashMap<MIRTypeID, String>,
     functions: BTreeMap<MIRFunctionID, MIRFunction>,
     globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
@@ -34,6 +35,7 @@ impl MIRModuleBuilder {
 
             types: HashMap::new(),
             interned: HashMap::new(),
+            debug_names: HashMap::new(),
             functions: BTreeMap::new(),
             globals: BTreeMap::new(),
             global_order: Vec::new(),
@@ -58,6 +60,22 @@ impl MIRModuleBuilder {
         id
     }
 
+    // An aggregate may refer to itself, so its ID exists before its definition does
+    pub fn reserve_type(&mut self) -> MIRTypeID {
+        let id = MIRTypeID::new(self.types.len());
+        self.types.insert(id, MIRType::undefined());
+        id
+    }
+
+    pub fn define_type(&mut self, id: MIRTypeID, ty: MIRType, debug_name: Option<String>) {
+        self.types.insert(id, ty.clone());
+        self.interned.entry(ty).or_insert(id);
+
+        if let Some(name) = debug_name {
+            self.debug_names.insert(id, name);
+        }
+    }
+
     pub fn declare_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {
         let name = prototype.symbol_name.as_string();
         if let Some(id) = self.function_names.get(&name) {
@@ -68,6 +86,10 @@ impl MIRModuleBuilder {
         self.functions.insert(id, MIRFunction::new(prototype, None));
         self.function_names.insert(name, id);
         id
+    }
+
+    pub fn declared_function(&self, name: &str) -> Option<MIRFunctionID> {
+        self.function_names.get(name).copied()
     }
 
     pub fn define_function(&mut self, id: MIRFunctionID, function: MIRFunction) {
@@ -100,7 +122,7 @@ impl MIRModuleBuilder {
 
     pub fn finish(self) -> MIRUnit {
         MIRUnit::new(
-            MIRTypeRegistry::new(self.architecture, self.types, HashMap::new()),
+            MIRTypeRegistry::new(self.architecture, self.types, self.debug_names),
             self.functions,
             self.globals,
             self.global_order,
@@ -125,8 +147,8 @@ impl MTRegistry for MIRModuleBuilder {
         self.find(&MIRType::new(kind.clone()))
     }
 
-    fn debug_name(&self, _id: MIRTypeID) -> Option<&str> {
-        None
+    fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
+        self.debug_names.get(&id).map(String::as_str)
     }
 }
 

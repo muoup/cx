@@ -50,16 +50,16 @@ fn is_root(def: &HMIRDef) -> bool {
     }
 }
 
-fn generate<'hmir>(id: HMIRDefID, env: &mut HMIREnvironment<'_, 'hmir>) -> CXResult<()> {
-    fn is_staged(function: &HMIRFunction) -> bool {
-        function.signature().stage() == HMIRFunctionStage::Comptime
-            || function
-                .signature()
-                .params()
-                .iter()
-                .any(|param| param.comptime())
-    }
+pub(crate) fn is_staged(function: &HMIRFunction) -> bool {
+    function.signature().stage() == HMIRFunctionStage::Comptime
+        || function
+            .signature()
+            .params()
+            .iter()
+            .any(|param| param.comptime())
+}
 
+fn generate<'hmir>(id: HMIRDefID, env: &mut HMIREnvironment<'_, 'hmir>) -> CXResult<()> {
     let def = env
         .symbols()
         .local_unit()

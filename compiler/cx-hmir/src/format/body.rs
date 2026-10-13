@@ -1,10 +1,22 @@
 use std::fmt::{self, Formatter};
 
 use crate::{
-    body::{HMIRBody, HMIRLocalID},
+    body::{HMIRBody, HMIRHoleID, HMIRLocalID},
     expr::{HMIRExprID, HMIRExprKind},
     unit::HMIRUnit,
 };
+
+impl fmt::Display for HMIRLocalID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "%{}", self.index())
+    }
+}
+
+impl fmt::Display for HMIRHoleID {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "?{}", self.index())
+    }
+}
 
 pub(super) struct BodyPrinter<'a> {
     unit: &'a HMIRUnit,

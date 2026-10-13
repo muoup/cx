@@ -18,7 +18,11 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{EvalResult, coerce::convert, eval, promote},
+    eval::{
+        EvalResult,
+        coerce::{convert, decay},
+        eval, promote,
+    },
 };
 
 fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
@@ -31,12 +35,7 @@ pub(crate) fn promote_operand(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let value = emit::referent(context, value, span)?;
-    if matches!(
-        kind(context, value.ty()),
-        HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_)
-    ) {
-        todo!("array, string or function operand decay")
-    }
+    let value = decay(context, value, span)?;
 
     let promoted = promote::integer(context, value.ty(), span);
     convert(context, value, promoted, span)

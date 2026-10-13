@@ -1,7 +1,10 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody, HMIRCoerceMode,
     expr::{HMIRExprID, constant::HMIRConstant},
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{
+        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+        intrinsic::HMIRIntWidth,
+    },
     value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::{CXResult, catalogue::typecheck};
@@ -11,7 +14,10 @@ use cx_util::unsafe_float::FloatWrapper;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{EvalResult, constant, eval, eval_type, place::dereference, types},
+    eval::{
+        EvalResult, aggregate::eval_initializer, constant, eval, eval_type, place::dereference,
+        types,
+    },
     log::hmir_error,
 };
 
@@ -23,12 +29,13 @@ pub(crate) fn eval_coerce(
     value: HMIRExprID,
     target: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let value = eval(context, body, value)?;
     if mode == HMIRCoerceMode::Truthy {
+        let value = eval(context, body, value)?;
         return Ok(truthy(context, value, span)?);
     }
 
     let target = eval_type(context, body, target)?;
+    let value = eval_initializer(context, body, value, target)?;
     Ok(convert(context, value, target, span)?)
 }
 
@@ -38,6 +45,7 @@ pub(crate) fn truthy(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let value = emit::referent(context, value, span)?;
+    let value = decay(context, value, span)?;
     let ty = value.ty();
 
     let zero = match context.env().resolve_kind(ty) {
@@ -48,9 +56,6 @@ pub(crate) fn truthy(
             ty,
         },
         HMIRTypeKind::PointerTo(_) => HMIRConstant::Null(ty),
-        HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_) => {
-            todo!("truthiness of an array, string or function")
-        }
         _ => {
             return Err(hmir_error(
                 span,
@@ -63,6 +68,30 @@ pub(crate) fn truthy(
     let zero = HMIRValue::constant(ty, zero);
     let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     emit::binary(context, HMIRBinaryOp::Neq, &value, &zero, bool_ty, span)
+}
+
+pub(crate) fn decay(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let pointee = match context.env().resolve_kind(value.ty()) {
+        HMIRTypeKind::Str => types::int(context.env_mut(), HMIRIntWidth::I8, false, span),
+        HMIRTypeKind::Function(_) => value.ty(),
+        HMIRTypeKind::Array { .. } => todo!("decay of an array to a pointer"),
+        _ => return Ok(value),
+    };
+    if !matches!(value.kind(), HMIRValueKind::Constant(_)) {
+        todo!("decay of a string or function that is not a constant")
+    }
+
+    let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::PointerTo(pointee),
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ));
+    Ok(value.with_ty(ty))
 }
 
 fn bind_reference(
@@ -136,9 +165,16 @@ pub(crate) fn convert(
         (_, HMIRTypeKind::ReferenceTo(inner)) => {
             return bind_reference(context, value, *inner, target, span);
         }
-        (HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_), _)
-        | (_, HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_)) => {
-            todo!("conversion involving an array, string or function")
+        (HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_), _) => {
+            let value = decay(context, value, span)?;
+            return convert(context, value, target, span);
+        }
+        (_, HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_)) => {
+            return Err(hmir_error(
+                span,
+                &typecheck::INVALID_CONVERSION,
+                (todo!("type display"), todo!("type display")),
+            ));
         }
 
         _ => {}

@@ -146,6 +146,31 @@ pub fn dereference(
     }
 }
 
+pub fn field(
+    context: &mut LocalLoweringContext,
+    base: &HMIRValue,
+    index: usize,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::field(context, base, index, ty, span),
+        FnContext::Comptime(_) => todo!("comptime member access"),
+    }
+}
+
+pub fn aggregate(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    fields: &[(usize, HMIRValue)],
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::aggregate(context, ty, fields, span),
+        FnContext::Comptime(_) => todo!("comptime aggregate initialization"),
+    }
+}
+
 pub fn binary(
     context: &mut LocalLoweringContext,
     op: HMIRBinaryOp,
@@ -181,6 +206,19 @@ pub fn cast(
     match context.context() {
         FnContext::Runtime(_) => runtime::cast(context, value, target, span),
         FnContext::Comptime(_) => todo!("comptime folding of conversions"),
+    }
+}
+
+pub fn call(
+    context: &mut LocalLoweringContext,
+    callee: &HMIRValue,
+    args: &[HMIRValue],
+    result: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::call(context, callee, args, result, span),
+        FnContext::Comptime(_) => todo!("comptime calls"),
     }
 }
 

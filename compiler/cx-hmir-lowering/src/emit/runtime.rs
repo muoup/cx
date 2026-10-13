@@ -3,6 +3,7 @@ mod op;
 pub use op::{binary, cast, difference, offset, unary};
 
 use cx_hmir::{
+    HMIRDefKind,
     expr::constant::HMIRConstant,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
@@ -12,9 +13,9 @@ use cx_hmir::{
 };
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRConstant, MIRInstructionKind,
-    MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRPtrIntrinsic, MIRRegister,
-    MIRRegisterDecl, MIRScopeID, MIRTarget, MIRTypeID, MIRValue,
+    MIRAggregateIntrinsic, MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRConstant,
+    MIRInstructionKind, MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceDecl, MIRPlaceID,
+    MIRPtrIntrinsic, MIRRegister, MIRRegisterDecl, MIRScopeID, MIRTarget, MIRTypeID, MIRValue,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
@@ -171,11 +172,38 @@ fn constant(
             ty: types::lower_type(env, *ty, span)?,
         },
         HMIRConstant::Str(value) => MIRConstant::String(value.clone()),
+        HMIRConstant::Function { def, args } if args.is_empty() => {
+            let HMIRDefKind::Function(function) = env.symbols().resolve_definition(*def).kind()
+            else {
+                unreachable!("function constant of a definition that is not a function")
+            };
+            let name = function.prototype().symbol_name().as_str();
+
+            MIRConstant::Function(
+                env.module()
+                    .declared_function(name)
+                    .expect("Function referenced before its declaration"),
+            )
+        }
         other => todo!("constant {other:?}"),
     })
 }
 
 pub fn materialize(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<MIRValue> {
+    if matches!(value.kind(), HMIRValueKind::Indirect(_)) {
+        let value = read(context, value.clone(), span)?;
+        return location(context, &value, span);
+    }
+
+    location(context, value, span)
+}
+
+// Names the storage of a value rather than what it holds, where it is behind a reference
+fn location(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
@@ -265,6 +293,41 @@ fn place_address(
     Ok(MIRValue::Register(out))
 }
 
+pub fn call(
+    context: &mut LocalLoweringContext,
+    callee: &HMIRValue,
+    args: &[HMIRValue],
+    result: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let callee = materialize(context, callee, span)?;
+    let args = args
+        .iter()
+        .map(|arg| materialize(context, arg, span))
+        .collect::<CXResult<_>>()?;
+
+    let returns = !matches!(
+        context.env().resolve_kind(result),
+        HMIRTypeKind::Void | HMIRTypeKind::Unreachable
+    );
+    let (out, value) = if returns {
+        let register = register(context, result, span)?;
+        let value = context
+            .runtime_mut()
+            .bind(result, MIRBindable::Register(register));
+
+        (Some(register), value)
+    } else {
+        (None, HMIRValue::constant(result, HMIRConstant::Unit))
+    };
+
+    context
+        .runtime_mut()
+        .emit(MIRInstructionKind::Call { out, callee, args }, span.clone());
+
+    Ok(value)
+}
+
 pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     let runtime = context.runtime_mut();
     let scope = runtime.builder_mut().add_scope(span);
@@ -278,8 +341,9 @@ pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     drop_scope(context, scope, &span);
 }
 
-pub fn drop_scopes(context: &mut LocalLoweringContext, span: &TokenRange) {
-    let scopes = context.runtime_mut().open_scopes().to_vec();
+// Drops what the scopes opened past the first 'depth' hold, without closing them
+pub fn drop_scopes(context: &mut LocalLoweringContext, depth: usize, span: &TokenRange) {
+    let scopes = context.runtime_mut().open_scopes()[depth..].to_vec();
 
     for scope in scopes.into_iter().rev() {
         drop_scope(context, scope, span);
@@ -374,7 +438,7 @@ pub fn read(
     }
 
     let ty = types::lower_type(context.env_mut(), value.ty(), span)?;
-    let source = runtime::materialize(context, &value, span)?;
+    let source = runtime::location(context, &value, span)?;
     let (out, result) = runtime::output(context, value.ty(), span)?;
     runtime::store(context, out, source, ty, span.clone());
 
@@ -394,7 +458,7 @@ pub fn write(
     let ty = types::lower_type(context.env_mut(), target.ty(), span)?;
 
     if initialize {
-        let value = materialize(context, &value, span)?;
+        let value = location(context, &value, span)?;
         emit::runtime::store(context, destination.clone(), value, ty, span.clone());
 
         if let MIRTarget::Place(place) = destination {
@@ -496,4 +560,61 @@ pub fn dereference(
     );
 
     Ok(HMIRValue::indirect(inner, reference))
+}
+
+pub fn field(
+    context: &mut LocalLoweringContext,
+    base: &HMIRValue,
+    index: usize,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let struct_ty = types::lower_type(context.env_mut(), base.ty(), span)?;
+    let base = location(context, base, span)?;
+
+    let reference_ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::ReferenceTo(ty),
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ));
+    let (out, reference) = output(context, reference_ty, span)?;
+    intrinsic(
+        context,
+        MIRAggregateIntrinsic::StructField {
+            out,
+            base,
+            field: index,
+            struct_ty,
+        },
+        span.clone(),
+    );
+
+    Ok(HMIRValue::indirect(ty, reference))
+}
+
+pub fn aggregate(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    fields: &[(usize, HMIRValue)],
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let fields = fields
+        .iter()
+        .map(|(index, value)| Ok((*index, materialize(context, value, span)?)))
+        .collect::<CXResult<_>>()?;
+
+    let mir_ty = types::lower_type(context.env_mut(), ty, span)?;
+    let (out, result) = output(context, ty, span)?;
+    intrinsic(
+        context,
+        MIRAggregateIntrinsic::AggregateInit {
+            out,
+            ty: mir_ty,
+            fields,
+        },
+        span.clone(),
+    );
+
+    Ok(result)
 }

@@ -2,7 +2,7 @@ use cx_hmir::ty::{
     HMIRType, HMIRTypeID, HMIRTypeKind,
     aggregate::HMIRTypeSemantics,
     context::HMIRTypeContext,
-    intrinsic::{HMIRFloatType, HMIRIntWidth},
+    intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntWidth},
 };
 use cx_tokens::TokenRange;
 
@@ -18,6 +18,26 @@ pub(crate) fn integer(
             types::int(context.env_mut(), HMIRIntWidth::I32, true, span)
         }
         _ => ty,
+    }
+}
+
+// What an argument that no parameter gives a type to is passed as
+pub(crate) fn argument(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    match context.env().resolve_kind(ty) {
+        HMIRTypeKind::Float(float) if float.width() < HMIRFloatWidth::F64 => {
+            let kind = HMIRTypeKind::Float(HMIRFloatType::new(HMIRFloatWidth::F64));
+            context.env_mut().resolver_mut().realize_type(HMIRType::new(
+                kind,
+                HMIRTypeSemantics::default(),
+                span.clone(),
+                None,
+            ))
+        }
+        _ => integer(context, ty, span),
     }
 }
 

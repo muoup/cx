@@ -1,8 +1,9 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBody, HMIRFnSignature,
+    expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind,
-        aggregate::HMIRTypeSemantics,
+        aggregate::{HMIRFieldDef, HMIRTypeSemantics},
         context::HMIRTypeContext,
         intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
     },
@@ -10,10 +11,11 @@ use cx_hmir::{
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{
-    MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRType, MIRTypeID,
-    MIRTypeKind,
+    MIRField, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRType,
+    MIRTypeID, MIRTypeKind,
 };
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
@@ -21,35 +23,45 @@ use crate::{
     log::log_hmir_error,
 };
 
-pub(crate) fn lower_prototype(
+pub(crate) fn eval_signature(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
-    prototype: &HMIRFnPrototype,
-) -> EvalResult<MIRFnPrototype> {
-    let signature = prototype.signature();
+    signature: &HMIRFnSignature<HMIRExprID>,
+) -> EvalResult<HMIRFnSignature<HMIRTypeID>> {
+    signature.map(|ty| eval_type(context, body, *ty))
+}
 
-    let mut params = Vec::with_capacity(signature.params().len());
-    for param in signature.params() {
-        let ty = eval_type(context, body, *param.ty())?;
-        let ty = lower_type(context.env_mut(), ty, body.expr(*param.ty()).span())?;
+pub(crate) fn lower_signature(
+    env: &mut HMIREnvironment,
+    signature: &HMIRFnSignature<HMIRTypeID>,
+    span: &TokenRange,
+) -> CXResult<MIRFnSignature> {
+    let params = signature
+        .params()
+        .iter()
+        .map(|param| {
+            let ty = lower_type(env, *param.ty(), span)?;
+            Ok(MIRFnParam::new(None, ty, false))
+        })
+        .collect::<CXResult<_>>()?;
+    let return_type = lower_type(env, *signature.return_type(), span)?;
 
-        params.push(MIRFnParam::new(None, ty, false));
-    }
-
-    let return_type = eval_type(context, body, *signature.return_type())?;
-    let return_type = lower_type(
-        context.env_mut(),
+    Ok(MIRFnSignature::new(
+        params,
         return_type,
-        body.expr(*signature.return_type()).span(),
-    )?;
+        signature.is_variadic(),
+        signature.contract().is_safe(),
+    ))
+}
 
+pub(crate) fn lower_prototype(
+    env: &mut HMIREnvironment,
+    prototype: &HMIRFnPrototype,
+    signature: &HMIRFnSignature<HMIRTypeID>,
+    span: &TokenRange,
+) -> CXResult<MIRFnPrototype> {
     Ok(MIRFnPrototype::new(
-        MIRFnSignature::new(
-            params,
-            return_type,
-            signature.is_variadic(),
-            signature.contract().is_safe(),
-        ),
+        lower_signature(env, signature, span)?,
         prototype.linkage(),
         prototype.symbol_name().clone(),
         None,
@@ -61,11 +73,26 @@ pub(crate) fn lower_type(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
+    let ty = env.underlying(ty);
     if let Some(id) = env.resolver().lowered_type(ty) {
         return Ok(id);
     }
 
     let kind = match env.resolve_kind(ty).clone() {
+        HMIRTypeKind::Struct { fields } => {
+            let kind = |fields| MIRTypeKind::Structured { fields };
+            return lower_aggregate(env, ty, &fields, kind, span);
+        }
+        HMIRTypeKind::Union { fields } => {
+            let kind = |variants| MIRTypeKind::Union { variants };
+            return lower_aggregate(env, ty, &fields, kind, span);
+        }
+        HMIRTypeKind::TaggedUnion { fields } => {
+            let kind = |variants| MIRTypeKind::TaggedUnion { variants };
+            return lower_aggregate(env, ty, &fields, kind, span);
+        }
+        HMIRTypeKind::Nominal(_) => unreachable!("an underlying type is not nominal"),
+
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
         HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } => {
             return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, todo!("type display"));
@@ -93,16 +120,47 @@ pub(crate) fn lower_type(
                 None => MIRTypeKind::IncompleteArray { inner },
             }
         }
-        HMIRTypeKind::Function(_) => {
-            todo!("function types")
-        }
+        HMIRTypeKind::Function(signature) => MIRTypeKind::Function {
+            signature: lower_signature(env, &signature, span)?,
+        },
         HMIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
-
-        _ => todo!(),
     };
 
     let id = env.module_mut().intern_type(MIRType::new(kind));
     env.resolver_mut().cache_lowered(ty, id);
+    Ok(id)
+}
+
+fn lower_aggregate(
+    env: &mut HMIREnvironment,
+    ty: HMIRTypeID,
+    fields: &[HMIRFieldDef<HMIRTypeID>],
+    kind: impl FnOnce(Vec<MIRField>) -> MIRTypeKind,
+    span: &TokenRange,
+) -> CXResult<MIRTypeID> {
+    let id = env.module_mut().reserve_type();
+    env.resolver_mut().cache_lowered(ty, id);
+
+    let fields = fields
+        .iter()
+        .map(|field| {
+            let name = field.name().map(CXIdent::as_string);
+            let ty = lower_type(env, *field.ty(), span)?;
+
+            Ok(match field.bit_width() {
+                Some(width) => MIRField::Bitfield {
+                    name,
+                    integer_type_id: ty,
+                    width,
+                },
+                None => MIRField::Standard { name, type_id: ty },
+            })
+        })
+        .collect::<CXResult<_>>()?;
+
+    let debug_name = env.resolve_type_id(ty).debug_name().map(str::to_string);
+    env.module_mut()
+        .define_type(id, MIRType::new(kind(fields)), debug_name);
     Ok(id)
 }
 

@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::{self, runtime},
-    env::function::{FnContext, LocalLoweringContext},
+    env::function::{FnContext, LocalLoweringContext, runtime::LoopFrame},
     eval::{
         EvalResult,
         binding::eval_scoped,
@@ -187,19 +187,42 @@ fn merged_type(
     merged
 }
 
+pub(crate) fn eval_for(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    init: HMIRExprID,
+    condition: HMIRExprID,
+    increment: HMIRExprID,
+    loop_body: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    emit::open_scope(context, span.clone());
+    let result = eval(context, body, init).and_then(|_| {
+        let increment = Some(increment);
+        eval_while(context, body, span, condition, loop_body, increment, true)
+    });
+    emit::close_scope(context, span.clone());
+
+    result
+}
+
+// 'increment' runs after each iteration of the body, and is where 'continue' leads
 pub(crate) fn eval_while(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
     condition: HMIRExprID,
     loop_body: HMIRExprID,
+    increment: Option<HMIRExprID>,
     pre_eval: bool,
 ) -> EvalResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime_while(context, body, span, condition, loop_body, pre_eval),
-        FnContext::Comptime(_) => {
-            comptime_while(context, body, span, condition, loop_body, pre_eval)
-        }
+        FnContext::Runtime(_) => runtime_while(
+            context, body, span, condition, loop_body, increment, pre_eval,
+        ),
+        FnContext::Comptime(_) => comptime_while(
+            context, body, span, condition, loop_body, increment, pre_eval,
+        ),
     }
 }
 
@@ -209,6 +232,7 @@ fn comptime_while(
     span: &TokenRange,
     condition: HMIRExprID,
     loop_body: HMIRExprID,
+    increment: Option<HMIRExprID>,
     pre_eval: bool,
 ) -> EvalResult<HMIRValue> {
     let mut checks = pre_eval;
@@ -227,6 +251,9 @@ fn comptime_while(
             Err(EvalStop::Comptime(ComptimeStop::Break)) => break,
             Err(stop) => return Err(stop),
         }
+        if let Some(increment) = increment {
+            eval(context, body, increment)?;
+        }
     }
 
     Ok(constant::unit(context, span))
@@ -238,11 +265,13 @@ fn runtime_while(
     span: &TokenRange,
     condition: HMIRExprID,
     loop_body: HMIRExprID,
+    increment: Option<HMIRExprID>,
     pre_eval: bool,
 ) -> EvalResult<HMIRValue> {
-    let condition_block = runtime::block(context, "while.condition");
-    let body_block = runtime::block(context, "while.body");
-    let exit = runtime::block(context, "while.exit");
+    let condition_block = runtime::block(context, "loop.condition");
+    let body_block = runtime::block(context, "loop.body");
+    let increment_block = increment.map(|_| runtime::block(context, "loop.increment"));
+    let exit = runtime::block(context, "loop.exit");
 
     let entry = if pre_eval {
         condition_block
@@ -254,7 +283,9 @@ fn runtime_while(
     runtime::switch_to(context, condition_block);
     let condition = flow::catch_diverged(eval_condition(context, body, span, condition))?;
     let Some(condition) = condition else {
-        for block in [body_block, exit] {
+        for block in [Some(body_block), increment_block, Some(exit)] {
+            let Some(block) = block else { continue };
+
             runtime::switch_to(context, block);
             context
                 .runtime_mut()
@@ -273,9 +304,25 @@ fn runtime_while(
         span.clone(),
     );
 
+    let continue_block = increment_block.unwrap_or(condition_block);
+    let scope_depth = context.runtime().open_scopes().len();
+    context.runtime_mut().push_loop(LoopFrame {
+        continue_block,
+        break_block: exit,
+        scope_depth,
+    });
+
     runtime::switch_to(context, body_block);
-    flow::catch_diverged(eval_scoped(context, body, loop_body))?;
-    runtime::jump(context, condition_block, Vec::new(), span.clone());
+    let completion = flow::catch_diverged(eval_scoped(context, body, loop_body));
+    context.runtime_mut().pop_loop();
+    completion?;
+    runtime::jump(context, continue_block, Vec::new(), span.clone());
+
+    if let (Some(block), Some(increment)) = (increment_block, increment) {
+        runtime::switch_to(context, block);
+        flow::catch_diverged(eval(context, body, increment))?;
+        runtime::jump(context, condition_block, Vec::new(), span.clone());
+    }
 
     runtime::switch_to(context, exit);
     Ok(constant::unit(context, span))
@@ -341,12 +388,26 @@ fn runtime_short_circuit(
 
 pub(crate) fn eval_loop_exit(
     context: &mut LocalLoweringContext,
+    span: &TokenRange,
     stop: ComptimeStop,
 ) -> EvalResult<HMIRValue> {
-    match context.context() {
-        FnContext::Runtime(_) => todo!("break and continue need runtime loop targets"),
-        FnContext::Comptime(_) => Err(stop.into()),
+    if matches!(context.context(), FnContext::Comptime(_)) {
+        return Err(stop.into());
     }
+
+    let Some(frame) = context.runtime().current_loop() else {
+        let exit = "'break' or 'continue'".into();
+        return Err(hmir_error(span, &typecheck::REQUIRED_CONTEXT, (exit, "a loop".into())).into());
+    };
+    let target = match stop {
+        ComptimeStop::Break => frame.break_block,
+        ComptimeStop::Continue => frame.continue_block,
+        _ => unreachable!("only 'break' and 'continue' exit a loop"),
+    };
+
+    runtime::drop_scopes(context, frame.scope_depth, span);
+    runtime::jump(context, target, Vec::new(), span.clone());
+    Err(RuntimeStop::Diverged.into())
 }
 
 pub(crate) fn eval_return(
@@ -408,7 +469,7 @@ pub(crate) fn return_value(
                 None => None,
             };
 
-            runtime::drop_scopes(context, span);
+            runtime::drop_scopes(context, 0, span);
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Return { value }, span.clone());

@@ -5,7 +5,9 @@ use cx_hmir::{
     ty::HMIRTypeID,
     value::{HMIRPlace, HMIRSlotID, HMIRValue},
 };
-use cx_mir::{MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRScopeID};
+use cx_mir::{
+    MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRScopeID,
+};
 use cx_tokens::TokenRange;
 
 use crate::env::module::MIRFunctionBuilder;
@@ -16,12 +18,21 @@ pub enum Emission {
     Suppressed,
 }
 
+// Where 'break' and 'continue' lead, and how many scopes were open around the loop they leave
+#[derive(Debug, Clone, Copy)]
+pub struct LoopFrame {
+    pub continue_block: MIRBasicBlockID,
+    pub break_block: MIRBasicBlockID,
+    pub scope_depth: usize,
+}
+
 #[derive(Debug)]
 pub struct RuntimeContext {
     builder: MIRFunctionBuilder,
     locals: HashMap<HMIRLocalID, HMIRValue>,
     slots: Vec<MIRBindable>,
     open_scopes: Vec<MIRScopeID>,
+    loops: Vec<LoopFrame>,
     emission: Emission,
 }
 
@@ -32,6 +43,7 @@ impl RuntimeContext {
             locals: HashMap::new(),
             slots: Vec::new(),
             open_scopes: Vec::new(),
+            loops: Vec::new(),
             emission: Emission::Enabled,
         }
     }
@@ -113,6 +125,20 @@ impl RuntimeContext {
         self.open_scopes
             .pop()
             .expect("Attempt to pop a scope when none is open")
+    }
+
+    pub fn current_loop(&self) -> Option<LoopFrame> {
+        self.loops.last().copied()
+    }
+
+    pub fn push_loop(&mut self, frame: LoopFrame) {
+        self.loops.push(frame);
+    }
+
+    pub fn pop_loop(&mut self) -> LoopFrame {
+        self.loops
+            .pop()
+            .expect("Attempt to pop a loop when none is open")
     }
 
     pub fn finish(self) -> MIRFunction {

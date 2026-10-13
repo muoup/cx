@@ -9,7 +9,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
-        coerce::convert,
+        coerce::{convert, decay},
         eval,
         op::{binary_operands, eval_operand, promote_operand},
     },
@@ -54,11 +54,10 @@ pub(crate) fn eval_address_of(
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, operand)?;
     let value = emit::referent(context, value, span)?;
-    if matches!(
-        context.env().resolve_kind(value.ty()),
-        HMIRTypeKind::Str | HMIRTypeKind::Function(_)
-    ) {
-        todo!("address of a string or function")
+    match context.env().resolve_kind(value.ty()) {
+        HMIRTypeKind::Function(_) => return Ok(decay(context, value, span)?),
+        HMIRTypeKind::Str => todo!("address of a string"),
+        _ => {}
     }
 
     let value = emit::spill(context, value, span)?;
@@ -89,11 +88,9 @@ pub(crate) fn dereference(
     pointer: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
+    let pointer = decay(context, pointer, span)?;
     let inner = match context.env().resolve_kind(pointer.ty()) {
         HMIRTypeKind::PointerTo(inner) => *inner,
-        HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_) => {
-            todo!("array, string or function operand decay")
-        }
         _ => {
             return Err(hmir_error(
                 span,

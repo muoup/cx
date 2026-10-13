@@ -1,7 +1,10 @@
+mod aggregate;
 mod binding;
+mod call;
 mod coerce;
 mod constant;
 mod control;
+mod def;
 mod op;
 mod place;
 mod promote;
@@ -30,10 +33,13 @@ use crate::{
         function::{ComptimeContext, FnContext, LocalLoweringContext, RuntimeContext},
     },
     eval::{
+        aggregate::eval_aggregate,
         binding::{eval_block, eval_let, eval_local},
+        call::eval_call,
         coerce::eval_coerce,
         constant::eval_constant,
-        control::{eval_if, eval_loop_exit, eval_return, eval_while},
+        control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_while},
+        def::eval_def,
         flow::ComptimeStop,
         op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
         place::{eval_address_of, eval_assign, eval_dereference},
@@ -57,11 +63,9 @@ pub(crate) fn lower_runtime_function<'hmir>(
         Some(signature),
         FnContext::Comptime(ComptimeContext::new()),
     );
-    let prototype = flow::top(types::lower_prototype(
-        &mut staging,
-        body,
-        function.prototype(),
-    ))?;
+    let evaluated = flow::top(types::eval_signature(&mut staging, body, signature))?;
+    let prototype =
+        types::lower_prototype(staging.env_mut(), function.prototype(), &evaluated, span)?;
 
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
     let mut context = staging.child(Some(signature), runtime);
@@ -149,7 +153,15 @@ pub(crate) fn eval(
             condition,
             body: loop_body,
             pre_eval,
-        } => eval_while(context, body, span, *condition, *loop_body, *pre_eval),
+        } => eval_while(context, body, span, *condition, *loop_body, None, *pre_eval),
+        HMIRExprKind::For {
+            init,
+            condition,
+            increment,
+            body: loop_body,
+        } => eval_for(
+            context, body, span, *init, *condition, *increment, *loop_body,
+        ),
 
         HMIRExprKind::Op(op) => match op {
             HMIROp::BinOp { op, lhs, rhs } => eval_binary(context, body, span, *op, *lhs, *rhs),
@@ -163,9 +175,11 @@ pub(crate) fn eval(
             HMIROp::Control(HMIRControlOp::Return(value)) => {
                 eval_return(context, body, span, *value)
             }
-            HMIROp::Control(HMIRControlOp::Break) => eval_loop_exit(context, ComptimeStop::Break),
+            HMIROp::Control(HMIRControlOp::Break) => {
+                eval_loop_exit(context, span, ComptimeStop::Break)
+            }
             HMIROp::Control(HMIRControlOp::Continue) => {
-                eval_loop_exit(context, ComptimeStop::Continue)
+                eval_loop_exit(context, span, ComptimeStop::Continue)
             }
 
             HMIROp::Assign { target, op, value } => {
@@ -179,10 +193,12 @@ pub(crate) fn eval(
             HMIROp::OwnershipOp(ownership) => {
                 todo!("HMIROp::OwnershipOp({})", ownership.path())
             }
-            HMIROp::AggregateOp(_) => todo!("HMIROp::AggregateOp"),
+            HMIROp::AggregateOp(aggregate) => eval_aggregate(context, body, span, aggregate),
         },
 
-        HMIRExprKind::Def(_) => todo!("HMIRExprKind::Def"),
+        HMIRExprKind::Def(def) => eval_def(context, span, def),
+        HMIRExprKind::Call { callee, args } => eval_call(context, body, span, *callee, args),
+
         HMIRExprKind::Hole(_) => todo!("HMIRExprKind::Hole"),
         HMIRExprKind::Type(_) => todo!("HMIRExprKind::Type"),
         HMIRExprKind::Comptime(_) => todo!("HMIRExprKind::Comptime"),
@@ -190,8 +206,6 @@ pub(crate) fn eval(
         HMIRExprKind::Splice { .. } => todo!("HMIRExprKind::Splice"),
         HMIRExprKind::Intrinsic(_) => todo!("HMIRExprKind::Intrinsic"),
         HMIRExprKind::Error(_) => todo!("HMIRExprKind::Error"),
-        HMIRExprKind::Call { .. } => todo!("HMIRExprKind::Call"),
-        HMIRExprKind::For { .. } => todo!("HMIRExprKind::For"),
         HMIRExprKind::Switch { .. } => todo!("HMIRExprKind::Switch"),
         HMIRExprKind::Case { .. } => todo!("HMIRExprKind::Case"),
         HMIRExprKind::Match { .. } => todo!("HMIRExprKind::Match"),
