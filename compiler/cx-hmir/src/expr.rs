@@ -1,10 +1,10 @@
 use cx_intrinsics::Intrinsic;
 use cx_tokens::TokenRange;
-use cx_util::{dense_id, identifier::CXIdent};
+use cx_util::identifier::CXIdent;
 
 use crate::{
     HMIRDefRef, HMIROp, HMIRPattern,
-    body::{HMIRHoleID, HMIRLocalID},
+    body::{HMIRBodyID, HMIRHoleID, HMIRLocalID},
     expr::constant::HMIRConstant,
 };
 
@@ -12,14 +12,18 @@ pub mod aggregate;
 pub mod constant;
 pub mod op;
 
-dense_id!(HMIRExprID, "e");
-
 pub type HMIRIntrinsic = Intrinsic<HMIRExprID, HMIRExprID>;
 
 #[derive(Debug, Clone)]
 pub struct HMIRExpr {
     kind: HMIRExprKind,
     span: TokenRange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HMIRExprID {
+    body: HMIRBodyID,
+    index: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +95,23 @@ pub enum HMIRExprKind {
         name: CXIdent,
         body: HMIRExprID,
     },
+}
+
+impl HMIRExprID {
+    pub const fn new(body: HMIRBodyID, index: usize) -> Self {
+        Self {
+            body,
+            index: index as u32,
+        }
+    }
+
+    pub const fn body(self) -> HMIRBodyID {
+        self.body
+    }
+
+    pub const fn index(self) -> usize {
+        self.index as usize
+    }
 }
 
 impl HMIRExpr {

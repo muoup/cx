@@ -1,13 +1,23 @@
+use std::cell::Cell;
+
 use cx_tokens::TokenRange;
 use cx_util::{dense_id, identifier::CXIdent};
 
 use crate::expr::{HMIRExpr, HMIRExprID};
 
+thread_local! {
+    static NEXT_BODY: Cell<usize> = Cell::new(0);
+}
+
 dense_id!(HMIRLocalID, "%");
 dense_id!(HMIRHoleID, "?");
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HMIRBodyID(u32);
+
+#[derive(Debug, Clone)]
 pub struct HMIRBody {
+    id: HMIRBodyID,
     exprs: Vec<HMIRExpr>,
     locals: Vec<HMIRLocal>,
     holes: Vec<HMIRHole>,
@@ -29,13 +39,19 @@ pub struct HMIRHole {
 }
 
 impl HMIRLocal {
-    pub fn new(name: Option<CXIdent>, ty: HMIRExprID, span: TokenRange, comptime: bool, nodrop: bool) -> Self {
+    pub fn new(
+        name: Option<CXIdent>,
+        ty: HMIRExprID,
+        span: TokenRange,
+        comptime: bool,
+        nodrop: bool,
+    ) -> Self {
         Self {
             name,
             ty,
             span,
             comptime,
-            nodrop
+            nodrop,
         }
     }
 
@@ -72,12 +88,25 @@ impl HMIRHole {
 
 impl HMIRBody {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            id: HMIRBodyID(NEXT_BODY.with(|next| {
+                let id = next.get();
+                next.set(id + 1);
+                id as u32
+            })),
+            exprs: Vec::new(),
+            locals: Vec::new(),
+            holes: Vec::new(),
+        }
+    }
+
+    pub fn id(&self) -> HMIRBodyID {
+        self.id
     }
 
     pub fn push_expr(&mut self, expr: HMIRExpr) -> HMIRExprID {
         self.exprs.push(expr);
-        HMIRExprID::new(self.exprs.len() - 1)
+        HMIRExprID::new(self.id, self.exprs.len() - 1)
     }
 
     pub fn declare_local(&mut self, local: HMIRLocal) -> HMIRLocalID {
@@ -91,10 +120,12 @@ impl HMIRBody {
     }
 
     pub fn expr(&self, id: HMIRExprID) -> &HMIRExpr {
+        debug_assert_eq!(id.body(), self.id, "expression used outside of its body");
         &self.exprs[id.index()]
     }
 
     pub fn expr_mut(&mut self, id: HMIRExprID) -> &mut HMIRExpr {
+        debug_assert_eq!(id.body(), self.id, "expression used outside of its body");
         &mut self.exprs[id.index()]
     }
 

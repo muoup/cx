@@ -13,6 +13,12 @@ use super::{
     ty::{write_constant, write_def_ref},
 };
 
+impl std::fmt::Display for HMIRExprID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "e{}", self.index())
+    }
+}
+
 impl BodyPrinter<'_> {
     pub(super) fn expr(&self, f: &mut Formatter<'_>, id: HMIRExprID, depth: usize) -> fmt::Result {
         match self.body().expr(id).kind() {
