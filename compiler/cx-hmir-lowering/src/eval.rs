@@ -35,7 +35,7 @@ use crate::{
         constant::eval_constant,
         control::{eval_if, eval_loop_exit, eval_return, eval_while},
         flow::ComptimeStop,
-        op::{eval_binary, eval_type_op, eval_unary},
+        op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
         place::{eval_address_of, eval_assign, eval_dereference},
     },
     log::hmir_error,
@@ -90,7 +90,7 @@ fn runtime_definition(
 
     for (param, local) in signature.params().iter().zip(def.params()) {
         let decl = body.local(*local);
-        let ty = eval_type(context, body, param.ty())?;
+        let ty = eval_type(context, body, *param.ty())?;
         let value = runtime::parameter(
             context,
             ty,
@@ -184,6 +184,7 @@ pub(crate) fn eval(
 
         HMIRExprKind::Def(_) => todo!("HMIRExprKind::Def"),
         HMIRExprKind::Hole(_) => todo!("HMIRExprKind::Hole"),
+        HMIRExprKind::Type(_) => todo!("HMIRExprKind::Type"),
         HMIRExprKind::Comptime(_) => todo!("HMIRExprKind::Comptime"),
         HMIRExprKind::Quote { .. } => todo!("HMIRExprKind::Quote"),
         HMIRExprKind::Splice { .. } => todo!("HMIRExprKind::Splice"),
@@ -209,12 +210,13 @@ pub(crate) fn eval_comptime(
 pub(crate) fn eval_type(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
-    expr: HMIRExprID,
+    id: HMIRExprID,
 ) -> EvalResult<HMIRTypeID> {
-    let expr = body.expr(expr);
+    let expr = body.expr(id);
 
     match expr.kind() {
         HMIRExprKind::Constant(HMIRConstant::Type(ty)) => Ok(*ty),
+        HMIRExprKind::Type(ty) => eval_declared_type(context, body, id, ty),
         HMIRExprKind::Op(HMIROp::Type(op)) => eval_type_op(context, body, expr.span(), op),
         HMIRExprKind::Def(def) => eval_type_def(context, expr.span(), def),
         _ => todo!("Evaluate a type expression using the available comptime bindings"),

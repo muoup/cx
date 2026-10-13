@@ -109,9 +109,6 @@ pub enum HMIROwnershipOp {
 
 #[derive(Debug, Clone)]
 pub enum HMIRTypeOp {
-    Pointer(HMIRExprID),
-    Reference(HMIRExprID),
-    Const(HMIRExprID),
     PointerInner(HMIRExprID),
     ReferenceInner(HMIRExprID),
     Member {
@@ -120,19 +117,6 @@ pub enum HMIRTypeOp {
     },
     TypeOf(HMIRExprID),
     Decay(HMIRExprID),
-    Array {
-        element: HMIRExprID,
-        length: Option<HMIRExprID>,
-    },
-    Function {
-        params: Vec<HMIRExprID>,
-        ret: HMIRExprID,
-        variadic: bool,
-    },
-    Expr {
-        params: Vec<HMIRExprID>,
-        result: HMIRExprID,
-    },
     Aggregate {
         ty: HMIRExprID,
         pairs: Vec<(Option<CXIdent>, HMIRExprID)>,
@@ -232,17 +216,11 @@ impl HMIROwnershipOp {
 impl HMIRTypeOp {
     pub fn path(&self) -> &'static str {
         match self {
-            Self::Pointer(_) => "type.pointer",
-            Self::Reference(_) => "type.reference",
-            Self::Const(_) => "type.const",
             Self::PointerInner(_) => "type.pointer_inner",
             Self::ReferenceInner(_) => "type.reference_inner",
             Self::Member { .. } => "type.member",
             Self::TypeOf(_) => "type.type_of",
             Self::Decay(_) => "type.decay",
-            Self::Array { .. } => "type.array",
-            Self::Function { .. } => "type.function",
-            Self::Expr { .. } => "type.expr",
             Self::Aggregate { .. } => "type.aggregate",
             Self::SizeOf(_) => "type.size_of",
             Self::AlignOf(_) => "type.align_of",

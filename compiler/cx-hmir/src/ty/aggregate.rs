@@ -1,7 +1,5 @@
 use cx_util::identifier::CXIdent;
 
-use crate::expr::HMIRExprID;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HMIRTypeSemantics {
     pub constant: bool,
@@ -18,9 +16,9 @@ pub enum HMIRMoveSemantics {
 }
 
 #[derive(Debug, Clone)]
-pub struct HMIRFieldDef {
+pub struct HMIRFieldDef<T> {
     name: Option<CXIdent>,
-    ty: HMIRExprID,
+    ty: T,
     bit_width: Option<usize>,
 }
 
@@ -54,8 +52,8 @@ impl Default for HMIRTypeSemantics {
     }
 }
 
-impl HMIRFieldDef {
-    pub fn new(name: Option<CXIdent>, ty: HMIRExprID, bit_width: Option<usize>) -> Self {
+impl<T> HMIRFieldDef<T> {
+    pub fn new(name: Option<CXIdent>, ty: T, bit_width: Option<usize>) -> Self {
         Self {
             name,
             ty,
@@ -67,11 +65,19 @@ impl HMIRFieldDef {
         self.name.as_ref()
     }
 
-    pub fn ty(&self) -> HMIRExprID {
-        self.ty
+    pub fn ty(&self) -> &T {
+        &self.ty
     }
 
     pub fn bit_width(&self) -> Option<usize> {
         self.bit_width
+    }
+
+    pub fn map<U, E>(&self, ty: impl FnOnce(&T) -> Result<U, E>) -> Result<HMIRFieldDef<U>, E> {
+        Ok(HMIRFieldDef {
+            name: self.name.clone(),
+            ty: ty(&self.ty)?,
+            bit_width: self.bit_width,
+        })
     }
 }

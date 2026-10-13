@@ -1,12 +1,12 @@
 use cx_hir::ast::{
-    function::{HIRFunctionBody, HIRFunctionContract, HIRFunctionPrototype, HIRParameter},
+    function::{HIRFunctionBody, HIRFunctionPrototype, HIRParameter},
     global_var::HIREnumVariant,
     modifiers::HIRSymbolNameScheme,
     types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBinaryOp, HMIRComptimeGlobal, HMIRContract, HMIRDefKind, HMIRFnSignature,
-    HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp, HMIROwnershipOp,
+    HMIRAggregateOp, HMIRBinaryOp, HMIRBody, HMIRComptimeGlobal, HMIRContract, HMIRDefKind,
+    HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp, HMIROwnershipOp,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRType, HMIRTypeKind,
@@ -100,7 +100,7 @@ fn lower_function(
                 ));
             }
             let return_type = lower_type(this, &prototype.return_type)?;
-            let contract = lower_contract(this, &prototype.contract, &prototype.range)?;
+            let contract = lower_contract(this, prototype)?;
             let root = body
                 .map(|body| lower_function_body(this, body))
                 .transpose()?;
@@ -233,21 +233,41 @@ fn lower_enum_variant(
     Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)))
 }
 
+// The conditions are lowered into a body of their own, where a local stands for each parameter
+// they may name. Those locals take their types from the signature.
 fn lower_contract(
     context: &mut BodyLowering<'_>,
-    contract: &HIRFunctionContract,
-    span: &TokenRange,
+    prototype: &HIRFunctionPrototype,
 ) -> CXResult<HMIRContract> {
+    let contract = &prototype.contract;
+    let span = &prototype.range;
+    if contract.precondition.is_none() && contract.postcondition.is_none() {
+        let (body, params) = (HMIRBody::new(), Box::default());
+        return Ok(HMIRContract::new(body, params, contract.safe, None, None));
+    }
+
+    let declared = declared_params(context, prototype)?;
+    let mut conditions = context.detached(prototype.comptime);
+    let params = declared
+        .iter()
+        .map(|param| {
+            let span = &param.ty.range;
+            let ty = conditions.hole(span);
+            let quoted = staged_signature(&param.ty).is_some();
+            conditions.declare(param.name.as_ref(), ty, param.comptime, quoted, span)
+        })
+        .collect();
+
     let precondition = contract
         .precondition
         .as_ref()
-        .map(|condition| lower_expr(context, condition))
+        .map(|condition| lower_expr(&mut conditions, condition))
         .transpose()?;
     let postcondition = contract
         .postcondition
         .as_ref()
         .map(|(binding, condition)| {
-            context.scoped(|this| -> CXResult<_> {
+            conditions.scoped(|this| -> CXResult<_> {
                 let binding = binding.as_ref().map(|name| {
                     let ty = this.hole(span);
                     this.declare_local(Some(name), ty, span)
@@ -258,6 +278,8 @@ fn lower_contract(
         .transpose()?;
 
     Ok(HMIRContract::new(
+        conditions.finish(),
+        params,
         contract.safe,
         precondition,
         postcondition,

@@ -7,12 +7,13 @@ use cx_hir::ast::{
     },
 };
 use cx_hmir::{
-    HMIRDefRef,
-    expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant, op::HMIRTypeOp},
+    HMIRContract, HMIRDefRef, HMIRFnSignature, HMIRFunctionStage,
+    expr::{HMIRExprID, HMIRExprKind},
     ty::{
-        HMIRType, HMIRTypeKind,
+        HMIRExprTypeKind,
         aggregate::{HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
     },
+    unit::function::HMIRFnParam,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -32,7 +33,12 @@ pub(crate) fn lower_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXResu
         return Ok(lowered);
     }
 
-    Ok(context.type_op(HMIRTypeOp::Const(lowered), &ty.range))
+    let semantics = HMIRTypeSemantics {
+        constant: true,
+        ..HMIRTypeSemantics::default()
+    };
+    let kind = HMIRExprTypeKind::Nominal(lowered);
+    Ok(context.expr_type(kind, semantics, None, &ty.range))
 }
 
 fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXResult<HMIRExprID> {
@@ -41,7 +47,7 @@ fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXRes
         return lower_staged_type(context, params, result, span);
     }
 
-    Ok(match &ty.kind {
+    let kind = match &ty.kind {
         HIRTypeKind::Identifier { name, args, .. } => {
             let callee = match context.lookup(name, ty.tag_kind(), span)? {
                 Symbol::Local(binding) => context.push(HMIRExprKind::Local(binding.local()), span),
@@ -67,29 +73,27 @@ fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXRes
                 .iter()
                 .map(|arg| lower_expr(context, arg))
                 .collect::<CXResult<_>>()?;
-            context.push(HMIRExprKind::Call { callee, args }, span)
+            return Ok(context.push(HMIRExprKind::Call { callee, args }, span));
         }
-        HIRTypeKind::Universe => context.type_of_types(span),
-        HIRTypeKind::Auto => context.hole(span),
+        HIRTypeKind::Universe => return Ok(context.type_of_types(span)),
+        HIRTypeKind::Auto => return Ok(context.hole(span)),
         // Handled as a staged signature above
-        HIRTypeKind::Expr(result) => lower_staged_type(context, Vec::new(), result, span)?,
+        HIRTypeKind::Expr(result) => return lower_staged_type(context, Vec::new(), result, span),
         HIRTypeKind::ExplicitSizedArray(element, length) => {
             let element = lower_type(context, element)?;
             let length = Some(lower_expr(context, length)?);
-            context.type_op(HMIRTypeOp::Array { element, length }, span)
+            HMIRExprTypeKind::Array { element, length }
         }
         HIRTypeKind::ImplicitSizedArray(element) => {
             let element = lower_type(context, element)?;
             let length = None;
-            context.type_op(HMIRTypeOp::Array { element, length }, span)
+            HMIRExprTypeKind::Array { element, length }
         }
         HIRTypeKind::MemoryReference { inner_type, .. } => {
-            let inner = lower_type(context, inner_type)?;
-            context.type_op(HMIRTypeOp::Reference(inner), span)
+            HMIRExprTypeKind::ReferenceTo(lower_type(context, inner_type)?)
         }
         HIRTypeKind::PointerTo { inner_type } => {
-            let inner = lower_type(context, inner_type)?;
-            context.type_op(HMIRTypeOp::Pointer(inner), span)
+            HMIRExprTypeKind::PointerTo(lower_type(context, inner_type)?)
         }
         HIRTypeKind::Structured {
             name,
@@ -97,14 +101,14 @@ fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXRes
             fields,
         } => {
             let fields = lower_fields(context, fields)?;
-            let kind = HMIRTypeKind::Struct { fields };
-            lower_aggregate_type(context, name.as_ref(), kind, attributes, span)?
+            let kind = HMIRExprTypeKind::Struct { fields };
+            return lower_aggregate_type(context, name.as_ref(), kind, attributes, span);
         }
         HIRTypeKind::Union { name, fields } => {
             let fields = lower_fields(context, fields)?;
-            let kind = HMIRTypeKind::Union { fields };
+            let kind = HMIRExprTypeKind::Union { fields };
             let attributes = HIRAggregateAttributes::default();
-            lower_aggregate_type(context, name.as_ref(), kind, &attributes, span)?
+            return lower_aggregate_type(context, name.as_ref(), kind, &attributes, span);
         }
         HIRTypeKind::TaggedUnion {
             name,
@@ -112,11 +116,15 @@ fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXRes
             variants,
         } => {
             let fields = lower_fields(context, variants)?;
-            let kind = HMIRTypeKind::TaggedUnion { fields };
-            lower_aggregate_type(context, name.as_ref(), kind, attributes, span)?
+            let kind = HMIRExprTypeKind::TaggedUnion { fields };
+            return lower_aggregate_type(context, name.as_ref(), kind, attributes, span);
         }
-        HIRTypeKind::FunctionPointer { prototype } => lower_function_type(context, prototype)?,
-    })
+        HIRTypeKind::FunctionPointer { prototype } => {
+            HMIRExprTypeKind::Function(lower_function_type(context, prototype)?)
+        }
+    };
+
+    Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
 }
 
 // The shape of a staged value: 'expr(T)', or a comptime function over code such as
@@ -159,7 +167,8 @@ fn lower_staged_type(
         .collect::<CXResult<_>>()?;
     let result = lower_type(context, result)?;
 
-    Ok(context.type_op(HMIRTypeOp::Expr { params, result }, span))
+    let kind = HMIRExprTypeKind::StagedExpr { params, result };
+    Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
 }
 
 // The sum a constructor builds, as the def of its type
@@ -182,28 +191,35 @@ pub(crate) fn lower_constructor_sum(
 fn lower_function_type(
     context: &mut BodyLowering<'_>,
     prototype: &HIRFunctionPrototype,
-) -> CXResult<HMIRExprID> {
+) -> CXResult<HMIRFnSignature<HMIRExprID>> {
     let params = prototype
         .params
         .iter()
-        .map(|param| lower_type(context, &param.ty))
+        .map(|param| {
+            let ty = lower_type(context, &param.ty)?;
+            Ok(HMIRFnParam::new(param.comptime, ty))
+        })
         .collect::<CXResult<_>>()?;
-    let ret = lower_type(context, &prototype.return_type)?;
+    let return_type = lower_type(context, &prototype.return_type)?;
+    let stage = if prototype.comptime {
+        HMIRFunctionStage::Comptime
+    } else {
+        HMIRFunctionStage::Runtime
+    };
 
-    Ok(context.type_op(
-        HMIRTypeOp::Function {
-            params,
-            ret,
-            variadic: prototype.var_args,
-        },
-        &prototype.range,
+    Ok(HMIRFnSignature::new(
+        stage,
+        params,
+        return_type,
+        prototype.var_args,
+        HMIRContract::default(),
     ))
 }
 
 fn lower_fields(
     context: &mut BodyLowering<'_>,
     fields: &[HIRField],
-) -> CXResult<Vec<HMIRFieldDef>> {
+) -> CXResult<Vec<HMIRFieldDef<HMIRExprID>>> {
     fields
         .iter()
         .map(|field| {
@@ -229,11 +245,11 @@ fn lower_fields(
         .collect()
 }
 
-// Each declaration is a type of its own, whose fields are typed by expressions of this body
+// Each declaration is a type of its own, which the expression it lowers to identifies
 fn lower_aggregate_type(
     context: &mut BodyLowering<'_>,
     name: Option<&CXIdent>,
-    kind: HMIRTypeKind,
+    kind: HMIRExprTypeKind,
     attributes: &HIRAggregateAttributes,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
@@ -250,12 +266,6 @@ fn lower_aggregate_type(
             HIRMoveSemantics::Nodrop => HMIRMoveSemantics::Nodrop,
         },
     };
-    let ty = context.declare_type(HMIRType::new(
-        kind,
-        semantics,
-        span.clone(),
-        name.map(ToString::to_string),
-    ));
 
-    Ok(context.push(HMIRExprKind::Constant(HMIRConstant::Type(ty)), span))
+    Ok(context.expr_type(kind, semantics, name, span))
 }

@@ -78,7 +78,7 @@ fn write_function(
                 if param.comptime() {
                     f.write_str("comptime ")?;
                 }
-                printer.expr(f, param.ty(), 0)?;
+                printer.expr(f, *param.ty(), 0)?;
             }
         }
     }
@@ -90,27 +90,29 @@ fn write_function(
         })?;
     }
     f.write_str(") -> ")?;
-    printer.expr(f, signature.return_type(), 0)?;
+    printer.expr(f, *signature.return_type(), 0)?;
     write_link_name(f, def, function.prototype().symbol_name())?;
 
     let contract = signature.contract();
     if !contract.is_empty() {
+        let conditions = BodyPrinter::new(unit, contract.body());
+
         f.write_str(" where")?;
         if contract.is_safe() {
             f.write_str(" safe")?;
         }
         if let Some(precondition) = contract.precondition() {
             f.write_str(" pre(")?;
-            printer.expr(f, precondition, 0)?;
+            conditions.expr(f, precondition, 0)?;
             f.write_str(")")?;
         }
         if let Some((binding, postcondition)) = contract.postcondition() {
             f.write_str(" post(")?;
             if let Some(binding) = binding {
-                printer.local(f, binding)?;
+                conditions.local(f, binding)?;
                 f.write_str(" => ")?;
             }
-            printer.expr(f, postcondition, 0)?;
+            conditions.expr(f, postcondition, 0)?;
             f.write_str(")")?;
         }
     }

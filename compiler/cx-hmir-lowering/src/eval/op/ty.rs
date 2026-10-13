@@ -2,7 +2,8 @@ use cx_hmir::{
     HMIRBody,
     expr::{HMIRExprID, constant::HMIRConstant, op::HMIRTypeOp},
     ty::{
-        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+        HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
+        aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
     },
 };
 use cx_tokens::TokenRange;
@@ -13,43 +14,75 @@ use crate::{
 };
 
 pub(crate) fn eval_type_op(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBody,
-    span: &TokenRange,
+    _context: &mut LocalLoweringContext,
+    _body: &HMIRBody,
+    _span: &TokenRange,
     op: &HMIRTypeOp,
 ) -> EvalResult<HMIRTypeID> {
-    let kind = match op {
-        HMIRTypeOp::Pointer(inner) => HMIRTypeKind::PointerTo(eval_type(context, body, *inner)?),
-        HMIRTypeOp::Reference(inner) => {
-            HMIRTypeKind::ReferenceTo(eval_type(context, body, *inner)?)
-        }
-        HMIRTypeOp::Array { element, length } => {
-            let element = eval_type(context, body, *element)?;
-            let length = length
-                .map(|length| array_length(context, body, length))
-                .transpose()?;
+    todo!("HMIRTypeOp: {}", op.path())
+}
 
-            HMIRTypeKind::Array { element, length }
-        }
-
-        HMIRTypeOp::Const(inner) => {
+pub(crate) fn eval_declared_type(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    declaration: HMIRExprID,
+    ty: &HMIRExprType,
+) -> EvalResult<HMIRTypeID> {
+    match ty.kind() {
+        HMIRExprTypeKind::Nominal(inner) => {
             let inner = eval_type(context, body, *inner)?;
-            let specifiers = HMIRTypeSemantics {
-                constant: true,
-                ..HMIRTypeSemantics::default()
-            };
-
-            return Ok(specify(context, inner, specifiers, span));
+            Ok(specify(context, inner, *ty.semantics(), ty.decl_span()))
         }
-        _ => todo!("HMIRTypeOp: {}", op.path()),
-    };
+        HMIRExprTypeKind::Struct { .. }
+        | HMIRExprTypeKind::Union { .. }
+        | HMIRExprTypeKind::TaggedUnion { .. } => eval_aggregate(context, body, declaration, ty),
+        _ => {
+            let ty = evaluate(context, body, ty)?;
+            Ok(context.env_mut().resolver_mut().realize_type(ty))
+        }
+    }
+}
 
-    Ok(context.env_mut().resolver_mut().realize_type(HMIRType::new(
-        kind,
-        HMIRTypeSemantics::default(),
-        span.clone(),
-        None,
-    )))
+// The fields of an aggregate may refer back to it, which finds it incomplete until they are all evaluated
+fn eval_aggregate(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    declaration: HMIRExprID,
+    ty: &HMIRExprType,
+) -> EvalResult<HMIRTypeID> {
+    if let Some(id) = context.env().resolver().declared_type(declaration) {
+        return Ok(id);
+    }
+
+    let incomplete = HMIRType::new(
+        HMIRTypeKind::Opaque {
+            size: 0,
+            alignment: 1,
+        },
+        *ty.semantics(),
+        ty.decl_span().clone(),
+        ty.debug_name().map(str::to_string),
+    );
+    let id = context
+        .env_mut()
+        .resolver_mut()
+        .declare_type(declaration, incomplete);
+    let complete = evaluate(context, body, ty)?;
+    context.env_mut().resolver_mut().complete_type(id, complete);
+
+    Ok(id)
+}
+
+fn evaluate(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    ty: &HMIRExprType,
+) -> EvalResult<HMIRType> {
+    ty.map(
+        context,
+        |context, inner| eval_type(context, body, *inner),
+        |context, length| array_length(context, body, *length),
+    )
 }
 
 // Specifiers only accumulate, so a type that already carries them stands for itself

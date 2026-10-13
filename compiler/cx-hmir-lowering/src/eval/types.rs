@@ -30,17 +30,17 @@ pub(crate) fn lower_prototype(
 
     let mut params = Vec::with_capacity(signature.params().len());
     for param in signature.params() {
-        let ty = eval_type(context, body, param.ty())?;
-        let ty = lower_type(context.env_mut(), ty, body.expr(param.ty()).span())?;
+        let ty = eval_type(context, body, *param.ty())?;
+        let ty = lower_type(context.env_mut(), ty, body.expr(*param.ty()).span())?;
 
         params.push(MIRFnParam::new(None, ty, false));
     }
 
-    let return_type = eval_type(context, body, signature.return_type())?;
+    let return_type = eval_type(context, body, *signature.return_type())?;
     let return_type = lower_type(
         context.env_mut(),
         return_type,
-        body.expr(signature.return_type()).span(),
+        body.expr(*signature.return_type()).span(),
     )?;
 
     Ok(MIRFnPrototype::new(
@@ -94,7 +94,7 @@ pub(crate) fn lower_type(
             }
         }
         HMIRTypeKind::Function(_) => {
-            todo!("function type signatures hold expressions, which need the eval API")
+            todo!("function types")
         }
         HMIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
 

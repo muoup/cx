@@ -10,7 +10,7 @@ use crate::expr::{
 
 use super::{
     body::{BodyPrinter, indent},
-    ty::{write_constant, write_def_ref},
+    ty::{write_constant, write_def_ref, write_generic_type},
 };
 
 impl std::fmt::Display for HMIRExprID {
@@ -26,6 +26,12 @@ impl BodyPrinter<'_> {
             HMIRExprKind::Local(local) => self.local(f, *local),
             HMIRExprKind::Def(def) => write_def_ref(f, self.unit(), def),
             HMIRExprKind::Hole(hole) => write!(f, "{hole}"),
+            HMIRExprKind::Type(ty) => write_generic_type(
+                f,
+                ty,
+                &|f, inner| self.expr(f, *inner, depth),
+                &|f, length| self.expr(f, *length, depth),
+            ),
             HMIRExprKind::Error(_) => f.write_str("<error>"),
 
             HMIRExprKind::Comptime(inner) => {

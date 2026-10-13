@@ -370,7 +370,7 @@ pub(crate) fn return_value(
     value: Option<HMIRValue>,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
-    let Some(return_type) = context.signature().map(|sig| sig.return_type()) else {
+    let Some(return_type) = context.signature().map(|sig| *sig.return_type()) else {
         unreachable!("return statement in a context without a signature")
     };
     let ty = eval_type(context, body, return_type)?;
@@ -427,7 +427,7 @@ pub(crate) fn fallthrough(
     is_main: bool,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
-    let Some(return_type) = context.signature().map(|sig| sig.return_type()) else {
+    let Some(return_type) = context.signature().map(|sig| *sig.return_type()) else {
         unreachable!("fallthrough in a context without a signature")
     };
     let ty = eval_type(context, body, return_type)?;

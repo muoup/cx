@@ -3,7 +3,7 @@ mod ty;
 mod unary;
 
 pub(crate) use binary::{binary_operands, eval_binary};
-pub(crate) use ty::eval_type_op;
+pub(crate) use ty::{eval_declared_type, eval_type_op};
 pub(crate) use unary::eval_unary;
 
 use cx_hmir::{

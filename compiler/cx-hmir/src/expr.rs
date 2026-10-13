@@ -6,6 +6,7 @@ use crate::{
     HMIRDefRef, HMIROp, HMIRPattern,
     body::{HMIRBodyID, HMIRHoleID, HMIRLocalID},
     expr::constant::HMIRConstant,
+    ty::HMIRExprType,
 };
 
 pub mod aggregate;
@@ -32,6 +33,7 @@ pub enum HMIRExprKind {
     Local(HMIRLocalID),
     Def(HMIRDefRef),
     Hole(HMIRHoleID),
+    Type(Box<HMIRExprType>),
 
     Comptime(HMIRExprID),
     Quote {

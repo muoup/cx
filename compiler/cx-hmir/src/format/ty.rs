@@ -2,7 +2,7 @@ use std::fmt::{self, Formatter};
 
 use crate::{
     expr::constant::HMIRConstant,
-    ty::{HMIRTypeID, HMIRTypeKind},
+    ty::{HMIRGenericType, HMIRGenericTypeKind, HMIRTypeID, aggregate::HMIRFieldDef},
     unit::{HMIRUnit, def::HMIRDefRef},
 };
 
@@ -55,12 +55,26 @@ pub(super) fn write_constant(
 }
 
 pub(super) fn write_type(f: &mut Formatter<'_>, unit: &HMIRUnit, id: HMIRTypeID) -> fmt::Result {
-    match unit.resolve_type(id).kind() {
-        HMIRTypeKind::Void => f.write_str("void"),
-        HMIRTypeKind::Unreachable => f.write_str("never"),
-        HMIRTypeKind::Type => f.write_str("@type"),
-        HMIRTypeKind::Str => f.write_str("str"),
-        HMIRTypeKind::Int(ty) => {
+    write_generic_type(
+        f,
+        unit.resolve_type(id),
+        &|f, inner| write_type(f, unit, *inner),
+        &|f, length| write!(f, "{length}"),
+    )
+}
+
+pub(super) fn write_generic_type<T, L>(
+    f: &mut Formatter<'_>,
+    ty: &HMIRGenericType<T, L>,
+    write_inner: &impl Fn(&mut Formatter<'_>, &T) -> fmt::Result,
+    write_length: &impl Fn(&mut Formatter<'_>, &L) -> fmt::Result,
+) -> fmt::Result {
+    match ty.kind() {
+        HMIRGenericTypeKind::Void => f.write_str("void"),
+        HMIRGenericTypeKind::Unreachable => f.write_str("never"),
+        HMIRGenericTypeKind::Type => f.write_str("@type"),
+        HMIRGenericTypeKind::Str => f.write_str("str"),
+        HMIRGenericTypeKind::Int(ty) => {
             write!(
                 f,
                 "{}{}",
@@ -68,54 +82,89 @@ pub(super) fn write_type(f: &mut Formatter<'_>, unit: &HMIRUnit, id: HMIRTypeID)
                 ty.width().bytes() * 8
             )
         }
-        HMIRTypeKind::Float(ty) => write!(f, "f{}", ty.width().bytes() * 8),
-        HMIRTypeKind::PointerTo(inner) => {
-            write_type(f, unit, *inner)?;
+        HMIRGenericTypeKind::Float(ty) => write!(f, "f{}", ty.width().bytes() * 8),
+        HMIRGenericTypeKind::PointerTo(inner) => {
+            write_inner(f, inner)?;
             f.write_str("*")
         }
-        HMIRTypeKind::ReferenceTo(inner) => {
-            write_type(f, unit, *inner)?;
+        HMIRGenericTypeKind::ReferenceTo(inner) => {
+            write_inner(f, inner)?;
             f.write_str("&")
         }
-        HMIRTypeKind::Array { element, length } => {
-            write_type(f, unit, *element)?;
-            match length {
-                Some(length) => write!(f, "[{length}]"),
-                None => f.write_str("[]"),
+        HMIRGenericTypeKind::Array { element, length } => {
+            write_inner(f, element)?;
+            f.write_str("[")?;
+            if let Some(length) = length {
+                write_length(f, length)?;
             }
+            f.write_str("]")
         }
-        HMIRTypeKind::Function(signature) => {
-            write!(f, "fn/{}", signature.params().len())?;
+        HMIRGenericTypeKind::Function(signature) => {
+            f.write_str("fn(")?;
+            for (index, param) in signature.params().iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                if param.comptime() {
+                    f.write_str("comptime ")?;
+                }
+                write_inner(f, param.ty())?;
+            }
             if signature.is_variadic() {
-                f.write_str("...")?;
+                f.write_str(if signature.params().is_empty() {
+                    "..."
+                } else {
+                    ", ..."
+                })?;
             }
-            Ok(())
-        }
-        HMIRTypeKind::Struct { fields } => write!(f, "struct/{}", fields.len()),
-        HMIRTypeKind::Union { fields } => write!(f, "union/{}", fields.len()),
-        HMIRTypeKind::TaggedUnion { fields } => write!(f, "enum union/{}", fields.len()),
-        HMIRTypeKind::StagedExpr { params, result } => {
-            f.write_str("expr(")?;
-            write_type_list(f, unit, params)?;
             f.write_str(") -> ")?;
-            write_type(f, unit, *result)
+            write_inner(f, signature.return_type())
         }
-        HMIRTypeKind::Opaque { size, alignment } => write!(f, "opaque({size}, {alignment})"),
-        HMIRTypeKind::Nominal(inner) => {
-            if unit.resolve_type(id).semantics().constant {
+        HMIRGenericTypeKind::Struct { fields } => write_fields(f, "struct", fields, write_inner),
+        HMIRGenericTypeKind::Union { fields } => write_fields(f, "union", fields, write_inner),
+        HMIRGenericTypeKind::TaggedUnion { fields } => {
+            write_fields(f, "enum union", fields, write_inner)
+        }
+        HMIRGenericTypeKind::StagedExpr { params, result } => {
+            f.write_str("expr(")?;
+            for (index, param) in params.iter().enumerate() {
+                if index != 0 {
+                    f.write_str(", ")?;
+                }
+                write_inner(f, param)?;
+            }
+            f.write_str(") -> ")?;
+            write_inner(f, result)
+        }
+        HMIRGenericTypeKind::Opaque { size, alignment } => {
+            write!(f, "opaque({size}, {alignment})")
+        }
+        HMIRGenericTypeKind::Nominal(inner) => {
+            if ty.semantics().constant {
                 f.write_str("const ")?;
             }
-            write_type(f, unit, *inner)
+            write_inner(f, inner)
         }
     }
 }
 
-fn write_type_list(f: &mut Formatter<'_>, unit: &HMIRUnit, types: &[HMIRTypeID]) -> fmt::Result {
-    for (index, ty) in types.iter().enumerate() {
-        if index != 0 {
-            f.write_str(", ")?;
+fn write_fields<T>(
+    f: &mut Formatter<'_>,
+    keyword: &str,
+    fields: &[HMIRFieldDef<T>],
+    write_inner: &impl Fn(&mut Formatter<'_>, &T) -> fmt::Result,
+) -> fmt::Result {
+    write!(f, "{keyword} {{")?;
+    for (index, field) in fields.iter().enumerate() {
+        f.write_str(if index == 0 { " " } else { ", " })?;
+        match field.name() {
+            Some(name) => write!(f, "{name}: ")?,
+            None => f.write_str("_: ")?,
         }
-        write_type(f, unit, *ty)?;
+        write_inner(f, field.ty())?;
+        if let Some(width) = field.bit_width() {
+            write!(f, " : {width}")?;
+        }
     }
-    Ok(())
+    f.write_str(" }")
 }

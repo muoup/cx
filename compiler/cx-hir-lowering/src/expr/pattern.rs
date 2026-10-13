@@ -5,7 +5,8 @@ use cx_hir::ast::{
 use cx_hmir::{
     HMIRPattern,
     body::HMIRLocalID,
-    expr::{HMIRExprID, op::HMIRTypeOp},
+    expr::HMIRExprID,
+    ty::{HMIRExprTypeKind, aggregate::HMIRTypeSemantics},
 };
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
@@ -71,12 +72,19 @@ fn lower_binding_type(
     span: &TokenRange,
 ) -> HMIRExprID {
     let hole = context.hole(span);
+    let semantics = HMIRTypeSemantics::default();
     match mode {
         HIRBindingMode::Owned => hole,
-        HIRBindingMode::Reference => context.type_op(HMIRTypeOp::Reference(hole), span),
+        HIRBindingMode::Reference => {
+            context.expr_type(HMIRExprTypeKind::ReferenceTo(hole), semantics, None, span)
+        }
         HIRBindingMode::ConstReference => {
-            let inner = context.type_op(HMIRTypeOp::Const(hole), span);
-            context.type_op(HMIRTypeOp::Reference(inner), span)
+            let constant = HMIRTypeSemantics {
+                constant: true,
+                ..semantics
+            };
+            let inner = context.expr_type(HMIRExprTypeKind::Nominal(hole), constant, None, span);
+            context.expr_type(HMIRExprTypeKind::ReferenceTo(inner), semantics, None, span)
         }
     }
 }

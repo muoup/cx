@@ -1,4 +1,6 @@
-use cx_hmir::{HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, value::HMIRValue};
+use cx_hmir::{
+    HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, expr::HMIRExprID, value::HMIRValue,
+};
 
 pub mod comptime;
 pub mod runtime;
@@ -10,7 +12,7 @@ pub use self::{comptime::ComptimeContext, runtime::RuntimeContext};
 #[derive(Debug)]
 pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     env: &'env mut HMIREnvironment<'global, 'hmir>,
-    signature: Option<&'hmir HMIRFnSignature>,
+    signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
     context: FnContext,
 }
 
@@ -23,7 +25,7 @@ pub enum FnContext {
 impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
     pub fn new(
         env: &'env mut HMIREnvironment<'global, 'hmir>,
-        signature: Option<&'hmir HMIRFnSignature>,
+        signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
         context: FnContext,
     ) -> Self {
         // A comptime context may stage a runtime signature, as prototype resolution does
@@ -44,7 +46,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
 
     pub fn child<'parent>(
         &'parent mut self,
-        signature: Option<&'hmir HMIRFnSignature>,
+        signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
         context: FnContext,
     ) -> LocalLoweringContext<'parent, 'global, 'hmir> {
         LocalLoweringContext::new(&mut *self.env, signature, context)
@@ -58,7 +60,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         self.env
     }
 
-    pub fn signature(&self) -> Option<&'hmir HMIRFnSignature> {
+    pub fn signature(&self) -> Option<&'hmir HMIRFnSignature<HMIRExprID>> {
         self.signature
     }
 

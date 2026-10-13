@@ -10,7 +10,10 @@ use cx_hmir::{
     HMIROwnershipOp,
     body::{HMIRHole, HMIRLocal, HMIRLocalID},
     expr::{HMIRExpr, HMIRExprID, HMIRExprKind, constant::HMIRConstant, op::HMIRTypeOp},
-    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, intrinsic::HMIRIntType},
+    ty::{
+        HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
+        aggregate::HMIRTypeSemantics, intrinsic::HMIRIntType,
+    },
     unit::function::{HMIRFnDefinition, HMIRFnParam, HMIRFnPrototype},
 };
 use cx_log::{CXResult, catalogue::typecheck};
@@ -135,8 +138,13 @@ impl<'a> BodyLowering<'a> {
         self.body
     }
 
+    // A lowering for a body of its own, which sees none of the locals of this one
+    pub(crate) fn detached(&mut self, comptime: bool) -> BodyLowering<'_> {
+        BodyLowering::new(self.resolver, self.types, self.namespace.clone(), comptime)
+    }
+
     // The signature parameters that the locals of a definition were declared from
-    pub(crate) fn fn_params(&self, locals: &[HMIRLocalID]) -> Vec<HMIRFnParam> {
+    pub(crate) fn fn_params(&self, locals: &[HMIRLocalID]) -> Vec<HMIRFnParam<HMIRExprID>> {
         locals
             .iter()
             .map(|local| {
@@ -379,6 +387,18 @@ impl<'a> BodyLowering<'a> {
 
     pub(crate) fn type_op(&mut self, op: HMIRTypeOp, span: &TokenRange) -> HMIRExprID {
         self.op(HMIROp::Type(op), span)
+    }
+
+    pub(crate) fn expr_type(
+        &mut self,
+        kind: HMIRExprTypeKind,
+        semantics: HMIRTypeSemantics,
+        name: Option<&CXIdent>,
+        span: &TokenRange,
+    ) -> HMIRExprID {
+        let name = name.map(ToString::to_string);
+        let ty = HMIRExprType::new(kind, semantics, span.clone(), name);
+        self.push(HMIRExprKind::Type(Box::new(ty)), span)
     }
 
     pub(crate) fn coerce(

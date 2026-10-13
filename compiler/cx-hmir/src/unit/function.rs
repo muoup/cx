@@ -23,26 +23,30 @@ pub struct HMIRFnDefinition {
 pub struct HMIRFnPrototype {
     symbol_name: CXIdent,
     linkage: LinkageMode,
-    signature: HMIRFnSignature,
+    signature: HMIRFnSignature<HMIRExprID>,
 }
 
 #[derive(Debug, Clone)]
-pub struct HMIRFnSignature {
+pub struct HMIRFnSignature<T> {
     stage: HMIRFunctionStage,
-    return_type: HMIRExprID,
-    params: Vec<HMIRFnParam>,
+    return_type: T,
+    params: Vec<HMIRFnParam<T>>,
     variadic: bool,
     contract: HMIRContract,
 }
 
 #[derive(Debug, Clone)]
-pub struct HMIRFnParam {
+pub struct HMIRFnParam<T> {
     comptime: bool,
-    ty: HMIRExprID,
+    ty: T,
 }
 
-#[derive(Debug, Clone, Default)]
+// The conditions are expressions of the contract's own body, which binds the parameters they name by position
+#[derive(Debug, Clone)]
 pub struct HMIRContract {
+    body: HMIRBody,
+    params: Box<[HMIRLocalID]>,
+
     safe: bool,
     precondition: Option<HMIRExprID>,
     postcondition: Option<(Option<HMIRLocalID>, HMIRExprID)>,
@@ -71,7 +75,7 @@ impl HMIRFunction {
         &self.prototype
     }
 
-    pub fn signature(&self) -> &HMIRFnSignature {
+    pub fn signature(&self) -> &HMIRFnSignature<HMIRExprID> {
         &self.prototype.signature
     }
 
@@ -84,7 +88,7 @@ impl HMIRFnPrototype {
     pub fn new(
         symbol_name: CXIdent,
         linkage: LinkageMode,
-        signature: HMIRFnSignature,
+        signature: HMIRFnSignature<HMIRExprID>,
     ) -> Self {
         Self {
             symbol_name,
@@ -101,16 +105,16 @@ impl HMIRFnPrototype {
         self.linkage
     }
 
-    pub fn signature(&self) -> &HMIRFnSignature {
+    pub fn signature(&self) -> &HMIRFnSignature<HMIRExprID> {
         &self.signature
-    }    
+    }
 }
 
-impl HMIRFnSignature {
+impl<T> HMIRFnSignature<T> {
     pub fn new(
         stage: HMIRFunctionStage,
-        params: Vec<HMIRFnParam>,
-        return_type: HMIRExprID,
+        params: Vec<HMIRFnParam<T>>,
+        return_type: T,
         variadic: bool,
         contract: HMIRContract,
     ) -> Self {
@@ -127,12 +131,12 @@ impl HMIRFnSignature {
         self.stage
     }
 
-    pub fn params(&self) -> &[HMIRFnParam] {
+    pub fn params(&self) -> &[HMIRFnParam<T>] {
         &self.params
     }
 
-    pub fn return_type(&self) -> HMIRExprID {
-        self.return_type
+    pub fn return_type(&self) -> &T {
+        &self.return_type
     }
 
     pub fn is_variadic(&self) -> bool {
@@ -142,19 +146,50 @@ impl HMIRFnSignature {
     pub fn contract(&self) -> &HMIRContract {
         &self.contract
     }
+
+    pub fn map<U, E>(
+        &self,
+        mut ty: impl FnMut(&T) -> Result<U, E>,
+    ) -> Result<HMIRFnSignature<U>, E> {
+        let params = self
+            .params
+            .iter()
+            .map(|param| Ok(HMIRFnParam::new(param.comptime, ty(&param.ty)?)))
+            .collect::<Result<_, E>>()?;
+
+        Ok(HMIRFnSignature {
+            stage: self.stage,
+            params,
+            return_type: ty(&self.return_type)?,
+            variadic: self.variadic,
+            contract: self.contract.clone(),
+        })
+    }
 }
 
 impl HMIRContract {
     pub fn new(
+        body: HMIRBody,
+        params: Box<[HMIRLocalID]>,
         safe: bool,
         precondition: Option<HMIRExprID>,
         postcondition: Option<(Option<HMIRLocalID>, HMIRExprID)>,
     ) -> Self {
         Self {
+            body,
+            params,
             safe,
             precondition,
             postcondition,
         }
+    }
+
+    pub fn body(&self) -> &HMIRBody {
+        &self.body
+    }
+
+    pub fn params(&self) -> &[HMIRLocalID] {
+        &self.params
     }
 
     pub fn is_safe(&self) -> bool {
@@ -171,6 +206,12 @@ impl HMIRContract {
 
     pub fn is_empty(&self) -> bool {
         !self.safe && self.precondition.is_none() && self.postcondition.is_none()
+    }
+}
+
+impl Default for HMIRContract {
+    fn default() -> Self {
+        Self::new(HMIRBody::new(), Box::default(), false, None, None)
     }
 }
 
@@ -196,8 +237,8 @@ impl HMIRFnDefinition {
     }
 }
 
-impl HMIRFnParam {
-    pub fn new(comptime: bool, ty: HMIRExprID) -> Self {
+impl<T> HMIRFnParam<T> {
+    pub fn new(comptime: bool, ty: T) -> Self {
         Self { comptime, ty }
     }
 
@@ -205,7 +246,7 @@ impl HMIRFnParam {
         self.comptime
     }
 
-    pub fn ty(&self) -> HMIRExprID {
-        self.ty
+    pub fn ty(&self) -> &T {
+        &self.ty
     }
 }

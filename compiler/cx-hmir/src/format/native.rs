@@ -129,49 +129,10 @@ impl BodyPrinter<'_> {
 
     fn type_op(&self, f: &mut Formatter<'_>, op: &HMIRTypeOp, depth: usize) -> fmt::Result {
         match op {
-            HMIRTypeOp::Pointer(inner) => {
-                self.expr(f, *inner, depth)?;
-                f.write_str("*")
-            }
-            HMIRTypeOp::Reference(inner) => {
-                self.expr(f, *inner, depth)?;
-                f.write_str("&")
-            }
-            HMIRTypeOp::Const(inner) => {
-                f.write_str("const ")?;
-                self.expr(f, *inner, depth)
-            }
             HMIRTypeOp::Member { ty, name } => {
                 write!(f, "{}(", op.path())?;
                 self.expr(f, *ty, depth)?;
                 write!(f, ", {name})")
-            }
-            HMIRTypeOp::Array { element, length } => {
-                self.expr(f, *element, depth)?;
-                f.write_str("[")?;
-                if let Some(length) = length {
-                    self.expr(f, *length, depth)?;
-                }
-                f.write_str("]")
-            }
-            HMIRTypeOp::Function {
-                params,
-                ret,
-                variadic,
-            } => {
-                f.write_str("fn(")?;
-                self.list(f, params, depth, Self::expr)?;
-                if *variadic {
-                    f.write_str(if params.is_empty() { "..." } else { ", ..." })?;
-                }
-                f.write_str(") -> ")?;
-                self.expr(f, *ret, depth)
-            }
-            HMIRTypeOp::Expr { params, result } => {
-                f.write_str("expr(")?;
-                self.list(f, params, depth, Self::expr)?;
-                f.write_str(") -> ")?;
-                self.expr(f, *result, depth)
             }
             HMIRTypeOp::Aggregate { ty, pairs } => {
                 f.write_str("aggregate(")?;
