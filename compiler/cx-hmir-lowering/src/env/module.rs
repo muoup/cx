@@ -261,6 +261,10 @@ impl MIRFunctionBuilder {
         self.places.get(id.index())
     }
 
+    pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
+        self.places.get_mut(id.index())
+    }
+
     pub fn allocate_place(&mut self, place: MIRPlaceDecl) -> MIRPlaceID {
         let id = MIRPlaceID::new(self.places.len());
         self.places.push(place);

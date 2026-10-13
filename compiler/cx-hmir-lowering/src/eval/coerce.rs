@@ -140,7 +140,7 @@ pub(crate) fn convert(
 ) -> CXResult<HMIRValue> {
     let source = value.ty();
     if context.env().same_type(source, target) {
-        return Ok(value);
+        return Ok(value.with_ty(target));
     }
 
     let kinds = (
@@ -158,8 +158,25 @@ pub(crate) fn convert(
             return Ok(truthy(context, value, span)?.with_ty(target));
         }
 
-        (HMIRTypeKind::ReferenceTo(_), _) => {
+        (HMIRTypeKind::ReferenceTo(inner), _) => {
+            if context
+                .env()
+                .resolve_type_id(*inner)
+                .semantics()
+                .move_semantics
+                .is_nocopy()
+            {
+                return Err(hmir_error(
+                    span,
+                    &typecheck::INVALID_CONVERSION,
+                    (
+                        types::name(context.env(), source),
+                        types::name(context.env(), target),
+                    ),
+                ));
+            }
             let value = emit::referent(context, value, span)?;
+            let value = emit::read(context, value, span)?;
             return convert(context, value, target, span);
         }
         (_, HMIRTypeKind::ReferenceTo(inner)) => {
@@ -200,5 +217,16 @@ pub(crate) fn convert(
             &typecheck::INVALID_CONVERSION,
             (todo!("type display"), todo!("type display")),
         )),
+    }
+}
+
+pub(crate) fn value(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    match context.env().reference_inner(&value.ty()) {
+        Some(inner) => convert(context, value, inner, span),
+        None => Ok(value),
     }
 }

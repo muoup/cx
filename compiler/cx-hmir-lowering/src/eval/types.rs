@@ -40,8 +40,13 @@ pub(crate) fn lower_signature(
         .params()
         .iter()
         .map(|param| {
+            let nodrop = env
+                .resolve_type_id(*param.ty())
+                .semantics()
+                .move_semantics
+                .is_nodrop();
             let ty = lower_type(env, *param.ty(), span)?;
-            Ok(MIRFnParam::new(None, ty, false))
+            Ok(MIRFnParam::new(None, ty, nodrop))
         })
         .collect::<CXResult<_>>()?;
     let return_type = lower_type(env, *signature.return_type(), span)?;
@@ -177,6 +182,43 @@ pub(crate) fn int(
         span.clone(),
         None,
     ))
+}
+
+pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
+    let semantics = env.resolve_type_id(ty).semantics();
+    let ty = env.resolve_type_id(env.underlying(ty));
+    let base = match ty.kind() {
+        HMIRTypeKind::Nominal(_) => unreachable!("underlying type is not nominal"),
+        _ if ty.debug_name().is_some() => ty.debug_name().unwrap().to_owned(),
+        HMIRTypeKind::Void => "void".into(),
+        HMIRTypeKind::Unreachable => "unreachable".into(),
+        HMIRTypeKind::Type => "@type".into(),
+        HMIRTypeKind::Str => "str".into(),
+        HMIRTypeKind::Int(int) => format!(
+            "{}{}",
+            if int.signed() { "i" } else { "u" },
+            int.width().bytes() * 8
+        ),
+        HMIRTypeKind::Float(float) => format!("f{}", float.width().bytes() * 8),
+        HMIRTypeKind::PointerTo(inner) => format!("{}*", name(env, *inner)),
+        HMIRTypeKind::ReferenceTo(inner) => format!("{}&", name(env, *inner)),
+        HMIRTypeKind::Array { element, length } => format!(
+            "{}[{}]",
+            name(env, *element),
+            length.map(|n| n.to_string()).unwrap_or_default()
+        ),
+        HMIRTypeKind::Struct { .. } => "struct".into(),
+        HMIRTypeKind::Union { .. } => "union".into(),
+        HMIRTypeKind::TaggedUnion { .. } => "enum union".into(),
+        HMIRTypeKind::Function(_) => "function".into(),
+        HMIRTypeKind::StagedExpr { .. } => "expr".into(),
+        HMIRTypeKind::Opaque { .. } => "opaque".into(),
+    };
+    if semantics.constant || ty.semantics().constant {
+        format!("const {base}")
+    } else {
+        base
+    }
 }
 
 pub(crate) fn mir_int(width: HMIRIntWidth) -> MIRIntType {

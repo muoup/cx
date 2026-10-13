@@ -1,7 +1,11 @@
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBody, HMIROp,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRFieldDef, context::HMIRTypeContext},
+    ty::{
+        HMIRTypeID, HMIRTypeKind,
+        aggregate::{HMIRFieldDef, HMIRTypeSemantics},
+        context::HMIRTypeContext,
+    },
     value::HMIRValue,
 };
 use cx_log::catalogue::typecheck;
@@ -18,7 +22,7 @@ use crate::{
         EvalResult,
         coerce::convert,
         eval, eval_type,
-        op::{binary_operands, eval_operand},
+        op::{binary_operands, eval_operand, specify},
         place::dereference,
     },
     log::hmir_error,
@@ -45,7 +49,8 @@ pub(crate) fn eval_aggregate(
             let index = eval_operand(context, body, span, *index)?;
             let element = binary_operands(context, span, HMIRBinaryOp::Add, base, index)?;
 
-            Ok(dereference(context, element, span)?)
+            let element = dereference(context, element, span)?;
+            Ok(emit::reference(context, &element, span)?)
         }
         _ => todo!("HMIROp::AggregateOp({})", op.path()),
     }
@@ -83,11 +88,27 @@ fn eval_member(
             todo!("bitfield member access");
         }
 
-        let ty = *field.ty();
+        let mut ty = *field.ty();
+        if context
+            .env()
+            .resolve_type_id(value.ty())
+            .semantics()
+            .constant
+        {
+            ty = specify(
+                context,
+                ty,
+                HMIRTypeSemantics {
+                    constant: true,
+                    ..Default::default()
+                },
+                span,
+            );
+        }
         value = emit::field(context, &value, index, ty, span)?;
     }
 
-    Ok(value)
+    Ok(emit::reference(context, &value, span)?)
 }
 
 fn member_fields<'a>(env: &'a HMIREnvironment, ty: HMIRTypeID) -> &'a [HMIRFieldDef<HMIRTypeID>] {
@@ -191,8 +212,7 @@ fn field_value(
     let span = body.expr(value).span();
     let value = eval_initializer(context, body, value, ty)?;
 
-    let value = convert(context, value, ty, span)?;
-    Ok(emit::read(context, value, span)?)
+    Ok(convert(context, value, ty, span)?)
 }
 
 // A list without a declared type takes the type of the field or cast that it is the value of

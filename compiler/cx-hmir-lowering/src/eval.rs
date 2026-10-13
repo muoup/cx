@@ -134,15 +134,15 @@ pub(crate) fn eval(
 
     match expr.kind() {
         HMIRExprKind::Constant(constant) => eval_constant(context, span, constant),
-        HMIRExprKind::Local(local) => eval_local(context, span, *local),
+        HMIRExprKind::Local(local) => eval_local(context, body, span, *local),
         HMIRExprKind::Let { local, initializer } => {
             eval_let(context, body, span, *local, *initializer)
         }
         HMIRExprKind::Block {
             statements,
             scoped,
-            yields: _,
-        } => eval_block(context, body, span, statements, *scoped),
+            yields,
+        } => eval_block(context, body, span, statements, *scoped, *yields),
 
         HMIRExprKind::If {
             condition,

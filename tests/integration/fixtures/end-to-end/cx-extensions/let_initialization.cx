@@ -1,0 +1,68 @@
+#include <stdio.h>
+#include <string.h>
+
+struct Pair {
+    int left;
+    int right;
+};
+
+struct Data : @nocopy {
+    int value;
+};
+
+struct Resource : @nodrop {
+    int value;
+};
+
+struct Node {
+    Node* self;
+    int value;
+};
+
+struct Byte {
+    unsigned char value;
+};
+
+Resource make_resource(int condition) {
+    return condition ? (Resource) { .value = 1 } : (Resource) { .value = 2 };
+}
+
+Pair make_pair(int value) {
+    return (Pair) { .left = value, .right = 2 };
+}
+
+void initialize_data() {
+    Data data;
+    data = (Data) { .value = 1 };
+}
+
+int main() {
+    initialize_data();
+    Pair original = (Pair) { .left = 1, .right = 2 };
+    Pair copied = original;
+    copied.left = 7;
+    printf("%d %d\n", original.left, copied.left);
+    Pair& alias = original;
+    alias.left = 5;
+    printf("%d %d\n", original.left, copied.left);
+
+    Data pending;
+    pending = (Data) { .value = 11 };
+    printf("%d\n", pending.value);
+
+    Resource unused;
+
+    Node node = { .self = &node, .value = 13 };
+    printf("%d %d\n", node.self == &node, node.self->value);
+
+    Pair returned = make_pair(17);
+    printf("%d %d\n", returned.left, returned.right);
+
+    Byte bytes;
+    Byte source = { .value = 23 };
+    memcpy(&bytes, &source, 1);
+    printf("%d ", bytes.value);
+    memset(&bytes, 0, 1);
+    printf("%d\n", bytes.value);
+    return 0;
+}

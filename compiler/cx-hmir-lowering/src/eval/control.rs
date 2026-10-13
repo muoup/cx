@@ -5,7 +5,9 @@ use cx_hmir::{
     value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind};
+use cx_mir::{
+    MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRInstructionKind, MIRRegisterDecl, MIRValue,
+};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -156,7 +158,32 @@ fn runtime_if(
     for arm in arms {
         runtime::switch_to(context, arm.block);
         let value = convert(context, arm.value, ty, span)?;
-        let value = runtime::materialize(context, &value, span)?;
+        let mut value = runtime::materialize(context, &value, span)?;
+        if context.env().reference_inner(&ty).is_none()
+            && let MIRValue::PlaceRef(place) = value
+        {
+            let ty = types::lower_type(context.env_mut(), ty, span)?;
+            let out = context
+                .runtime_mut()
+                .builder_mut()
+                .allocate_register(MIRRegisterDecl::new(ty, None));
+            context.runtime_mut().emit(
+                MIRInstructionKind::Lift {
+                    out,
+                    source: MIRBindable::Place(place),
+                    origin: MIRBindable::Place(place),
+                },
+                span.clone(),
+            );
+            context.runtime_mut().emit(
+                MIRInstructionKind::Invalidate {
+                    place: MIRBindable::Place(place),
+                    kind: cx_mir::expr::instruction::MIRInvalidationKind::Move,
+                },
+                span.clone(),
+            );
+            value = MIRValue::Register(out);
+        }
         runtime::jump(context, merge, vec![value], span.clone());
     }
 
@@ -405,7 +432,7 @@ pub(crate) fn eval_loop_exit(
         _ => unreachable!("only 'break' and 'continue' exit a loop"),
     };
 
-    runtime::drop_scopes(context, frame.scope_depth, span);
+    runtime::drop_scopes(context, frame.scope_depth, None, span);
     runtime::jump(context, target, Vec::new(), span.clone());
     Err(RuntimeStop::Diverged.into())
 }
@@ -445,10 +472,7 @@ pub(crate) fn return_value(
 
     let value = match value {
         Some(value) if returns_void => {
-            if !matches!(
-                context.env().resolve_kind(value.ty()),
-                HMIRTypeKind::Void
-            ) {
+            if !matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void) {
                 return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()).into());
             }
 
@@ -456,7 +480,7 @@ pub(crate) fn return_value(
         }
         Some(value) => {
             let value = convert(context, value, ty, span)?;
-            Some(emit::read(context, value, span)?)
+            Some(value)
         }
         None if returns_void => None,
         None => return Err(hmir_error(span, &typecheck::MISSING_RETURN_VALUE, ()).into()),
@@ -464,12 +488,17 @@ pub(crate) fn return_value(
 
     match context.context() {
         FnContext::Runtime(_) => {
+            let owns_result = context.env().reference_inner(&ty).is_none();
             let value = match &value {
                 Some(value) => Some(runtime::materialize(context, value, span)?),
                 None => None,
             };
 
-            runtime::drop_scopes(context, 0, span);
+            let keep = match &value {
+                Some(MIRValue::PlaceRef(place)) if owns_result => Some(*place),
+                _ => None,
+            };
+            runtime::drop_scopes(context, 0, keep, span);
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Return { value }, span.clone());

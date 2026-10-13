@@ -79,8 +79,7 @@ impl BodyPrinter<'_> {
 
     fn ownership(&self, f: &mut Formatter<'_>, op: &HMIROwnershipOp, depth: usize) -> fmt::Result {
         match op {
-            HMIROwnershipOp::Allocate(operand)
-            | HMIROwnershipOp::Adopt(operand)
+            HMIROwnershipOp::Adopt(operand)
             | HMIROwnershipOp::Leak(operand)
             | HMIROwnershipOp::Move(operand) => self.call(f, op.path(), &[*operand], depth),
         }

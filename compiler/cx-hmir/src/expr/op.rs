@@ -101,7 +101,6 @@ pub enum HMIRControlOp {
 
 #[derive(Debug, Clone)]
 pub enum HMIROwnershipOp {
-    Allocate(HMIRExprID),
     Adopt(HMIRExprID),
     Leak(HMIRExprID),
     Move(HMIRExprID),
@@ -205,7 +204,6 @@ impl HMIRControlOp {
 impl HMIROwnershipOp {
     pub fn path(&self) -> &'static str {
         match self {
-            Self::Allocate(_) => "allocate",
             Self::Adopt(_) => "adopt",
             Self::Leak(_) => "leak",
             Self::Move(_) => "move",

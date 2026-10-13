@@ -13,7 +13,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
-        coerce::{convert, decay},
+        coerce::{self, convert, decay},
         eval,
         flow::RuntimeStop,
         promote,
@@ -67,7 +67,7 @@ pub(crate) fn eval_call(
         let value = match params.get(index) {
             Some(param) => convert(context, value, *param.ty(), span)?,
             None => {
-                let value = emit::referent(context, value, span)?;
+                let value = coerce::value(context, value, span)?;
                 let value = decay(context, value, span)?;
                 let promoted = promote::argument(context, value.ty(), span);
 
@@ -75,7 +75,7 @@ pub(crate) fn eval_call(
             }
         };
 
-        values.push(emit::read(context, value, span)?);
+        values.push(value);
     }
 
     let return_type = *signature.return_type();

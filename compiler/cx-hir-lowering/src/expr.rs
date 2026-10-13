@@ -311,10 +311,10 @@ fn lower_declaration(
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     let local_ty = lower_type(context, ty)?;
+    let local = context.declare_local(Some(name), local_ty, span);
     let initializer = initial_value
         .map(|value| lower_initial_value(context, local_ty, value))
         .transpose()?;
-    let local = context.declare_local(Some(name), local_ty, span);
 
     Ok(context.push(HMIRExprKind::Let { local, initializer }, span))
 }

@@ -86,7 +86,7 @@ fn evaluate(
 }
 
 // Specifiers only accumulate, so a type that already carries them stands for itself
-fn specify(
+pub(crate) fn specify(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     specifiers: HMIRTypeSemantics,

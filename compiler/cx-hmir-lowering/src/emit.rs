@@ -9,7 +9,9 @@ pub(crate) mod runtime;
 use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,
     expr::constant::HMIRConstant,
-    ty::{HMIRTypeID, context::HMIRTypeContext},
+    ty::{
+        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+    },
     value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::CXResult;
@@ -102,6 +104,20 @@ pub fn referent(
 
     let reference = read(context, value, span)?;
     Ok(HMIRValue::indirect(inner, reference))
+}
+
+pub fn reference(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::ReferenceTo(value.ty()),
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ));
+    address(context, value, ty, span)
 }
 
 pub fn address(

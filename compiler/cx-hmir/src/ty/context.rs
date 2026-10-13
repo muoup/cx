@@ -18,21 +18,33 @@ pub trait HMIRTypeContext {
         self.resolve_type_id(self.underlying(id)).kind()
     }
 
-    fn pointer_inner(&self, ty: &HMIRTypeID) -> Option<HMIRTypeID> {
-        self.resolve_type_id(self.underlying(*ty))
+    fn pointer_inner(&self, ty: HMIRTypeID) -> Option<HMIRTypeID> {
+        self.resolve_type_id(self.underlying(ty))
             .pointer_inner()
             .copied()
     }
 
-    fn reference_inner(&self, ty: &HMIRTypeID) -> Option<HMIRTypeID> {
-        self.resolve_type_id(self.underlying(*ty))
+    fn is_pointer(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::PointerTo(_))
+    }
+
+    fn reference_inner(&self, ty: HMIRTypeID) -> Option<HMIRTypeID> {
+        self.resolve_type_id(self.underlying(ty))
             .reference_inner()
             .copied()
     }
 
-    fn array_inner(&self, ty: &HMIRTypeID) -> Option<HMIRTypeID> {
-        self.resolve_type_id(self.underlying(*ty))
+    fn is_reference(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::ReferenceTo(_))
+    }
+
+    fn array_inner(&self, ty: HMIRTypeID) -> Option<HMIRTypeID> {
+        self.resolve_type_id(self.underlying(ty))
             .array_inner()
             .copied()
+    }
+
+    fn is_array(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Array { .. })
     }
 }

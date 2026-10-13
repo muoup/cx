@@ -1,5 +1,8 @@
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBody, expr::HMIRExprID, ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext}, value::HMIRValue,
+    HMIRBinaryOp, HMIRBody,
+    expr::HMIRExprID,
+    ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext},
+    value::HMIRValue,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -12,6 +15,7 @@ use crate::{
         coerce::{convert, decay},
         eval,
         op::{binary_operands, eval_operand, promote_operand},
+        types,
     },
     log::hmir_error,
 };
@@ -29,6 +33,19 @@ pub(crate) fn eval_assign(
     if !emit::addressable(context, &target) {
         return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "assign to".into()).into());
     }
+    if context
+        .env()
+        .resolve_type_id(target.ty())
+        .semantics()
+        .constant
+    {
+        return Err(hmir_error(
+            span,
+            &typecheck::MUTATE_CONST,
+            ("assign to".into(), types::name(context.env(), target.ty())),
+        )
+        .into());
+    }
 
     let value = match op {
         Some(op) => {
@@ -43,7 +60,7 @@ pub(crate) fn eval_assign(
     let value = convert(context, value, target.ty(), span)?;
     emit::write(context, &target, value, false, span)?;
 
-    Ok(target)
+    Ok(emit::reference(context, &target, span)?)
 }
 
 pub(crate) fn eval_address_of(
@@ -80,7 +97,8 @@ pub(crate) fn eval_dereference(
     let value = eval(context, body, pointer)?;
     let value = emit::referent(context, value, span)?;
 
-    Ok(dereference(context, value, span)?)
+    let value = dereference(context, value, span)?;
+    Ok(emit::reference(context, &value, span)?)
 }
 
 pub(crate) fn dereference(

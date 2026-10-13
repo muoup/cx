@@ -1,7 +1,7 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody, HMIRUnaryOp,
     expr::{HMIRExprID, constant::HMIRConstant},
-    ty::{HMIRTypeKind, intrinsic::HMIRIntWidth},
+    ty::{HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
     value::HMIRValue,
 };
 use cx_log::{CXResult, catalogue::typecheck};
@@ -75,6 +75,18 @@ fn increment(
             "increment".into(),
         ));
     }
+    if context
+        .env()
+        .resolve_type_id(target.ty())
+        .semantics()
+        .constant
+    {
+        return Err(hmir_error(
+            span,
+            &typecheck::MUTATE_CONST,
+            ("increment".into(), types::name(context.env(), target.ty())),
+        ));
+    }
 
     let subtract = matches!(op, HMIRUnaryOp::PreDecrement | HMIRUnaryOp::PostDecrement);
     let prefix = matches!(op, HMIRUnaryOp::PreIncrement | HMIRUnaryOp::PreDecrement);
@@ -118,5 +130,9 @@ fn increment(
     };
     emit::write(context, &target, updated, false, span)?;
 
-    if prefix { Ok(target) } else { Ok(current) }
+    if prefix {
+        emit::reference(context, &target, span)
+    } else {
+        Ok(current)
+    }
 }

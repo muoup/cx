@@ -15,7 +15,10 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
     use MIRAggregateIntrinsic as A;
     match op {
         A::AggregateInit { out, ty, fields } => {
-            let address = memory::allocate(context, *ty);
+            let address = match out {
+                MIRTarget::Place(place) => context.places[place].clone(),
+                _ => memory::allocate(context, *ty),
+            };
             memory::void(
                 context,
                 LMIRInstructionKind::ZeroMemory {
@@ -47,7 +50,9 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                 let value = lower_rvalue(context, field, location.1);
                 store_member(context, address.clone(), location, value);
             }
-            write_target(context, *out, address);
+            if !matches!(out, MIRTarget::Place(_)) {
+                write_target(context, *out, address);
+            }
         }
         A::StructField {
             out,
