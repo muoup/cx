@@ -159,7 +159,7 @@ fn runtime_if(
         runtime::switch_to(context, arm.block);
         let value = convert(context, arm.value, ty, span)?;
         let mut value = runtime::materialize(context, &value, span)?;
-        if context.env().reference_inner(&ty).is_none()
+        if context.env().reference_inner(ty).is_none()
             && let MIRValue::PlaceRef(place) = value
         {
             let ty = types::lower_type(context.env_mut(), ty, span)?;
@@ -488,7 +488,7 @@ pub(crate) fn return_value(
 
     match context.context() {
         FnContext::Runtime(_) => {
-            let owns_result = context.env().reference_inner(&ty).is_none();
+            let owns_result = context.env().reference_inner(ty).is_none();
             let value = match &value {
                 Some(value) => Some(runtime::materialize(context, value, span)?),
                 None => None,

@@ -3,9 +3,14 @@ use cx_hmir::{
     ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics},
     value::{HMIRValue, HMIRValueKind},
 };
+use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
 
-use crate::{env::function::LocalLoweringContext, eval::flow::EvalResult};
+use crate::{
+    env::function::{FnContext, LocalLoweringContext},
+    eval::{flow::EvalResult, types},
+    log::hmir_error,
+};
 
 pub(crate) fn eval_constant(
     context: &mut LocalLoweringContext,
@@ -18,7 +23,26 @@ pub(crate) fn eval_constant(
         // trying to use a type directly.
         //
         // In the future, we may want to introduce a runtime-friendly type info API, but for now, we will just error out.
-        HMIRConstant::Type(_) => todo!("Error: unexpected type constant in runtime expression"),
+        HMIRConstant::Type(ty) => match context.context() {
+            FnContext::Comptime(_) => {
+                let type_ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+                    HMIRTypeKind::Type,
+                    HMIRTypeSemantics::default(),
+                    span.clone(),
+                    None,
+                ));
+                Ok(HMIRValue::constant(type_ty, constant.clone()))
+            }
+            FnContext::Runtime(_) => Err(hmir_error(
+                span,
+                &typecheck::UNEXPECTED_KIND,
+                (
+                    format!("type '{}'", types::name(context.env(), *ty)),
+                    "a value".into(),
+                ),
+            )
+            .into()),
+        },
 
         HMIRConstant::Unit => Ok(unit(context, span)),
 

@@ -16,7 +16,7 @@ use crate::{
         coerce::{self, convert, decay},
         eval,
         flow::RuntimeStop,
-        promote,
+        promote, types,
     },
     log::hmir_error,
 };
@@ -35,13 +35,13 @@ pub(crate) fn eval_call(
 
     let env = context.env();
     let function = env
-        .pointer_inner(&callee.ty())
+        .pointer_inner(callee.ty())
         .map(|inner| env.resolve_kind(inner));
     let Some(HMIRTypeKind::Function(signature)) = function else {
         return Err(hmir_error(
             span,
             &typecheck::UNEXPECTED_KIND,
-            (todo!("type display"), "callable".into()),
+            (types::name(context.env(), callee.ty()), "callable".into()),
         )
         .into());
     };

@@ -24,6 +24,7 @@ use crate::{
         eval, eval_type,
         op::{binary_operands, eval_operand, specify},
         place::dereference,
+        types,
     },
     log::hmir_error,
 };
@@ -65,7 +66,7 @@ fn eval_member(
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, base)?;
     let mut value = emit::referent(context, value, span)?;
-    if context.env().pointer_inner(&value.ty()).is_some() {
+    if context.env().pointer_inner(value.ty()).is_some() {
         value = dereference(context, value, span)?;
     }
     if matches!(context.context(), FnContext::Comptime(_)) {
@@ -76,7 +77,7 @@ fn eval_member(
         return Err(hmir_error(
             span,
             &typecheck::UNKNOWN_MEMBER,
-            (todo!("type display"), name.to_string()),
+            (types::name(context.env(), value.ty()), name.to_string()),
         )
         .into());
     };
@@ -163,7 +164,7 @@ fn initialize(
                     return Err(hmir_error(
                         span,
                         &typecheck::UNKNOWN_MEMBER,
-                        (todo!("type display"), name.to_string()),
+                        (types::name(context.env(), ty), name.to_string()),
                     )
                     .into());
                 };
@@ -196,10 +197,10 @@ fn initialize_scalar(
         [(Some(name), _)] => Err(hmir_error(
             span,
             &typecheck::UNKNOWN_MEMBER,
-            (todo!("type display"), name.to_string()),
+            (types::name(context.env(), ty), name.to_string()),
         )
         .into()),
-        _ => Err(hmir_error(span, &typecheck::LIST_INITIALIZATION, todo!("type display")).into()),
+        _ => Err(hmir_error(span, &typecheck::LIST_INITIALIZATION, types::name(context.env(), ty)).into()),
     }
 }
 

@@ -55,7 +55,7 @@ pub(crate) fn eval_unary(
         _ => Err(hmir_error(
             span,
             &typecheck::INVALID_OPERAND,
-            (format!("apply '{}' to", op.path()), todo!("type display")),
+            (format!("apply '{}' to", op.path()), types::name(context.env(), value.ty())),
         )
         .into()),
     }
@@ -124,7 +124,7 @@ fn increment(
             return Err(hmir_error(
                 span,
                 &typecheck::INVALID_OPERAND,
-                ("increment".into(), todo!("type display")),
+                ("increment".into(), types::name(context.env(), ty)),
             ));
         }
     };

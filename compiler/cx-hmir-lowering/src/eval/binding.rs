@@ -141,7 +141,7 @@ pub(crate) fn eval_block(
     emit::open_scope(context, span.clone());
     let result = eval_statements(context, body, span, statements, yields);
     if let (Some(scope), Ok(value)) = (parent, &result)
-        && context.env().reference_inner(&value.ty()).is_none()
+        && context.env().reference_inner(value.ty()).is_none()
     {
         runtime::relocate(context, value, scope, None);
     }

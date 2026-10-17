@@ -113,7 +113,7 @@ pub(crate) fn dereference(
             return Err(hmir_error(
                 span,
                 &typecheck::UNEXPECTED_KIND,
-                (todo!("type display"), "a pointer".into()),
+                (types::name(context.env(), pointer.ty()), "a pointer".into()),
             ));
         }
     };

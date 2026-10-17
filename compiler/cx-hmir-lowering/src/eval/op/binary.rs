@@ -106,8 +106,8 @@ fn arithmetic(
             &typecheck::INVALID_BINARY_OPERANDS,
             (
                 op.path().into(),
-                todo!("type display"),
-                todo!("type display"),
+                types::name(context.env(), lhs.ty()),
+                types::name(context.env(), rhs.ty()),
             ),
         ));
     };

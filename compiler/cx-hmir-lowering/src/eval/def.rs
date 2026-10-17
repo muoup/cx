@@ -4,12 +4,14 @@ use cx_hmir::{
     ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics},
     value::HMIRValue,
 };
+use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
 
 use crate::{
     emit,
     env::function::{ComptimeContext, FnContext, LocalLoweringContext},
     eval::{EvalResult, coerce::convert, eval, eval_type, types},
+    log::hmir_error,
     lower::is_staged,
 };
 
@@ -34,7 +36,12 @@ pub(crate) fn eval_def(
             Ok(emit::read(&mut child, value, span)?)
         }
         HMIRDefKind::Global(_) => todo!("global places: globals are not lowered yet"),
-        HMIRDefKind::Type(_) => todo!("type definition used as a value"),
+        HMIRDefKind::Type(_) => Err(hmir_error(
+            span,
+            &typecheck::UNEXPECTED_KIND,
+            (format!("type '{}'", resolved.name()), "a value".into()),
+        )
+        .into()),
     }
 }
 

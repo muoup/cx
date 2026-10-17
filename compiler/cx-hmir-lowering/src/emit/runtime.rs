@@ -162,7 +162,7 @@ fn output(
     Ok((MIRTarget::Register(register), value))
 }
 
-fn constant(
+pub fn constant(
     env: &mut HMIREnvironment,
     constant: &HMIRConstant,
     span: &TokenRange,
@@ -228,7 +228,7 @@ fn location(
             place_address(context, *place, path, value.ty(), span)?
         }
         HMIRValueKind::Constant(function @ HMIRConstant::Function { args, .. })
-            if args.is_empty() && context.env().pointer_inner(&value.ty()).is_some() =>
+            if args.is_empty() && context.env().pointer_inner(value.ty()).is_some() =>
         {
             let MIRConstant::Function(fn_id) = constant(context.env_mut(), function, span)? else {
                 unreachable!("function constant lowered to a non-function")
@@ -504,7 +504,7 @@ pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue, span: &
 }
 
 pub fn consume(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) {
-    if context.env().reference_inner(&value.ty()).is_none()
+    if context.env().reference_inner(value.ty()).is_none()
         && let HMIRValueKind::Place(HMIRPlace::Local(slot)) = value.kind()
         && let MIRBindable::Place(place) = *context.runtime().slot(*slot)
     {

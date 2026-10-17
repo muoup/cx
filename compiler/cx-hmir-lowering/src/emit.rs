@@ -61,7 +61,7 @@ pub fn read(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::read(context, value, span),
-        FnContext::Comptime(_) => comptime::read(context, value),
+        FnContext::Comptime(_) => comptime::read(context, value, span),
     }
 }
 
@@ -74,7 +74,7 @@ pub fn write(
 ) -> CXResult<()> {
     match context.context() {
         FnContext::Runtime(_) => runtime::write(context, target, value, initialize, span),
-        FnContext::Comptime(_) => comptime::write(context, target, value),
+        FnContext::Comptime(_) => comptime::write(context, target, value, span),
     }
 }
 
@@ -98,7 +98,7 @@ pub fn referent(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let Some(inner) = context.env().reference_inner(&value.ty()) else {
+    let Some(inner) = context.env().reference_inner(value.ty()) else {
         return Ok(value);
     };
 
@@ -158,7 +158,7 @@ pub fn dereference(
 
     match context.context() {
         FnContext::Runtime(_) => runtime::dereference(context, pointer, inner, span),
-        FnContext::Comptime(_) => comptime::dereference(context, pointer, inner),
+        FnContext::Comptime(_) => comptime::dereference(context, pointer, inner, span),
     }
 }
 

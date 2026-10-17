@@ -1,9 +1,10 @@
 use crate::{
+    emit,
     env::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
-    eval::{self, eval_type, flow, types::lower_type},
+    eval::{self, eval_comptime, eval_type, flow, types::lower_type},
 };
 use cx_hmir::{
     HMIRDef, HMIRDefID, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
@@ -11,6 +12,7 @@ use cx_hmir::{
 };
 use cx_log::CXResult;
 use cx_mir::{MIRGlobalID, MIRGlobalState, MIRGlobalVariable};
+use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
 
 pub fn lower_unit<'hmir>(
@@ -104,7 +106,13 @@ pub fn lower_global(global: &HMIRGlobal, env: &mut HMIREnvironment) -> CXResult<
     let is_mutable = !context.env().resolve_type_id(ty).semantics().constant;
 
     let state = match (global.initializer(), global.linkage()) {
-        (Some(_), _) => todo!("global initializers: comptime evaluation to the global's type"),
+        (Some(init), _) => {
+            let value = eval_comptime(&mut context, global.body(), init)?;
+            let constant =
+                emit::runtime::constant(context.env_mut(), &value, &TokenRange::internal())?;
+
+            MIRGlobalState::Initialized(constant)
+        }
         (None, LinkageMode::Extern) => MIRGlobalState::External,
         (None, _) => MIRGlobalState::ZeroInitialized,
     };

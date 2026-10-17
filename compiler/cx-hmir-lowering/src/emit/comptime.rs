@@ -3,10 +3,14 @@ use cx_hmir::{
     ty::HMIRTypeID,
     value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir};
+use cx_tokens::TokenRange;
 
-use crate::env::function::{
-    ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeSlotState,
+use crate::{
+    env::function::{
+        ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeSlotState,
+    },
+    log::hmir_error,
 };
 
 fn comptime<'a>(context: &'a mut LocalLoweringContext<'_, '_, '_>) -> &'a mut ComptimeContext {
@@ -20,7 +24,11 @@ pub fn allocate(context: &mut LocalLoweringContext, ty: HMIRTypeID) -> HMIRValue
     comptime(context).allocate(ty)
 }
 
-pub fn read(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
+pub fn read(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
     let slot = match value.kind() {
         HMIRValueKind::Constant(_) => return Ok(value),
         HMIRValueKind::Place(HMIRPlace::Local(slot)) => *slot,
@@ -30,8 +38,13 @@ pub fn read(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HM
 
     match comptime(context).slot(slot).state() {
         ComptimeSlotState::Value(constant) => Ok(HMIRValue::constant(value.ty(), constant.clone())),
-        ComptimeSlotState::Uninitialized | ComptimeSlotState::Invalidated => {
-            todo!("diagnostic: comptime read of a slot that holds no value")
+        ComptimeSlotState::Uninitialized => Err(hmir_error(
+            span,
+            &mir::COMPTIME_UNSET,
+            "uninitialized value".into(),
+        )),
+        ComptimeSlotState::Invalidated => {
+            Err(hmir_error(span, &mir::COMPTIME_UNSET, "moved value".into()))
         }
     }
 }
@@ -40,8 +53,9 @@ pub fn write(
     context: &mut LocalLoweringContext,
     target: &HMIRValue,
     value: HMIRValue,
+    span: &TokenRange,
 ) -> CXResult<()> {
-    let value = read(context, value)?;
+    let value = read(context, value, span)?;
     let HMIRValueKind::Constant(constant) = value.kind() else {
         unreachable!("a comptime read yields a constant");
     };
@@ -77,13 +91,18 @@ pub fn dereference(
     context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     inner: HMIRTypeID,
+    span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointer = read(context, pointer)?;
+    let pointer = read(context, pointer, span)?;
     if !matches!(
         pointer.kind(),
         HMIRValueKind::Constant(HMIRConstant::Address { .. })
     ) {
-        todo!("diagnostic: comptime dereference of a pointer that holds no address")
+        return Err(hmir_error(
+            span,
+            &mir::EXPECTED_CONSTANT,
+            ("pointer".into(), "address".into()),
+        ));
     }
 
     Ok(HMIRValue::indirect(inner, pointer))

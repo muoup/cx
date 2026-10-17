@@ -60,7 +60,7 @@ pub(crate) fn truthy(
             return Err(hmir_error(
                 span,
                 &typecheck::NO_TRUTH_VALUE,
-                todo!("type display"),
+                types::name(context.env(), ty),
             ));
         }
     };
@@ -101,7 +101,7 @@ fn bind_reference(
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointee = context.env().pointer_inner(&value.ty());
+    let pointee = context.env().pointer_inner(value.ty());
     let value = match pointee {
         Some(pointee) if context.env().same_type(pointee, inner) => {
             dereference(context, value, span)?
@@ -113,7 +113,7 @@ fn bind_reference(
         return Err(hmir_error(
             span,
             &typecheck::INVALID_CONVERSION,
-            (todo!("type display"), todo!("type display")),
+            (types::name(context.env(), value.ty()), types::name(context.env(), inner)),
         ));
     }
 
@@ -190,7 +190,7 @@ pub(crate) fn convert(
             return Err(hmir_error(
                 span,
                 &typecheck::INVALID_CONVERSION,
-                (todo!("type display"), todo!("type display")),
+                (types::name(context.env(), source), types::name(context.env(), target)),
             ));
         }
 
@@ -215,7 +215,7 @@ pub(crate) fn convert(
         _ => Err(hmir_error(
             span,
             &typecheck::INVALID_CONVERSION,
-            (todo!("type display"), todo!("type display")),
+            (types::name(context.env(), source), types::name(context.env(), target)),
         )),
     }
 }
@@ -225,7 +225,7 @@ pub(crate) fn value(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    match context.env().reference_inner(&value.ty()) {
+    match context.env().reference_inner(value.ty()) {
         Some(inner) => convert(context, value, inner, span),
         None => Ok(value),
     }

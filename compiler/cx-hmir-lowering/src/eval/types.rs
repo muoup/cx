@@ -100,7 +100,7 @@ pub(crate) fn lower_type(
 
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
         HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } => {
-            return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, todo!("type display"));
+            return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, name(env, ty));
         }
         HMIRTypeKind::Str => MIRTypeKind::Str,
         HMIRTypeKind::Int(int) => MIRTypeKind::Integer {

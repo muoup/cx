@@ -6,11 +6,14 @@ use cx_hmir::{
         aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
     },
 };
+use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::{
     env::function::LocalLoweringContext,
     eval::{EvalResult, eval_comptime, eval_type},
+    log::hmir_error,
 };
 
 pub(crate) fn eval_type_op(
@@ -68,9 +71,39 @@ fn eval_aggregate(
         .resolver_mut()
         .declare_type(declaration, incomplete);
     let complete = evaluate(context, body, ty)?;
+    if let Some(field) = incomplete_field(context, &complete) {
+        let subject = match field {
+            Some(name) => format!("field '{name}'"),
+            None => "anonymous field".into(),
+        };
+        return Err(hmir_error(ty.decl_span(), &typecheck::INCOMPLETE_TYPE, subject).into());
+    }
     context.env_mut().resolver_mut().complete_type(id, complete);
 
     Ok(id)
+}
+
+// A field is stored inline, so its type cannot be one still being declared (this one included) or only forward declared
+fn incomplete_field(context: &LocalLoweringContext, ty: &HMIRType) -> Option<Option<CXIdent>> {
+    let fields = match ty.kind() {
+        HMIRTypeKind::Struct { fields }
+        | HMIRTypeKind::Union { fields }
+        | HMIRTypeKind::TaggedUnion { fields } => fields,
+        _ => return None,
+    };
+
+    fields
+        .iter()
+        .find(|field| is_incomplete(context, *field.ty()))
+        .map(|field| field.name().cloned())
+}
+
+fn is_incomplete(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {
+    match context.env().resolve_kind(ty) {
+        HMIRTypeKind::Opaque { size: 0, .. } => true,
+        HMIRTypeKind::Array { element, .. } => is_incomplete(context, *element),
+        _ => false,
+    }
 }
 
 fn evaluate(
@@ -115,6 +148,14 @@ fn array_length(
 ) -> EvalResult<u64> {
     match eval_comptime(context, body, length)? {
         HMIRConstant::Int { value, .. } if value >= 0 => Ok(value as u64),
-        _ => todo!("Error: array length is not a non-negative integer constant"),
+        _ => {
+            let span = body.expr(length).span();
+            let requirement = (
+                "array length".into(),
+                "a non-negative integer constant".into(),
+                None,
+            );
+            Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).into())
+        }
     }
 }
