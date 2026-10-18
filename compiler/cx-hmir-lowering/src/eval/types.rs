@@ -184,6 +184,38 @@ pub(crate) fn int(
     ))
 }
 
+pub(crate) fn pointer(env: &mut HMIREnvironment, pointee: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+    env.resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::PointerTo(pointee),
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ))
+}
+
+// An array whose length is known, with the specifiers of 'array', which may not know it yet
+pub(crate) fn array(env: &mut HMIREnvironment, array: HMIRTypeID, length: u64, span: &TokenRange) -> HMIRTypeID {
+    let HMIRTypeKind::Array { element, .. } = env.resolve_kind(array).clone() else {
+        unreachable!("'{}' is not an array", name(env, array))
+    };
+    let semantics = env.resolve_type_id(array).semantics().clone();
+
+    env.resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::Array {
+            element,
+            length: Some(length),
+        },
+        semantics,
+        span.clone(),
+        None,
+    ))
+}
+
+// An array declared without a length takes it from its initializer
+pub(crate) fn unsized_array(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
+    matches!(env.resolve_kind(ty), HMIRTypeKind::Array { length: None, .. })
+}
+
 pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
     let semantics = env.resolve_type_id(ty).semantics();
     let ty = env.resolve_type_id(env.underlying(ty));

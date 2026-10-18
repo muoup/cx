@@ -13,10 +13,10 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
-        coerce::{self, convert, decay},
+        coerce::{self, arithmetic, implicit},
         eval,
         flow::RuntimeStop,
-        promote, types,
+        types,
     },
     log::hmir_error,
 };
@@ -29,8 +29,7 @@ pub(crate) fn eval_call(
     args: &[HMIRExprID],
 ) -> EvalResult<HMIRValue> {
     let callee = eval(context, body, callee)?;
-    let callee = emit::referent(context, callee, span)?;
-    let callee = decay(context, callee, span)?;
+    let callee = coerce::rvalue(context, callee, span)?;
     let callee = emit::read(context, callee, span)?;
 
     let env = context.env();
@@ -63,15 +62,15 @@ pub(crate) fn eval_call(
     let mut values = Vec::with_capacity(args.len());
     for (index, arg) in args.iter().enumerate() {
         let span = body.expr(*arg).span();
-        let value = eval(context, body, *arg)?;
         let value = match params.get(index) {
-            Some(param) => convert(context, value, *param.ty(), span)?,
+            Some(param) => coerce::implicit_expr(context, body, *arg, *param.ty())?,
             None => {
+                let value = eval(context, body, *arg)?;
                 let value = coerce::value(context, value, span)?;
-                let value = decay(context, value, span)?;
-                let promoted = promote::argument(context, value.ty(), span);
+                let value = coerce::rvalue(context, value, span)?;
+                let promoted = arithmetic::argument(context, value.ty(), span);
 
-                convert(context, value, promoted, span)?
+                implicit(context, value, promoted, span)?
             }
         };
 

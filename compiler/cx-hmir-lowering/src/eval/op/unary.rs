@@ -13,9 +13,9 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
-        coerce::truthy,
+        coerce::{self, truthy},
         eval,
-        op::{kind, promote_operand},
+        op::kind,
         types,
     },
     log::hmir_error,
@@ -42,7 +42,7 @@ pub(crate) fn eval_unary(
 
     let value = match op {
         HMIRUnaryOp::LNot => truthy(context, value, span)?,
-        _ => promote_operand(context, value, span)?,
+        _ => coerce::operand(context, value, span)?,
     };
 
     match (op, kind(context, value.ty())) {

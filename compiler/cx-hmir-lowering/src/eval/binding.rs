@@ -14,9 +14,8 @@ use crate::{
     env::function::{FnContext, LocalLoweringContext},
     eval::{
         EvalResult,
-        aggregate::eval_initializer,
-        coerce::{self, convert},
-        constant, eval, eval_type,
+        coerce::{self, implicit_expr},
+        constant, eval, eval_type, types,
     },
     log::hmir_error,
 };
@@ -70,19 +69,23 @@ pub(crate) fn eval_let(
         todo!("comptime let binding in a runtime context");
     }
 
-    let ty = eval_type(context, body, decl.ty())?;
+    let mut ty = eval_type(context, body, decl.ty())?;
     if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Void) {
         todo!("local of type void");
     }
 
     let value = match initializer {
         Some(initializer) => {
-            let value = eval_initializer(context, body, initializer, ty)?;
-            Some(convert(context, value, ty, body.expr(initializer).span())?)
+            Some(implicit_expr(context, body, initializer, ty)?)
         }
 
         None => None,
     };
+    if let Some(value) = &value
+        && types::unsized_array(context.env(), ty)
+    {
+        ty = value.ty();
+    }
 
     if context.get_local(&local).is_none()
         && matches!(context.context(), FnContext::Runtime(_))

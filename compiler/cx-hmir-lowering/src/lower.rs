@@ -4,11 +4,12 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
-    eval::{self, eval_comptime, eval_type, flow, types::lower_type},
+    eval::{self, eval_comptime_initializer, eval_type, flow, types::{lower_type, unsized_array}},
 };
 use cx_hmir::{
     HMIRDef, HMIRDefID, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
     ty::context::HMIRTypeContext,
+    value::HMIRValueKind,
 };
 use cx_log::CXResult;
 use cx_mir::{MIRGlobalID, MIRGlobalState, MIRGlobalVariable};
@@ -101,21 +102,27 @@ pub fn lower_global(global: &HMIRGlobal, env: &mut HMIREnvironment) -> CXResult<
         LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
     let span = global.body().expr(global.ty()).span();
 
-    let ty = flow::top(eval_type(&mut context, global.body(), global.ty()))?;
-    let mir_ty = lower_type(context.env_mut(), ty, span)?;
+    let mut ty = flow::top(eval_type(&mut context, global.body(), global.ty()))?;
     let is_mutable = !context.env().resolve_type_id(ty).semantics().constant;
 
     let state = match (global.initializer(), global.linkage()) {
         (Some(init), _) => {
-            let value = eval_comptime(&mut context, global.body(), init)?;
+            let value = eval_comptime_initializer(&mut context, global.body(), init, ty)?;
+            if unsized_array(context.env(), ty) {
+                ty = value.ty();
+            }
+            let HMIRValueKind::Constant(value) = value.kind() else {
+                unreachable!("a comptime read yields a constant")
+            };
             let constant =
-                emit::runtime::constant(context.env_mut(), &value, &TokenRange::internal())?;
+                emit::runtime::constant(context.env_mut(), value, &TokenRange::internal())?;
 
             MIRGlobalState::Initialized(constant)
         }
         (None, LinkageMode::Extern) => MIRGlobalState::External,
         (None, _) => MIRGlobalState::ZeroInitialized,
     };
+    let mir_ty = lower_type(context.env_mut(), ty, span)?;
 
     Ok(context
         .env_mut()

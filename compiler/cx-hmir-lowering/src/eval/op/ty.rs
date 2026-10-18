@@ -1,20 +1,114 @@
 use cx_hmir::{
-    HMIRBody,
-    expr::{HMIRExprID, constant::HMIRConstant, op::HMIRTypeOp},
+    HMIRBody, HMIRDefKind, HMIROp,
+    expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant, op::HMIRTypeOp},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
-        aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+        aggregate::HMIRTypeSemantics, context::HMIRTypeContext, intrinsic::HMIRIntWidth,
     },
+    value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::catalogue::typecheck;
+use cx_mir::ty::layout::calculate_type_layout;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
     env::function::LocalLoweringContext,
-    eval::{EvalResult, eval_comptime, eval_type},
+    eval::{EvalResult, constant::eval_constant, eval, eval_comptime, eval_type, types},
     log::hmir_error,
 };
+
+// A type operation used as a value: 'sizeof' and 'alignof' are sizes, and the others are types
+pub(crate) fn eval_type_value(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    op: &HMIRTypeOp,
+) -> EvalResult<HMIRValue> {
+    let (HMIRTypeOp::SizeOf(operand) | HMIRTypeOp::AlignOf(operand)) = op else {
+        let ty = eval_type_op(context, body, span, op)?;
+        return eval_constant(context, span, &HMIRConstant::Type(ty));
+    };
+
+    let (size, alignment) = match operand_type(context, body, *operand)? {
+        // A string literal is an array of its characters and a terminator
+        Operand::String(length) => (length + 1, 1),
+        Operand::Type(ty) => {
+            if is_incomplete(context, ty) {
+                let subject = format!("'{}'", types::name(context.env(), ty));
+                return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject).into());
+            }
+
+            let ty = types::lower_type(context.env_mut(), ty, span)?;
+            let layout = calculate_type_layout(context.env().module(), ty);
+            (layout.size(), layout.alignment())
+        }
+    };
+    let value = match op {
+        HMIRTypeOp::SizeOf(_) => size,
+        _ => alignment,
+    };
+
+    let env = context.env_mut();
+    let width = HMIRIntWidth::pointer_width(env.architecture());
+    let ty = types::int(env, width, false, span);
+    let value = HMIRConstant::Int {
+        value: value as i128,
+        ty,
+    };
+    Ok(HMIRValue::constant(ty, value))
+}
+
+enum Operand {
+    Type(HMIRTypeID),
+    String(usize),
+}
+
+// The operand names a type, or is an expression that stands for its type. The expression is evaluated, though
+// only its type is used.
+fn operand_type(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    operand: HMIRExprID,
+) -> EvalResult<Operand> {
+    if names_type(context, body, operand) {
+        return Ok(Operand::Type(eval_type(context, body, operand)?));
+    }
+
+    let value = eval(context, body, operand)?;
+    let mut ty = match value.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Type(ty)) => return Ok(Operand::Type(*ty)),
+        HMIRValueKind::Constant(HMIRConstant::Str(string)) => {
+            return Ok(Operand::String(string.len()));
+        }
+        _ => value.ty(),
+    };
+    while let Some(inner) = context.env().reference_inner(ty) {
+        ty = inner;
+    }
+
+    Ok(Operand::Type(ty))
+}
+
+fn names_type(context: &mut LocalLoweringContext, body: &HMIRBody, expr: HMIRExprID) -> bool {
+    match body.expr(expr).kind() {
+        HMIRExprKind::Type(_) | HMIRExprKind::Constant(HMIRConstant::Type(_)) => true,
+        HMIRExprKind::Op(HMIROp::Type(op)) => matches!(
+            op,
+            HMIRTypeOp::PointerInner(_)
+                | HMIRTypeOp::ReferenceInner(_)
+                | HMIRTypeOp::Member { .. }
+                | HMIRTypeOp::TypeOf(_)
+                | HMIRTypeOp::Decay(_)
+                | HMIRTypeOp::Aggregate { .. }
+        ),
+        HMIRExprKind::Def(def) => matches!(
+            context.env_mut().resolve_def(def).kind(),
+            HMIRDefKind::Type(_)
+        ),
+        _ => false,
+    }
+}
 
 pub(crate) fn eval_type_op(
     _context: &mut LocalLoweringContext,

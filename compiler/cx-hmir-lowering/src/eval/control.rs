@@ -15,11 +15,12 @@ use crate::{
     env::function::{FnContext, LocalLoweringContext, runtime::LoopFrame},
     eval::{
         EvalResult,
+        aggregate::eval_initializer,
         binding::eval_scoped,
-        coerce::{self, convert},
+        coerce::{self, arithmetic, implicit},
         constant, eval, eval_type,
         flow::{self, ComptimeStop, EvalStop, RuntimeStop},
-        promote, types,
+        types,
     },
     log::hmir_error,
 };
@@ -134,6 +135,8 @@ fn runtime_if(
     for (block, branch) in [(then_block, then_branch), (else_block, else_branch)] {
         runtime::switch_to(context, block);
         if let Some(value) = flow::catch_diverged(eval_scoped(context, body, branch))? {
+            // C11 6.5.15: the operands of a conditional are rvalues, so an array or string merges as a pointer
+            let value = coerce::decay(context, value, span)?;
             let block = runtime::current_block(context);
             arms.push(Arm { block, value });
         }
@@ -157,7 +160,7 @@ fn runtime_if(
     let result = runtime::block_param(context, merge, ty, span)?;
     for arm in arms {
         runtime::switch_to(context, arm.block);
-        let value = convert(context, arm.value, ty, span)?;
+        let value = implicit(context, arm.value, ty, span)?;
         let mut value = runtime::materialize(context, &value, span)?;
         if context.env().reference_inner(ty).is_none()
             && let MIRValue::PlaceRef(place) = value
@@ -207,7 +210,7 @@ fn merged_type(
         merged = Some(match merged {
             None => ty,
             Some(current) if context.env().same_type(current, ty) => current,
-            Some(current) => promote::common(context, current, ty, span).unwrap_or(current),
+            Some(current) => arithmetic::common(context, current, ty, span).unwrap_or(current),
         });
     }
 
@@ -443,9 +446,14 @@ pub(crate) fn eval_return(
     span: &TokenRange,
     value: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    let value = match value {
-        Some(value) => Some(eval(context, body, value)?),
-        None => None,
+    let value = match (value, context.signature()) {
+        // The return type is what an initializer list without a type of its own takes
+        (Some(value), Some(signature)) => {
+            let ty = eval_type(context, body, *signature.return_type())?;
+            Some(eval_initializer(context, body, value, ty)?)
+        }
+        (Some(value), None) => Some(eval(context, body, value)?),
+        (None, _) => None,
     };
 
     return_value(context, body, value, span)
@@ -479,7 +487,7 @@ pub(crate) fn return_value(
             None
         }
         Some(value) => {
-            let value = convert(context, value, ty, span)?;
+            let value = implicit(context, value, ty, span)?;
             Some(value)
         }
         None if returns_void => None,

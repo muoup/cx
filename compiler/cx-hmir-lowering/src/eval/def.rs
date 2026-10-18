@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::{ComptimeContext, FnContext, LocalLoweringContext},
-    eval::{EvalResult, coerce::convert, eval, eval_type, types},
+    eval::{EvalResult, coerce::implicit, eval, eval_type, types},
     log::hmir_error,
     lower::is_staged,
 };
@@ -31,7 +31,7 @@ pub(crate) fn eval_def(
             let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
             let ty = eval_type(&mut child, global.body(), global.ty())?;
             let value = eval(&mut child, global.body(), global.initializer())?;
-            let value = convert(&mut child, value, ty, span)?;
+            let value = implicit(&mut child, value, ty, span)?;
 
             Ok(emit::read(&mut child, value, span)?)
         }

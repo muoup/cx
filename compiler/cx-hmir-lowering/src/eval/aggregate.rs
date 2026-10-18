@@ -20,7 +20,7 @@ use crate::{
     },
     eval::{
         EvalResult,
-        coerce::convert,
+        coerce::implicit_expr,
         eval, eval_type,
         op::{binary_operands, eval_operand, specify},
         place::dereference,
@@ -39,7 +39,8 @@ pub(crate) fn eval_aggregate(
         HMIRAggregateOp::Member { base, name } => eval_member(context, body, span, *base, name),
         HMIRAggregateOp::Initialize { ty, fields } => {
             if matches!(body.expr(*ty).kind(), HMIRExprKind::Hole(_)) {
-                todo!("initializer list without a declared type");
+                let subject = "the type of an initializer list".into();
+                return Err(hmir_error(span, &typecheck::CANNOT_INFER, subject).into());
             }
 
             let ty = eval_type(context, body, *ty)?;
@@ -146,14 +147,13 @@ fn initialize(
 ) -> EvalResult<HMIRValue> {
     let declared = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => fields.clone(),
-        HMIRTypeKind::Array { .. } => todo!("array initializers"),
+        HMIRTypeKind::Array { element, length } => {
+            let (element, length) = (*element, *length);
+            return initialize_array(context, body, span, ty, element, length, fields);
+        }
         HMIRTypeKind::TaggedUnion { .. } => todo!("tagged union initializers"),
         _ => return initialize_scalar(context, body, span, ty, fields),
     };
-    if matches!(context.context(), FnContext::Comptime(_)) {
-        todo!("comptime aggregate initialization");
-    }
-
     let mut values = Vec::with_capacity(fields.len());
     let mut next = 0;
     for (name, value) in fields {
@@ -185,6 +185,45 @@ fn initialize(
     Ok(emit::aggregate(context, ty, &values, span)?)
 }
 
+// C11 6.7.9: elements are initialized in order, and those left out are zero; an array without a length has as
+// many elements as are given
+fn initialize_array(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    ty: HMIRTypeID,
+    element: HMIRTypeID,
+    length: Option<u64>,
+    fields: &[(Option<CXIdent>, HMIRExprID)],
+) -> EvalResult<HMIRValue> {
+    if let Some(length) = length
+        && fields.len() as u64 > length
+    {
+        let limit = ("array".into(), Some(length as usize));
+        return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit).into());
+    }
+
+    let mut values = Vec::with_capacity(fields.len());
+    for (index, (name, value)) in fields.iter().enumerate() {
+        if let Some(name) = name {
+            return Err(hmir_error(
+                span,
+                &typecheck::UNKNOWN_MEMBER,
+                (types::name(context.env(), ty), name.to_string()),
+            )
+            .into());
+        }
+
+        values.push((index, field_value(context, body, *value, element)?));
+    }
+
+    let ty = match length {
+        Some(_) => ty,
+        None => types::array(context.env_mut(), ty, fields.len() as u64, span),
+    };
+    Ok(emit::aggregate(context, ty, &values, span)?)
+}
+
 fn initialize_scalar(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
@@ -210,10 +249,7 @@ fn field_value(
     value: HMIRExprID,
     ty: HMIRTypeID,
 ) -> EvalResult<HMIRValue> {
-    let span = body.expr(value).span();
-    let value = eval_initializer(context, body, value, ty)?;
-
-    Ok(convert(context, value, ty, span)?)
+    implicit_expr(context, body, value, ty)
 }
 
 // A list without a declared type takes the type of the field or cast that it is the value of

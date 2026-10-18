@@ -7,7 +7,6 @@ mod control;
 mod def;
 mod op;
 mod place;
-mod promote;
 
 pub(crate) mod flow;
 pub(crate) mod types;
@@ -20,7 +19,7 @@ use cx_hmir::{
     expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant},
     ty::HMIRTypeID,
     unit::function::HMIRFnDefinition,
-    value::HMIRValue,
+    value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::MIRFunction;
@@ -41,7 +40,7 @@ use crate::{
         control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_while},
         def::eval_def,
         flow::ComptimeStop,
-        op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
+        op::{eval_binary, eval_declared_type, eval_type_op, eval_type_value, eval_unary},
         place::{eval_address_of, eval_assign, eval_dereference},
     },
     log::hmir_error,
@@ -127,9 +126,9 @@ pub(crate) fn eval_comptime_function<'hmir>(
 pub(crate) fn eval(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
-    expr: HMIRExprID,
+    id: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let expr = body.expr(expr);
+    let expr = body.expr(id);
     let span = expr.span();
 
     match expr.kind() {
@@ -188,7 +187,7 @@ pub(crate) fn eval(
             HMIROp::AddressOf(operand) => eval_address_of(context, body, span, *operand),
             HMIROp::Dereference(pointer) => eval_dereference(context, body, span, *pointer),
 
-            HMIROp::Type(_) => todo!("HMIROp::Type"),
+            HMIROp::Type(op) => eval_type_value(context, body, span, op),
             HMIROp::Control(control) => todo!("HMIROp::Control({})", control.path()),
             HMIROp::OwnershipOp(ownership) => {
                 todo!("HMIROp::OwnershipOp({})", ownership.path())
@@ -200,7 +199,10 @@ pub(crate) fn eval(
         HMIRExprKind::Call { callee, args } => eval_call(context, body, span, *callee, args),
 
         HMIRExprKind::Hole(_) => todo!("HMIRExprKind::Hole"),
-        HMIRExprKind::Type(_) => todo!("HMIRExprKind::Type"),
+        HMIRExprKind::Type(ty) => {
+            let ty = eval_declared_type(context, body, id, ty)?;
+            eval_constant(context, span, &HMIRConstant::Type(ty))
+        }
         HMIRExprKind::Comptime(_) => todo!("HMIRExprKind::Comptime"),
         HMIRExprKind::Quote { .. } => todo!("HMIRExprKind::Quote"),
         HMIRExprKind::Splice { .. } => todo!("HMIRExprKind::Splice"),
@@ -213,12 +215,41 @@ pub(crate) fn eval(
     }
 }
 
+// The expression is evaluated in a comptime context of its own, which sees nothing of the evaluating one
 pub(crate) fn eval_comptime(
-    _context: &mut LocalLoweringContext,
-    _body: &HMIRBody,
-    _expr: HMIRExprID,
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    expr: HMIRExprID,
 ) -> CXResult<HMIRConstant> {
-    todo!("Evaluate an isolated comptime expression with frozen inputs")
+    let value = isolated(context, body.expr(expr).span(), |child| eval(child, body, expr))?;
+
+    match value.kind() {
+        HMIRValueKind::Constant(constant) => Ok(constant.clone()),
+        _ => unreachable!("a comptime read yields a constant"),
+    }
+}
+
+// The initial value of a declaration of type 'ty', whose type completes 'ty' where it is an array without a length
+pub(crate) fn eval_comptime_initializer(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    expr: HMIRExprID,
+    ty: HMIRTypeID,
+) -> CXResult<HMIRValue> {
+    isolated(context, body.expr(expr).span(), |child| {
+        coerce::implicit_expr(child, body, expr, ty)
+    })
+}
+
+fn isolated(
+    context: &mut LocalLoweringContext,
+    span: &TokenRange,
+    eval: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<HMIRValue>,
+) -> CXResult<HMIRValue> {
+    let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
+    let value = flow::top(eval(&mut child))?;
+
+    emit::read(&mut child, value, span)
 }
 
 pub(crate) fn eval_type(

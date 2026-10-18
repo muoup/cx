@@ -12,9 +12,10 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
-        coerce::{convert, decay},
+        aggregate::eval_initializer,
+        coerce::{self, decay, implicit},
         eval,
-        op::{binary_operands, eval_operand, promote_operand},
+        op::{binary_operands, eval_operand},
         types,
     },
     log::hmir_error,
@@ -49,15 +50,15 @@ pub(crate) fn eval_assign(
 
     let value = match op {
         Some(op) => {
-            let current = promote_operand(context, target.clone(), span)?;
+            let current = coerce::operand(context, target.clone(), span)?;
             let operand = eval_operand(context, body, span, value)?;
 
             binary_operands(context, span, op, current, operand)?
         }
-        None => eval(context, body, value)?,
+        None => eval_initializer(context, body, value, target.ty())?,
     };
 
-    let value = convert(context, value, target.ty(), span)?;
+    let value = implicit(context, value, target.ty(), span)?;
     emit::write(context, &target, value, false, span)?;
 
     Ok(emit::reference(context, &target, span)?)
@@ -106,7 +107,7 @@ pub(crate) fn dereference(
     pointer: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointer = decay(context, pointer, span)?;
+    let pointer = coerce::rvalue(context, pointer, span)?;
     let inner = match context.env().resolve_kind(pointer.ty()) {
         HMIRTypeKind::PointerTo(inner) => *inner,
         _ => {

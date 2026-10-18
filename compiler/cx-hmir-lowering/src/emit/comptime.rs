@@ -1,3 +1,7 @@
+mod op;
+
+pub use op::{binary, cast, unary};
+
 use cx_hmir::{
     expr::constant::HMIRConstant,
     ty::HMIRTypeID,
@@ -18,6 +22,23 @@ fn comptime<'a>(context: &'a mut LocalLoweringContext<'_, '_, '_>) -> &'a mut Co
         FnContext::Comptime(comptime) => comptime,
         FnContext::Runtime(_) => unreachable!("comptime evaluation in a runtime context"),
     }
+}
+
+pub fn aggregate(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    fields: &[(usize, HMIRValue)],
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let fields = fields
+        .iter()
+        .map(|(index, value)| match read(context, value.clone(), span)?.kind() {
+            HMIRValueKind::Constant(constant) => Ok((*index, Box::new(constant.clone()))),
+            _ => unreachable!("a comptime read yields a constant"),
+        })
+        .collect::<CXResult<_>>()?;
+
+    Ok(HMIRValue::constant(ty, HMIRConstant::Aggregate { ty, fields }))
 }
 
 pub fn allocate(context: &mut LocalLoweringContext, ty: HMIRTypeID) -> HMIRValue {

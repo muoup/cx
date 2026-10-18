@@ -183,7 +183,7 @@ pub fn aggregate(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::aggregate(context, ty, fields, span),
-        FnContext::Comptime(_) => todo!("comptime aggregate initialization"),
+        FnContext::Comptime(_) => comptime::aggregate(context, ty, fields, span),
     }
 }
 
@@ -197,7 +197,7 @@ pub fn binary(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::binary(context, op, lhs, rhs, result, span),
-        FnContext::Comptime(_) => todo!("comptime folding of binary operators"),
+        FnContext::Comptime(_) => comptime::binary(context, op, lhs, rhs, result, span),
     }
 }
 
@@ -209,7 +209,7 @@ pub fn unary(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::unary(context, op, value, span),
-        FnContext::Comptime(_) => todo!("comptime folding of unary operators"),
+        FnContext::Comptime(_) => comptime::unary(context, op, value, span),
     }
 }
 
@@ -221,7 +221,7 @@ pub fn cast(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::cast(context, value, target, span),
-        FnContext::Comptime(_) => todo!("comptime folding of conversions"),
+        FnContext::Comptime(_) => comptime::cast(context, value, target, span),
     }
 }
 

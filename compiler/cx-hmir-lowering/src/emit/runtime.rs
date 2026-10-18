@@ -187,6 +187,13 @@ pub fn constant(
             ty: types::lower_type(env, *ty, span)?,
         },
         HMIRConstant::Str(value) => MIRConstant::String(value.clone()),
+        HMIRConstant::Aggregate { ty, fields } => MIRConstant::Aggregate {
+            ty: types::lower_type(env, *ty, span)?,
+            fields: fields
+                .iter()
+                .map(|(index, field)| Ok((*index, self::constant(env, field, span)?)))
+                .collect::<CXResult<_>>()?,
+        },
         HMIRConstant::Function { def, args } if args.is_empty() => {
             let HMIRDefKind::Function(function) = env.symbols().resolve_definition(*def).kind()
             else {
