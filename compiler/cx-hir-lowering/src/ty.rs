@@ -51,7 +51,7 @@ fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXRes
         HIRTypeKind::Identifier { name, args, .. } => {
             let callee = match context.lookup(name, ty.tag_kind(), span)? {
                 Symbol::Local(binding) => context.push(HMIRExprKind::Local(binding.local()), span),
-                Symbol::Global(GlobalSymbol::Primitive(kind)) => context.type_constant(kind, span),
+                Symbol::Global(GlobalSymbol::Primitive(kind)) => context.type_ref(kind, span),
                 Symbol::Global(
                     GlobalSymbol::Def(def)
                     | GlobalSymbol::Function(def)

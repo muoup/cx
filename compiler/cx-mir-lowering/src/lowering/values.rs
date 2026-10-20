@@ -14,7 +14,7 @@ use super::typing::{convert_float_type, convert_integer_type};
 
 pub(crate) fn lower_value(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> LMIRValue {
     match value {
-        MIRValue::Register(id) => context.reg(*id),
+        MIRValue::Register(id) => context.value(*id),
         MIRValue::PlaceRef(id) => context.places[id].clone(),
         MIRValue::Constant(MIRConstant::GlobalRef(reference)) => {
             global_address(context, *reference)
@@ -124,9 +124,9 @@ fn read_through_reference(
         context.types().definition(inner).unwrap().kind(),
         MIRTypeKind::Function { .. }
     ) {
-        return Some(context.reg(register));
+        return Some(context.value(register));
     }
-    Some(memory::load(context, context.reg(register), inner))
+    Some(memory::load(context, context.value(register), inner))
 }
 
 pub(super) fn global_address(
@@ -310,7 +310,7 @@ pub(super) fn write_target(
             let address = global_address(context, reference);
             memory::store(context, address, value, ty);
         }
-        MIRTarget::Indirect(id) => memory::store(context, context.reg(id), value, ty),
+        MIRTarget::Indirect(id) => memory::store(context, context.value(id), value, ty),
     }
 }
 
@@ -322,7 +322,7 @@ pub(super) fn target_address(
     match target {
         MIRTarget::Place(id) => context.places[&id].clone(),
         MIRTarget::Global(reference) => global_address(context, reference),
-        MIRTarget::Indirect(id) => context.reg(id),
+        MIRTarget::Indirect(id) => context.value(id),
         MIRTarget::Register(_) => unreachable!("a register store target has no address"),
     }
 }

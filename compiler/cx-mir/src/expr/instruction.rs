@@ -15,7 +15,6 @@ dense_id!(MIRScopeID, "scope.");
 pub struct MIRBasicBlock {
     id: MIRBasicBlockID,
     debug_name: Option<CXIdent>,
-    params: Vec<MIRRegisterID>,
     instructions: Vec<MIRInstruction>,
 }
 
@@ -25,7 +24,6 @@ impl MIRBasicBlock {
             id,
             debug_name,
 
-            params: Vec::new(),
             instructions: Vec::new(),
         }
     }
@@ -41,18 +39,6 @@ impl MIRBasicBlock {
 
     pub fn debug_name(&self) -> Option<&CXIdent> {
         self.debug_name.as_ref()
-    }
-
-    pub fn params(&self) -> &[MIRRegisterID] {
-        &self.params
-    }
-
-    pub fn param(&self, index: usize) -> Option<&MIRRegisterID> {
-        self.params.get(index)
-    }
-
-    pub fn push_param(&mut self, param: MIRRegisterID) {
-        self.params.push(param);
     }
 
     pub fn instructions(&self) -> &[MIRInstruction] {
@@ -100,8 +86,9 @@ pub enum MIRInstructionKind {
         kind: MIRInvalidationKind,
     },
 
-    // Produces the value addressed by 'source' (a place, or a reference register read through),
-    // consuming the liveness of 'origin', the binding that owns that storage
+    // Produces the value addressed by 'source' (a place, or a reference register read through) into 'out'.
+    // 'out' captures the current value and may only be used later in this basic block. 'origin' must be live and
+    // stays live: a move out of it is a separate Invalidate that follows
     Lift {
         out: MIRRegisterID,
         source: MIRBindable,

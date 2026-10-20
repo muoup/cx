@@ -1,11 +1,8 @@
 use std::collections::HashMap;
 
-use cx_hmir::{
-    body::HMIRLocalID,
-    expr::constant::HMIRConstant,
-    ty::HMIRTypeID,
-    value::{HMIRPlace, HMIRSlotID, HMIRValue},
-};
+use cx_hmir::{body::HMIRLocalID, ty::HMIRTypeID};
+
+use crate::value::{HMIRSlotID, HMIRValue, constant::HMIRConstant};
 
 #[derive(Debug, Default)]
 pub struct ComptimeContext {
@@ -31,17 +28,6 @@ impl ComptimeContext {
         Self::default()
     }
 
-    pub fn allocate(&mut self, ty: HMIRTypeID) -> HMIRPlace {
-        let slot = HMIRSlotID::new(self.slots.len());
-        
-        self.slots.push(ComptimeSlot {
-            ty,
-            state: ComptimeSlotState::Uninitialized,
-        });
-        
-        HMIRPlace::Local(slot)
-    }
-
     pub fn locals(&self) -> impl Iterator<Item = (&HMIRLocalID, &HMIRValue)> {
         self.locals.iter()
     }
@@ -52,6 +38,10 @@ impl ComptimeContext {
 
     pub fn set_local(&mut self, local: HMIRLocalID, value: HMIRValue) {
         self.locals.insert(local, value);
+    }
+
+    pub fn remove_local(&mut self, local: HMIRLocalID) {
+        self.locals.remove(&local);
     }
 
     pub fn slots(&self) -> impl Iterator<Item = &ComptimeSlot> {

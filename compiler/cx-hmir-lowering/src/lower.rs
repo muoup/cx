@@ -101,7 +101,7 @@ pub fn lower_global(global: &HMIRGlobal, env: &mut HMIREnvironment) -> CXResult<
 
     let ty = flow::top(eval_type(&mut context, global.body(), global.ty()))?;
     let mir_ty = lower_type(context.env_mut(), ty, span)?;
-    let is_mutable = !context.env().resolve_type_id(ty).semantics().constant;
+    let is_mutable = !context.env().semantics(ty).constant;
 
     let state = match (global.initializer(), global.linkage()) {
         (Some(_), _) => todo!("global initializers: comptime evaluation to the global's type"),

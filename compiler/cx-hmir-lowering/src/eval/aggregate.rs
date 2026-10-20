@@ -6,7 +6,6 @@ use cx_hmir::{
         aggregate::{HMIRFieldDef, HMIRTypeSemantics},
         context::HMIRTypeContext,
     },
-    value::HMIRValue,
 };
 use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
@@ -26,6 +25,7 @@ use crate::{
         place::dereference,
     },
     log::hmir_error,
+    value::HMIRValue,
 };
 
 pub(crate) fn eval_aggregate(
@@ -65,7 +65,7 @@ fn eval_member(
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, base)?;
     let mut value = emit::referent(context, value, span)?;
-    if context.env().pointer_inner(&value.ty()).is_some() {
+    if context.env().pointer_inner(value.ty()).is_some() {
         value = dereference(context, value, span)?;
     }
     if matches!(context.context(), FnContext::Comptime(_)) {
@@ -89,12 +89,7 @@ fn eval_member(
         }
 
         let mut ty = *field.ty();
-        if context
-            .env()
-            .resolve_type_id(value.ty())
-            .semantics()
-            .constant
-        {
+        if context.env().semantics(value.ty()).constant {
             ty = specify(
                 context,
                 ty,

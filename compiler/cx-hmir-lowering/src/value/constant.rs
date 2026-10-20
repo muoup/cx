@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
+use cx_hmir::{HMIRDefID, expr::HMIRExprID, ty::HMIRTypeID};
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
-use crate::{HMIRDefID, expr::HMIRExprID, ty::HMIRTypeID, value::HMIRPlace};
+use crate::value::HMIRPlace;
 
 #[derive(Debug, Clone)]
 pub enum HMIRConstant {

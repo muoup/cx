@@ -31,12 +31,11 @@ impl MIRFunction {
 pub struct MIRFnParam {
     name: Option<CXIdent>,
     ty: MIRTypeID,
-    nodrop: bool,
 }
 
 impl MIRFnParam {
-    pub fn new(name: Option<CXIdent>, ty: MIRTypeID, nodrop: bool) -> Self {
-        Self { name, ty, nodrop }
+    pub fn new(name: Option<CXIdent>, ty: MIRTypeID) -> Self {
+        Self { name, ty }
     }
 
     pub fn name(&self) -> Option<&CXIdent> {
@@ -45,10 +44,6 @@ impl MIRFnParam {
 
     pub fn ty(&self) -> MIRTypeID {
         self.ty
-    }
-
-    pub fn nodrop(&self) -> bool {
-        self.nodrop
     }
 }
 

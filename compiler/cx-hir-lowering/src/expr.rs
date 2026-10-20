@@ -13,7 +13,7 @@ use cx_hir::ast::expression::{
 use cx_hir::ast::types::HIRType;
 use cx_hmir::{
     HMIRAggregateOp, HMIRControlOp, HMIROwnershipOp,
-    expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant, op::HMIRTypeOp},
+    expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral, op::HMIRTypeOp},
     ty::intrinsic::{HMIRIntType, HMIRIntWidth},
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
@@ -60,7 +60,7 @@ pub(crate) fn lower_expr(
             let statements = context.lower_block_statements()?;
             context.block(statements, false, false, span)
         }
-        HIRExprKind::Void => context.push(HMIRExprKind::Constant(HMIRConstant::Unit), span),
+        HIRExprKind::Void => context.push(HMIRExprKind::Literal(HMIRLiteral::Unit), span),
 
         HIRExprKind::Identifier { name } => lower_identifier(context, name, span)?,
         HIRExprKind::Type(ty) => lower_type(context, ty)?,
@@ -76,13 +76,13 @@ pub(crate) fn lower_expr(
         } => lower_int_literal(context, *magnitude, *base, *suffix, span)?,
         HIRExprKind::BoolLiteral(value) => {
             let ty = HMIRIntType::new(HMIRIntWidth::I1, false);
-            context.int_constant(ty, *value as i128, span)
+            context.int_literal(ty, *value as i128, span)
         }
         HIRExprKind::FloatLiteral { val, suffix } => {
             lower_float_literal(context, *val, *suffix, span)?
         }
         HIRExprKind::StringLiteral { val } => {
-            context.push(HMIRExprKind::Constant(HMIRConstant::Str(val.clone())), span)
+            context.push(HMIRExprKind::Literal(HMIRLiteral::Str(val.clone())), span)
         }
 
         HIRExprKind::If {
@@ -145,7 +145,7 @@ pub(crate) fn lower_expr(
             linkage: linkage @ (LinkageMode::Static | LinkageMode::Extern),
         } if !context.comptime() => {
             lower_static(context, name, ty, initial_value.as_deref(), *linkage, span)?;
-            context.push(HMIRExprKind::Constant(HMIRConstant::Unit), span)
+            context.push(HMIRExprKind::Literal(HMIRLiteral::Unit), span)
         }
         HIRExprKind::VarDeclaration {
             ty,
@@ -281,7 +281,7 @@ pub(crate) fn lower_identifier(
             let args = Vec::new();
             context.push(HMIRExprKind::Splice { quote: local, args }, span)
         }
-        Symbol::Global(GlobalSymbol::Primitive(kind)) => context.type_constant(kind, span),
+        Symbol::Global(GlobalSymbol::Primitive(kind)) => context.type_ref(kind, span),
         Symbol::Global(
             GlobalSymbol::Def(def)
             | GlobalSymbol::Function(def)
@@ -296,7 +296,7 @@ pub(crate) fn lower_identifier(
                 return Ok(context.push(HMIRExprKind::Def(def), span));
             }
 
-            let unit = context.push(HMIRExprKind::Constant(HMIRConstant::Unit), span);
+            let unit = context.push(HMIRExprKind::Literal(HMIRLiteral::Unit), span);
             let sum = lower_constructor_sum(context, &data.union_type, span)?;
             lower_construct(context, sum, variant, unit, span)
         }

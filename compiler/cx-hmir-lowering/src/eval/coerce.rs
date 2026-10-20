@@ -1,11 +1,10 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody, HMIRCoerceMode,
-    expr::{HMIRExprID, constant::HMIRConstant},
+    expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
         intrinsic::HMIRIntWidth,
     },
-    value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -15,10 +14,11 @@ use crate::{
     emit,
     env::function::LocalLoweringContext,
     eval::{
-        EvalResult, aggregate::eval_initializer, constant, eval, eval_type, place::dereference,
+        EvalResult, aggregate::eval_initializer, eval, eval_type, literal, place::dereference,
         types,
     },
     log::hmir_error,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) fn eval_coerce(
@@ -101,7 +101,7 @@ fn bind_reference(
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointee = context.env().pointer_inner(&value.ty());
+    let pointee = context.env().pointer_inner(value.ty());
     let value = match pointee {
         Some(pointee) if context.env().same_type(pointee, inner) => {
             dereference(context, value, span)?
@@ -113,7 +113,10 @@ fn bind_reference(
         return Err(hmir_error(
             span,
             &typecheck::INVALID_CONVERSION,
-            (todo!("type display"), todo!("type display")),
+            (
+                types::name(context.env(), value.ty()),
+                types::name(context.env(), target),
+            ),
         ));
     }
 
@@ -149,7 +152,7 @@ pub(crate) fn convert(
     );
 
     match &kinds {
-        (_, HMIRTypeKind::Void) => return Ok(constant::unit(context, span)),
+        (_, HMIRTypeKind::Void) => return Ok(literal::unit(context, span)),
 
         (
             HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_),
@@ -159,13 +162,7 @@ pub(crate) fn convert(
         }
 
         (HMIRTypeKind::ReferenceTo(inner), _) => {
-            if context
-                .env()
-                .resolve_type_id(*inner)
-                .semantics()
-                .move_semantics
-                .is_nocopy()
-            {
+            if context.env().is_nocopy(*inner) {
                 return Err(hmir_error(
                     span,
                     &typecheck::INVALID_CONVERSION,
@@ -197,6 +194,23 @@ pub(crate) fn convert(
         _ => {}
     }
 
+    // A conversion yields a value with its own obligations, which cannot be weakened or strengthened in passing
+    let invalid = |context: &LocalLoweringContext| {
+        hmir_error(
+            span,
+            &typecheck::INVALID_CONVERSION,
+            (
+                types::name(context.env(), source),
+                types::name(context.env(), target),
+            ),
+        )
+    };
+    if context.env().semantics(source).move_semantics
+        != context.env().semantics(target).move_semantics
+    {
+        return Err(invalid(context));
+    }
+
     let source_mir = types::lower_type(context.env_mut(), source, span)?;
     let target_mir = types::lower_type(context.env_mut(), target, span)?;
     if source_mir == target_mir {
@@ -212,11 +226,7 @@ pub(crate) fn convert(
         | (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_) | HMIRTypeKind::PointerTo(_)) => {
             emit::cast(context, &value, target, span)
         }
-        _ => Err(hmir_error(
-            span,
-            &typecheck::INVALID_CONVERSION,
-            (todo!("type display"), todo!("type display")),
-        )),
+        _ => Err(invalid(context)),
     }
 }
 
@@ -225,7 +235,7 @@ pub(crate) fn value(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    match context.env().reference_inner(&value.ty()) {
+    match context.env().reference_inner(value.ty()) {
         Some(inner) => convert(context, value, inner, span),
         None => Ok(value),
     }

@@ -1,8 +1,6 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,
-    expr::constant::HMIRConstant,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
-    value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::CXResult;
 use cx_mir::{
@@ -11,10 +9,11 @@ use cx_mir::{
 };
 use cx_tokens::TokenRange;
 
-use super::{intrinsic, materialize, output, register};
+use super::{initialize, intrinsic, materialize, output, register};
 use crate::{
     env::function::LocalLoweringContext,
     eval::types::{self, mir_float, mir_int},
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
@@ -95,6 +94,7 @@ pub fn binary(
         _ => unreachable!("binary operands are arithmetic or pointers"),
     };
     intrinsic(context, instruction, span.clone());
+    initialize(context, &result, span);
 
     Ok(result)
 }
@@ -117,6 +117,7 @@ pub fn unary(
         _ => unreachable!("'{}' does not apply to this operand", op.path()),
     };
     intrinsic(context, instruction, span.clone());
+    initialize(context, &result, span);
 
     Ok(result)
 }
@@ -184,6 +185,7 @@ pub fn cast(
         _ => unreachable!("conversions are between scalar types"),
     };
     intrinsic(context, instruction, span.clone());
+    initialize(context, &result, span);
 
     Ok(result)
 }
@@ -241,6 +243,7 @@ pub fn offset(
         false => MIRPtrIntrinsic::Add { out, ptr, offset },
     };
     intrinsic(context, instruction, span.clone());
+    initialize(context, &result, span);
 
     Ok(result)
 }
@@ -267,6 +270,7 @@ pub fn difference(
         },
         span.clone(),
     );
+    initialize(context, &result, span);
 
     Ok(result)
 }

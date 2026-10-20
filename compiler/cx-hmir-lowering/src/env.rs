@@ -45,7 +45,13 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
         }
     }
 
+    // Equivalent types are interchangeable views of one value, so they may differ in constness but never in the
+    // ownership obligations of their move semantics, at any depth
     pub fn same_type(&self, a: HMIRTypeID, b: HMIRTypeID) -> bool {
+        if self.semantics(a).move_semantics != self.semantics(b).move_semantics {
+            return false;
+        }
+
         let (a, b) = (self.underlying(a), self.underlying(b));
         if a == b {
             return true;

@@ -10,7 +10,6 @@ use cx_hmir::{
     HMIRBody,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
-    value::HMIRValue,
 };
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
@@ -23,6 +22,7 @@ use crate::{
         coerce::{convert, decay},
         eval, promote,
     },
+    value::HMIRValue,
 };
 
 fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {

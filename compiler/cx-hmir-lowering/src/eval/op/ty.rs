@@ -1,6 +1,6 @@
 use cx_hmir::{
     HMIRBody,
-    expr::{HMIRExprID, constant::HMIRConstant, op::HMIRTypeOp},
+    expr::{HMIRExprID, op::HMIRTypeOp},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
         aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
@@ -11,6 +11,7 @@ use cx_tokens::TokenRange;
 use crate::{
     env::function::LocalLoweringContext,
     eval::{EvalResult, eval_comptime, eval_type},
+    value::constant::HMIRConstant,
 };
 
 pub(crate) fn eval_type_op(
@@ -93,7 +94,7 @@ pub(crate) fn specify(
     span: &TokenRange,
 ) -> HMIRTypeID {
     let env = context.env_mut();
-    let current = *env.resolve_type_id(ty).semantics();
+    let current = env.semantics(ty);
     let semantics = current.apply(specifiers);
     if semantics == current {
         return ty;

@@ -1,8 +1,7 @@
 use crate::lowering::memory;
 use cx_lmir::types::LMIRIntegerType;
 use cx_lmir::{
-    LMIRBasicBlock, LMIRBlockParameter, LMIRFunction, LMIRInstructionKind, LMIRParameterABI,
-    LMIRRegister, LMIRValue,
+    LMIRBasicBlock, LMIRFunction, LMIRInstructionKind, LMIRParameterABI, LMIRRegister, LMIRValue,
 };
 use cx_log::CXResult;
 use cx_mir::ty::layout::calculate_type_layout;
@@ -11,6 +10,7 @@ use cx_mir::{MIRBody, MIRFunction};
 use crate::context::{FunctionContext, GlobalContext, block_id};
 
 use super::instructions::lower_instruction;
+use super::lifts::{self, Lifts};
 use super::typing::convert_prototype;
 
 pub(super) fn lower_function<'mir>(
@@ -18,29 +18,22 @@ pub(super) fn lower_function<'mir>(
     function: &'mir MIRFunction,
     body: &'mir MIRBody,
 ) -> CXResult<LMIRFunction> {
+    cx_mir::verify::lifts(body)?;
+    
     let prototype = convert_prototype(function.prototype(), global.unit.types());
     let mut context = FunctionContext::new(global, function, body, prototype);
+    
     for (id, block) in body.blocks() {
-        let params = block
-            .params()
-            .iter()
-            .filter(|id| !context.ty(body.register(**id).ty()).is_void())
-            .map(|id| {
-                let LMIRValue::Register { register, ty } = context.reg(*id) else {
-                    unreachable!()
-                };
-                LMIRBlockParameter { register, ty }
-            })
-            .collect();
         let index = context.blocks.len();
         context.block_indices.insert(id, index);
         context.blocks.push(LMIRBasicBlock {
             id: block_id(id),
             debug_name: block.debug_name().cloned(),
-            params,
+            params: Vec::new(),
             body: Vec::new(),
         });
     }
+    
     context.current_block = context.block_indices[&body.entry()];
     for (id, place) in body.places() {
         let address = if place.adopted() {
@@ -54,10 +47,14 @@ pub(super) fn lower_function<'mir>(
         context.places.insert(id, address);
     }
     lower_parameters(&mut context);
+    
     for (id, block) in body.blocks() {
         context.current_block = context.block_indices[&id];
-        for instruction in block.instructions() {
+        context.lifts = Lifts::new(block);
+        for (index, instruction) in block.instructions().iter().enumerate() {
+            lifts::before(&mut context, &instruction.kind);
             lower_instruction(&mut context, instruction);
+            context.lifts.retire(index);
         }
     }
     Ok(context.finish())

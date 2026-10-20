@@ -1,6 +1,6 @@
 use cx_target::ArchitectureConfig;
 
-use crate::ty::{HMIRType, HMIRTypeID, HMIRTypeKind};
+use crate::ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics};
 
 pub trait HMIRTypeContext {
     fn architecture(&self) -> &ArchitectureConfig;
@@ -48,17 +48,20 @@ pub trait HMIRTypeContext {
         matches!(self.resolve_kind(ty), HMIRTypeKind::Array { .. })
     }
 
+    // The qualifiers of 'ty' itself; those of a type it references or points to are not its own
+    fn semantics(&self, ty: HMIRTypeID) -> HMIRTypeSemantics {
+        let resolved = self.resolve_type_id(ty);
+        match resolved.kind() {
+            HMIRTypeKind::Nominal(inner) => resolved.semantics().apply(self.semantics(*inner)),
+            _ => *resolved.semantics(),
+        }
+    }
+
     fn is_nodrop(&self, ty: HMIRTypeID) -> bool {
-        self.resolve_type_id(self.underlying(ty))
-            .semantics()
-            .move_semantics
-            .is_nodrop()
+        self.semantics(ty).move_semantics.is_nodrop()
     }
 
     fn is_nocopy(&self, ty: HMIRTypeID) -> bool {
-        self.resolve_type_id(self.underlying(ty))
-            .semantics()
-            .move_semantics
-            .is_nocopy()
+        self.semantics(ty).move_semantics.is_nocopy()
     }
 }

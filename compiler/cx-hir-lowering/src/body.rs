@@ -9,7 +9,7 @@ use cx_hmir::{
     HMIRDefKind, HMIRDefRef, HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
     HMIROwnershipOp,
     body::{HMIRHole, HMIRLocal, HMIRLocalID},
-    expr::{HMIRExpr, HMIRExprID, HMIRExprKind, constant::HMIRConstant, op::HMIRTypeOp},
+    expr::{HMIRExpr, HMIRExprID, HMIRExprKind, literal::HMIRLiteral, op::HMIRTypeOp},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
         aggregate::HMIRTypeSemantics, intrinsic::HMIRIntType,
@@ -206,9 +206,9 @@ impl<'a> BodyLowering<'a> {
         self.types.declare(ty)
     }
 
-    pub(crate) fn type_constant(&mut self, kind: HMIRTypeKind, span: &TokenRange) -> HMIRExprID {
+    pub(crate) fn type_ref(&mut self, kind: HMIRTypeKind, span: &TokenRange) -> HMIRExprID {
         let ty = self.primitive(kind);
-        self.push(HMIRExprKind::Constant(HMIRConstant::Type(ty)), span)
+        self.push(HMIRExprKind::TypeRef(ty), span)
     }
 
     pub(crate) fn comptime(&self) -> bool {
@@ -304,7 +304,6 @@ impl<'a> BodyLowering<'a> {
             ty,
             span.clone(),
             comptime,
-            false,
         ));
         if let Some(name) = name {
             self.scopes
@@ -356,7 +355,7 @@ impl<'a> BodyLowering<'a> {
         self.block(vec![ret], true, false, span)
     }
 
-    pub(crate) fn int_constant(
+    pub(crate) fn int_literal(
         &mut self,
         ty: HMIRIntType,
         value: i128,
@@ -364,7 +363,7 @@ impl<'a> BodyLowering<'a> {
     ) -> HMIRExprID {
         let ty = self.primitive(HMIRTypeKind::Int(ty));
         self.push(
-            HMIRExprKind::Constant(HMIRConstant::Int { value, ty }),
+            HMIRExprKind::Literal(HMIRLiteral::Int { value, ty }),
             span,
         )
     }
@@ -382,7 +381,7 @@ impl<'a> BodyLowering<'a> {
     }
 
     pub(crate) fn type_of_types(&mut self, span: &TokenRange) -> HMIRExprID {
-        self.type_constant(HMIRTypeKind::Type, span)
+        self.type_ref(HMIRTypeKind::Type, span)
     }
 
     pub(crate) fn type_op(&mut self, op: HMIRTypeOp, span: &TokenRange) -> HMIRExprID {

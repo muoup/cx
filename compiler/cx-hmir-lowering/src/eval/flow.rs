@@ -1,7 +1,7 @@
-use cx_hmir::{HMIRFunctionStage, value::HMIRValue};
+use cx_hmir::HMIRFunctionStage;
 use cx_log::{CXResult, error::CXError};
 
-use crate::env::function::FnContext;
+use crate::{env::function::FnContext, value::HMIRValue};
 
 pub(crate) type EvalResult<T> = Result<T, EvalStop>;
 

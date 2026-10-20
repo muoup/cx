@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use cx_log::{CXResult, catalogue::analysis};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRConstant, MIRInstruction, MIRInstructionKind,
-    MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic, MIRTarget, MIRValue,
+    MIRBasicBlockID, MIRBindable, MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntIntrinsic,
+    MIRInternalIntrinsic, MIRIntrinsic, MIRTarget, MIRValue,
     expr::visit::successors,
 };
 use cx_tokens::TokenRange;
@@ -83,26 +83,6 @@ impl Values {
         };
         Some(evaluate(self.value(lhs)?, self.value(rhs)?))
     }
-
-    fn edge(
-        &self,
-        env: &AnalysisEnvironment,
-        target: &MIRBlockTarget,
-    ) -> HashMap<MIRBindable, i128> {
-        let mut state = self.known.clone();
-        let body = env.body();
-        let block = body.block(target.block);
-        for (parameter, argument) in block.params().iter().zip(&target.args) {
-            let value = self.value(argument);
-            let key = MIRBindable::Register(*parameter);
-            if let Some(value) = value {
-                state.insert(key, value);
-            } else {
-                state.remove(&key);
-            }
-        }
-        state
-    }
 }
 
 impl AnalysisPass for Values {
@@ -156,7 +136,7 @@ impl AnalysisPass for Values {
 
     fn analyze_instruction(
         &mut self,
-        env: &AnalysisEnvironment,
+        _: &AnalysisEnvironment,
         instruction: &MIRInstruction,
     ) -> CXResult<()> {
         if !self.reachable {
@@ -202,7 +182,7 @@ impl AnalysisPass for Values {
 
         self.edges = successors(instruction)
             .into_iter()
-            .map(|target| (target.block, Some(self.edge(env, target))))
+            .map(|target| (target.block, Some(self.known.clone())))
             .collect();
         if let MIRInstructionKind::Branch { cond, .. } = &instruction.kind
             && let Some(value) = self.value(cond)

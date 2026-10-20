@@ -4,7 +4,7 @@ use cx_hir::ast::{
 };
 use cx_hmir::{
     HMIRAggregateOp,
-    expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant},
+    expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral},
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
 use cx_log::{CXResult, catalogue::typecheck};
@@ -235,7 +235,7 @@ fn lower_payload(
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     match args {
-        [] => Ok(context.push(HMIRExprKind::Constant(HMIRConstant::Unit), span)),
+        [] => Ok(context.push(HMIRExprKind::Literal(HMIRLiteral::Unit), span)),
         [value] => lower_expr(context, value),
         _ => log_hir_error(
             span,

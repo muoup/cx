@@ -51,18 +51,10 @@ pub enum MIRTarget {
 #[derive(Debug, Clone)]
 pub struct MIRBlockTarget {
     pub block: MIRBasicBlockID,
-    pub args: Vec<MIRValue>,
 }
 
 impl MIRBlockTarget {
     pub fn new(block: MIRBasicBlockID) -> Self {
-        Self {
-            block,
-            args: Vec::new(),
-        }
-    }
-
-    pub fn with_args(block: MIRBasicBlockID, args: Vec<MIRValue>) -> Self {
-        Self { block, args }
+        Self { block }
     }
 }

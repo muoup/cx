@@ -30,13 +30,7 @@ use crate::{
 
 impl Display for MIRBlockTarget {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(&self.block, f)?;
-        if self.args.is_empty() {
-            return Ok(());
-        }
-        f.write_str("(")?;
-        write_plain_values(f, &self.args)?;
-        f.write_str(")")
+        Display::fmt(&self.block, f)
     }
 }
 
@@ -128,16 +122,6 @@ impl Display for MIRUnit {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         Display::fmt(&self.display_pretty(), f)
     }
-}
-
-fn write_plain_values(f: &mut Formatter<'_>, values: &[MIRValue]) -> fmt::Result {
-    for (index, value) in values.iter().enumerate() {
-        if index != 0 {
-            f.write_str(", ")?;
-        }
-        Display::fmt(value, f)?;
-    }
-    Ok(())
 }
 
 pub struct MIRDisplay<'a> {
@@ -395,6 +379,9 @@ fn write_body<T: MTRegistry>(
         f.write_str("    let ")?;
         write_place_name(f, unit, function, id)?;
         f.write_str(": ")?;
+        if place.nodrop() {
+            f.write_str("@nodrop ")?;
+        }
         types.write(f, place.ty())?;
         f.write_str(";\n")?;
     }
@@ -419,16 +406,6 @@ fn write_block<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     write!(f, "    {}", block.id())?;
-    if !block.params().is_empty() {
-        f.write_str("(")?;
-        for (index, parameter) in block.params().iter().enumerate() {
-            if index != 0 {
-                f.write_str(", ")?;
-            }
-            write_register_name(f, function, *parameter)?;
-        }
-        f.write_str(")")?;
-    }
     if let Some(name) = &block.debug_name() {
         write!(f, " /* {name} */")?;
     }
@@ -518,7 +495,7 @@ fn write_instruction<T: MTRegistry>(
         }
         MIRInstructionKind::Jump { target } => {
             f.write_str("goto ")?;
-            write_block_target(f, unit, function, target)
+            write_block_target(f, target)
         }
         MIRInstructionKind::Branch {
             cond,
@@ -528,9 +505,9 @@ fn write_instruction<T: MTRegistry>(
             f.write_str("if ")?;
             write_value(f, unit, function, cond)?;
             f.write_str(" goto ")?;
-            write_block_target(f, unit, function, true_target)?;
+            write_block_target(f, true_target)?;
             f.write_str(" else goto ")?;
-            write_block_target(f, unit, function, false_target)
+            write_block_target(f, false_target)
         }
         MIRInstructionKind::CaseBranch {
             value,
@@ -546,14 +523,14 @@ fn write_instruction<T: MTRegistry>(
                     f.write_str(",")?;
                 }
                 write!(f, " {case_value} => ")?;
-                write_block_target(f, unit, function, target)?;
+                write_block_target(f, target)?;
             }
             if let Some(default) = default {
                 if !cases.is_empty() {
                     f.write_str(",")?;
                 }
                 f.write_str(" _ => ")?;
-                write_block_target(f, unit, function, default)?;
+                write_block_target(f, default)?;
             }
             f.write_str(" }")
         }
@@ -565,7 +542,7 @@ fn write_instruction<T: MTRegistry>(
                 if index != 0 {
                     f.write_str(", ")?;
                 }
-                write_block_target(f, unit, function, target)?;
+                write_block_target(f, target)?;
             }
             f.write_str("]")
         }
@@ -1273,19 +1250,8 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
     }
 }
 
-fn write_block_target(
-    f: &mut Formatter<'_>,
-    unit: &MIRUnit,
-    function: &MIRFunction,
-    target: &MIRBlockTarget,
-) -> fmt::Result {
-    Display::fmt(&target.block, f)?;
-    if !target.args.is_empty() {
-        f.write_str("(")?;
-        write_values(f, unit, function, &target.args)?;
-        f.write_str(")")?;
-    }
-    Ok(())
+fn write_block_target(f: &mut Formatter<'_>, target: &MIRBlockTarget) -> fmt::Result {
+    Display::fmt(&target.block, f)
 }
 
 fn write_values(

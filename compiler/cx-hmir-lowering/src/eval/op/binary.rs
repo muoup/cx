@@ -2,7 +2,6 @@ use cx_hmir::{
     HMIRBinaryOp, HMIRBody,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, intrinsic::HMIRIntWidth},
-    value::HMIRValue,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -18,6 +17,7 @@ use crate::{
         promote, types,
     },
     log::hmir_error,
+    value::HMIRValue,
 };
 
 fn is_comparison(op: HMIRBinaryOp) -> bool {

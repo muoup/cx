@@ -218,10 +218,6 @@ impl MIRFunctionBuilder {
         id
     }
 
-    pub fn add_block_param(&mut self, block: MIRBasicBlockID, param: MIRRegister) {
-        self.blocks[block.index()].push_param(param);
-    }
-
     pub fn current_block(&self) -> MIRBasicBlockID {
         self.current_block
     }

@@ -1,8 +1,6 @@
 use cx_hmir::{
     HMIRDefID, HMIRDefKind, HMIRDefRef, HMIRFunction,
-    expr::constant::HMIRConstant,
     ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics},
-    value::HMIRValue,
 };
 use cx_tokens::TokenRange;
 
@@ -11,6 +9,7 @@ use crate::{
     env::function::{ComptimeContext, FnContext, LocalLoweringContext},
     eval::{EvalResult, coerce::convert, eval, eval_type, types},
     lower::is_staged,
+    value::{HMIRValue, constant::HMIRConstant},
 };
 
 pub(crate) fn eval_def(

@@ -65,4 +65,5 @@ define_errors! {
     UNSUPPORTED_LOWERING: String = "MX016" => |subject| format!("{subject} reached MIR generation");
     MALFORMED_HIR: String = "MX017" => |subject| format!("malformed HIR: {subject}");
     COMPTIME_INVARIANT: String = "MX018" => |subject| format!("compile-time evaluator reached {subject}");
+    MIR_LIFT_REDEFINED: String = "MX019" => |register| format!("lifted register {register} must be defined by exactly one instruction");
 }

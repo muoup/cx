@@ -31,6 +31,22 @@ Pair make_pair(int value) {
     return (Pair) { .left = value, .right = 2 };
 }
 
+Data make_data(int value) {
+    return (Data) { .value = value };
+}
+
+int touch(int* counter) {
+    *counter = *counter + 1;
+    return 1;
+}
+
+int countdown(int n) {
+    int i = n;
+    i--;
+    i -= 1;
+    return i;
+}
+
 void initialize_data() {
     Data data;
     data = (Data) { .value = 1 };
@@ -64,5 +80,40 @@ int main() {
     printf("%d ", bytes.value);
     memset(&bytes, 0, 1);
     printf("%d\n", bytes.value);
+
+    Pair mutated = make_pair(3);
+    mutated.left = 9;
+    Pair snapshot = mutated;
+    snapshot.right = 4;
+    int counted = countdown(5);
+    counted++;
+    printf("%d %d %d %d %d\n", mutated.left, mutated.right, snapshot.left, snapshot.right, counted);
+
+    for (int i = 0; i < 3; i++) {
+        Pair chosen = i % 2 ? make_pair(i) : (Pair) { .left = 10, .right = i };
+        chosen.right += 100;
+        Pair& view = chosen;
+        view.left++;
+        printf("%d %d\n", chosen.left, chosen.right);
+    }
+
+    Data owned = make_data(5);
+    owned.value = owned.value + 1;
+    Data later;
+    later = make_data(7);
+    printf("%d %d\n", owned.value, later.value);
+
+    Pair target = { .left = 1, .right = 1 };
+    Pair* pointer = &target;
+    pointer->left = 3;
+    printf("%d %d\n", target.left, pointer == &target);
+
+    int calls = 0;
+    int zero = 0;
+    int skipped = zero && touch(&calls);
+    int taken = !zero && touch(&calls);
+    int either = taken || touch(&calls);
+    int nested = calls ? (taken ? 20 : 30) : (either ? 40 : 50);
+    printf("%d %d %d %d %d\n", skipped, taken, either, calls, nested);
     return 0;
 }

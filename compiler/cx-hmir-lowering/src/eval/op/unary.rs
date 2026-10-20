@@ -1,15 +1,14 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody, HMIRUnaryOp,
-    expr::{HMIRExprID, constant::HMIRConstant},
+    expr::HMIRExprID,
     ty::{HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
-    value::HMIRValue,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
-    emit,
+    emit::{self, Transfer},
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
@@ -19,6 +18,7 @@ use crate::{
         types,
     },
     log::hmir_error,
+    value::{HMIRValue, constant::HMIRConstant},
 };
 
 pub(crate) fn eval_unary(
@@ -75,12 +75,7 @@ fn increment(
             "increment".into(),
         ));
     }
-    if context
-        .env()
-        .resolve_type_id(target.ty())
-        .semantics()
-        .constant
-    {
+    if context.env().semantics(target.ty()).constant {
         return Err(hmir_error(
             span,
             &typecheck::MUTATE_CONST,
@@ -128,7 +123,7 @@ fn increment(
             ));
         }
     };
-    emit::write(context, &target, updated, false, span)?;
+    emit::transfer(context, &target, updated, Transfer::Replace, span)?;
 
     if prefix {
         emit::reference(context, &target, span)

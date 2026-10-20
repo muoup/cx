@@ -10,6 +10,7 @@ mod calls;
 mod functions;
 mod globals;
 mod instructions;
+pub(crate) mod lifts;
 mod intrinsics;
 pub(crate) mod memory;
 pub(crate) mod typing;

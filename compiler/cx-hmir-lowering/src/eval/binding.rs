@@ -1,16 +1,22 @@
 use cx_hmir::{
     HMIRBody,
-    body::HMIRLocalID,
+    body::{HMIRLocal, HMIRLocalID},
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeKind, context::HMIRTypeContext},
-    value::{HMIRPlace, HMIRValue, HMIRValueKind},
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
+use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::{self, runtime}, env::function::{FnContext, LocalLoweringContext}, eval::{
-        EvalResult, aggregate::eval_initializer, coerce::{self, convert}, constant, eval, eval_type, flow::EvalStop,
+    emit::{self, Transfer, runtime},
+    env::function::{FnContext, LocalLoweringContext},
+    eval::{
+        EvalResult,
+        aggregate::eval_initializer,
+        coerce::{self, convert},
+        eval, eval_type, literal,
     },
+    value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 
 pub(crate) fn eval_local(
@@ -24,24 +30,7 @@ pub(crate) fn eval_local(
         None if matches!(context.context(), FnContext::Runtime(_)) => {
             let decl = body.local(local);
             let ty = eval_type(context, body, decl.ty())?;
-            let value = emit::allocate(
-                context,
-                ty,
-                decl.name().cloned(),
-                decl.nodrop(),
-                decl.span(),
-            )?;
-            if !context
-                .env()
-                .resolve_type_id(ty)
-                .semantics()
-                .move_semantics
-                .is_nocopy()
-            {
-                runtime::initialize(context, &value, decl.span());
-            }
-            context.insert_local(local, value.clone());
-            value
+            declare(context, local, decl, ty)?
         }
         None => todo!("local {local} has no binding in the evaluating context"),
     };
@@ -50,6 +39,27 @@ pub(crate) fn eval_local(
     Ok(emit::reference(context, &value, span)?)
 }
 
+// Binds a local to fresh storage of its declared type. The storage of a copyable runtime value is live, with
+// indeterminate contents, from its declaration on; a value with move semantics, or a comptime slot, holds nothing
+// until a whole value is moved into it
+fn declare(
+    context: &mut LocalLoweringContext,
+    local: HMIRLocalID,
+    decl: &HMIRLocal,
+    ty: HMIRTypeID,
+) -> CXResult<HMIRValue> {
+    let storage = emit::allocate(context, ty, decl.name().cloned(), decl.span())?;
+    if matches!(context.context(), FnContext::Runtime(_)) && !context.env().is_nocopy(ty) {
+        emit::initialize(context, &storage, decl.span());
+    }
+    context.insert_local(local, storage.clone());
+
+    Ok(storage)
+}
+
+// A declaration is a statement, and evaluates to unit. Each evaluation binds a fresh instance of the local, so a
+// binding left by an earlier evaluation of the same declaration, as a comptime loop makes, is forgotten first. The
+// initializer is evaluated before the local is bound, and may itself name the local, which declares its storage early
 pub(crate) fn eval_let(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
@@ -67,37 +77,45 @@ pub(crate) fn eval_let(
         todo!("local of type void");
     }
 
-    match initializer {
-        Some(initializer) => {
-            let value = eval_initializer(context, body, initializer, ty)?;
-            let coerced = convert(context, value, ty, span)?;
+    context.remove_local(local);
+    let Some(initializer) = initializer else {
+        declare(context, local, decl, ty)?;
+        return Ok(literal::unit(context, span));
+    };
 
-            // Since we own the rhs, if it is addressable, we can simply alias the initialization
-            // to that value without needing to allocate.
-            if matches!(coerced.kind(), HMIRValueKind::PlaceRef(HMIRPlace::Local(_))) {
-                emit::bind_local(context, local, coerced.clone())?;
+    let scope = match context.context() {
+        FnContext::Runtime(runtime) => runtime.open_scopes().last().copied(),
+        FnContext::Comptime(_) => None,
+    };
+    let value = eval_initializer(context, body, initializer, ty)?;
+    let value = convert(context, value, ty, span)?;
 
-                return Ok(coerced);
-            }
-            
-            let allocation = emit::allocate(context, ty, decl.name().cloned(), decl.nodrop(), decl.span())
-                .map_err(EvalStop::from)?;
-
-            emit::write(context, &allocation, coerced, true, span)?;
-            emit::bind_local(context, local, allocation.clone())?;
- 
-            Ok(allocation)
+    // A value of a type that is not a reference is a temporary that the initializer owns, as naming any storage
+    // yields a reference to it; owned storage of the declared type is adopted as the local's own
+    let storage = match context.get_local(&local).cloned() {
+        Some(storage) => {
+            emit::transfer(context, &storage, value, Transfer::Init, span)?;
+            storage
         }
-
+        None if context.env().reference_inner(ty).is_none()
+            && matches!(value.kind(), HMIRValueKind::PlaceRef(HMIRPlace::Local(_)))
+            && emit::addressable(context, &value) =>
+        {
+            context.insert_local(local, value.clone());
+            value
+        }
         None => {
-            let allocation = emit::allocate(context, ty, decl.name().cloned(), decl.nodrop(), decl.span())
-                .map_err(EvalStop::from)?;
-
-            emit::bind_local(context, local, allocation.clone())?;
-
-            Ok(allocation)
+            let storage = emit::allocate(context, ty, decl.name().cloned(), decl.span())?;
+            emit::transfer(context, &storage, value, Transfer::Init, span)?;
+            context.insert_local(local, storage.clone());
+            storage
         }
+    };
+    if let Some(scope) = scope {
+        runtime::relocate(context, &storage, scope, decl.name().cloned());
     }
+
+    Ok(literal::unit(context, span))
 }
 
 pub(crate) fn eval_block(
@@ -142,7 +160,7 @@ fn eval_statements(
 
     match result {
         Some(value) if yields => Ok(coerce::value(context, value, span)?),
-        _ => Ok(constant::unit(context, span)),
+        _ => Ok(literal::unit(context, span)),
     }
 }
 

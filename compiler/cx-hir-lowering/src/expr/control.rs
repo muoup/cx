@@ -171,11 +171,11 @@ fn lower_condition(
     let span = &condition.range;
     let bool_ty = HMIRIntType::new(HMIRIntWidth::I1, false);
     if matches!(condition.kind, HIRExprKind::Void) {
-        return Ok(context.int_constant(bool_ty, 1, span));
+        return Ok(context.int_literal(bool_ty, 1, span));
     }
 
     let value = lower_expr(context, condition)?;
-    let target = context.type_constant(HMIRTypeKind::Int(bool_ty), span);
+    let target = context.type_ref(HMIRTypeKind::Int(bool_ty), span);
 
     Ok(context.coerce(HMIRCoerceMode::Truthy, value, target, span))
 }

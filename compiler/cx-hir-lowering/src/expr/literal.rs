@@ -1,5 +1,5 @@
 use cx_hmir::{
-    expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant},
+    expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral},
     ty::{
         HMIRTypeKind,
         intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
@@ -44,7 +44,7 @@ pub(crate) fn lower_int_literal(
         return log_hir_error(span, &typecheck::INTEGER_LITERAL_RANGE, ());
     };
 
-    Ok(context.int_constant(HMIRIntType::new(width, signed), magnitude as i128, span))
+    Ok(context.int_literal(HMIRIntType::new(width, signed), magnitude as i128, span))
 }
 
 pub(crate) fn lower_float_literal(
@@ -63,7 +63,7 @@ pub(crate) fn lower_float_literal(
     let ty = context.primitive(HMIRTypeKind::Float(HMIRFloatType::new(width)));
 
     Ok(context.push(
-        HMIRExprKind::Constant(HMIRConstant::Float { value, ty }),
+        HMIRExprKind::Literal(HMIRLiteral::Float { value, ty }),
         span,
     ))
 }

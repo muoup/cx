@@ -1,24 +1,25 @@
-use cx_hmir::{
-    body::HMIRLocalID,
-    expr::constant::HMIRConstant,
-    ty::HMIRTypeID,
-    value::{HMIRPlace, HMIRValue, HMIRValueKind},
-};
+use cx_hmir::ty::HMIRTypeID;
 use cx_log::CXResult;
+use cx_mir::expr::instruction::MIRInvalidationKind;
 
-use crate::env::function::{LocalLoweringContext, comptime::ComptimeSlotState};
+use crate::{
+    env::function::{LocalLoweringContext, comptime::ComptimeSlotState},
+    value::{HMIRPlace, HMIRSlotID, HMIRValue, HMIRValueKind, constant::HMIRConstant},
+};
 
-pub fn bind_local(
-    context: &mut LocalLoweringContext,
-    local: HMIRLocalID,
-    value: HMIRValue,
-) -> CXResult<()> {
-    context.comptime_mut().set_local(local, value);
-    Ok(())
+pub fn allocate(context: &mut LocalLoweringContext, ty: HMIRTypeID) -> HMIRValue {
+    let slot = context.comptime_mut().allocate_slot(ty);
+
+    HMIRValue::place(ty, HMIRPlace::Local(slot))
 }
 
-pub fn allocate_slot(context: &mut LocalLoweringContext, ty: HMIRTypeID) -> HMIRPlace {
-    context.comptime_mut().allocate(ty)
+// The slot whose state a value's liveness is recorded on; storage behind an address is untracked
+fn tracked_slot(value: &HMIRValue) -> Option<HMIRSlotID> {
+    match value.kind() {
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => Some(*slot),
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => todo!("comptime global storage"),
+        HMIRValueKind::Constant(_) | HMIRValueKind::Indirect(_) => None,
+    }
 }
 
 pub fn read(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
@@ -40,9 +41,9 @@ pub fn read(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HM
 pub fn write(
     context: &mut LocalLoweringContext,
     target: &HMIRValue,
-    value: HMIRValue,
+    value: &HMIRValue,
 ) -> CXResult<()> {
-    let value = read(context, value)?;
+    let value = read(context, value.clone())?;
     let HMIRValueKind::Constant(constant) = value.kind() else {
         unreachable!("a comptime read yields a constant");
     };
@@ -58,6 +59,27 @@ pub fn write(
     }
 
     Ok(())
+}
+
+pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue) {
+    if let Some(slot) = tracked_slot(value) {
+        debug_assert!(
+            matches!(
+                context.comptime().slot(slot).state(),
+                ComptimeSlotState::Value(_)
+            ),
+            "comptime slot initialized before it was written"
+        );
+    }
+}
+
+pub fn invalidate(context: &mut LocalLoweringContext, value: &HMIRValue, kind: MIRInvalidationKind) {
+    if let Some(slot) = tracked_slot(value) {
+        *context.comptime_mut().slot_mut(slot).state_mut() = match kind {
+            MIRInvalidationKind::Drop => ComptimeSlotState::Uninitialized,
+            MIRInvalidationKind::Move | MIRInvalidationKind::Leak => ComptimeSlotState::Invalidated,
+        };
+    }
 }
 
 pub fn address(pointer: &HMIRValue, ty: HMIRTypeID) -> HMIRValue {

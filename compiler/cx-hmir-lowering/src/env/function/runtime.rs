@@ -1,16 +1,15 @@
 use std::collections::HashMap;
 
-use cx_hmir::{
-    body::HMIRLocalID,
-    ty::HMIRTypeID,
-    value::{HMIRPlace, HMIRSlotID, HMIRValue},
-};
+use cx_hmir::body::HMIRLocalID;
 use cx_mir::{
     MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRScopeID,
 };
 use cx_tokens::TokenRange;
 
-use crate::env::module::MIRFunctionBuilder;
+use crate::{
+    env::module::MIRFunctionBuilder,
+    value::{HMIRSlotID, HMIRValue},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Emission {
@@ -105,6 +104,10 @@ impl RuntimeContext {
 
     pub fn set_local(&mut self, local: HMIRLocalID, value: HMIRValue) {
         self.locals.insert(local, value);
+    }
+
+    pub fn remove_local(&mut self, local: HMIRLocalID) {
+        self.locals.remove(&local);
     }
 
     pub fn open_scopes(&self) -> &[MIRScopeID] {

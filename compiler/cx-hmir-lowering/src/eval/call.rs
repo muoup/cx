@@ -1,8 +1,7 @@
 use cx_hmir::{
     HMIRBody,
-    expr::{HMIRExprID, constant::HMIRConstant},
+    expr::HMIRExprID,
     ty::{HMIRTypeKind, context::HMIRTypeContext},
-    value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::catalogue::typecheck;
 use cx_mir::MIRInstructionKind;
@@ -19,6 +18,7 @@ use crate::{
         promote,
     },
     log::hmir_error,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) fn eval_call(
@@ -35,7 +35,7 @@ pub(crate) fn eval_call(
 
     let env = context.env();
     let function = env
-        .pointer_inner(&callee.ty())
+        .pointer_inner(callee.ty())
         .map(|inner| env.resolve_kind(inner));
     let Some(HMIRTypeKind::Function(signature)) = function else {
         return Err(hmir_error(

@@ -50,12 +50,6 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
         }
     }
 
-    fn block(target: &MIRBlockTarget, visit: &mut impl FnMut(MIRBindable)) {
-        for arg in &target.args {
-            value(arg, visit);
-        }
-    }
-
     fn intrinsic(op: &MIRIntrinsic, visit: &mut impl FnMut(MIRBindable)) {
         if let Some(output) = op.output_target() {
             target(output, visit);
@@ -206,35 +200,15 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 value(returned, &mut visit);
             }
         }
-        MIRInstructionKind::Jump { target } => block(target, &mut visit),
+        MIRInstructionKind::Jump { .. } => {}
         MIRInstructionKind::Branch {
             cond,
-            true_target,
-            false_target,
-        } => {
-            value(cond, &mut visit);
-            block(true_target, &mut visit);
-            block(false_target, &mut visit);
-        }
+            ..
+        } => value(cond, &mut visit),
         MIRInstructionKind::CaseBranch {
             value: subject,
-            cases,
-            default,
             ..
-        } => {
-            value(subject, &mut visit);
-            for (_, target) in cases {
-                block(target, &mut visit);
-            }
-            if let Some(target) = default {
-                block(target, &mut visit);
-            }
-        }
-        MIRInstructionKind::IndirectJump { address, targets } => {
-            value(address, &mut visit);
-            for target in targets {
-                block(target, &mut visit);
-            }
-        }
+        } => value(subject, &mut visit),
+        MIRInstructionKind::IndirectJump { address, .. } => value(address, &mut visit),
     }
 }

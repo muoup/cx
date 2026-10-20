@@ -211,7 +211,7 @@ fn lower_enum_variant(
 ) -> CXResult<HMIRDefKind> {
     let span = TokenRange::internal();
     let int = HMIRIntType::new(HMIRIntWidth::I32, true);
-    let ty = context.type_constant(HMIRTypeKind::Int(int), &span);
+    let ty = context.type_ref(HMIRTypeKind::Int(int), &span);
     // Implicit values count from the nearest explicit one rather than the previous variant, so
     // evaluating a long enum does not recurse through every variant before it
     let explicit = variants[..index]
@@ -219,11 +219,11 @@ fn lower_enum_variant(
         .rposition(|variant| variant.value.is_some());
     let initializer = match (&variants[index].value, explicit) {
         (Some(value), _) => lower_expr(&mut context, value)?,
-        (None, None) => context.int_constant(int, index as i128, &span),
+        (None, None) => context.int_literal(int, index as i128, &span),
         (None, Some(explicit)) => {
             let base = QualifiedName::new(name.namespace.clone(), variants[explicit].name.clone());
             let lhs = context.def_expr(base, &span);
-            let rhs = context.int_constant(int, (index - explicit) as i128, &span);
+            let rhs = context.int_literal(int, (index - explicit) as i128, &span);
             let op = HMIRBinaryOp::Add;
             context.op(HMIROp::BinOp { op, lhs, rhs }, &span)
         }

@@ -15,9 +15,8 @@ use cx_mir::{
 };
 use cx_util::identifier::CXIdent;
 
-use crate::lowering::memory;
 use crate::lowering::typing::convert_type;
-use crate::lowering::values::lower_rvalue;
+use crate::lowering::lifts::Lifts;
 
 /// The LMIR name of a MIR block, which a block address elsewhere in the unit names it by.
 pub(crate) fn block_id(block: MIRBasicBlockID) -> LMIRBlockID {
@@ -92,6 +91,7 @@ pub(crate) struct FunctionContext<'a, 'mir> {
     pub current_block: usize,
     pub next_register: usize,
     pub places: HashMap<MIRPlaceID, LMIRValue>,
+    pub lifts: Lifts,
 }
 
 impl<'a, 'mir> FunctionContext<'a, 'mir> {
@@ -111,6 +111,7 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
             current_block: 0,
             next_register: 0,
             places: HashMap::new(),
+            lifts: Lifts::default(),
         }
     }
 
@@ -133,6 +134,10 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
         }
     }
 
+    pub fn value(&self, id: MIRRegister) -> LMIRValue {
+        self.lifts.value(id).unwrap_or_else(|| self.reg(id))
+    }
+
     pub fn emit(&mut self, kind: LMIRInstructionKind, ty: LMIRType, result: Option<LMIRRegister>) {
         self.blocks[self.current_block].body.push(LMIRInstruction {
             kind,
@@ -148,32 +153,8 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
         }
     }
 
-    pub fn target(&mut self, target: &cx_mir::MIRBlockTarget) -> LMIRBlockTarget {
-        let id = self.blocks[self.block_indices[&target.block]].id.clone();
-        let params = self
-            .body
-            .block(target.block)
-            .params();
-        let args = target
-            .args
-            .iter()
-            .zip(params)
-            .filter_map(|(arg, parameter)| {
-                let ty = self.body.register(*parameter).ty();
-                if self.ty(ty).is_void() {
-                    return None;
-                }
-                let value = lower_rvalue(self, arg, ty);
-                if self.ty(ty).is_memory_resident() {
-                    let copy = memory::allocate(self, ty);
-                    memory::store(self, copy.clone(), value, ty);
-                    Some(copy)
-                } else {
-                    Some(value)
-                }
-            })
-            .collect();
-        LMIRBlockTarget::with_args(id, args)
+    pub fn target(&self, target: &cx_mir::MIRBlockTarget) -> LMIRBlockTarget {
+        LMIRBlockTarget::new(self.blocks[self.block_indices[&target.block]].id.clone())
     }
 
     pub fn finish(self) -> LMIRFunction {

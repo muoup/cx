@@ -2,9 +2,9 @@ mod aggregate;
 mod binding;
 mod call;
 mod coerce;
-mod constant;
 mod control;
 mod def;
+mod literal;
 mod op;
 mod place;
 mod promote;
@@ -17,10 +17,9 @@ pub(crate) use flow::EvalResult;
 use cx_hmir::{
     HMIRBody, HMIRControlOp, HMIRDefKind, HMIRDefRef, HMIRFunction, HMIROp,
     body::HMIRLocalID,
-    expr::{HMIRExprID, HMIRExprKind, constant::HMIRConstant},
+    expr::{HMIRExprID, HMIRExprKind},
     ty::HMIRTypeID,
     unit::function::HMIRFnDefinition,
-    value::HMIRValue,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::MIRFunction;
@@ -37,14 +36,15 @@ use crate::{
         binding::{eval_block, eval_let, eval_local},
         call::eval_call,
         coerce::eval_coerce,
-        constant::eval_constant,
         control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_while},
         def::eval_def,
         flow::ComptimeStop,
+        literal::eval_literal,
         op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
         place::{eval_address_of, eval_assign, eval_dereference},
     },
     log::hmir_error,
+    value::{HMIRValue, constant::HMIRConstant},
 };
 
 pub(crate) fn lower_runtime_function<'hmir>(
@@ -95,13 +95,7 @@ fn runtime_definition(
     for (param, local) in signature.params().iter().zip(def.params()) {
         let decl = body.local(*local);
         let ty = eval_type(context, body, *param.ty())?;
-        let value = runtime::parameter(
-            context,
-            ty,
-            decl.name().cloned(),
-            decl.nodrop(),
-            decl.span(),
-        )?;
+        let value = runtime::parameter(context, ty, decl.name().cloned(), decl.span())?;
 
         context.insert_local(*local, value);
     }
@@ -133,7 +127,12 @@ pub(crate) fn eval(
     let span = expr.span();
 
     match expr.kind() {
-        HMIRExprKind::Constant(constant) => eval_constant(context, span, constant),
+        HMIRExprKind::Literal(literal) => Ok(eval_literal(context, span, literal)),
+        // Note: because lowering refers to runtime expressions, where comptime expressions are "evaluated", a type
+        // reaching this path would indicate that we are trying to use a type directly.
+        //
+        // In the future, we may want to introduce a runtime-friendly type info API, but for now, we will just error out.
+        HMIRExprKind::TypeRef(_) => todo!("Error: unexpected type constant in runtime expression"),
         HMIRExprKind::Local(local) => eval_local(context, body, span, *local),
         HMIRExprKind::Let { local, initializer } => {
             eval_let(context, body, span, *local, *initializer)
@@ -229,7 +228,7 @@ pub(crate) fn eval_type(
     let expr = body.expr(id);
 
     match expr.kind() {
-        HMIRExprKind::Constant(HMIRConstant::Type(ty)) => Ok(*ty),
+        HMIRExprKind::TypeRef(ty) => Ok(*ty),
         HMIRExprKind::Type(ty) => eval_declared_type(context, body, id, ty),
         HMIRExprKind::Op(HMIROp::Type(op)) => eval_type_op(context, body, expr.span(), op),
         HMIRExprKind::Def(def) => eval_type_def(context, expr.span(), def),

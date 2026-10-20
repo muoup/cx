@@ -5,17 +5,25 @@
 
 mod comptime;
 pub(crate) mod runtime;
+mod storage;
+mod transfer;
+
+pub use storage::{addressable, allocate, initialize, read, spill};
+pub use transfer::{Transfer, consume, transfer};
 
 use cx_hmir::{
-    HMIRBinaryOp, HMIRUnaryOp, body::HMIRLocalID, expr::constant::HMIRConstant, ty::{
+    HMIRBinaryOp, HMIRUnaryOp,
+    ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
-    }, value::{HMIRValue, HMIRValueKind},
+    },
 };
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
 
-use crate::env::function::{FnContext, LocalLoweringContext};
+use crate::{
+    env::function::{FnContext, LocalLoweringContext},
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+};
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     match context.context() {
@@ -31,82 +39,12 @@ pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     }
 }
 
-pub fn allocate(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    name: Option<CXIdent>,
-    nodrop: bool,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    match context.context() {
-        FnContext::Runtime(_) => runtime::allocate_slot(context, ty, name, span),
-        FnContext::Comptime(_) => Ok(comptime::allocate_slot(context, ty)),
-    }
-}
-
-pub fn bind_local(
-    context: &mut LocalLoweringContext,
-    local: HMIRLocalID,
-    value: HMIRValue,
-) -> CXResult<()> {
-    match context.context() {
-        FnContext::Runtime(_) => runtime::bind_local(context, local, value),
-        FnContext::Comptime(_) => comptime::bind_local(context, local, value),
-    }
-}
-
-pub fn addressable(context: &mut LocalLoweringContext, value: &HMIRValue) -> bool {
-    match context.context() {
-        FnContext::Runtime(_) => runtime::addressable(context, value),
-        FnContext::Comptime(_) => !matches!(value.kind(), HMIRValueKind::Constant(_)),
-    }
-}
-
-pub fn read(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    match context.context() {
-        FnContext::Runtime(_) => runtime::read(context, value, span),
-        FnContext::Comptime(_) => comptime::read(context, value),
-    }
-}
-
-pub fn write(
-    context: &mut LocalLoweringContext,
-    target: &HMIRValue,
-    value: HMIRValue,
-    initialize: bool,
-    span: &TokenRange,
-) -> CXResult<()> {
-    match context.context() {
-        FnContext::Runtime(_) => runtime::write(context, target, value, initialize, span),
-        FnContext::Comptime(_) => comptime::write(context, target, value),
-    }
-}
-
-pub fn spill(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    if addressable(context, &value) {
-        return Ok(value);
-    }
-
-    let place = allocate(context, value.ty(), None, false, span)?;
-    write(context, &place, value, true, span)?;
-
-    Ok(place)
-}
-
 pub fn referent(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let Some(inner) = context.env().reference_inner(&value.ty()) else {
+    let Some(inner) = context.env().reference_inner(value.ty()) else {
         return Ok(value);
     };
 

@@ -1,7 +1,7 @@
 use cx_log::{CXMaybeRawResult, CXResult, catalogue::analysis};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRBody, MIRInstruction, MIRInstructionKind, MIRLivenessState, MIRPlaceID,
-    MIRRegisterID, MIRTarget,
+    MIRBasicBlockID, MIRBindable, MIRBody, MIRInstruction, MIRInstructionKind, MIRLivenessState,
+    MIRPlaceID, MIRRegisterID, MIRTarget,
     expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
 };
 use cx_tokens::TokenRange;
@@ -29,6 +29,13 @@ fn debug_name(body: &MIRBody, bindable: &MIRBindable) -> (String, bool) {
     let discarded = debug_name.is_some_and(|name| name.as_str() == "_");
 
     (name, discarded)
+}
+
+fn nodrop(env: &AnalysisEnvironment, bindable: &MIRBindable) -> bool {
+    match bindable {
+        MIRBindable::Place(id) => env.body().place(*id).nodrop(),
+        MIRBindable::Register(_) => false,
+    }
 }
 
 impl Liveness {
@@ -85,8 +92,7 @@ impl Liveness {
         existing: MIRLivenessState,
         incoming: MIRLivenessState,
     ) -> CXMaybeRawResult<MIRLivenessState> {
-        if let MIRBindable::Place(place) = bindable
-            && env.body().place(place).nodrop()
+        if nodrop(env, &bindable)
             && (existing == MIRLivenessState::Available || incoming == MIRLivenessState::Available)
         {
             let (name, discarded) = debug_name(env.body(), &bindable);
@@ -120,13 +126,6 @@ impl AnalysisPass for Liveness {
         Ok(())
     }
 
-    fn block_entry(&mut self, env: &AnalysisEnvironment, block: MIRBasicBlockID) -> CXResult<()> {
-        for register in env.body().block(block).params() {
-            self.set(&MIRBindable::Register(*register), MIRLivenessState::Available);
-        }
-        Ok(())
-    }
-
     fn analyze_instruction(
         &mut self,
         env: &AnalysisEnvironment,
@@ -148,25 +147,21 @@ impl AnalysisPass for Liveness {
             }
             MIRInstructionKind::Invalidate { place, kind } => {
                 if *kind == MIRInvalidationKind::Drop {
-                    if self.get(place) == Some(MIRLivenessState::Available) {
-                        if let MIRBindable::Place(id) = place {
-                            if env.body().place(*id).nodrop() {
-                                let (name, discarded) = debug_name(env.body(), place);
-                                return log_analysis_error(
-                                    &instruction.token_range,
-                                    (
-                                        &analysis::VALUE_NOT_CONSUMED,
-                                        (
-                                            env.function().prototype().display_name().to_string(),
-                                            "value".to_owned(),
-                                            name,
-                                            "lifetime".to_owned(),
-                                            discarded,
-                                        ),
-                                    ),
-                                );
-                            }
-                        }
+                    if self.get(place) == Some(MIRLivenessState::Available) && nodrop(env, place) {
+                        let (name, discarded) = debug_name(env.body(), place);
+                        return log_analysis_error(
+                            &instruction.token_range,
+                            (
+                                &analysis::VALUE_NOT_CONSUMED,
+                                (
+                                    env.function().prototype().display_name().to_string(),
+                                    "value".to_owned(),
+                                    name,
+                                    "lifetime".to_owned(),
+                                    discarded,
+                                ),
+                            ),
+                        );
                     }
                     self.set(place, MIRLivenessState::Uninitialized);
                 } else {

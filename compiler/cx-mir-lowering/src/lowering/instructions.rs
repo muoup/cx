@@ -3,14 +3,14 @@ use cx_lmir::types::LMIRType;
 use cx_lmir::{LMIRBasicBlock, LMIRBlockTarget, LMIRInstruction, LMIRInstructionKind};
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::{
-    MIRBindable, MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntType, MIRStoreBitfield, MIRTarget,
+    MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntType, MIRStoreBitfield,
     MIRTypeKind, MIRValue,
 };
 use cx_util::identifier::CXIdent;
 
 use crate::context::FunctionContext;
 
-use super::{calls, intrinsics, values};
+use super::{calls, intrinsics, lifts, values};
 
 pub(super) fn lower_instruction(
     context: &mut FunctionContext<'_, '_>,
@@ -20,39 +20,7 @@ pub(super) fn lower_instruction(
         MIRInstructionKind::Initialize { .. }
         | MIRInstructionKind::Invalidate { .. }
         | MIRInstructionKind::BindLifetime { .. } => {}
-        MIRInstructionKind::Lift { out, source, .. } => {
-            let target = match source {
-                MIRBindable::Place(place) => MIRTarget::Place(*place),
-                MIRBindable::Register(register) => MIRTarget::Indirect(*register),
-            };
-            let ty = values::target_type(context, target);
-            let source = match source {
-                MIRBindable::Place(place) => context.places[place].clone(),
-                MIRBindable::Register(register) => context.reg(*register),
-            };
-            if context.ty(ty).is_void() {
-                memory::assign(
-                    context,
-                    *out,
-                    LMIRInstructionKind::Alias {
-                        value: cx_lmir::LMIRValue::NULL,
-                    },
-                );
-            } else if context.ty(ty).is_memory_resident() {
-                let copy = memory::allocate(context, ty);
-                memory::store(context, copy.clone(), source, ty);
-                memory::assign(context, *out, LMIRInstructionKind::Alias { value: copy });
-            } else {
-                memory::assign(
-                    context,
-                    *out,
-                    LMIRInstructionKind::Load {
-                        memory: source,
-                        ty: context.ty(ty),
-                    },
-                );
-            }
-        }
+        MIRInstructionKind::Lift { out, source, .. } => lifts::lower(context, *out, source),
         MIRInstructionKind::Store {
             target,
             value,
@@ -62,7 +30,7 @@ pub(super) fn lower_instruction(
             let MIRValue::Register(reference) = value else {
                 unreachable!("a bitfield load must read through a reference register")
             };
-            let unit = context.reg(*reference);
+            let unit = context.value(*reference);
             let value = values::read_bitfield(context, unit, *ty, access);
             values::write_target(context, *target, value);
         }

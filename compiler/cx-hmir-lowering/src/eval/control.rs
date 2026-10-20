@@ -1,27 +1,27 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody,
-    expr::{HMIRExprID, constant::HMIRConstant},
+    expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
-    value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRInstructionKind, MIRRegisterDecl, MIRValue,
+    MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, MIRValue,
 };
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::{self, runtime},
+    emit::{self, Transfer, runtime},
     env::function::{FnContext, LocalLoweringContext, runtime::LoopFrame},
     eval::{
         EvalResult,
         binding::eval_scoped,
         coerce::{self, convert},
-        constant, eval, eval_type,
+        eval, eval_type,
         flow::{self, ComptimeStop, EvalStop, RuntimeStop},
-        promote, types,
+        literal, promote, types,
     },
     log::hmir_error,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 fn eval_condition(
@@ -80,10 +80,10 @@ fn comptime_if(
         (true, Some(_)) => eval_scoped(context, body, then_branch),
         (true, None) => {
             eval_scoped(context, body, then_branch)?;
-            Ok(constant::unit(context, span))
+            Ok(literal::unit(context, span))
         }
         (false, Some(else_branch)) => eval_scoped(context, body, else_branch),
-        (false, None) => Ok(constant::unit(context, span)),
+        (false, None) => Ok(literal::unit(context, span)),
     }
 }
 
@@ -115,10 +115,10 @@ fn runtime_if(
 
         runtime::switch_to(context, then_block);
         flow::catch_diverged(eval_scoped(context, body, then_branch))?;
-        runtime::jump(context, merge, Vec::new(), span.clone());
+        runtime::jump(context, merge, span.clone());
 
         runtime::switch_to(context, merge);
-        return Ok(constant::unit(context, span));
+        return Ok(literal::unit(context, span));
     };
 
     let else_block = runtime::block(context, "if.else");
@@ -147,48 +147,39 @@ fn runtime_if(
     let Some(ty) = merged_type(context, &arms, span) else {
         for arm in arms {
             runtime::switch_to(context, arm.block);
-            runtime::jump(context, merge, Vec::new(), span.clone());
+            runtime::jump(context, merge, span.clone());
         }
 
         runtime::switch_to(context, merge);
-        return Ok(constant::unit(context, span));
+        return Ok(literal::unit(context, span));
     };
 
-    let result = runtime::block_param(context, merge, ty, span)?;
+    let result = emit::allocate(context, ty, None, span)?;
     for arm in arms {
         runtime::switch_to(context, arm.block);
         let value = convert(context, arm.value, ty, span)?;
-        let mut value = runtime::materialize(context, &value, span)?;
-        if context.env().reference_inner(&ty).is_none()
-            && let MIRValue::PlaceRef(place) = value
-        {
-            let ty = types::lower_type(context.env_mut(), ty, span)?;
-            let out = context
-                .runtime_mut()
-                .builder_mut()
-                .allocate_register(MIRRegisterDecl::new(ty, None));
-            context.runtime_mut().emit(
-                MIRInstructionKind::Lift {
-                    out,
-                    source: MIRBindable::Place(place),
-                    origin: MIRBindable::Place(place),
-                },
-                span.clone(),
-            );
-            context.runtime_mut().emit(
-                MIRInstructionKind::Invalidate {
-                    place: MIRBindable::Place(place),
-                    kind: cx_mir::expr::instruction::MIRInvalidationKind::Move,
-                },
-                span.clone(),
-            );
-            value = MIRValue::Register(out);
-        }
-        runtime::jump(context, merge, vec![value], span.clone());
+        store_result(context, &result, value, span)?;
+        runtime::jump(context, merge, span.clone());
     }
 
     runtime::switch_to(context, merge);
     Ok(result)
+}
+
+// Each incoming edge of a merge initializes the shared result place in its own block, consuming an owned source
+// before control leaves; a value behind a pointer is read into storage of its own first
+fn store_result(
+    context: &mut LocalLoweringContext,
+    result: &HMIRValue,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<()> {
+    let value = match value.kind() {
+        HMIRValueKind::Indirect(_) => emit::read(context, value, span)?,
+        _ => value,
+    };
+
+    emit::transfer(context, result, value, Transfer::Init, span)
 }
 
 fn merged_type(
@@ -283,7 +274,7 @@ fn comptime_while(
         }
     }
 
-    Ok(constant::unit(context, span))
+    Ok(literal::unit(context, span))
 }
 
 fn runtime_while(
@@ -305,7 +296,7 @@ fn runtime_while(
     } else {
         body_block
     };
-    runtime::jump(context, entry, Vec::new(), span.clone());
+    runtime::jump(context, entry, span.clone());
 
     runtime::switch_to(context, condition_block);
     let condition = flow::catch_diverged(eval_condition(context, body, span, condition))?;
@@ -343,16 +334,16 @@ fn runtime_while(
     let completion = flow::catch_diverged(eval_scoped(context, body, loop_body));
     context.runtime_mut().pop_loop();
     completion?;
-    runtime::jump(context, continue_block, Vec::new(), span.clone());
+    runtime::jump(context, continue_block, span.clone());
 
     if let (Some(block), Some(increment)) = (increment_block, increment) {
         runtime::switch_to(context, block);
         flow::catch_diverged(eval(context, body, increment))?;
-        runtime::jump(context, condition_block, Vec::new(), span.clone());
+        runtime::jump(context, condition_block, span.clone());
     }
 
     runtime::switch_to(context, exit);
-    Ok(constant::unit(context, span))
+    Ok(literal::unit(context, span))
 }
 
 pub(crate) fn eval_short_circuit(
@@ -388,26 +379,33 @@ fn runtime_short_circuit(
     left: HMIRValue,
     rhs: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let left = runtime::materialize(context, &left, span)?;
+    let condition = runtime::materialize(context, &left, span)?;
 
-    let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let rhs_block = runtime::block(context, "logical.rhs");
+    let short_block = runtime::block(context, "logical.short");
     let merge = runtime::block(context, "logical.merge");
-    let result = runtime::block_param(context, merge, ty, span)?;
 
     let rhs_target = MIRBlockTarget::new(rhs_block);
-    let merge_target = MIRBlockTarget::with_args(merge, vec![left.clone()]);
+    let short_target = MIRBlockTarget::new(short_block);
     let (true_target, false_target) = match op {
-        HMIRBinaryOp::LAnd => (rhs_target, merge_target),
-        _ => (merge_target, rhs_target),
+        HMIRBinaryOp::LAnd => (rhs_target, short_target),
+        _ => (short_target, rhs_target),
     };
-    runtime::branch(context, left, true_target, false_target, span.clone());
+    runtime::branch(context, condition, true_target, false_target, span.clone());
 
     runtime::switch_to(context, rhs_block);
-    if let Some(right) = flow::catch_diverged(eval_condition(context, body, span, rhs))? {
-        let right = runtime::materialize(context, &right, span)?;
-        runtime::jump(context, merge, vec![right], span.clone());
+    let right = flow::catch_diverged(eval_condition(context, body, span, rhs))?;
+
+    let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
+    let result = emit::allocate(context, ty, None, span)?;
+    if let Some(right) = right {
+        store_result(context, &result, right, span)?;
+        runtime::jump(context, merge, span.clone());
     }
+
+    runtime::switch_to(context, short_block);
+    store_result(context, &result, left, span)?;
+    runtime::jump(context, merge, span.clone());
 
     runtime::switch_to(context, merge);
     Ok(result)
@@ -433,7 +431,7 @@ pub(crate) fn eval_loop_exit(
     };
 
     runtime::drop_scopes(context, frame.scope_depth, None, span);
-    runtime::jump(context, target, Vec::new(), span.clone());
+    runtime::jump(context, target, span.clone());
     Err(RuntimeStop::Diverged.into())
 }
 
@@ -488,7 +486,7 @@ pub(crate) fn return_value(
 
     match context.context() {
         FnContext::Runtime(_) => {
-            let owns_result = context.env().reference_inner(&ty).is_none();
+            let owns_result = context.env().reference_inner(ty).is_none();
             let value = match &value {
                 Some(value) => Some(runtime::materialize(context, value, span)?),
                 None => None,
@@ -505,7 +503,7 @@ pub(crate) fn return_value(
             Err(RuntimeStop::Diverged.into())
         }
         FnContext::Comptime(_) => {
-            let value = value.unwrap_or_else(|| constant::unit(context, span));
+            let value = value.unwrap_or_else(|| literal::unit(context, span));
             Err(ComptimeStop::Return(value).into())
         }
     }

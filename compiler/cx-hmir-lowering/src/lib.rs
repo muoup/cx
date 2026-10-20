@@ -4,6 +4,7 @@ mod lower;
 mod log;
 
 pub mod env;
+pub mod value;
 
 use cx_hmir::HMIRUnit;
 use cx_log::CXResult;

@@ -1,11 +1,9 @@
-use cx_hmir::{
-    HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, expr::HMIRExprID, value::HMIRValue,
-};
+use cx_hmir::{HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, expr::HMIRExprID};
 
 pub mod comptime;
 pub mod runtime;
 
-use crate::env::HMIREnvironment;
+use crate::{env::HMIREnvironment, value::HMIRValue};
 
 pub use self::{comptime::ComptimeContext, runtime::RuntimeContext};
 
@@ -116,6 +114,13 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         match &mut self.context {
             FnContext::Runtime(context) => context.set_local(id, value),
             FnContext::Comptime(context) => context.set_local(id, value),
+        };
+    }
+
+    pub fn remove_local(&mut self, id: HMIRLocalID) {
+        match &mut self.context {
+            FnContext::Runtime(context) => context.remove_local(id),
+            FnContext::Comptime(context) => context.remove_local(id),
         };
     }
 

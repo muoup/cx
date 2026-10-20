@@ -5,12 +5,12 @@ use cx_util::identifier::CXIdent;
 use crate::{
     HMIRDefRef, HMIROp, HMIRPattern,
     body::{HMIRBodyID, HMIRHoleID, HMIRLocalID},
-    expr::constant::HMIRConstant,
-    ty::HMIRExprType,
+    expr::literal::HMIRLiteral,
+    ty::{HMIRExprType, HMIRTypeID},
 };
 
 pub mod aggregate;
-pub mod constant;
+pub mod literal;
 pub mod op;
 
 pub type HMIRIntrinsic = Intrinsic<HMIRExprID, HMIRExprID>;
@@ -29,7 +29,9 @@ pub struct HMIRExprID {
 
 #[derive(Debug, Clone)]
 pub enum HMIRExprKind {
-    Constant(HMIRConstant),
+    Literal(HMIRLiteral),
+    // A type of the unit's table; input HMIR never holds the slots or addresses of an evaluation
+    TypeRef(HMIRTypeID),
     Local(HMIRLocalID),
     Def(HMIRDefRef),
     Hole(HMIRHoleID),

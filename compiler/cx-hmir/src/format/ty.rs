@@ -1,7 +1,7 @@
 use std::fmt::{self, Formatter};
 
 use crate::{
-    expr::constant::HMIRConstant,
+    expr::literal::HMIRLiteral,
     ty::{HMIRGenericType, HMIRGenericTypeKind, HMIRTypeID, aggregate::HMIRFieldDef},
     unit::{HMIRUnit, def::HMIRDefRef},
 };
@@ -29,28 +29,22 @@ pub(super) fn write_def_ref(
     }
 }
 
-pub(super) fn write_constant(
+pub(super) fn write_literal(
     f: &mut Formatter<'_>,
     unit: &HMIRUnit,
-    constant: &HMIRConstant,
+    literal: &HMIRLiteral,
 ) -> fmt::Result {
-    match constant {
-        HMIRConstant::Unit => f.write_str("()"),
-        HMIRConstant::Int { value, ty } => {
+    match literal {
+        HMIRLiteral::Unit => f.write_str("()"),
+        HMIRLiteral::Int { value, ty } => {
             write!(f, "{value}:")?;
             write_type(f, unit, *ty)
         }
-        HMIRConstant::Float { value, ty } => {
+        HMIRLiteral::Float { value, ty } => {
             write!(f, "{value}:")?;
             write_type(f, unit, *ty)
         }
-        HMIRConstant::Str(value) => write!(f, "{value:?}"),
-        HMIRConstant::Null(ty) => {
-            f.write_str("null:")?;
-            write_type(f, unit, *ty)
-        }
-        HMIRConstant::Type(ty) => write_type(f, unit, *ty),
-        other => write!(f, "{other:?}"),
+        HMIRLiteral::Str(value) => write!(f, "{value:?}"),
     }
 }
 

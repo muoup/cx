@@ -39,15 +39,7 @@ pub(crate) fn lower_signature(
     let params = signature
         .params()
         .iter()
-        .map(|param| {
-            let nodrop = env
-                .resolve_type_id(*param.ty())
-                .semantics()
-                .move_semantics
-                .is_nodrop();
-            let ty = lower_type(env, *param.ty(), span)?;
-            Ok(MIRFnParam::new(None, ty, nodrop))
-        })
+        .map(|param| Ok(MIRFnParam::new(None, lower_type(env, *param.ty(), span)?)))
         .collect::<CXResult<_>>()?;
     let return_type = lower_type(env, *signature.return_type(), span)?;
 
@@ -185,7 +177,7 @@ pub(crate) fn int(
 }
 
 pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
-    let semantics = env.resolve_type_id(ty).semantics();
+    let constant = env.semantics(ty).constant;
     let ty = env.resolve_type_id(env.underlying(ty));
     let base = match ty.kind() {
         HMIRTypeKind::Nominal(_) => unreachable!("underlying type is not nominal"),
@@ -214,7 +206,7 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         HMIRTypeKind::StagedExpr { .. } => "expr".into(),
         HMIRTypeKind::Opaque { .. } => "opaque".into(),
     };
-    if semantics.constant || ty.semantics().constant {
+    if constant {
         format!("const {base}")
     } else {
         base

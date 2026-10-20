@@ -1,8 +1,12 @@
+pub mod constant;
+
+use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
 use cx_util::dense_id;
 
-use crate::{HMIRDefID, expr::constant::HMIRConstant, ty::HMIRTypeID};
+use crate::value::constant::HMIRConstant;
 
-// One instantiation of a local or temporary, allocated by whichever context evaluates the body
+// One instantiation of a local or temporary, allocated by whichever context evaluates the body; slots, and the
+// addresses and values built on them, belong to that evaluation and are never written back into input HMIR
 dense_id!(HMIRSlotID, "$");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
