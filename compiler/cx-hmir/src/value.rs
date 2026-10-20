@@ -20,7 +20,7 @@ pub struct HMIRValue {
 #[derive(Debug, Clone)]
 pub enum HMIRValueKind {
     Constant(HMIRConstant),
-    Place(HMIRPlace),
+    PlaceRef(HMIRPlace),
     // The storage that a pointer or reference value addresses
     Indirect(Box<HMIRValue>),
 }
@@ -35,7 +35,7 @@ impl HMIRValue {
     }
 
     pub fn place(ty: HMIRTypeID, place: HMIRPlace) -> Self {
-        Self::new(ty, HMIRValueKind::Place(place))
+        Self::new(ty, HMIRValueKind::PlaceRef(place))
     }
 
     pub fn indirect(ty: HMIRTypeID, pointer: HMIRValue) -> Self {

@@ -77,12 +77,6 @@ impl RuntimeContext {
         }
     }
 
-    pub fn bind(&mut self, ty: HMIRTypeID, binding: MIRBindable) -> HMIRValue {
-        let slot = HMIRSlotID::new(self.slots.len());
-        self.slots.push(binding);
-        HMIRValue::place(ty, HMIRPlace::Local(slot))
-    }
-
     pub fn slots(&self) -> impl Iterator<Item = &MIRBindable> {
         self.slots.iter()
     }

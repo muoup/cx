@@ -47,4 +47,18 @@ pub trait HMIRTypeContext {
     fn is_array(&self, ty: HMIRTypeID) -> bool {
         matches!(self.resolve_kind(ty), HMIRTypeKind::Array { .. })
     }
+
+    fn is_nodrop(&self, ty: HMIRTypeID) -> bool {
+        self.resolve_type_id(self.underlying(ty))
+            .semantics()
+            .move_semantics
+            .is_nodrop()
+    }
+
+    fn is_nocopy(&self, ty: HMIRTypeID) -> bool {
+        self.resolve_type_id(self.underlying(ty))
+            .semantics()
+            .move_semantics
+            .is_nocopy()
+    }
 }

@@ -3,13 +3,10 @@ mod op;
 pub use op::{binary, cast, difference, offset, unary};
 
 use cx_hmir::{
-    HMIRDefKind,
-    expr::constant::HMIRConstant,
-    ty::{
+    HMIRDefKind, body::HMIRLocalID, expr::constant::HMIRConstant, ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
         intrinsic::HMIRIntWidth,
-    },
-    value::{HMIRPlace, HMIRValue, HMIRValueKind},
+    }, value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 use cx_log::CXResult;
 use cx_mir::{
@@ -146,7 +143,7 @@ fn output(
             | HMIRTypeKind::Array { .. }
             | HMIRTypeKind::Opaque { .. }
     ) {
-        let value = allocate(context, ty, None, false, span)?;
+        let value = allocate_slot(context, ty, None, false, span)?;
         initialize(context, &value, span);
         return Ok((
             target(context, &value).expect("allocated output has storage"),
@@ -247,13 +244,13 @@ fn location(
         HMIRValueKind::Constant(value) => {
             MIRValue::Constant(constant(context.env_mut(), value, span)?)
         }
-        HMIRValueKind::Place(HMIRPlace::Local(slot)) => {
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
             match context.context_mut().runtime().slot(*slot) {
                 MIRBindable::Register(register) => MIRValue::Register(*register),
                 MIRBindable::Place(place) => MIRValue::PlaceRef(*place),
             }
         }
-        HMIRValueKind::Place(HMIRPlace::Global(_)) => {
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => {
             todo!("global places: globals are not lowered yet")
         }
         HMIRValueKind::Indirect(pointer) => MIRValue::Register(reference(context, pointer)),
@@ -263,13 +260,13 @@ fn location(
 fn target(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<MIRTarget> {
     match value.kind() {
         HMIRValueKind::Constant(_) => None,
-        HMIRValueKind::Place(HMIRPlace::Local(slot)) => {
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
             match context.context_mut().runtime().slot(*slot) {
                 MIRBindable::Register(_) => None,
                 MIRBindable::Place(place) => Some(MIRTarget::Place(*place)),
             }
         }
-        HMIRValueKind::Place(HMIRPlace::Global(_)) => {
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => {
             todo!("global places: globals are not lowered yet")
         }
         HMIRValueKind::Indirect(pointer) => Some(MIRTarget::Indirect(reference(context, pointer))),
@@ -278,7 +275,7 @@ fn target(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<MIRTa
 
 fn reference(context: &mut LocalLoweringContext, pointer: &HMIRValue) -> MIRRegister {
     match pointer.kind() {
-        HMIRValueKind::Place(HMIRPlace::Local(slot)) => {
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
             match context.context_mut().runtime().slot(*slot) {
                 MIRBindable::Register(register) => *register,
                 MIRBindable::Place(_) => {
@@ -429,20 +426,13 @@ fn drop_scope(
     }
 }
 
-fn place(
+fn allocate_place(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     name: Option<CXIdent>,
-    nodrop: bool,
-    span: &TokenRange,
+    span: &TokenRange
 ) -> CXResult<MIRPlaceID> {
-    let nodrop = nodrop
-        || context
-            .env()
-            .resolve_type_id(ty)
-            .semantics()
-            .move_semantics
-            .is_nodrop();
+    let nodrop = context.env().is_nodrop(ty);
     let ty = types::lower_type(context.env_mut(), ty, span)?;
     let runtime = context.runtime_mut();
     let scope = *runtime
@@ -455,26 +445,37 @@ fn place(
         .allocate_place(MIRPlaceDecl::new(ty, name, scope, nodrop, false)))
 }
 
-pub fn allocate(
+pub fn bind_local(
+    context: &mut LocalLoweringContext,
+    local: HMIRLocalID,
+    value: HMIRValue,
+) -> CXResult<()> {
+    context.runtime_mut().set_local(local, value);
+ 
+    Ok(())
+}
+
+pub fn allocate_slot(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     name: Option<CXIdent>,
-    nodrop: bool,
-    span: &TokenRange,
+    span: &TokenRange
 ) -> CXResult<HMIRValue> {
-    let place = place(context, ty, name, nodrop, span)?;
+    let place = allocate_place(context, ty, name, span)?;
+    let slot = context
+        .runtime_mut()
+        .allocate_slot(MIRBindable::Place(place));
 
-    Ok(context.runtime_mut().bind(ty, MIRBindable::Place(place)))
+    Ok(HMIRValue::place(ty, HMIRPlace::Local(slot)))
 }
 
 pub fn parameter(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     name: Option<CXIdent>,
-    nodrop: bool,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let place = place(context, ty, name, nodrop, span)?;
+    let place = allocate_place(context, ty, name, span)?;
     let runtime = context.runtime_mut();
 
     runtime.builder_mut().add_parameter(place);
@@ -504,8 +505,8 @@ pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue, span: &
 }
 
 pub fn consume(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) {
-    if context.env().reference_inner(&value.ty()).is_none()
-        && let HMIRValueKind::Place(HMIRPlace::Local(slot)) = value.kind()
+    if context.env().reference_inner(value.ty()).is_none()
+        && let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = value.kind()
         && let MIRBindable::Place(place) = *context.runtime().slot(*slot)
     {
         context.runtime_mut().emit(
@@ -524,7 +525,7 @@ pub fn relocate(
     scope: MIRScopeID,
     name: Option<CXIdent>,
 ) {
-    if let HMIRValueKind::Place(HMIRPlace::Local(slot)) = value.kind()
+    if let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = value.kind()
         && let MIRBindable::Place(place) = *context.runtime().slot(*slot)
     {
         let old = context

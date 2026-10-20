@@ -31,13 +31,15 @@ impl ComptimeContext {
         Self::default()
     }
 
-    pub fn allocate(&mut self, ty: HMIRTypeID) -> HMIRValue {
+    pub fn allocate(&mut self, ty: HMIRTypeID) -> HMIRPlace {
         let slot = HMIRSlotID::new(self.slots.len());
+        
         self.slots.push(ComptimeSlot {
             ty,
             state: ComptimeSlotState::Uninitialized,
         });
-        HMIRValue::place(ty, HMIRPlace::Local(slot))
+        
+        HMIRPlace::Local(slot)
     }
 
     pub fn locals(&self) -> impl Iterator<Item = (&HMIRLocalID, &HMIRValue)> {

@@ -5,20 +5,12 @@ use cx_hmir::{
     ty::{HMIRTypeKind, context::HMIRTypeContext},
     value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
-use cx_log::catalogue::typecheck;
-use cx_mir::MIRBindable;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::{self, runtime},
-    env::function::{FnContext, LocalLoweringContext},
-    eval::{
-        EvalResult,
-        aggregate::eval_initializer,
-        coerce::{self, convert},
-        constant, eval, eval_type,
+    emit::{self, runtime}, env::function::{FnContext, LocalLoweringContext}, eval::{
+        EvalResult, aggregate::eval_initializer, coerce::{self, convert}, constant, eval, eval_type, flow::EvalStop,
     },
-    log::hmir_error,
 };
 
 pub(crate) fn eval_local(
@@ -75,51 +67,37 @@ pub(crate) fn eval_let(
         todo!("local of type void");
     }
 
-    let value = match initializer {
+    match initializer {
         Some(initializer) => {
             let value = eval_initializer(context, body, initializer, ty)?;
-            Some(convert(context, value, ty, body.expr(initializer).span())?)
+            let coerced = convert(context, value, ty, span)?;
+
+            // Since we own the rhs, if it is addressable, we can simply alias the initialization
+            // to that value without needing to allocate.
+            if matches!(coerced.kind(), HMIRValueKind::PlaceRef(HMIRPlace::Local(_))) {
+                emit::bind_local(context, local, coerced.clone())?;
+
+                return Ok(coerced);
+            }
+            
+            let allocation = emit::allocate(context, ty, decl.name().cloned(), decl.nodrop(), decl.span())
+                .map_err(EvalStop::from)?;
+
+            emit::write(context, &allocation, coerced, true, span)?;
+            emit::bind_local(context, local, allocation.clone())?;
+ 
+            Ok(allocation)
         }
 
-        None => None,
-    };
+        None => {
+            let allocation = emit::allocate(context, ty, decl.name().cloned(), decl.nodrop(), decl.span())
+                .map_err(EvalStop::from)?;
 
-    if context.get_local(&local).is_none()
-        && matches!(context.context(), FnContext::Runtime(_))
-        && context.env().is_reference(ty)
-        && let Some(value) = &value
-        && let HMIRValueKind::Place(HMIRPlace::Local(slot)) = value.kind()
-        && matches!(context.runtime().slot(*slot), MIRBindable::Place(_))
-    {
-        let scope = *context
-            .runtime()
-            .open_scopes()
-            .last()
-            .expect("let outside a scope");
-        runtime::relocate(context, value, scope, decl.name().cloned());
-        context.insert_local(local, value.clone());
-        return Ok(constant::unit(context, span));
+            emit::bind_local(context, local, allocation.clone())?;
+
+            Ok(allocation)
+        }
     }
-
-    let place = match context.get_local(&local).cloned() {
-        Some(place) => place,
-        None => emit::allocate(context, ty, decl.name().cloned(), decl.nodrop(), span)?,
-    };
-    if let Some(value) = value {
-        emit::write(context, &place, value, true, span)?;
-    } else if matches!(context.context(), FnContext::Runtime(_))
-        && !context
-            .env()
-            .resolve_type_id(ty)
-            .semantics()
-            .move_semantics
-            .is_nocopy()
-    {
-        runtime::initialize(context, &place, span);
-    }
-
-    context.insert_local(local, place);
-    Ok(constant::unit(context, span))
 }
 
 pub(crate) fn eval_block(
@@ -141,7 +119,7 @@ pub(crate) fn eval_block(
     emit::open_scope(context, span.clone());
     let result = eval_statements(context, body, span, statements, yields);
     if let (Some(scope), Ok(value)) = (parent, &result)
-        && context.env().reference_inner(&value.ty()).is_none()
+        && context.env().reference_inner(value.ty()).is_none()
     {
         runtime::relocate(context, value, scope, None);
     }

@@ -1,34 +1,35 @@
 use cx_hmir::{
+    body::HMIRLocalID,
     expr::constant::HMIRConstant,
     ty::HMIRTypeID,
     value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 use cx_log::CXResult;
 
-use crate::env::function::{
-    ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeSlotState,
-};
+use crate::env::function::{LocalLoweringContext, comptime::ComptimeSlotState};
 
-fn comptime<'a>(context: &'a mut LocalLoweringContext<'_, '_, '_>) -> &'a mut ComptimeContext {
-    match context.context_mut() {
-        FnContext::Comptime(comptime) => comptime,
-        FnContext::Runtime(_) => unreachable!("comptime evaluation in a runtime context"),
-    }
+pub fn bind_local(
+    context: &mut LocalLoweringContext,
+    local: HMIRLocalID,
+    value: HMIRValue,
+) -> CXResult<()> {
+    context.comptime_mut().set_local(local, value);
+    Ok(())
 }
 
-pub fn allocate(context: &mut LocalLoweringContext, ty: HMIRTypeID) -> HMIRValue {
-    comptime(context).allocate(ty)
+pub fn allocate_slot(context: &mut LocalLoweringContext, ty: HMIRTypeID) -> HMIRPlace {
+    context.comptime_mut().allocate(ty)
 }
 
 pub fn read(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
     let slot = match value.kind() {
         HMIRValueKind::Constant(_) => return Ok(value),
-        HMIRValueKind::Place(HMIRPlace::Local(slot)) => *slot,
-        HMIRValueKind::Place(HMIRPlace::Global(_)) => todo!("comptime read of a global"),
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => *slot,
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => todo!("comptime read of a global"),
         HMIRValueKind::Indirect(_) => todo!("comptime read through a subobject address"),
     };
 
-    match comptime(context).slot(slot).state() {
+    match context.comptime_mut().slot(slot).state() {
         ComptimeSlotState::Value(constant) => Ok(HMIRValue::constant(value.ty(), constant.clone())),
         ComptimeSlotState::Uninitialized | ComptimeSlotState::Invalidated => {
             todo!("diagnostic: comptime read of a slot that holds no value")
@@ -47,11 +48,11 @@ pub fn write(
     };
 
     match target.kind() {
-        HMIRValueKind::Place(HMIRPlace::Local(slot)) => {
-            *comptime(context).slot_mut(*slot).state_mut() =
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
+            *context.comptime_mut().slot_mut(*slot).state_mut() =
                 ComptimeSlotState::Value(constant.clone());
         }
-        HMIRValueKind::Place(HMIRPlace::Global(_)) => todo!("comptime write to a global"),
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => todo!("comptime write to a global"),
         HMIRValueKind::Indirect(_) => todo!("comptime write through a subobject address"),
         HMIRValueKind::Constant(_) => unreachable!("write to a value without storage"),
     }

@@ -119,7 +119,7 @@ fn bind_reference(
 
     let value = emit::spill(context, value, span)?;
     Ok(match value.kind() {
-        HMIRValueKind::Place(place) => HMIRValue::constant(
+        HMIRValueKind::PlaceRef(place) => HMIRValue::constant(
             target,
             HMIRConstant::Address {
                 place: *place,

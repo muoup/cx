@@ -7,12 +7,9 @@ mod comptime;
 pub(crate) mod runtime;
 
 use cx_hmir::{
-    HMIRBinaryOp, HMIRUnaryOp,
-    expr::constant::HMIRConstant,
-    ty::{
+    HMIRBinaryOp, HMIRUnaryOp, body::HMIRLocalID, expr::constant::HMIRConstant, ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
-    },
-    value::{HMIRValue, HMIRValueKind},
+    }, value::{HMIRValue, HMIRValueKind},
 };
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
@@ -42,8 +39,19 @@ pub fn allocate(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::allocate(context, ty, name, nodrop, span),
-        FnContext::Comptime(_) => Ok(comptime::allocate(context, ty)),
+        FnContext::Runtime(_) => runtime::allocate_slot(context, ty, name, span),
+        FnContext::Comptime(_) => Ok(comptime::allocate_slot(context, ty)),
+    }
+}
+
+pub fn bind_local(
+    context: &mut LocalLoweringContext,
+    local: HMIRLocalID,
+    value: HMIRValue,
+) -> CXResult<()> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::bind_local(context, local, value),
+        FnContext::Comptime(_) => comptime::bind_local(context, local, value),
     }
 }
 
@@ -127,7 +135,7 @@ pub fn address(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match value.kind() {
-        HMIRValueKind::Place(place) => Ok(HMIRValue::constant(
+        HMIRValueKind::PlaceRef(place) => Ok(HMIRValue::constant(
             ty,
             HMIRConstant::Address {
                 place: *place,
