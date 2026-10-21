@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     env::function::{FnContext, LocalLoweringContext},
-    value::HMIRValue,
+    value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 
 // Fresh, uninitialized storage of type 'ty' in the current scope; binds no local, writes and consumes nothing
@@ -59,6 +59,15 @@ pub fn write(
     match context.context() {
         FnContext::Runtime(_) => runtime::write(context, target, value, span),
         FnContext::Comptime(_) => comptime::write(context, target, value),
+    }
+}
+
+pub fn is_place(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::is_place(context, value),
+        FnContext::Comptime(_) => {
+            matches!(value.kind(), HMIRValueKind::PlaceRef(HMIRPlace::Local(_)))
+        }
     }
 }
 

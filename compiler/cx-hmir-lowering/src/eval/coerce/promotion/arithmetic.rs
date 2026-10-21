@@ -8,7 +8,7 @@ use cx_tokens::TokenRange;
 
 use crate::{env::function::LocalLoweringContext, eval::types};
 
-pub(crate) fn integer(
+pub fn integer(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,
@@ -22,7 +22,7 @@ pub(crate) fn integer(
 }
 
 // What an argument that no parameter gives a type to is passed as
-pub(crate) fn argument(
+pub fn argument(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,
@@ -41,7 +41,7 @@ pub(crate) fn argument(
     }
 }
 
-pub(crate) fn common(
+pub fn common(
     context: &mut LocalLoweringContext,
     lhs: HMIRTypeID,
     rhs: HMIRTypeID,

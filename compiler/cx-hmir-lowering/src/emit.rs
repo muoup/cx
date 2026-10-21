@@ -13,17 +13,13 @@ pub(crate) mod runtime;
 pub use storage::{allocate, initialize, copy, spill};
 pub use transfer::{Transfer, consume, transfer};
 
-use cx_hmir::{
-    HMIRBinaryOp, HMIRUnaryOp,
-    ty::{
-        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
-    },
-};
+use cx_hmir::{HMIRBinaryOp, HMIRUnaryOp, ty::HMIRTypeID};
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
     env::function::{FnContext, LocalLoweringContext},
+    eval::types,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
@@ -41,30 +37,12 @@ pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     }
 }
 
-pub fn referent(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let Some(inner) = context.env().reference_inner(value.ty()) else {
-        return Ok(value);
-    };
-
-    let reference = copy(context, value, span)?;
-    Ok(HMIRValue::indirect(inner, reference))
-}
-
 pub fn reference(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::ReferenceTo(value.ty()),
-        HMIRTypeSemantics::default(),
-        span.clone(),
-        None,
-    ));
+    let ty = types::reference(context.env_mut(), value.ty(), span);
     address(context, value, ty, span)
 }
 
@@ -74,20 +52,9 @@ pub fn address(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    match value.kind() {
-        HMIRValueKind::PlaceRef(place) => Ok(HMIRValue::constant(
-            ty,
-            HMIRConstant::Address {
-                place: *place,
-                path: Vec::new(),
-                ty,
-            },
-        )),
-        HMIRValueKind::Indirect(pointer) => match context.context() {
-            FnContext::Runtime(_) => runtime::address(context, pointer, ty, span),
-            FnContext::Comptime(_) => Ok(comptime::address(pointer, ty)),
-        },
-        HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),
+    match context.context() {
+        FnContext::Runtime(_) => runtime::address(context, value, ty, span),
+        FnContext::Comptime(_) => Ok(comptime::address(value, ty)),
     }
 }
 

@@ -1,18 +1,17 @@
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegisterDecl, MIRScopeID,
-    MIRTarget, expr::instruction::MIRInvalidationKind,
+    MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRScopeID, MIRTarget,
+    expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use super::{lower_value, output, reference, store};
 use crate::{
-    emit::runtime,
     env::function::LocalLoweringContext,
     eval::types::{self, lower_type},
-    value::{HMIRPlace, HMIRValue, HMIRValueKind},
+    value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 fn allocate_place(
@@ -46,21 +45,46 @@ pub fn slot(
 }
 
 fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBindable> {
-    match value.kind() {
-        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
-            Some(context.runtime().slot(*slot).clone())
+    let is_reference = context.env().is_reference(value.ty());
+    let place = match value.kind() {
+        HMIRValueKind::PlaceRef(place) => place,
+        HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. })
+            if is_reference && path.is_empty() =>
+        {
+            place
         }
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => {
-            todo!("global places: globals are not lowered yet")
-        }
-        HMIRValueKind::Constant(_) | HMIRValueKind::Indirect(_) => None,
+        _ => return None,
+    };
+    let HMIRPlace::Local(slot) = place else {
+        todo!("global places: globals are not lowered yet")
+    };
+
+    match context.runtime().slot(*slot) {
+        MIRBindable::Register(_) if is_reference => None,
+        bindable => Some(bindable.clone()),
     }
 }
 
-// Where a value's storage can be written: a place, or storage behind a pointer; registers have no address
-pub(super) fn target(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<MIRTarget> {
+pub fn is_place(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
+    matches!(bindable(context, value), Some(MIRBindable::Place(_)))
+}
+
+// Where the storage of a value can be written: for a reference, the storage it designates, otherwise the value's
+// own place or the storage behind its pointer; a register has no address
+pub fn target(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<MIRTarget> {
+    let is_reference = context.env().is_reference(value.ty());
+
     match value.kind() {
-        HMIRValueKind::Indirect(pointer) => Some(MIRTarget::Indirect(reference(context, pointer))),
+        HMIRValueKind::Indirect(pointer) if !is_reference => {
+            Some(MIRTarget::Indirect(reference(context, pointer)))
+        }
+        HMIRValueKind::Indirect(_) => todo!("write to a stored reference"),
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) if is_reference => {
+            match context.runtime().slot(*slot) {
+                MIRBindable::Register(register) => Some(MIRTarget::Indirect(*register)),
+                MIRBindable::Place(place) => Some(MIRTarget::Place(*place)),
+            }
+        }
         _ => match bindable(context, value)? {
             MIRBindable::Place(place) => Some(MIRTarget::Place(place)),
             MIRBindable::Register(_) => None,
@@ -163,7 +187,7 @@ pub fn copy(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let runtime_value = runtime::lower_value(context, &value, span)?;
+    let runtime_value = lower_value(context, &value, span)?;
 
     // Keep this as not a reference_inner because we need the bitfield data later
     let HMIRTypeKind::ReferenceTo(result_type) = context.env().resolve_type_id(value.ty()).kind()
@@ -173,14 +197,10 @@ pub fn copy(
     let result_type = *result_type;
 
     let ty = types::lower_type(context.env_mut(), result_type, span)?;
-    let runtime = context.runtime_mut();
-
-    let register = runtime
-        .builder_mut()
-        .allocate_register(MIRRegisterDecl::new(ty, None));
-    runtime.emit(
+    let (out, result) = output(context, result_type, span)?;
+    context.runtime_mut().emit(
         MIRInstructionKind::Store {
-            target: MIRTarget::Register(register),
+            target: out,
             value: runtime_value,
             ty,
 
@@ -189,11 +209,9 @@ pub fn copy(
         },
         span.clone(),
     );
+    initialize(context, &result, span);
 
-    Ok(HMIRValue::place(
-        result_type,
-        HMIRPlace::Local(runtime.allocate_slot(MIRBindable::Register(register))),
-    ))
+    Ok(result)
 }
 
 pub fn write(
@@ -205,7 +223,11 @@ pub fn write(
     let Some(destination) = self::target(context, target) else {
         unreachable!("write to a value without an address");
     };
-    let ty = types::lower_type(context.env_mut(), target.ty(), span)?;
+    let stored = context
+        .env()
+        .reference_inner(target.ty())
+        .unwrap_or(target.ty());
+    let ty = types::lower_type(context.env_mut(), stored, span)?;
     let source = lower_value(context, value, span)?;
     store(context, destination, source, ty, span.clone());
 

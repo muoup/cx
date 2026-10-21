@@ -5,9 +5,8 @@ use cx_hmir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
     env::function::{ComptimeContext, FnContext, LocalLoweringContext},
-    eval::{EvalResult, coerce::cast, eval, eval_type, types},
+    eval::{EvalResult, coerce, eval, eval_type, types},
     lower::is_staged,
     value::{HMIRValue, constant::HMIRConstant},
 };
@@ -28,9 +27,8 @@ pub(crate) fn eval_def(
             let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
             let ty = eval_type(&mut child, global.body(), global.ty())?;
             let value = eval(&mut child, global.body(), global.initializer())?;
-            let value = cast(&mut child, value, ty, span)?;
 
-            Ok(emit::copy(&mut child, value, span)?)
+            Ok(coerce::implicit(&mut child, value, ty, span)?)
         }
         HMIRDefKind::Global(_) => todo!("global places: globals are not lowered yet"),
         HMIRDefKind::Type(_) => todo!("type definition used as a value"),

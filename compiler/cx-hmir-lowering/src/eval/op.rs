@@ -11,34 +11,16 @@ use cx_hmir::{
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
-use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
     env::function::LocalLoweringContext,
-    eval::{
-        EvalResult,
-        coerce::{cast, decay},
-        eval, promote,
-    },
+    eval::{EvalResult, coerce, eval},
     value::HMIRValue,
 };
 
 fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
     context.env().resolve_kind(ty).clone()
-}
-
-pub(crate) fn promote_operand(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let value = emit::referent(context, value, span)?;
-    let value = decay(context, value, span)?;
-
-    let promoted = promote::integer(context, value.ty(), span);
-    cast(context, value, promoted, span)
 }
 
 pub(crate) fn eval_operand(
@@ -49,5 +31,5 @@ pub(crate) fn eval_operand(
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, expr)?;
 
-    Ok(promote_operand(context, value, span)?)
+    Ok(coerce::arithmetic(context, value, span)?)
 }

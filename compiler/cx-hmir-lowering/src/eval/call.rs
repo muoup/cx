@@ -8,9 +8,11 @@ use cx_mir::MIRInstructionKind;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit, env::function::LocalLoweringContext, eval::{
-        EvalResult, coerce::{self, cast, decay}, eval, flow::RuntimeStop, promote, types,
-    }, log::hmir_error, value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    emit,
+    env::function::LocalLoweringContext,
+    eval::{EvalResult, coerce, eval, flow::RuntimeStop, types},
+    log::hmir_error,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) fn eval_call(
@@ -21,9 +23,7 @@ pub(crate) fn eval_call(
     args: &[HMIRExprID],
 ) -> EvalResult<HMIRValue> {
     let callee = eval(context, body, callee)?;
-    let callee = emit::referent(context, callee, span)?;
-    let callee = decay(context, callee, span)?;
-    let callee = emit::copy(context, callee, span)?;
+    let callee = coerce::std_rvalue(context, callee, span)?;
 
     let env = context.env();
     let function = env
@@ -57,14 +57,8 @@ pub(crate) fn eval_call(
         let span = body.expr(*arg).span();
         let value = eval(context, body, *arg)?;
         let value = match params.get(index) {
-            Some(param) => cast(context, value, *param.ty(), span)?,
-            None => {
-                let value = coerce::value(context, value, span)?;
-                let value = decay(context, value, span)?;
-                let promoted = promote::argument(context, value.ty(), span);
-
-                cast(context, value, promoted, span)?
-            }
+            Some(param) => coerce::implicit(context, value, *param.ty(), span)?,
+            None => coerce::default_argument(context, value, span)?,
         };
 
         values.push(value);

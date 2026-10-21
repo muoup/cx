@@ -3,7 +3,7 @@ use cx_hmir::{
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
-use cx_log::{CXResult, catalogue::typecheck};
+use cx_log::catalogue::typecheck;
 use cx_mir::{
     MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, MIRValue,
 };
@@ -15,35 +15,17 @@ use crate::{
     eval::{
         EvalResult,
         binding::eval_scoped,
-        coerce::{self, cast},
-        eval, eval_type,
+        coerce, eval, eval_type,
         flow::{self, ComptimeStop, EvalStop, RuntimeStop},
-        literal, promote, types,
+        literal, types,
     },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
-fn eval_condition(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBody,
-    span: &TokenRange,
-    condition: HMIRExprID,
-) -> EvalResult<HMIRValue> {
-    let value = eval(context, body, condition)?;
-
-    Ok(coerce::truthy(context, value, span)?)
-}
-
-fn comptime_truth(
-    context: &mut LocalLoweringContext,
-    condition: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<bool> {
-    let condition = emit::copy(context, condition, span)?;
-
+fn comptime_truth(condition: &HMIRValue) -> bool {
     match condition.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) => Ok(*value != 0),
+        HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) => *value != 0,
         _ => unreachable!("a comptime condition reads as an integer constant"),
     }
 }
@@ -56,7 +38,7 @@ pub(crate) fn eval_if(
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    let condition = eval_condition(context, body, span, condition)?;
+    let condition = eval(context, body, condition)?;
 
     match context.context() {
         FnContext::Runtime(_) => {
@@ -76,7 +58,7 @@ fn comptime_if(
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    match (comptime_truth(context, condition, span)?, else_branch) {
+    match (comptime_truth(&condition), else_branch) {
         (true, Some(_)) => eval_scoped(context, body, then_branch),
         (true, None) => {
             eval_scoped(context, body, then_branch)?;
@@ -100,7 +82,7 @@ fn runtime_if(
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    let condition = runtime::materialize(context, &condition, span)?;
+    let condition = runtime::lower_value(context, &condition, span)?;
     let then_block = runtime::block(context, "if.then");
 
     let Some(else_branch) = else_branch else {
@@ -157,29 +139,13 @@ fn runtime_if(
     let result = emit::allocate(context, ty, None, span)?;
     for arm in arms {
         runtime::switch_to(context, arm.block);
-        let value = cast(context, arm.value, ty, span)?;
-        store_result(context, &result, value, span)?;
+        let value = coerce::implicit(context, arm.value, ty, span)?;
+        emit::transfer(context, &result, value, Transfer::Init, span)?;
         runtime::jump(context, merge, span.clone());
     }
 
     runtime::switch_to(context, merge);
     Ok(result)
-}
-
-// Each incoming edge of a merge initializes the shared result place in its own block, consuming an owned source
-// before control leaves; a value behind a pointer is read into storage of its own first
-fn store_result(
-    context: &mut LocalLoweringContext,
-    result: &HMIRValue,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<()> {
-    let value = match value.kind() {
-        HMIRValueKind::Indirect(_) => emit::copy(context, value, span)?,
-        _ => value,
-    };
-
-    emit::transfer(context, result, value, Transfer::Init, span)
 }
 
 fn merged_type(
@@ -198,7 +164,7 @@ fn merged_type(
         merged = Some(match merged {
             None => ty,
             Some(current) if context.env().same_type(current, ty) => current,
-            Some(current) => promote::common(context, current, ty, span).unwrap_or(current),
+            Some(current) => coerce::common(context, current, ty, span).unwrap_or(current),
         });
     }
 
@@ -257,8 +223,8 @@ fn comptime_while(
 
     loop {
         if checks {
-            let condition = eval_condition(context, body, span, condition)?;
-            if !comptime_truth(context, condition, span)? {
+            let condition = eval(context, body, condition)?;
+            if !comptime_truth(&condition) {
                 break;
             }
         }
@@ -299,7 +265,7 @@ fn runtime_while(
     runtime::jump(context, entry, span.clone());
 
     runtime::switch_to(context, condition_block);
-    let condition = flow::catch_diverged(eval_condition(context, body, span, condition))?;
+    let condition = flow::catch_diverged(eval(context, body, condition))?;
     let Some(condition) = condition else {
         for block in [Some(body_block), increment_block, Some(exit)] {
             let Some(block) = block else { continue };
@@ -313,7 +279,7 @@ fn runtime_while(
         return Err(RuntimeStop::Diverged.into());
     };
 
-    let condition = runtime::materialize(context, &condition, span)?;
+    let condition = runtime::lower_value(context, &condition, span)?;
     runtime::branch(
         context,
         condition,
@@ -346,6 +312,17 @@ fn runtime_while(
     Ok(literal::unit(context, span))
 }
 
+fn eval_logical_operand(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    operand: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    let value = eval(context, body, operand)?;
+
+    Ok(coerce::condition(context, value, span)?)
+}
+
 pub(crate) fn eval_short_circuit(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
@@ -354,19 +331,17 @@ pub(crate) fn eval_short_circuit(
     lhs: HMIRExprID,
     rhs: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let left = eval_condition(context, body, span, lhs)?;
-    let left = emit::copy(context, left, span)?;
+    let left = eval_logical_operand(context, body, span, lhs)?;
 
     match context.context() {
         FnContext::Runtime(_) => runtime_short_circuit(context, body, span, op, left, rhs),
         FnContext::Comptime(_) => {
-            let truth = comptime_truth(context, left.clone(), span)?;
+            let truth = comptime_truth(&left);
             if truth == (op == HMIRBinaryOp::LOr) {
                 return Ok(left);
             }
 
-            let right = eval_condition(context, body, span, rhs)?;
-            Ok(emit::copy(context, right, span)?)
+            eval_logical_operand(context, body, span, rhs)
         }
     }
 }
@@ -379,7 +354,7 @@ fn runtime_short_circuit(
     left: HMIRValue,
     rhs: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let condition = runtime::materialize(context, &left, span)?;
+    let condition = runtime::lower_value(context, &left, span)?;
 
     let rhs_block = runtime::block(context, "logical.rhs");
     let short_block = runtime::block(context, "logical.short");
@@ -394,17 +369,17 @@ fn runtime_short_circuit(
     runtime::branch(context, condition, true_target, false_target, span.clone());
 
     runtime::switch_to(context, rhs_block);
-    let right = flow::catch_diverged(eval_condition(context, body, span, rhs))?;
+    let right = flow::catch_diverged(eval_logical_operand(context, body, span, rhs))?;
 
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = emit::allocate(context, ty, None, span)?;
     if let Some(right) = right {
-        store_result(context, &result, right, span)?;
+        emit::transfer(context, &result, right, Transfer::Init, span)?;
         runtime::jump(context, merge, span.clone());
     }
 
     runtime::switch_to(context, short_block);
-    store_result(context, &result, left, span)?;
+    emit::transfer(context, &result, left, Transfer::Init, span)?;
     runtime::jump(context, merge, span.clone());
 
     runtime::switch_to(context, merge);
@@ -477,7 +452,7 @@ pub(crate) fn return_value(
             None
         }
         Some(value) => {
-            let value = cast(context, value, ty, span)?;
+            let value = coerce::implicit(context, value, ty, span)?;
             Some(value)
         }
         None if returns_void => None,
@@ -488,7 +463,7 @@ pub(crate) fn return_value(
         FnContext::Runtime(_) => {
             let owns_result = context.env().reference_inner(ty).is_none();
             let value = match &value {
-                Some(value) => Some(runtime::materialize(context, value, span)?),
+                Some(value) => Some(runtime::lower_value(context, value, span)?),
                 None => None,
             };
 

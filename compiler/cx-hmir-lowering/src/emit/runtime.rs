@@ -3,7 +3,7 @@ mod storage;
 
 pub use op::{binary, cast, difference, offset, unary};
 pub use storage::{
-    allocate, initialize, invalidate, parameter, copy, relocate, write,
+    allocate, copy, initialize, invalidate, is_place, parameter, relocate, write,
 };
 
 use cx_hmir::{
@@ -194,28 +194,6 @@ fn constant(
     })
 }
 
-// Reads a value that is behind a pointer into storage of its own, leaving any other value as it is
-fn detach(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    match value.kind() {
-        HMIRValueKind::Indirect(_) => copy(context, value, span),
-        _ => Ok(value),
-    }
-}
-
-pub fn materialize(
-    context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    span: &TokenRange,
-) -> CXResult<MIRValue> {
-    let value = detach(context, value.clone(), span)?;
-
-    lower_value(context, &value, span)
-}
-
 // Moves a value that a register produced into a place of the current scope when it is an aggregate, which is kept
 // in memory, or has move semantics, whose obligations only the cleanup of a scope discharges
 pub fn settle(
@@ -231,7 +209,7 @@ pub fn settle(
 }
 
 // Names the storage of a value rather than what it holds, where it is behind a reference
-fn lower_value(
+pub fn lower_value(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
@@ -335,12 +313,8 @@ pub fn call(
         {
             MIRValue::Constant(constant(context.env_mut(), function, span)?)
         }
-        _ => materialize(context, callee, span)?,
+        _ => lower_value(context, callee, span)?,
     };
-    let args = args
-        .iter()
-        .map(|arg| detach(context, arg.clone(), span))
-        .collect::<CXResult<Vec<_>>>()?;
     let lowered_args = args
         .iter()
         .map(|arg| lower_value(context, arg, span))
@@ -366,7 +340,7 @@ pub fn call(
         },
         span.clone(),
     );
-    for arg in &args {
+    for arg in args {
         emit::consume(context, arg, span);
     }
 
@@ -429,11 +403,43 @@ fn drop_scope(
 
 pub fn address(
     context: &mut LocalLoweringContext,
-    reference: &HMIRValue,
+    value: &HMIRValue,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let reference = materialize(context, reference, span)?;
+    let reference = match value.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => {
+            return Ok(HMIRValue::constant(
+                ty,
+                HMIRConstant::Address {
+                    place: *place,
+                    path: path.clone(),
+                    ty,
+                },
+            ));
+        }
+        HMIRValueKind::PlaceRef(place) => match place {
+            HMIRPlace::Local(slot) => match context.runtime().slot(*slot) {
+                MIRBindable::Place(_) => {
+                    return Ok(HMIRValue::constant(
+                        ty,
+                        HMIRConstant::Address {
+                            place: *place,
+                            path: Vec::new(),
+                            ty,
+                        },
+                    ));
+                }
+                MIRBindable::Register(_) if context.env().is_reference(value.ty()) => value,
+                MIRBindable::Register(_) => unreachable!("a register has no address"),
+            },
+            HMIRPlace::Global(_) => todo!("global places: globals are not lowered yet"),
+        },
+        HMIRValueKind::Indirect(pointer) => pointer,
+        HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),
+    };
+
+    let reference = lower_value(context, reference, span)?;
     let (out, result) = output(context, ty, span)?;
     intrinsic(
         context,
@@ -451,8 +457,7 @@ pub fn dereference(
     inner: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointer = copy(context, pointer, span)?;
-    let value = materialize(context, &pointer, span)?;
+    let value = lower_value(context, &pointer, span)?;
 
     let null = MIRConstant::Nullptr {
         ty: types::lower_type(context.env_mut(), pointer.ty(), span)?,
@@ -506,7 +511,8 @@ pub fn field(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let struct_ty = types::lower_type(context.env_mut(), base.ty(), span)?;
+    let stored = context.env().reference_inner(base.ty()).unwrap_or(base.ty());
+    let struct_ty = types::lower_type(context.env_mut(), stored, span)?;
     let base = lower_value(context, base, span)?;
 
     let reference_ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
@@ -537,10 +543,6 @@ pub fn aggregate(
     fields: &[(usize, HMIRValue)],
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let fields = fields
-        .iter()
-        .map(|(index, value)| Ok((*index, detach(context, value.clone(), span)?)))
-        .collect::<CXResult<Vec<_>>>()?;
     let lowered_fields = fields
         .iter()
         .map(|(index, value)| Ok((*index, lower_value(context, value, span)?)))
@@ -558,7 +560,7 @@ pub fn aggregate(
         span.clone(),
     );
     initialize(context, &result, span);
-    for (_, field) in &fields {
+    for (_, field) in fields {
         emit::consume(context, field, span);
     }
 

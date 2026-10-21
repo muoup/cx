@@ -9,7 +9,7 @@ use cx_mir::{
 };
 use cx_tokens::TokenRange;
 
-use super::{initialize, intrinsic, materialize, output, register};
+use super::{initialize, intrinsic, lower_value, output, register};
 use crate::{
     env::function::LocalLoweringContext,
     eval::types::{self, mir_float, mir_int},
@@ -29,8 +29,8 @@ pub fn binary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let operands = kind(context, lhs.ty());
-    let ml = materialize(context, lhs, span)?;
-    let mr = materialize(context, rhs, span)?;
+    let ml = lower_value(context, lhs, span)?;
+    let mr = lower_value(context, rhs, span)?;
     let (out, result) = output(context, result, span)?;
 
     let instruction: MIRIntrinsic = match operands {
@@ -115,7 +115,7 @@ pub fn unary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let ty = value.ty();
-    let value = materialize(context, value, span)?;
+    let value = lower_value(context, value, span)?;
     let (out, result) = output(context, ty, span)?;
 
     let instruction: MIRIntrinsic = match (op, kind(context, ty)) {
@@ -139,7 +139,7 @@ pub fn cast(
 ) -> CXResult<HMIRValue> {
     let kinds = (kind(context, value.ty()), kind(context, target));
     let target_ty = types::lower_type(context.env_mut(), target, span)?;
-    let value = materialize(context, value, span)?;
+    let value = lower_value(context, value, span)?;
     let (out, result) = output(context, target, span)?;
 
     let instruction: MIRIntrinsic = match kinds {
@@ -225,14 +225,14 @@ pub fn offset(
             let value = value * size;
             let offset = HMIRValue::constant(ty, HMIRConstant::Int { value, ty });
 
-            let ptr = materialize(context, pointer, span)?;
-            (ptr, materialize(context, &offset, span)?)
+            let ptr = lower_value(context, pointer, span)?;
+            (ptr, lower_value(context, &offset, span)?)
         }
         _ => {
             let size = HMIRValue::constant(ty, HMIRConstant::Int { value: size, ty });
-            let lhs = materialize(context, index, span)?;
-            let rhs = materialize(context, &size, span)?;
-            let ptr = materialize(context, pointer, span)?;
+            let lhs = lower_value(context, index, span)?;
+            let rhs = lower_value(context, &size, span)?;
+            let ptr = lower_value(context, pointer, span)?;
 
             let scaled = register(context, ty, span)?;
             let out = MIRTarget::Register(scaled);
@@ -266,8 +266,8 @@ pub fn difference(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let element_ty = types::lower_type(context.env_mut(), element, span)?;
-    let lhs = materialize(context, lhs, span)?;
-    let rhs = materialize(context, rhs, span)?;
+    let lhs = lower_value(context, lhs, span)?;
+    let rhs = lower_value(context, rhs, span)?;
     let (out, result) = output(context, result, span)?;
     intrinsic(
         context,

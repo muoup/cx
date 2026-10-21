@@ -1,242 +1,121 @@
-use cx_hmir::{
-    HMIRBinaryOp, HMIRBody, HMIRCoerceMode,
-    expr::HMIRExprID,
-    ty::{
-        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
-        intrinsic::HMIRIntWidth,
-    },
-};
+mod compatible;
+mod explicit;
+mod implicit;
+mod promotion;
+mod result;
+mod truth;
+
+use cx_hmir::ty::HMIRTypeID;
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
-use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
-    emit,
     env::function::LocalLoweringContext,
     eval::{
-        EvalResult, aggregate::eval_initializer, eval, eval_type, literal, place::dereference,
+        coerce::{promotion::arithmetic, result::Coercion},
         types,
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::HMIRValue,
 };
 
-pub(crate) fn eval_coerce(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBody,
-    span: &TokenRange,
-    mode: HMIRCoerceMode,
-    value: HMIRExprID,
-    target: HMIRExprID,
-) -> EvalResult<HMIRValue> {
-    if mode == HMIRCoerceMode::Truthy {
-        let value = eval(context, body, value)?;
-        return Ok(truthy(context, value, span)?);
-    }
-
-    let target = eval_type(context, body, target)?;
-    let value = eval_initializer(context, body, value, target)?;
-    Ok(cast(context, value, target, span)?)
-}
-
-pub(crate) fn truthy(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let value = emit::referent(context, value, span)?;
-    let value = decay(context, value, span)?;
-    let ty = value.ty();
-
-    let zero = match context.env().resolve_kind(ty) {
-        HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I1 => return Ok(value),
-        HMIRTypeKind::Int(_) => HMIRConstant::Int { value: 0, ty },
-        HMIRTypeKind::Float(_) => HMIRConstant::Float {
-            value: FloatWrapper::from(0.0),
-            ty,
-        },
-        HMIRTypeKind::PointerTo(_) => HMIRConstant::Null(ty),
-        _ => {
-            return Err(hmir_error(
-                span,
-                &typecheck::NO_TRUTH_VALUE,
-                types::name(context.env(), ty),
-            ));
-        }
-    };
-
-    let zero = HMIRValue::constant(ty, zero);
-    let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    emit::binary(context, HMIRBinaryOp::Neq, &value, &zero, bool_ty, span)
-}
-
-pub(crate) fn decay(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let pointee = match context.env().resolve_kind(value.ty()) {
-        HMIRTypeKind::Str => types::int(context.env_mut(), HMIRIntWidth::I8, false, span),
-        HMIRTypeKind::Function(_) => value.ty(),
-        HMIRTypeKind::Array { .. } => todo!("decay of an array to a pointer"),
-        _ => return Ok(value),
-    };
-    if !matches!(value.kind(), HMIRValueKind::Constant(_)) {
-        todo!("decay of a string or function that is not a constant")
-    }
-
-    let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::PointerTo(pointee),
-        HMIRTypeSemantics::default(),
-        span.clone(),
-        None,
-    ));
-    Ok(value.with_ty(ty))
-}
-
-fn bind_reference(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    inner: HMIRTypeID,
-    target: HMIRTypeID,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let pointee = context.env().pointer_inner(value.ty());
-    let value = match pointee {
-        Some(pointee) if context.env().same_type(pointee, inner) => {
-            dereference(context, value, span)?
-        }
-        _ => value,
-    };
-
-    if !context.env().same_type(value.ty(), inner) {
-        return Err(hmir_error(
-            span,
-            &typecheck::INVALID_CONVERSION,
-            (
-                types::name(context.env(), value.ty()),
-                types::name(context.env(), target),
-            ),
-        ));
-    }
-
-    let value = emit::spill(context, value, span)?;
-    Ok(match value.kind() {
-        HMIRValueKind::PlaceRef(place) => HMIRValue::constant(
-            target,
-            HMIRConstant::Address {
-                place: *place,
-                path: Vec::new(),
-                ty: target,
-            },
-        ),
-        HMIRValueKind::Indirect(reference) => reference.as_ref().clone().with_ty(target),
-        HMIRValueKind::Constant(_) => unreachable!("a spilled value is addressable"),
-    })
-}
-
-pub(crate) fn cast(
+pub(crate) fn implicit(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let source = value.ty();
-    if context.env().same_type(source, target) {
-        return Ok(value.with_ty(target));
+    let coercion = implicit::convert(context, value, target, span)?;
+
+    applied(context, coercion, source, target, span)
+}
+
+pub(crate) fn explicit(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    target: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let source = value.ty();
+    let coercion = explicit::convert(context, value, target, span)?;
+
+    applied(context, coercion, source, target, span)
+}
+
+pub(crate) fn std_rvalue(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    promotion::std_rvalue(context, value, span)
+}
+
+pub(crate) fn arithmetic(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let value = promotion::std_rvalue(context, value, span)?;
+    let target = arithmetic::integer(context, value.ty(), span);
+
+    implicit(context, value, target, span)
+}
+
+pub(crate) fn default_argument(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let value = promotion::std_rvalue(context, value, span)?;
+    let target = arithmetic::argument(context, value.ty(), span);
+
+    implicit(context, value, target, span)
+}
+
+pub(crate) fn condition(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let value = promotion::std_rvalue(context, value, span)?;
+    let source = value.ty();
+
+    match truth::apply(context, value, span)? {
+        Coercion::Applied(value) => Ok(value),
+        Coercion::Unapplied(_) => Err(hmir_error(
+            span,
+            &typecheck::NO_TRUTH_VALUE,
+            types::name(context.env(), source),
+        )),
     }
+}
 
-    let kinds = (
-        context.env().resolve_kind(source).clone(),
-        context.env().resolve_kind(target).clone(),
-    );
+pub(crate) fn common(
+    context: &mut LocalLoweringContext,
+    lhs: HMIRTypeID,
+    rhs: HMIRTypeID,
+    span: &TokenRange,
+) -> Option<HMIRTypeID> {
+    arithmetic::common(context, lhs, rhs, span)
+}
 
-    match &kinds {
-        (_, HMIRTypeKind::Void) => return Ok(literal::unit(context, span)),
-
-        (
-            HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_),
-            HMIRTypeKind::Int(to),
-        ) if to.width() == HMIRIntWidth::I1 => {
-            return Ok(truthy(context, value, span)?.with_ty(target));
-        }
-
-        (HMIRTypeKind::ReferenceTo(inner), _) => {
-            if context.env().is_nocopy(*inner) {
-                return Err(hmir_error(
-                    span,
-                    &typecheck::INVALID_CONVERSION,
-                    (
-                        types::name(context.env(), source),
-                        types::name(context.env(), target),
-                    ),
-                ));
-            }
-            let value = emit::referent(context, value, span)?;
-            let value = emit::copy(context, value, span)?;
-            return cast(context, value, target, span);
-        }
-        (_, HMIRTypeKind::ReferenceTo(inner)) => {
-            return bind_reference(context, value, *inner, target, span);
-        }
-        (HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_), _) => {
-            let value = decay(context, value, span)?;
-            return cast(context, value, target, span);
-        }
-        (_, HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_)) => {
-            return Err(hmir_error(
-                span,
-                &typecheck::INVALID_CONVERSION,
-                (types::name(context.env(), value.ty()), types::name(context.env(), target)),
-            ));
-        }
-
-        _ => {}
-    }
-
-    // A conversion yields a value with its own obligations, which cannot be weakened or strengthened in passing
-    let invalid = |context: &LocalLoweringContext| {
-        hmir_error(
+fn applied(
+    context: &LocalLoweringContext,
+    coercion: Coercion,
+    source: HMIRTypeID,
+    target: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    match coercion {
+        Coercion::Applied(value) => Ok(value),
+        Coercion::Unapplied(_) => Err(hmir_error(
             span,
             &typecheck::INVALID_CONVERSION,
             (
                 types::name(context.env(), source),
                 types::name(context.env(), target),
             ),
-        )
-    };
-    if context.env().semantics(source).move_semantics
-        != context.env().semantics(target).move_semantics
-    {
-        return Err(invalid(context));
-    }
-
-    let source_mir = types::lower_type(context.env_mut(), source, span)?;
-    let target_mir = types::lower_type(context.env_mut(), target, span)?;
-    if source_mir == target_mir {
-        return Ok(emit::copy(context, value, span)?.with_ty(target));
-    }
-
-    match kinds {
-        (
-            HMIRTypeKind::Int(_),
-            HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_),
-        )
-        | (HMIRTypeKind::Float(_), HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_))
-        | (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_) | HMIRTypeKind::PointerTo(_)) => {
-            emit::cast(context, &value, target, span)
-        }
-        _ => Err(invalid(context)),
-    }
-}
-
-pub(crate) fn value(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    match context.env().reference_inner(value.ty()) {
-        Some(inner) => cast(context, value, inner, span),
-        None => Ok(value),
+        )),
     }
 }

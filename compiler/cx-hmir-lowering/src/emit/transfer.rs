@@ -17,10 +17,9 @@ pub enum Transfer {
     Replace,
 }
 
-// Moves 'value' into the storage of 'target', in order: a Replace first reads a value behind a pointer or in a
-// global into storage of its own, since those may share the overwritten storage, then drops the old contents;
-// the payload is written, the target marked initialized, and the source consumed once. Transferring a slot into
-// itself does nothing, so it is neither dropped nor consumed
+// Moves a prepared value into the storage of 'target': a Replace drops the old contents, then the payload is
+// written, the target marked initialized, and the source consumed once. Transferring a slot into itself does
+// nothing, so it is neither dropped nor consumed
 pub fn transfer(
     context: &mut LocalLoweringContext,
     target: &HMIRValue,
@@ -35,13 +34,6 @@ pub fn transfer(
         return Ok(());
     }
 
-    let value = match (mode, value.kind()) {
-        (
-            Transfer::Replace,
-            HMIRValueKind::Indirect(_) | HMIRValueKind::PlaceRef(HMIRPlace::Global(_)),
-        ) => storage::copy(context, value, span)?,
-        _ => value,
-    };
     if mode == Transfer::Replace {
         storage::invalidate(context, target, MIRInvalidationKind::Drop, span);
     }

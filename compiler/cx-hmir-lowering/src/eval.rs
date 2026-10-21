@@ -7,7 +7,6 @@ mod def;
 mod literal;
 mod op;
 mod place;
-mod promote;
 
 pub(crate) mod flow;
 pub(crate) mod types;
@@ -15,7 +14,7 @@ pub(crate) mod types;
 pub(crate) use flow::EvalResult;
 
 use cx_hmir::{
-    HMIRBody, HMIRControlOp, HMIRDefKind, HMIRDefRef, HMIRFunction, HMIROp,
+    HMIRBody, HMIRCoerceMode, HMIRControlOp, HMIRDefKind, HMIRDefRef, HMIRFunction, HMIROp,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::HMIRTypeID,
@@ -32,10 +31,9 @@ use crate::{
         function::{ComptimeContext, FnContext, LocalLoweringContext, RuntimeContext},
     },
     eval::{
-        aggregate::eval_aggregate,
+        aggregate::{eval_aggregate, eval_initializer},
         binding::{eval_block, eval_let, eval_local},
         call::eval_call,
-        coerce::eval_coerce,
         control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_while},
         def::eval_def,
         flow::ComptimeStop,
@@ -96,6 +94,8 @@ fn runtime_definition(
         let decl = body.local(*local);
         let ty = eval_type(context, body, *param.ty())?;
         let value = runtime::parameter(context, ty, decl.name().cloned(), decl.span())?;
+        let reference = types::reference(context.env_mut(), ty, decl.span());
+        let value = value.with_ty(reference);
 
         emit::storage::bind_local(context, *local, value);
     }
@@ -169,7 +169,20 @@ pub(crate) fn eval(
                 mode,
                 value,
                 target,
-            } => eval_coerce(context, body, span, *mode, *value, *target),
+            } => match mode {
+                HMIRCoerceMode::Truthy => {
+                    let value = eval(context, body, *value)?;
+                    Ok(coerce::condition(context, value, span)?)
+                }
+                HMIRCoerceMode::Implicit | HMIRCoerceMode::Convert | HMIRCoerceMode::CCast => {
+                    let target = eval_type(context, body, *target)?;
+                    let value = eval_initializer(context, body, *value, target)?;
+                    Ok(match mode {
+                        HMIRCoerceMode::Implicit => coerce::implicit(context, value, target, span)?,
+                        _ => coerce::explicit(context, value, target, span)?,
+                    })
+                }
+            },
 
             HMIROp::Control(HMIRControlOp::Return(value)) => {
                 eval_return(context, body, span, *value)

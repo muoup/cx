@@ -1,21 +1,22 @@
 use cx_hmir::{
-    HMIRBody, body::{HMIRLocal, HMIRLocalID}, expr::{HMIRExprID, HMIRExprKind}, ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext},
+    HMIRBody,
+    body::HMIRLocalID,
+    expr::{HMIRExprID, HMIRExprKind},
+    ty::{HMIRTypeKind, context::HMIRTypeContext},
 };
-use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::{self, runtime},
+    emit::{self, Transfer, runtime},
     env::function::{FnContext, LocalLoweringContext},
     eval::{
         EvalResult,
         aggregate::eval_initializer,
         coerce::{self},
         eval, eval_type,
-        flow::EvalStop,
-        literal,
+        literal, types,
     },
-    value::{HMIRPlace, HMIRValue, HMIRValueKind},
+    value::HMIRValue,
 };
 
 pub(crate) fn eval_local(
@@ -28,7 +29,13 @@ pub(crate) fn eval_local(
         todo!("local {local} has no binding in the evaluating context")
     };
 
-    Ok(value)
+    let stored = context.env().reference_inner(value.ty());
+    match stored {
+        Some(inner) if context.env().is_reference(inner) => {
+            Ok(coerce::implicit(context, value, inner, span)?)
+        }
+        _ => Ok(value),
+    }
 }
 
 // A declaration is a statement, and evaluates to unit. Each evaluation binds a fresh instance of the local, so a
@@ -51,37 +58,27 @@ pub(crate) fn eval_let(
         todo!("local of type void");
     }
 
-    let reference_type = context.env_mut().resolver_mut().realize_type(
-        HMIRType::new(
-            HMIRTypeKind::ReferenceTo(ty),
-            HMIRTypeSemantics::default(),
-            local.span().clone(),
-            None
-        )
-    );
+    let reference_type = types::reference(context.env_mut(), ty, local.span());
 
-    if let Some(initializer) = initializer {
-        let value = eval_initializer(context, body, initializer, ty)
-            .and_then(|value| coerce::cast(context, value, ty, span).map_err(EvalStop::from))?;
+    let storage = match initializer {
+        Some(initializer) => {
+            let value = eval_initializer(context, body, initializer, ty)?;
+            let value = coerce::implicit(context, value, ty, span)?;
 
-        if matches!(value.kind(), HMIRValueKind::PlaceRef(HMIRPlace::Local(_))) {
-            let value = value.clone().with_ty(reference_type);
-            
-            emit::storage::bind_local(context, local_id, value.clone());
-
-            return Ok(value);
+            if !context.env().is_reference(ty) && emit::storage::is_place(context, &value) {
+                value.with_ty(reference_type)
+            } else {
+                let allocation = emit::allocate(context, ty, None, span)?;
+                let allocation = allocation.with_ty(reference_type);
+                emit::transfer(context, &allocation, value, Transfer::Init, span)?;
+                allocation
+            }
         }
-
-        let allocation =
-            emit::storage::allocate(context, ty, None, span).map_err(EvalStop::from)?;
-        emit::storage::write(context, &allocation, &value, span).map_err(EvalStop::from)?;
-    
-        return Ok(allocation.with_ty(reference_type));
+        None => emit::allocate(context, ty, None, span)?.with_ty(reference_type),
     };
+    emit::storage::bind_local(context, local_id, storage);
 
-    emit::storage::allocate(context, ty, None, span)
-        .map(|allocation| allocation.with_ty(reference_type))
-        .map_err(EvalStop::from)
+    Ok(literal::unit(context, span))
 }
 
 pub(crate) fn eval_block(
@@ -125,7 +122,7 @@ fn eval_statements(
     }
 
     match result {
-        Some(value) if yields => Ok(coerce::value(context, value, span)?),
+        Some(value) if yields => Ok(coerce::std_rvalue(context, value, span)?),
         _ => Ok(literal::unit(context, span)),
     }
 }

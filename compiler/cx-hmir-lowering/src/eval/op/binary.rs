@@ -10,11 +10,10 @@ use crate::{
     emit,
     env::function::LocalLoweringContext,
     eval::{
-        EvalResult,
-        coerce::cast,
+        EvalResult, coerce,
         control::eval_short_circuit,
         op::{eval_operand, kind},
-        promote, types,
+        types,
     },
     log::hmir_error,
     value::HMIRValue,
@@ -74,12 +73,12 @@ pub(crate) fn binary_operands(
             emit::difference(context, &lhs, &rhs, element, ty, span)
         }
         (HMIRTypeKind::PointerTo(_), _) if is_comparison(op) => {
-            let rhs = cast(context, rhs, lhs.ty(), span)?;
+            let rhs = coerce::implicit(context, rhs, lhs.ty(), span)?;
             let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
             emit::binary(context, op, &lhs, &rhs, ty, span)
         }
         (_, HMIRTypeKind::PointerTo(_)) if is_comparison(op) => {
-            let lhs = cast(context, lhs, rhs.ty(), span)?;
+            let lhs = coerce::implicit(context, lhs, rhs.ty(), span)?;
             let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
             emit::binary(context, op, &lhs, &rhs, ty, span)
         }
@@ -96,9 +95,9 @@ fn arithmetic(
 ) -> CXResult<HMIRValue> {
     let common = match op {
         HMIRBinaryOp::LShift | HMIRBinaryOp::RShift => {
-            promote::common(context, lhs.ty(), lhs.ty(), span)
+            coerce::common(context, lhs.ty(), lhs.ty(), span)
         }
-        _ => promote::common(context, lhs.ty(), rhs.ty(), span),
+        _ => coerce::common(context, lhs.ty(), rhs.ty(), span),
     };
     let Some(common) = common else {
         return Err(hmir_error(
@@ -129,8 +128,8 @@ fn arithmetic(
         ));
     }
 
-    let lhs = cast(context, lhs, common, span)?;
-    let rhs = cast(context, rhs, common, span)?;
+    let lhs = coerce::implicit(context, lhs, common, span)?;
+    let rhs = coerce::implicit(context, rhs, common, span)?;
     let result = match is_comparison(op) {
         true => types::int(context.env_mut(), HMIRIntWidth::I1, false, span),
         false => common,
@@ -149,7 +148,7 @@ fn pointer_offset(
 ) -> CXResult<HMIRValue> {
     let signed = matches!(kind(context, index.ty()), HMIRTypeKind::Int(int) if int.signed());
     let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, signed, span);
-    let index = cast(context, index, offset_ty, span)?;
+    let index = coerce::implicit(context, index, offset_ty, span)?;
 
     emit::offset(context, &pointer, &index, element, subtract, span)
 }

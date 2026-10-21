@@ -174,6 +174,15 @@ pub(crate) fn int(
     ))
 }
 
+pub(crate) fn reference(env: &mut HMIREnvironment, inner: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+    env.resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::ReferenceTo(inner),
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ))
+}
+
 pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
     let constant = env.semantics(ty).constant;
     let ty = env.resolve_type_id(env.underlying(ty));

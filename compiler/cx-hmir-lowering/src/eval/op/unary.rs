@@ -11,11 +11,9 @@ use crate::{
     emit::{self},
     env::function::LocalLoweringContext,
     eval::{
-        EvalResult,
-        coerce::truthy,
-        eval,
+        EvalResult, coerce, eval,
         flow::EvalStop,
-        op::{kind, promote_operand},
+        op::{eval_operand, kind},
         types,
     },
     log::hmir_error,
@@ -29,21 +27,23 @@ pub(crate) fn eval_unary(
     op: HMIRUnaryOp,
     operand: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let value = eval(context, body, operand)?;
-
     match op {
         HMIRUnaryOp::LNot => {
-            let value = truthy(context, value, span)?;
+            let value = eval(context, body, operand)?;
+            let value = coerce::condition(context, value, span)?;
             Ok(emit::unary(context, op, &value, span)?)
         }
 
         HMIRUnaryOp::PreIncrement
         | HMIRUnaryOp::PreDecrement
         | HMIRUnaryOp::PostIncrement
-        | HMIRUnaryOp::PostDecrement => increment(context, span, op, value).map_err(EvalStop::from),
+        | HMIRUnaryOp::PostDecrement => {
+            let value = eval(context, body, operand)?;
+            increment(context, span, op, value).map_err(EvalStop::from)
+        }
 
         HMIRUnaryOp::Neg | HMIRUnaryOp::BNot => {
-            let value = promote_operand(context, value, span)?;
+            let value = eval_operand(context, body, span, operand)?;
             match (op, kind(context, value.ty())) {
                 (HMIRUnaryOp::Neg, HMIRTypeKind::Float(_) | HMIRTypeKind::Int(_))
                 | (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => {
@@ -97,7 +97,7 @@ fn increment(
         _ => unreachable!("increment called with non-increment operator"),
     };
 
-    let current = emit::copy(context, target.clone(), span)?;
+    let current = coerce::std_rvalue(context, target.clone(), span)?;
 
     let updated = match kind(context, ty) {
         HMIRTypeKind::Int(_) => {
@@ -142,5 +142,5 @@ fn increment(
 
     emit::storage::write(context, &target, &updated, span)?;
 
-    if prefix { Ok(target) } else { Ok(updated) }
+    if prefix { Ok(target) } else { Ok(current) }
 }

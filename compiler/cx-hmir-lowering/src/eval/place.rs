@@ -10,10 +10,8 @@ use crate::{
     emit::{self, Transfer},
     env::function::LocalLoweringContext,
     eval::{
-        EvalResult,
-        coerce::{cast, decay},
-        eval,
-        op::{binary_operands, eval_operand, promote_operand},
+        EvalResult, coerce, eval,
+        op::{binary_operands, eval_operand},
         types,
     },
     log::hmir_error,
@@ -29,24 +27,22 @@ pub(crate) fn eval_assign(
     value: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
     let target = eval(context, body, target)?;
-    let target = emit::referent(context, target, span)?;
 
-    if !context.env().is_reference(target.ty()) {
+    let Some(inner) = context.env().reference_inner(target.ty()) else {
         return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "assign to".into()).into());
-    }
-
-    if context.env().semantics(target.ty()).constant {
+    };
+    if context.env().semantics(inner).constant {
         return Err(hmir_error(
             span,
             &typecheck::MUTATE_CONST,
-            ("assign to".into(), types::name(context.env(), target.ty())),
+            ("assign to".into(), types::name(context.env(), inner)),
         )
         .into());
     }
 
     let value = match op {
         Some(op) => {
-            let current = promote_operand(context, target.clone(), span)?;
+            let current = coerce::arithmetic(context, target.clone(), span)?;
             let operand = eval_operand(context, body, span, value)?;
 
             binary_operands(context, span, op, current, operand)?
@@ -54,10 +50,10 @@ pub(crate) fn eval_assign(
         None => eval(context, body, value)?,
     };
 
-    let value = cast(context, value, target.ty(), span)?;
+    let value = coerce::implicit(context, value, inner, span)?;
     emit::transfer(context, &target, value, Transfer::Replace, span)?;
 
-    Ok(emit::reference(context, &target, span)?)
+    Ok(target)
 }
 
 pub(crate) fn eval_address_of(
@@ -67,16 +63,23 @@ pub(crate) fn eval_address_of(
     operand: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, operand)?;
-    let value = emit::referent(context, value, span)?;
-    match context.env().resolve_kind(value.ty()) {
-        HMIRTypeKind::Function(_) => return Ok(decay(context, value, span)?),
-        HMIRTypeKind::Str => todo!("address of a string"),
-        _ => {}
+    let Some(inner) = context.env().reference_inner(value.ty()) else {
+        return match context.env().resolve_kind(value.ty()) {
+            HMIRTypeKind::Function(_) => Ok(coerce::std_rvalue(context, value, span)?),
+            _ => Err(hmir_error(
+                span,
+                &typecheck::NOT_ADDRESSABLE,
+                "take the address of".into(),
+            )
+            .into()),
+        };
+    };
+    if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Str) {
+        todo!("address of a string")
     }
 
-    let value = emit::spill(context, value, span)?;
     let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::PointerTo(value.ty()),
+        HMIRTypeKind::PointerTo(inner),
         HMIRTypeSemantics::default(),
         span.clone(),
         None,
@@ -92,10 +95,8 @@ pub(crate) fn eval_dereference(
     pointer: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, pointer)?;
-    let value = emit::referent(context, value, span)?;
 
-    let value = dereference(context, value, span)?;
-    Ok(emit::reference(context, &value, span)?)
+    Ok(dereference(context, value, span)?)
 }
 
 pub(crate) fn dereference(
@@ -103,7 +104,7 @@ pub(crate) fn dereference(
     pointer: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointer = decay(context, pointer, span)?;
+    let pointer = coerce::std_rvalue(context, pointer, span)?;
     let Some(inner) = context.env().pointer_inner(pointer.ty()) else {
         return Err(hmir_error(
             span,
@@ -115,5 +116,6 @@ pub(crate) fn dereference(
         todo!("dereference of a function pointer")
     }
 
-    emit::dereference(context, pointer, inner, span)
+    let storage = emit::dereference(context, pointer, inner, span)?;
+    emit::reference(context, &storage, span)
 }

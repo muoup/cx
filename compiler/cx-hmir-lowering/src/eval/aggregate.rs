@@ -19,8 +19,7 @@ use crate::{
     },
     eval::{
         EvalResult,
-        coerce::cast,
-        eval, eval_type,
+        coerce, eval, eval_type,
         op::{binary_operands, eval_operand, specify},
         place::dereference,
         types,
@@ -50,8 +49,7 @@ pub(crate) fn eval_aggregate(
             let index = eval_operand(context, body, span, *index)?;
             let element = binary_operands(context, span, HMIRBinaryOp::Add, base, index)?;
 
-            let element = dereference(context, element, span)?;
-            Ok(emit::reference(context, &element, span)?)
+            Ok(dereference(context, element, span)?)
         }
         _ => todo!("HMIROp::AggregateOp({})", op.path()),
     }
@@ -65,32 +63,39 @@ fn eval_member(
     name: &CXIdent,
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, base)?;
-    let mut value = emit::referent(context, value, span)?;
-    if context.env().pointer_inner(value.ty()).is_some() {
-        value = dereference(context, value, span)?;
-    }
+    let subject = context.env().reference_inner(value.ty()).unwrap_or(value.ty());
+    let mut value = if context.env().pointer_inner(subject).is_some() {
+        dereference(context, value, span)?
+    } else if context.env().is_reference(value.ty()) {
+        value
+    } else {
+        let storage = emit::spill(context, value, span)?;
+        emit::reference(context, &storage, span)?
+    };
     if matches!(context.context(), FnContext::Comptime(_)) {
         todo!("comptime member access");
     }
 
-    let Some(path) = member_path(context.env(), value.ty(), name) else {
+    let Some(mut owner) = context.env().reference_inner(value.ty()) else {
+        unreachable!("a member base is a reference")
+    };
+    let Some(path) = member_path(context.env(), owner, name) else {
         return Err(hmir_error(
             span,
             &typecheck::UNKNOWN_MEMBER,
-            (types::name(context.env(), value.ty()), name.to_string()),
+            (types::name(context.env(), owner), name.to_string()),
         )
         .into());
     };
 
-    let mut value = emit::spill(context, value, span)?;
     for index in path {
-        let field = &member_fields(context.env(), value.ty())[index];
+        let field = &member_fields(context.env(), owner)[index];
         if field.bit_width().is_some() {
             todo!("bitfield member access");
         }
 
         let mut ty = *field.ty();
-        if context.env().semantics(value.ty()).constant {
+        if context.env().semantics(owner).constant {
             ty = specify(
                 context,
                 ty,
@@ -102,6 +107,7 @@ fn eval_member(
             );
         }
         value = emit::field(context, &value, index, ty, span)?;
+        owner = ty;
     }
 
     Ok(emit::reference(context, &value, span)?)
@@ -213,7 +219,7 @@ fn field_value(
     let span = body.expr(value).span();
     let value = eval_initializer(context, body, value, ty)?;
 
-    Ok(cast(context, value, ty, span)?)
+    Ok(coerce::implicit(context, value, ty, span)?)
 }
 
 // A list without a declared type takes the type of the field or cast that it is the value of

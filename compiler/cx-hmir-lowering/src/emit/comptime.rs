@@ -1,4 +1,4 @@
-use cx_hmir::ty::HMIRTypeID;
+use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::expr::instruction::MIRInvalidationKind;
 
@@ -14,28 +14,45 @@ pub fn allocate(context: &mut LocalLoweringContext, ty: HMIRTypeID) -> HMIRValue
 }
 
 // The slot whose state a value's liveness is recorded on; storage behind an address is untracked
-fn tracked_slot(value: &HMIRValue) -> Option<HMIRSlotID> {
+fn tracked_slot(context: &LocalLoweringContext, value: &HMIRValue) -> Option<HMIRSlotID> {
     match value.kind() {
         HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => Some(*slot),
         HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => todo!("comptime global storage"),
+        HMIRValueKind::Constant(HMIRConstant::Address {
+            place: HMIRPlace::Local(slot),
+            path,
+            ..
+        }) if path.is_empty() && context.env().is_reference(value.ty()) => Some(*slot),
         HMIRValueKind::Constant(_) | HMIRValueKind::Indirect(_) => None,
     }
 }
 
-pub fn copy(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
-    let slot = match value.kind() {
-        HMIRValueKind::Constant(_) => return Ok(value),
-        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => *slot,
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => todo!("comptime read of a global"),
-        HMIRValueKind::Indirect(_) => todo!("comptime read through a subobject address"),
+fn read(context: &LocalLoweringContext, value: &HMIRValue) -> CXResult<HMIRConstant> {
+    let slot = match (value.kind(), tracked_slot(context, value)) {
+        (_, Some(slot)) => slot,
+        (HMIRValueKind::Constant(constant), None)
+            if !matches!(constant, HMIRConstant::Address { .. })
+                || !context.env().is_reference(value.ty()) =>
+        {
+            return Ok(constant.clone());
+        }
+        _ => todo!("comptime read through a subobject address"),
     };
 
-    match context.comptime_mut().slot(slot).state() {
-        ComptimeSlotState::Value(constant) => Ok(HMIRValue::constant(value.ty(), constant.clone())),
+    match context.comptime().slot(slot).state() {
+        ComptimeSlotState::Value(constant) => Ok(constant.clone()),
         ComptimeSlotState::Uninitialized | ComptimeSlotState::Invalidated => {
             todo!("diagnostic: comptime read of a slot that holds no value")
         }
     }
+}
+
+pub fn copy(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
+    let Some(inner) = context.env().reference_inner(value.ty()) else {
+        unreachable!("a comptime copy reads from a reference")
+    };
+
+    Ok(HMIRValue::constant(inner, read(context, &value)?))
 }
 
 pub fn write(
@@ -43,26 +60,17 @@ pub fn write(
     target: &HMIRValue,
     value: &HMIRValue,
 ) -> CXResult<()> {
-    let value = copy(context, value.clone())?;
-    let HMIRValueKind::Constant(constant) = value.kind() else {
-        unreachable!("a comptime read yields a constant");
+    let constant = read(context, value)?;
+    let Some(slot) = tracked_slot(context, target) else {
+        todo!("comptime write through a subobject address")
     };
-
-    match target.kind() {
-        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
-            *context.comptime_mut().slot_mut(*slot).state_mut() =
-                ComptimeSlotState::Value(constant.clone());
-        }
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => todo!("comptime write to a global"),
-        HMIRValueKind::Indirect(_) => todo!("comptime write through a subobject address"),
-        HMIRValueKind::Constant(_) => unreachable!("write to a value without storage"),
-    }
+    *context.comptime_mut().slot_mut(slot).state_mut() = ComptimeSlotState::Value(constant);
 
     Ok(())
 }
 
 pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue) {
-    if let Some(slot) = tracked_slot(value) {
+    if let Some(slot) = tracked_slot(context, value) {
         debug_assert!(
             matches!(
                 context.comptime().slot(slot).state(),
@@ -74,7 +82,7 @@ pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue) {
 }
 
 pub fn invalidate(context: &mut LocalLoweringContext, value: &HMIRValue, kind: MIRInvalidationKind) {
-    if let Some(slot) = tracked_slot(value) {
+    if let Some(slot) = tracked_slot(context, value) {
         *context.comptime_mut().slot_mut(slot).state_mut() = match kind {
             MIRInvalidationKind::Drop => ComptimeSlotState::Uninitialized,
             MIRInvalidationKind::Move | MIRInvalidationKind::Leak => ComptimeSlotState::Invalidated,
@@ -82,18 +90,27 @@ pub fn invalidate(context: &mut LocalLoweringContext, value: &HMIRValue, kind: M
     }
 }
 
-pub fn address(pointer: &HMIRValue, ty: HMIRTypeID) -> HMIRValue {
-    match pointer.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => HMIRValue::constant(
+pub fn address(value: &HMIRValue, ty: HMIRTypeID) -> HMIRValue {
+    let (place, path) = match value.kind() {
+        HMIRValueKind::PlaceRef(place) => (place, Vec::new()),
+        HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => (place, path.clone()),
+        HMIRValueKind::Indirect(pointer) => match pointer.kind() {
+            HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => {
+                (place, path.clone())
+            }
+            _ => todo!("comptime address through a pointer that holds no address"),
+        },
+        HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),
+    };
+
+    HMIRValue::constant(
+        ty,
+        HMIRConstant::Address {
+            place: *place,
+            path,
             ty,
-            HMIRConstant::Address {
-                place: *place,
-                path: path.clone(),
-                ty,
-            },
-        ),
-        _ => todo!("comptime address through a pointer that holds no address"),
-    }
+        },
+    )
 }
 
 pub fn dereference(
@@ -101,7 +118,7 @@ pub fn dereference(
     pointer: HMIRValue,
     inner: HMIRTypeID,
 ) -> CXResult<HMIRValue> {
-    let pointer = copy(context, pointer)?;
+    let pointer = HMIRValue::constant(pointer.ty(), read(context, &pointer)?);
     if !matches!(
         pointer.kind(),
         HMIRValueKind::Constant(HMIRConstant::Address { .. })
