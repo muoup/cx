@@ -9,7 +9,7 @@ thread_local! {
 
 dense_id!(ElaborationScopeID, "es.");
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ElaborationScope {
     id: ElaborationScopeID,
     holes: Vec<(HMIRHoleID, HMIRTypeID)>,

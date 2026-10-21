@@ -2,76 +2,121 @@ use cx_hmir::{
     HMIRAggregateOp, HMIRBody, HMIROp,
     body::HMIRHoleID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeID, context::HMIRTypeContext},
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::catalogue::typecheck;
+use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::{LocalLoweringContext, elaboration::ElaborationScopeID},
-    eval::{EvalResult, eval},
+    env::function::LocalLoweringContext,
+    eval::{
+        EvalResult, eval,
+        flow::{Evaluation, Incomplete, IncompleteReason},
+        types,
+    },
     log::hmir_error,
-    value::HMIRValue,
+    value::{HMIRValue, constant::HMIRConstant},
 };
 
-pub(crate) enum Completion {
-    Ready(HMIRValue),
-    Pending(Pending),
-}
-
-pub(crate) struct Pending {
-    expr: HMIRExprID,
-    scope: ElaborationScopeID,
-    holes: Vec<HMIRHoleID>,
-}
-
-pub(crate) fn elaborate(
-    context: &mut LocalLoweringContext,
+pub(crate) fn contextual(
+    context: &LocalLoweringContext,
     body: &HMIRBody,
     expr: HMIRExprID,
-) -> EvalResult<Completion> {
+) -> Option<Incomplete<HMIRValue>> {
     let mut holes = Vec::new();
     contextual_holes(context, body, expr, &mut holes);
     if holes.is_empty() {
-        return Ok(Completion::Ready(eval(context, body, expr)?));
+        return None;
     }
-
-    Ok(Completion::Pending(Pending {
-        expr,
-        scope: context.elaboration().id(),
-        holes,
-    }))
+    Some(Incomplete::new(
+        context,
+        body.expr(expr).span(),
+        IncompleteReason::ExpectedType,
+        None,
+        move |context, body, expected| {
+            let expected = context.env().reference_inner(expected).unwrap_or(expected);
+            let mark = context.elaboration_mut().bind(&holes, expected);
+            let result = eval(context, body, expr);
+            context.elaboration_mut().release(mark);
+            result
+        },
+    ))
 }
 
-impl Completion {
-    pub(crate) fn complete(
-        self,
-        context: &mut LocalLoweringContext,
-        body: &HMIRBody,
-        expected: Option<HMIRTypeID>,
-    ) -> EvalResult<HMIRValue> {
-        let pending = match self {
-            Self::Ready(value) => return Ok(value),
-            Self::Pending(pending) => pending,
-        };
-        assert_eq!(
-            pending.scope,
-            context.elaboration().id(),
-            "pending expression completed outside of the scope that elaborated it"
-        );
-
-        let Some(expected) = expected else {
-            let span = body.expr(pending.expr).span();
-            let subject = "the initialized type".into();
-            return Err(hmir_error(span, &typecheck::CANNOT_INFER, subject).into());
-        };
-        let expected = context.env().reference_inner(expected).unwrap_or(expected);
-
-        let mark = context.elaboration_mut().bind(&pending.holes, expected);
-        let result = eval(context, body, pending.expr);
-        context.elaboration_mut().release(mark);
-
-        result
+pub(crate) fn type_result(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> EvalResult<HMIRValue> {
+    let value = super::def::type_value(context, ty, span)?;
+    if !types::unsized_array(context.env(), ty) {
+        return Ok(Evaluation::Ready(value));
     }
+    let span = span.clone();
+    Ok(Evaluation::Incomplete(Incomplete::new(
+        context,
+        &span.clone(),
+        IncompleteReason::ArrayBound,
+        Some(value),
+        move |context, _, expected| {
+            let env = context.env();
+            let HMIRTypeKind::Array {
+                element: from,
+                length: Some(length),
+            } = *env.resolve_kind(expected)
+            else {
+                return Err(hmir_error(
+                    &span,
+                    &typecheck::CANNOT_INFER,
+                    "the array bound".into(),
+                ));
+            };
+            let HMIRTypeKind::Array { element: to, .. } = *env.resolve_kind(ty) else {
+                unreachable!("an incomplete array retains its constructor")
+            };
+            if !env.same_type(from, to) {
+                return Err(hmir_error(
+                    &span,
+                    &typecheck::TYPE_REQUIREMENT,
+                    (
+                        "array initializer".into(),
+                        types::name(env, ty),
+                        Some(types::name(env, expected)),
+                    ),
+                ));
+            }
+            let ty = types::array(context.env_mut(), ty, length, &span);
+            let universe = types::universe(context.env_mut(), &span);
+            Ok(Evaluation::Ready(HMIRValue::constant(
+                universe,
+                HMIRConstant::Type(ty),
+            )))
+        },
+    )))
+}
+
+pub(crate) fn hole(
+    context: &mut LocalLoweringContext,
+    span: &TokenRange,
+    hole: HMIRHoleID,
+) -> EvalResult<HMIRValue> {
+    if let Some(ty) = context.elaboration().hole(hole) {
+        return type_result(context, ty, span);
+    }
+    let span = span.clone();
+    Ok(Evaluation::Incomplete(Incomplete::new(
+        context,
+        &span.clone(),
+        IncompleteReason::ExpectedType,
+        None,
+        move |context, _, expected| {
+            let universe = types::universe(context.env_mut(), &span);
+            Ok(Evaluation::Ready(HMIRValue::constant(
+                universe,
+                HMIRConstant::Type(expected),
+            )))
+        },
+    )))
 }
 
 fn contextual_holes(

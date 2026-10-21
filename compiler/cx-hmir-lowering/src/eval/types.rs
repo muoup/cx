@@ -18,7 +18,9 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    env::{HMIREnvironment, function::LocalLoweringContext}, eval::{EvalResult, eval_type, types}, log::log_hmir_error,
+    env::{HMIREnvironment, function::LocalLoweringContext},
+    eval::{EvalResult, eval_type, flow, types},
+    log::log_hmir_error,
 };
 
 pub(crate) fn eval_signature(
@@ -26,7 +28,8 @@ pub(crate) fn eval_signature(
     body: &HMIRBody,
     signature: &HMIRFnSignature<HMIRExprID>,
 ) -> EvalResult<HMIRFnSignature<HMIRTypeID>> {
-    signature.map(|ty| eval_type(context, body, *ty))
+    let signature = signature.map(|ty| flow::top(eval_type(context, body, *ty)?.description()))?;
+    Ok(flow::Evaluation::Ready(signature))
 }
 
 pub(crate) fn lower_signature(

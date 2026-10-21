@@ -11,9 +11,8 @@ use crate::{
     emit,
     env::function::LocalLoweringContext,
     eval::{
-        EvalResult, coerce,
-        complete::elaborate,
-        eval,
+        EvalResult, coerce, eval,
+        flow::{Evaluation, ready},
         op::{binary_operands, eval_operand},
         storage, types,
     },
@@ -29,7 +28,7 @@ pub(crate) fn eval_assign(
     op: Option<HMIRBinaryOp>,
     value: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let target = eval(context, body, target)?;
+    let target = ready!(eval(context, body, target));
 
     let Some(inner) = context.env().reference_inner(target.ty()) else {
         return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "assign to".into()).into());
@@ -46,18 +45,21 @@ pub(crate) fn eval_assign(
     let value = match op {
         Some(op) => {
             let current = coerce::arithmetic(context, target.clone(), span)?;
-            let operand = eval_operand(context, body, span, value)?;
+            let operand = ready!(eval_operand(context, body, span, value));
 
             binary_operands(context, span, op, current, operand)?
         }
-        None => elaborate(context, body, value)?.complete(context, body, Some(inner))?,
+        None => {
+            let evaluated = eval(context, body, value)?;
+            ready!(evaluated.complete(context, body, Some(inner)))
+        }
     };
 
     let value = coerce::implicit(context, value, inner, span)?;
     emit::invalidate(context, &target, MIRInvalidationKind::Drop, span);
     storage::initialize(context, &target, &value, span)?;
 
-    Ok(target)
+    Ok(Evaluation::Ready(target))
 }
 
 pub(crate) fn eval_move(
@@ -66,9 +68,9 @@ pub(crate) fn eval_move(
     span: &TokenRange,
     operand: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let value = eval(context, body, operand)?;
+    let value = ready!(eval(context, body, operand));
     let Some(inner) = context.env().reference_inner(value.ty()) else {
-        return Ok(value);
+        return Ok(Evaluation::Ready(value));
     };
 
     let HMIRExprKind::Local(local) = body.expr(operand).kind() else {
@@ -92,7 +94,7 @@ pub(crate) fn eval_move(
     let moved = emit::lift(context, &value, span)?;
     emit::invalidate(context, &value, MIRInvalidationKind::Move, span);
 
-    Ok(moved)
+    Ok(Evaluation::Ready(moved))
 }
 
 pub(crate) fn eval_address_of(
@@ -101,10 +103,12 @@ pub(crate) fn eval_address_of(
     span: &TokenRange,
     operand: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let value = eval(context, body, operand)?;
+    let value = ready!(eval(context, body, operand));
     let Some(inner) = context.env().reference_inner(value.ty()) else {
         return match context.env().resolve_kind(value.ty()) {
-            HMIRTypeKind::Function(_) => Ok(coerce::std_rvalue(context, value, span)?),
+            HMIRTypeKind::Function(_) => {
+                Ok(Evaluation::Ready(coerce::std_rvalue(context, value, span)?))
+            }
             _ => Err(hmir_error(
                 span,
                 &typecheck::NOT_ADDRESSABLE,
@@ -124,7 +128,7 @@ pub(crate) fn eval_address_of(
         None,
     ));
 
-    Ok(emit::address(context, &value, ty, span)?)
+    Ok(Evaluation::Ready(emit::address(context, &value, ty, span)?))
 }
 
 pub(crate) fn eval_dereference(
@@ -133,9 +137,9 @@ pub(crate) fn eval_dereference(
     span: &TokenRange,
     pointer: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let value = eval(context, body, pointer)?;
+    let value = ready!(eval(context, body, pointer));
 
-    Ok(dereference(context, value, span)?)
+    Ok(Evaluation::Ready(dereference(context, value, span)?))
 }
 
 pub(crate) fn dereference(

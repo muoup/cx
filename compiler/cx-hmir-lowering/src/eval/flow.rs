@@ -1,13 +1,22 @@
-use cx_log::{CXResult, error::CXError};
+use cx_log::CXResult;
 
 use crate::value::HMIRValue;
 
-pub(crate) type EvalResult<T> = Result<T, EvalStop>;
+mod incomplete;
 
-pub(crate) enum EvalStop {
+pub(crate) use incomplete::{Incomplete, IncompleteReason};
+
+pub(crate) type EvalResult<T> = CXResult<Evaluation<T>>;
+
+pub(crate) enum Evaluation<T> {
+    Ready(T),
+    Incomplete(Incomplete<T>),
+    Stop(StopReason),
+}
+
+pub(crate) enum StopReason {
     Comptime(ComptimeStop),
     Runtime(RuntimeStop),
-    Diagnostic(CXError),
 }
 
 #[derive(Debug)]
@@ -23,39 +32,51 @@ pub(crate) enum RuntimeStop {
     Diverged,
 }
 
-// A runtime boundary that resumes in another block absorbs divergence; every other stop keeps propagating
-pub(crate) fn catch_diverged<T>(result: EvalResult<T>) -> EvalResult<Option<T>> {
-    match result {
-        Err(EvalStop::Runtime(RuntimeStop::Diverged)) => Ok(None),
+macro_rules! ready {
+    ($result:expr) => {
+        match $result? {
+            $crate::eval::flow::Evaluation::Ready(value) => value,
+            $crate::eval::flow::Evaluation::Incomplete(incomplete) => {
+                return Err(incomplete.error());
+            }
+            $crate::eval::flow::Evaluation::Stop(stop) => {
+                return Ok($crate::eval::flow::Evaluation::Stop(stop));
+            }
+        }
+    };
+}
 
-        Ok(value) => Ok(Some(value)),
-        Err(stop) => Err(stop),
+pub(crate) use ready;
+
+pub(crate) fn catch_diverged<T: 'static>(result: EvalResult<T>) -> EvalResult<Option<T>> {
+    match result? {
+        Evaluation::Stop(StopReason::Runtime(RuntimeStop::Diverged)) => Ok(Evaluation::Ready(None)),
+        Evaluation::Ready(value) => Ok(Evaluation::Ready(Some(value))),
+        Evaluation::Incomplete(incomplete) => Ok(Evaluation::Incomplete(incomplete.project(Some))),
+        Evaluation::Stop(stop) => Ok(Evaluation::Stop(stop)),
     }
 }
 
-// The top of an evaluation, where only diagnostics may remain uncaught
 pub(crate) fn top<T>(result: EvalResult<T>) -> CXResult<T> {
-    match result {
-        Ok(value) => Ok(value),
-        Err(EvalStop::Diagnostic(error)) => Err(error),
-        Err(EvalStop::Comptime(stop)) => unreachable!("uncaught comptime stop: {stop:?}"),
-        Err(EvalStop::Runtime(stop)) => unreachable!("uncaught runtime stop: {stop:?}"),
+    match result? {
+        Evaluation::Ready(value) => Ok(value),
+        Evaluation::Incomplete(incomplete) => Err(incomplete.error()),
+        Evaluation::Stop(StopReason::Comptime(stop)) => {
+            unreachable!("uncaught comptime stop: {stop:?}")
+        }
+        Evaluation::Stop(StopReason::Runtime(stop)) => {
+            unreachable!("uncaught runtime stop: {stop:?}")
+        }
     }
 }
 
-impl From<CXError> for EvalStop {
-    fn from(error: CXError) -> Self {
-        Self::Diagnostic(error)
-    }
-}
-
-impl From<ComptimeStop> for EvalStop {
+impl From<ComptimeStop> for StopReason {
     fn from(stop: ComptimeStop) -> Self {
         Self::Comptime(stop)
     }
 }
 
-impl From<RuntimeStop> for EvalStop {
+impl From<RuntimeStop> for StopReason {
     fn from(stop: RuntimeStop) -> Self {
         Self::Runtime(stop)
     }

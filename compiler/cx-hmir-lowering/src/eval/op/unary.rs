@@ -10,7 +10,12 @@ use cx_util::unsafe_float::FloatWrapper;
 use crate::{
     emit::{self},
     env::function::LocalLoweringContext,
-    eval::{EvalResult, coerce, eval, flow::EvalStop, op::eval_operand, types},
+    eval::{
+        EvalResult, coerce, eval,
+        flow::{Evaluation, ready},
+        op::eval_operand,
+        types,
+    },
     log::hmir_error,
     value::{HMIRValue, constant::HMIRConstant},
 };
@@ -24,25 +29,25 @@ pub(crate) fn eval_unary(
 ) -> EvalResult<HMIRValue> {
     match op {
         HMIRUnaryOp::LNot => {
-            let value = eval(context, body, operand)?;
+            let value = ready!(eval(context, body, operand));
             let value = coerce::condition(context, value, span)?;
-            Ok(emit::unary(context, op, &value, span)?)
+            Ok(Evaluation::Ready(emit::unary(context, op, &value, span)?))
         }
 
         HMIRUnaryOp::PreIncrement
         | HMIRUnaryOp::PreDecrement
         | HMIRUnaryOp::PostIncrement
         | HMIRUnaryOp::PostDecrement => {
-            let value = eval(context, body, operand)?;
-            increment(context, span, op, value).map_err(EvalStop::from)
+            let value = ready!(eval(context, body, operand));
+            Ok(Evaluation::Ready(increment(context, span, op, value)?))
         }
 
         HMIRUnaryOp::Neg | HMIRUnaryOp::BNot => {
-            let value = eval_operand(context, body, span, operand)?;
+            let value = ready!(eval_operand(context, body, span, operand));
             match (op, context.env().resolve_kind(value.ty())) {
                 (HMIRUnaryOp::Neg, HMIRTypeKind::Float(_) | HMIRTypeKind::Int(_))
                 | (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => {
-                    Ok(emit::unary(context, op, &value, span)?)
+                    Ok(Evaluation::Ready(emit::unary(context, op, &value, span)?))
                 }
                 (_, HMIRTypeKind::Float(_)) => {
                     Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()).into())

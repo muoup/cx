@@ -10,7 +10,11 @@ use cx_util::identifier::CXIdent;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{EvalResult, coerce, complete::elaborate, types},
+    eval::{
+        EvalResult, coerce, eval,
+        flow::{Evaluation, ready},
+        types,
+    },
     log::hmir_error,
     value::HMIRValue,
 };
@@ -55,10 +59,15 @@ pub fn initialize(
         };
         next = index + 1;
 
-        values.push((index, field_value(context, body, *value, *field.ty())?));
+        values.push((
+            index,
+            ready!(field_value(context, body, *value, *field.ty())),
+        ));
     }
 
-    Ok(emit::aggregate(context, ty, &values, span)?)
+    Ok(Evaluation::Ready(emit::aggregate(
+        context, ty, &values, span,
+    )?))
 }
 
 fn array(
@@ -84,12 +93,15 @@ fn array(
             return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
         }
         let value_span = body.expr(*value).span();
-        let value = elaborate(context, body, *value)?.complete(context, body, Some(element))?;
+        let evaluated = eval(context, body, *value)?;
+        let value = ready!(evaluated.complete(context, body, Some(element)));
         if fields.len() == 1
             && matches!(context.env().resolve_kind(element), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8)
             && matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Str)
         {
-            return Ok(coerce::implicit(context, value, ty, span)?);
+            return Ok(Evaluation::Ready(coerce::implicit(
+                context, value, ty, span,
+            )?));
         }
         values.push((
             index,
@@ -101,7 +113,9 @@ fn array(
         None => types::array(context.env_mut(), ty, fields.len() as u64, span),
     };
 
-    Ok(emit::aggregate(context, ty, &values, span)?)
+    Ok(Evaluation::Ready(emit::aggregate(
+        context, ty, &values, span,
+    )?))
 }
 
 fn initialize_scalar(
@@ -135,7 +149,10 @@ fn field_value(
     ty: HMIRTypeID,
 ) -> EvalResult<HMIRValue> {
     let span = body.expr(value).span();
-    let value = elaborate(context, body, value)?.complete(context, body, Some(ty))?;
+    let evaluated = eval(context, body, value)?;
+    let value = ready!(evaluated.complete(context, body, Some(ty)));
 
-    Ok(coerce::implicit(context, value, ty, span)?)
+    Ok(Evaluation::Ready(coerce::implicit(
+        context, value, ty, span,
+    )?))
 }

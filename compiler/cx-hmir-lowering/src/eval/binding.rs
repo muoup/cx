@@ -13,8 +13,9 @@ use crate::{
     eval::{
         EvalResult,
         coerce::{self},
-        complete::elaborate,
-        eval, eval_type, literal, storage, types,
+        eval, eval_type,
+        flow::{Evaluation, ready},
+        literal, storage, types,
     },
     log::hmir_error,
     value::HMIRValue,
@@ -43,10 +44,10 @@ pub(crate) fn eval_local(
 
     let stored = context.env().reference_inner(value.ty());
     match stored {
-        Some(inner) if context.env().is_reference(inner) => {
-            Ok(coerce::implicit(context, value, inner, span)?)
-        }
-        _ => Ok(value),
+        Some(inner) if context.env().is_reference(inner) => Ok(Evaluation::Ready(
+            coerce::implicit(context, value, inner, span)?,
+        )),
+        _ => Ok(Evaluation::Ready(value)),
     }
 }
 
@@ -65,21 +66,26 @@ pub(crate) fn eval_let(
         todo!("comptime let binding in a runtime context");
     }
 
-    let mut ty = eval_type(context, body, local.ty())?;
-
+    let declared = eval_type(context, body, local.ty())?;
+    let ty = match declared.known() {
+        Some(ty) => *ty,
+        None => {
+            ready!(declared.complete(context, body, None));
+            unreachable!("a declaration without known type information is incomplete or stopped")
+        }
+    };
     let value = match initializer {
         Some(initializer) => {
-            let value = elaborate(context, body, initializer)?;
-            let value = value.complete(context, body, Some(ty))?;
+            let value = eval(context, body, initializer)?;
+            let value = ready!(value.complete(context, body, Some(ty)));
             Some(coerce::implicit(context, value, ty, span)?)
         }
         None => None,
     };
-    if let Some(value) = &value
-        && types::unsized_array(context.env(), ty)
-    {
-        ty = value.ty();
-    }
+    let ty = match &value {
+        Some(value) => ready!(declared.complete(context, body, Some(value.ty()))),
+        None => ready!(declared.complete(context, body, None)),
+    };
     if !types::is_complete(context.env(), ty) {
         let subject = format!("variable of type '{}'", types::name(context.env(), ty));
         return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject).into());
@@ -92,7 +98,7 @@ pub(crate) fn eval_let(
     }
     emit::storage::bind_local(context, local_id, local_storage);
 
-    Ok(literal::unit(context, span))
+    Ok(Evaluation::Ready(literal::unit(context, span)))
 }
 
 pub(crate) fn eval_block(
@@ -109,9 +115,18 @@ pub(crate) fn eval_block(
 
     emit::open_scope(context, span.clone());
     let result = eval_statements(context, body, span, statements, yields);
-    emit::close_scope(context, span.clone());
-
-    result
+    match result {
+        Ok(result) => {
+            let span = span.clone();
+            Ok(result.finish(context, move |context| {
+                emit::close_scope(context, span.clone())
+            }))
+        }
+        Err(error) => {
+            emit::close_scope(context, span.clone());
+            Err(error)
+        }
+    }
 }
 
 fn eval_statements(
@@ -121,24 +136,25 @@ fn eval_statements(
     statements: &[HMIRExprID],
     yields: bool,
 ) -> EvalResult<HMIRValue> {
-    let mut result = None;
     for (index, statement) in statements.iter().enumerate() {
         let lifts = match context.context() {
             FnContext::Runtime(runtime) => Some(runtime.lift_count()),
             FnContext::Comptime(_) => None,
         };
-        result = Some(eval(context, body, *statement)?);
-
+        let result = eval(context, body, *statement);
         let yielded = yields && index + 1 == statements.len();
-        if let Some(lifts) = lifts.filter(|_| !yielded) {
+        if yielded {
+            let span = span.clone();
+            return result?.map(context, move |context, value| {
+                coerce::std_rvalue(context, value, &span)
+            });
+        }
+        ready!(result);
+        if let Some(lifts) = lifts {
             context.runtime_mut().release_lifts(lifts);
         }
     }
-
-    match result {
-        Some(value) if yields => Ok(coerce::std_rvalue(context, value, span)?),
-        _ => Ok(literal::unit(context, span)),
-    }
+    Ok(Evaluation::Ready(literal::unit(context, span)))
 }
 
 pub(crate) fn eval_scoped(

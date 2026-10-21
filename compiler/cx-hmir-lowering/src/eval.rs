@@ -18,8 +18,7 @@ pub(crate) use comptime::eval_comptime;
 pub(crate) use flow::EvalResult;
 
 use cx_hmir::{
-    HMIRBody, HMIRCoerceMode, HMIRControlOp, HMIRDefKind, HMIRDefRef, HMIRFunction, HMIROp,
-    HMIROwnershipOp,
+    HMIRBody, HMIRCoerceMode, HMIRControlOp, HMIRFunction, HMIROp, HMIROwnershipOp,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::HMIRTypeID,
@@ -39,10 +38,10 @@ use crate::{
         aggregate::eval_aggregate,
         binding::{eval_block, eval_let, eval_local},
         call::eval_call,
-        complete::elaborate,
         control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_while},
-        def::{eval_def, type_value},
+        def::eval_def,
         flow::ComptimeStop,
+        flow::{Evaluation, ready},
         literal::eval_literal,
         op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
         place::{eval_address_of, eval_assign, eval_dereference, eval_move},
@@ -98,7 +97,7 @@ fn runtime_definition(
 
     for (param, local) in signature.params().iter().zip(def.params()) {
         let decl = body.local(*local);
-        let ty = eval_type(context, body, *param.ty())?;
+        let ty = ready!(eval_type(context, body, *param.ty())?.description());
         let value = runtime::parameter(context, ty, decl.name().cloned(), decl.span())?;
         let reference = types::reference(context.env_mut(), ty, decl.span());
         let value = value.with_ty(reference);
@@ -108,12 +107,12 @@ fn runtime_definition(
 
     match root.kind() {
         HMIRExprKind::Block { .. } => {
-            eval(context, body, def.root())?;
+            ready!(eval(context, body, def.root()));
             let is_main = function.prototype().symbol_name().as_str() == "main";
             control::fallthrough(context, body, is_main, root.span())
         }
         _ => {
-            let value = elaborate(context, body, def.root())?;
+            let value = eval(context, body, def.root())?;
             control::return_value(context, body, Some(value), root.span())
         }
     }
@@ -134,12 +133,18 @@ pub(crate) fn eval(
 ) -> EvalResult<HMIRValue> {
     let expr = body.expr(id);
     let span = expr.span();
+    if let Some(incomplete) = complete::contextual(context, body, id) {
+        return Ok(Evaluation::Incomplete(incomplete));
+    }
 
     match expr.kind() {
-        HMIRExprKind::Literal(literal) => Ok(eval_literal(context, span, literal)),
-        HMIRExprKind::TypeRef(_) | HMIRExprKind::Type(_) => {
-            let ty = eval_type(context, body, id)?;
-            type_value(context, ty, span)
+        HMIRExprKind::Literal(literal) => {
+            Ok(Evaluation::Ready(eval_literal(context, span, literal)))
+        }
+        HMIRExprKind::TypeRef(ty) => complete::type_result(context, *ty, span),
+        HMIRExprKind::Type(ty) => {
+            let ty = eval_declared_type(context, body, id, ty)?;
+            complete::type_result(context, ty, span)
         }
         HMIRExprKind::Local(local) => eval_local(context, body, span, *local),
         HMIRExprKind::Let { local, initializer } => {
@@ -179,17 +184,17 @@ pub(crate) fn eval(
                 target,
             } => match mode {
                 HMIRCoerceMode::Truthy => {
-                    let value = eval(context, body, *value)?;
-                    Ok(coerce::condition(context, value, span)?)
+                    let value = ready!(eval(context, body, *value));
+                    Ok(Evaluation::Ready(coerce::condition(context, value, span)?))
                 }
                 HMIRCoerceMode::Implicit | HMIRCoerceMode::Convert | HMIRCoerceMode::CCast => {
-                    let target = eval_type(context, body, *target)?;
-                    let value = elaborate(context, body, *value)?;
-                    let value = value.complete(context, body, Some(target))?;
-                    Ok(match mode {
+                    let target = ready!(eval_type(context, body, *target));
+                    let value = eval(context, body, *value)?;
+                    let value = ready!(value.complete(context, body, Some(target)));
+                    Ok(Evaluation::Ready(match mode {
                         HMIRCoerceMode::Implicit => coerce::implicit(context, value, target, span)?,
                         _ => coerce::explicit(context, value, target, span)?,
-                    })
+                    }))
                 }
             },
 
@@ -209,7 +214,10 @@ pub(crate) fn eval(
             HMIROp::AddressOf(operand) => eval_address_of(context, body, span, *operand),
             HMIROp::Dereference(pointer) => eval_dereference(context, body, span, *pointer),
 
-            HMIROp::Type(_) => todo!("HMIROp::Type"),
+            HMIROp::Type(op) => {
+                let ty = eval_type_op(context, body, span, op)?;
+                complete::type_result(context, ty, span)
+            }
             HMIROp::Control(control) => todo!("HMIROp::Control({})", control.path()),
             HMIROp::OwnershipOp(HMIROwnershipOp::Move(operand)) => {
                 eval_move(context, body, span, *operand)
@@ -223,8 +231,10 @@ pub(crate) fn eval(
         HMIRExprKind::Def(def) => eval_def(context, span, def),
         HMIRExprKind::Call { callee, args } => eval_call(context, body, span, *callee, args),
 
-        HMIRExprKind::Hole(_) => todo!("HMIRExprKind::Hole as a value"),
-        HMIRExprKind::Comptime(inner) => Ok(eval_comptime(context, body, *inner, None)?),
+        HMIRExprKind::Hole(hole) => complete::hole(context, span, *hole),
+        HMIRExprKind::Comptime(inner) => Ok(Evaluation::Ready(eval_comptime(
+            context, body, *inner, None,
+        )?)),
         HMIRExprKind::Quote { .. } => todo!("HMIRExprKind::Quote"),
         HMIRExprKind::Splice { .. } => todo!("HMIRExprKind::Splice"),
         HMIRExprKind::Intrinsic(_) => todo!("HMIRExprKind::Intrinsic"),
@@ -241,49 +251,39 @@ pub(crate) fn eval_type(
     body: &HMIRBody,
     id: HMIRExprID,
 ) -> EvalResult<HMIRTypeID> {
-    let expr = body.expr(id);
-
-    match expr.kind() {
-        HMIRExprKind::TypeRef(ty) => Ok(*ty),
-        HMIRExprKind::Type(ty) => eval_declared_type(context, body, id, ty),
-        HMIRExprKind::Op(HMIROp::Type(op)) => eval_type_op(context, body, expr.span(), op),
-        HMIRExprKind::Def(def) => eval_type_def(context, expr.span(), def),
-        HMIRExprKind::Hole(hole) => match context.elaboration().hole(*hole) {
-            Some(ty) => Ok(ty),
-            None => Err(hmir_error(
-                expr.span(),
-                &typecheck::CANNOT_INFER,
-                "this type".into(),
-            )
-            .into()),
-        },
-        _ => todo!("Evaluate a type expression using the available comptime bindings"),
+    if matches!(context.context(), FnContext::Runtime(_)) {
+        return comptime::type_expression(context, body, id);
     }
+    let value = eval(context, body, id)?;
+    if matches!(value, Evaluation::Stop(_)) {
+        return Err(hmir_error(
+            body.expr(id).span(),
+            &cx_log::catalogue::mir::COMPTIME_CONTROL_ESCAPE,
+            (),
+        ));
+    }
+    let span = body.expr(id).span().clone();
+    value.map(context, move |context, value| {
+        require_type(context, value, &span)
+    })
 }
 
-// A type definition is evaluated in a context of its own, which sees nothing of the referring one
-fn eval_type_def(
+fn require_type(
     context: &mut LocalLoweringContext,
+    value: HMIRValue,
     span: &TokenRange,
-    def: &HMIRDefRef,
-) -> EvalResult<HMIRTypeID> {
-    let def = context.env_mut().resolve_def(def);
-
-    match def.kind() {
-        HMIRDefKind::Type(ty) => {
-            context.env_mut().resolver_mut().mark_incomplete(*ty);
-            Ok(*ty)
-        }
-        HMIRDefKind::ComptimeGlobal(global) => {
-            let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
-            eval_type(&mut child, global.body(), global.initializer())
-        }
-        HMIRDefKind::Function(_) | HMIRDefKind::Global(_) => Err(hmir_error(
+) -> CXResult<HMIRTypeID> {
+    let value = coerce::std_rvalue(context, value, span)?;
+    match value.kind() {
+        crate::value::HMIRValueKind::Constant(HMIRConstant::Type(ty)) => Ok(*ty),
+        _ => Err(hmir_error(
             span,
             &typecheck::EXPECTED_TYPE,
-            format!("'{}'", def.name()),
-        )
-        .into()),
+            format!(
+                "expression of type '{}'",
+                types::name(context.env(), value.ty())
+            ),
+        )),
     }
 }
 

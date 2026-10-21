@@ -6,12 +6,15 @@ use cx_hmir::{
         aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
     },
 };
-use cx_log::catalogue::{mir, typecheck};
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_tokens::TokenRange;
 
 use crate::{
     env::function::LocalLoweringContext,
-    eval::{EvalResult, eval_comptime, eval_type, types},
+    eval::{eval_comptime, eval_type, flow, types},
     log::hmir_error,
     value::{HMIRValueKind, constant::HMIRConstant, scalar::int},
 };
@@ -21,7 +24,7 @@ pub(crate) fn eval_type_op(
     _body: &HMIRBody,
     _span: &TokenRange,
     op: &HMIRTypeOp,
-) -> EvalResult<HMIRTypeID> {
+) -> CXResult<HMIRTypeID> {
     todo!("HMIRTypeOp: {}", op.path())
 }
 
@@ -30,10 +33,10 @@ pub(crate) fn eval_declared_type(
     body: &HMIRBody,
     declaration: HMIRExprID,
     ty: &HMIRExprType,
-) -> EvalResult<HMIRTypeID> {
+) -> CXResult<HMIRTypeID> {
     match ty.kind() {
         HMIRExprTypeKind::Nominal(inner) => {
-            let inner = eval_type(context, body, *inner)?;
+            let inner = flow::top(eval_type(context, body, *inner)?.description())?;
             Ok(specify(context, inner, *ty.semantics(), ty.decl_span()))
         }
         HMIRExprTypeKind::Struct { .. }
@@ -52,7 +55,7 @@ fn eval_aggregate(
     body: &HMIRBody,
     declaration: HMIRExprID,
     ty: &HMIRExprType,
-) -> EvalResult<HMIRTypeID> {
+) -> CXResult<HMIRTypeID> {
     if let Some(id) = context.env().resolver().declared_type(declaration) {
         return Ok(id);
     }
@@ -80,7 +83,7 @@ fn evaluate(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     ty: &HMIRExprType,
-) -> EvalResult<HMIRType> {
+) -> CXResult<HMIRType> {
     let inline = match ty.kind() {
         HMIRExprTypeKind::Array { .. } => Some("array element"),
         HMIRExprTypeKind::Struct { .. }
@@ -101,8 +104,8 @@ fn member(
     body: &HMIRBody,
     expr: HMIRExprID,
     inline: Option<&str>,
-) -> EvalResult<HMIRTypeID> {
-    let ty = eval_type(context, body, expr)?;
+) -> CXResult<HMIRTypeID> {
+    let ty = flow::top(eval_type(context, body, expr)?.description())?;
 
     match inline {
         Some(subject) if !types::is_complete(context.env(), ty) => {
@@ -128,19 +131,15 @@ pub(crate) fn specify(
     }
 
     let kind = HMIRTypeKind::Nominal(env.underlying(ty));
-    env.resolver_mut().realize_type(HMIRType::new(
-        kind,
-        semantics,
-        span.clone(),
-        None
-    ))
+    env.resolver_mut()
+        .realize_type(HMIRType::new(kind, semantics, span.clone(), None))
 }
 
 fn array_length(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     length: HMIRExprID,
-) -> EvalResult<u64> {
+) -> CXResult<u64> {
     let span = body.expr(length).span();
     let value = eval_comptime(context, body, length, None)?;
     let (HMIRTypeKind::Int(ty), HMIRValueKind::Constant(HMIRConstant::Int { value, .. })) =

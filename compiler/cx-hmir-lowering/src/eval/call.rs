@@ -10,7 +10,11 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{EvalResult, coerce, complete::elaborate, eval, flow::RuntimeStop, types},
+    eval::{
+        EvalResult, coerce, eval,
+        flow::{Evaluation, RuntimeStop, ready},
+        types,
+    },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
@@ -22,7 +26,7 @@ pub(crate) fn eval_call(
     callee: HMIRExprID,
     args: &[HMIRExprID],
 ) -> EvalResult<HMIRValue> {
-    let callee = eval(context, body, callee)?;
+    let callee = ready!(eval(context, body, callee));
     let callee = coerce::std_rvalue(context, callee, span)?;
 
     let env = context.env();
@@ -56,7 +60,8 @@ pub(crate) fn eval_call(
     for (index, arg) in args.iter().enumerate() {
         let span = body.expr(*arg).span();
         let param = params.get(index).map(|param| *param.ty());
-        let value = elaborate(context, body, *arg)?.complete(context, body, param)?;
+        let evaluated = eval(context, body, *arg)?;
+        let value = ready!(evaluated.complete(context, body, param));
         let value = match param {
             Some(param) => coerce::implicit(context, value, param, span)?,
             None => coerce::default_argument(context, value, span)?,
@@ -74,8 +79,8 @@ pub(crate) fn eval_call(
         context
             .runtime_mut()
             .emit(MIRInstructionKind::Unreachable, span.clone());
-        return Err(RuntimeStop::Diverged.into());
+        return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
     }
 
-    Ok(result)
+    Ok(Evaluation::Ready(result))
 }

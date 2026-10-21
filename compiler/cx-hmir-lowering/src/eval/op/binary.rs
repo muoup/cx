@@ -1,5 +1,7 @@
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBody, expr::HMIRExprID, ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    HMIRBinaryOp, HMIRBody,
+    expr::HMIRExprID,
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -7,7 +9,13 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{EvalResult, coerce, control::eval_short_circuit, op::eval_operand, types},
+    eval::{
+        EvalResult, coerce,
+        control::eval_short_circuit,
+        flow::{Evaluation, ready},
+        op::eval_operand,
+        types,
+    },
     log::hmir_error,
     value::HMIRValue,
 };
@@ -36,10 +44,12 @@ pub(crate) fn eval_binary(
         return eval_short_circuit(context, body, span, op, lhs, rhs);
     }
 
-    let lhs = eval_operand(context, body, span, lhs)?;
-    let rhs = eval_operand(context, body, span, rhs)?;
+    let lhs = ready!(eval_operand(context, body, span, lhs));
+    let rhs = ready!(eval_operand(context, body, span, rhs));
 
-    Ok(binary_operands(context, span, op, lhs, rhs)?)
+    Ok(Evaluation::Ready(binary_operands(
+        context, span, op, lhs, rhs,
+    )?))
 }
 
 pub(crate) fn binary_operands(
@@ -49,7 +59,10 @@ pub(crate) fn binary_operands(
     lhs: HMIRValue,
     rhs: HMIRValue,
 ) -> CXResult<HMIRValue> {
-    match (context.env().resolve_kind(lhs.ty()), context.env().resolve_kind(rhs.ty())) {
+    match (
+        context.env().resolve_kind(lhs.ty()),
+        context.env().resolve_kind(rhs.ty()),
+    ) {
         (HMIRTypeKind::PointerTo(element), HMIRTypeKind::Int(_))
             if matches!(op, HMIRBinaryOp::Add | HMIRBinaryOp::Sub) =>
         {
@@ -140,7 +153,8 @@ fn pointer_offset(
     element: HMIRTypeID,
     subtract: bool,
 ) -> CXResult<HMIRValue> {
-    let signed = matches!(context.env().resolve_kind(index.ty()), HMIRTypeKind::Int(int) if int.signed());
+    let signed =
+        matches!(context.env().resolve_kind(index.ty()), HMIRTypeKind::Int(int) if int.signed());
     let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, signed, span);
     let index = coerce::implicit(context, index, offset_ty, span)?;
 

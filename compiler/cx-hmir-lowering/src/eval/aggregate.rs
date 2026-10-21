@@ -22,8 +22,8 @@ use crate::{
         function::{FnContext, LocalLoweringContext},
     },
     eval::{
-        EvalResult,
-        eval, eval_type,
+        EvalResult, eval, eval_type,
+        flow::{Evaluation, ready},
         op::{binary_operands, eval_operand, specify},
         place::dereference,
         storage, types,
@@ -41,15 +41,15 @@ pub(crate) fn eval_aggregate(
     match op {
         HMIRAggregateOp::Member { base, name } => eval_member(context, body, span, *base, name),
         HMIRAggregateOp::Initialize { ty, fields } => {
-            let ty = eval_type(context, body, *ty)?;
+            let ty = ready!(eval_type(context, body, *ty)?.description());
             initialize(context, body, span, ty, fields)
         }
         HMIRAggregateOp::Index { base, index } => {
-            let base = eval_operand(context, body, span, *base)?;
-            let index = eval_operand(context, body, span, *index)?;
+            let base = ready!(eval_operand(context, body, span, *base));
+            let index = ready!(eval_operand(context, body, span, *index));
             let element = binary_operands(context, span, HMIRBinaryOp::Add, base, index)?;
 
-            Ok(dereference(context, element, span)?)
+            Ok(Evaluation::Ready(dereference(context, element, span)?))
         }
         _ => todo!("HMIROp::AggregateOp({})", op.path()),
     }
@@ -62,8 +62,11 @@ fn eval_member(
     base: HMIRExprID,
     name: &CXIdent,
 ) -> EvalResult<HMIRValue> {
-    let value = eval(context, body, base)?;
-    let subject = context.env().reference_inner(value.ty()).unwrap_or(value.ty());
+    let value = ready!(eval(context, body, base));
+    let subject = context
+        .env()
+        .reference_inner(value.ty())
+        .unwrap_or(value.ty());
     let mut value = if context.env().pointer_inner(subject).is_some() {
         dereference(context, value, span)?
     } else if context.env().is_reference(value.ty()) {
@@ -73,7 +76,12 @@ fn eval_member(
         emit::reference(context, &storage, span)?
     };
     if matches!(context.context(), FnContext::Comptime(_)) {
-        return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, "member access".into()).into());
+        return Err(hmir_error(
+            span,
+            &mir::COMPTIME_INVALID_OPERATION,
+            "member access".into(),
+        )
+        .into());
     }
 
     let Some(mut owner) = context.env().reference_inner(value.ty()) else {
@@ -110,7 +118,7 @@ fn eval_member(
         owner = ty;
     }
 
-    Ok(emit::reference(context, &value, span)?)
+    Ok(Evaluation::Ready(emit::reference(context, &value, span)?))
 }
 
 fn member_fields<'a>(env: &'a HMIREnvironment, ty: HMIRTypeID) -> &'a [HMIRFieldDef<HMIRTypeID>] {

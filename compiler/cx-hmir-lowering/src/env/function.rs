@@ -55,6 +55,10 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         LocalLoweringContext::new(&mut *self.env, signature, context)
     }
 
+    pub(crate) fn inherit_elaboration(&mut self, elaboration: ElaborationScope) {
+        self.elaboration = elaboration;
+    }
+
     pub fn env(&self) -> &HMIREnvironment<'global, 'hmir> {
         self.env
     }

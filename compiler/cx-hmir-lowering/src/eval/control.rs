@@ -13,10 +13,8 @@ use crate::{
     eval::{
         EvalResult,
         binding::eval_scoped,
-        coerce,
-        complete::{Completion, elaborate},
-        eval, eval_type,
-        flow::{self, ComptimeStop, EvalStop, RuntimeStop},
+        coerce, eval, eval_type,
+        flow::{self, ComptimeStop, Evaluation, RuntimeStop, StopReason, ready},
         literal, storage, types,
     },
     log::hmir_error,
@@ -38,7 +36,7 @@ pub(crate) fn eval_if(
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    let condition = eval(context, body, condition)?;
+    let condition = ready!(eval(context, body, condition));
 
     match context.context() {
         FnContext::Runtime(_) => {
@@ -61,11 +59,11 @@ fn comptime_if(
     match (comptime_truth(&condition), else_branch) {
         (true, Some(_)) => eval_scoped(context, body, then_branch),
         (true, None) => {
-            eval_scoped(context, body, then_branch)?;
-            Ok(literal::unit(context, span))
+            ready!(eval_scoped(context, body, then_branch));
+            Ok(Evaluation::Ready(literal::unit(context, span)))
         }
         (false, Some(else_branch)) => eval_scoped(context, body, else_branch),
-        (false, None) => Ok(literal::unit(context, span)),
+        (false, None) => Ok(Evaluation::Ready(literal::unit(context, span))),
     }
 }
 
@@ -96,11 +94,15 @@ fn runtime_if(
         );
 
         runtime::switch_to(context, then_block);
-        flow::catch_diverged(eval_scoped(context, body, then_branch))?;
+        ready!(flow::catch_diverged(eval_scoped(
+            context,
+            body,
+            then_branch
+        )));
         runtime::jump(context, merge, span.clone());
 
         runtime::switch_to(context, merge);
-        return Ok(literal::unit(context, span));
+        return Ok(Evaluation::Ready(literal::unit(context, span)));
     };
 
     let else_block = runtime::block(context, "if.else");
@@ -115,14 +117,14 @@ fn runtime_if(
     let mut arms = Vec::new();
     for (block, branch) in [(then_block, then_branch), (else_block, else_branch)] {
         runtime::switch_to(context, block);
-        if let Some(value) = flow::catch_diverged(eval_scoped(context, body, branch))? {
+        if let Some(value) = ready!(flow::catch_diverged(eval_scoped(context, body, branch))) {
             let block = runtime::current_block(context);
             arms.push(Arm { block, value });
         }
     }
 
     if arms.is_empty() {
-        return Err(RuntimeStop::Diverged.into());
+        return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
     }
 
     let merge = runtime::block(context, "if.merge");
@@ -133,7 +135,7 @@ fn runtime_if(
         }
 
         runtime::switch_to(context, merge);
-        return Ok(literal::unit(context, span));
+        return Ok(Evaluation::Ready(literal::unit(context, span)));
     };
 
     let result = emit::scratch(context, ty, span)?;
@@ -145,7 +147,7 @@ fn runtime_if(
     }
 
     runtime::switch_to(context, merge);
-    Ok(result)
+    Ok(Evaluation::Ready(result))
 }
 
 fn merged_type(
@@ -181,10 +183,20 @@ pub(crate) fn eval_for(
     loop_body: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
     emit::open_scope(context, span.clone());
-    let result = eval(context, body, init).and_then(|_| {
-        let increment = Some(increment);
-        eval_while(context, body, span, condition, loop_body, increment, true)
-    });
+    let result = match eval(context, body, init) {
+        Ok(Evaluation::Ready(_)) => eval_while(
+            context,
+            body,
+            span,
+            condition,
+            loop_body,
+            Some(increment),
+            true,
+        ),
+        Ok(Evaluation::Incomplete(incomplete)) => Err(incomplete.error()),
+        Ok(Evaluation::Stop(stop)) => Ok(Evaluation::Stop(stop)),
+        Err(error) => Err(error),
+    };
     emit::close_scope(context, span.clone());
 
     result
@@ -223,7 +235,7 @@ fn comptime_while(
 
     loop {
         if checks {
-            let condition = eval(context, body, condition)?;
+            let condition = ready!(eval(context, body, condition));
             if !comptime_truth(&condition) {
                 break;
             }
@@ -231,16 +243,19 @@ fn comptime_while(
         checks = true;
 
         match eval_scoped(context, body, loop_body) {
-            Ok(_) | Err(EvalStop::Comptime(ComptimeStop::Continue)) => {}
-            Err(EvalStop::Comptime(ComptimeStop::Break)) => break,
-            Err(stop) => return Err(stop),
+            Ok(Evaluation::Ready(_))
+            | Ok(Evaluation::Stop(StopReason::Comptime(ComptimeStop::Continue))) => {}
+            Ok(Evaluation::Stop(StopReason::Comptime(ComptimeStop::Break))) => break,
+            Ok(Evaluation::Stop(stop)) => return Ok(Evaluation::Stop(stop)),
+            Ok(Evaluation::Incomplete(incomplete)) => return Err(incomplete.error()),
+            Err(error) => return Err(error),
         }
         if let Some(increment) = increment {
-            eval(context, body, increment)?;
+            ready!(eval(context, body, increment));
         }
     }
 
-    Ok(literal::unit(context, span))
+    Ok(Evaluation::Ready(literal::unit(context, span)))
 }
 
 fn runtime_while(
@@ -265,7 +280,7 @@ fn runtime_while(
     runtime::jump(context, entry, span.clone());
 
     runtime::switch_to(context, condition_block);
-    let condition = flow::catch_diverged(eval(context, body, condition))?;
+    let condition = ready!(flow::catch_diverged(eval(context, body, condition)));
     let Some(condition) = condition else {
         for block in [Some(body_block), increment_block, Some(exit)] {
             let Some(block) = block else { continue };
@@ -276,7 +291,7 @@ fn runtime_while(
                 .emit(MIRInstructionKind::Unreachable, span.clone());
         }
 
-        return Err(RuntimeStop::Diverged.into());
+        return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
     };
 
     let condition = runtime::lower_value(context, &condition, span)?;
@@ -299,17 +314,17 @@ fn runtime_while(
     runtime::switch_to(context, body_block);
     let completion = flow::catch_diverged(eval_scoped(context, body, loop_body));
     context.runtime_mut().pop_loop();
-    completion?;
+    ready!(completion);
     runtime::jump(context, continue_block, span.clone());
 
     if let (Some(block), Some(increment)) = (increment_block, increment) {
         runtime::switch_to(context, block);
-        flow::catch_diverged(eval(context, body, increment))?;
+        ready!(flow::catch_diverged(eval(context, body, increment)));
         runtime::jump(context, condition_block, span.clone());
     }
 
     runtime::switch_to(context, exit);
-    Ok(literal::unit(context, span))
+    Ok(Evaluation::Ready(literal::unit(context, span)))
 }
 
 fn eval_logical_operand(
@@ -318,9 +333,9 @@ fn eval_logical_operand(
     span: &TokenRange,
     operand: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let value = eval(context, body, operand)?;
+    let value = ready!(eval(context, body, operand));
 
-    Ok(coerce::condition(context, value, span)?)
+    Ok(Evaluation::Ready(coerce::condition(context, value, span)?))
 }
 
 pub(crate) fn eval_short_circuit(
@@ -331,14 +346,14 @@ pub(crate) fn eval_short_circuit(
     lhs: HMIRExprID,
     rhs: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let left = eval_logical_operand(context, body, span, lhs)?;
+    let left = ready!(eval_logical_operand(context, body, span, lhs));
 
     match context.context() {
         FnContext::Runtime(_) => runtime_short_circuit(context, body, span, op, left, rhs),
         FnContext::Comptime(_) => {
             let truth = comptime_truth(&left);
             if truth == (op == HMIRBinaryOp::LOr) {
-                return Ok(left);
+                return Ok(Evaluation::Ready(left));
             }
 
             eval_logical_operand(context, body, span, rhs)
@@ -369,7 +384,9 @@ fn runtime_short_circuit(
     runtime::branch(context, condition, true_target, false_target, span.clone());
 
     runtime::switch_to(context, rhs_block);
-    let right = flow::catch_diverged(eval_logical_operand(context, body, span, rhs))?;
+    let right = ready!(flow::catch_diverged(eval_logical_operand(
+        context, body, span, rhs
+    )));
 
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = emit::scratch(context, ty, span)?;
@@ -383,7 +400,7 @@ fn runtime_short_circuit(
     runtime::jump(context, merge, span.clone());
 
     runtime::switch_to(context, merge);
-    Ok(result)
+    Ok(Evaluation::Ready(result))
 }
 
 pub(crate) fn eval_loop_exit(
@@ -392,7 +409,7 @@ pub(crate) fn eval_loop_exit(
     stop: ComptimeStop,
 ) -> EvalResult<HMIRValue> {
     if matches!(context.context(), FnContext::Comptime(_)) {
-        return Err(stop.into());
+        return Ok(Evaluation::Stop(stop.into()));
     }
 
     let Some(frame) = context.runtime().current_loop() else {
@@ -407,7 +424,7 @@ pub(crate) fn eval_loop_exit(
 
     runtime::drop_scopes(context, frame.scope_depth, span);
     runtime::jump(context, target, span.clone());
-    Err(RuntimeStop::Diverged.into())
+    Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))
 }
 
 pub(crate) fn eval_return(
@@ -416,10 +433,7 @@ pub(crate) fn eval_return(
     span: &TokenRange,
     value: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    let value = match value {
-        Some(value) => Some(elaborate(context, body, value)?),
-        None => None,
-    };
+    let value = value.map(|value| eval(context, body, value)).transpose()?;
 
     return_value(context, body, value, span)
 }
@@ -428,13 +442,13 @@ pub(crate) fn eval_return(
 pub(crate) fn return_value(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
-    value: Option<Completion>,
+    value: Option<Evaluation<HMIRValue>>,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
     let Some(return_type) = context.signature().map(|sig| *sig.return_type()) else {
         return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into());
     };
-    let ty = eval_type(context, body, return_type)?;
+    let ty = ready!(eval_type(context, body, return_type));
     let returns_void = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Unreachable => {
             return Err(hmir_error(span, &typecheck::NORETURN_RETURN, ()).into());
@@ -444,18 +458,19 @@ pub(crate) fn return_value(
     };
 
     let value = match value {
-        Some(value) if returns_void => {
-            let Completion::Ready(value) = value else {
-                return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()).into());
-            };
-            if !matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void) {
+        Some(value) if returns_void => match value {
+            Evaluation::Ready(value)
+                if matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void) =>
+            {
+                None
+            }
+            Evaluation::Stop(stop) => return Ok(Evaluation::Stop(stop)),
+            Evaluation::Ready(_) | Evaluation::Incomplete(_) => {
                 return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()).into());
             }
-
-            None
-        }
+        },
         Some(value) => {
-            let value = value.complete(context, body, Some(ty))?;
+            let value = ready!(value.complete(context, body, Some(ty)));
             Some(coerce::implicit(context, value, ty, span)?)
         }
         None if returns_void => None,
@@ -473,11 +488,11 @@ pub(crate) fn return_value(
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Return { value }, span.clone());
-            Err(RuntimeStop::Diverged.into())
+            Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))
         }
         FnContext::Comptime(_) => {
             let value = value.unwrap_or_else(|| literal::unit(context, span));
-            Err(ComptimeStop::Return(value).into())
+            Ok(Evaluation::Stop(ComptimeStop::Return(value).into()))
         }
     }
 }
@@ -491,19 +506,19 @@ pub(crate) fn fallthrough(
     let Some(return_type) = context.signature().map(|sig| *sig.return_type()) else {
         unreachable!("fallthrough in a context without a signature")
     };
-    let ty = eval_type(context, body, return_type)?;
+    let ty = ready!(eval_type(context, body, return_type));
 
     match context.env().resolve_kind(ty) {
         HMIRTypeKind::Void => return_value(context, body, None, span),
         HMIRTypeKind::Int(_) if is_main => {
             let zero = HMIRValue::constant(ty, HMIRConstant::Int { value: 0, ty });
-            return_value(context, body, Some(Completion::Ready(zero)), span)
+            return_value(context, body, Some(Evaluation::Ready(zero)), span)
         }
         _ => {
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Unreachable, span.clone());
-            Err(RuntimeStop::Diverged.into())
+            Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))
         }
     }
 }

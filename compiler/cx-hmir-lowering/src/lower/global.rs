@@ -27,7 +27,7 @@ pub fn declare(
     let mut context =
         LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
     let span = global.body().expr(global.ty()).span();
-    let ty = flow::top(eval_type(&mut context, global.body(), global.ty()))?;
+    let ty = flow::top(eval_type(&mut context, global.body(), global.ty())?.description())?;
     let external = global.initializer().is_none() && global.linkage() == LinkageMode::Extern;
     if !external && !types::is_complete(context.env(), ty) {
         let subject = format!("global of type '{}'", types::name(context.env(), ty));
