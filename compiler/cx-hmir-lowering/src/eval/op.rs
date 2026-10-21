@@ -19,7 +19,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
-        coerce::{convert, decay},
+        coerce::{cast, decay},
         eval, promote,
     },
     value::HMIRValue,
@@ -38,7 +38,7 @@ pub(crate) fn promote_operand(
     let value = decay(context, value, span)?;
 
     let promoted = promote::integer(context, value.ty(), span);
-    convert(context, value, promoted, span)
+    cast(context, value, promoted, span)
 }
 
 pub(crate) fn eval_operand(

@@ -3,7 +3,7 @@ mod storage;
 
 pub use op::{binary, cast, difference, offset, unary};
 pub use storage::{
-    addressable, allocate, initialize, invalidate, parameter, read, relocate, write,
+    allocate, initialize, invalidate, parameter, copy, relocate, write,
 };
 
 use cx_hmir::{
@@ -201,7 +201,7 @@ fn detach(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match value.kind() {
-        HMIRValueKind::Indirect(_) => read(context, value, span),
+        HMIRValueKind::Indirect(_) => copy(context, value, span),
         _ => Ok(value),
     }
 }
@@ -451,7 +451,7 @@ pub fn dereference(
     inner: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointer = read(context, pointer, span)?;
+    let pointer = copy(context, pointer, span)?;
     let value = materialize(context, &pointer, span)?;
 
     let null = MIRConstant::Nullptr {

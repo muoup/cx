@@ -1,17 +1,15 @@
-use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRScopeID, MIRTarget,
-    expr::instruction::MIRInvalidationKind,
+    MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegisterDecl, MIRScopeID,
+    MIRTarget, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use super::{location, output, reference, store};
 use crate::{
-    env::function::LocalLoweringContext,
-    eval::types,
-    value::{HMIRPlace, HMIRValue, HMIRValueKind},
+    emit::runtime, env::function::LocalLoweringContext, eval::types::{self, lower_type}, value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 
 fn allocate_place(
@@ -34,7 +32,11 @@ fn allocate_place(
 }
 
 // Registers a MIR binding as a fresh evaluation slot; this names storage and never binds a local
-pub fn slot(context: &mut LocalLoweringContext, ty: HMIRTypeID, bindable: MIRBindable) -> HMIRValue {
+pub fn slot(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    bindable: MIRBindable,
+) -> HMIRValue {
     let slot = context.runtime_mut().allocate_slot(bindable);
 
     HMIRValue::place(ty, HMIRPlace::Local(slot))
@@ -42,7 +44,9 @@ pub fn slot(context: &mut LocalLoweringContext, ty: HMIRTypeID, bindable: MIRBin
 
 fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBindable> {
     match value.kind() {
-        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => Some(context.runtime().slot(*slot).clone()),
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
+            Some(context.runtime().slot(*slot).clone())
+        }
         HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => {
             todo!("global places: globals are not lowered yet")
         }
@@ -67,9 +71,26 @@ pub fn allocate(
     name: Option<CXIdent>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let place = allocate_place(context, ty, name, span)?;
+    let nodrop = context.env().is_nodrop(ty);
 
-    Ok(slot(context, ty, MIRBindable::Place(place)))
+    let place = {
+        let ty = lower_type(context.env_mut(), ty, span)?;
+        let scope = *context
+            .runtime()
+            .open_scopes()
+            .last()
+            .expect("Place allocated outside of a scope");
+
+        context
+            .runtime_mut()
+            .builder_mut()
+            .allocate_place(MIRPlaceDecl::new(ty, name, scope, nodrop, false))
+    };
+    let slot = context
+        .runtime_mut()
+        .allocate_slot(MIRBindable::Place(place));
+
+    Ok(HMIRValue::place(ty, HMIRPlace::Local(slot)))
 }
 
 pub fn parameter(
@@ -85,10 +106,6 @@ pub fn parameter(
     initialize(context, &value, span);
 
     Ok(value)
-}
-
-pub fn addressable(context: &mut LocalLoweringContext, value: &HMIRValue) -> bool {
-    target(context, value).is_some()
 }
 
 pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) {
@@ -138,26 +155,37 @@ pub fn relocate(
     );
 }
 
-pub fn read(
+pub fn copy(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let shared = match value.kind() {
-        HMIRValueKind::Constant(_) => true,
-        _ => !addressable(context, &value) && !context.env().is_nocopy(value.ty()),
+    let runtime_value = runtime::materialize(context, &value, span)?;
+    
+    // Keep this as not a reference_inner because we need the bitfield data later
+    let HMIRTypeKind::ReferenceTo(result_type) = context.env().resolve_type_id(runtime_value.ty()).kind() else {
+        unreachable!("read from type: {}", types::name(context.env(), runtime_value.ty()))
     };
-    if shared {
-        return Ok(value);
-    }
 
-    let ty = types::lower_type(context.env_mut(), value.ty(), span)?;
-    let source = location(context, &value, span)?;
-    let (out, result) = output(context, value.ty(), span)?;
-    store(context, out, source, ty, span.clone());
-    initialize(context, &result, span);
+    let ty = types::lower_type(context.env_mut(), *result_type, span)?;
+    let runtime = context.runtime_mut();
 
-    Ok(result)
+    let register = runtime
+        .builder_mut()
+        .allocate_register(MIRRegisterDecl::new(ty, None));
+    runtime.emit(
+        MIRInstructionKind::Store {
+            target: MIRTarget::Register(register),
+            value: runtime_value,
+            ty,
+
+            // TODO: Implement
+            bitfield: None
+        },
+        span.clone(),
+    );
+
+    todo!()
 }
 
 pub fn write(

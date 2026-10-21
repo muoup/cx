@@ -97,7 +97,7 @@ fn runtime_definition(
         let ty = eval_type(context, body, *param.ty())?;
         let value = runtime::parameter(context, ty, decl.name().cloned(), decl.span())?;
 
-        context.insert_local(*local, value);
+        emit::storage::bind_local(context, *local, value);
     }
 
     let value = eval(context, body, def.root())?;

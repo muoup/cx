@@ -18,9 +18,7 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{EvalResult, eval_type},
-    log::log_hmir_error,
+    env::{HMIREnvironment, function::LocalLoweringContext}, eval::{EvalResult, eval_type, types}, log::log_hmir_error,
 };
 
 pub(crate) fn eval_signature(
@@ -92,7 +90,7 @@ pub(crate) fn lower_type(
 
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
         HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } => {
-            return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, todo!("type display"));
+            return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, types::name(env, ty));
         }
         HMIRTypeKind::Str => MIRTypeKind::Str,
         HMIRTypeKind::Int(int) => MIRTypeKind::Integer {

@@ -36,7 +36,7 @@ pub(crate) fn eval_coerce(
 
     let target = eval_type(context, body, target)?;
     let value = eval_initializer(context, body, value, target)?;
-    Ok(convert(context, value, target, span)?)
+    Ok(cast(context, value, target, span)?)
 }
 
 pub(crate) fn truthy(
@@ -60,7 +60,7 @@ pub(crate) fn truthy(
             return Err(hmir_error(
                 span,
                 &typecheck::NO_TRUTH_VALUE,
-                todo!("type display"),
+                types::name(context.env(), ty),
             ));
         }
     };
@@ -135,7 +135,7 @@ fn bind_reference(
     })
 }
 
-pub(crate) fn convert(
+pub(crate) fn cast(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     target: HMIRTypeID,
@@ -173,21 +173,21 @@ pub(crate) fn convert(
                 ));
             }
             let value = emit::referent(context, value, span)?;
-            let value = emit::read(context, value, span)?;
-            return convert(context, value, target, span);
+            let value = emit::copy(context, value, span)?;
+            return cast(context, value, target, span);
         }
         (_, HMIRTypeKind::ReferenceTo(inner)) => {
             return bind_reference(context, value, *inner, target, span);
         }
         (HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_), _) => {
             let value = decay(context, value, span)?;
-            return convert(context, value, target, span);
+            return cast(context, value, target, span);
         }
         (_, HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_)) => {
             return Err(hmir_error(
                 span,
                 &typecheck::INVALID_CONVERSION,
-                (todo!("type display"), todo!("type display")),
+                (types::name(context.env(), value.ty()), types::name(context.env(), target)),
             ));
         }
 
@@ -214,7 +214,7 @@ pub(crate) fn convert(
     let source_mir = types::lower_type(context.env_mut(), source, span)?;
     let target_mir = types::lower_type(context.env_mut(), target, span)?;
     if source_mir == target_mir {
-        return Ok(emit::read(context, value, span)?.with_ty(target));
+        return Ok(emit::copy(context, value, span)?.with_ty(target));
     }
 
     match kinds {
@@ -236,7 +236,7 @@ pub(crate) fn value(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.env().reference_inner(value.ty()) {
-        Some(inner) => convert(context, value, inner, span),
+        Some(inner) => cast(context, value, inner, span),
         None => Ok(value),
     }
 }

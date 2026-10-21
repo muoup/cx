@@ -55,7 +55,7 @@ pub(crate) fn eval_unary(
         _ => Err(hmir_error(
             span,
             &typecheck::INVALID_OPERAND,
-            (format!("apply '{}' to", op.path()), todo!("type display")),
+            (format!("apply '{}' to", op.path()), types::name(context.env(), value.ty())),
         )
         .into()),
     }
@@ -67,45 +67,48 @@ fn increment(
     op: HMIRUnaryOp,
     target: HMIRValue,
 ) -> CXResult<HMIRValue> {
-    let target = emit::referent(context, target, span)?;
-    if !emit::addressable(context, &target) {
+    let Some(ty) = context.env().reference_inner(target.ty()) else {
         return Err(hmir_error(
             span,
             &typecheck::NOT_ADDRESSABLE,
             "increment".into(),
         ));
-    }
-    if context.env().semantics(target.ty()).constant {
+    };
+
+    if context.env().semantics(ty).constant {
         return Err(hmir_error(
             span,
             &typecheck::MUTATE_CONST,
-            ("increment".into(), types::name(context.env(), target.ty())),
+            ("increment".into(), types::name(context.env(), ty)),
         ));
     }
 
-    let subtract = matches!(op, HMIRUnaryOp::PreDecrement | HMIRUnaryOp::PostDecrement);
-    let prefix = matches!(op, HMIRUnaryOp::PreIncrement | HMIRUnaryOp::PreDecrement);
-    let step = match subtract {
-        true => HMIRBinaryOp::Sub,
-        false => HMIRBinaryOp::Add,
+    let (prefix, op) = match op {
+        HMIRUnaryOp::PreIncrement => (true, HMIRBinaryOp::Add),
+        HMIRUnaryOp::PostIncrement => (false, HMIRBinaryOp::Add),
+        HMIRUnaryOp::PreDecrement => (true, HMIRBinaryOp::Sub),
+        HMIRUnaryOp::PostDecrement => (false, HMIRBinaryOp::Sub),
+        
+        _ => unreachable!("increment called with non-increment operator"),
     };
 
-    let ty = target.ty();
-    let current = emit::read(context, target.clone(), span)?;
+    let current = emit::copy(context, target.clone(), span)?;
 
     let updated = match kind(context, ty) {
         HMIRTypeKind::Int(_) => {
             let one = HMIRValue::constant(ty, HMIRConstant::Int { value: 1, ty });
-            emit::binary(context, step, &current, &one, ty, span)?
+            emit::binary(context, op, &current, &one, ty, span)?
         }
+
         HMIRTypeKind::Float(_) => {
             let one = HMIRConstant::Float {
                 value: FloatWrapper::from(1.0),
                 ty,
             };
             let one = HMIRValue::constant(ty, one);
-            emit::binary(context, step, &current, &one, ty, span)?
+            emit::binary(context, op, &current, &one, ty, span)?
         }
+
         HMIRTypeKind::PointerTo(element) => {
             let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
             let one = HMIRConstant::Int {
@@ -113,21 +116,23 @@ fn increment(
                 ty: offset_ty,
             };
             let one = HMIRValue::constant(offset_ty, one);
-            emit::offset(context, &current, &one, element, subtract, span)?
+            emit::offset(context, &current, &one, element, matches!(op, HMIRBinaryOp::Sub), span)?
         }
+
         _ => {
             return Err(hmir_error(
                 span,
                 &typecheck::INVALID_OPERAND,
-                ("increment".into(), todo!("type display")),
+                ("increment".into(), "type display".into()),
             ));
         }
     };
-    emit::transfer(context, &target, updated, Transfer::Replace, span)?;
+
+    emit::storage::write(context, &target, &updated, span)?;
 
     if prefix {
-        emit::reference(context, &target, span)
+        Ok(target)
     } else {
-        Ok(current)
+        Ok(updated)
     }
 }

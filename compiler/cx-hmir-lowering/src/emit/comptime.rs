@@ -22,7 +22,7 @@ fn tracked_slot(value: &HMIRValue) -> Option<HMIRSlotID> {
     }
 }
 
-pub fn read(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
+pub fn copy(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
     let slot = match value.kind() {
         HMIRValueKind::Constant(_) => return Ok(value),
         HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => *slot,
@@ -43,7 +43,7 @@ pub fn write(
     target: &HMIRValue,
     value: &HMIRValue,
 ) -> CXResult<()> {
-    let value = read(context, value.clone())?;
+    let value = copy(context, value.clone())?;
     let HMIRValueKind::Constant(constant) = value.kind() else {
         unreachable!("a comptime read yields a constant");
     };
@@ -101,7 +101,7 @@ pub fn dereference(
     pointer: HMIRValue,
     inner: HMIRTypeID,
 ) -> CXResult<HMIRValue> {
-    let pointer = read(context, pointer)?;
+    let pointer = copy(context, pointer)?;
     if !matches!(
         pointer.kind(),
         HMIRValueKind::Constant(HMIRConstant::Address { .. })

@@ -11,7 +11,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
-        coerce::convert,
+        coerce::cast,
         control::eval_short_circuit,
         op::{eval_operand, kind},
         promote, types,
@@ -74,12 +74,12 @@ pub(crate) fn binary_operands(
             emit::difference(context, &lhs, &rhs, element, ty, span)
         }
         (HMIRTypeKind::PointerTo(_), _) if is_comparison(op) => {
-            let rhs = convert(context, rhs, lhs.ty(), span)?;
+            let rhs = cast(context, rhs, lhs.ty(), span)?;
             let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
             emit::binary(context, op, &lhs, &rhs, ty, span)
         }
         (_, HMIRTypeKind::PointerTo(_)) if is_comparison(op) => {
-            let lhs = convert(context, lhs, rhs.ty(), span)?;
+            let lhs = cast(context, lhs, rhs.ty(), span)?;
             let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
             emit::binary(context, op, &lhs, &rhs, ty, span)
         }
@@ -106,8 +106,8 @@ fn arithmetic(
             &typecheck::INVALID_BINARY_OPERANDS,
             (
                 op.path().into(),
-                todo!("type display"),
-                todo!("type display"),
+                types::name(context.env(), lhs.ty()),
+                types::name(context.env(), rhs.ty()),
             ),
         ));
     };
@@ -129,8 +129,8 @@ fn arithmetic(
         ));
     }
 
-    let lhs = convert(context, lhs, common, span)?;
-    let rhs = convert(context, rhs, common, span)?;
+    let lhs = cast(context, lhs, common, span)?;
+    let rhs = cast(context, rhs, common, span)?;
     let result = match is_comparison(op) {
         true => types::int(context.env_mut(), HMIRIntWidth::I1, false, span),
         false => common,
@@ -149,7 +149,7 @@ fn pointer_offset(
 ) -> CXResult<HMIRValue> {
     let signed = matches!(kind(context, index.ty()), HMIRTypeKind::Int(int) if int.signed());
     let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, signed, span);
-    let index = convert(context, index, offset_ty, span)?;
+    let index = cast(context, index, offset_ty, span)?;
 
     emit::offset(context, &pointer, &index, element, subtract, span)
 }

@@ -8,17 +8,9 @@ use cx_mir::MIRInstructionKind;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
-    env::function::LocalLoweringContext,
-    eval::{
-        EvalResult,
-        coerce::{self, convert, decay},
-        eval,
-        flow::RuntimeStop,
-        promote,
-    },
-    log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    emit, env::function::LocalLoweringContext, eval::{
+        EvalResult, coerce::{self, cast, decay}, eval, flow::RuntimeStop, promote, types,
+    }, log::hmir_error, value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) fn eval_call(
@@ -31,7 +23,7 @@ pub(crate) fn eval_call(
     let callee = eval(context, body, callee)?;
     let callee = emit::referent(context, callee, span)?;
     let callee = decay(context, callee, span)?;
-    let callee = emit::read(context, callee, span)?;
+    let callee = emit::copy(context, callee, span)?;
 
     let env = context.env();
     let function = env
@@ -41,7 +33,7 @@ pub(crate) fn eval_call(
         return Err(hmir_error(
             span,
             &typecheck::UNEXPECTED_KIND,
-            (todo!("type display"), "callable".into()),
+            (types::name(context.env(), callee.ty()), "callable".into()),
         )
         .into());
     };
@@ -65,13 +57,13 @@ pub(crate) fn eval_call(
         let span = body.expr(*arg).span();
         let value = eval(context, body, *arg)?;
         let value = match params.get(index) {
-            Some(param) => convert(context, value, *param.ty(), span)?,
+            Some(param) => cast(context, value, *param.ty(), span)?,
             None => {
                 let value = coerce::value(context, value, span)?;
                 let value = decay(context, value, span)?;
                 let promoted = promote::argument(context, value.ty(), span);
 
-                convert(context, value, promoted, span)?
+                cast(context, value, promoted, span)?
             }
         };
 

@@ -4,11 +4,13 @@
 // Avoid any routines in here that are hyper-specific and would only feasibly be used in one place
 
 mod comptime;
-pub(crate) mod runtime;
-mod storage;
 mod transfer;
 
-pub use storage::{addressable, allocate, initialize, read, spill};
+pub mod storage;
+
+pub(crate) mod runtime;
+
+pub use storage::{allocate, initialize, copy, spill};
 pub use transfer::{Transfer, consume, transfer};
 
 use cx_hmir::{
@@ -48,7 +50,7 @@ pub fn referent(
         return Ok(value);
     };
 
-    let reference = read(context, value, span)?;
+    let reference = copy(context, value, span)?;
     Ok(HMIRValue::indirect(inner, reference))
 }
 

@@ -19,10 +19,11 @@ use crate::{
     },
     eval::{
         EvalResult,
-        coerce::convert,
+        coerce::cast,
         eval, eval_type,
         op::{binary_operands, eval_operand, specify},
         place::dereference,
+        types,
     },
     log::hmir_error,
     value::HMIRValue,
@@ -76,7 +77,7 @@ fn eval_member(
         return Err(hmir_error(
             span,
             &typecheck::UNKNOWN_MEMBER,
-            (todo!("type display"), name.to_string()),
+            (types::name(context.env(), value.ty()), name.to_string()),
         )
         .into());
     };
@@ -158,7 +159,7 @@ fn initialize(
                     return Err(hmir_error(
                         span,
                         &typecheck::UNKNOWN_MEMBER,
-                        (todo!("type display"), name.to_string()),
+                        (types::name(context.env(), ty), name.to_string()),
                     )
                     .into());
                 };
@@ -191,10 +192,15 @@ fn initialize_scalar(
         [(Some(name), _)] => Err(hmir_error(
             span,
             &typecheck::UNKNOWN_MEMBER,
-            (todo!("type display"), name.to_string()),
+            (types::name(context.env(), ty), name.to_string()),
         )
         .into()),
-        _ => Err(hmir_error(span, &typecheck::LIST_INITIALIZATION, todo!("type display")).into()),
+        _ => Err(hmir_error(
+            span,
+            &typecheck::LIST_INITIALIZATION,
+            (types::name(context.env(), ty)).into(),
+        )
+        .into()),
     }
 }
 
@@ -207,7 +213,7 @@ fn field_value(
     let span = body.expr(value).span();
     let value = eval_initializer(context, body, value, ty)?;
 
-    Ok(convert(context, value, ty, span)?)
+    Ok(cast(context, value, ty, span)?)
 }
 
 // A list without a declared type takes the type of the field or cast that it is the value of

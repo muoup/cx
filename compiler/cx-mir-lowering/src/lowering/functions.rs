@@ -18,8 +18,6 @@ pub(super) fn lower_function<'mir>(
     function: &'mir MIRFunction,
     body: &'mir MIRBody,
 ) -> CXResult<LMIRFunction> {
-    cx_mir::verify::lifts(body)?;
-    
     let prototype = convert_prototype(function.prototype(), global.unit.types());
     let mut context = FunctionContext::new(global, function, body, prototype);
     

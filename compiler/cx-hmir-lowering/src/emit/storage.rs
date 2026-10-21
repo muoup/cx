@@ -1,4 +1,4 @@
-use cx_hmir::ty::HMIRTypeID;
+use cx_hmir::{body::HMIRLocalID, ty::HMIRTypeID};
 use cx_log::CXResult;
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
@@ -10,7 +10,7 @@ use super::{
 };
 use crate::{
     env::function::{FnContext, LocalLoweringContext},
-    value::{HMIRValue, HMIRValueKind},
+    value::HMIRValue,
 };
 
 // Fresh, uninitialized storage of type 'ty' in the current scope; binds no local, writes and consumes nothing
@@ -26,25 +26,25 @@ pub fn allocate(
     }
 }
 
-// Whether a value has storage that can be written; a register-backed slot has no address
-pub fn addressable(context: &mut LocalLoweringContext, value: &HMIRValue) -> bool {
-    match context.context() {
-        FnContext::Runtime(_) => runtime::addressable(context, value),
-        FnContext::Comptime(_) => !matches!(value.kind(), HMIRValueKind::Constant(_)),
+// Binds a local to an existing value; the value is not copied, moved or consumed, and the local is not marked
+pub fn bind_local(context: &mut LocalLoweringContext, local: HMIRLocalID, value: HMIRValue) {
+    match context.context_mut() {
+        FnContext::Runtime(context) => context.set_local(local, value),
+        FnContext::Comptime(context) => context.set_local(local, value),
     }
 }
 
 // The contents of a value, copied into initialized storage of their own; the source is neither consumed nor
 // checked for being copyable, so the caller authorizes the copy. Constants, and registers of a copyable type,
 // cannot be written and are returned as they are
-pub fn read(
+pub fn copy(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::read(context, value, span),
-        FnContext::Comptime(_) => comptime::read(context, value),
+        FnContext::Runtime(_) => runtime::copy(context, value, span),
+        FnContext::Comptime(_) => comptime::copy(context, value),
     }
 }
 
@@ -92,10 +92,6 @@ pub fn spill(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if addressable(context, &value) {
-        return Ok(value);
-    }
-
     let place = allocate(context, value.ty(), None, span)?;
     transfer::transfer(context, &place, value, Transfer::Init, span)?;
 

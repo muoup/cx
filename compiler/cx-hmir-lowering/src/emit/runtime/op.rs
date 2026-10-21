@@ -29,52 +29,52 @@ pub fn binary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let operands = kind(context, lhs.ty());
-    let lhs = materialize(context, lhs, span)?;
-    let rhs = materialize(context, rhs, span)?;
+    let ml = materialize(context, lhs, span)?;
+    let mr = materialize(context, rhs, span)?;
     let (out, result) = output(context, result, span)?;
 
     let instruction: MIRIntrinsic = match operands {
         HMIRTypeKind::Float(_) => match op {
-            HMIRBinaryOp::Add => MIRFloatIntrinsic::Add { out, lhs, rhs },
-            HMIRBinaryOp::Sub => MIRFloatIntrinsic::Sub { out, lhs, rhs },
-            HMIRBinaryOp::Mul => MIRFloatIntrinsic::Mul { out, lhs, rhs },
-            HMIRBinaryOp::Div => MIRFloatIntrinsic::Div { out, lhs, rhs },
-            HMIRBinaryOp::Eq => MIRFloatIntrinsic::Eq { out, lhs, rhs },
-            HMIRBinaryOp::Neq => MIRFloatIntrinsic::Neq { out, lhs, rhs },
-            HMIRBinaryOp::Lt => MIRFloatIntrinsic::Lt { out, lhs, rhs },
-            HMIRBinaryOp::Le => MIRFloatIntrinsic::Le { out, lhs, rhs },
-            HMIRBinaryOp::Gt => MIRFloatIntrinsic::Gt { out, lhs, rhs },
-            HMIRBinaryOp::Ge => MIRFloatIntrinsic::Geq { out, lhs, rhs },
+            HMIRBinaryOp::Add => MIRFloatIntrinsic::Add { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Sub => MIRFloatIntrinsic::Sub { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Mul => MIRFloatIntrinsic::Mul { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Div => MIRFloatIntrinsic::Div { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Eq => MIRFloatIntrinsic::Eq { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Neq => MIRFloatIntrinsic::Neq { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Lt => MIRFloatIntrinsic::Lt { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Le => MIRFloatIntrinsic::Le { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Gt => MIRFloatIntrinsic::Gt { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Ge => MIRFloatIntrinsic::Geq { out, lhs: ml, rhs: mr },
             _ => unreachable!("'{}' has no floating form", op.path()),
         }
         .into(),
         HMIRTypeKind::Int(int) => {
             let signed = int.signed();
             match op {
-                HMIRBinaryOp::Add => MIRIntIntrinsic::Add { out, lhs, rhs },
-                HMIRBinaryOp::Sub => MIRIntIntrinsic::Sub { out, lhs, rhs },
-                HMIRBinaryOp::Mul if signed => MIRIntIntrinsic::SMul { out, lhs, rhs },
-                HMIRBinaryOp::Mul => MIRIntIntrinsic::UMul { out, lhs, rhs },
-                HMIRBinaryOp::Div if signed => MIRIntIntrinsic::SDiv { out, lhs, rhs },
-                HMIRBinaryOp::Div => MIRIntIntrinsic::UDiv { out, lhs, rhs },
-                HMIRBinaryOp::Mod if signed => MIRIntIntrinsic::SMod { out, lhs, rhs },
-                HMIRBinaryOp::Mod => MIRIntIntrinsic::UMod { out, lhs, rhs },
-                HMIRBinaryOp::Eq => MIRIntIntrinsic::Eq { out, lhs, rhs },
-                HMIRBinaryOp::Neq => MIRIntIntrinsic::Neq { out, lhs, rhs },
-                HMIRBinaryOp::Lt if signed => MIRIntIntrinsic::SLt { out, lhs, rhs },
-                HMIRBinaryOp::Lt => MIRIntIntrinsic::ULt { out, lhs, rhs },
-                HMIRBinaryOp::Le if signed => MIRIntIntrinsic::SLe { out, lhs, rhs },
-                HMIRBinaryOp::Le => MIRIntIntrinsic::ULe { out, lhs, rhs },
-                HMIRBinaryOp::Gt if signed => MIRIntIntrinsic::SGt { out, lhs, rhs },
-                HMIRBinaryOp::Gt => MIRIntIntrinsic::UGt { out, lhs, rhs },
-                HMIRBinaryOp::Ge if signed => MIRIntIntrinsic::SGe { out, lhs, rhs },
-                HMIRBinaryOp::Ge => MIRIntIntrinsic::UGe { out, lhs, rhs },
-                HMIRBinaryOp::BAnd => MIRIntIntrinsic::BAnd { out, lhs, rhs },
-                HMIRBinaryOp::BOr => MIRIntIntrinsic::BOr { out, lhs, rhs },
-                HMIRBinaryOp::BXor => MIRIntIntrinsic::BXor { out, lhs, rhs },
-                HMIRBinaryOp::LShift => MIRIntIntrinsic::LShift { out, lhs, rhs },
-                HMIRBinaryOp::RShift if signed => MIRIntIntrinsic::ARShift { out, lhs, rhs },
-                HMIRBinaryOp::RShift => MIRIntIntrinsic::LRShift { out, lhs, rhs },
+                HMIRBinaryOp::Add => MIRIntIntrinsic::Add { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Sub => MIRIntIntrinsic::Sub { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Mul if signed => MIRIntIntrinsic::SMul { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Mul => MIRIntIntrinsic::UMul { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Div if signed => MIRIntIntrinsic::SDiv { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Div => MIRIntIntrinsic::UDiv { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Mod if signed => MIRIntIntrinsic::SMod { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Mod => MIRIntIntrinsic::UMod { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Eq => MIRIntIntrinsic::Eq { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Neq => MIRIntIntrinsic::Neq { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Lt if signed => MIRIntIntrinsic::SLt { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Lt => MIRIntIntrinsic::ULt { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Le if signed => MIRIntIntrinsic::SLe { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Le => MIRIntIntrinsic::ULe { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Gt if signed => MIRIntIntrinsic::SGt { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Gt => MIRIntIntrinsic::UGt { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Ge if signed => MIRIntIntrinsic::SGe { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::Ge => MIRIntIntrinsic::UGe { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::BAnd => MIRIntIntrinsic::BAnd { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::BOr => MIRIntIntrinsic::BOr { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::BXor => MIRIntIntrinsic::BXor { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::LShift => MIRIntIntrinsic::LShift { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::RShift if signed => MIRIntIntrinsic::ARShift { out, lhs: ml, rhs: mr },
+                HMIRBinaryOp::RShift => MIRIntIntrinsic::LRShift { out, lhs: ml, rhs: mr },
                 HMIRBinaryOp::LAnd | HMIRBinaryOp::LOr => {
                     unreachable!("logical operators evaluate as short circuits")
                 }
@@ -82,16 +82,25 @@ pub fn binary(
             .into()
         }
         HMIRTypeKind::PointerTo(_) => match op {
-            HMIRBinaryOp::Eq => MIRPtrIntrinsic::Eq { out, lhs, rhs },
-            HMIRBinaryOp::Neq => MIRPtrIntrinsic::Neq { out, lhs, rhs },
-            HMIRBinaryOp::Lt => MIRPtrIntrinsic::Lt { out, lhs, rhs },
-            HMIRBinaryOp::Le => MIRPtrIntrinsic::Leq { out, lhs, rhs },
-            HMIRBinaryOp::Gt => MIRPtrIntrinsic::Gt { out, lhs, rhs },
-            HMIRBinaryOp::Ge => MIRPtrIntrinsic::Geq { out, lhs, rhs },
+            HMIRBinaryOp::Eq => MIRPtrIntrinsic::Eq { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Neq => MIRPtrIntrinsic::Neq { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Lt => MIRPtrIntrinsic::Lt { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Le => MIRPtrIntrinsic::Leq { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Gt => MIRPtrIntrinsic::Gt { out, lhs: ml, rhs: mr },
+            HMIRBinaryOp::Ge => MIRPtrIntrinsic::Geq { out, lhs: ml, rhs: mr },
             _ => unreachable!("'{}' has no pointer form", op.path()),
         }
         .into(),
-        _ => unreachable!("binary operands are arithmetic or pointers"),
+        _ => {
+            let (lhs, rhs) = (lhs.ty(), rhs.ty());
+            let lhs = types::name(context.env(), lhs);
+            let rhs = types::name(context.env(), rhs);
+
+            unreachable!(
+                "'{}' does not apply to these {} and {}",
+                op.path(), lhs, rhs
+            )
+        }
     };
     intrinsic(context, instruction, span.clone());
     initialize(context, &result, span);

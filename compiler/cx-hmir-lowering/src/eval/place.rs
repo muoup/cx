@@ -11,7 +11,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
-        coerce::{convert, decay},
+        coerce::{cast, decay},
         eval,
         op::{binary_operands, eval_operand, promote_operand},
         types,
@@ -30,9 +30,11 @@ pub(crate) fn eval_assign(
 ) -> EvalResult<HMIRValue> {
     let target = eval(context, body, target)?;
     let target = emit::referent(context, target, span)?;
-    if !emit::addressable(context, &target) {
+
+    if !context.env().is_reference(target.ty()) {
         return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "assign to".into()).into());
     }
+
     if context.env().semantics(target.ty()).constant {
         return Err(hmir_error(
             span,
@@ -52,7 +54,7 @@ pub(crate) fn eval_assign(
         None => eval(context, body, value)?,
     };
 
-    let value = convert(context, value, target.ty(), span)?;
+    let value = cast(context, value, target.ty(), span)?;
     emit::transfer(context, &target, value, Transfer::Replace, span)?;
 
     Ok(emit::reference(context, &target, span)?)
@@ -102,15 +104,12 @@ pub(crate) fn dereference(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let pointer = decay(context, pointer, span)?;
-    let inner = match context.env().resolve_kind(pointer.ty()) {
-        HMIRTypeKind::PointerTo(inner) => *inner,
-        _ => {
-            return Err(hmir_error(
-                span,
-                &typecheck::UNEXPECTED_KIND,
-                (todo!("type display"), "a pointer".into()),
-            ));
-        }
+    let Some(inner) = context.env().pointer_inner(pointer.ty()) else {
+        return Err(hmir_error(
+            span,
+            &typecheck::UNEXPECTED_KIND,
+            (types::name(context.env(), pointer.ty()), "a pointer".into()),
+        ));
     };
     if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Function(_)) {
         todo!("dereference of a function pointer")

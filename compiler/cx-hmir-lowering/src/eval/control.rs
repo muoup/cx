@@ -15,7 +15,7 @@ use crate::{
     eval::{
         EvalResult,
         binding::eval_scoped,
-        coerce::{self, convert},
+        coerce::{self, cast},
         eval, eval_type,
         flow::{self, ComptimeStop, EvalStop, RuntimeStop},
         literal, promote, types,
@@ -40,7 +40,7 @@ fn comptime_truth(
     condition: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<bool> {
-    let condition = emit::read(context, condition, span)?;
+    let condition = emit::copy(context, condition, span)?;
 
     match condition.kind() {
         HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) => Ok(*value != 0),
@@ -157,7 +157,7 @@ fn runtime_if(
     let result = emit::allocate(context, ty, None, span)?;
     for arm in arms {
         runtime::switch_to(context, arm.block);
-        let value = convert(context, arm.value, ty, span)?;
+        let value = cast(context, arm.value, ty, span)?;
         store_result(context, &result, value, span)?;
         runtime::jump(context, merge, span.clone());
     }
@@ -175,7 +175,7 @@ fn store_result(
     span: &TokenRange,
 ) -> CXResult<()> {
     let value = match value.kind() {
-        HMIRValueKind::Indirect(_) => emit::read(context, value, span)?,
+        HMIRValueKind::Indirect(_) => emit::copy(context, value, span)?,
         _ => value,
     };
 
@@ -355,7 +355,7 @@ pub(crate) fn eval_short_circuit(
     rhs: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
     let left = eval_condition(context, body, span, lhs)?;
-    let left = emit::read(context, left, span)?;
+    let left = emit::copy(context, left, span)?;
 
     match context.context() {
         FnContext::Runtime(_) => runtime_short_circuit(context, body, span, op, left, rhs),
@@ -366,7 +366,7 @@ pub(crate) fn eval_short_circuit(
             }
 
             let right = eval_condition(context, body, span, rhs)?;
-            Ok(emit::read(context, right, span)?)
+            Ok(emit::copy(context, right, span)?)
         }
     }
 }
@@ -477,7 +477,7 @@ pub(crate) fn return_value(
             None
         }
         Some(value) => {
-            let value = convert(context, value, ty, span)?;
+            let value = cast(context, value, ty, span)?;
             Some(value)
         }
         None if returns_void => None,

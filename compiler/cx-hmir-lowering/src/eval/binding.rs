@@ -1,20 +1,19 @@
 use cx_hmir::{
-    HMIRBody,
-    body::{HMIRLocal, HMIRLocalID},
-    expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    HMIRBody, body::{HMIRLocal, HMIRLocalID}, expr::{HMIRExprID, HMIRExprKind}, ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext},
 };
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::{self, Transfer, runtime},
+    emit::{self, runtime},
     env::function::{FnContext, LocalLoweringContext},
     eval::{
         EvalResult,
         aggregate::eval_initializer,
-        coerce::{self, convert},
-        eval, eval_type, literal,
+        coerce::{self},
+        eval, eval_type,
+        flow::EvalStop,
+        literal,
     },
     value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
@@ -25,36 +24,11 @@ pub(crate) fn eval_local(
     span: &TokenRange,
     local: HMIRLocalID,
 ) -> EvalResult<HMIRValue> {
-    let value = match context.get_local(&local).cloned() {
-        Some(value) => value,
-        None if matches!(context.context(), FnContext::Runtime(_)) => {
-            let decl = body.local(local);
-            let ty = eval_type(context, body, decl.ty())?;
-            declare(context, local, decl, ty)?
-        }
-        None => todo!("local {local} has no binding in the evaluating context"),
+    let Some(value) = context.get_local(&local).cloned() else {
+        todo!("local {local} has no binding in the evaluating context")
     };
 
-    let value = emit::referent(context, value, span)?;
-    Ok(emit::reference(context, &value, span)?)
-}
-
-// Binds a local to fresh storage of its declared type. The storage of a copyable runtime value is live, with
-// indeterminate contents, from its declaration on; a value with move semantics, or a comptime slot, holds nothing
-// until a whole value is moved into it
-fn declare(
-    context: &mut LocalLoweringContext,
-    local: HMIRLocalID,
-    decl: &HMIRLocal,
-    ty: HMIRTypeID,
-) -> CXResult<HMIRValue> {
-    let storage = emit::allocate(context, ty, decl.name().cloned(), decl.span())?;
-    if matches!(context.context(), FnContext::Runtime(_)) && !context.env().is_nocopy(ty) {
-        emit::initialize(context, &storage, decl.span());
-    }
-    context.insert_local(local, storage.clone());
-
-    Ok(storage)
+    Ok(value)
 }
 
 // A declaration is a statement, and evaluates to unit. Each evaluation binds a fresh instance of the local, so a
@@ -64,58 +38,54 @@ pub(crate) fn eval_let(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
-    local: HMIRLocalID,
+    local_id: HMIRLocalID,
     initializer: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    let decl = body.local(local);
-    if decl.comptime() && matches!(context.context(), FnContext::Runtime(_)) {
+    let local = body.local(local_id);
+    if local.comptime() && matches!(context.context(), FnContext::Runtime(_)) {
         todo!("comptime let binding in a runtime context");
     }
 
-    let ty = eval_type(context, body, decl.ty())?;
+    let ty = eval_type(context, body, local.ty())?;
     if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Void) {
         todo!("local of type void");
     }
 
-    context.remove_local(local);
-    let Some(initializer) = initializer else {
-        declare(context, local, decl, ty)?;
-        return Ok(literal::unit(context, span));
+    let reference_type = context.env_mut().resolver_mut().realize_type(
+        HMIRType::new(
+            HMIRTypeKind::ReferenceTo(ty),
+            HMIRTypeSemantics::default(),
+            local.span().clone(),
+            None
+        )
+    );
+
+    println!("eval_let: local {local_id:?} of type {ty:?} with reference type {reference_type:?}");
+
+    if let Some(initializer) = initializer {
+        let value = eval_initializer(context, body, initializer, ty)
+            .and_then(|value| coerce::cast(context, value, ty, span).map_err(EvalStop::from))?;
+
+        if matches!(value.kind(), HMIRValueKind::PlaceRef(HMIRPlace::Local(_))) {
+            let value = value.clone().with_ty(reference_type);
+            
+            emit::storage::bind_local(context, local_id, value.clone());
+
+            println!("Alloc: {:?}", value);
+            
+            return Ok(value);
+        }
+
+        let allocation =
+            emit::storage::allocate(context, ty, None, span).map_err(EvalStop::from)?;
+        emit::storage::write(context, &allocation, &value, span).map_err(EvalStop::from)?;
+    
+        return Ok(allocation.with_ty(reference_type));
     };
 
-    let scope = match context.context() {
-        FnContext::Runtime(runtime) => runtime.open_scopes().last().copied(),
-        FnContext::Comptime(_) => None,
-    };
-    let value = eval_initializer(context, body, initializer, ty)?;
-    let value = convert(context, value, ty, span)?;
-
-    // A value of a type that is not a reference is a temporary that the initializer owns, as naming any storage
-    // yields a reference to it; owned storage of the declared type is adopted as the local's own
-    let storage = match context.get_local(&local).cloned() {
-        Some(storage) => {
-            emit::transfer(context, &storage, value, Transfer::Init, span)?;
-            storage
-        }
-        None if context.env().reference_inner(ty).is_none()
-            && matches!(value.kind(), HMIRValueKind::PlaceRef(HMIRPlace::Local(_)))
-            && emit::addressable(context, &value) =>
-        {
-            context.insert_local(local, value.clone());
-            value
-        }
-        None => {
-            let storage = emit::allocate(context, ty, decl.name().cloned(), decl.span())?;
-            emit::transfer(context, &storage, value, Transfer::Init, span)?;
-            context.insert_local(local, storage.clone());
-            storage
-        }
-    };
-    if let Some(scope) = scope {
-        runtime::relocate(context, &storage, scope, decl.name().cloned());
-    }
-
-    Ok(literal::unit(context, span))
+    emit::storage::allocate(context, ty, None, span)
+        .map(|allocation| allocation.with_ty(reference_type))
+        .map_err(EvalStop::from)
 }
 
 pub(crate) fn eval_block(

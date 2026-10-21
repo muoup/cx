@@ -110,13 +110,6 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         self.context
     }
 
-    pub fn insert_local(&mut self, id: HMIRLocalID, value: HMIRValue) {
-        match &mut self.context {
-            FnContext::Runtime(context) => context.set_local(id, value),
-            FnContext::Comptime(context) => context.set_local(id, value),
-        };
-    }
-
     pub fn remove_local(&mut self, id: HMIRLocalID) {
         match &mut self.context {
             FnContext::Runtime(context) => context.remove_local(id),

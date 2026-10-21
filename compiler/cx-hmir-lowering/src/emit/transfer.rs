@@ -39,7 +39,7 @@ pub fn transfer(
         (
             Transfer::Replace,
             HMIRValueKind::Indirect(_) | HMIRValueKind::PlaceRef(HMIRPlace::Global(_)),
-        ) => storage::read(context, value, span)?,
+        ) => storage::copy(context, value, span)?,
         _ => value,
     };
     if mode == Transfer::Replace {
@@ -61,7 +61,7 @@ pub fn consume(context: &mut LocalLoweringContext, value: &HMIRValue, span: &Tok
     {
         return;
     }
-    if !storage::addressable(context, value) && !context.env().is_nocopy(value.ty()) {
+    if !context.env().is_reference(value.ty()) && !context.env().is_nocopy(value.ty()) {
         return;
     }
 

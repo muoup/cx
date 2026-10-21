@@ -3,7 +3,6 @@ pub mod expr;
 pub mod ty;
 pub mod unit;
 pub mod value;
-pub mod verify;
 
 pub(crate) mod format;
 
