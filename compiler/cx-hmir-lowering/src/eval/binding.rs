@@ -11,8 +11,8 @@ use crate::{
     env::function::{FnContext, LocalLoweringContext},
     eval::{
         EvalResult,
-        aggregate::eval_initializer,
         coerce::{self},
+        complete::elaborate,
         eval, eval_type,
         literal, storage, types,
     },
@@ -62,7 +62,8 @@ pub(crate) fn eval_let(
 
     let value = match initializer {
         Some(initializer) => {
-            let value = eval_initializer(context, body, initializer, ty)?;
+            let value = elaborate(context, body, initializer)?;
+            let value = value.complete(context, body, Some(ty))?;
             Some(coerce::implicit(context, value, ty, span)?)
         }
         None => None,

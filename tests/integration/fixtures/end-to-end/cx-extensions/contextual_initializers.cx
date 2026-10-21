@@ -1,0 +1,81 @@
+#include <stdio.h>
+
+struct Inner {
+    int a;
+    int b;
+};
+
+struct Outer {
+    Inner inner;
+    long wide;
+};
+
+int next(int* counter) {
+    *counter = *counter + 1;
+    return *counter;
+}
+
+long widen(long value) {
+    return value;
+}
+
+int sum(Inner value) {
+    return value.a + value.b;
+}
+
+long total(Outer value) {
+    return value.inner.a + value.inner.b + value.wide;
+}
+
+Inner make_inner(int value) {
+    return { value, value + 1 };
+}
+
+Outer make_outer(int value) {
+    return { { value, 2 }, value };
+}
+
+Inner arrow(int value) => { value, -value };
+
+Inner pick(int flag) {
+    return flag ? { 1, 2 } : { 3, 4 };
+}
+
+Inner yielded(int value) {
+    return .{
+        int doubled = value * 2;
+        ({ doubled, value });
+    };
+}
+
+int main() {
+    int count = 0;
+    printf("%d\n", sum({ next(&count), next(&count) * 10 }));
+    printf("%d\n", count);
+    printf("%ld\n", widen(count));
+
+    Inner made = make_inner(4);
+    printf("%d %d\n", made.a, made.b);
+
+    Outer outer = make_outer(5);
+    printf("%d %d %ld\n", outer.inner.a, outer.inner.b, outer.wide);
+    printf("%ld\n", total({ { 1, 2 }, 3 }));
+
+    Inner assigned;
+    assigned = { 7, 8 };
+    printf("%d %d\n", assigned.a, assigned.b);
+
+    Inner cast = (Inner) { .b = 9, .a = 6 };
+    printf("%d %d\n", cast.a, cast.b);
+
+    Inner first = pick(1);
+    Inner second = pick(0);
+    printf("%d %d %d %d\n", first.a, first.b, second.a, second.b);
+
+    Inner block = yielded(3);
+    printf("%d %d\n", block.a, block.b);
+
+    Inner arrowed = arrow(5);
+    printf("%d %d\n", arrowed.a, arrowed.b);
+    return 0;
+}

@@ -13,7 +13,9 @@ use crate::{
     eval::{
         EvalResult,
         binding::eval_scoped,
-        coerce, eval, eval_type,
+        coerce,
+        complete::{Completion, elaborate},
+        eval, eval_type,
         flow::{self, ComptimeStop, EvalStop, RuntimeStop},
         literal, storage, types,
     },
@@ -415,7 +417,7 @@ pub(crate) fn eval_return(
     value: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
     let value = match value {
-        Some(value) => Some(eval(context, body, value)?),
+        Some(value) => Some(elaborate(context, body, value)?),
         None => None,
     };
 
@@ -426,7 +428,7 @@ pub(crate) fn eval_return(
 pub(crate) fn return_value(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
-    value: Option<HMIRValue>,
+    value: Option<Completion>,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
     let Some(return_type) = context.signature().map(|sig| *sig.return_type()) else {
@@ -443,6 +445,9 @@ pub(crate) fn return_value(
 
     let value = match value {
         Some(value) if returns_void => {
+            let Completion::Ready(value) = value else {
+                return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()).into());
+            };
             if !matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void) {
                 return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()).into());
             }
@@ -450,8 +455,8 @@ pub(crate) fn return_value(
             None
         }
         Some(value) => {
-            let value = coerce::implicit(context, value, ty, span)?;
-            Some(value)
+            let value = value.complete(context, body, Some(ty))?;
+            Some(coerce::implicit(context, value, ty, span)?)
         }
         None if returns_void => None,
         None => return Err(hmir_error(span, &typecheck::MISSING_RETURN_VALUE, ()).into()),
@@ -492,7 +497,7 @@ pub(crate) fn fallthrough(
         HMIRTypeKind::Void => return_value(context, body, None, span),
         HMIRTypeKind::Int(_) if is_main => {
             let zero = HMIRValue::constant(ty, HMIRConstant::Int { value: 0, ty });
-            return_value(context, body, Some(zero), span)
+            return_value(context, body, Some(Completion::Ready(zero)), span)
         }
         _ => {
             context

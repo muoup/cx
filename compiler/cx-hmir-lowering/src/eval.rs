@@ -2,6 +2,7 @@ mod aggregate;
 mod binding;
 mod call;
 mod coerce;
+mod complete;
 mod control;
 mod def;
 mod literal;
@@ -33,9 +34,10 @@ use crate::{
         function::{ComptimeContext, FnContext, LocalLoweringContext, RuntimeContext},
     },
     eval::{
-        aggregate::{eval_aggregate, eval_initializer},
+        aggregate::eval_aggregate,
         binding::{eval_block, eval_let, eval_local},
         call::eval_call,
+        complete::elaborate,
         control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_while},
         def::eval_def,
         flow::ComptimeStop,
@@ -102,13 +104,16 @@ fn runtime_definition(
         emit::storage::bind_local(context, *local, value);
     }
 
-    let value = eval(context, body, def.root())?;
     match root.kind() {
         HMIRExprKind::Block { .. } => {
+            eval(context, body, def.root())?;
             let is_main = function.prototype().symbol_name().as_str() == "main";
             control::fallthrough(context, body, is_main, root.span())
         }
-        _ => control::return_value(context, body, Some(value), root.span()),
+        _ => {
+            let value = elaborate(context, body, def.root())?;
+            control::return_value(context, body, Some(value), root.span())
+        }
     }
 }
 
@@ -178,7 +183,8 @@ pub(crate) fn eval(
                 }
                 HMIRCoerceMode::Implicit | HMIRCoerceMode::Convert | HMIRCoerceMode::CCast => {
                     let target = eval_type(context, body, *target)?;
-                    let value = eval_initializer(context, body, *value, target)?;
+                    let value = elaborate(context, body, *value)?;
+                    let value = value.complete(context, body, Some(target))?;
                     Ok(match mode {
                         HMIRCoerceMode::Implicit => coerce::implicit(context, value, target, span)?,
                         _ => coerce::explicit(context, value, target, span)?,
@@ -216,7 +222,7 @@ pub(crate) fn eval(
         HMIRExprKind::Def(def) => eval_def(context, span, def),
         HMIRExprKind::Call { callee, args } => eval_call(context, body, span, *callee, args),
 
-        HMIRExprKind::Hole(_) => todo!("HMIRExprKind::Hole"),
+        HMIRExprKind::Hole(_) => todo!("HMIRExprKind::Hole as a value"),
         HMIRExprKind::Type(_) => todo!("HMIRExprKind::Type"),
         HMIRExprKind::Comptime(_) => todo!("HMIRExprKind::Comptime"),
         HMIRExprKind::Quote { .. } => todo!("HMIRExprKind::Quote"),
@@ -250,6 +256,15 @@ pub(crate) fn eval_type(
         HMIRExprKind::Type(ty) => eval_declared_type(context, body, id, ty),
         HMIRExprKind::Op(HMIROp::Type(op)) => eval_type_op(context, body, expr.span(), op),
         HMIRExprKind::Def(def) => eval_type_def(context, expr.span(), def),
+        HMIRExprKind::Hole(hole) => match context.elaboration().hole(*hole) {
+            Some(ty) => Ok(ty),
+            None => Err(hmir_error(
+                expr.span(),
+                &typecheck::CANNOT_INFER,
+                "this type".into(),
+            )
+            .into()),
+        },
         _ => todo!("Evaluate a type expression using the available comptime bindings"),
     }
 }

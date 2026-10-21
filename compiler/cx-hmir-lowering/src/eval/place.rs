@@ -11,7 +11,9 @@ use crate::{
     emit,
     env::function::LocalLoweringContext,
     eval::{
-        EvalResult, coerce, eval,
+        EvalResult, coerce,
+        complete::elaborate,
+        eval,
         op::{binary_operands, eval_operand},
         storage, types,
     },
@@ -48,7 +50,7 @@ pub(crate) fn eval_assign(
 
             binary_operands(context, span, op, current, operand)?
         }
-        None => eval(context, body, value)?,
+        None => elaborate(context, body, value)?.complete(context, body, Some(inner))?,
     };
 
     let value = coerce::implicit(context, value, inner, span)?;

@@ -1,17 +1,21 @@
 use cx_hmir::{HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, expr::HMIRExprID};
 
 pub mod comptime;
+pub mod elaboration;
 pub mod runtime;
 
 use crate::{env::HMIREnvironment, value::HMIRValue};
 
-pub use self::{comptime::ComptimeContext, runtime::RuntimeContext};
+pub use self::{
+    comptime::ComptimeContext, elaboration::ElaborationScope, runtime::RuntimeContext,
+};
 
 #[derive(Debug)]
 pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     env: &'env mut HMIREnvironment<'global, 'hmir>,
     signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
     context: FnContext,
+    elaboration: ElaborationScope,
 }
 
 #[derive(Debug)]
@@ -39,6 +43,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             env,
             signature,
             context,
+            elaboration: ElaborationScope::new(),
         }
     }
 
@@ -104,6 +109,14 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             }
             FnContext::Comptime(context) => context,
         }
+    }
+
+    pub fn elaboration(&self) -> &ElaborationScope {
+        &self.elaboration
+    }
+
+    pub fn elaboration_mut(&mut self) -> &mut ElaborationScope {
+        &mut self.elaboration
     }
 
     pub fn into_context(self) -> FnContext {

@@ -1,6 +1,6 @@
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBinaryOp, HMIRBody, HMIROp,
-    expr::{HMIRExprID, HMIRExprKind},
+    HMIRAggregateOp, HMIRBinaryOp, HMIRBody,
+    expr::HMIRExprID,
     ty::{
         HMIRTypeID, HMIRTypeKind,
         aggregate::{HMIRFieldDef, HMIRTypeSemantics},
@@ -18,8 +18,9 @@ use crate::{
         function::{FnContext, LocalLoweringContext},
     },
     eval::{
-        EvalResult,
-        coerce, eval, eval_type,
+        EvalResult, coerce,
+        complete::elaborate,
+        eval, eval_type,
         op::{binary_operands, eval_operand, specify},
         place::dereference,
         storage, types,
@@ -37,10 +38,6 @@ pub(crate) fn eval_aggregate(
     match op {
         HMIRAggregateOp::Member { base, name } => eval_member(context, body, span, *base, name),
         HMIRAggregateOp::Initialize { ty, fields } => {
-            if matches!(body.expr(*ty).kind(), HMIRExprKind::Hole(_)) {
-                todo!("initializer list without a declared type");
-            }
-
             let ty = eval_type(context, body, *ty)?;
             initialize(context, body, span, ty, fields)
         }
@@ -217,27 +214,7 @@ fn field_value(
     ty: HMIRTypeID,
 ) -> EvalResult<HMIRValue> {
     let span = body.expr(value).span();
-    let value = eval_initializer(context, body, value, ty)?;
+    let value = elaborate(context, body, value)?.complete(context, body, Some(ty))?;
 
     Ok(coerce::implicit(context, value, ty, span)?)
-}
-
-// A list without a declared type takes the type of the field or cast that it is the value of
-pub(crate) fn eval_initializer(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBody,
-    value: HMIRExprID,
-    ty: HMIRTypeID,
-) -> EvalResult<HMIRValue> {
-    let expr = body.expr(value);
-
-    match expr.kind() {
-        HMIRExprKind::Op(HMIROp::AggregateOp(HMIRAggregateOp::Initialize {
-            ty: declared,
-            fields,
-        })) if matches!(body.expr(*declared).kind(), HMIRExprKind::Hole(_)) => {
-            initialize(context, body, expr.span(), ty, fields)
-        }
-        _ => eval(context, body, value),
-    }
 }

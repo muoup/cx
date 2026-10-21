@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{EvalResult, coerce, eval, flow::RuntimeStop, types},
+    eval::{EvalResult, coerce, complete::elaborate, eval, flow::RuntimeStop, types},
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
@@ -55,9 +55,10 @@ pub(crate) fn eval_call(
     let mut values = Vec::with_capacity(args.len());
     for (index, arg) in args.iter().enumerate() {
         let span = body.expr(*arg).span();
-        let value = eval(context, body, *arg)?;
-        let value = match params.get(index) {
-            Some(param) => coerce::implicit(context, value, *param.ty(), span)?,
+        let param = params.get(index).map(|param| *param.ty());
+        let value = elaborate(context, body, *arg)?.complete(context, body, param)?;
+        let value = match param {
+            Some(param) => coerce::implicit(context, value, param, span)?,
             None => coerce::default_argument(context, value, span)?,
         };
 
