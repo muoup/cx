@@ -6,12 +6,14 @@ use cx_hmir::{
         aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
     },
 };
+use cx_log::catalogue::{mir, typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
     env::function::LocalLoweringContext,
-    eval::{EvalResult, eval_comptime, eval_type},
-    value::constant::HMIRConstant,
+    eval::{EvalResult, eval_comptime, eval_type, types},
+    log::hmir_error,
+    value::{HMIRValueKind, constant::HMIRConstant, scalar::int},
 };
 
 pub(crate) fn eval_type_op(
@@ -79,11 +81,36 @@ fn evaluate(
     body: &HMIRBody,
     ty: &HMIRExprType,
 ) -> EvalResult<HMIRType> {
+    let inline = match ty.kind() {
+        HMIRExprTypeKind::Array { .. } => Some("array element"),
+        HMIRExprTypeKind::Struct { .. }
+        | HMIRExprTypeKind::Union { .. }
+        | HMIRExprTypeKind::TaggedUnion { .. } => Some("member"),
+        _ => None,
+    };
+
     ty.map(
         context,
-        |context, inner| eval_type(context, body, *inner),
+        |context, inner| member(context, body, *inner, inline),
         |context, length| array_length(context, body, *length),
     )
+}
+
+fn member(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    expr: HMIRExprID,
+    inline: Option<&str>,
+) -> EvalResult<HMIRTypeID> {
+    let ty = eval_type(context, body, expr)?;
+
+    match inline {
+        Some(subject) if !types::is_complete(context.env(), ty) => {
+            let subject = format!("{subject} of type '{}'", types::name(context.env(), ty));
+            Err(hmir_error(body.expr(expr).span(), &typecheck::INCOMPLETE_TYPE, subject).into())
+        }
+        _ => Ok(ty),
+    }
 }
 
 // Specifiers only accumulate, so a type that already carries them stands for itself
@@ -114,8 +141,28 @@ fn array_length(
     body: &HMIRBody,
     length: HMIRExprID,
 ) -> EvalResult<u64> {
-    match eval_comptime(context, body, length)? {
-        HMIRConstant::Int { value, .. } if value >= 0 => Ok(value as u64),
-        _ => todo!("Error: array length is not a non-negative integer constant"),
-    }
+    let span = body.expr(length).span();
+    let value = eval_comptime(context, body, length, None)?;
+    let (HMIRTypeKind::Int(ty), HMIRValueKind::Constant(HMIRConstant::Int { value, .. })) =
+        (context.env().resolve_kind(value.ty()), value.kind())
+    else {
+        let subject = ("array length".into(), "integer".into());
+        return Err(hmir_error(span, &mir::EXPECTED_CONSTANT, subject).into());
+    };
+
+    let value = int::normalize(*value, *ty);
+    let (negative, found) = match int::signed(*ty) {
+        true => (value < 0, value.to_string()),
+        false => (false, (value as u128).to_string()),
+    };
+    let requirement = match negative {
+        true => "a non-negative value".to_string(),
+        false => match u64::try_from(value as u128) {
+            Ok(length) => return Ok(length),
+            Err(_) => format!("a value of at most {}", u64::MAX),
+        },
+    };
+
+    let subject = ("array length".into(), requirement, Some(found));
+    Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, subject).into())
 }

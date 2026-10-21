@@ -1,23 +1,47 @@
+mod op;
+
+pub use op::{binary, cast, unary};
+
 use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir};
 use cx_mir::expr::instruction::MIRInvalidationKind;
+use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::{
     env::function::{LocalLoweringContext, comptime::ComptimeSlotState},
+    log::hmir_error,
     value::{HMIRPlace, HMIRSlotID, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
-pub fn allocate(context: &mut LocalLoweringContext, ty: HMIRTypeID) -> HMIRValue {
-    let slot = context.comptime_mut().allocate_slot(ty);
+pub fn allocate(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    name: Option<CXIdent>,
+) -> HMIRValue {
+    let slot = context.comptime_mut().allocate_slot(ty, name);
 
     HMIRValue::place(ty, HMIRPlace::Local(slot))
+}
+
+pub fn aggregate(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    fields: &[(usize, HMIRValue)],
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let fields = fields.iter().map(|(index, value)| {
+        Ok((*index, Box::new(read(context, value, span)?)))
+    }).collect::<CXResult<_>>()?;
+
+    Ok(HMIRValue::constant(ty, HMIRConstant::Aggregate { ty, fields }))
 }
 
 // The slot whose state a value's liveness is recorded on; storage behind an address is untracked
 fn tracked_slot(context: &LocalLoweringContext, value: &HMIRValue) -> Option<HMIRSlotID> {
     match value.kind() {
         HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => Some(*slot),
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => todo!("comptime global storage"),
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => None,
         HMIRValueKind::Constant(HMIRConstant::Address {
             place: HMIRPlace::Local(slot),
             path,
@@ -27,7 +51,11 @@ fn tracked_slot(context: &LocalLoweringContext, value: &HMIRValue) -> Option<HMI
     }
 }
 
-fn read(context: &LocalLoweringContext, value: &HMIRValue) -> CXResult<HMIRConstant> {
+fn read(
+    context: &LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRConstant> {
     let slot = match (value.kind(), tracked_slot(context, value)) {
         (_, Some(slot)) => slot,
         (HMIRValueKind::Constant(constant), None)
@@ -36,33 +64,46 @@ fn read(context: &LocalLoweringContext, value: &HMIRValue) -> CXResult<HMIRConst
         {
             return Ok(constant.clone());
         }
-        _ => todo!("comptime read through a subobject address"),
+        _ => return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, "reading through this address".into())),
     };
 
-    match context.comptime().slot(slot).state() {
+    let slot = context.comptime().slot(slot);
+    let subject = match slot.name() {
+        Some(name) => format!("'{name}'"),
+        None => "this temporary".into(),
+    };
+    match slot.state() {
         ComptimeSlotState::Value(constant) => Ok(constant.clone()),
-        ComptimeSlotState::Uninitialized | ComptimeSlotState::Invalidated => {
-            todo!("diagnostic: comptime read of a slot that holds no value")
-        }
+        ComptimeSlotState::Uninitialized => Err(hmir_error(span, &mir::COMPTIME_UNSET, subject)),
+        ComptimeSlotState::Invalidated => Err(hmir_error(
+            span,
+            &mir::COMPTIME_UNSET,
+            format!("{subject}, which was moved or leaked,"),
+        )),
     }
 }
 
-pub fn copy(context: &mut LocalLoweringContext, value: HMIRValue) -> CXResult<HMIRValue> {
+pub fn copy(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
     let Some(inner) = context.env().reference_inner(value.ty()) else {
         unreachable!("a comptime copy reads from a reference")
     };
 
-    Ok(HMIRValue::constant(inner, read(context, &value)?))
+    Ok(HMIRValue::constant(inner, read(context, &value, span)?))
 }
 
 pub fn write(
     context: &mut LocalLoweringContext,
     target: &HMIRValue,
     value: &HMIRValue,
+    span: &TokenRange,
 ) -> CXResult<()> {
-    let constant = read(context, value)?;
+    let constant = read(context, value, span)?;
     let Some(slot) = tracked_slot(context, target) else {
-        todo!("comptime write through a subobject address")
+        return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, "writing through this address".into()));
     };
     *context.comptime_mut().slot_mut(slot).state_mut() = ComptimeSlotState::Value(constant);
 
@@ -117,13 +158,15 @@ pub fn dereference(
     context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     inner: HMIRTypeID,
+    span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointer = HMIRValue::constant(pointer.ty(), read(context, &pointer)?);
+    let pointer = HMIRValue::constant(pointer.ty(), read(context, &pointer, span)?);
     if !matches!(
         pointer.kind(),
         HMIRValueKind::Constant(HMIRConstant::Address { .. })
     ) {
-        todo!("diagnostic: comptime dereference of a pointer that holds no address")
+        let operation = "dereference".into();
+        return Err(hmir_error(span, &mir::COMPTIME_UNDEFINED_ARITHMETIC, operation));
     }
 
     Ok(HMIRValue::indirect(inner, pointer))

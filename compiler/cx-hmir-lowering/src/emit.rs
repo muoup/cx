@@ -12,14 +12,19 @@ pub(crate) mod runtime;
 pub use storage::{allocate, copy, initialize, invalidate, lift, scratch, write};
 
 use cx_hmir::{HMIRBinaryOp, HMIRUnaryOp, ty::HMIRTypeID};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir};
 use cx_tokens::TokenRange;
 
 use crate::{
     env::function::{FnContext, LocalLoweringContext},
     eval::types,
+    log::log_hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
+
+fn unsupported<T>(span: &TokenRange, operation: &str) -> CXResult<T> {
+    log_hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation.into())
+}
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     match context.context() {
@@ -71,7 +76,7 @@ pub fn dereference(
 
     match context.context() {
         FnContext::Runtime(_) => runtime::dereference(context, pointer, inner, span),
-        FnContext::Comptime(_) => comptime::dereference(context, pointer, inner),
+        FnContext::Comptime(_) => comptime::dereference(context, pointer, inner, span),
     }
 }
 
@@ -84,7 +89,7 @@ pub fn field(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::field(context, base, index, ty, span),
-        FnContext::Comptime(_) => todo!("comptime member access"),
+        FnContext::Comptime(_) => unsupported(span, "member access"),
     }
 }
 
@@ -96,7 +101,7 @@ pub fn aggregate(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::aggregate(context, ty, fields, span),
-        FnContext::Comptime(_) => todo!("comptime aggregate initialization"),
+        FnContext::Comptime(_) => comptime::aggregate(context, ty, fields, span),
     }
 }
 
@@ -110,7 +115,7 @@ pub fn binary(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::binary(context, op, lhs, rhs, result, span),
-        FnContext::Comptime(_) => todo!("comptime folding of binary operators"),
+        FnContext::Comptime(_) => comptime::binary(context, op, lhs, rhs, result, span),
     }
 }
 
@@ -122,7 +127,7 @@ pub fn unary(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::unary(context, op, value, span),
-        FnContext::Comptime(_) => todo!("comptime folding of unary operators"),
+        FnContext::Comptime(_) => comptime::unary(context, op, value, span),
     }
 }
 
@@ -134,7 +139,7 @@ pub fn cast(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::cast(context, value, target, span),
-        FnContext::Comptime(_) => todo!("comptime folding of conversions"),
+        FnContext::Comptime(_) => comptime::cast(context, value, target, span),
     }
 }
 
@@ -147,7 +152,7 @@ pub fn call(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::call(context, callee, args, result, span),
-        FnContext::Comptime(_) => todo!("comptime calls"),
+        FnContext::Comptime(_) => unsupported(span, "a function call"),
     }
 }
 
@@ -161,7 +166,7 @@ pub fn offset(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::offset(context, pointer, index, element, subtract, span),
-        FnContext::Comptime(_) => todo!("comptime pointer arithmetic"),
+        FnContext::Comptime(_) => unsupported(span, "pointer arithmetic"),
     }
 }
 
@@ -175,6 +180,6 @@ pub fn difference(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::difference(context, lhs, rhs, element, result, span),
-        FnContext::Comptime(_) => todo!("comptime pointer arithmetic"),
+        FnContext::Comptime(_) => unsupported(span, "pointer arithmetic"),
     }
 }

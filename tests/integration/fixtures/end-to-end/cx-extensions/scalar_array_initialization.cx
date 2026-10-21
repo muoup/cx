@@ -1,0 +1,33 @@
+#include <stdio.h>
+
+struct Pair { int a; int b; };
+
+int main() {
+    int unsigned_check[((unsigned int)-1 > 0) ? 1 : -1];
+    int shift_check[((unsigned int)-1 >> 31) == 1 ? 1 : -1];
+    int rounding_check[(int)(float)16777217 == 16777216 ? 1 : -1];
+    int short_check[(1 || (1 / 0)) ? 1 : -1];
+    int signed_check[((-9 / 2) == -4 && (-9 % 2) == -1) ? 1 : -1];
+    int truncation_check[((unsigned char)257 == 1) ? 1 : -1];
+    int wrap_check[((unsigned int)4294967295 + 1 == 0) ? 1 : -1];
+    int branch_check[(1 ? 2 : (1 / 0))];
+    int empty_check[(0 && (1 / 0)) ? -1 : 1];
+    int values[] = { 3, 5, 8 };
+    int copied[] = values;
+    copied[0] = 19;
+    char braced[] = { "ok" };
+    int padded[4] = { 7 };
+    Pair pairs[2] = { { 4, 6 } };
+    int matrix[2][3] = { { 1, 2 }, { 3 } };
+    char exact[2] = "cx";
+    char text[] = "hello";
+    char names[2][4] = { "one", "two" };
+    int counter = 0;
+    int ordered[] = { ++counter, ++counter, ++counter };
+    printf("%d %d %d %d\n", values[0], values[2], padded[0], padded[3]);
+    printf("%d %d %d %d\n", pairs[0].a, pairs[0].b, pairs[1].a, matrix[1][2]);
+    printf("%c%c %s %s %s\n", exact[0], exact[1], text, names[0], names[1]);
+    printf("%d %d %d %d\n", counter, ordered[0], ordered[1], ordered[2]);
+    printf("%d %d %s\n", values[0], copied[0], braced);
+    return 0;
+}

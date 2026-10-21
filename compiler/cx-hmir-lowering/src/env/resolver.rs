@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cx_hmir::{
     expr::HMIRExprID,
@@ -12,6 +12,7 @@ const REALIZED_BIT: usize = 1 << 63;
 pub(crate) struct HMIRResolver {
     realized: HashMap<HMIRTypeID, HMIRType>,
     declared: HashMap<HMIRExprID, HMIRTypeID>,
+    incomplete: HashSet<HMIRTypeID>,
     lowered: HashMap<HMIRTypeID, MIRTypeID>,
 }
 
@@ -20,6 +21,7 @@ impl HMIRResolver {
         Self {
             realized: HashMap::new(),
             declared: HashMap::new(),
+            incomplete: HashSet::new(),
             lowered: HashMap::new(),
         }
     }
@@ -38,11 +40,21 @@ impl HMIRResolver {
     pub fn declare_type(&mut self, declaration: HMIRExprID, incomplete: HMIRType) -> HMIRTypeID {
         let id = self.realize_type(incomplete);
         self.declared.insert(declaration, id);
+        self.incomplete.insert(id);
         id
     }
 
     pub fn complete_type(&mut self, id: HMIRTypeID, ty: HMIRType) {
         self.realized.insert(id, ty);
+        self.incomplete.remove(&id);
+    }
+
+    pub fn mark_incomplete(&mut self, id: HMIRTypeID) {
+        self.incomplete.insert(id);
+    }
+
+    pub fn is_incomplete(&self, id: HMIRTypeID) -> bool {
+        self.incomplete.contains(&id)
     }
 
     pub fn declared_type(&self, declaration: HMIRExprID) -> Option<HMIRTypeID> {

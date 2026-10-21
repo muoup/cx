@@ -1,5 +1,6 @@
 mod op;
 mod storage;
+mod global;
 
 pub use op::{binary, cast, difference, offset, unary};
 pub use storage::{allocate, copy, initialize, invalidate, lift, parameter, scratch, write};
@@ -130,7 +131,7 @@ fn output(
     ))
 }
 
-fn constant(
+pub fn constant(
     env: &mut HMIREnvironment,
     constant: &HMIRConstant,
     span: &TokenRange,
@@ -155,6 +156,12 @@ fn constant(
             ty: types::lower_type(env, *ty, span)?,
         },
         HMIRConstant::Str(value) => MIRConstant::String(value.clone()),
+        HMIRConstant::Aggregate { ty, fields } => MIRConstant::Aggregate {
+            ty: types::lower_type(env, *ty, span)?,
+            fields: fields.iter().map(|(index, field)| {
+                Ok((*index, self::constant(env, field, span)?))
+            }).collect::<CXResult<_>>()?,
+        },
         HMIRConstant::Function { def, args } if args.is_empty() => {
             let HMIRDefKind::Function(function) = env.symbols().resolve_definition(*def).kind()
             else {
@@ -208,9 +215,9 @@ pub fn lower_value(
                 MIRBindable::Place(place) => MIRValue::PlaceRef(*place),
             }
         }
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => {
-            todo!("global places: globals are not lowered yet")
-        }
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => MIRValue::Constant(MIRConstant::GlobalRef(
+            global::reference(context, *def, value.ty(), span)?,
+        )),
         HMIRValueKind::Indirect(pointer) => MIRValue::Register(reference(context, pointer)),
     })
 }
@@ -240,8 +247,19 @@ fn place_address(
         todo!("address of a subobject: aggregates are not lowered yet");
     }
 
-    let HMIRPlace::Local(slot) = place else {
-        todo!("global places: globals are not lowered yet");
+    let slot = match place {
+        HMIRPlace::Local(slot) => slot,
+        HMIRPlace::Global(def) => {
+            let inner = context.env().reference_inner(ty).or_else(|| context.env().pointer_inner(ty))
+                .expect("an address is a pointer or reference");
+            let global = global::reference(context, def, inner, span)?;
+            if context.env().is_reference(ty) {
+                return Ok(MIRValue::Constant(MIRConstant::GlobalRef(global)));
+            }
+            let out = register(context, ty, span)?;
+            intrinsic(context, MIRInternalIntrinsic::GlobalAddress { out: MIRTarget::Register(out), global }, span.clone());
+            return Ok(MIRValue::Register(out));
+        }
     };
     let MIRBindable::Place(place) = *context.context_mut().runtime().slot(slot) else {
         unreachable!("only a place has an address");
@@ -392,7 +410,11 @@ pub fn address(
                 MIRBindable::Register(_) if context.env().is_reference(value.ty()) => value,
                 MIRBindable::Register(_) => unreachable!("a register has no address"),
             },
-            HMIRPlace::Global(_) => todo!("global places: globals are not lowered yet"),
+            HMIRPlace::Global(_) => {
+                return Ok(HMIRValue::constant(ty, HMIRConstant::Address {
+                    place: *place, path: Vec::new(), ty,
+                }));
+            }
         },
         HMIRValueKind::Indirect(pointer) => pointer,
         HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),

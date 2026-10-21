@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use cx_hmir::{body::HMIRLocalID, ty::HMIRTypeID};
+use cx_util::identifier::CXIdent;
 
 use crate::value::{HMIRSlotID, HMIRValue, constant::HMIRConstant};
 
@@ -13,6 +14,7 @@ pub struct ComptimeContext {
 #[derive(Debug)]
 pub struct ComptimeSlot {
     ty: HMIRTypeID,
+    name: Option<CXIdent>,
     state: ComptimeSlotState,
 }
 
@@ -56,10 +58,11 @@ impl ComptimeContext {
         &mut self.slots[slot.index()]
     }
 
-    pub fn allocate_slot(&mut self, ty: HMIRTypeID) -> HMIRSlotID {
+    pub fn allocate_slot(&mut self, ty: HMIRTypeID, name: Option<CXIdent>) -> HMIRSlotID {
         let slot = HMIRSlotID::new(self.slots.len());
         self.slots.push(ComptimeSlot {
             ty,
+            name,
             state: ComptimeSlotState::Uninitialized,
         });
         slot
@@ -69,6 +72,10 @@ impl ComptimeContext {
 impl ComptimeSlot {
     pub fn ty(&self) -> HMIRTypeID {
         self.ty
+    }
+
+    pub fn name(&self) -> Option<&CXIdent> {
+        self.name.as_ref()
     }
 
     pub fn state(&self) -> &ComptimeSlotState {

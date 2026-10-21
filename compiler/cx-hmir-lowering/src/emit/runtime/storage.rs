@@ -7,7 +7,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{lower_value, output, reference, register, store};
+use super::{global, lower_value, output, reference, register, store};
 use crate::{
     env::function::LocalLoweringContext,
     eval::types,
@@ -54,7 +54,7 @@ fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBind
         _ => return None,
     };
     let HMIRPlace::Local(slot) = place else {
-        todo!("global places: globals are not lowered yet")
+        return None;
     };
 
     match context.runtime().slot(*slot) {
@@ -65,10 +65,18 @@ fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBind
 
 // Where the storage of a value can be written: for a reference, the storage it designates, otherwise the value's
 // own place or the storage behind its pointer; a register has no address
-fn target(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<MIRTarget> {
+fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<Option<MIRTarget>> {
     let is_reference = context.env().is_reference(value.ty());
-
-    match value.kind() {
+    Ok(match value.kind() {
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => Some(MIRTarget::Global(
+            global::reference(context, *def, value.ty(), span)?,
+        )),
+        HMIRValueKind::Constant(HMIRConstant::Address { place: HMIRPlace::Global(def), path, .. })
+            if is_reference && path.is_empty() =>
+        {
+            let inner = context.env().reference_inner(value.ty()).unwrap();
+            Some(MIRTarget::Global(global::reference(context, *def, inner, span)?))
+        }
         HMIRValueKind::Indirect(pointer) if !is_reference => {
             Some(MIRTarget::Indirect(reference(context, pointer)))
         }
@@ -79,11 +87,11 @@ fn target(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<MIRTa
                 MIRBindable::Place(place) => Some(MIRTarget::Place(*place)),
             }
         }
-        _ => match bindable(context, value)? {
-            MIRBindable::Place(place) => Some(MIRTarget::Place(place)),
-            MIRBindable::Register(_) => None,
+        _ => match bindable(context, value) {
+            Some(MIRBindable::Place(place)) => Some(MIRTarget::Place(place)),
+            _ => None,
         },
-    }
+    })
 }
 
 pub fn allocate(
@@ -214,7 +222,7 @@ pub fn write(
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<()> {
-    let Some(destination) = self::target(context, target) else {
+    let Some(destination) = self::target(context, target, span)? else {
         unreachable!("write to a value without an address");
     };
     let stored = context

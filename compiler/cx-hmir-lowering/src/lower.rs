@@ -1,16 +1,10 @@
-use crate::{
-    env::{
-        HMIREnvironment,
-        function::{ComptimeContext, FnContext, LocalLoweringContext},
-    },
-    eval::{self, eval_type, flow, types::lower_type},
-};
-use cx_hmir::{
-    HMIRDef, HMIRDefID, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIRUnit,
-    ty::context::HMIRTypeContext,
-};
+pub(crate) mod global;
+
+pub use global::lower as lower_global;
+
+use crate::{env::HMIREnvironment, eval};
+use cx_hmir::{HMIRDef, HMIRDefID, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRUnit};
 use cx_log::CXResult;
-use cx_mir::{MIRGlobalID, MIRGlobalState, MIRGlobalVariable};
 use cx_util::linkage::LinkageMode;
 
 pub fn lower_unit<'hmir>(
@@ -92,31 +86,4 @@ pub fn lower_function<'hmir>(
     env.module_mut().define_function(id, function);
 
     Ok(())
-}
-
-pub fn lower_global(global: &HMIRGlobal, env: &mut HMIREnvironment) -> CXResult<MIRGlobalID> {
-    let mut context =
-        LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
-    let span = global.body().expr(global.ty()).span();
-
-    let ty = flow::top(eval_type(&mut context, global.body(), global.ty()))?;
-    let mir_ty = lower_type(context.env_mut(), ty, span)?;
-    let is_mutable = !context.env().semantics(ty).constant;
-
-    let state = match (global.initializer(), global.linkage()) {
-        (Some(_), _) => todo!("global initializers: comptime evaluation to the global's type"),
-        (None, LinkageMode::Extern) => MIRGlobalState::External,
-        (None, _) => MIRGlobalState::ZeroInitialized,
-    };
-
-    Ok(context
-        .env_mut()
-        .module_mut()
-        .declare_global(MIRGlobalVariable::new(
-            global.symbol_name().clone(),
-            global.linkage(),
-            mir_ty,
-            state,
-            is_mutable,
-        )))
 }

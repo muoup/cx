@@ -8,7 +8,7 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{coerce::result::Coercion, op::specify, types},
+    eval::{coerce::result::Coercion, op::specify, storage, types},
     value::{HMIRValue, HMIRValueKind},
 };
 
@@ -22,12 +22,12 @@ pub fn apply(
 
     match context.env().resolve_kind(subject).clone() {
         HMIRTypeKind::Array { element, .. } => {
-            let storage = match reference {
+            let mut storage = match reference {
                 Some(_) => HMIRValue::indirect(subject, value),
                 None => value,
             };
             if matches!(storage.kind(), HMIRValueKind::Constant(_)) {
-                todo!("decay of a constant array")
+                storage = storage::temporary(context, storage, span)?;
             }
 
             let element = match context.env().semantics(subject).constant {

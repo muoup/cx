@@ -20,7 +20,7 @@ pub fn allocate(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::allocate(context, ty, name, span),
-        FnContext::Comptime(_) => Ok(comptime::allocate(context, ty)),
+        FnContext::Comptime(_) => Ok(comptime::allocate(context, ty, name)),
     }
 }
 
@@ -33,7 +33,7 @@ pub fn scratch(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::scratch(context, ty, span),
-        FnContext::Comptime(_) => Ok(comptime::allocate(context, ty)),
+        FnContext::Comptime(_) => Ok(comptime::allocate(context, ty, None)),
     }
 }
 
@@ -54,7 +54,7 @@ pub fn copy(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::copy(context, value, span),
-        FnContext::Comptime(_) => comptime::copy(context, value),
+        FnContext::Comptime(_) => comptime::copy(context, value, span),
     }
 }
 
@@ -67,7 +67,7 @@ pub fn lift(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::lift(context, value, span),
-        FnContext::Comptime(_) => comptime::copy(context, value.clone()),
+        FnContext::Comptime(_) => comptime::copy(context, value.clone(), span),
     }
 }
 
@@ -81,7 +81,7 @@ pub fn write(
 ) -> CXResult<()> {
     match context.context() {
         FnContext::Runtime(_) => runtime::write(context, target, value, span),
-        FnContext::Comptime(_) => comptime::write(context, target, value),
+        FnContext::Comptime(_) => comptime::write(context, target, value, span),
     }
 }
 

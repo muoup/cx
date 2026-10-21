@@ -1,3 +1,7 @@
+mod initializer;
+
+use initializer::initialize;
+
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBody,
     expr::HMIRExprID,
@@ -7,7 +11,7 @@ use cx_hmir::{
         context::HMIRTypeContext,
     },
 };
-use cx_log::catalogue::typecheck;
+use cx_log::catalogue::{mir, typecheck};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -18,8 +22,7 @@ use crate::{
         function::{FnContext, LocalLoweringContext},
     },
     eval::{
-        EvalResult, coerce,
-        complete::elaborate,
+        EvalResult,
         eval, eval_type,
         op::{binary_operands, eval_operand, specify},
         place::dereference,
@@ -70,7 +73,7 @@ fn eval_member(
         emit::reference(context, &storage, span)?
     };
     if matches!(context.context(), FnContext::Comptime(_)) {
-        todo!("comptime member access");
+        return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, "member access".into()).into());
     }
 
     let Some(mut owner) = context.env().reference_inner(value.ty()) else {
@@ -133,88 +136,4 @@ fn member_path(env: &HMIREnvironment, ty: HMIRTypeID, name: &CXIdent) -> Option<
                 Some(path)
             }
         })
-}
-
-fn initialize(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBody,
-    span: &TokenRange,
-    ty: HMIRTypeID,
-    fields: &[(Option<CXIdent>, HMIRExprID)],
-) -> EvalResult<HMIRValue> {
-    let declared = match context.env().resolve_kind(ty) {
-        HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => fields.clone(),
-        HMIRTypeKind::Array { .. } => todo!("array initializers"),
-        HMIRTypeKind::TaggedUnion { .. } => todo!("tagged union initializers"),
-        _ => return initialize_scalar(context, body, span, ty, fields),
-    };
-    if matches!(context.context(), FnContext::Comptime(_)) {
-        todo!("comptime aggregate initialization");
-    }
-
-    let mut values = Vec::with_capacity(fields.len());
-    let mut next = 0;
-    for (name, value) in fields {
-        let index = match name {
-            Some(name) => {
-                let field = declared.iter().position(|field| field.name() == Some(name));
-                let Some(index) = field else {
-                    return Err(hmir_error(
-                        span,
-                        &typecheck::UNKNOWN_MEMBER,
-                        (types::name(context.env(), ty), name.to_string()),
-                    )
-                    .into());
-                };
-
-                index
-            }
-            None => next,
-        };
-        let Some(field) = declared.get(index) else {
-            let limit = ("aggregate".into(), Some(declared.len()));
-            return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit).into());
-        };
-        next = index + 1;
-
-        values.push((index, field_value(context, body, *value, *field.ty())?));
-    }
-
-    Ok(emit::aggregate(context, ty, &values, span)?)
-}
-
-fn initialize_scalar(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBody,
-    span: &TokenRange,
-    ty: HMIRTypeID,
-    fields: &[(Option<CXIdent>, HMIRExprID)],
-) -> EvalResult<HMIRValue> {
-    match fields {
-        [(None, value)] => field_value(context, body, *value, ty),
-        [(Some(name), _)] => Err(hmir_error(
-            span,
-            &typecheck::UNKNOWN_MEMBER,
-            (types::name(context.env(), ty), name.to_string()),
-        )
-        .into()),
-        _ => Err(hmir_error(
-            span,
-            &typecheck::LIST_INITIALIZATION,
-            (types::name(context.env(), ty)).into(),
-        )
-        .into()),
-    }
-}
-
-fn field_value(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBody,
-    value: HMIRExprID,
-    ty: HMIRTypeID,
-) -> EvalResult<HMIRValue> {
-    let span = body.expr(value).span();
-    let value = elaborate(context, body, value)?.complete(context, body, Some(ty))?;
-
-    Ok(coerce::implicit(context, value, ty, span)?)
 }

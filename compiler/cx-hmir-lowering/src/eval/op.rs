@@ -19,10 +19,6 @@ use crate::{
     value::HMIRValue,
 };
 
-fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
-    context.env().resolve_kind(ty).clone()
-}
-
 pub(crate) fn eval_operand(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,

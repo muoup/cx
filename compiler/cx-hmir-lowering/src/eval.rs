@@ -3,6 +3,7 @@ mod binding;
 mod call;
 mod coerce;
 mod complete;
+mod comptime;
 mod control;
 mod def;
 mod literal;
@@ -13,6 +14,7 @@ mod storage;
 pub(crate) mod flow;
 pub(crate) mod types;
 
+pub(crate) use comptime::eval_comptime;
 pub(crate) use flow::EvalResult;
 
 use cx_hmir::{
@@ -39,7 +41,7 @@ use crate::{
         call::eval_call,
         complete::elaborate,
         control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_while},
-        def::eval_def,
+        def::{eval_def, type_value},
         flow::ComptimeStop,
         literal::eval_literal,
         op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
@@ -128,18 +130,17 @@ pub(crate) fn eval_comptime_function<'hmir>(
 pub(crate) fn eval(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
-    expr: HMIRExprID,
+    id: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    let expr = body.expr(expr);
+    let expr = body.expr(id);
     let span = expr.span();
 
     match expr.kind() {
         HMIRExprKind::Literal(literal) => Ok(eval_literal(context, span, literal)),
-        // Note: because lowering refers to runtime expressions, where comptime expressions are "evaluated", a type
-        // reaching this path would indicate that we are trying to use a type directly.
-        //
-        // In the future, we may want to introduce a runtime-friendly type info API, but for now, we will just error out.
-        HMIRExprKind::TypeRef(_) => todo!("Error: unexpected type constant in runtime expression"),
+        HMIRExprKind::TypeRef(_) | HMIRExprKind::Type(_) => {
+            let ty = eval_type(context, body, id)?;
+            type_value(context, ty, span)
+        }
         HMIRExprKind::Local(local) => eval_local(context, body, span, *local),
         HMIRExprKind::Let { local, initializer } => {
             eval_let(context, body, span, *local, *initializer)
@@ -223,8 +224,7 @@ pub(crate) fn eval(
         HMIRExprKind::Call { callee, args } => eval_call(context, body, span, *callee, args),
 
         HMIRExprKind::Hole(_) => todo!("HMIRExprKind::Hole as a value"),
-        HMIRExprKind::Type(_) => todo!("HMIRExprKind::Type"),
-        HMIRExprKind::Comptime(_) => todo!("HMIRExprKind::Comptime"),
+        HMIRExprKind::Comptime(inner) => Ok(eval_comptime(context, body, *inner, None)?),
         HMIRExprKind::Quote { .. } => todo!("HMIRExprKind::Quote"),
         HMIRExprKind::Splice { .. } => todo!("HMIRExprKind::Splice"),
         HMIRExprKind::Intrinsic(_) => todo!("HMIRExprKind::Intrinsic"),
@@ -234,14 +234,6 @@ pub(crate) fn eval(
         HMIRExprKind::Match { .. } => todo!("HMIRExprKind::Match"),
         HMIRExprKind::Label { .. } => todo!("HMIRExprKind::Label"),
     }
-}
-
-pub(crate) fn eval_comptime(
-    _context: &mut LocalLoweringContext,
-    _body: &HMIRBody,
-    _expr: HMIRExprID,
-) -> CXResult<HMIRConstant> {
-    todo!("Evaluate an isolated comptime expression with frozen inputs")
 }
 
 pub(crate) fn eval_type(
@@ -278,7 +270,10 @@ fn eval_type_def(
     let def = context.env_mut().resolve_def(def);
 
     match def.kind() {
-        HMIRDefKind::Type(ty) => Ok(*ty),
+        HMIRDefKind::Type(ty) => {
+            context.env_mut().resolver_mut().mark_incomplete(*ty);
+            Ok(*ty)
+        }
         HMIRDefKind::ComptimeGlobal(global) => {
             let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
             eval_type(&mut child, global.body(), global.initializer())

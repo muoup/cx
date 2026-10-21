@@ -174,6 +174,51 @@ pub(crate) fn int(
     ))
 }
 
+pub(crate) fn universe(env: &mut HMIREnvironment, span: &TokenRange) -> HMIRTypeID {
+    env.resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::Type,
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ))
+}
+
+pub(crate) fn array(
+    env: &mut HMIREnvironment,
+    ty: HMIRTypeID,
+    length: u64,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    let HMIRTypeKind::Array { element, .. } = *env.resolve_kind(ty) else {
+        unreachable!("only an array has its length completed")
+    };
+    let semantics = env.semantics(ty);
+    env.resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::Array { element, length: Some(length) },
+        semantics,
+        span.clone(),
+        None,
+    ))
+}
+
+pub(crate) fn unsized_array(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
+    matches!(env.resolve_kind(ty), HMIRTypeKind::Array { length: None, .. })
+}
+
+pub(crate) fn is_complete(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
+    let ty = env.underlying(ty);
+
+    if env.resolver().is_incomplete(ty) {
+        return false;
+    }
+
+    match env.resolve_kind(ty) {
+        HMIRTypeKind::Array { element, length } => length.is_some() && is_complete(env, *element),
+        HMIRTypeKind::Void | HMIRTypeKind::Unreachable => false,
+        _ => true,
+    }
+}
+
 pub(crate) fn reference(env: &mut HMIREnvironment, inner: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
     env.resolver_mut().realize_type(HMIRType::new(
         HMIRTypeKind::ReferenceTo(inner),

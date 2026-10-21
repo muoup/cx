@@ -10,12 +10,7 @@ use cx_util::unsafe_float::FloatWrapper;
 use crate::{
     emit::{self},
     env::function::LocalLoweringContext,
-    eval::{
-        EvalResult, coerce, eval,
-        flow::EvalStop,
-        op::{eval_operand, kind},
-        types,
-    },
+    eval::{EvalResult, coerce, eval, flow::EvalStop, op::eval_operand, types},
     log::hmir_error,
     value::{HMIRValue, constant::HMIRConstant},
 };
@@ -44,7 +39,7 @@ pub(crate) fn eval_unary(
 
         HMIRUnaryOp::Neg | HMIRUnaryOp::BNot => {
             let value = eval_operand(context, body, span, operand)?;
-            match (op, kind(context, value.ty())) {
+            match (op, context.env().resolve_kind(value.ty())) {
                 (HMIRUnaryOp::Neg, HMIRTypeKind::Float(_) | HMIRTypeKind::Int(_))
                 | (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => {
                     Ok(emit::unary(context, op, &value, span)?)
@@ -99,7 +94,7 @@ fn increment(
 
     let current = coerce::std_rvalue(context, target.clone(), span)?;
 
-    let updated = match kind(context, ty) {
+    let updated = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Int(_) => {
             let one = HMIRValue::constant(ty, HMIRConstant::Int { value: 1, ty });
             emit::binary(context, op, &current, &one, ty, span)?
@@ -115,6 +110,7 @@ fn increment(
         }
 
         HMIRTypeKind::PointerTo(element) => {
+            let element = *element;
             let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
             let one = HMIRConstant::Int {
                 value: 1,

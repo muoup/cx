@@ -3,7 +3,7 @@ use cx_hmir::{
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
-use cx_log::catalogue::typecheck;
+use cx_log::catalogue::{mir, typecheck};
 use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind};
 use cx_tokens::TokenRange;
 
@@ -432,7 +432,7 @@ pub(crate) fn return_value(
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
     let Some(return_type) = context.signature().map(|sig| *sig.return_type()) else {
-        unreachable!("return statement in a context without a signature")
+        return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into());
     };
     let ty = eval_type(context, body, return_type)?;
     let returns_void = match context.env().resolve_kind(ty) {

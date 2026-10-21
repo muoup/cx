@@ -43,6 +43,22 @@ pub enum HMIRConstant {
     },
 }
 
+impl HMIRConstant {
+    pub fn holds_local_address(&self) -> bool {
+        match self {
+            Self::Address {
+                place: HMIRPlace::Local(_),
+                ..
+            } => true,
+            Self::Aggregate { fields, .. } => {
+                fields.iter().any(|(_, field)| field.holds_local_address())
+            }
+            Self::Function { args, .. } => args.iter().any(Self::holds_local_address),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Quote {
     def: HMIRDefID,

@@ -1,4 +1,5 @@
 pub mod constant;
+pub mod scalar;
 
 use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
 use cx_util::dense_id;

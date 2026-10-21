@@ -1,0 +1,2 @@
+struct Recursive { Recursive value; };
+int main() { Recursive value; return 0; }

@@ -5,7 +5,16 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::coerce::{compatible::is_void, implicit::reference, promotion, result::Coercion, truth},
+    eval::{
+        coerce::{
+            compatible::is_void,
+            implicit::{reference, string},
+            promotion,
+            result::Coercion,
+            truth,
+        },
+        types,
+    },
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
@@ -22,6 +31,36 @@ pub fn apply(
     );
 
     match &kinds {
+        (
+            HMIRTypeKind::ReferenceTo(inner),
+            HMIRTypeKind::Array {
+                element: to,
+                length: target_length,
+            },
+        ) => {
+            let HMIRTypeKind::Array {
+                element: from,
+                length: Some(length),
+            } = *context.env().resolve_kind(*inner)
+            else {
+                return Ok(Coercion::Unapplied(value));
+            };
+            if !context.env().same_type(from, *to)
+                || target_length.is_some_and(|target| target != length)
+                || context.env().is_nocopy(*inner)
+                || context.env().semantics(*inner).move_semantics
+                    != context.env().semantics(target).move_semantics
+            {
+                return Ok(Coercion::Unapplied(value));
+            }
+            let ty = match target_length {
+                Some(_) => target,
+                None => types::array(context.env_mut(), target, length, span),
+            };
+            return Ok(Coercion::Applied(
+                emit::copy(context, value, span)?.with_ty(ty),
+            ));
+        }
         (HMIRTypeKind::ReferenceTo(inner), HMIRTypeKind::ReferenceTo(_))
             if context.env().is_reference(*inner) =>
         {
@@ -36,7 +75,7 @@ pub fn apply(
         }
 
         (HMIRTypeKind::Str, HMIRTypeKind::Array { .. }) => {
-            todo!("conversion of a string to an array")
+            return string::array(context, value, target, span);
         }
         (HMIRTypeKind::Str, HMIRTypeKind::PointerTo(_)) => {
             let decayed = promotion::step(context, value, span)?;

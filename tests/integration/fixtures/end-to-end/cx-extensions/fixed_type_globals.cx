@@ -1,0 +1,30 @@
+#include <stdio.h>
+
+struct Point { int x; int y; };
+
+int scalar = (2 + 3) * 4;
+int zero;
+static Point points[2] = { { .x = 7 }, { .y = 9 } };
+const char text[5] = "cx";
+char names[2][4] = { "one", "two" };
+char *message = "global";
+int *null_pointer = 0;
+int selected = 0 ? 1 / 0 : 6;
+unsigned int unsigned_value = (unsigned int)-1 >> 31;
+float rounded = 16777217.0f + 0.0f;
+
+void update() {
+    scalar += 2;
+    points[0].y = 4;
+}
+
+int main() {
+    update();
+    int *address = &scalar;
+    *address += 3;
+    printf("%d %d %d %u\n", scalar, zero, selected, unsigned_value);
+    printf("%d %d %d %d\n", points[0].x, points[0].y, points[1].x, points[1].y);
+    printf("%s %s %s %s\n", text, names[0], names[1], message);
+    printf("%d %d\n", null_pointer == 0, (int)rounded);
+    return 0;
+}

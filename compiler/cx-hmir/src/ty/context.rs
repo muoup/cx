@@ -48,6 +48,14 @@ pub trait HMIRTypeContext {
         matches!(self.resolve_kind(ty), HMIRTypeKind::Array { .. })
     }
 
+    fn is_float(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Float(_))
+    }
+
+    fn is_int(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Int(_))
+    }
+
     // The qualifiers of 'ty' itself; those of a type it references or points to are not its own
     fn semantics(&self, ty: HMIRTypeID) -> HMIRTypeSemantics {
         let resolved = self.resolve_type_id(ty);

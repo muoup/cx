@@ -114,10 +114,20 @@ impl MIRModuleBuilder {
     }
 
     pub fn define_global(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
-        self.globals
+        let global = self.globals
             .get_mut(&id)
-            .unwrap_or_else(|| panic!("Could not define unknown global id: {id}"))
-            .define(state);
+            .unwrap_or_else(|| panic!("Could not define unknown global id: {id}"));
+        *global = MIRGlobalVariable::new(
+            global.name().clone(), global.linkage(), global.ty(), state, global.is_mutable(),
+        );
+    }
+
+    pub fn declared_global(&self, name: &str) -> Option<MIRGlobalID> {
+        self.global_names.get(name).copied()
+    }
+
+    pub fn global(&self, id: MIRGlobalID) -> &MIRGlobalVariable {
+        &self.globals[&id]
     }
 
     pub fn finish(self) -> MIRUnit {

@@ -2,8 +2,9 @@ use cx_hmir::{
     HMIRBody,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeKind, context::HMIRTypeContext},
+    ty::context::HMIRTypeContext,
 };
+use cx_log::catalogue::{mir, typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -13,9 +14,9 @@ use crate::{
         EvalResult,
         coerce::{self},
         complete::elaborate,
-        eval, eval_type,
-        literal, storage, types,
+        eval, eval_type, literal, storage, types,
     },
+    log::hmir_error,
     value::HMIRValue,
 };
 
@@ -26,7 +27,18 @@ pub(crate) fn eval_local(
     local: HMIRLocalID,
 ) -> EvalResult<HMIRValue> {
     let Some(value) = context.get_local(&local).cloned() else {
-        todo!("local {local} has no binding in the evaluating context")
+        match context.context() {
+            FnContext::Comptime(_) => {
+                let subject = match body.local(local).name() {
+                    Some(name) => format!("variable '{name}'"),
+                    None => "this variable".into(),
+                };
+                return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, subject).into());
+            }
+            FnContext::Runtime(_) => {
+                todo!("local {local} has no binding in the evaluating context")
+            }
+        }
     };
 
     let stored = context.env().reference_inner(value.ty());
@@ -53,12 +65,7 @@ pub(crate) fn eval_let(
         todo!("comptime let binding in a runtime context");
     }
 
-    let ty = eval_type(context, body, local.ty())?;
-    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Void) {
-        todo!("local of type void");
-    }
-
-    let reference_type = types::reference(context.env_mut(), ty, local.span());
+    let mut ty = eval_type(context, body, local.ty())?;
 
     let value = match initializer {
         Some(initializer) => {
@@ -68,8 +75,18 @@ pub(crate) fn eval_let(
         }
         None => None,
     };
-    let local_storage = emit::allocate(context, ty, local.name().cloned(), span)?;
-    let local_storage = local_storage.with_ty(reference_type);
+    if let Some(value) = &value
+        && types::unsized_array(context.env(), ty)
+    {
+        ty = value.ty();
+    }
+    if !types::is_complete(context.env(), ty) {
+        let subject = format!("variable of type '{}'", types::name(context.env(), ty));
+        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject).into());
+    }
+    let reference_type = types::reference(context.env_mut(), ty, local.span());
+    let local_storage = emit::allocate(context, ty, local.name().cloned(), span)
+        .map(|allocate| allocate.with_ty(reference_type))?;
     if let Some(value) = value {
         storage::initialize(context, &local_storage, &value, span)?;
     }
