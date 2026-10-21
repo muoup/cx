@@ -1,7 +1,6 @@
-use cx_hmir::HMIRFunctionStage;
 use cx_log::{CXResult, error::CXError};
 
-use crate::{env::function::FnContext, value::HMIRValue};
+use crate::value::HMIRValue;
 
 pub(crate) type EvalResult<T> = Result<T, EvalStop>;
 
@@ -24,21 +23,11 @@ pub(crate) enum RuntimeStop {
     Diverged,
 }
 
-impl EvalStop {
-    pub fn assert_context(&self, context: &FnContext) {
-        match self {
-            Self::Comptime(_) => assert_eq!(context.stage(), HMIRFunctionStage::Comptime),
-            Self::Runtime(_) => assert_eq!(context.stage(), HMIRFunctionStage::Runtime),
-            Self::Diagnostic(_) => {}
-        }
-    }
-}
-
 // A runtime boundary that resumes in another block absorbs divergence; every other stop keeps propagating
 pub(crate) fn catch_diverged<T>(result: EvalResult<T>) -> EvalResult<Option<T>> {
     match result {
         Err(EvalStop::Runtime(RuntimeStop::Diverged)) => Ok(None),
-        
+
         Ok(value) => Ok(Some(value)),
         Err(stop) => Err(stop),
     }

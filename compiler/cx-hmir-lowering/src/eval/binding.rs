@@ -60,8 +60,6 @@ pub(crate) fn eval_let(
         )
     );
 
-    println!("eval_let: local {local_id:?} of type {ty:?} with reference type {reference_type:?}");
-
     if let Some(initializer) = initializer {
         let value = eval_initializer(context, body, initializer, ty)
             .and_then(|value| coerce::cast(context, value, ty, span).map_err(EvalStop::from))?;
@@ -71,8 +69,6 @@ pub(crate) fn eval_let(
             
             emit::storage::bind_local(context, local_id, value.clone());
 
-            println!("Alloc: {:?}", value);
-            
             return Ok(value);
         }
 

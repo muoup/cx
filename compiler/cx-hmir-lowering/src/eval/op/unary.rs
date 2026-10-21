@@ -8,12 +8,13 @@ use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
-    emit::{self, Transfer},
+    emit::{self},
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
         coerce::truthy,
         eval,
+        flow::EvalStop,
         op::{kind, promote_operand},
         types,
     },
@@ -30,34 +31,38 @@ pub(crate) fn eval_unary(
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, operand)?;
 
-    if matches!(
-        op,
-        HMIRUnaryOp::PreIncrement
-            | HMIRUnaryOp::PreDecrement
-            | HMIRUnaryOp::PostIncrement
-            | HMIRUnaryOp::PostDecrement
-    ) {
-        return Ok(increment(context, span, op, value)?);
-    }
-
-    let value = match op {
-        HMIRUnaryOp::LNot => truthy(context, value, span)?,
-        _ => promote_operand(context, value, span)?,
-    };
-
-    match (op, kind(context, value.ty())) {
-        (HMIRUnaryOp::LNot, _)
-        | (HMIRUnaryOp::Neg, HMIRTypeKind::Float(_) | HMIRTypeKind::Int(_))
-        | (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => Ok(emit::unary(context, op, &value, span)?),
-        (_, HMIRTypeKind::Float(_)) => {
-            Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()).into())
+    match op {
+        HMIRUnaryOp::LNot => {
+            let value = truthy(context, value, span)?;
+            Ok(emit::unary(context, op, &value, span)?)
         }
-        _ => Err(hmir_error(
-            span,
-            &typecheck::INVALID_OPERAND,
-            (format!("apply '{}' to", op.path()), types::name(context.env(), value.ty())),
-        )
-        .into()),
+
+        HMIRUnaryOp::PreIncrement
+        | HMIRUnaryOp::PreDecrement
+        | HMIRUnaryOp::PostIncrement
+        | HMIRUnaryOp::PostDecrement => increment(context, span, op, value).map_err(EvalStop::from),
+
+        HMIRUnaryOp::Neg | HMIRUnaryOp::BNot => {
+            let value = promote_operand(context, value, span)?;
+            match (op, kind(context, value.ty())) {
+                (HMIRUnaryOp::Neg, HMIRTypeKind::Float(_) | HMIRTypeKind::Int(_))
+                | (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => {
+                    Ok(emit::unary(context, op, &value, span)?)
+                }
+                (_, HMIRTypeKind::Float(_)) => {
+                    Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()).into())
+                }
+                _ => Err(hmir_error(
+                    span,
+                    &typecheck::INVALID_OPERAND,
+                    (
+                        format!("apply '{}' to", op.path()),
+                        types::name(context.env(), value.ty()),
+                    ),
+                )
+                .into()),
+            }
+        }
     }
 }
 
@@ -88,7 +93,7 @@ fn increment(
         HMIRUnaryOp::PostIncrement => (false, HMIRBinaryOp::Add),
         HMIRUnaryOp::PreDecrement => (true, HMIRBinaryOp::Sub),
         HMIRUnaryOp::PostDecrement => (false, HMIRBinaryOp::Sub),
-        
+
         _ => unreachable!("increment called with non-increment operator"),
     };
 
@@ -116,7 +121,14 @@ fn increment(
                 ty: offset_ty,
             };
             let one = HMIRValue::constant(offset_ty, one);
-            emit::offset(context, &current, &one, element, matches!(op, HMIRBinaryOp::Sub), span)?
+            emit::offset(
+                context,
+                &current,
+                &one,
+                element,
+                matches!(op, HMIRBinaryOp::Sub),
+                span,
+            )?
         }
 
         _ => {
@@ -130,9 +142,5 @@ fn increment(
 
     emit::storage::write(context, &target, &updated, span)?;
 
-    if prefix {
-        Ok(target)
-    } else {
-        Ok(updated)
-    }
+    if prefix { Ok(target) } else { Ok(updated) }
 }

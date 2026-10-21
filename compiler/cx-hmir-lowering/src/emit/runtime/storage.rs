@@ -7,9 +7,12 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{location, output, reference, store};
+use super::{lower_value, output, reference, store};
 use crate::{
-    emit::runtime, env::function::LocalLoweringContext, eval::types::{self, lower_type}, value::{HMIRPlace, HMIRValue, HMIRValueKind},
+    emit::runtime,
+    env::function::LocalLoweringContext,
+    eval::types::{self, lower_type},
+    value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 
 fn allocate_place(
@@ -160,14 +163,16 @@ pub fn copy(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let runtime_value = runtime::materialize(context, &value, span)?;
-    
-    // Keep this as not a reference_inner because we need the bitfield data later
-    let HMIRTypeKind::ReferenceTo(result_type) = context.env().resolve_type_id(runtime_value.ty()).kind() else {
-        unreachable!("read from type: {}", types::name(context.env(), runtime_value.ty()))
-    };
+    let runtime_value = runtime::lower_value(context, &value, span)?;
 
-    let ty = types::lower_type(context.env_mut(), *result_type, span)?;
+    // Keep this as not a reference_inner because we need the bitfield data later
+    let HMIRTypeKind::ReferenceTo(result_type) = context.env().resolve_type_id(value.ty()).kind()
+    else {
+        unreachable!("read from type: {}", types::name(context.env(), value.ty()))
+    };
+    let result_type = *result_type;
+
+    let ty = types::lower_type(context.env_mut(), result_type, span)?;
     let runtime = context.runtime_mut();
 
     let register = runtime
@@ -180,12 +185,15 @@ pub fn copy(
             ty,
 
             // TODO: Implement
-            bitfield: None
+            bitfield: None,
         },
         span.clone(),
     );
 
-    todo!()
+    Ok(HMIRValue::place(
+        result_type,
+        HMIRPlace::Local(runtime.allocate_slot(MIRBindable::Register(register))),
+    ))
 }
 
 pub fn write(
@@ -198,7 +206,7 @@ pub fn write(
         unreachable!("write to a value without an address");
     };
     let ty = types::lower_type(context.env_mut(), target.ty(), span)?;
-    let source = location(context, value, span)?;
+    let source = lower_value(context, value, span)?;
     store(context, destination, source, ty, span.clone());
 
     Ok(())

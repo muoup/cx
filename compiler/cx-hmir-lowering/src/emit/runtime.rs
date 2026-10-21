@@ -213,7 +213,7 @@ pub fn materialize(
 ) -> CXResult<MIRValue> {
     let value = detach(context, value.clone(), span)?;
 
-    location(context, &value, span)
+    lower_value(context, &value, span)
 }
 
 // Moves a value that a register produced into a place of the current scope when it is an aggregate, which is kept
@@ -231,7 +231,7 @@ pub fn settle(
 }
 
 // Names the storage of a value rather than what it holds, where it is behind a reference
-fn location(
+fn lower_value(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
@@ -343,7 +343,7 @@ pub fn call(
         .collect::<CXResult<Vec<_>>>()?;
     let lowered_args = args
         .iter()
-        .map(|arg| location(context, arg, span))
+        .map(|arg| lower_value(context, arg, span))
         .collect::<CXResult<_>>()?;
 
     let returns = !matches!(
@@ -507,7 +507,7 @@ pub fn field(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let struct_ty = types::lower_type(context.env_mut(), base.ty(), span)?;
-    let base = location(context, base, span)?;
+    let base = lower_value(context, base, span)?;
 
     let reference_ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
         HMIRTypeKind::ReferenceTo(ty),
@@ -543,7 +543,7 @@ pub fn aggregate(
         .collect::<CXResult<Vec<_>>>()?;
     let lowered_fields = fields
         .iter()
-        .map(|(index, value)| Ok((*index, location(context, value, span)?)))
+        .map(|(index, value)| Ok((*index, lower_value(context, value, span)?)))
         .collect::<CXResult<_>>()?;
 
     let mir_ty = types::lower_type(context.env_mut(), ty, span)?;
