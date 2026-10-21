@@ -4,14 +4,12 @@
 // Avoid any routines in here that are hyper-specific and would only feasibly be used in one place
 
 mod comptime;
-mod transfer;
 
 pub mod storage;
 
 pub(crate) mod runtime;
 
-pub use storage::{allocate, initialize, copy, spill};
-pub use transfer::{Transfer, consume, transfer};
+pub use storage::{allocate, copy, initialize, invalidate, lift, scratch, write};
 
 use cx_hmir::{HMIRBinaryOp, HMIRUnaryOp, ty::HMIRTypeID};
 use cx_log::CXResult;

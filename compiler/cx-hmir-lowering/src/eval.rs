@@ -7,6 +7,7 @@ mod def;
 mod literal;
 mod op;
 mod place;
+mod storage;
 
 pub(crate) mod flow;
 pub(crate) mod types;
@@ -15,6 +16,7 @@ pub(crate) use flow::EvalResult;
 
 use cx_hmir::{
     HMIRBody, HMIRCoerceMode, HMIRControlOp, HMIRDefKind, HMIRDefRef, HMIRFunction, HMIROp,
+    HMIROwnershipOp,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::HMIRTypeID,
@@ -39,7 +41,7 @@ use crate::{
         flow::ComptimeStop,
         literal::eval_literal,
         op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
-        place::{eval_address_of, eval_assign, eval_dereference},
+        place::{eval_address_of, eval_assign, eval_dereference, eval_move},
     },
     log::hmir_error,
     value::{HMIRValue, constant::HMIRConstant},
@@ -202,6 +204,9 @@ pub(crate) fn eval(
 
             HMIROp::Type(_) => todo!("HMIROp::Type"),
             HMIROp::Control(control) => todo!("HMIROp::Control({})", control.path()),
+            HMIROp::OwnershipOp(HMIROwnershipOp::Move(operand)) => {
+                eval_move(context, body, span, *operand)
+            }
             HMIROp::OwnershipOp(ownership) => {
                 todo!("HMIROp::OwnershipOp({})", ownership.path())
             }

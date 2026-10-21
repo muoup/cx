@@ -22,7 +22,7 @@ use crate::{
         coerce, eval, eval_type,
         op::{binary_operands, eval_operand, specify},
         place::dereference,
-        types,
+        storage, types,
     },
     log::hmir_error,
     value::HMIRValue,
@@ -69,7 +69,7 @@ fn eval_member(
     } else if context.env().is_reference(value.ty()) {
         value
     } else {
-        let storage = emit::spill(context, value, span)?;
+        let storage = storage::temporary(context, value, span)?;
         emit::reference(context, &storage, span)?
     };
     if matches!(context.context(), FnContext::Comptime(_)) {

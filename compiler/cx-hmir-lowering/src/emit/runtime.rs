@@ -2,9 +2,7 @@ mod op;
 mod storage;
 
 pub use op::{binary, cast, difference, offset, unary};
-pub use storage::{
-    allocate, copy, initialize, invalidate, is_place, parameter, relocate, write,
-};
+pub use storage::{allocate, copy, initialize, invalidate, lift, parameter, scratch, write};
 
 use cx_hmir::{
     HMIRDefKind,
@@ -23,9 +21,8 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use self::storage::{slot, target};
+use self::storage::slot;
 use crate::{
-    emit,
     env::{
         HMIREnvironment,
         function::{LocalLoweringContext, runtime::Emission},
@@ -119,31 +116,12 @@ fn register(
         .allocate_register(MIRRegisterDecl::new(ty, None)))
 }
 
-fn in_memory(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {
-    matches!(
-        context.env().resolve_kind(ty),
-        HMIRTypeKind::Struct { .. }
-            | HMIRTypeKind::Union { .. }
-            | HMIRTypeKind::TaggedUnion { .. }
-            | HMIRTypeKind::Array { .. }
-            | HMIRTypeKind::Opaque { .. }
-    )
-}
-
-// Selects where an operation writes its result: fresh storage for an aggregate, a register otherwise. Nothing is
-// initialized, so the caller marks the result initialized once the operation that writes it is emitted
+// A fresh register for the result of an operation, which holds it once the operation that writes it is emitted
 fn output(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<(MIRTarget, HMIRValue)> {
-    if in_memory(context, ty) {
-        let value = allocate(context, ty, None, span)?;
-        return Ok((
-            target(context, &value).expect("allocated output has storage"),
-            value,
-        ));
-    }
     let register = register(context, ty, span)?;
 
     Ok((
@@ -192,20 +170,6 @@ fn constant(
         }
         other => todo!("constant {other:?}"),
     })
-}
-
-// Moves a value that a register produced into a place of the current scope when it is an aggregate, which is kept
-// in memory, or has move semantics, whose obligations only the cleanup of a scope discharges
-pub fn settle(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    if !in_memory(context, value.ty()) && !context.env().is_nocopy(value.ty()) {
-        return Ok(value);
-    }
-
-    emit::spill(context, value, span)
 }
 
 // Names the storage of a value rather than what it holds, where it is behind a reference
@@ -340,11 +304,8 @@ pub fn call(
         },
         span.clone(),
     );
-    for arg in args {
-        emit::consume(context, arg, span);
-    }
 
-    settle(context, value, span)
+    Ok(value)
 }
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
@@ -357,27 +318,25 @@ pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
 pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
     let scope = context.runtime_mut().pop_scope();
 
-    drop_scope(context, scope, None, &span);
+    drop_scope(context, scope, &span);
 }
 
 // Drops what the scopes opened past the first 'depth' hold, without closing them
 pub fn drop_scopes(
     context: &mut LocalLoweringContext,
     depth: usize,
-    keep: Option<MIRPlaceID>,
     span: &TokenRange,
 ) {
     let scopes = context.runtime_mut().open_scopes()[depth..].to_vec();
 
     for scope in scopes.into_iter().rev() {
-        drop_scope(context, scope, keep, span);
+        drop_scope(context, scope, span);
     }
 }
 
 fn drop_scope(
     context: &mut LocalLoweringContext,
     scope: MIRScopeID,
-    keep: Option<MIRPlaceID>,
     span: &TokenRange,
 ) {
     let places = context
@@ -386,7 +345,7 @@ fn drop_scope(
         .places()
         .iter()
         .enumerate()
-        .filter(|(index, place)| place.scope() == scope && keep != Some(MIRPlaceID::new(*index)))
+        .filter(|(_, place)| place.scope() == scope)
         .map(|(index, _)| MIRPlaceID::new(index))
         .collect::<Vec<_>>();
 
@@ -560,9 +519,6 @@ pub fn aggregate(
         span.clone(),
     );
     initialize(context, &result, span);
-    for (_, field) in fields {
-        emit::consume(context, field, span);
-    }
 
     Ok(result)
 }

@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use cx_hmir::body::HMIRLocalID;
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRScopeID,
+    MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRPlaceDecl,
+    MIRScopeID, MIRTarget, MIRValue,
 };
 use cx_tokens::TokenRange;
 
@@ -31,18 +32,25 @@ pub struct RuntimeContext {
     locals: HashMap<HMIRLocalID, HMIRValue>,
     slots: Vec<MIRBindable>,
     open_scopes: Vec<MIRScopeID>,
+    scratch_scope: MIRScopeID,
     loops: Vec<LoopFrame>,
+    lifts: Vec<(HMIRSlotID, MIRBasicBlockID)>,
     emission: Emission,
 }
 
 impl RuntimeContext {
     pub fn new(prototype: MIRFnPrototype) -> Self {
+        let mut builder = MIRFunctionBuilder::new(prototype);
+        let scratch_scope = builder.add_scope(TokenRange::internal());
+
         Self {
-            builder: MIRFunctionBuilder::new(prototype),
+            builder,
             locals: HashMap::new(),
             slots: Vec::new(),
             open_scopes: Vec::new(),
+            scratch_scope,
             loops: Vec::new(),
+            lifts: Vec::new(),
             emission: Emission::Enabled,
         }
     }
@@ -69,10 +77,70 @@ impl RuntimeContext {
         }
         
         let terminator = kind.is_terminator();
+        if matches!(kind, MIRInstructionKind::Jump { .. } | MIRInstructionKind::Branch { .. }) {
+            self.preserve_lifts(&span);
+        }
         self.builder.emit(kind, span);
         
         if terminator {
             self.set_emission(Emission::Suppressed);
+        }
+    }
+
+    pub fn add_lift(&mut self, slot: HMIRSlotID) {
+        let block = self.builder.current_block();
+        self.lifts.push((slot, block));
+    }
+
+    pub fn lift_count(&self) -> usize {
+        self.lifts.len()
+    }
+
+    pub fn release_lifts(&mut self, count: usize) {
+        self.lifts.truncate(count);
+    }
+
+    // A lift register is only valid in its defining block, so before evaluation continues in another block, a
+    // capture that may still be used is moved into scratch storage, which carries no obligations
+    fn preserve_lifts(&mut self, span: &TokenRange) {
+        let block = self.builder.current_block();
+        let (preserved, pending) = std::mem::take(&mut self.lifts)
+            .into_iter()
+            .partition(|(_, defined)| *defined == block);
+        self.lifts = pending;
+
+        for (slot, _) in preserved {
+            let MIRBindable::Register(register) = self.slots[slot.index()] else {
+                continue;
+            };
+            let ty = self
+                .builder
+                .register(register)
+                .expect("a lift register is declared")
+                .ty();
+            let place = self.builder.allocate_place(MIRPlaceDecl::new(
+                ty,
+                None,
+                self.scratch_scope,
+                false,
+                false,
+            ));
+            self.builder.emit(
+                MIRInstructionKind::Store {
+                    target: MIRTarget::Place(place),
+                    value: MIRValue::Register(register),
+                    ty,
+                    bitfield: None,
+                },
+                span.clone(),
+            );
+            self.builder.emit(
+                MIRInstructionKind::Initialize {
+                    place: MIRBindable::Place(place),
+                },
+                span.clone(),
+            );
+            self.slots[slot.index()] = MIRBindable::Place(place);
         }
     }
 
@@ -112,6 +180,10 @@ impl RuntimeContext {
 
     pub fn open_scopes(&self) -> &[MIRScopeID] {
         &self.open_scopes
+    }
+
+    pub fn scratch_scope(&self) -> MIRScopeID {
+        self.scratch_scope
     }
 
     pub fn push_scope(&mut self, scope: MIRScopeID) {

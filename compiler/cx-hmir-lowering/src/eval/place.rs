@@ -1,18 +1,19 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody,
-    expr::HMIRExprID,
+    expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue::typecheck};
+use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::{self, Transfer},
+    emit,
     env::function::LocalLoweringContext,
     eval::{
         EvalResult, coerce, eval,
         op::{binary_operands, eval_operand},
-        types,
+        storage, types,
     },
     log::hmir_error,
     value::HMIRValue,
@@ -51,9 +52,45 @@ pub(crate) fn eval_assign(
     };
 
     let value = coerce::implicit(context, value, inner, span)?;
-    emit::transfer(context, &target, value, Transfer::Replace, span)?;
+    emit::invalidate(context, &target, MIRInvalidationKind::Drop, span);
+    storage::initialize(context, &target, &value, span)?;
 
     Ok(target)
+}
+
+pub(crate) fn eval_move(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    operand: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    let value = eval(context, body, operand)?;
+    let Some(inner) = context.env().reference_inner(value.ty()) else {
+        return Ok(value);
+    };
+
+    let HMIRExprKind::Local(local) = body.expr(operand).kind() else {
+        return Err(hmir_error(span, &typecheck::LOCAL_VARIABLE_REQUIRED, "move".into()).into());
+    };
+    let Some(binding) = context.get_local(local) else {
+        unreachable!("an evaluated local has a binding")
+    };
+    if context.env().reference_inner(binding.ty()) != Some(inner) {
+        todo!("move out of the referent of a reference local")
+    }
+
+    let safe = context
+        .signature()
+        .is_some_and(|signature| signature.contract().is_safe());
+    if safe && context.env().semantics(inner).unsafe_move {
+        let operation = "move of a type declared as @unsafe_move".into();
+        return Err(hmir_error(span, &typecheck::UNSAFE_OPERATION, operation).into());
+    }
+
+    let moved = emit::lift(context, &value, span)?;
+    emit::invalidate(context, &value, MIRInvalidationKind::Move, span);
+
+    Ok(moved)
 }
 
 pub(crate) fn eval_address_of(

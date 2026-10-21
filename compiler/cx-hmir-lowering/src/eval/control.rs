@@ -4,20 +4,18 @@ use cx_hmir::{
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_log::catalogue::typecheck;
-use cx_mir::{
-    MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, MIRValue,
-};
+use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind};
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::{self, Transfer, runtime},
+    emit::{self, runtime},
     env::function::{FnContext, LocalLoweringContext, runtime::LoopFrame},
     eval::{
         EvalResult,
         binding::eval_scoped,
         coerce, eval, eval_type,
         flow::{self, ComptimeStop, EvalStop, RuntimeStop},
-        literal, types,
+        literal, storage, types,
     },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
@@ -136,11 +134,11 @@ fn runtime_if(
         return Ok(literal::unit(context, span));
     };
 
-    let result = emit::allocate(context, ty, None, span)?;
+    let result = emit::scratch(context, ty, span)?;
     for arm in arms {
         runtime::switch_to(context, arm.block);
         let value = coerce::implicit(context, arm.value, ty, span)?;
-        emit::transfer(context, &result, value, Transfer::Init, span)?;
+        storage::initialize(context, &result, &value, span)?;
         runtime::jump(context, merge, span.clone());
     }
 
@@ -372,14 +370,14 @@ fn runtime_short_circuit(
     let right = flow::catch_diverged(eval_logical_operand(context, body, span, rhs))?;
 
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    let result = emit::allocate(context, ty, None, span)?;
+    let result = emit::scratch(context, ty, span)?;
     if let Some(right) = right {
-        emit::transfer(context, &result, right, Transfer::Init, span)?;
+        storage::initialize(context, &result, &right, span)?;
         runtime::jump(context, merge, span.clone());
     }
 
     runtime::switch_to(context, short_block);
-    emit::transfer(context, &result, left, Transfer::Init, span)?;
+    storage::initialize(context, &result, &left, span)?;
     runtime::jump(context, merge, span.clone());
 
     runtime::switch_to(context, merge);
@@ -405,7 +403,7 @@ pub(crate) fn eval_loop_exit(
         _ => unreachable!("only 'break' and 'continue' exit a loop"),
     };
 
-    runtime::drop_scopes(context, frame.scope_depth, None, span);
+    runtime::drop_scopes(context, frame.scope_depth, span);
     runtime::jump(context, target, span.clone());
     Err(RuntimeStop::Diverged.into())
 }
@@ -461,17 +459,12 @@ pub(crate) fn return_value(
 
     match context.context() {
         FnContext::Runtime(_) => {
-            let owns_result = context.env().reference_inner(ty).is_none();
             let value = match &value {
                 Some(value) => Some(runtime::lower_value(context, value, span)?),
                 None => None,
             };
 
-            let keep = match &value {
-                Some(MIRValue::PlaceRef(place)) if owns_result => Some(*place),
-                _ => None,
-            };
-            runtime::drop_scopes(context, 0, keep, span);
+            runtime::drop_scopes(context, 0, span);
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Return { value }, span.clone());

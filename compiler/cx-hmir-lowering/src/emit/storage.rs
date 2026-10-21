@@ -4,16 +4,14 @@ use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{
-    comptime, runtime,
-    transfer::{self, Transfer},
-};
+use super::{comptime, runtime};
 use crate::{
     env::function::{FnContext, LocalLoweringContext},
-    value::{HMIRPlace, HMIRValue, HMIRValueKind},
+    value::HMIRValue,
 };
 
-// Fresh, uninitialized storage of type 'ty' in the current scope; binds no local, writes and consumes nothing
+// Fresh, uninitialized storage of type 'ty' declared in the current scope, which carries the drop obligations of
+// its type once initialized; binds no local and writes nothing
 pub fn allocate(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
@@ -26,6 +24,19 @@ pub fn allocate(
     }
 }
 
+// Fresh, uninitialized storage of type 'ty' that only carries an expression value, such as a merged result or a
+// temporary that needs an address. Its scope is never opened, so it carries no obligations and is never dropped
+pub fn scratch(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::scratch(context, ty, span),
+        FnContext::Comptime(_) => Ok(comptime::allocate(context, ty)),
+    }
+}
+
 // Binds a local to an existing value; the value is not copied, moved or consumed, and the local is not marked
 pub fn bind_local(context: &mut LocalLoweringContext, local: HMIRLocalID, value: HMIRValue) {
     match context.context_mut() {
@@ -34,9 +45,8 @@ pub fn bind_local(context: &mut LocalLoweringContext, local: HMIRLocalID, value:
     }
 }
 
-// The contents of a value, copied into initialized storage of their own; the source is neither consumed nor
-// checked for being copyable, so the caller authorizes the copy. Constants, and registers of a copyable type,
-// cannot be written and are returned as they are
+// The contents of a value, copied into a value of their own; the source is not checked for being copyable, so
+// the caller authorizes the copy
 pub fn copy(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
@@ -48,8 +58,21 @@ pub fn copy(
     }
 }
 
+// The current contents of the place a reference names, captured without copying them; the place stays live, so a
+// move out of it is a separate invalidation. A runtime capture may only be used within the current block
+pub fn lift(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::lift(context, value, span),
+        FnContext::Comptime(_) => comptime::copy(context, value.clone()),
+    }
+}
+
 // Stores the payload of 'value' into the storage of 'target' and does nothing else: the old contents are not
-// dropped, the target is not marked initialized and the source is not consumed
+// dropped, the target is not marked initialized and the source is not invalidated
 pub fn write(
     context: &mut LocalLoweringContext,
     target: &HMIRValue,
@@ -59,15 +82,6 @@ pub fn write(
     match context.context() {
         FnContext::Runtime(_) => runtime::write(context, target, value, span),
         FnContext::Comptime(_) => comptime::write(context, target, value),
-    }
-}
-
-pub fn is_place(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
-    match context.context() {
-        FnContext::Runtime(_) => runtime::is_place(context, value),
-        FnContext::Comptime(_) => {
-            matches!(value.kind(), HMIRValueKind::PlaceRef(HMIRPlace::Local(_)))
-        }
     }
 }
 
@@ -81,9 +95,9 @@ pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue, span: &
     }
 }
 
-// Ends the liveness of the slot a value names, place or register, as a move, drop or leak; storage behind a
-// pointer is untracked. Comptime records this on the concrete slot only: there is no flow analysis over it and a
-// dropped nodrop value is not reported
+// Ends the liveness of the place a value names as a move, drop or leak; registers and storage behind a pointer
+// are untracked. Comptime records this on the concrete slot only: there is no flow analysis over it and a dropped
+// nodrop value is not reported
 pub fn invalidate(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
@@ -94,15 +108,4 @@ pub fn invalidate(
         FnContext::Runtime(_) => runtime::invalidate(context, value, kind, span),
         FnContext::Comptime(_) => comptime::invalidate(context, value, kind),
     }
-}
-
-pub fn spill(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let place = allocate(context, value.ty(), None, span)?;
-    transfer::transfer(context, &place, value, Transfer::Init, span)?;
-
-    Ok(place)
 }

@@ -7,14 +7,14 @@ use cx_hmir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::{self, Transfer, runtime},
+    emit,
     env::function::{FnContext, LocalLoweringContext},
     eval::{
         EvalResult,
         aggregate::eval_initializer,
         coerce::{self},
         eval, eval_type,
-        literal, types,
+        literal, storage, types,
     },
     value::HMIRValue,
 };
@@ -60,23 +60,19 @@ pub(crate) fn eval_let(
 
     let reference_type = types::reference(context.env_mut(), ty, local.span());
 
-    let storage = match initializer {
+    let value = match initializer {
         Some(initializer) => {
             let value = eval_initializer(context, body, initializer, ty)?;
-            let value = coerce::implicit(context, value, ty, span)?;
-
-            if !context.env().is_reference(ty) && emit::storage::is_place(context, &value) {
-                value.with_ty(reference_type)
-            } else {
-                let allocation = emit::allocate(context, ty, None, span)?;
-                let allocation = allocation.with_ty(reference_type);
-                emit::transfer(context, &allocation, value, Transfer::Init, span)?;
-                allocation
-            }
+            Some(coerce::implicit(context, value, ty, span)?)
         }
-        None => emit::allocate(context, ty, None, span)?.with_ty(reference_type),
+        None => None,
     };
-    emit::storage::bind_local(context, local_id, storage);
+    let local_storage = emit::allocate(context, ty, local.name().cloned(), span)?;
+    let local_storage = local_storage.with_ty(reference_type);
+    if let Some(value) = value {
+        storage::initialize(context, &local_storage, &value, span)?;
+    }
+    emit::storage::bind_local(context, local_id, local_storage);
 
     Ok(literal::unit(context, span))
 }
@@ -93,17 +89,8 @@ pub(crate) fn eval_block(
         return eval_statements(context, body, span, statements, true);
     }
 
-    let parent = match context.context() {
-        FnContext::Runtime(runtime) => runtime.open_scopes().last().copied(),
-        FnContext::Comptime(_) => None,
-    };
     emit::open_scope(context, span.clone());
     let result = eval_statements(context, body, span, statements, yields);
-    if let (Some(scope), Ok(value)) = (parent, &result)
-        && context.env().reference_inner(value.ty()).is_none()
-    {
-        runtime::relocate(context, value, scope, None);
-    }
     emit::close_scope(context, span.clone());
 
     result
@@ -117,8 +104,17 @@ fn eval_statements(
     yields: bool,
 ) -> EvalResult<HMIRValue> {
     let mut result = None;
-    for statement in statements {
+    for (index, statement) in statements.iter().enumerate() {
+        let lifts = match context.context() {
+            FnContext::Runtime(runtime) => Some(runtime.lift_count()),
+            FnContext::Comptime(_) => None,
+        };
         result = Some(eval(context, body, *statement)?);
+
+        let yielded = yields && index + 1 == statements.len();
+        if let Some(lifts) = lifts.filter(|_| !yielded) {
+            context.runtime_mut().release_lifts(lifts);
+        }
     }
 
     match result {

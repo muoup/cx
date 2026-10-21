@@ -5,7 +5,10 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::coerce::{compatible, result::Coercion},
+    eval::{
+        coerce::{compatible, result::Coercion},
+        storage,
+    },
     value::{HMIRValue, HMIRValueKind},
 };
 
@@ -28,7 +31,7 @@ pub fn bind(
             }
             value
         }
-        _ => emit::spill(context, value, span)?,
+        _ => storage::temporary(context, value, span)?,
     };
 
     Ok(Coercion::Applied(emit::address(
