@@ -1,0 +1,15 @@
+typedef void nothing;
+
+enum union maybe {
+    none :: void,
+    empty :: nothing,
+    some :: int
+};
+
+void inspect(maybe* slot) {}
+
+int main() {
+    maybe* slot = (maybe*) 0;
+    inspect(slot);
+    return 0;
+}

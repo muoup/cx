@@ -1,0 +1,43 @@
+/* CX-STDOUT: 7 9 5 */
+
+#include <stdio.h>
+
+struct Resource : @nodrop {
+    int data;
+};
+
+struct Plain {
+    int data;
+};
+
+void discharge(Resource value) {
+    printf("%d ", value.data);
+    @leak(value);
+}
+
+int main() {
+    int cond = 1;
+    Resource first = (Resource) {
+        .data = 7
+    };
+    Resource second = (Resource) {
+        .data = 9
+    };
+
+    discharge(move first);
+    if (cond) {
+        printf("%d ", second.data);
+        @leak(second);
+    } else {
+        @leak(second);
+    }
+
+    Plain plain = (Plain) {
+        .data = 1
+    };
+    @leak(plain) = (Plain) {
+        .data = 5
+    };
+    printf("%d\n", plain.data);
+    return 0;
+}

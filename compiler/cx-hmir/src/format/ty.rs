@@ -57,9 +57,9 @@ pub(super) fn write_type(f: &mut Formatter<'_>, unit: &HMIRUnit, id: HMIRTypeID)
     )
 }
 
-pub(super) fn write_generic_type<T, L>(
+pub(super) fn write_generic_type<T, L, M>(
     f: &mut Formatter<'_>,
-    ty: &HMIRGenericType<T, L>,
+    ty: &HMIRGenericType<T, L, M>,
     write_inner: &impl Fn(&mut Formatter<'_>, &T) -> fmt::Result,
     write_length: &impl Fn(&mut Formatter<'_>, &L) -> fmt::Result,
 ) -> fmt::Result {

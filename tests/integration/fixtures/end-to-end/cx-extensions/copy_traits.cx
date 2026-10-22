@@ -1,0 +1,66 @@
+/* CX-STDOUT: 2 4 6 8 10 12 7 */
+
+#include <stdio.h>
+
+struct Plain {
+    int value;
+};
+
+struct Owned : @nocopy {
+    int value;
+};
+
+typedef Plain PlainPair[2];
+typedef Owned* OwnedPointer;
+typedef Owned& OwnedReference;
+typedef const Owned ConstOwned;
+
+struct FromPlain : @copy_traits(Plain) {
+    int value;
+};
+
+struct FromPlainArray : @copy_traits(PlainPair) {
+    int value;
+};
+
+struct FromOwnedPointer : @copy_traits(OwnedPointer) {
+    int value;
+};
+
+struct FromOwnedReference : @copy_traits(OwnedReference) {
+    int value;
+};
+
+struct OverridesNocopy : @nocopy, @copy_traits(Plain) {
+    int value;
+};
+
+struct UnsafeFromPlain : @copy_traits(Plain), @unsafe_move {
+    int value;
+};
+
+struct FromConstOwned : @copy_traits(ConstOwned) {
+    int value;
+};
+
+int main() {
+    FromPlain a = (FromPlain) { .value = 1 };
+    FromPlain a2 = a;
+    FromPlainArray b = (FromPlainArray) { .value = 2 };
+    FromPlainArray b2 = b;
+    FromOwnedPointer c = (FromOwnedPointer) { .value = 3 };
+    FromOwnedPointer c2 = c;
+    FromOwnedReference d = (FromOwnedReference) { .value = 4 };
+    FromOwnedReference d2 = d;
+    OverridesNocopy e = (OverridesNocopy) { .value = 5 };
+    OverridesNocopy e2 = e;
+    UnsafeFromPlain f = (UnsafeFromPlain) { .value = 6 };
+    UnsafeFromPlain f2 = f;
+    FromConstOwned g = (FromConstOwned) { .value = 6 };
+    g.value = 7;
+    FromConstOwned g2 = move g;
+
+    printf("%d %d %d %d %d %d %d\n", a.value + a2.value, b.value + b2.value, c.value + c2.value,
+        d.value + d2.value, e.value + e2.value, f.value + f2.value, g2.value);
+    return 0;
+}

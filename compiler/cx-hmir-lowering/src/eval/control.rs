@@ -9,7 +9,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::{self, runtime},
-    env::function::{FnContext, LocalLoweringContext, runtime::LoopFrame},
+    env::function::{FnContext, LocalLoweringContext, Permission, runtime::LoopFrame},
     eval::{
         EvalResult,
         binding::eval_scoped,
@@ -441,6 +441,16 @@ pub(crate) fn eval_loop_exit(
     runtime::drop_scopes(context, frame.scope_depth, span);
     runtime::jump(context, target, span.clone());
     Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))
+}
+
+pub(crate) fn eval_unsafe(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    operand: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    flow::with_permission(context, Permission::Unsafe, |context| {
+        eval(context, body, operand)
+    })
 }
 
 pub(crate) fn eval_return(

@@ -3,7 +3,8 @@ use cx_hmir::{
     expr::{HMIRExprID, op::HMIRTypeOp},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
-        aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+        aggregate::{HMIRDeclaredMove, HMIRMoveSemantics, HMIRTypeSemantics},
+        context::HMIRTypeContext,
     },
 };
 use cx_log::{
@@ -13,7 +14,7 @@ use cx_log::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::LocalLoweringContext,
+    env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{eval_comptime, eval_type, flow, types},
     log::hmir_error,
     value::{HMIRValueKind, constant::HMIRConstant, scalar::int},
@@ -37,13 +38,17 @@ pub(crate) fn eval_declared_type(
     match ty.kind() {
         HMIRExprTypeKind::Nominal(inner) => {
             let inner = flow::top(eval_type(context, body, *inner)?.description())?;
-            Ok(specify(context, inner, *ty.semantics(), ty.decl_span()))
+            let specifiers = ty
+                .semantics()
+                .map(|declared| declared_move(context, body, declared))?;
+            Ok(specify(context, inner, specifiers, ty.decl_span()))
         }
         HMIRExprTypeKind::Struct { .. }
         | HMIRExprTypeKind::Union { .. }
         | HMIRExprTypeKind::TaggedUnion { .. } => eval_aggregate(context, body, declaration, ty),
         _ => {
-            let ty = evaluate(context, body, ty)?;
+            let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
+            let ty = evaluate(context, body, ty, move_semantics)?;
             Ok(context.env_mut().resolver_mut().realize_type(ty))
         }
     }
@@ -60,12 +65,18 @@ fn eval_aggregate(
         return Ok(id);
     }
 
+    let reserved = ty.semantics().map(|declared| {
+        CXResult::Ok(match declared {
+            HMIRDeclaredMove::Explicit(semantics) => *semantics,
+            HMIRDeclaredMove::CopyTraits(_) => HMIRMoveSemantics::default(),
+        })
+    })?;
     let incomplete = HMIRType::new(
         HMIRTypeKind::Opaque {
             size: 0,
             alignment: 1,
         },
-        *ty.semantics(),
+        reserved,
         ty.decl_span().clone(),
         ty.debug_name().map(str::to_string),
     );
@@ -73,7 +84,8 @@ fn eval_aggregate(
         .env_mut()
         .resolver_mut()
         .declare_type(declaration, incomplete);
-    let complete = evaluate(context, body, ty)?;
+    let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
+    let complete = evaluate(context, body, ty, move_semantics)?;
     context.env_mut().resolver_mut().complete_type(id, complete);
 
     Ok(id)
@@ -83,12 +95,12 @@ fn evaluate(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     ty: &HMIRExprType,
+    move_semantics: HMIRMoveSemantics,
 ) -> CXResult<HMIRType> {
     let inline = match ty.kind() {
-        HMIRExprTypeKind::Array { .. } => Some("array element"),
-        HMIRExprTypeKind::Struct { .. }
-        | HMIRExprTypeKind::Union { .. }
-        | HMIRExprTypeKind::TaggedUnion { .. } => Some("member"),
+        HMIRExprTypeKind::Array { .. } => Some(Inline::Element),
+        HMIRExprTypeKind::Struct { .. } | HMIRExprTypeKind::Union { .. } => Some(Inline::Member),
+        HMIRExprTypeKind::TaggedUnion { .. } => Some(Inline::Variant),
         _ => None,
     };
 
@@ -96,19 +108,63 @@ fn evaluate(
         context,
         |context, inner| member(context, body, *inner, inline),
         |context, length| array_length(context, body, *length),
+        |_, _| Ok(move_semantics),
     )
+}
+
+fn declared_move(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    declared: &HMIRDeclaredMove,
+) -> CXResult<HMIRMoveSemantics> {
+    match declared {
+        HMIRDeclaredMove::Explicit(semantics) => Ok(*semantics),
+        HMIRDeclaredMove::CopyTraits(source) => {
+            let source = flow::top(eval_type(context, body, *source)?.description())?;
+            Ok(owned_move_semantics(context.env(), source))
+        }
+    }
+}
+
+fn owned_move_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRMoveSemantics {
+    match env.array_inner(ty) {
+        Some(element) => owned_move_semantics(env, element),
+        None => env.semantics(ty).move_semantics,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Inline {
+    Element,
+    Member,
+    Variant,
+}
+
+impl Inline {
+    fn subject(self) -> &'static str {
+        match self {
+            Inline::Element => "array element",
+            Inline::Member | Inline::Variant => "member",
+        }
+    }
+
+    fn admits(self, env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
+        let void = matches!(env.resolve_kind(env.underlying(ty)), HMIRTypeKind::Void);
+        (void && matches!(self, Inline::Variant)) || types::is_complete(env, ty)
+    }
 }
 
 fn member(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     expr: HMIRExprID,
-    inline: Option<&str>,
+    inline: Option<Inline>,
 ) -> CXResult<HMIRTypeID> {
     let ty = flow::top(eval_type(context, body, expr)?.description())?;
 
     match inline {
-        Some(subject) if !types::is_complete(context.env(), ty) => {
+        Some(inline) if !inline.admits(context.env(), ty) => {
+            let subject = inline.subject();
             let subject = format!("{subject} of type '{}'", types::name(context.env(), ty));
             Err(hmir_error(body.expr(expr).span(), &typecheck::INCOMPLETE_TYPE, subject).into())
         }

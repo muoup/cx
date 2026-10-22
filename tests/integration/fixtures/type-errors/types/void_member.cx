@@ -1,0 +1,11 @@
+typedef void nothing;
+
+struct holder {
+    int value;
+    nothing empty;
+};
+
+int main() {
+    holder* h = (holder*) 0;
+    return 0;
+}

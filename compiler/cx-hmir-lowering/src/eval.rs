@@ -38,13 +38,13 @@ use crate::{
         aggregate::eval_aggregate,
         binding::{eval_block, eval_let, eval_local},
         call::eval_call,
-        control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_while},
+        control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_unsafe, eval_while},
         def::eval_def,
         flow::ComptimeStop,
         flow::{Evaluation, ready},
         literal::eval_literal,
         op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
-        place::{eval_address_of, eval_assign, eval_dereference, eval_move},
+        place::{eval_address_of, eval_assign, eval_dereference, eval_leak, eval_move},
     },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
@@ -204,6 +204,7 @@ pub(crate) fn eval(
             HMIROp::Control(HMIRControlOp::Continue) => {
                 eval_loop_exit(context, span, ComptimeStop::Continue)
             }
+            HMIROp::Control(HMIRControlOp::Unsafe(operand)) => eval_unsafe(context, body, *operand),
 
             HMIROp::Assign { target, op, value } => {
                 eval_assign(context, body, span, *target, *op, *value)
@@ -218,6 +219,9 @@ pub(crate) fn eval(
             HMIROp::Control(control) => todo!("HMIROp::Control({})", control.path()),
             HMIROp::OwnershipOp(HMIROwnershipOp::Move(operand)) => {
                 eval_move(context, body, span, *operand)
+            }
+            HMIROp::OwnershipOp(HMIROwnershipOp::Leak(operand)) => {
+                eval_leak(context, body, span, *operand)
             }
             HMIROp::OwnershipOp(ownership) => {
                 todo!("HMIROp::OwnershipOp({})", ownership.path())

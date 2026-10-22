@@ -12,7 +12,8 @@ use cx_hmir::{
     expr::{HMIRExpr, HMIRExprID, HMIRExprKind, literal::HMIRLiteral, op::HMIRTypeOp},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
-        aggregate::HMIRTypeSemantics, intrinsic::HMIRIntType,
+        aggregate::{HMIRDeclaredMove, HMIRTypeSemantics},
+        intrinsic::HMIRIntType,
     },
     unit::function::{HMIRFnDefinition, HMIRFnParam, HMIRFnPrototype},
 };
@@ -391,7 +392,7 @@ impl<'a> BodyLowering<'a> {
     pub(crate) fn expr_type(
         &mut self,
         kind: HMIRExprTypeKind,
-        semantics: HMIRTypeSemantics,
+        semantics: HMIRTypeSemantics<HMIRDeclaredMove>,
         name: Option<&CXIdent>,
         span: &TokenRange,
     ) -> HMIRExprID {

@@ -1,10 +1,12 @@
 use cx_util::identifier::CXIdent;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct HMIRTypeSemantics {
+use crate::expr::HMIRExprID;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HMIRTypeSemantics<M = HMIRMoveSemantics> {
     pub constant: bool,
     pub unsafe_move: bool,
-    pub move_semantics: HMIRMoveSemantics,
+    pub move_semantics: M,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -13,6 +15,12 @@ pub enum HMIRMoveSemantics {
     POD,
     Nocopy,
     Nodrop,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HMIRDeclaredMove {
+    Explicit(HMIRMoveSemantics),
+    CopyTraits(HMIRExprID),
 }
 
 #[derive(Debug, Clone)]
@@ -42,13 +50,22 @@ impl HMIRTypeSemantics {
     }
 }
 
-impl Default for HMIRTypeSemantics {
+impl<M> HMIRTypeSemantics<M> {
+    pub fn map<N, E>(
+        &self,
+        move_semantics: impl FnOnce(&M) -> Result<N, E>,
+    ) -> Result<HMIRTypeSemantics<N>, E> {
+        Ok(HMIRTypeSemantics {
+            constant: self.constant,
+            unsafe_move: self.unsafe_move,
+            move_semantics: move_semantics(&self.move_semantics)?,
+        })
+    }
+}
+
+impl Default for HMIRDeclaredMove {
     fn default() -> Self {
-        Self {
-            constant: false,
-            unsafe_move: false,
-            move_semantics: HMIRMoveSemantics::POD,
-        }
+        Self::Explicit(HMIRMoveSemantics::default())
     }
 }
 

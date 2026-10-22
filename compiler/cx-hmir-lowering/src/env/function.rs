@@ -31,6 +31,14 @@ pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
     context: FnContext,
     evaluation: EvaluationID,
+    permission: Permission,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Permission {
+    Safe,
+    Nonsafe,
+    Unsafe,
 }
 
 #[derive(Debug)]
@@ -59,6 +67,10 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             signature,
             context,
             evaluation: EvaluationID::fresh(),
+            permission: match signature {
+                Some(signature) if signature.contract().is_safe() => Permission::Safe,
+                _ => Permission::Nonsafe,
+            },
         }
     }
 
@@ -71,6 +83,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         let mut child = LocalLoweringContext::new(&mut *self.env, signature, context);
         if let Some(evaluation) = evaluation {
             child.evaluation = evaluation;
+            child.permission = self.permission;
         }
         child
     }
@@ -133,6 +146,21 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
 
     pub fn evaluation(&self) -> EvaluationID {
         self.evaluation
+    }
+
+    pub fn permission(&self) -> Permission {
+        self.permission
+    }
+
+    pub fn with_permission<R>(
+        &mut self,
+        permission: Permission,
+        scoped: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let outer = std::mem::replace(&mut self.permission, permission);
+        let result = scoped(self);
+        self.permission = outer;
+        result
     }
 
     pub fn into_context(self) -> FnContext {

@@ -6,7 +6,7 @@ use cx_log::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::{ComptimeContext, EvaluationID, FnContext, LocalLoweringContext},
+    env::function::{ComptimeContext, EvaluationID, FnContext, LocalLoweringContext, Permission},
     eval::flow::{EvalResult, Evaluation},
     log::hmir_error,
 };
@@ -83,6 +83,19 @@ impl<T: 'static> Incomplete<T> {
         })
     }
 
+    fn with_permission(self, permission: Permission) -> Self {
+        let Self {
+            suspension,
+            partial,
+            resolve,
+        } = self;
+        Self::resume(suspension, partial, move |context, body, expected| {
+            let result =
+                context.with_permission(permission, |context| resolve(context, body, expected))?;
+            Ok(result.scoped(permission))
+        })
+    }
+
     pub(crate) fn project<U: 'static>(self, project: impl Fn(T) -> U + 'static) -> Incomplete<U> {
         self.project_with(Box::new(project))
     }
@@ -116,7 +129,25 @@ impl<T> Incomplete<T> {
     }
 }
 
+pub(crate) fn with_permission<T: 'static>(
+    context: &mut LocalLoweringContext,
+    permission: Permission,
+    eval: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<T>,
+) -> EvalResult<T> {
+    let result = context.with_permission(permission, eval)?;
+    Ok(result.scoped(permission))
+}
+
 impl<T: 'static> Evaluation<T> {
+    fn scoped(self, permission: Permission) -> Self {
+        match self {
+            Self::Incomplete(incomplete) => {
+                Self::Incomplete(incomplete.with_permission(permission))
+            }
+            result => result,
+        }
+    }
+
     pub(crate) fn known(&self) -> Option<&T> {
         match self {
             Self::Ready(value) => Some(value),

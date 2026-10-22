@@ -1,0 +1,101 @@
+/* CX-STDOUT: 7 3 4 */
+/* CX-STDOUT-NEXT: note 1 */
+/* CX-STDOUT-NEXT: note 2 */
+/* CX-STDOUT-NEXT: note 3 */
+/* CX-STDOUT-NEXT: 5 1 6 3 8 */
+/* CX-STDOUT-NEXT: 1 2 */
+
+#include <stdio.h>
+
+struct Resource : @nodrop {
+    int data;
+};
+
+struct Plain {
+    int data;
+};
+
+struct pinned : @unsafe_move {
+    int value;
+};
+
+struct holder {
+    pinned inner;
+    int tag;
+};
+
+int note(int v) {
+    printf("note %d\n", v);
+    return v;
+}
+
+int consume(pinned value) safe {
+    return value.value;
+}
+
+void discharge(Resource value) safe {
+    printf("%d ", value.data);
+    @unsafe {
+        @leak(value);
+    };
+}
+
+void places() safe {
+    Plain plain = (Plain) {
+        .data = 1
+    };
+    @unsafe(@leak(plain)) = (Plain) {
+        .data = 3
+    };
+    printf("%d ", plain.data);
+    @unsafe(plain).data = 4;
+    printf("%d\n", plain.data);
+}
+
+void contextual(int cond) safe {
+    pinned first = (pinned) {
+        .value = 5
+    };
+    pinned second = (pinned) {
+        .value = 6
+    };
+    pinned third = (pinned) {
+        .value = 8
+    };
+    pinned fourth = (pinned) {
+        .value = 9
+    };
+
+    holder h = @unsafe({ .inner = move first, .tag = note(1) });
+    holder g = @unsafe(.{
+        note(2);
+        @unsafe({ .inner = move second, .tag = note(3) });
+    });
+    holder k = cond ? @unsafe({ .inner = move third, .tag = 0 }) : @unsafe({ .inner = move fourth, .tag = 1 });
+    printf("%d %d %d %d %d\n", h.inner.value, h.tag, g.inner.value, g.tag, k.inner.value);
+}
+
+int early(int cond) safe {
+    pinned value = (pinned) {
+        .value = 1
+    };
+    @unsafe {
+        if (cond) {
+            return move value |> consume();
+        }
+        @unsafe {
+            return 1 + (move value |> consume());
+        };
+    };
+}
+
+int main() {
+    Resource resource = (Resource) {
+        .data = 7
+    };
+    discharge(move resource);
+    places();
+    contextual(1);
+    printf("%d %d\n", early(1), early(0));
+    return 0;
+}

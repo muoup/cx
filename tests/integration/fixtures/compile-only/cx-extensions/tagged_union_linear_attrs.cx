@@ -10,7 +10,7 @@ enum union Result : @nodrop {
 void accept(Result* result) {}
 
 int main() {
-    Result* result;
+    Result* result = 0;
     accept(result);
     return 0;
 }

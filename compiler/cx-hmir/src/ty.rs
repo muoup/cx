@@ -6,7 +6,7 @@ use crate::{
     HMIRFnSignature,
     expr::HMIRExprID,
     ty::{
-        aggregate::{HMIRFieldDef, HMIRTypeSemantics},
+        aggregate::{HMIRDeclaredMove, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
         intrinsic::{HMIRFloatType, HMIRIntType},
     },
 };
@@ -17,20 +17,20 @@ dense_id!(HMIRTypeID, "ty");
 dense_id!(NominalID, "nominal");
 
 // An evaluated type, which refers to the types it is built from by their IDs
-pub type HMIRType = HMIRGenericType<HMIRTypeID, u64>;
+pub type HMIRType = HMIRGenericType<HMIRTypeID, u64, HMIRMoveSemantics>;
 pub type HMIRTypeKind = HMIRGenericTypeKind<HMIRTypeID, u64>;
 
 // A declared type, which refers to the types it is built from by the expressions that evaluate to them
-pub type HMIRExprType = HMIRGenericType<HMIRExprID, HMIRExprID>;
+pub type HMIRExprType = HMIRGenericType<HMIRExprID, HMIRExprID, HMIRDeclaredMove>;
 pub type HMIRExprTypeKind = HMIRGenericTypeKind<HMIRExprID, HMIRExprID>;
 
 #[derive(Debug, Clone)]
-pub struct HMIRGenericType<T, L> {
+pub struct HMIRGenericType<T, L, M> {
     debug_name: Option<String>,
     decl_span: TokenRange,
 
     kind: HMIRGenericTypeKind<T, L>,
-    semantics: HMIRTypeSemantics,
+    semantics: HMIRTypeSemantics<M>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,10 +54,10 @@ pub enum HMIRGenericTypeKind<T, L> {
     Nominal(T),
 }
 
-impl<T, L> HMIRGenericType<T, L> {
+impl<T, L, M> HMIRGenericType<T, L, M> {
     pub fn new(
         kind: HMIRGenericTypeKind<T, L>,
-        semantics: HMIRTypeSemantics,
+        semantics: HMIRTypeSemantics<M>,
         decl_span: TokenRange,
         debug_name: Option<String>,
     ) -> Self {
@@ -77,7 +77,7 @@ impl<T, L> HMIRGenericType<T, L> {
         &self.kind
     }
 
-    pub fn semantics(&self) -> &HMIRTypeSemantics {
+    pub fn semantics(&self) -> &HMIRTypeSemantics<M> {
         &self.semantics
     }
 
@@ -106,18 +106,23 @@ impl<T, L> HMIRGenericType<T, L> {
         }
     }
 
-    // 'state' is handed to whichever of the two is mapping, as both usually need the same context
-    pub fn map<S, U, M, E>(
+    // 'state' is handed to whichever of them is mapping, as they usually need the same context
+    pub fn map<S, U, K, N, E>(
         &self,
         state: &mut S,
         ty: impl Fn(&mut S, &T) -> Result<U, E>,
-        length: impl Fn(&mut S, &L) -> Result<M, E>,
-    ) -> Result<HMIRGenericType<U, M>, E> {
+        length: impl Fn(&mut S, &L) -> Result<K, E>,
+        move_semantics: impl FnOnce(&mut S, &M) -> Result<N, E>,
+    ) -> Result<HMIRGenericType<U, K, N>, E> {
+        let semantics = self
+            .semantics
+            .map(|declared| move_semantics(state, declared))?;
+
         Ok(HMIRGenericType {
             debug_name: self.debug_name.clone(),
             decl_span: self.decl_span.clone(),
             kind: self.kind.map(state, ty, length)?,
-            semantics: self.semantics,
+            semantics,
         })
     }
 }

@@ -2,8 +2,8 @@ use cx_hir::ast::{
     function::HIRFunctionPrototype,
     modifiers::HIR_CONST,
     types::{
-        ANONYMOUS_MEMBER_PREFIX, HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType,
-        HIRTypeKind,
+        ANONYMOUS_MEMBER_PREFIX, HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRTagKind,
+        HIRType, HIRTypeKind,
     },
 };
 use cx_hmir::{
@@ -11,11 +11,12 @@ use cx_hmir::{
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprTypeKind,
-        aggregate::{HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
+        aggregate::{HMIRDeclaredMove, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
     },
     unit::function::HMIRFnParam,
 };
 use cx_log::{CXResult, catalogue::typecheck};
+use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -49,22 +50,7 @@ fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXRes
 
     let kind = match &ty.kind {
         HIRTypeKind::Identifier { name, args, .. } => {
-            let callee = match context.lookup(name, ty.tag_kind(), span)? {
-                Symbol::Local(binding) => context.push(HMIRExprKind::Local(binding.local()), span),
-                Symbol::Global(GlobalSymbol::Primitive(kind)) => context.type_ref(kind, span),
-                Symbol::Global(
-                    GlobalSymbol::Def(def)
-                    | GlobalSymbol::Function(def)
-                    | GlobalSymbol::ComptimeFunction(def, ..),
-                ) => context.push(HMIRExprKind::Def(def), span),
-                Symbol::Global(GlobalSymbol::Constructor(..)) => {
-                    return log_hir_error(
-                        span,
-                        &typecheck::EXPECTED_TYPE,
-                        format!("constructor '{name}'"),
-                    );
-                }
-            };
+            let callee = lower_type_name(context, name, ty.tag_kind(), span)?;
             let Some(args) = args else {
                 return Ok(callee);
             };
@@ -125,6 +111,30 @@ fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXRes
     };
 
     Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
+}
+
+fn lower_type_name(
+    context: &mut BodyLowering<'_>,
+    name: &QualifiedName,
+    tag: Option<HIRTagKind>,
+    span: &TokenRange,
+) -> CXResult<HMIRExprID> {
+    Ok(match context.lookup(name, tag, span)? {
+        Symbol::Local(binding) => context.push(HMIRExprKind::Local(binding.local()), span),
+        Symbol::Global(GlobalSymbol::Primitive(kind)) => context.type_ref(kind, span),
+        Symbol::Global(
+            GlobalSymbol::Def(def)
+            | GlobalSymbol::Function(def)
+            | GlobalSymbol::ComptimeFunction(def, ..),
+        ) => context.push(HMIRExprKind::Def(def), span),
+        Symbol::Global(GlobalSymbol::Constructor(..)) => {
+            return log_hir_error(
+                span,
+                &typecheck::EXPECTED_TYPE,
+                format!("constructor '{name}'"),
+            );
+        }
+    })
 }
 
 // The shape of a staged value: 'expr(T)', or a comptime function over code such as
@@ -253,18 +263,21 @@ fn lower_aggregate_type(
     attributes: &HIRAggregateAttributes,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
-    if attributes.copy_traits.is_some() {
-        return log_hir_error(span, &typecheck::UNSUPPORTED_FEATURE, "@copy_traits".into());
-    }
-
-    let semantics = HMIRTypeSemantics {
-        constant: false,
-        unsafe_move: attributes.unsafe_move,
-        move_semantics: match attributes.semantics {
+    let move_semantics = match &attributes.copy_traits {
+        Some(source) => {
+            let source = QualifiedName::new_raw(CXIdent::from(source.as_str()));
+            HMIRDeclaredMove::CopyTraits(lower_type_name(context, &source, None, span)?)
+        }
+        None => HMIRDeclaredMove::Explicit(match attributes.semantics {
             HIRMoveSemantics::POD => HMIRMoveSemantics::POD,
             HIRMoveSemantics::Nocopy => HMIRMoveSemantics::Nocopy,
             HIRMoveSemantics::Nodrop => HMIRMoveSemantics::Nodrop,
-        },
+        }),
+    };
+    let semantics = HMIRTypeSemantics {
+        constant: false,
+        unsafe_move: attributes.unsafe_move,
+        move_semantics,
     };
 
     Ok(context.expr_type(kind, semantics, name, span))

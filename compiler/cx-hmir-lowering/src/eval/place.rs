@@ -1,5 +1,6 @@
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody,
+    body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext},
 };
@@ -9,10 +10,11 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::LocalLoweringContext,
+    env::function::{LocalLoweringContext, Permission},
     eval::{
         EvalResult, coerce, eval,
         flow::{Evaluation, ready},
+        literal,
         op::{binary_operands, eval_operand},
         storage, types,
     },
@@ -73,28 +75,83 @@ pub(crate) fn eval_move(
         return Ok(Evaluation::Ready(value));
     };
 
-    let HMIRExprKind::Local(local) = body.expr(operand).kind() else {
-        return Err(hmir_error(span, &typecheck::LOCAL_VARIABLE_REQUIRED, "move".into()).into());
-    };
-    let Some(binding) = context.get_local(local) else {
+    let local = require_local(body, operand, span, "move")?;
+    let Some(binding) = context.get_local(&local) else {
         unreachable!("an evaluated local has a binding")
     };
     if context.env().reference_inner(binding.ty()) != Some(inner) {
         todo!("move out of the referent of a reference local")
     }
 
-    let safe = context
-        .signature()
-        .is_some_and(|signature| signature.contract().is_safe());
-    if safe && context.env().semantics(inner).unsafe_move {
-        let operation = "move of a type declared as @unsafe_move".into();
-        return Err(hmir_error(span, &typecheck::UNSAFE_OPERATION, operation).into());
+    if context.env().semantics(inner).unsafe_move {
+        require_nonsafe(context, span, "move of a type declared as @unsafe_move")?;
     }
 
     let moved = emit::lift(context, &value, span)?;
     emit::invalidate(context, &value, MIRInvalidationKind::Move, span);
 
     Ok(Evaluation::Ready(moved))
+}
+
+pub(crate) fn eval_leak(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    operand: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    let value = ready!(eval(context, body, operand));
+    require_local(body, operand, span, "@leak")?;
+    let Some(inner) = context.env().reference_inner(value.ty()) else {
+        return Err(hmir_error(
+            span,
+            &typecheck::TYPE_MISMATCH,
+            (
+                "@leak".into(),
+                "memory reference type".into(),
+                types::name(context.env(), value.ty()),
+            ),
+        )
+        .into());
+    };
+    require_nonsafe(context, span, "@leak")?;
+
+    if !context.env().is_nodrop(inner) {
+        return Ok(Evaluation::Ready(value));
+    }
+
+    emit::invalidate(context, &value, MIRInvalidationKind::Leak, span);
+    Ok(Evaluation::Ready(literal::unit(context, span)))
+}
+
+fn require_local(
+    body: &HMIRBody,
+    operand: HMIRExprID,
+    span: &TokenRange,
+    operation: &str,
+) -> CXResult<HMIRLocalID> {
+    match body.expr(operand).kind() {
+        HMIRExprKind::Local(local) => Ok(*local),
+        _ => Err(hmir_error(
+            span,
+            &typecheck::LOCAL_VARIABLE_REQUIRED,
+            operation.into(),
+        )),
+    }
+}
+
+fn require_nonsafe(
+    context: &LocalLoweringContext,
+    span: &TokenRange,
+    operation: &str,
+) -> CXResult<()> {
+    if context.permission() < Permission::Nonsafe {
+        return Err(hmir_error(
+            span,
+            &typecheck::UNSAFE_OPERATION,
+            operation.into(),
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn eval_address_of(
