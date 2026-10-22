@@ -61,6 +61,10 @@ impl Liveness {
         self.table.set(self.key(bindable), state);
     }
 
+    fn available(&self, _: &AnalysisEnvironment, bindable: &MIRBindable) -> bool {
+        matches!(self.get(bindable), Some(MIRLivenessState::Available))
+    }
+
     fn require_available(
         &self,
         env: &AnalysisEnvironment,
@@ -69,7 +73,7 @@ impl Liveness {
         range: &TokenRange,
     ) -> CXResult<()> {
         let state = self.get(bindable);
-        if state == Some(MIRLivenessState::Available) {
+        if self.available(env, bindable) {
             return Ok(());
         }
 
@@ -106,10 +110,13 @@ impl Liveness {
         }
 
         Ok(match (existing, incoming) {
+            (MIRLivenessState::Moved, _) | (_, MIRLivenessState::Moved) => {
+                MIRLivenessState::Moved
+            }
             (MIRLivenessState::Uninitialized, _) | (_, MIRLivenessState::Uninitialized) => {
                 MIRLivenessState::Uninitialized
             }
-            _ => MIRLivenessState::Moved,
+            _ => MIRLivenessState::Available,
         })
     }
 }
@@ -133,7 +140,7 @@ impl AnalysisPass for Liveness {
     ) -> CXResult<()> {
         let mut unavailable = None;
         visit_bindable_uses(&instruction.kind, |bindable| {
-            if unavailable.is_none() && self.get(&bindable) != Some(MIRLivenessState::Available) {
+            if unavailable.is_none() && !self.available(env, &bindable) {
                 unavailable = Some(bindable);
             }
         });

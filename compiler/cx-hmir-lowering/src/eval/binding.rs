@@ -74,6 +74,7 @@ pub(crate) fn eval_let(
             unreachable!("a declaration without known type information is incomplete or stopped")
         }
     };
+
     let value = match initializer {
         Some(initializer) => {
             let value = eval(context, body, initializer)?;
@@ -82,19 +83,25 @@ pub(crate) fn eval_let(
         }
         None => None,
     };
+
     let ty = match &value {
         Some(value) => ready!(declared.complete(context, body, Some(value.ty()))),
         None => ready!(declared.complete(context, body, None)),
     };
+
     if !types::is_complete(context.env(), ty) {
         let subject = format!("variable of type '{}'", types::name(context.env(), ty));
         return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject).into());
     }
+
     let reference_type = types::reference(context.env_mut(), ty, local.span());
     let local_storage = emit::allocate(context, ty, local.name().cloned(), span)
         .map(|allocate| allocate.with_ty(reference_type))?;
+
     if let Some(value) = value {
         storage::initialize(context, &local_storage, &value, span)?;
+    } else if !context.env().semantics(ty).move_semantics.is_nocopy() {
+        emit::initialize(context, &local_storage, span);
     }
     emit::storage::bind_local(context, local_id, local_storage);
 
@@ -151,7 +158,9 @@ fn eval_statements(
                 .cloned();
             let span = span.clone();
             return result.and_then(context, body, partial, move |context, _, value, _| {
-                Ok(Evaluation::Ready(coerce::std_rvalue(context, value, &span)?))
+                Ok(Evaluation::Ready(coerce::std_rvalue(
+                    context, value, &span,
+                )?))
             });
         }
         ready!(result);

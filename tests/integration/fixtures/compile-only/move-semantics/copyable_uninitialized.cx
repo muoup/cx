@@ -1,0 +1,23 @@
+struct Data {
+    int value;
+};
+
+void inspect(int number, Data first, Data second) {}
+
+void conditional(int condition) {
+    Data data;
+    if (condition) {
+        data = (Data) { .value = 1 };
+    }
+    inspect(0, data, data);
+}
+
+int main() {
+    int number;
+    Data data;
+    Data moved = move data;
+    data = (Data) { .value = 2 };
+    inspect(number, moved, data);
+    conditional(1);
+    return 0;
+}
