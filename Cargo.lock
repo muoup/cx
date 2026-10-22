@@ -381,6 +381,7 @@ dependencies = [
 name = "cx-hmir-lowering"
 version = "0.0.0"
 dependencies = [
+ "cx-hir",
  "cx-hmir",
  "cx-intrinsics",
  "cx-log",

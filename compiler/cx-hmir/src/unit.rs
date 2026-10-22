@@ -1,6 +1,7 @@
 pub mod def;
 pub mod function;
 pub mod global;
+pub mod symbols;
 
 use std::collections::HashMap;
 
@@ -9,16 +10,14 @@ use cx_namespace::module::NamespacePath;
 use crate::{
     HMIRDefID,
     ty::{HMIRType, HMIRTypeID},
-    unit::def::HMIRDef,
+    unit::{def::HMIRDef, symbols::HMIRSymbolTable},
 };
 
 #[derive(Debug, Clone)]
 pub struct HMIRUnit {
     namespace: NamespacePath,
+    symbols: HMIRSymbolTable,
 
-    externs: HashMap<NamespacePath, Vec<NamespacePath>>,
-    symbols: HashMap<String, HMIRDefID>,
-    
     types: HashMap<HMIRTypeID, HMIRType>,
     defs: HashMap<HMIRDefID, HMIRDef>,
 }
@@ -26,15 +25,13 @@ pub struct HMIRUnit {
 impl HMIRUnit {
     pub fn new(
         namespace: NamespacePath,
-        externs: HashMap<NamespacePath, Vec<NamespacePath>>,
-        symbols: HashMap<String, HMIRDefID>,
+        symbols: HMIRSymbolTable,
         types: HashMap<HMIRTypeID, HMIRType>,
         defs: HashMap<HMIRDefID, HMIRDef>,
     ) -> Self {
         Self {
             namespace,
             symbols,
-            externs,
             types,
             defs,
         }
@@ -42,6 +39,10 @@ impl HMIRUnit {
 
     pub fn namespace(&self) -> &NamespacePath {
         &self.namespace
+    }
+
+    pub fn symbols(&self) -> &HMIRSymbolTable {
+        &self.symbols
     }
 
     pub fn resolve_type(&self, id: HMIRTypeID) -> &HMIRType {
@@ -52,25 +53,11 @@ impl HMIRUnit {
         self.types.iter()
     }
 
-    pub fn find_symbol(&self, name: &str) -> Option<HMIRDefID> {
-        self.symbols.get(name).copied()
-    }
-
     pub fn resolve_def(&self, id: HMIRDefID) -> Option<&HMIRDef> {
         self.defs.get(&id)
     }
 
     pub fn defs(&self) -> impl Iterator<Item = (&HMIRDefID, &HMIRDef)> {
         self.defs.iter()
-    }
-
-    pub fn resolve_extern(&self, namespace: &NamespacePath) -> &[NamespacePath] {
-        self.externs.get(namespace)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
-    }
-
-    pub fn externs(&self) -> impl Iterator<Item = (&NamespacePath, &Vec<NamespacePath>)> {
-        self.externs.iter()
     }
 }

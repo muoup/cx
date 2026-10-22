@@ -1,8 +1,16 @@
-use std::{collections::HashMap, sync::Arc};
+pub mod lookup;
 
-use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit};
-use cx_namespace::module::{NamespacePath, QualifiedName};
+use std::{collections::HashMap, ops::Deref, sync::Arc};
+
+use cx_hir::ast::types::HIRTagKind;
+use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit, unit::symbols::HMIRDeclaration};
+use cx_namespace::{
+    lookup::{QualifiedLookup, QualifiedLookupResult},
+    module::{NamespacePath, QualifiedName},
+};
 use cx_pipeline_data::db::ModuleMap;
+
+use crate::env::symbols::lookup::{Candidate, HMIRLookup, HMIRSymbolGroup, ScopeLookup};
 
 ///
 /// Handles accessing the HMIR environment. An HMIR environment contains both the HMIR module itself, as well as
@@ -14,13 +22,27 @@ pub struct HMIRSymbolEnv<'global, 'hmir> {
     module_map: &'global ModuleMap<HMIRUnit>,
     local_unit: &'hmir HMIRUnit,
 
-    defs: HashMap<HMIRDefID, &'global HMIRDef>,
-    
-    unit_cache: HashMap<NamespacePath, Arc<HMIRUnit>>,
-    def_cache: HashMap<QualifiedName, HMIRDefID>,
-
-    next_external_def_id: usize,
+    units: HashMap<NamespacePath, Arc<HMIRUnit>>,
+    externals: Vec<(NamespacePath, HMIRDefID)>,
+    external_ids: HashMap<(NamespacePath, HMIRDefID), HMIRDefID>,
+    lookups: HashMap<LookupKey, HMIRLookup>,
 }
+
+#[derive(Debug, Clone)]
+pub enum HMIRUnitHandle<'hmir> {
+    Local(&'hmir HMIRUnit),
+    Imported(Arc<HMIRUnit>),
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct LookupKey {
+    owner: NamespacePath,
+    lexical_namespace: NamespacePath,
+    name: QualifiedName,
+    tag: Option<HIRTagKind>,
+}
+
+const EXTERNAL_BIT: usize = 1 << 63;
 
 impl<'global, 'hmir> HMIRSymbolEnv<'global, 'hmir> {
     pub fn new(module_map: &'global ModuleMap<HMIRUnit>, local_unit: &'hmir HMIRUnit) -> Self {
@@ -28,12 +50,10 @@ impl<'global, 'hmir> HMIRSymbolEnv<'global, 'hmir> {
             module_map,
             local_unit,
 
-            defs: HashMap::new(),
-
-            unit_cache: HashMap::new(),
-            def_cache: HashMap::new(),
-
-            next_external_def_id: 0
+            units: HashMap::new(),
+            externals: Vec::new(),
+            external_ids: HashMap::new(),
+            lookups: HashMap::new(),
         }
     }
 
@@ -41,75 +61,158 @@ impl<'global, 'hmir> HMIRSymbolEnv<'global, 'hmir> {
         self.local_unit
     }
 
-    fn allocate_external_id(&mut self) -> HMIRDefID {
-        let id = HMIRDefID::new(self.next_external_def_id | (1 << 63)); // Set the highest bit to indicate external
-        self.next_external_def_id += 1;
-        id
+    pub fn unit(&mut self, namespace: &NamespacePath) -> Option<HMIRUnitHandle<'hmir>> {
+        if namespace == self.local_unit.namespace() {
+            return Some(HMIRUnitHandle::Local(self.local_unit));
+        }
+
+        if let Some(unit) = self.units.get(namespace) {
+            return Some(HMIRUnitHandle::Imported(unit.clone()));
+        }
+
+        let unit = self.module_map.lock().get(namespace)?.clone();
+        self.units.insert(namespace.clone(), unit.clone());
+        Some(HMIRUnitHandle::Imported(unit))
     }
 
-    fn is_external_id(&self, def_id: HMIRDefID) -> bool {
-        def_id.index() & (1 << 63) != 0
-    }
-
-    pub fn query_external(&mut self, name: &QualifiedName) -> HMIRDefID {
-        if let Some(&def_id) = self.def_cache.get(name) {
-            return def_id;
+    pub fn identity(&self, def_id: HMIRDefID) -> (&NamespacePath, HMIRDefID) {
+        if !is_external_id(def_id) {
+            return (self.local_unit.namespace(), def_id);
         }
 
-        let candidates = self
-            .local_unit
-            .resolve_extern(&name.namespace)
-            .iter()
-            .map(|ns| self.resolve_unit(ns))
-            .collect::<Vec<_>>();
-
-        let mut potential = vec![];
-        for candidate in candidates {
-            if let Some(def_id) = candidate.find_symbol(&name.name.as_str()) {
-                // SAFETY: The Arc we own is derived from the arc in the module map, which we can assume will last the length
-                // of the pipeline.
-                let reference = unsafe { std::mem::transmute::<&HMIRDef, &'global HMIRDef>(candidate.resolve_def(def_id).unwrap()) };
-
-                potential.push((candidate.clone(), reference));
-            }
-        }
-
-        match potential.len() {
-            0 => panic!("External symbol not found: {}", name),
-            1 => {
-                let (_, def) = potential.pop().unwrap();
-                let id = self.allocate_external_id();
-                
-                self.def_cache.insert(name.clone(), id);
-                self.defs.insert(id, def);
-
-                id
-            }
-            _ => panic!("Ambiguous external symbol: {}", name),
-        }
-    }
-
-    fn resolve_unit<'s>(&'s mut self, namespace: &NamespacePath) -> Arc<HMIRUnit> {
-        if let Some(unit) = self.unit_cache.get(namespace) {
-            return unit.clone();
-        }
-
-        let unit = self.module_map.get(namespace);
-
-        self.unit_cache.insert(namespace.clone(), unit.clone());
-        unit
+        let (unit, def) = &self.externals[def_id.index() & !EXTERNAL_BIT];
+        (unit, *def)
     }
 
     pub fn resolve_definition(&self, def_id: HMIRDefID) -> &HMIRDef {
-        match self.is_external_id(def_id) {
-            true => self
-                .defs
-                .get(&def_id)
-                .expect("External symbol not found"),
-            false => self
-                .local_unit
-                .resolve_def(def_id)
-                .expect("Local symbol not found"),
+        let (unit, def) = self.owning_unit(def_id);
+        unit.resolve_def(def)
+            .expect("Definition not found in its owning unit")
+    }
+
+    pub fn declarations(&self, def_id: HMIRDefID) -> &[HMIRDeclaration] {
+        let (unit, def) = self.owning_unit(def_id);
+        unit.symbols().declarations(def)
+    }
+
+    pub fn lookup(
+        &mut self,
+        owner: &NamespacePath,
+        lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+        tag: Option<HIRTagKind>,
+    ) -> HMIRLookup {
+        let key = LookupKey {
+            owner: owner.clone(),
+            lexical_namespace: lexical_namespace.clone(),
+            name: name.clone(),
+            tag,
+        };
+        if let Some(cached) = self.lookups.get(&key) {
+            return cached.clone();
+        }
+
+        if lexical_namespace.clone().strip_prefix(owner).is_none() {
+            return HMIRLookup::NotFound;
+        }
+        let Some(scope) = self.scope(owner, tag) else {
+            return HMIRLookup::NotFound;
+        };
+
+        let result = self.scoped_lookup(&scope, lexical_namespace, name, tag);
+        self.lookups.insert(key, result.clone());
+        result
+    }
+
+    fn intern(&mut self, unit: &NamespacePath, def: HMIRDefID) -> HMIRDefID {
+        if unit == self.local_unit.namespace() {
+            return def;
+        }
+
+        let key = (unit.clone(), def);
+        if let Some(id) = self.external_ids.get(&key) {
+            return *id;
+        }
+
+        let id = HMIRDefID::new(self.externals.len() | EXTERNAL_BIT);
+        self.externals.push(key.clone());
+        self.external_ids.insert(key, id);
+        id
+    }
+
+    fn owning_unit(&self, def_id: HMIRDefID) -> (&HMIRUnit, HMIRDefID) {
+        let (unit, def) = self.identity(def_id);
+        
+        if !is_external_id(def_id) {
+            return (self.local_unit, def);
+        }
+        
+        (&self.units[unit], def)
+    }
+
+    fn scope(
+        &mut self,
+        owner: &NamespacePath,
+        tag: Option<HIRTagKind>,
+    ) -> Option<ScopeLookup<'hmir>> {
+        let owner = self.unit(owner)?;
+        let mut units = vec![owner.clone()];
+        for import in owner.symbols().imports() {
+            units.push(self.unit(import)?);
+        }
+        Some(ScopeLookup { units, tag })
+    }
+
+    fn scoped_lookup(
+        &mut self,
+        scope: &ScopeLookup,
+        lexical_namespace: &NamespacePath,
+        name: &QualifiedName,
+        tag: Option<HIRTagKind>,
+    ) -> HMIRLookup {
+        match scope.qualified_lookup(lexical_namespace, name) {
+            QualifiedLookupResult::NotFound => HMIRLookup::NotFound,
+            QualifiedLookupResult::Found {
+                resolved_name,
+                value,
+            } => HMIRLookup::Found {
+                incompatible_tag: value.incompatible_tag(tag),
+                group: self.group(resolved_name, &value),
+            },
+            QualifiedLookupResult::Ambiguous { candidates } => HMIRLookup::Ambiguous(
+                candidates
+                    .into_iter()
+                    .filter_map(|candidate| {
+                        let value = scope.lookup_exact(lexical_namespace, &candidate)?;
+                        Some(self.group(candidate, &value))
+                    })
+                    .collect(),
+            ),
         }
     }
+
+    fn group(&mut self, name: QualifiedName, candidate: &Candidate) -> HMIRSymbolGroup {
+        let unit = candidate.unit.namespace();
+        let defs = candidate
+            .defs
+            .iter()
+            .map(|def| self.intern(unit, *def))
+            .collect();
+        HMIRSymbolGroup::new(name, defs)
+    }
+}
+
+impl Deref for HMIRUnitHandle<'_> {
+    type Target = HMIRUnit;
+
+    fn deref(&self) -> &HMIRUnit {
+        match self {
+            HMIRUnitHandle::Local(unit) => unit,
+            HMIRUnitHandle::Imported(unit) => unit,
+        }
+    }
+}
+
+fn is_external_id(def_id: HMIRDefID) -> bool {
+    def_id.index() & EXTERNAL_BIT != 0
 }

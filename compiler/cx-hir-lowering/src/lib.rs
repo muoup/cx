@@ -6,6 +6,7 @@ mod external;
 mod log;
 mod plan;
 mod resolve;
+mod symbols;
 mod ty;
 
 use cx_hir::{ast::HIR, registry::GlobalSymbolRegistry};
@@ -16,7 +17,7 @@ use cx_target::ArchitectureConfig;
 
 use crate::{
     body::BodyLowering, builder::HMIRUnitBuilder, def::lower_def, plan::plan_defs,
-    resolve::Resolver,
+    resolve::Resolver, symbols::symbol_table,
 };
 
 pub use external::generate_external_hmir;
@@ -34,6 +35,7 @@ pub fn generate_hmir(
         resolver.declare_def(plan.name().clone(), HMIRDefID::new(index));
     }
 
+    let symbols = symbol_table(hir, &namespace, registry, &plans);
     let mut unit = HMIRUnitBuilder::new(namespace);
     for (index, plan) in plans.iter().enumerate() {
         let namespace = plan.namespace().clone();
@@ -47,5 +49,5 @@ pub fn generate_hmir(
         unit.push_def(def);
     }
 
-    Ok(unit.finish())
+    Ok(unit.finish(symbols))
 }

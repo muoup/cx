@@ -3,7 +3,7 @@ use cx_hir::{
     registry::GlobalSymbolRegistry,
     symbols::{HIRSymbol, HIRSymbolKind},
 };
-use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit};
+use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit, unit::symbols::HMIRSymbolTable};
 use cx_log::CXResult;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_target::ArchitectureConfig;
@@ -109,7 +109,7 @@ pub fn generate_external_hmir(
         unit.push_def(def);
     }
 
-    Ok(Some(unit.finish()))
+    Ok(Some(unit.finish(HMIRSymbolTable::default())))
 }
 
 fn split_tag(name: &QualifiedName) -> (Option<HIRTagKind>, QualifiedName) {

@@ -8,6 +8,7 @@ use cx_hir::ast::{
     modifiers::{HIRSymbolNameScheme, LinkageMode},
     types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
+use cx_hmir::unit::symbols::HMIRDeclaration;
 use cx_util::identifier::CXIdent;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::TokenRange;
@@ -44,6 +45,7 @@ pub(crate) struct PlannedDef<'h> {
     namespace: NamespacePath,
     span: TokenRange,
     source: DefSource<'h>,
+    declarations: Vec<HMIRDeclaration>,
 }
 
 impl<'h> PlannedDef<'h> {
@@ -58,6 +60,7 @@ impl<'h> PlannedDef<'h> {
             namespace,
             span,
             source,
+            declarations: Vec::new(),
         }
     }
 
@@ -75,6 +78,17 @@ impl<'h> PlannedDef<'h> {
 
     pub(crate) fn source(&self) -> &DefSource<'h> {
         &self.source
+    }
+
+    pub(crate) fn declarations(&self) -> &[HMIRDeclaration] {
+        &self.declarations
+    }
+
+    fn completes(&self, forward: &HMIRDeclaration) -> bool {
+        matches!(self.source, DefSource::Type { .. })
+            && self.declarations.first().is_some_and(|declaration| {
+                declaration.tag() == forward.tag() && declaration.name() == forward.name()
+            })
     }
 }
 
@@ -125,20 +139,37 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
     let mut plans = Vec::new();
     // Declarations of a function defined in this unit go last, so that its name finds the definition
     let mut redeclarations = Vec::new();
+    let mut forward_declarations = Vec::new();
     for definition in &hir.definition_stmts {
         let base = if definition.namespace.is_root() {
             &definition.namespace
         } else {
             namespace
         };
-        let planned = |name: QualifiedName, span: &TokenRange, source: DefSource<'h>| PlannedDef {
-            name,
+        let (HIRStmt::TypeDefinition { visibility, .. }
+        | HIRStmt::FunctionDefinition { visibility, .. }
+        | HIRStmt::GlobalVariableDefinition { visibility, .. }) = &definition.stmt;
+        let declare =
+            |name: QualifiedName, tag: Option<HIRTagKind>, naming: Option<HIRSymbolNameScheme>| {
+                HMIRDeclaration::new(name, tag, definition.namespace.clone(), *visibility, naming)
+            };
+        let planned = |name: QualifiedName,
+                       tag: Option<HIRTagKind>,
+                       naming: Option<HIRSymbolNameScheme>,
+                       span: &TokenRange,
+                       source: DefSource<'h>| PlannedDef {
+            name: def_name(name.clone(), tag),
             namespace: definition.namespace.clone(),
             span: span.clone(),
             source,
+            declarations: vec![declare(name, tag, naming)],
         };
-        let mut plan = |name: QualifiedName, span: &TokenRange, source: DefSource<'h>| {
-            plans.push(planned(name, span, source))
+        let mut plan = |name: QualifiedName,
+                        tag: Option<HIRTagKind>,
+                        naming: Option<HIRSymbolNameScheme>,
+                        span: &TokenRange,
+                        source: DefSource<'h>| {
+            plans.push(planned(name, tag, naming, span, source))
         };
 
         match &definition.stmt {
@@ -148,12 +179,11 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                 tag,
                 ..
             } if is_forward_declaration(name, *tag, ty) => {
-                if !defined_types.contains(&(name.clone(), *tag)) {
-                    plan(
-                        def_name(QualifiedName::new(base.clone(), name.clone()), *tag),
-                        &ty.range,
-                        DefSource::OpaqueType,
-                    );
+                let name = QualifiedName::new(base.clone(), name.clone());
+                if defined_types.contains(&(name.name.clone(), *tag)) {
+                    forward_declarations.push(declare(name, *tag, None));
+                } else {
+                    plan(name, *tag, None, &ty.range, DefSource::OpaqueType);
                 }
             }
             HIRStmt::TypeDefinition {
@@ -162,7 +192,9 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                 tag,
                 ..
             } => plan(
-                def_name(QualifiedName::new(base.clone(), name.clone()), *tag),
+                QualifiedName::new(base.clone(), name.clone()),
+                *tag,
+                None,
                 &ty.range,
                 DefSource::Type { ty },
             ),
@@ -175,6 +207,8 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                     body.is_none() && defined_functions.contains(&prototype.kind.into_key());
                 let def = planned(
                     function_name(base, &prototype.kind),
+                    None,
+                    Some(prototype.symbol_naming),
                     &prototype.range,
                     DefSource::Function {
                         prototype,
@@ -198,6 +232,8 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                     ..
                 } => plan(
                     QualifiedName::new(base.clone(), name.clone()),
+                    None,
+                    Some(*symbol_name_scheme),
                     &ty.range,
                     DefSource::Global {
                         ty,
@@ -210,6 +246,8 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                     for (index, variant) in enumeration.variants.iter().enumerate() {
                         plan(
                             QualifiedName::new(base.clone(), variant.name.clone()),
+                            None,
+                            None,
                             &TokenRange::internal(),
                             DefSource::EnumVariant {
                                 variants: &enumeration.variants,
@@ -220,6 +258,13 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                 }
             },
         }
+    }
+    for forward in forward_declarations {
+        let definition = plans
+            .iter_mut()
+            .find(|plan| plan.completes(&forward))
+            .expect("Forward declaration without a planned definition");
+        definition.declarations.push(forward);
     }
     plans.extend(redeclarations);
     plans

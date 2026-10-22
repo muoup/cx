@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use cx_hmir::{
     HMIRDef, HMIRDefID, HMIRUnit,
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics},
+    unit::symbols::HMIRSymbolTable,
 };
 use cx_namespace::module::NamespacePath;
 use cx_tokens::TokenRange;
@@ -38,8 +39,8 @@ impl HMIRUnitBuilder {
         id
     }
 
-    pub(crate) fn finish(self) -> HMIRUnit {
-        HMIRUnit::new(self.namespace, self.types.types, self.defs)
+    pub(crate) fn finish(self, symbols: HMIRSymbolTable) -> HMIRUnit {
+        HMIRUnit::new(self.namespace, symbols, self.types.types, self.defs)
     }
 }
 
