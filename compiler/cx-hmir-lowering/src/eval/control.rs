@@ -114,15 +114,31 @@ fn runtime_if(
         span.clone(),
     );
 
-    let mut arms = Vec::new();
-    for (block, branch) in [(then_block, then_branch), (else_block, else_branch)] {
-        runtime::switch_to(context, block);
-        if let Some(value) = ready!(flow::catch_diverged(eval_scoped(context, body, branch))) {
-            let block = runtime::current_block(context);
-            arms.push(Arm { block, value });
-        }
-    }
+    runtime::switch_to(context, then_block);
+    let then = flow::catch_diverged(eval_scoped(context, body, then_branch))?;
+    let span = span.clone();
+    then.and_then(context, body, None, move |context, body, then, expected| {
+        let mut arms: Vec<Arm> = arm(context, then).into_iter().collect();
+        runtime::switch_to(context, else_block);
+        let otherwise = flow::catch_diverged(eval_scoped(context, body, else_branch))?
+            .complete(context, body, expected)?;
+        otherwise.and_then(context, body, None, move |context, _, otherwise, _| {
+            arms.extend(arm(context, otherwise));
+            merge(context, arms, &span)
+        })
+    })
+}
 
+fn arm(context: &mut LocalLoweringContext, value: Option<HMIRValue>) -> Option<Arm> {
+    let block = runtime::current_block(context);
+    value.map(|value| Arm { block, value })
+}
+
+fn merge(
+    context: &mut LocalLoweringContext,
+    arms: Vec<Arm>,
+    span: &TokenRange,
+) -> EvalResult<HMIRValue> {
     if arms.is_empty() {
         return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
     }

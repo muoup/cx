@@ -1,27 +1,42 @@
+use std::cell::Cell;
+
 use cx_hmir::{HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, expr::HMIRExprID};
+use cx_util::dense_id;
 
 pub mod comptime;
-pub mod elaboration;
 pub mod runtime;
 
 use crate::{env::HMIREnvironment, value::HMIRValue};
 
-pub use self::{
-    comptime::ComptimeContext, elaboration::ElaborationScope, runtime::RuntimeContext,
-};
+pub use self::{comptime::ComptimeContext, runtime::RuntimeContext};
+
+thread_local! {
+    static NEXT_EVALUATION: Cell<usize> = Cell::new(0);
+}
+dense_id!(EvaluationID, "ev.");
+
+impl EvaluationID {
+    pub fn fresh() -> Self {
+        NEXT_EVALUATION.with(|next| {
+            let id = next.get();
+            next.set(id + 1);
+            EvaluationID(id)
+        })
+    }
+}
 
 #[derive(Debug)]
 pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     env: &'env mut HMIREnvironment<'global, 'hmir>,
     signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
     context: FnContext,
-    elaboration: ElaborationScope,
+    evaluation: EvaluationID,
 }
 
 #[derive(Debug)]
 pub enum FnContext {
     Runtime(RuntimeContext),
-    Comptime(ComptimeContext)
+    Comptime(ComptimeContext),
 }
 
 impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
@@ -43,7 +58,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             env,
             signature,
             context,
-            elaboration: ElaborationScope::new(),
+            evaluation: EvaluationID::fresh(),
         }
     }
 
@@ -51,12 +66,13 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         &'parent mut self,
         signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
         context: FnContext,
+        evaluation: Option<EvaluationID>,
     ) -> LocalLoweringContext<'parent, 'global, 'hmir> {
-        LocalLoweringContext::new(&mut *self.env, signature, context)
-    }
-
-    pub(crate) fn inherit_elaboration(&mut self, elaboration: ElaborationScope) {
-        self.elaboration = elaboration;
+        let mut child = LocalLoweringContext::new(&mut *self.env, signature, context);
+        if let Some(evaluation) = evaluation {
+            child.evaluation = evaluation;
+        }
+        child
     }
 
     pub fn env(&self) -> &HMIREnvironment<'global, 'hmir> {
@@ -115,12 +131,8 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         }
     }
 
-    pub fn elaboration(&self) -> &ElaborationScope {
-        &self.elaboration
-    }
-
-    pub fn elaboration_mut(&mut self) -> &mut ElaborationScope {
-        &mut self.elaboration
+    pub fn evaluation(&self) -> EvaluationID {
+        self.evaluation
     }
 
     pub fn into_context(self) -> FnContext {

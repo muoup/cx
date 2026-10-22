@@ -47,7 +47,7 @@ use crate::{
         place::{eval_address_of, eval_assign, eval_dereference, eval_move},
     },
     log::hmir_error,
-    value::{HMIRValue, constant::HMIRConstant},
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) fn lower_runtime_function<'hmir>(
@@ -71,7 +71,7 @@ pub(crate) fn lower_runtime_function<'hmir>(
         types::lower_prototype(staging.env_mut(), function.prototype(), &evaluated, span)?;
 
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
-    let mut context = staging.child(Some(signature), runtime);
+    let mut context = staging.child(Some(signature), runtime, None);
 
     emit::open_scope(&mut context, span.clone());
     let completion = runtime_definition(&mut context, function, def);
@@ -133,9 +133,6 @@ pub(crate) fn eval(
 ) -> EvalResult<HMIRValue> {
     let expr = body.expr(id);
     let span = expr.span();
-    if let Some(incomplete) = complete::contextual(context, body, id) {
-        return Ok(Evaluation::Incomplete(incomplete));
-    }
 
     match expr.kind() {
         HMIRExprKind::Literal(literal) => {
@@ -231,7 +228,7 @@ pub(crate) fn eval(
         HMIRExprKind::Def(def) => eval_def(context, span, def),
         HMIRExprKind::Call { callee, args } => eval_call(context, body, span, *callee, args),
 
-        HMIRExprKind::Hole(hole) => complete::hole(context, span, *hole),
+        HMIRExprKind::Hole(_) => complete::hole(context, span),
         HMIRExprKind::Comptime(inner) => Ok(Evaluation::Ready(eval_comptime(
             context, body, *inner, None,
         )?)),
@@ -262,10 +259,27 @@ pub(crate) fn eval_type(
             (),
         ));
     }
-    let span = body.expr(id).span().clone();
-    value.map(context, move |context, value| {
-        require_type(context, value, &span)
+    described_type(context, body, value, body.expr(id).span())
+}
+
+fn described_type(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    value: Evaluation<HMIRValue>,
+    span: &TokenRange,
+) -> EvalResult<HMIRTypeID> {
+    let partial = value.known().and_then(type_constant);
+    let span = span.clone();
+    value.and_then(context, body, partial, move |context, _, value, _| {
+        Ok(Evaluation::Ready(require_type(context, value, &span)?))
     })
+}
+
+fn type_constant(value: &HMIRValue) -> Option<HMIRTypeID> {
+    match value.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Type(ty)) => Some(*ty),
+        _ => None,
+    }
 }
 
 fn require_type(
@@ -274,9 +288,9 @@ fn require_type(
     span: &TokenRange,
 ) -> CXResult<HMIRTypeID> {
     let value = coerce::std_rvalue(context, value, span)?;
-    match value.kind() {
-        crate::value::HMIRValueKind::Constant(HMIRConstant::Type(ty)) => Ok(*ty),
-        _ => Err(hmir_error(
+    match type_constant(&value) {
+        Some(ty) => Ok(ty),
+        None => Err(hmir_error(
             span,
             &typecheck::EXPECTED_TYPE,
             format!(

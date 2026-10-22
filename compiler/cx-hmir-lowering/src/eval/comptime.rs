@@ -29,9 +29,12 @@ pub(crate) fn eval_comptime(
 ) -> CXResult<HMIRValue> {
     let span = body.expr(expr).span();
     let inputs = frozen_inputs(context);
-    let elaboration = context.elaboration().clone();
-    let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
-    child.inherit_elaboration(elaboration);
+    let evaluation = context.evaluation();
+    let mut child = context.child(
+        None,
+        FnContext::Comptime(ComptimeContext::new()),
+        Some(evaluation),
+    );
     for (local, value) in inputs {
         emit::storage::bind_local(&mut child, local, value);
     }
@@ -55,25 +58,22 @@ pub(crate) fn type_expression(
     expr: HMIRExprID,
 ) -> EvalResult<HMIRTypeID> {
     let inputs = frozen_inputs(context);
-    let elaboration = context.elaboration().clone();
-    let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
-    child.inherit_elaboration(elaboration);
+    let evaluation = context.evaluation();
+    let mut child = context.child(
+        None,
+        FnContext::Comptime(ComptimeContext::new()),
+        Some(evaluation),
+    );
     for (local, value) in inputs {
         emit::storage::bind_local(&mut child, local, value);
     }
-    let span = body.expr(expr).span().clone();
-    let result = eval(&mut child, body, expr)?.map(&mut child, move |context, value| {
-        super::require_type(context, value, &span)
-    })?;
-    match result {
+    let value = eval(&mut child, body, expr)?;
+    match super::described_type(&mut child, body, value, body.expr(expr).span())? {
         Evaluation::Incomplete(incomplete) => {
-            let elaboration = child.elaboration().clone();
             let FnContext::Comptime(state) = child.into_context() else {
                 unreachable!()
             };
-            Ok(Evaluation::Incomplete(
-                incomplete.in_comptime(state, elaboration),
-            ))
+            Ok(Evaluation::Incomplete(incomplete.in_comptime(state)))
         }
         Evaluation::Stop(StopReason::Comptime(_)) => Err(hmir_error(
             body.expr(expr).span(),
@@ -109,21 +109,9 @@ fn evaluate(
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
     let value = eval(context, body, expr)?;
-    let describes_type = value.known().is_some_and(|value| {
-        matches!(
-            value.kind(),
-            HMIRValueKind::Constant(crate::value::constant::HMIRConstant::Type(_))
-        )
-    });
+    let describes_type = value.known().and_then(super::type_constant).is_some();
     let value = if describes_type {
-        let type_span = span.clone();
-        let ty = ready!(
-            value
-                .map(context, move |context, value| super::require_type(
-                    context, value, &type_span
-                ))?
-                .description()
-        );
+        let ty = ready!(super::described_type(context, body, value, span)?.description());
         super::def::type_value(context, ty, span)?
     } else {
         ready!(value.complete(context, body, expected))

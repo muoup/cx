@@ -1,16 +1,12 @@
 use cx_hmir::{HMIRBody, ty::HMIRTypeID};
 use cx_log::{
-    CXResult,
     catalogue::{mir, typecheck},
     error::CXError,
 };
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::{
-        ComptimeContext, FnContext, LocalLoweringContext,
-        elaboration::{ElaborationScope, ElaborationScopeID},
-    },
+    env::function::{ComptimeContext, EvaluationID, FnContext, LocalLoweringContext},
     eval::flow::{EvalResult, Evaluation},
     log::hmir_error,
 };
@@ -22,11 +18,15 @@ pub(crate) enum IncompleteReason {
     ArrayBound,
 }
 
-pub(crate) struct Incomplete<T> {
+struct Suspension {
     reason: IncompleteReason,
-    partial: Option<T>,
-    scope: ElaborationScopeID,
+    evaluation: EvaluationID,
     span: TokenRange,
+}
+
+pub(crate) struct Incomplete<T> {
+    suspension: Suspension,
+    partial: Option<T>,
     resolve: Box<Resolver<T>>,
 }
 
@@ -39,43 +39,48 @@ impl<T: 'static> Incomplete<T> {
         resolve: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, HMIRTypeID) -> EvalResult<T>
         + 'static,
     ) -> Self {
-        Self {
+        let suspension = Suspension {
             reason,
-            partial,
-            scope: context.elaboration().id(),
+            evaluation: context.evaluation(),
             span: span.clone(),
+        };
+        Self::resume(suspension, partial, resolve)
+    }
+
+    fn resume(
+        suspension: Suspension,
+        partial: Option<T>,
+        resolve: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, HMIRTypeID) -> EvalResult<T>
+        + 'static,
+    ) -> Self {
+        Self {
+            suspension,
+            partial,
             resolve: Box::new(resolve),
         }
     }
 
-    pub(crate) fn in_comptime(self, state: ComptimeContext, elaboration: ElaborationScope) -> Self {
-        let span = self.span.clone();
-        Self {
-            reason: self.reason,
-            partial: self.partial,
-            scope: self.scope,
-            span: self.span,
-            resolve: Box::new(move |context, body, expected| {
-                let mut child = context.child(None, FnContext::Comptime(state));
-                child.inherit_elaboration(elaboration);
-                let result = (self.resolve)(&mut child, body, expected)?;
-                match result {
-                    Evaluation::Incomplete(incomplete) => {
-                        let elaboration = child.elaboration().clone();
-                        let FnContext::Comptime(state) = child.into_context() else {
-                            unreachable!()
-                        };
-                        Ok(Evaluation::Incomplete(
-                            incomplete.in_comptime(state, elaboration),
-                        ))
-                    }
-                    Evaluation::Stop(_) => {
-                        Err(hmir_error(&span, &mir::COMPTIME_CONTROL_ESCAPE, ()))
-                    }
-                    result => Ok(result),
+    pub(crate) fn in_comptime(self, state: ComptimeContext) -> Self {
+        let Self {
+            suspension,
+            partial,
+            resolve,
+        } = self;
+        let span = suspension.span.clone();
+        Self::resume(suspension, partial, move |context, body, expected| {
+            let evaluation = context.evaluation();
+            let mut child = context.child(None, FnContext::Comptime(state), Some(evaluation));
+            match resolve(&mut child, body, expected)? {
+                Evaluation::Incomplete(incomplete) => {
+                    let FnContext::Comptime(state) = child.into_context() else {
+                        unreachable!()
+                    };
+                    Ok(Evaluation::Incomplete(incomplete.in_comptime(state)))
                 }
-            }),
-        }
+                Evaluation::Stop(_) => Err(hmir_error(&span, &mir::COMPTIME_CONTROL_ESCAPE, ())),
+                result => Ok(result),
+            }
+        })
     }
 
     pub(crate) fn project<U: 'static>(self, project: impl Fn(T) -> U + 'static) -> Incomplete<U> {
@@ -83,33 +88,31 @@ impl<T: 'static> Incomplete<T> {
     }
 
     fn project_with<U: 'static>(self, project: Box<dyn Fn(T) -> U>) -> Incomplete<U> {
-        let partial = self.partial.map(|value| project(value));
-        Incomplete {
-            reason: self.reason,
+        let Self {
+            suspension,
             partial,
-            scope: self.scope,
-            span: self.span,
-            resolve: Box::new(move |context, body, expected| {
-                let result = (self.resolve)(context, body, expected)?;
-                Ok(match result {
-                    Evaluation::Ready(value) => Evaluation::Ready(project(value)),
-                    Evaluation::Incomplete(incomplete) => {
-                        Evaluation::Incomplete(incomplete.project_with(project))
-                    }
-                    Evaluation::Stop(stop) => Evaluation::Stop(stop),
-                })
-            }),
-        }
+            resolve,
+        } = self;
+        let partial = partial.map(|value| project(value));
+        Incomplete::resume(suspension, partial, move |context, body, expected| {
+            Ok(match resolve(context, body, expected)? {
+                Evaluation::Ready(value) => Evaluation::Ready(project(value)),
+                Evaluation::Incomplete(incomplete) => {
+                    Evaluation::Incomplete(incomplete.project_with(project))
+                }
+                Evaluation::Stop(stop) => Evaluation::Stop(stop),
+            })
+        })
     }
 }
 
 impl<T> Incomplete<T> {
     pub(crate) fn error(&self) -> CXError {
-        let subject = match self.reason {
+        let subject = match self.suspension.reason {
             IncompleteReason::ExpectedType => "this type",
             IncompleteReason::ArrayBound => "the array bound",
         };
-        hmir_error(&self.span, &typecheck::CANNOT_INFER, subject.into())
+        hmir_error(&self.suspension.span, &typecheck::CANNOT_INFER, subject.into())
     }
 }
 
@@ -128,58 +131,59 @@ impl<T: 'static> Evaluation<T> {
         body: &HMIRBody,
         expected: Option<HMIRTypeID>,
     ) -> EvalResult<T> {
-        match self {
-            Self::Incomplete(incomplete) => {
+        match (self, expected) {
+            (Self::Incomplete(incomplete), Some(expected)) => {
                 assert_eq!(
-                    incomplete.scope,
-                    context.elaboration().id(),
-                    "incomplete expression completed outside of its elaboration scope"
+                    incomplete.suspension.evaluation,
+                    context.evaluation(),
+                    "incomplete expression completed outside of its evaluation"
                 );
-                let Some(expected) = expected else {
-                    return Err(incomplete.error());
-                };
                 (incomplete.resolve)(context, body, expected)
             }
-            result => Ok(result),
+            (result, _) => Ok(result),
         }
     }
 
-    pub(crate) fn map<U: 'static>(
+    pub(crate) fn and_then<U: 'static>(
         self,
         context: &mut LocalLoweringContext,
-        map: impl Fn(&mut LocalLoweringContext, T) -> CXResult<U> + 'static,
+        body: &HMIRBody,
+        partial: Option<U>,
+        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, T, Option<HMIRTypeID>) -> EvalResult<U>
+        + 'static,
     ) -> EvalResult<U> {
-        match self {
-            Self::Ready(value) => Ok(Evaluation::Ready(map(context, value)?)),
-            Self::Stop(stop) => Ok(Evaluation::Stop(stop)),
-            result => result.map_with(context, Box::new(map)),
-        }
+        self.chain(context, body, None, partial, then)
     }
 
-    fn map_with<U: 'static>(
+    fn chain<U: 'static>(
         self,
         context: &mut LocalLoweringContext,
-        map: Box<dyn Fn(&mut LocalLoweringContext, T) -> CXResult<U>>,
+        body: &HMIRBody,
+        expected: Option<HMIRTypeID>,
+        partial: Option<U>,
+        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, T, Option<HMIRTypeID>) -> EvalResult<U>
+        + 'static,
     ) -> EvalResult<U> {
         match self {
-            Self::Ready(value) => Ok(Evaluation::Ready(map(context, value)?)),
+            Self::Ready(value) => then(context, body, value, expected),
             Self::Stop(stop) => Ok(Evaluation::Stop(stop)),
-            Self::Incomplete(incomplete) => {
-                let partial = incomplete
-                    .partial
-                    .map(|value| map(context, value))
-                    .transpose()?;
-                Ok(Evaluation::Incomplete(Incomplete {
-                    reason: incomplete.reason,
-                    partial,
-                    scope: incomplete.scope,
-                    span: incomplete.span,
-                    resolve: Box::new(move |context, body, expected| {
-                        let result = (incomplete.resolve)(context, body, expected)?;
-                        result.map_with(context, map)
-                    }),
-                }))
-            }
+            Self::Incomplete(Incomplete {
+                suspension,
+                resolve,
+                ..
+            }) => Ok(Evaluation::Incomplete(Incomplete::resume(
+                suspension,
+                partial,
+                move |context, body, expected| {
+                    resolve(context, body, expected)?.chain(
+                        context,
+                        body,
+                        Some(expected),
+                        None,
+                        then,
+                    )
+                },
+            ))),
         }
     }
 
@@ -189,21 +193,21 @@ impl<T: 'static> Evaluation<T> {
         finish: impl FnOnce(&mut LocalLoweringContext) + 'static,
     ) -> Self {
         match self {
-            Self::Incomplete(incomplete) => Self::Incomplete(Incomplete {
-                reason: incomplete.reason,
-                partial: incomplete.partial,
-                scope: incomplete.scope,
-                span: incomplete.span,
-                resolve: Box::new(move |context, body, expected| {
-                    match (incomplete.resolve)(context, body, expected) {
-                        Ok(result) => Ok(result.finish(context, finish)),
-                        Err(error) => {
-                            finish(context);
-                            Err(error)
-                        }
+            Self::Incomplete(Incomplete {
+                suspension,
+                partial,
+                resolve,
+            }) => Self::Incomplete(Incomplete::resume(
+                suspension,
+                partial,
+                move |context, body, expected| match resolve(context, body, expected) {
+                    Ok(result) => Ok(result.finish(context, finish)),
+                    Err(error) => {
+                        finish(context);
+                        Err(error)
                     }
-                }),
-            }),
+                },
+            )),
             result => {
                 finish(context);
                 result
@@ -217,7 +221,7 @@ impl Evaluation<HMIRTypeID> {
         match self {
             Self::Incomplete(mut incomplete) => match incomplete.partial.take() {
                 Some(value) => Ok(Self::Ready(value)),
-                None => Err(incomplete.error()),
+                None => Ok(Self::Incomplete(incomplete)),
             },
             result => Ok(result),
         }

@@ -41,8 +41,12 @@ pub(crate) fn eval_aggregate(
     match op {
         HMIRAggregateOp::Member { base, name } => eval_member(context, body, span, *base, name),
         HMIRAggregateOp::Initialize { ty, fields } => {
-            let ty = ready!(eval_type(context, body, *ty)?.description());
-            initialize(context, body, span, ty, fields)
+            let ty = eval_type(context, body, *ty)?.description()?;
+            let fields = fields.clone();
+            let span = span.clone();
+            ty.and_then(context, body, None, move |context, body, ty, _| {
+                initialize(context, body, &span, ty, &fields)
+            })
         }
         HMIRAggregateOp::Index { base, index } => {
             let base = ready!(eval_operand(context, body, span, *base));

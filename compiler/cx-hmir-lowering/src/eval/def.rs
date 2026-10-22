@@ -31,7 +31,7 @@ pub(crate) fn eval_def(
     match resolved.kind() {
         HMIRDefKind::Function(function) => function_value(context, span, *id, function),
         HMIRDefKind::ComptimeGlobal(global) => {
-            let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
+            let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()), None);
             let ty = ready!(eval_type(&mut child, global.body(), global.ty())?.description());
             let value = eval_comptime(&mut child, global.body(), global.initializer(), Some(ty))?;
 
@@ -90,7 +90,7 @@ fn function_value(
         todo!("reference to a function with comptime parameters")
     }
 
-    let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()));
+    let mut child = context.child(None, FnContext::Comptime(ComptimeContext::new()), None);
     let signature = ready!(types::eval_signature(
         &mut child,
         function.body(),

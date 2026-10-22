@@ -48,6 +48,21 @@ Inner yielded(int value) {
     };
 }
 
+int ticks = 0;
+
+int tick() {
+    ticks = ticks + 1;
+    return ticks;
+}
+
+Inner suspended(int flag) {
+    return flag ? .{ tick(); ({ 1, 2 }); } : .{ tick(); ({ 3, 4 }); };
+}
+
+Inner escaping(int flag) {
+    return flag ? .{ return { 5, 6 }; } : .{ Inner local = { 7, 8 }; ({ local.b, local.a }); };
+}
+
 int main() {
     int count = 0;
     printf("%d\n", sum({ next(&count), next(&count) * 10 }));
@@ -77,5 +92,16 @@ int main() {
 
     Inner arrowed = arrow(5);
     printf("%d %d\n", arrowed.a, arrowed.b);
+
+    Inner sequenced = .{ tick(); .{ tick(); ({ ticks, 10 }); }; };
+    printf("%d %d %d\n", sequenced.a, sequenced.b, ticks);
+
+    Inner left = suspended(1);
+    Inner right = suspended(0);
+    printf("%d %d %d %d %d\n", left.a, left.b, right.a, right.b, ticks);
+
+    Inner escaped = escaping(1);
+    Inner kept = escaping(0);
+    printf("%d %d %d %d\n", escaped.a, escaped.b, kept.a, kept.b);
     return 0;
 }

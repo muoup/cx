@@ -144,9 +144,14 @@ fn eval_statements(
         let result = eval(context, body, *statement);
         let yielded = yields && index + 1 == statements.len();
         if yielded {
+            let result = result?;
+            let partial = result
+                .known()
+                .filter(|value| super::type_constant(value).is_some())
+                .cloned();
             let span = span.clone();
-            return result?.map(context, move |context, value| {
-                coerce::std_rvalue(context, value, &span)
+            return result.and_then(context, body, partial, move |context, _, value, _| {
+                Ok(Evaluation::Ready(coerce::std_rvalue(context, value, &span)?))
             });
         }
         ready!(result);
