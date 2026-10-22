@@ -511,7 +511,12 @@ pub(crate) fn perform_job(
             let hmir = context.module_db.hmir.get(job.unit.namespace());
             let architecture = context.config.architecture;
 
-            let env = HMIREnvironment::new(&context.module_db, hmir.as_ref(), architecture);
+            let env = HMIREnvironment::new(
+                &context.module_db,
+                hmir.as_ref(),
+                architecture,
+                require_explicit_return(context, &job.unit),
+            );
             let mir = generate_mir(hmir.as_ref(), env)?;
 
             if !job.unit.is_std_lib() || context.config.verbose {

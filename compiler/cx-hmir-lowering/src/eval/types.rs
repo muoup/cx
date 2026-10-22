@@ -1,3 +1,5 @@
+pub(crate) mod validate;
+
 use cx_hmir::{
     HMIRBody, HMIRFnSignature,
     expr::HMIRExprID,
@@ -206,6 +208,16 @@ pub(crate) fn array(
 
 pub(crate) fn unsized_array(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     matches!(env.resolve_kind(ty), HMIRTypeKind::Array { length: None, .. })
+}
+
+pub(crate) fn owned_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRTypeSemantics {
+    match env.resolve_kind(ty) {
+        HMIRTypeKind::Array { element, .. } => owned_semantics(env, *element),
+        HMIRTypeKind::Struct { .. }
+        | HMIRTypeKind::Union { .. }
+        | HMIRTypeKind::TaggedUnion { .. } => env.semantics(ty),
+        _ => HMIRTypeSemantics::default(),
+    }
 }
 
 pub(crate) fn is_complete(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {

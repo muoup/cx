@@ -461,7 +461,7 @@ pub(crate) fn eval_return(
 ) -> EvalResult<HMIRValue> {
     let value = value.map(|value| eval(context, body, value)).transpose()?;
 
-    return_value(context, body, value, span)
+    return_value(context, body, value, true, span)
 }
 
 // Always stops evaluation: a runtime return diverges, and a comptime return carries its value to the caller
@@ -469,6 +469,7 @@ pub(crate) fn return_value(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     value: Option<Evaluation<HMIRValue>>,
+    explicit: bool,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
     let Some(return_type) = context.signature().map(|sig| *sig.return_type()) else {
@@ -484,6 +485,9 @@ pub(crate) fn return_value(
     };
 
     let value = match value {
+        Some(_) if returns_void && explicit && matches!(context.context(), FnContext::Runtime(_)) => {
+            return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()).into());
+        }
         Some(value) if returns_void => match value {
             Evaluation::Ready(value)
                 if matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void) =>
@@ -535,12 +539,19 @@ pub(crate) fn fallthrough(
     let ty = ready!(eval_type(context, body, return_type));
 
     match context.env().resolve_kind(ty) {
-        HMIRTypeKind::Void => return_value(context, body, None, span),
+        HMIRTypeKind::Void => return_value(context, body, None, false, span),
         HMIRTypeKind::Int(_) if is_main => {
             let zero = HMIRValue::constant(ty, HMIRConstant::Int { value: 0, ty });
-            return_value(context, body, Some(Evaluation::Ready(zero)), span)
+            return_value(context, body, Some(Evaluation::Ready(zero)), false, span)
         }
         _ => {
+            if !matches!(context.env().resolve_kind(ty), HMIRTypeKind::Unreachable)
+                && context.env().require_explicit_return()
+                && context.runtime().builder().current_block_reachable()
+            {
+                let name = context.runtime().builder().prototype().display_name().to_string();
+                return Err(hmir_error(span, &mir::FUNCTION_RETURN, name).into());
+            }
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Unreachable, span.clone());

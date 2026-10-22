@@ -21,6 +21,7 @@ use crate::env::{
 pub struct HMIREnvironment<'global, 'hmir> {
     global: &'global ModuleData,
     architecture: ArchitectureConfig,
+    require_explicit_return: bool,
 
     module: MIRModuleBuilder,
     symbols: HMIRSymbolEnv<'global, 'hmir>,
@@ -33,16 +34,22 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
         global: &'global ModuleData,
         unit: &'hmir HMIRUnit,
         architecture: ArchitectureConfig,
+        require_explicit_return: bool,
     ) -> Self {
         Self {
             global,
             architecture,
+            require_explicit_return,
 
             module: MIRModuleBuilder::new(architecture),
             symbols: HMIRSymbolEnv::new(&global.hmir, unit),
             resolver: HMIRResolver::new(),
             generation: GenerationQueue::new(),
         }
+    }
+
+    pub fn require_explicit_return(&self) -> bool {
+        self.require_explicit_return
     }
 
     // Equivalent types are interchangeable views of one value, so they may differ in constness but never in the

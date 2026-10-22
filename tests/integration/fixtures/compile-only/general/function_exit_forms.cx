@@ -1,0 +1,35 @@
+typedef int Callback(int value);
+typedef unreachable (*Halt)(void);
+
+void noop() {}
+
+void forward() => noop();
+
+int identity(int value) => value;
+
+int choose(int condition) {
+    if (condition) {
+        return 1;
+    } else {
+        return 2;
+    }
+}
+
+int spin() {
+    while (1) {}
+}
+
+int rounded_float() {
+    if (1e-50f) {
+    } else {
+        return 1;
+    }
+}
+
+int main() {
+    Callback* callback = identity;
+    Halt halt;
+    void* opaque;
+    forward();
+    callback(choose(1));
+}

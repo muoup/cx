@@ -19,7 +19,7 @@ struct pinned : @unsafe_move {
     int value;
 };
 
-struct holder {
+struct holder : @unsafe_move {
     pinned inner;
     int tag;
 };

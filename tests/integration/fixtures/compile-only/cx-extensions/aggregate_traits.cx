@@ -1,0 +1,43 @@
+struct Resource : @nodrop {
+    int value;
+};
+
+struct Pinned : @unsafe_move {
+    int value;
+};
+
+typedef Resource Resources[2];
+typedef const Resource ConstResource;
+
+struct ResourceArray : @nodrop {
+    Resources values;
+};
+
+struct FromResource : @copy_traits(ConstResource) {
+    ConstResource value;
+};
+
+struct PinnedArray : @unsafe_move {
+    Pinned values[2];
+};
+
+struct Borrowed {
+    Resource* resource;
+    Resource& reference;
+    Pinned* pinned;
+    Pinned& pinned_reference;
+};
+
+enum union Result : @nodrop {
+    some :: Resource,
+    none :: void
+};
+
+int main() {
+    ResourceArray* resources;
+    FromResource* copied;
+    PinnedArray* pinned;
+    Borrowed* borrowed;
+    Result* result;
+    return 0;
+}

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
+use cx_mir::{MIRConstant, MIRValue, expr::visit::successors};
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRInstruction, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl, MIRScopeID, MIRType, MIRTypeID, MIRTypeKind, MIRUnit, ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
@@ -230,6 +231,32 @@ impl MIRFunctionBuilder {
 
     pub fn current_block(&self) -> MIRBasicBlockID {
         self.current_block
+    }
+
+    pub fn current_block_reachable(&self) -> bool {
+        let mut visited = vec![false; self.blocks.len()];
+        let mut pending = vec![MIRBasicBlockID::new(0)];
+        while let Some(id) = pending.pop() {
+            if visited[id.index()] {
+                continue;
+            }
+            visited[id.index()] = true;
+            if id == self.current_block {
+                return true;
+            }
+            let Some(instruction) = self.blocks[id.index()].last_instruction() else {
+                continue;
+            };
+            match &instruction.kind {
+                MIRInstructionKind::Branch {
+                    cond: MIRValue::Constant(MIRConstant::Integer { value, .. }),
+                    true_target,
+                    false_target,
+                } => pending.push(if *value != 0 { true_target.block } else { false_target.block }),
+                _ => pending.extend(successors(instruction).into_iter().map(|target| target.block)),
+            }
+        }
+        false
     }
 
     pub fn switch_to(&mut self, block: MIRBasicBlockID) {

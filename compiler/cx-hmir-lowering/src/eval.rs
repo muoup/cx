@@ -113,7 +113,7 @@ fn runtime_definition(
         }
         _ => {
             let value = eval(context, body, def.root())?;
-            control::return_value(context, body, Some(value), root.span())
+            control::return_value(context, body, Some(value), false, root.span())
         }
     }
 }

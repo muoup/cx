@@ -49,6 +49,7 @@ pub(crate) fn eval_declared_type(
         _ => {
             let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
             let ty = evaluate(context, body, ty, move_semantics)?;
+            types::validate::declaration(context.env(), &ty)?;
             Ok(context.env_mut().resolver_mut().realize_type(ty))
         }
     }
@@ -86,6 +87,7 @@ fn eval_aggregate(
         .declare_type(declaration, incomplete);
     let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
     let complete = evaluate(context, body, ty, move_semantics)?;
+    types::validate::declaration(context.env(), &complete)?;
     context.env_mut().resolver_mut().complete_type(id, complete);
 
     Ok(id)
@@ -121,15 +123,8 @@ fn declared_move(
         HMIRDeclaredMove::Explicit(semantics) => Ok(*semantics),
         HMIRDeclaredMove::CopyTraits(source) => {
             let source = flow::top(eval_type(context, body, *source)?.description())?;
-            Ok(owned_move_semantics(context.env(), source))
+            Ok(types::owned_semantics(context.env(), source).move_semantics)
         }
-    }
-}
-
-fn owned_move_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRMoveSemantics {
-    match env.array_inner(ty) {
-        Some(element) => owned_move_semantics(env, element),
-        None => env.semantics(ty).move_semantics,
     }
 }
 
