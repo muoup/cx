@@ -1,11 +1,12 @@
 use cx_hir::{ast::HIR, registry::GlobalSymbolRegistry};
-use cx_hmir::{HMIRDefID, unit::symbols::HMIRSymbolTable};
+use cx_hmir::{HMIRDefID, HMIRUnitID, unit::symbols::HMIRSymbolTable};
 use cx_namespace::module::NamespacePath;
 
 use crate::plan::PlannedDef;
 
 pub(crate) fn symbol_table(
     hir: &HIR,
+    id: HMIRUnitID,
     namespace: &NamespacePath,
     registry: &GlobalSymbolRegistry,
     plans: &[PlannedDef],
@@ -24,14 +25,13 @@ pub(crate) fn symbol_table(
         .flat_map(|(index, plan)| {
             plan.declarations()
                 .iter()
-                .map(move |declaration| (HMIRDefID::new(index), declaration.clone()))
+                .map(move |declaration| (HMIRDefID::new(id, index), declaration.clone()))
         })
         .collect();
 
     HMIRSymbolTable::new(
         imports,
         hir.namespace_aliases.clone(),
-        registry.namespace_friends(namespace),
         registry.export_name_mode(namespace),
         declarations,
     )

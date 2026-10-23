@@ -10,7 +10,7 @@ mod symbols;
 mod ty;
 
 use cx_hir::{ast::HIR, registry::GlobalSymbolRegistry};
-use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit};
+use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit, HMIRUnitID};
 use cx_log::CXResult;
 use cx_namespace::module::NamespacePath;
 use cx_target::ArchitectureConfig;
@@ -24,23 +24,24 @@ pub use external::generate_external_hmir;
 
 pub fn generate_hmir(
     hir: &HIR,
+    id: HMIRUnitID,
     namespace: NamespacePath,
     registry: &GlobalSymbolRegistry,
     architecture: ArchitectureConfig,
 ) -> CXResult<HMIRUnit> {
     let plans = plan_defs(hir, &namespace);
 
-    let mut resolver = Resolver::new(registry, architecture, plans.len());
+    let mut resolver = Resolver::new(registry, architecture, id, plans.len());
     for (index, plan) in plans.iter().enumerate() {
-        resolver.declare_def(plan.name().clone(), HMIRDefID::new(index));
+        resolver.declare_def(plan.name().clone(), HMIRDefID::new(id, index));
     }
 
-    let symbols = symbol_table(hir, &namespace, registry, &plans);
-    let mut unit = HMIRUnitBuilder::new(namespace);
+    let symbols = symbol_table(hir, id, &namespace, registry, &plans);
+    let mut unit = HMIRUnitBuilder::new(id, namespace);
     for (index, plan) in plans.iter().enumerate() {
         let namespace = plan.namespace().clone();
         let context = BodyLowering::new(&resolver, unit.types_mut(), namespace, false)
-            .owned_by(HMIRDefID::new(index));
+            .owned_by(HMIRDefID::new(id, index));
         let kind = lower_def(context, plan)?;
 
         unit.push_def(HMIRDef::new(plan.name().clone(), plan.span().clone(), kind));

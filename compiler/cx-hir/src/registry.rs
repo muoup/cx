@@ -78,17 +78,6 @@ impl GlobalSymbolRegistry {
             .contains(&(namespace.clone(), friend.clone()))
     }
 
-    pub fn namespace_friends(&self, namespace: &NamespacePath) -> Vec<NamespacePath> {
-        self.inner
-            .read()
-            .expect("GlobalSymbolRegistry read lock poisoned")
-            .namespace_friends
-            .iter()
-            .filter(|(owner, _)| owner == namespace)
-            .map(|(_, friend)| friend.clone())
-            .collect()
-    }
-
     pub fn export_name_mode(&self, namespace: &NamespacePath) -> ExportNameMode {
         let inner = self
             .inner

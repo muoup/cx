@@ -14,3 +14,4 @@ pub use unit::HMIRUnit;
 pub use unit::def::{HMIRDef, HMIRDefID, HMIRDefKind, HMIRDefRef};
 pub use unit::function::{HMIRContract, HMIRFnSignature, HMIRFunction, HMIRFunctionStage};
 pub use unit::global::{HMIRComptimeGlobal, HMIRGlobal};
+pub use unit::id::{HMIRUnitAllocator, HMIRUnitID};

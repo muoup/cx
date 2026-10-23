@@ -492,6 +492,7 @@ pub(crate) fn perform_job(
 
             let hmir = generate_hmir(
                 hir.as_ref(),
+                context.module_db.hmir.allocate(),
                 job.unit.namespace().clone(),
                 registry,
                 architecture,
@@ -501,14 +502,15 @@ pub(crate) fn perform_job(
                 dump_data(&hmir);
             }
 
-            context
-                .module_db
-                .hmir
-                .insert(job.unit.namespace().clone(), hmir);
+            context.module_db.hmir.insert(hmir);
         }
 
         CompilationStep::MIR => {
-            let hmir = context.module_db.hmir.get(job.unit.namespace());
+            let hmir = context
+                .module_db
+                .hmir
+                .get(job.unit.namespace())
+                .expect("HMIR unit not found for its compilation unit");
             let architecture = context.config.architecture;
 
             let env = HMIREnvironment::new(

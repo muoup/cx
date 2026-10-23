@@ -1,5 +1,6 @@
 pub mod config;
 pub mod db;
+pub mod hmir;
 pub mod internal_storage;
 pub mod jobs;
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use cx_hmir::{
-    HMIRDef, HMIRDefID, HMIRUnit,
+    HMIRDef, HMIRDefID, HMIRUnit, HMIRUnitID,
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics},
     unit::symbols::HMIRSymbolTable,
 };
@@ -9,6 +9,7 @@ use cx_namespace::module::NamespacePath;
 use cx_tokens::TokenRange;
 
 pub(crate) struct HMIRUnitBuilder {
+    id: HMIRUnitID,
     namespace: NamespacePath,
     types: HMIRTypeBuilder,
     defs: HashMap<HMIRDefID, HMIRDef>,
@@ -21,8 +22,9 @@ pub(crate) struct HMIRTypeBuilder {
 }
 
 impl HMIRUnitBuilder {
-    pub(crate) fn new(namespace: NamespacePath) -> Self {
+    pub(crate) fn new(id: HMIRUnitID, namespace: NamespacePath) -> Self {
         Self {
+            id,
             namespace,
             types: HMIRTypeBuilder::default(),
             defs: HashMap::new(),
@@ -34,13 +36,19 @@ impl HMIRUnitBuilder {
     }
 
     pub(crate) fn push_def(&mut self, def: HMIRDef) -> HMIRDefID {
-        let id = HMIRDefID::new(self.defs.len());
+        let id = HMIRDefID::new(self.id, self.defs.len());
         self.defs.insert(id, def);
         id
     }
 
     pub(crate) fn finish(self, symbols: HMIRSymbolTable) -> HMIRUnit {
-        HMIRUnit::new(self.namespace, symbols, self.types.types, self.defs)
+        HMIRUnit::new(
+            self.id,
+            self.namespace,
+            symbols,
+            self.types.types,
+            self.defs,
+        )
     }
 }
 

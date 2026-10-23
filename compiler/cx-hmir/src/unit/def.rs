@@ -1,16 +1,17 @@
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
-use cx_util::dense_id;
+use cx_util::branded_id;
 
 use crate::{
     ty::HMIRTypeID,
     unit::{
         function::HMIRFunction,
         global::{HMIRComptimeGlobal, HMIRGlobal},
+        id::HMIRUnitID,
     },
 };
 
-dense_id!(HMIRDefID, "def");
+branded_id!(HMIRDefID, HMIRUnitID, "def");
 
 #[derive(Debug, Clone)]
 pub struct HMIRDef {

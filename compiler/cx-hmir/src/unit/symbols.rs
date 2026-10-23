@@ -21,7 +21,6 @@ pub enum HMIRLookupClass {
 pub struct HMIRDeclaration {
     name: QualifiedName,
     tag: Option<HIRTagKind>,
-    lexical_namespace: NamespacePath,
     visibility: VisibilityMode,
     naming: Option<HIRSymbolNameScheme>,
 }
@@ -30,16 +29,15 @@ pub struct HMIRDeclaration {
 pub struct HMIRSymbolTable {
     imports: Vec<NamespacePath>,
     aliases: HashMap<NamespacePath, Vec<NamespacePath>>,
-    friends: Vec<NamespacePath>,
     export_mode: ExportNameMode,
 
     declarations: HashMap<HMIRDefID, Vec<HMIRDeclaration>>,
     groups: HashMap<(QualifiedName, HMIRLookupClass), Vec<HMIRDefID>>,
 }
 
-impl HMIRLookupClass {
-    pub fn of(tag: Option<HIRTagKind>) -> Self {
-        match tag {
+impl From<Option<HIRTagKind>> for HMIRLookupClass {
+    fn from(other: Option<HIRTagKind>) -> Self {
+        match other {
             Some(_) => Self::Tag,
             None => Self::Ordinary,
         }
@@ -50,14 +48,12 @@ impl HMIRDeclaration {
     pub fn new(
         name: QualifiedName,
         tag: Option<HIRTagKind>,
-        lexical_namespace: NamespacePath,
         visibility: VisibilityMode,
         naming: Option<HIRSymbolNameScheme>,
     ) -> Self {
         Self {
             name,
             tag,
-            lexical_namespace,
             visibility,
             naming,
         }
@@ -72,11 +68,7 @@ impl HMIRDeclaration {
     }
 
     pub fn class(&self) -> HMIRLookupClass {
-        HMIRLookupClass::of(self.tag)
-    }
-
-    pub fn lexical_namespace(&self) -> &NamespacePath {
-        &self.lexical_namespace
+        HMIRLookupClass::from(self.tag)
     }
 
     pub fn visibility(&self) -> VisibilityMode {
@@ -92,7 +84,6 @@ impl HMIRSymbolTable {
     pub fn new(
         imports: Vec<NamespacePath>,
         aliases: HashMap<NamespacePath, Vec<NamespacePath>>,
-        friends: Vec<NamespacePath>,
         export_mode: ExportNameMode,
         declarations: Vec<(HMIRDefID, HMIRDeclaration)>,
     ) -> Self {
@@ -111,7 +102,6 @@ impl HMIRSymbolTable {
         Self {
             imports,
             aliases,
-            friends,
             export_mode,
             declarations: by_def,
             groups,
@@ -126,10 +116,6 @@ impl HMIRSymbolTable {
         self.aliases.get(prefix).map_or(&[], Vec::as_slice)
     }
 
-    pub fn friends(&self) -> &[NamespacePath] {
-        &self.friends
-    }
-
     pub fn export_mode(&self) -> ExportNameMode {
         self.export_mode
     }
@@ -142,5 +128,11 @@ impl HMIRSymbolTable {
         self.groups
             .get(&(name.clone(), class))
             .map_or(&[], Vec::as_slice)
+    }
+
+    pub fn groups(&self) -> impl Iterator<Item = (&QualifiedName, HMIRLookupClass, &[HMIRDefID])> {
+        self.groups
+            .iter()
+            .map(|((name, class), defs)| (name, *class, defs.as_slice()))
     }
 }

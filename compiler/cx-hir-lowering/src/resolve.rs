@@ -10,7 +10,7 @@ use cx_hir::{
     symbols::{HIRSymbol, HIRSymbolKind, TypeConstructorData},
 };
 use cx_hmir::{
-    HMIRDef, HMIRDefID, HMIRDefRef,
+    HMIRDef, HMIRDefID, HMIRDefRef, HMIRUnitID,
     ty::{
         HMIRTypeKind,
         intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
@@ -32,6 +32,7 @@ pub(crate) struct Resolver<'a> {
     registry: &'a GlobalSymbolRegistry,
     architecture: ArchitectureConfig,
     defs: HashMap<QualifiedName, HMIRDefID>,
+    unit: HMIRUnitID,
     // Function-level statics become defs placed after the planned ones
     planned: usize,
     statics: RefCell<Vec<HMIRDef>>,
@@ -125,19 +126,21 @@ impl<'a> Resolver<'a> {
     pub(crate) fn new(
         registry: &'a GlobalSymbolRegistry,
         architecture: ArchitectureConfig,
+        unit: HMIRUnitID,
         planned: usize,
     ) -> Self {
         Self {
             registry,
             architecture,
             defs: HashMap::new(),
+            unit,
             planned,
             statics: RefCell::new(Vec::new()),
         }
     }
 
     pub(crate) fn next_static(&self) -> HMIRDefID {
-        HMIRDefID::new(self.planned + self.statics.borrow().len())
+        HMIRDefID::new(self.unit, self.planned + self.statics.borrow().len())
     }
 
     pub(crate) fn push_static(&self, def: HMIRDef) {

@@ -1,3 +1,4 @@
+pub mod branded_id;
 pub mod char_iter;
 pub mod dense_id;
 pub mod format;

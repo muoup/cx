@@ -151,7 +151,7 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
         | HIRStmt::GlobalVariableDefinition { visibility, .. }) = &definition.stmt;
         let declare =
             |name: QualifiedName, tag: Option<HIRTagKind>, naming: Option<HIRSymbolNameScheme>| {
-                HMIRDeclaration::new(name, tag, definition.namespace.clone(), *visibility, naming)
+                HMIRDeclaration::new(name, tag, *visibility, naming)
             };
         let planned = |name: QualifiedName,
                        tag: Option<HIRTagKind>,

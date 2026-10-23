@@ -3,7 +3,7 @@ use cx_hir::{
     registry::GlobalSymbolRegistry,
     symbols::{HIRSymbol, HIRSymbolKind},
 };
-use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit, unit::symbols::HMIRSymbolTable};
+use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit, HMIRUnitID, unit::symbols::HMIRSymbolTable};
 use cx_log::CXResult;
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_target::ArchitectureConfig;
@@ -25,6 +25,7 @@ const TAGS: [HIRTagKind; 3] = [HIRTagKind::Struct, HIRTagKind::Union, HIRTagKind
 pub fn generate_external_hmir(
     registry: &GlobalSymbolRegistry,
     architecture: ArchitectureConfig,
+    id: HMIRUnitID,
     name: &QualifiedName,
 ) -> CXResult<Option<HMIRUnit>> {
     let (tag, bare) = split_tag(name);
@@ -98,10 +99,10 @@ pub fn generate_external_hmir(
     };
 
     let plan = PlannedDef::new(name.clone(), namespace.clone(), span.clone(), source);
-    let resolver = Resolver::new(registry, architecture, 1);
-    let mut unit = HMIRUnitBuilder::new(namespace.clone());
+    let resolver = Resolver::new(registry, architecture, id, 1);
+    let mut unit = HMIRUnitBuilder::new(id, namespace.clone());
     let context = BodyLowering::new(&resolver, unit.types_mut(), namespace, false)
-        .owned_by(HMIRDefID::new(0));
+        .owned_by(HMIRDefID::new(id, 0));
     let kind = lower_def(context, &plan)?;
 
     unit.push_def(HMIRDef::new(name.clone(), span, kind));
