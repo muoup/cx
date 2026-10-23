@@ -1,3 +1,6 @@
+#[doc(hidden)]
+pub use index_vec as __index_vec;
+
 #[macro_export]
 macro_rules! dense_id {
     ($name:ident, $display_prefix:literal) => {
@@ -21,6 +24,16 @@ macro_rules! dense_id {
             }
 
             pub const fn index(self) -> usize {
+                self.0
+            }
+        }
+
+        impl $crate::dense_id::__index_vec::Idx for $name {
+            fn from_usize(index: usize) -> Self {
+                Self(index)
+            }
+
+            fn index(self) -> usize {
                 self.0
             }
         }

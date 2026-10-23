@@ -90,7 +90,7 @@ pub(crate) fn eval_let(
     };
 
     types::validate::object(context.env(), ty, span)?;
-    if !types::is_complete(context.env(), ty) {
+    if !context.complete_object(ty) {
         let subject = format!("variable of type '{}'", types::name(context.env(), ty));
         return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject).into());
     }

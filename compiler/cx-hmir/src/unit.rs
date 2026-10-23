@@ -10,7 +10,7 @@ use cx_namespace::module::NamespacePath;
 
 use crate::{
     HMIRDefID,
-    ty::{HMIRType, HMIRTypeID},
+    body::{HMIRBody, HMIRBodyID},
     unit::{def::HMIRDef, id::HMIRUnitID, symbols::HMIRSymbolTable},
 };
 
@@ -20,8 +20,8 @@ pub struct HMIRUnit {
     namespace: NamespacePath,
     symbols: HMIRSymbolTable,
 
-    types: HashMap<HMIRTypeID, HMIRType>,
     defs: HashMap<HMIRDefID, HMIRDef>,
+    bodies: HashMap<HMIRBodyID, (HMIRDefID, usize, bool)>,
 }
 
 impl HMIRUnit {
@@ -29,15 +29,36 @@ impl HMIRUnit {
         id: HMIRUnitID,
         namespace: NamespacePath,
         symbols: HMIRSymbolTable,
-        types: HashMap<HMIRTypeID, HMIRType>,
         defs: HashMap<HMIRDefID, HMIRDef>,
     ) -> Self {
+        let mut bodies = HashMap::new();
+        for (def_id, def) in &defs {
+            for (declaration_index, declaration) in def.declarations().iter().enumerate() {
+                match declaration.kind() {
+                    Some(def::HMIRDefKind::Function(function)) => {
+                        bodies.insert(function.body().id(), (*def_id, declaration_index, false));
+                        bodies.insert(
+                            function.signature().contract().body().id(),
+                            (*def_id, declaration_index, true),
+                        );
+                    }
+                    Some(def::HMIRDefKind::Global(global)) => {
+                        bodies.insert(global.body().id(), (*def_id, declaration_index, false));
+                    }
+                    Some(def::HMIRDefKind::ComptimeGlobal(global)) => {
+                        bodies.insert(global.body().id(), (*def_id, declaration_index, false));
+                    }
+                    None => {}
+                }
+            }
+        }
+
         Self {
             id,
             namespace,
             symbols,
-            types,
             defs,
+            bodies,
         }
     }
 
@@ -53,12 +74,22 @@ impl HMIRUnit {
         &self.symbols
     }
 
-    pub fn resolve_type(&self, id: HMIRTypeID) -> &HMIRType {
-        self.types.get(&id).expect("Type ID not found in unit")
-    }
+    pub fn body(&self, id: HMIRBodyID) -> Option<&HMIRBody> {
+        let (def_id, declaration_index, contract) = self.bodies.get(&id)?;
+        let declaration = self
+            .defs
+            .get(def_id)?
+            .declarations()
+            .get(*declaration_index)?;
 
-    pub fn types(&self) -> impl Iterator<Item = (&HMIRTypeID, &HMIRType)> {
-        self.types.iter()
+        match declaration.kind()? {
+            def::HMIRDefKind::Function(function) if *contract => {
+                Some(function.signature().contract().body())
+            }
+            def::HMIRDefKind::Function(function) => Some(function.body()),
+            def::HMIRDefKind::Global(global) => Some(global.body()),
+            def::HMIRDefKind::ComptimeGlobal(global) => Some(global.body()),
+        }
     }
 
     pub fn resolve_def(&self, id: HMIRDefID) -> Option<&HMIRDef> {

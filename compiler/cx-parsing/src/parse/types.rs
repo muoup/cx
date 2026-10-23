@@ -222,10 +222,19 @@ fn predeclaration_type(
 
     if matches!(predeclaration, HIRTagKind::Struct | HIRTagKind::Union)
         && is_root_name
-        && matches!(
-            data.tokens.peek().map(|token| &token.kind),
-            Some(punctuator!(Semicolon))
-        )
+        && (data.c_mode
+            || data.in_include()
+            || matches!(
+                data.tokens.peek().map(|token| &token.kind),
+                Some(punctuator!(Semicolon))
+            ))
+        && !data.ast.definition_stmts.iter().any(|definition| {
+            matches!(
+                &definition.stmt,
+                HIRStmt::TypeDefinition { name: Some(existing), tag: Some(tag), .. }
+                    if existing == &definition_name && *tag == predeclaration
+            )
+        })
     {
         data.add_stmt(HIRStmt::TypeDefinition {
             name: Some(definition_name),

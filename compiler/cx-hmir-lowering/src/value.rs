@@ -16,13 +16,13 @@ pub enum HMIRPlace {
     Global(HMIRDefID),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HMIRValue {
     ty: HMIRTypeID,
     kind: HMIRValueKind,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HMIRValueKind {
     Constant(HMIRConstant),
     PlaceRef(HMIRPlace),

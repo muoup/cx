@@ -8,7 +8,10 @@ use cx_hir::ast::{
     modifiers::{HIRSymbolNameScheme, LinkageMode, VisibilityMode},
     types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
-use cx_hmir::{HMIRDeclaration, HMIRDeclarationRole, HMIRDefKind, unit::symbols::HMIRLookupClass};
+use cx_hmir::{
+    HMIRDeclaration, HMIRDeclarationRole, HMIRDefKind, HMIRUnitID,
+    unit::{def::HMIRDeclarationPoint, symbols::HMIRLookupClass},
+};
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -22,6 +25,7 @@ pub(crate) enum DefSource<'h> {
         body: Option<&'h HIRFunctionBody>,
     },
     Global {
+        comptime: bool,
         ty: &'h HIRType,
         initializer: Option<&'h HIRExpression>,
         linkage: LinkageMode,
@@ -34,6 +38,8 @@ pub(crate) enum DefSource<'h> {
 }
 
 pub(crate) struct PlannedDeclaration<'h> {
+    point: HMIRDeclarationPoint,
+    ordered: bool,
     namespace: NamespacePath,
     span: TokenRange,
     role: HMIRDeclarationRole,
@@ -50,6 +56,13 @@ pub(crate) struct PlannedSymbol<'h> {
 }
 
 impl<'h> PlannedDeclaration<'h> {
+    pub(crate) fn point(&self) -> HMIRDeclarationPoint {
+        self.point
+    }
+    pub(crate) fn ordered(&self) -> bool {
+        self.ordered
+    }
+
     pub(crate) fn namespace(&self) -> &NamespacePath {
         &self.namespace
     }
@@ -68,6 +81,7 @@ impl<'h> PlannedDeclaration<'h> {
 
     pub(crate) fn lowered(&self, kind: Option<HMIRDefKind>) -> HMIRDeclaration {
         HMIRDeclaration::new(
+            self.point,
             self.span.clone(),
             self.role,
             self.tag,
@@ -90,12 +104,6 @@ impl<'h> PlannedSymbol<'h> {
     pub(crate) fn declarations(&self) -> &[PlannedDeclaration<'h>] {
         &self.declarations
     }
-
-    pub(crate) fn is_defined(&self) -> bool {
-        self.declarations
-            .iter()
-            .any(|declaration| declaration.role == HMIRDeclarationRole::Definition)
-    }
 }
 
 fn function_name(base: &NamespacePath, kind: &HIRFunctionKind) -> QualifiedName {
@@ -114,10 +122,14 @@ fn is_forward_declaration(name: &CXIdent, tag: Option<HIRTagKind>, ty: &HIRType)
     )
 }
 
-pub(crate) fn plan_symbols<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<PlannedSymbol<'h>> {
+pub(crate) fn plan_symbols<'h>(
+    hir: &'h HIR,
+    namespace: &NamespacePath,
+    unit: HMIRUnitID,
+) -> Vec<PlannedSymbol<'h>> {
     let mut symbols = Vec::<PlannedSymbol>::new();
     let mut indices = HashMap::new();
-    for definition in &hir.definition_stmts {
+    for (ordinal, definition) in hir.definition_stmts.iter().enumerate() {
         let base = if definition.namespace.is_root() {
             &definition.namespace
         } else {
@@ -142,6 +154,8 @@ pub(crate) fn plan_symbols<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<P
                 symbols.len() - 1
             });
             symbols[index].declarations.push(PlannedDeclaration {
+                point: HMIRDeclarationPoint::new(unit, ordinal),
+                ordered: definition.ordered,
                 namespace: definition.namespace.clone(),
                 span: span.clone(),
                 role,
@@ -197,6 +211,7 @@ pub(crate) fn plan_symbols<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<P
 
             HIRStmt::GlobalVariableDefinition { variable, .. } => match variable {
                 HIRGlobalVariable::Standard {
+                    comptime,
                     name,
                     ty,
                     initializer,
@@ -214,6 +229,7 @@ pub(crate) fn plan_symbols<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<P
                         (None, _) => HMIRDeclarationRole::Tentative,
                     },
                     Some(DefSource::Global {
+                        comptime: *comptime,
                         ty,
                         initializer: initializer.as_ref(),
                         linkage: *linkage,

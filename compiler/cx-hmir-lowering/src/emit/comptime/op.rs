@@ -83,7 +83,8 @@ pub fn binary(
     result: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let operands = context.env().resolve_kind(lhs.ty());
+    let kind = context.env().resolve_kind(lhs.ty()).clone();
+    let operands = &kind;
     let constants = (read(context, lhs, span)?, read(context, rhs, span)?);
 
     match (operands, constants) {
@@ -139,7 +140,8 @@ pub fn unary(
 ) -> CXResult<HMIRValue> {
     let ty = value.ty();
 
-    match (context.env().resolve_kind(ty), read(context, value, span)?) {
+    let kind = context.env().resolve_kind(ty).clone();
+    match (&kind, read(context, value, span)?) {
         (HMIRTypeKind::Int(int), HMIRConstant::Int { value, .. }) => {
             Ok(integer(context, int::unary(op, value, *int), ty))
         }
@@ -156,7 +158,9 @@ pub fn cast(
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let kinds = (context.env().resolve_kind(value.ty()), context.env().resolve_kind(target));
+    let source_kind = context.env().resolve_kind(value.ty()).clone();
+    let target_kind = context.env().resolve_kind(target).clone();
+    let kinds = (&source_kind, &target_kind);
 
     match (kinds, read(context, value, span)?) {
         ((HMIRTypeKind::Int(from), HMIRTypeKind::Int(_)), HMIRConstant::Int { value, .. }) => {

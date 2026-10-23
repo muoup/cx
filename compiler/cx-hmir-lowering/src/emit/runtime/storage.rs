@@ -69,13 +69,13 @@ fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRan
     let is_reference = context.env().is_reference(value.ty());
     Ok(match value.kind() {
         HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => Some(MIRTarget::Global(
-            global::reference(context, *def, value.ty(), span)?,
+            global::address(context.env_mut(), *def, &[], value.ty(), span)?,
         )),
         HMIRValueKind::Constant(HMIRConstant::Address { place: HMIRPlace::Global(def), path, .. })
             if is_reference && path.is_empty() =>
         {
             let inner = context.env().reference_inner(value.ty()).unwrap();
-            Some(MIRTarget::Global(global::reference(context, *def, inner, span)?))
+            Some(MIRTarget::Global(global::address(context.env_mut(), *def, &[], inner, span)?))
         }
         HMIRValueKind::Indirect(pointer) if !is_reference => {
             Some(MIRTarget::Indirect(reference(context, pointer)))

@@ -19,6 +19,9 @@ pub(crate) fn type_result(
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
     let value = super::def::type_value(context, ty, span)?;
+    if !context.env().resolver().settled(ty) {
+        context.force_type(ty, span)?;
+    }
     if !types::unsized_array(context.env(), ty) {
         return Ok(Evaluation::Ready(value));
     }

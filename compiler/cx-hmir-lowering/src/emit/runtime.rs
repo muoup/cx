@@ -26,7 +26,6 @@ use crate::{
         function::{LocalLoweringContext, runtime::Emission},
     },
     eval::types::{self, mir_float, mir_int},
-    symbol::{self, CompletedSymbol},
     value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
@@ -154,6 +153,13 @@ pub fn constant(
             ty: types::lower_type(env, *ty, span)?,
         },
         HMIRConstant::Str(value) => MIRConstant::String(value.clone()),
+        HMIRConstant::Address { place: HMIRPlace::Global(def), path, ty } => {
+            let inner = env
+                .reference_inner(*ty)
+                .or_else(|| env.pointer_inner(*ty))
+                .expect("a global address has pointer or reference type");
+            MIRConstant::GlobalRef(global::address(env, *def, path, inner, span)?)
+        }
         HMIRConstant::Aggregate { ty, fields } => MIRConstant::Aggregate {
             ty: types::lower_type(env, *ty, span)?,
             fields: fields.iter().map(|(index, field)| {
@@ -161,16 +167,8 @@ pub fn constant(
             }).collect::<CXResult<_>>()?,
         },
         HMIRConstant::Function { def, args } if args.is_empty() => {
-            let CompletedSymbol::Function(function) = symbol::completed(env, *def) else {
-                unreachable!("function constant of a definition that is not a function")
-            };
-            let name = function.symbol_name.as_str();
-
-            MIRConstant::Function(
-                env.module()
-                    .declared_function(name)
-                    .expect("Function referenced before its declaration"),
-            )
+            let prototype = types::lower_prototype(env, *def, None, span)?;
+            MIRConstant::Function(env.module_mut().declare_function(prototype))
         }
         other => todo!("constant {other:?}"),
     })
@@ -213,7 +211,7 @@ pub fn lower_value(
             }
         }
         HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => MIRValue::Constant(MIRConstant::GlobalRef(
-            global::reference(context, *def, value.ty(), span)?,
+            global::address(context.env_mut(), *def, &[], value.ty(), span)?,
         )),
         HMIRValueKind::Indirect(pointer) => MIRValue::Register(reference(context, pointer)),
     })
@@ -240,16 +238,20 @@ fn place_address(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRValue> {
-    if !path.is_empty() {
-        todo!("address of a subobject: aggregates are not lowered yet");
-    }
-
     let slot = match place {
-        HMIRPlace::Local(slot) => slot,
+        HMIRPlace::Local(slot) => {
+            if !path.is_empty() {
+                todo!("address of a compile-time local subobject at runtime");
+            }
+            slot
+        }
         HMIRPlace::Global(def) => {
-            let inner = context.env().reference_inner(ty).or_else(|| context.env().pointer_inner(ty))
+            let inner = context
+                .env()
+                .reference_inner(ty)
+                .or_else(|| context.env().pointer_inner(ty))
                 .expect("an address is a pointer or reference");
-            let global = global::reference(context, def, inner, span)?;
+            let global = global::address(context.env_mut(), def, path, inner, span)?;
             if context.env().is_reference(ty) {
                 return Ok(MIRValue::Constant(MIRConstant::GlobalRef(global)));
             }

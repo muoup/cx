@@ -6,7 +6,7 @@ use cx_hmir::{
     HMIRCoerceMode,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
-        HMIRTypeKind,
+        HMIRExprTypeKind,
         intrinsic::{HMIRIntType, HMIRIntWidth},
     },
 };
@@ -175,7 +175,7 @@ fn lower_condition(
     }
 
     let value = lower_expr(context, condition)?;
-    let target = context.type_ref(HMIRTypeKind::Int(bool_ty), span);
+    let target = context.type_ref(HMIRExprTypeKind::Int(bool_ty), span);
 
     Ok(context.coerce(HMIRCoerceMode::Truthy, value, target, span))
 }

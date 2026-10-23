@@ -1,10 +1,6 @@
 pub(crate) mod global;
 
-use crate::{
-    env::HMIREnvironment,
-    eval,
-    symbol::{self, CompletedFunction, CompletedSymbol},
-};
+use crate::{env::HMIREnvironment, eval, symbol};
 use cx_hmir::{HMIRDefID, HMIRDefKind, HMIRFunction, HMIRUnit};
 use cx_log::CXResult;
 
@@ -16,9 +12,7 @@ pub fn lower_unit<'hmir>(
     defs.sort();
 
     for id in defs {
-        if symbol::validate(env, id)?.is_root() {
-            env.generation_mut().request(id);
-        }
+        symbol::validate(env, id)?;
     }
 
     while let Some(id) = env.generation_mut().next() {
@@ -34,34 +28,29 @@ fn generate(id: HMIRDefID, env: &mut HMIREnvironment) -> CXResult<()> {
         .owner(id.brand())
         .expect("symbol owner is available");
     let source = unit.resolve_def(id).expect("symbol exists");
-    match symbol::complete(env, id)? {
-        CompletedSymbol::Function(function) => {
-            let HMIRDefKind::Function(source) =
-                source.declarations()[function.declaration].kind().unwrap()
-            else {
-                unreachable!("a function symbol selects a function declaration")
-            };
-            if source.def().is_none() {
+    let selected = symbol::select(source, None)?;
+    let kind = source.declarations()[selected].kind();
+
+    match kind {
+        Some(HMIRDefKind::Function(function)) => {
+            if symbol::is_staged(&function) || function.def().is_none() {
                 return Ok(());
             }
-
-            lower_function(source, id, &function, env)
+            let signature = symbol::signature(env, id, None)?;
+            lower_function(function, id, &signature, env)
         }
-        CompletedSymbol::Global(global) => global::lower(env, id, &global),
-        CompletedSymbol::StagedFunction => Ok(()),
-        CompletedSymbol::Constant(_) | CompletedSymbol::Type(_) => {
-            unreachable!("generation requested for a definition that is never emitted")
-        }
+        Some(HMIRDefKind::Global(_)) => global::lower(env, id),
+        Some(HMIRDefKind::ComptimeGlobal(_)) | None => Ok(()),
     }
 }
 
 fn lower_function<'hmir>(
-    source: &HMIRFunction,
+    function: &HMIRFunction,
     id: HMIRDefID,
-    function: &CompletedFunction,
+    signature: &cx_hmir::HMIRFnSignature<cx_hmir::ty::HMIRTypeID>,
     env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
-    let lowered = eval::lower_runtime_function(env, id, source, function)?;
+    let lowered = eval::lower_runtime_function(env, id, function, signature)?;
     let id = env
         .module_mut()
         .declare_function(lowered.prototype().clone());

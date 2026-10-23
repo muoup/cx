@@ -11,16 +11,13 @@ use cx_hmir::{
         context::HMIRTypeContext,
     },
 };
-use cx_log::catalogue::{mir, typecheck};
+use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
     emit,
-    env::{
-        HMIREnvironment,
-        function::{FnContext, LocalLoweringContext},
-    },
+    env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
         EvalResult, eval, eval_type,
         flow::{Evaluation, ready},
@@ -79,14 +76,6 @@ fn eval_member(
         let storage = storage::temporary(context, value, span)?;
         emit::reference(context, &storage, span)?
     };
-    if matches!(context.context(), FnContext::Comptime(_)) {
-        return Err(hmir_error(
-            span,
-            &mir::COMPTIME_INVALID_OPERATION,
-            "member access".into(),
-        )
-        .into());
-    }
 
     let Some(mut owner) = context.env().reference_inner(value.ty()) else {
         unreachable!("a member base is a reference")

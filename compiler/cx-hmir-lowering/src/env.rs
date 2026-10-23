@@ -1,12 +1,12 @@
 pub(crate) mod function;
 pub(crate) mod generation;
-pub(crate) mod memo;
+pub(crate) use resolver::memo;
 pub(crate) mod module;
 pub(crate) mod resolver;
 pub(crate) mod symbols;
 
 use cx_hmir::{
-    HMIRUnit, HMIRUnitID,
+    HMIRUnit,
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_mir::MIRUnit;
@@ -147,7 +147,7 @@ impl HMIRTypeContext for HMIREnvironment<'_, '_> {
     fn resolve_type_id(&self, id: HMIRTypeID) -> &HMIRType {
         match self.resolver.realized_type(id) {
             Some(ty) => ty,
-            None => self.symbols.local_unit().resolve_type(id),
+            None => panic!("semantic type {id} was used before its expression was evaluated"),
         }
     }
 }

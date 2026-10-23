@@ -24,14 +24,14 @@ pub fn generate_hmir(
     namespace: NamespacePath,
     root_exports: bool,
 ) -> CXResult<HMIRUnit> {
-    let planned = plan_symbols(hir, &namespace);
+    let planned = plan_symbols(hir, &namespace, id);
     let context = UnitContext::new(id, root_exports, planned.len());
 
     let symbols = symbol_table(hir, id, &planned);
     let mut unit = HMIRUnitBuilder::new(id, namespace);
     for (index, symbol) in planned.iter().enumerate() {
         let def = HMIRDefID::new(id, index);
-        let def = lower_symbol(&context, unit.types_mut(), def, symbol)?;
+        let def = lower_symbol(&context, def, symbol)?;
         unit.push_def(def);
     }
     for def in context.take_statics() {

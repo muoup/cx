@@ -1,10 +1,11 @@
 use cx_hmir::{
     HMIRBody,
-    expr::{HMIRExprID, op::HMIRTypeOp},
+    expr::{HMIRExprID, HMIRExprKind, op::HMIRTypeOp},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
         aggregate::{HMIRDeclaredMove, HMIRMoveSemantics, HMIRTypeSemantics},
         context::HMIRTypeContext,
+        intrinsic::HMIRIntWidth,
     },
 };
 use cx_log::{
@@ -15,18 +16,174 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{eval_comptime, eval_type, flow, types},
+    eval::{
+        EvalResult, comptime, eval, eval_comptime, eval_type,
+        flow::{self, Evaluation},
+        name, types,
+    },
     log::hmir_error,
-    value::{HMIRValueKind, constant::HMIRConstant, scalar::int},
+    symbol,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant, scalar::int},
 };
 
 pub(crate) fn eval_type_op(
-    _context: &mut LocalLoweringContext,
-    _body: &HMIRBody,
-    _span: &TokenRange,
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
     op: &HMIRTypeOp,
+) -> EvalResult<HMIRValue> {
+    let (HMIRTypeOp::SizeOf(operand) | HMIRTypeOp::AlignOf(operand)) = op else {
+        todo!("HMIRTypeOp: {}", op.path())
+    };
+    let (size, alignment) = match operand_type(context, body, *operand)? {
+        Err(length) => (length, 1),
+        Ok(ty) => {
+            if !context.complete_object(ty) {
+                return Err(hmir_error(
+                    body.expr(*operand).span(),
+                    &typecheck::INCOMPLETE_TYPE,
+                    format!("operand of type '{}'", types::name(context.env(), ty)),
+                ));
+            }
+            let mir = types::lower_type(context.env_mut(), ty, span)?;
+            let layout = cx_mir::ty::layout::calculate_type_layout(context.env().module(), mir);
+            (layout.size(), layout.alignment())
+        }
+    };
+    let width = HMIRIntWidth::pointer_width(context.env().architecture());
+    let ty = types::int(context.env_mut(), width, false, span);
+    let value = if matches!(op, HMIRTypeOp::SizeOf(_)) {
+        size
+    } else {
+        alignment
+    };
+    Ok(Evaluation::Ready(HMIRValue::constant(
+        ty,
+        HMIRConstant::Int {
+            value: value as i128,
+            ty,
+        },
+    )))
+}
+
+fn operand_type(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    operand: HMIRExprID,
+) -> CXResult<Result<HMIRTypeID, usize>> {
+    let span = body.expr(operand).span();
+    if let HMIRExprKind::Local(local) = body.expr(operand).kind()
+        && let Some(value) = context.get_local(local)
+    {
+        let ty = value.ty();
+        return Ok(Ok(context.env().reference_inner(ty).unwrap_or(ty)));
+    }
+    let context = &mut comptime::frozen_child(context);
+    let def = match body.expr(operand).kind() {
+        HMIRExprKind::Def(def) => Some(*def),
+        HMIRExprKind::Name { name, tag } => name::resolve(context, span, name, *tag)?,
+        HMIRExprKind::Literal(_) => {
+            let value = flow::top(eval(context, body, operand))?;
+            return Ok(match value.kind() {
+                HMIRValueKind::Constant(HMIRConstant::Str(string)) => Err(string.len() + 1),
+                _ => Ok(value.ty()),
+            });
+        }
+        HMIRExprKind::Type(_) => None,
+        _ => {
+            return Err(hmir_error(
+                span,
+                &typecheck::UNSUPPORTED_FEATURE,
+                "the size or alignment of a computed expression".into(),
+            ));
+        }
+    };
+    if let Some(def) = def {
+        let point = context.visible_through();
+        let value = symbol::binding(context.env_mut(), def, point)?;
+        if !matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Type(_))) {
+            return Ok(Ok(context
+                .env()
+                .reference_inner(value.ty())
+                .unwrap_or(value.ty())));
+        }
+    }
+    flow::top(eval_type(context, body, operand)).map(Ok)
+}
+
+pub(crate) fn eval_declared_type(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    expr: HMIRExprID,
 ) -> CXResult<HMIRTypeID> {
-    todo!("HMIRTypeOp: {}", op.path())
+    let ty = context.deferred_type(expr);
+    context.force_type(ty, body.expr(expr).span())?;
+    Ok(ty)
+}
+
+pub(crate) fn construct_type(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    ty: &HMIRExprType,
+    memo: crate::env::memo::MemoID,
+) -> CXResult<HMIRTypeID> {
+    let id = crate::env::resolver::HMIRResolver::type_id(memo);
+    let forward = context.env().resolver().is_incomplete(id)
+        && matches!(ty.kind(), HMIRExprTypeKind::Opaque { .. });
+    let semantics = ty.semantics().map(|declared| {
+        CXResult::Ok(match declared {
+            HMIRDeclaredMove::Explicit(semantics) => *semantics,
+            HMIRDeclaredMove::CopyTraits(_) => HMIRMoveSemantics::default(),
+        })
+    })?;
+    let aggregate = matches!(
+        ty.kind(),
+        HMIRExprTypeKind::Struct { .. }
+            | HMIRExprTypeKind::Union { .. }
+            | HMIRExprTypeKind::TaggedUnion { .. }
+    );
+    if aggregate {
+        let name = ty.debug_name().map(str::to_owned);
+        context
+            .env_mut()
+            .resolver_mut()
+            .forward_type(id, semantics, ty.decl_span(), name);
+        let value = crate::eval::type_value(context, id, ty.decl_span())?;
+        context.env_mut().resolver_mut().publish(memo, value);
+    }
+    let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
+    let complete = match ty.kind() {
+        HMIRExprTypeKind::PointerTo(_)
+        | HMIRExprTypeKind::ReferenceTo(_)
+        | HMIRExprTypeKind::Function(_) => {
+            let complete = ty.map(
+                context,
+                |context, expr| CXResult::Ok(context.deferred_type(*expr)),
+                |_, _| unreachable!(),
+                |_, _| Ok(move_semantics),
+            )?;
+            context.env_mut().resolver_mut().complete_type(id, complete);
+            return Ok(id);
+        }
+        HMIRExprTypeKind::Nominal(inner) => {
+            let inner = flow::top(eval_type(context, body, *inner)?.description())?;
+            let current = context.env().semantics(inner);
+            let semantics = current.apply(semantics);
+            HMIRType::new(
+                HMIRTypeKind::Nominal(inner),
+                semantics,
+                ty.decl_span().clone(),
+                None,
+            )
+        }
+        _ => evaluate(context, body, ty, move_semantics)?,
+    };
+    context.env_mut().resolver_mut().complete_type(id, complete);
+    if forward {
+        context.env_mut().resolver_mut().mark_incomplete(id);
+    }
+    types::validate::declaration(context.env(), context.env().resolve_type_id(id))?;
+    Ok(id)
 }
 
 fn evaluate(
@@ -94,7 +251,7 @@ fn member(
     let ty = flow::top(eval_type(context, body, expr)?.description())?;
 
     match inline {
-        Some(inline) if !inline.admits(context.env(), ty) => {
+        Some(inline) if !inline.admits(context.env(), ty) || !context.type_visible(ty) => {
             let subject = inline.subject();
             let subject = format!("{subject} of type '{}'", types::name(context.env(), ty));
             Err(hmir_error(body.expr(expr).span(), &typecheck::INCOMPLETE_TYPE, subject).into())

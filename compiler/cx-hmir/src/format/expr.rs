@@ -10,7 +10,7 @@ use crate::expr::{
 
 use super::{
     body::{BodyPrinter, indent},
-    ty::{write_def, write_generic_type, write_literal, write_type},
+    ty::{write_def, write_generic_type, write_literal},
 };
 
 impl std::fmt::Display for HMIRExprID {
@@ -22,8 +22,7 @@ impl std::fmt::Display for HMIRExprID {
 impl BodyPrinter<'_> {
     pub(super) fn expr(&self, f: &mut Formatter<'_>, id: HMIRExprID, depth: usize) -> fmt::Result {
         match self.body().expr(id).kind() {
-            HMIRExprKind::Literal(literal) => write_literal(f, self.unit(), literal),
-            HMIRExprKind::TypeRef(ty) => write_type(f, self.unit(), *ty),
+            HMIRExprKind::Literal(literal) => write_literal(f, literal),
             HMIRExprKind::Local(local) => self.local(f, *local),
             HMIRExprKind::Def(def) => write_def(f, self.unit(), *def),
             HMIRExprKind::Name { name, tag: None } => write!(f, "{name}"),

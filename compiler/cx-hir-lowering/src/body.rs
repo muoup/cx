@@ -10,7 +10,7 @@ use cx_hmir::{
     body::{HMIRHole, HMIRLocal, HMIRLocalID},
     expr::{HMIRExpr, HMIRExprID, HMIRExprKind, literal::HMIRLiteral, op::HMIRTypeOp},
     ty::{
-        HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
+        HMIRExprType, HMIRExprTypeKind,
         aggregate::{HMIRDeclaredMove, HMIRTypeSemantics},
         intrinsic::HMIRIntType,
     },
@@ -22,7 +22,6 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    builder::HMIRTypeBuilder,
     def::declared_params,
     expr::{lower_expr, lower_initial_value},
     log::log_hir_error,
@@ -69,7 +68,6 @@ struct Scope {
 
 pub(crate) struct BodyLowering<'a> {
     unit: &'a UnitContext,
-    types: &'a mut HMIRTypeBuilder,
     namespace: NamespacePath,
     body: HMIRBody,
     scopes: Vec<Scope>,
@@ -99,15 +97,9 @@ impl Binding {
 }
 
 impl<'a> BodyLowering<'a> {
-    pub(crate) fn new(
-        unit: &'a UnitContext,
-        types: &'a mut HMIRTypeBuilder,
-        namespace: NamespacePath,
-        comptime: bool,
-    ) -> Self {
+    pub(crate) fn new(unit: &'a UnitContext, namespace: NamespacePath, comptime: bool) -> Self {
         Self {
             unit,
-            types,
             namespace,
             body: HMIRBody::new(),
             scopes: vec![Scope::new(ScopeKind::Plain)],
@@ -115,6 +107,11 @@ impl<'a> BodyLowering<'a> {
             owner: None,
             address_labels: Vec::new(),
         }
+    }
+
+    pub(crate) fn at(mut self, point: Option<cx_hmir::unit::def::HMIRDeclarationPoint>) -> Self {
+        self.body = self.body.at(point);
+        self
     }
 
     pub(crate) fn owned_by(mut self, owner: HMIRDefID) -> Self {
@@ -141,7 +138,8 @@ impl<'a> BodyLowering<'a> {
 
     // A lowering for a body of its own, which sees none of the locals of this one
     pub(crate) fn detached(&mut self, comptime: bool) -> BodyLowering<'_> {
-        BodyLowering::new(self.unit, self.types, self.namespace.clone(), comptime)
+        BodyLowering::new(self.unit, self.namespace.clone(), comptime)
+            .at(self.body.visible_through())
     }
 
     // The signature parameters that the locals of a definition were declared from
@@ -198,17 +196,8 @@ impl<'a> BodyLowering<'a> {
         self.push(HMIRExprKind::Name { name, tag: None }, span)
     }
 
-    pub(crate) fn primitive(&mut self, kind: HMIRTypeKind) -> HMIRTypeID {
-        self.types.primitive(kind)
-    }
-
-    pub(crate) fn declare_type(&mut self, ty: HMIRType) -> HMIRTypeID {
-        self.types.declare(ty)
-    }
-
-    pub(crate) fn type_ref(&mut self, kind: HMIRTypeKind, span: &TokenRange) -> HMIRExprID {
-        let ty = self.primitive(kind);
-        self.push(HMIRExprKind::TypeRef(ty), span)
+    pub(crate) fn type_ref(&mut self, kind: HMIRExprTypeKind, span: &TokenRange) -> HMIRExprID {
+        self.expr_type(kind, HMIRTypeSemantics::default(), None, span)
     }
 
     pub(crate) fn comptime(&self) -> bool {
@@ -350,7 +339,6 @@ impl<'a> BodyLowering<'a> {
         value: i128,
         span: &TokenRange,
     ) -> HMIRExprID {
-        let ty = self.primitive(HMIRTypeKind::Int(ty));
         self.push(HMIRExprKind::Literal(HMIRLiteral::Int { value, ty }), span)
     }
 
@@ -367,7 +355,7 @@ impl<'a> BodyLowering<'a> {
     }
 
     pub(crate) fn type_of_types(&mut self, span: &TokenRange) -> HMIRExprID {
-        self.type_ref(HMIRTypeKind::Type, span)
+        self.type_ref(HMIRExprTypeKind::Type, span)
     }
 
     pub(crate) fn type_op(&mut self, op: HMIRTypeOp, span: &TokenRange) -> HMIRExprID {
@@ -413,12 +401,7 @@ pub(crate) fn lower_variant_constructor(
     span: &TokenRange,
 ) -> HMIRExprID {
     let id = context.unit.next_static();
-    let mut ctor = BodyLowering::new(
-        context.unit,
-        context.types,
-        context.namespace.clone(),
-        false,
-    );
+    let mut ctor = BodyLowering::new(context.unit, context.namespace.clone(), false);
     let universe = ctor.type_of_types(span);
     let sum_param = ctor.declare(None, universe, true, false, span);
     let sum_ty = ctor.push(HMIRExprKind::Local(sum_param), span);
@@ -461,6 +444,7 @@ pub(crate) fn lower_variant_constructor(
         QualifiedName::new(context.namespace.clone(), name),
         span,
         HMIRDefKind::Function(Box::new(function)),
+        context.body.visible_through(),
     );
     let callee = context.push(HMIRExprKind::Def(id), span);
     context.push(
@@ -500,13 +484,7 @@ pub(crate) fn lower_reify(
     };
 
     let id = context.unit.next_static();
-    let mut anon = BodyLowering::new(
-        context.unit,
-        context.types,
-        context.namespace.clone(),
-        false,
-    )
-    .owned_by(id);
+    let mut anon = BodyLowering::new(context.unit, context.namespace.clone(), false).owned_by(id);
 
     let mut params = Vec::new();
     for param in declared_params(prototype) {
@@ -540,6 +518,7 @@ pub(crate) fn lower_reify(
         QualifiedName::new(context.namespace.clone(), name),
         span,
         HMIRDefKind::Function(Box::new(function)),
+        context.body.visible_through(),
     );
     Ok(context.push(HMIRExprKind::Def(id), span))
 }
@@ -554,12 +533,8 @@ pub(crate) fn lower_static(
     span: &TokenRange,
 ) -> CXResult<()> {
     let id = context.unit.next_static();
-    let mut global = BodyLowering::new(
-        context.unit,
-        context.types,
-        context.namespace.clone(),
-        false,
-    );
+    let mut global = BodyLowering::new(context.unit, context.namespace.clone(), false)
+        .at(context.body.visible_through());
     global.owner = context.owner;
 
     let global_ty = lower_type(&mut global, ty)?;
@@ -575,9 +550,12 @@ pub(crate) fn lower_static(
     let global = HMIRGlobal::new(global.finish(), global_ty, initializer, linkage, link_name);
 
     let qualified = QualifiedName::new(context.namespace.clone(), name.clone());
-    context
-        .unit
-        .push_static(qualified, span, HMIRDefKind::Global(Box::new(global)));
+    context.unit.push_static(
+        qualified,
+        span,
+        HMIRDefKind::Global(Box::new(global)),
+        context.body.visible_through(),
+    );
     for label in labels {
         if !context.address_labels.contains(&label) {
             context.address_labels.push(label);

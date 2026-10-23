@@ -6,6 +6,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::function::LocalLoweringContext,
+    eval::types,
     value::{HMIRValue, constant::HMIRConstant},
 };
 
@@ -14,19 +15,7 @@ pub(crate) fn eval_literal(
     span: &TokenRange,
     literal: &HMIRLiteral,
 ) -> HMIRValue {
-    let source = context.source();
-    let literal = match literal {
-        HMIRLiteral::Int { value, ty } => HMIRLiteral::Int {
-            value: *value,
-            ty: context.env_mut().import_type(source, *ty),
-        },
-        HMIRLiteral::Float { value, ty } => HMIRLiteral::Float {
-            value: *value,
-            ty: context.env_mut().import_type(source, *ty),
-        },
-        other => other.clone(),
-    };
-    match &literal {
+    match literal {
         HMIRLiteral::Unit => unit(context, span),
 
         HMIRLiteral::Str(value) => {
@@ -40,20 +29,31 @@ pub(crate) fn eval_literal(
             HMIRValue::constant(ty, HMIRConstant::Str(value.clone()))
         }
 
-        HMIRLiteral::Int { value, ty } => HMIRValue::constant(
-            *ty,
-            HMIRConstant::Int {
-                value: *value,
-                ty: *ty,
-            },
-        ),
-        HMIRLiteral::Float { value, ty } => HMIRValue::constant(
-            *ty,
-            HMIRConstant::Float {
-                value: *value,
-                ty: *ty,
-            },
-        ),
+        HMIRLiteral::Int { value, ty } => {
+            let semantic_type = types::int(context.env_mut(), ty.width(), ty.signed(), span);
+            HMIRValue::constant(
+                semantic_type,
+                HMIRConstant::Int {
+                    value: *value,
+                    ty: semantic_type,
+                },
+            )
+        }
+        HMIRLiteral::Float { value, ty } => {
+            let semantic_type = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+                HMIRTypeKind::Float(*ty),
+                HMIRTypeSemantics::default(),
+                span.clone(),
+                None,
+            ));
+            HMIRValue::constant(
+                semantic_type,
+                HMIRConstant::Float {
+                    value: *value,
+                    ty: semantic_type,
+                },
+            )
+        }
     }
 }
 

@@ -36,9 +36,11 @@ pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     permission: Permission,
     source: HMIRUnitID,
     return_type: Option<cx_hmir::ty::HMIRTypeID>,
+    visible_through: Option<cx_hmir::unit::def::HMIRDeclarationPoint>,
+    initializer: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Permission {
     Safe,
     Nonsafe,
@@ -70,6 +72,8 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         Self {
             source,
             return_type: None,
+            visible_through: None,
+            initializer: false,
             env,
             signature,
             context,
@@ -94,6 +98,8 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         }
         child.source = self.source;
         child.return_type = self.return_type;
+        child.visible_through = self.visible_through;
+        child.initializer = self.initializer;
         child
     }
 
@@ -104,6 +110,24 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
 
     pub fn source(&self) -> HMIRUnitID {
         self.source
+    }
+
+    pub fn at(mut self, point: Option<cx_hmir::unit::def::HMIRDeclarationPoint>) -> Self {
+        self.visible_through = point;
+        self
+    }
+
+    pub fn visible_through(&self) -> Option<cx_hmir::unit::def::HMIRDeclarationPoint> {
+        self.visible_through
+    }
+
+    pub fn initializing(mut self, initializer: bool) -> Self {
+        self.initializer = initializer;
+        self
+    }
+
+    pub fn initializer(&self) -> bool {
+        self.initializer
     }
 
     pub fn return_type(&self) -> Option<cx_hmir::ty::HMIRTypeID> {

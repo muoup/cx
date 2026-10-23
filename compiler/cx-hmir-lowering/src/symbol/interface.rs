@@ -1,171 +1,319 @@
-use std::rc::Rc;
-
 use cx_hmir::{
-    HMIRDeclaration, HMIRDef, HMIRDefID, HMIRDefKind, HMIRUnitID,
-    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics},
+    HMIRBody, HMIRDeclarationRole, HMIRDefID, HMIRDefKind,
+    expr::HMIRExprID,
+    ty::{
+        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+    },
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_util::linkage::LinkageMode;
+use cx_tokens::TokenRange;
 
 use crate::{
     env::{
-        HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
+        memo::{MemoContextID, MemoKey},
+        resolver::HMIRResolver,
     },
-    eval::{eval_comptime, eval_type, flow, types},
+    eval::{self, coerce, eval_type, flow, types},
     log::hmir_error,
     symbol::{
-        CompletedFunction, CompletedGlobal, CompletedSymbol, Shape,
         composite::{alike, composite, signatures_alike},
-        structure::incompatible,
+        structure::{self, incompatible},
     },
+    value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
-pub(crate) fn type_definition(
-    env: &mut HMIREnvironment,
+pub(crate) fn definition(
+    context: &mut LocalLoweringContext,
     id: HMIRDefID,
-    declaration: &HMIRDeclaration,
-) -> CXResult<HMIRTypeID> {
-    match declaration.kind() {
-        Some(HMIRDefKind::TypeDef(definition)) => {
-            let mut context = owner(env, id.brand());
-            let ty = eval_type(&mut context, definition.body(), definition.initializer())?;
-            flow::top(ty.description())
-        }
-        Some(HMIRDefKind::Type(ty)) => {
-            let ty = env.import_type(id.brand(), *ty);
-            env.resolver_mut().mark_incomplete(ty);
-            env.resolver_mut().publish_type(ty);
-            Ok(ty)
-        }
-        _ => unreachable!("a type symbol declares a type"),
-    }
-}
-
-fn function(
-    env: &mut HMIREnvironment,
-    id: HMIRDefID,
-    def: &HMIRDef,
-    selected: usize,
-    linkage: LinkageMode,
-) -> CXResult<CompletedSymbol> {
-    let declarations = def.declarations();
-    let mut signatures = Vec::with_capacity(declarations.len());
-    for declaration in declarations {
-        let Some(HMIRDefKind::Function(function)) = declaration.kind() else {
-            unreachable!("every declaration of a function declares a function")
+    scope: MemoContextID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let unit = context
+        .env_mut()
+        .symbols_mut()
+        .owner(id.brand())
+        .expect("definition owner exists");
+    let def = unit.resolve_def(id).unwrap();
+    let selected = structure::select(def, context.visible_through())?;
+    let declaration = &def.declarations()[selected];
+    if declaration.tag().is_some() {
+        let canonical = structure::select(def, None)?;
+        let Some(HMIRDefKind::ComptimeGlobal(global)) = def.declarations()[canonical].kind() else {
+            unreachable!("a tagged declaration has a type initializer");
         };
-        let mut context = owner(env, id.brand());
-        let signature = types::eval_signature(&mut context, function.body(), function.signature());
-        signatures.push(flow::top(signature)?);
-    }
-    for (declaration, signature) in declarations.iter().zip(&signatures) {
-        if !signatures_alike(env, signature, &signatures[0]) {
-            return Err(incompatible(def, declaration));
+        let ty = context.deferred_type(global.initializer());
+        if context.env().resolver().realized_type(ty).is_none() {
+            let name = Some(def.name().to_string());
+            context.env_mut().resolver_mut().forward_type(
+                ty,
+                HMIRTypeSemantics::default(),
+                span,
+                name,
+            );
         }
+        return eval::type_value(context, ty, span);
     }
-
-    let declaration = &declarations[selected];
-    let Some(HMIRDefKind::Function(source)) = declaration.kind() else {
-        unreachable!("every declaration of a function declares a function")
-    };
-    let signature = signatures.swap_remove(selected);
-    let ty = env.resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::Function(signature.clone()),
-        HMIRTypeSemantics::default(),
-        declaration.span().clone(),
-        None,
-    ));
-
-    Ok(CompletedSymbol::Function(Rc::new(CompletedFunction {
-        declaration: selected,
-        symbol_name: source.prototype().symbol_name().clone(),
-        linkage,
-        signature,
-        ty,
-    })))
-}
-
-fn global(
-    env: &mut HMIREnvironment,
-    id: HMIRDefID,
-    def: &HMIRDef,
-    selected: usize,
-    linkage: LinkageMode,
-) -> CXResult<CompletedSymbol> {
-    let declarations = def.declarations();
-    let mut canonical = None;
-    for declaration in declarations {
-        let Some(HMIRDefKind::Global(global)) = declaration.kind() else {
-            unreachable!("every declaration of a global declares a global")
-        };
-        let mut context = owner(env, id.brand());
-        let ty = flow::top(eval_type(&mut context, global.body(), global.ty())?.description())?;
-        canonical = match canonical {
-            None => Some(ty),
-            Some(current) => match composite(env, current, ty) {
-                Some(ty) => Some(ty),
-                None => {
-                    return Err(incompatible(def, declaration));
+    match declaration
+        .kind()
+        .expect("selected declaration has content")
+    {
+        HMIRDefKind::Function(function) => {
+            if structure::is_staged(function) {
+                todo!("reference to a function with comptime parameters");
+            }
+            let mut canonical = None;
+            for (_, declaration) in structure::visible(def, context.visible_through()) {
+                let Some(HMIRDefKind::Function(function)) = declaration.kind() else {
+                    continue;
+                };
+                let signature = flow::top(types::eval_signature(
+                    context,
+                    function.body(),
+                    function.signature(),
+                ))?;
+                if let Some(previous) = &canonical {
+                    if !signatures_alike(context.env(), previous, &signature) {
+                        return Err(incompatible(def, declaration));
+                    }
                 }
-            },
-        };
-    }
-    let ty = canonical.expect("a global has a declaration");
-
-    let Some(HMIRDefKind::Global(source)) = declarations[selected].kind() else {
-        unreachable!("every declaration of a global declares a global")
-    };
-    let external = source.initializer().is_none() && linkage == LinkageMode::Extern;
-    if !external && !types::is_complete(env, ty) {
-        let span = source.body().expr(source.ty()).span();
-        let subject = format!("global of type '{}'", types::name(env, ty));
-        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject));
-    }
-
-    Ok(CompletedSymbol::Global(Rc::new(CompletedGlobal {
-        declaration: selected,
-        symbol_name: source.symbol_name().clone(),
-        linkage,
-        ty,
-    })))
-}
-
-fn alias(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) -> CXResult<CompletedSymbol> {
-    let (first, rest) = def
-        .declarations()
-        .split_first()
-        .expect("an alias has a declaration");
-    let ty = type_definition(env, id, first)?;
-    for declaration in rest {
-        let other = type_definition(env, id, declaration)?;
-        if !alike(env, ty, other, true) {
-            return Err(incompatible(def, declaration));
+                if canonical.is_none() || std::ptr::eq(declaration, &def.declarations()[selected]) {
+                    canonical = Some(signature);
+                }
+            }
+            let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+                HMIRTypeKind::Function(canonical.unwrap()),
+                HMIRTypeSemantics::default(),
+                span.clone(),
+                None,
+            ));
+            Ok(HMIRValue::constant(
+                ty,
+                HMIRConstant::Function {
+                    def: id,
+                    args: Vec::new(),
+                },
+            ))
+        }
+        HMIRDefKind::Global(_) => {
+            let mut ty = None;
+            for (_, declaration) in structure::visible(def, context.visible_through()) {
+                let Some(HMIRDefKind::Global(global)) = declaration.kind() else {
+                    continue;
+                };
+                let declared = eval_type(context, global.body(), global.ty())?;
+                let known = declared.known().copied();
+                let resolved = match known {
+                    Some(known)
+                        if types::is_complete(context.env(), known)
+                            || global.initializer().is_none() =>
+                    {
+                        known
+                    }
+                    _ => {
+                        let Some(initializer) = global.initializer() else {
+                            return Err(match declared {
+                                flow::Evaluation::Incomplete(incomplete) => incomplete.error(),
+                                _ => unreachable!(),
+                            });
+                        };
+                        let value = initializer_value(context, global.body(), initializer, known)?;
+                        flow::top(declared.complete(context, global.body(), Some(value.ty())))?
+                    }
+                };
+                ty = Some(match ty {
+                    None => resolved,
+                    Some(previous) => composite(context.env(), previous, resolved)
+                        .ok_or_else(|| incompatible(def, declaration))?,
+                });
+            }
+            let mut ty = ty.expect("global has a type expression");
+            if context.visible_through().is_none()
+                && types::unsized_array(context.env(), ty)
+                && structure::reconcile_linkage(def, None)? != cx_util::linkage::LinkageMode::Extern
+            {
+                if let Some(HMIRDefKind::Global(global)) = declaration.kind() {
+                    if global.initializer().is_none() {
+                        ty = types::array(context.env_mut(), ty, 1, span);
+                    }
+                }
+            }
+            if !context.complete_object(ty)
+                && !(declaration.role() == HMIRDeclarationRole::Tentative
+                    && types::unsized_array(context.env(), ty))
+                && structure::reconcile_linkage(def, context.visible_through())?
+                    != cx_util::linkage::LinkageMode::Extern
+            {
+                return Err(hmir_error(
+                    span,
+                    &typecheck::INCOMPLETE_TYPE,
+                    format!("global of type '{}'", types::name(context.env(), ty)),
+                ));
+            }
+            let reference = types::reference(context.env_mut(), ty, span);
+            Ok(HMIRValue::constant(
+                reference,
+                HMIRConstant::Address {
+                    place: HMIRPlace::Global(id),
+                    path: Vec::new(),
+                    ty: reference,
+                },
+            ))
+        }
+        HMIRDefKind::ComptimeGlobal(global) => {
+            let declared =
+                flow::top(eval_type(context, global.body(), global.ty())?.description())?;
+            let type_definition =
+                matches!(context.env().resolve_kind(declared), HMIRTypeKind::Type);
+            let value = if type_definition {
+                let memo = context
+                    .env_mut()
+                    .resolver_mut()
+                    .reserve(MemoKey::Definition(id, scope));
+                let alias = HMIRResolver::type_id(memo);
+                let target = context.deferred_type(global.initializer());
+                context
+                    .env_mut()
+                    .resolver_mut()
+                    .alias_type(alias, target, span);
+                let identity = eval::type_value(context, alias, span)?;
+                context.env_mut().resolver_mut().publish(memo, identity);
+                let ty = flow::top(
+                    eval_type(context, global.body(), global.initializer())?.description(),
+                )?;
+                eval::type_value(context, ty, span)?
+            } else {
+                initializer_value(context, global.body(), global.initializer(), Some(declared))?
+            };
+            for (_, other) in structure::visible(def, context.visible_through()) {
+                if std::ptr::eq(other, declaration) || other.kind().is_none() {
+                    continue;
+                }
+                let Some(HMIRDefKind::ComptimeGlobal(other_global)) = other.kind() else {
+                    unreachable!();
+                };
+                let other_ty = flow::top(
+                    eval_type(context, other_global.body(), other_global.initializer())?
+                        .description(),
+                )?;
+                let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = value.kind() else {
+                    return Err(incompatible(def, other));
+                };
+                if !alike(context.env(), *ty, other_ty, true) {
+                    return Err(incompatible(def, other));
+                }
+            }
+            Ok(value)
         }
     }
-
-    Ok(CompletedSymbol::Type(ty))
 }
 
-fn constant(
-    env: &mut HMIREnvironment,
-    id: HMIRDefID,
-    declaration: &HMIRDeclaration,
-) -> CXResult<CompletedSymbol> {
-    let Some(HMIRDefKind::ComptimeGlobal(global)) = declaration.kind() else {
-        unreachable!("a constant symbol declares a comptime global")
+pub(crate) fn initializer_value(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    expr: HMIRExprID,
+    expected: Option<HMIRTypeID>,
+) -> CXResult<HMIRValue> {
+    let evaluation = context.evaluation();
+    let mut child = context
+        .child(
+            None,
+            FnContext::Comptime(ComptimeContext::new()),
+            Some(evaluation),
+        )
+        .initializing(true)
+        .at(body.visible_through());
+    let scope = child.memo_context(body.visible_through(), expected, true);
+    let memo = child
+        .env_mut()
+        .resolver_mut()
+        .reserve(MemoKey::Expression(expr, scope));
+    let value = flow::top(child.evaluate(memo, body.expr(expr).span()))?;
+    flow::top(eval::comptime::export(
+        &mut child,
+        value,
+        body.expr(expr).span(),
+    ))
+}
+
+pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> CXResult<HMIRValue> {
+    let unit = context
+        .env_mut()
+        .symbols_mut()
+        .owner(id.brand())
+        .expect("definition owner exists");
+    let def = unit.resolve_def(id).unwrap();
+    let selected = structure::select(def, None)?;
+    let declaration = &def.declarations()[selected];
+    let Some(HMIRDefKind::Global(global)) = declaration.kind() else {
+        unreachable!("only storage globals have initial values");
     };
-    let mut context = owner(env, id.brand());
-    let ty = flow::top(eval_type(&mut context, global.body(), global.ty())?.description())?;
-    let value = eval_comptime(&mut context, global.body(), global.initializer(), Some(ty))?;
-
-    Ok(CompletedSymbol::Constant(value))
+    let source = id.brand();
+    let mut child = context
+        .child(None, FnContext::Comptime(ComptimeContext::new()), None)
+        .sourced(source)
+        .initializing(true)
+        .at(global.body().visible_through());
+    let declared = eval_type(&mut child, global.body(), global.ty())?;
+    let value = match global.initializer() {
+        Some(expr) => {
+            initializer_value(&mut child, global.body(), expr, declared.known().copied())?
+        }
+        None => {
+            let ty = flow::top(declared.description())?;
+            if global.linkage() == cx_util::linkage::LinkageMode::Extern {
+                return Err(hmir_error(
+                    declaration.span(),
+                    &cx_log::catalogue::mir::COMPTIME_UNAVAILABLE,
+                    format!("initial value of '{}'", def.name()),
+                ));
+            }
+            let ty = if types::unsized_array(child.env(), ty) {
+                types::array(child.env_mut(), ty, 1, declaration.span())
+            } else {
+                ty
+            };
+            return zero(&mut child, ty, declaration.span())
+                .map(|value| HMIRValue::constant(ty, value));
+        }
+    };
+    let ty = flow::top(declared.complete(&mut child, global.body(), Some(value.ty())))?;
+    if !types::is_complete(child.env(), ty) {
+        return Err(hmir_error(
+            declaration.span(),
+            &typecheck::INCOMPLETE_TYPE,
+            format!("global of type '{}'", types::name(child.env(), ty)),
+        ));
+    }
+    coerce::implicit(&mut child, value, ty, declaration.span())
 }
 
-fn owner<'e, 'global, 'hmir>(
-    env: &'e mut HMIREnvironment<'global, 'hmir>,
-    source: HMIRUnitID,
-) -> LocalLoweringContext<'e, 'global, 'hmir> {
-    LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
-        .sourced(source)
+pub(crate) fn zero(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRConstant> {
+    Ok(match context.env().resolve_kind(ty).clone() {
+        HMIRTypeKind::Int(_) => HMIRConstant::Int { value: 0, ty },
+        HMIRTypeKind::Float(_) => HMIRConstant::Float {
+            value: 0.0.into(),
+            ty,
+        },
+        HMIRTypeKind::PointerTo(_) => HMIRConstant::Null(ty),
+        HMIRTypeKind::Array { .. }
+        | HMIRTypeKind::Struct { .. }
+        | HMIRTypeKind::Union { .. }
+        | HMIRTypeKind::TaggedUnion { .. } => HMIRConstant::Aggregate {
+            ty,
+            fields: Vec::new(),
+        },
+        HMIRTypeKind::Void => HMIRConstant::Unit,
+        _ => {
+            return Err(hmir_error(
+                span,
+                &typecheck::INCOMPLETE_TYPE,
+                format!("global of type '{}'", types::name(context.env(), ty)),
+            ));
+        }
+    })
 }

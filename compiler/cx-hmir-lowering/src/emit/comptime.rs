@@ -2,7 +2,10 @@ mod op;
 
 pub use op::{binary, cast, unary};
 
-use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
+use cx_hmir::{
+    HMIRDefID,
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+};
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
@@ -52,10 +55,22 @@ fn tracked_slot(context: &LocalLoweringContext, value: &HMIRValue) -> Option<HMI
 }
 
 fn read(
-    context: &LocalLoweringContext,
+    context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRConstant> {
+    let global = match value.kind() {
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => Some((*def, &[][..])),
+        HMIRValueKind::Constant(HMIRConstant::Address {
+            place: HMIRPlace::Global(def),
+            path,
+            ..
+        }) if context.env().is_reference(value.ty()) => Some((*def, path.as_slice())),
+        _ => None,
+    };
+    if let Some((def, path)) = global {
+        return read_global(context, def, path, span);
+    }
     let slot = match (value.kind(), tracked_slot(context, value)) {
         (_, Some(slot)) => slot,
         (HMIRValueKind::Constant(constant), None)
@@ -81,6 +96,51 @@ fn read(
             format!("{subject}, which was moved or leaked,"),
         )),
     }
+}
+
+fn read_global(
+    context: &mut LocalLoweringContext,
+    def: HMIRDefID,
+    path: &[usize],
+    span: &TokenRange,
+) -> CXResult<HMIRConstant> {
+    if !context.initializer() || context.visible_through().is_some() {
+        return Err(hmir_error(
+            span,
+            &mir::COMPTIME_UNAVAILABLE,
+            format!(
+                "value of '{}'",
+                context.env().symbols().resolve_definition(def).name()
+            ),
+        ));
+    }
+    let result = crate::symbol::initialize(context, def)?;
+    let HMIRValueKind::Constant(mut constant) = result.kind().clone() else {
+        unreachable!("a global initializer is frozen");
+    };
+    for index in path {
+        let HMIRConstant::Aggregate { ty, fields } = constant else {
+            return Err(hmir_error(
+                span,
+                &mir::COMPTIME_INVALID_OPERATION,
+                "reading a global subobject".into(),
+            ));
+        };
+        constant = match fields.into_iter().find(|(field, _)| field == index) {
+            Some((_, value)) => *value,
+            None => {
+                let field = match context.env().resolve_kind(ty) {
+                    HMIRTypeKind::Array { element, .. } => *element,
+                    HMIRTypeKind::Struct { fields }
+                    | HMIRTypeKind::Union { fields }
+                    | HMIRTypeKind::TaggedUnion { fields } => *fields[*index].ty(),
+                    _ => unreachable!("a global subobject path indexes an aggregate"),
+                };
+                crate::symbol::zero(context, field, span)?
+            }
+        };
+    }
+    Ok(constant)
 }
 
 pub fn copy(
@@ -170,4 +230,16 @@ pub fn dereference(
     }
 
     Ok(HMIRValue::indirect(inner, pointer))
+}
+
+pub fn field(base: &HMIRValue, index: usize, ty: HMIRTypeID) -> HMIRValue {
+    let address = address(base, ty);
+    let HMIRValueKind::Constant(HMIRConstant::Address {
+        place, mut path, ..
+    }) = address.kind().clone()
+    else {
+        unreachable!()
+    };
+    path.push(index);
+    HMIRValue::constant(ty, HMIRConstant::Address { place, path, ty })
 }

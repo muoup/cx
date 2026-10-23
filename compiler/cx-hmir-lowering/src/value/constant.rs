@@ -5,7 +5,7 @@ use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
 use crate::value::HMIRPlace;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HMIRConstant {
     Unit,
     Int {
@@ -60,11 +60,11 @@ impl HMIRConstant {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Quote {
     def: HMIRDefID,
     body: HMIRExprID,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct QuoteRef(Rc<Quote>);

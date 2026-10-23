@@ -1,13 +1,11 @@
-use std::cell::Cell;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::expr::{HMIRExpr, HMIRExprID};
 
-thread_local! {
-    static NEXT_BODY: Cell<usize> = Cell::new(0);
-}
+static NEXT_BODY: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HMIRBodyID(u32);
@@ -46,6 +44,7 @@ body_id!(HMIRHoleID);
 #[derive(Debug, Clone)]
 pub struct HMIRBody {
     id: HMIRBodyID,
+    visible_through: Option<crate::unit::def::HMIRDeclarationPoint>,
     exprs: Vec<HMIRExpr>,
     locals: Vec<HMIRLocal>,
     holes: Vec<HMIRHole>,
@@ -105,15 +104,26 @@ impl HMIRHole {
 impl HMIRBody {
     pub fn new() -> Self {
         Self {
-            id: HMIRBodyID(NEXT_BODY.with(|next| {
-                let id = next.get();
-                next.set(id + 1);
-                id as u32
-            })),
+            id: HMIRBodyID(
+                NEXT_BODY
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+                        next.checked_add(1)
+                    })
+                    .expect("HMIR body ID space exhausted"),
+            ),
+            visible_through: None,
             exprs: Vec::new(),
             locals: Vec::new(),
             holes: Vec::new(),
         }
+    }
+
+    pub fn at(mut self, point: Option<crate::unit::def::HMIRDeclarationPoint>) -> Self {
+        self.visible_through = point;
+        self
+    }
+    pub fn visible_through(&self) -> Option<crate::unit::def::HMIRDeclarationPoint> {
+        self.visible_through
     }
 
     pub fn id(&self) -> HMIRBodyID {

@@ -113,7 +113,7 @@ impl<'a> ParserData<'a> {
         self.register_stmt_namespace_aliases(&namespace, &stmt);
         self.ast
             .definition_stmts
-            .push(HIRDefinition { namespace, stmt })
+            .push(HIRDefinition { namespace, stmt, ordered: self.c_mode || self.in_include() })
     }
 
     pub fn begin_include(&mut self) {

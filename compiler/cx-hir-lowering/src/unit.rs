@@ -4,7 +4,10 @@ use cx_hir::ast::{
     modifiers::{HIRSymbolNameScheme, VisibilityMode},
     types::HIRTagKind,
 };
-use cx_hmir::{HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind, HMIRUnitID};
+use cx_hmir::{
+    HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind, HMIRUnitID,
+    unit::def::HMIRDeclarationPoint,
+};
 use cx_namespace::{mangling::mangle_namespace_symbol, module::QualifiedName};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -41,8 +44,18 @@ impl UnitContext {
         HMIRDefID::new(self.unit, self.planned + self.statics.borrow().len())
     }
 
-    pub(crate) fn push_static(&self, name: QualifiedName, span: &TokenRange, kind: HMIRDefKind) {
+    pub(crate) fn push_static(
+        &self,
+        name: QualifiedName,
+        span: &TokenRange,
+        kind: HMIRDefKind,
+        point: Option<HMIRDeclarationPoint>,
+    ) {
+        let point = point.unwrap_or_else(|| {
+            HMIRDeclarationPoint::new(self.unit, self.planned + self.statics.borrow().len())
+        });
         let declaration = HMIRDeclaration::new(
+            point,
             span.clone(),
             HMIRDeclarationRole::Definition,
             None,

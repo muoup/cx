@@ -5,4 +5,5 @@ edition = "2021"
 autotests = false
 
 [dependencies]
+index_vec = { workspace = true }
 speedy = { version = "0.8.7" }

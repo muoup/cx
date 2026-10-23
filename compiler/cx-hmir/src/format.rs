@@ -7,13 +7,11 @@ use std::fmt::{self, Display, Formatter};
 
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
-use crate::{
-    ty::HMIRTypeID, unit::{
-        HMIRUnit,
-        def::{HMIRDef, HMIRDefKind},
-        function::{HMIRFunction, HMIRFunctionStage},
-        global::{HMIRComptimeGlobal, HMIRGlobal},
-    },
+use crate::unit::{
+    HMIRUnit,
+    def::{HMIRDef, HMIRDefKind},
+    function::{HMIRFunction, HMIRFunctionStage},
+    global::{HMIRComptimeGlobal, HMIRGlobal},
 };
 
 use body::BodyPrinter;
@@ -38,10 +36,9 @@ fn write_def(f: &mut Formatter<'_>, unit: &HMIRUnit, def: &HMIRDef) -> fmt::Resu
         match declaration.kind() {
             Some(HMIRDefKind::Function(function)) => write_function(f, unit, def, function)?,
             Some(HMIRDefKind::Global(global)) => write_global(f, unit, def, global)?,
-            Some(HMIRDefKind::ComptimeGlobal(global) | HMIRDefKind::TypeDef(global)) => {
+            Some(HMIRDefKind::ComptimeGlobal(global)) => {
                 write_comptime_global(f, unit, def, global)?
             }
-            Some(HMIRDefKind::Type(ty)) => write_type_def(f, unit, def, *ty)?,
             None => write!(f, "declare @{};", def.name())?,
         }
     }
@@ -165,16 +162,5 @@ fn write_comptime_global(
     printer.expr(f, global.ty(), 0)?;
     f.write_str(" = ")?;
     printer.expr(f, global.initializer(), 0)?;
-    f.write_str(";")
-}
-
-fn write_type_def(
-    f: &mut Formatter<'_>,
-    unit: &HMIRUnit,
-    def: &HMIRDef,
-    ty: HMIRTypeID,
-) -> fmt::Result {
-    write!(f, "type @{} = ", def.name())?;
-    ty::write_type(f, unit, ty)?;
     f.write_str(";")
 }

@@ -391,6 +391,7 @@ dependencies = [
  "cx-target",
  "cx-tokens",
  "cx-util",
+ "index_vec",
  "speedy",
 ]
 
@@ -576,6 +577,7 @@ dependencies = [
 name = "cx-util"
 version = "0.0.0"
 dependencies = [
+ "index_vec",
  "speedy",
 ]
 
@@ -913,6 +915,12 @@ dependencies = [
  "icu_normalizer",
  "icu_properties",
 ]
+
+[[package]]
+name = "index_vec"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44faf5bb8861a9c72e20d3fb0fdbd59233e43056e2b80475ab0aacdc2e781355"
 
 [[package]]
 name = "indexmap"

@@ -89,7 +89,7 @@ pub fn field(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::field(context, base, index, ty, span),
-        FnContext::Comptime(_) => unsupported(span, "member access"),
+        FnContext::Comptime(_) => Ok(comptime::field(base, index, ty)),
     }
 }
 

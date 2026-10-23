@@ -1,24 +1,12 @@
 use std::collections::HashMap;
 
-use cx_hmir::{
-    HMIRDef, HMIRDefID, HMIRUnit, HMIRUnitID,
-    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics},
-    unit::symbols::HMIRSymbolTable,
-};
+use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit, HMIRUnitID, unit::symbols::HMIRSymbolTable};
 use cx_namespace::module::NamespacePath;
-use cx_tokens::TokenRange;
 
 pub(crate) struct HMIRUnitBuilder {
     id: HMIRUnitID,
     namespace: NamespacePath,
-    types: HMIRTypeBuilder,
     defs: HashMap<HMIRDefID, HMIRDef>,
-}
-
-#[derive(Default)]
-pub(crate) struct HMIRTypeBuilder {
-    types: HashMap<HMIRTypeID, HMIRType>,
-    primitives: Vec<HMIRTypeID>,
 }
 
 impl HMIRUnitBuilder {
@@ -26,13 +14,8 @@ impl HMIRUnitBuilder {
         Self {
             id,
             namespace,
-            types: HMIRTypeBuilder::default(),
             defs: HashMap::new(),
         }
-    }
-
-    pub(crate) fn types_mut(&mut self) -> &mut HMIRTypeBuilder {
-        &mut self.types
     }
 
     pub(crate) fn push_def(&mut self, def: HMIRDef) -> HMIRDefID {
@@ -42,66 +25,6 @@ impl HMIRUnitBuilder {
     }
 
     pub(crate) fn finish(self, symbols: HMIRSymbolTable) -> HMIRUnit {
-        HMIRUnit::new(
-            self.id,
-            self.namespace,
-            symbols,
-            self.types.types,
-            self.defs,
-        )
-    }
-}
-
-impl HMIRTypeBuilder {
-    // Declares a type of its own; structurally equal declarations stay distinct
-    pub(crate) fn declare(&mut self, ty: HMIRType) -> HMIRTypeID {
-        let id = HMIRTypeID::new(self.types.len());
-        self.types.insert(id, ty);
-        id
-    }
-
-    pub(crate) fn primitive(&mut self, kind: HMIRTypeKind) -> HMIRTypeID {
-        let existing = self
-            .primitives
-            .iter()
-            .find(|id| same_primitive(self.types[id].kind(), &kind));
-        if let Some(existing) = existing {
-            return *existing;
-        }
-
-        let id = self.declare(HMIRType::new(
-            kind,
-            HMIRTypeSemantics::default(),
-            TokenRange::internal(),
-            None,
-        ));
-
-        self.primitives.push(id);
-        id
-    }
-}
-
-fn same_primitive(a: &HMIRTypeKind, b: &HMIRTypeKind) -> bool {
-    match (a, b) {
-        (HMIRTypeKind::Void, HMIRTypeKind::Void)
-        | (HMIRTypeKind::Unreachable, HMIRTypeKind::Unreachable)
-        | (HMIRTypeKind::Type, HMIRTypeKind::Type)
-        | (HMIRTypeKind::Str, HMIRTypeKind::Str) => true,
-
-        (HMIRTypeKind::Int(a), HMIRTypeKind::Int(b)) => a == b,
-        (HMIRTypeKind::Float(a), HMIRTypeKind::Float(b)) => a == b,
-
-        (
-            HMIRTypeKind::Opaque {
-                size: a_size,
-                alignment: a_alignment,
-            },
-            HMIRTypeKind::Opaque {
-                size: b_size,
-                alignment: b_alignment,
-            },
-        ) => a_size == b_size && a_alignment == b_alignment,
-
-        _ => false,
+        HMIRUnit::new(self.id, self.namespace, symbols, self.defs)
     }
 }

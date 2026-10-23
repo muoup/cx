@@ -8,7 +8,7 @@ use crate::{
     HMIRDefID, HMIROp, HMIRPattern,
     body::{HMIRBodyID, HMIRHoleID, HMIRLocalID},
     expr::literal::HMIRLiteral,
-    ty::{HMIRExprType, HMIRTypeID},
+    ty::HMIRExprType,
 };
 
 pub mod aggregate;
@@ -32,8 +32,6 @@ pub struct HMIRExprID {
 #[derive(Debug, Clone)]
 pub enum HMIRExprKind {
     Literal(HMIRLiteral),
-    // A type of the unit's table; input HMIR never holds the slots or addresses of an evaluation
-    TypeRef(HMIRTypeID),
     Local(HMIRLocalID),
     Def(HMIRDefID),
     Name {

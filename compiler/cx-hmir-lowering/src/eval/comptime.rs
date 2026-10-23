@@ -28,16 +28,7 @@ pub(crate) fn eval_comptime(
     expected: Option<HMIRTypeID>,
 ) -> CXResult<HMIRValue> {
     let span = body.expr(expr).span();
-    let inputs = frozen_inputs(context);
-    let evaluation = context.evaluation();
-    let mut child = context.child(
-        None,
-        FnContext::Comptime(ComptimeContext::new()),
-        Some(evaluation),
-    );
-    for (local, value) in inputs {
-        emit::storage::bind_local(&mut child, local, value);
-    }
+    let mut child = frozen_child(context);
 
     match evaluate(&mut child, body, expr, expected, span) {
         Ok(Evaluation::Ready(value)) => Ok(value),
@@ -57,18 +48,8 @@ pub(crate) fn type_expression(
     body: &HMIRBody,
     expr: HMIRExprID,
 ) -> EvalResult<HMIRTypeID> {
-    let inputs = frozen_inputs(context);
-    let evaluation = context.evaluation();
-    let mut child = context.child(
-        None,
-        FnContext::Comptime(ComptimeContext::new()),
-        Some(evaluation),
-    );
-    for (local, value) in inputs {
-        emit::storage::bind_local(&mut child, local, value);
-    }
-    let value = eval(&mut child, body, expr)?;
-    match super::described_type(&mut child, body, value, body.expr(expr).span())? {
+    let mut child = frozen_child(context);
+    match super::eval_type(&mut child, body, expr)? {
         Evaluation::Incomplete(incomplete) => {
             let FnContext::Comptime(state) = child.into_context() else {
                 unreachable!()
@@ -87,7 +68,23 @@ pub(crate) fn type_expression(
     }
 }
 
-fn frozen_inputs(context: &LocalLoweringContext) -> Vec<(HMIRLocalID, HMIRValue)> {
+pub(crate) fn frozen_child<'a, 'global, 'hmir>(
+    context: &'a mut LocalLoweringContext<'_, 'global, 'hmir>,
+) -> LocalLoweringContext<'a, 'global, 'hmir> {
+    let inputs = frozen_inputs(context);
+    let evaluation = context.evaluation();
+    let mut child = context.child(
+        None,
+        FnContext::Comptime(ComptimeContext::new()),
+        Some(evaluation),
+    );
+    for (local, value) in inputs {
+        emit::storage::bind_local(&mut child, local, value);
+    }
+    child
+}
+
+pub(crate) fn frozen_inputs(context: &LocalLoweringContext) -> Vec<(HMIRLocalID, HMIRValue)> {
     let frozen = |(local, value): (&HMIRLocalID, &HMIRValue)| match value.kind() {
         HMIRValueKind::Constant(constant) if !constant.holds_local_address() => {
             Some((*local, value.clone()))
@@ -120,8 +117,15 @@ fn evaluate(
         Some(expected) => coerce::implicit(context, value, expected, span)?,
         None => coerce::std_rvalue(context, value, span)?,
     };
-    let value = settle(context, value, span)?;
+    export(context, value, span)
+}
 
+pub(crate) fn export(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> EvalResult<HMIRValue> {
+    let value = settle(context, value, span)?;
     match value.kind() {
         HMIRValueKind::Constant(constant) if !constant.holds_local_address() => {
             Ok(Evaluation::Ready(value))

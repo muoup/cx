@@ -1,9 +1,6 @@
 use cx_hmir::{
     expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral},
-    ty::{
-        HMIRTypeKind,
-        intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
-    },
+    ty::intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::{
@@ -60,7 +57,7 @@ pub(crate) fn lower_float_literal(
             return log_hir_error(span, &typecheck::UNSUPPORTED_LITERAL, "long double".into());
         }
     };
-    let ty = context.primitive(HMIRTypeKind::Float(HMIRFloatType::new(width)));
+    let ty = HMIRFloatType::new(width);
 
     Ok(context.push(
         HMIRExprKind::Literal(HMIRLiteral::Float { value, ty }),

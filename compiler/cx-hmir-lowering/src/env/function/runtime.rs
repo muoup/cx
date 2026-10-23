@@ -6,6 +6,7 @@ use cx_mir::{
     MIRScopeID, MIRTarget, MIRValue,
 };
 use cx_tokens::TokenRange;
+use index_vec::IndexVec;
 
 use crate::{
     env::module::MIRFunctionBuilder,
@@ -30,7 +31,7 @@ pub struct LoopFrame {
 pub struct RuntimeContext {
     builder: MIRFunctionBuilder,
     locals: HashMap<HMIRLocalID, HMIRValue>,
-    slots: Vec<MIRBindable>,
+    slots: IndexVec<HMIRSlotID, MIRBindable>,
     open_scopes: Vec<MIRScopeID>,
     scratch_scope: MIRScopeID,
     loops: Vec<LoopFrame>,
@@ -46,7 +47,7 @@ impl RuntimeContext {
         Self {
             builder,
             locals: HashMap::new(),
-            slots: Vec::new(),
+            slots: IndexVec::new(),
             open_scopes: Vec::new(),
             scratch_scope,
             loops: Vec::new(),
@@ -110,7 +111,7 @@ impl RuntimeContext {
         self.lifts = pending;
 
         for (slot, _) in preserved {
-            let MIRBindable::Register(register) = self.slots[slot.index()] else {
+            let MIRBindable::Register(register) = self.slots[slot] else {
                 continue;
             };
             let ty = self
@@ -140,7 +141,7 @@ impl RuntimeContext {
                 },
                 span.clone(),
             );
-            self.slots[slot.index()] = MIRBindable::Place(place);
+            self.slots[slot] = MIRBindable::Place(place);
         }
     }
 
@@ -149,17 +150,15 @@ impl RuntimeContext {
     }
 
     pub fn slot(&self, slot: HMIRSlotID) -> &MIRBindable {
-        &self.slots[slot.index()]
+        &self.slots[slot]
     }
 
     pub fn slot_mut(&mut self, slot: HMIRSlotID) -> &mut MIRBindable {
-        &mut self.slots[slot.index()]
+        &mut self.slots[slot]
     }
 
     pub fn allocate_slot(&mut self, bindable: MIRBindable) -> HMIRSlotID {
-        let slot = HMIRSlotID::new(self.slots.len());
-        self.slots.push(bindable);
-        slot
+        self.slots.push(bindable)
     }
     
     pub fn locals(&self) -> impl Iterator<Item = (&HMIRLocalID, &HMIRValue)> {

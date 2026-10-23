@@ -2,7 +2,11 @@ use std::fmt::{self, Formatter};
 
 use crate::{
     expr::literal::HMIRLiteral,
-    ty::{HMIRGenericType, HMIRGenericTypeKind, HMIRTypeID, aggregate::HMIRFieldDef},
+    ty::{
+        HMIRGenericType, HMIRGenericTypeKind,
+        aggregate::HMIRFieldDef,
+        intrinsic::{HMIRFloatType, HMIRIntType},
+    },
     unit::{HMIRUnit, def::HMIRDefID},
 };
 
@@ -13,32 +17,32 @@ pub(super) fn write_def(f: &mut Formatter<'_>, unit: &HMIRUnit, def: HMIRDefID) 
     }
 }
 
-pub(super) fn write_literal(
-    f: &mut Formatter<'_>,
-    unit: &HMIRUnit,
-    literal: &HMIRLiteral,
-) -> fmt::Result {
+pub(super) fn write_literal(f: &mut Formatter<'_>, literal: &HMIRLiteral) -> fmt::Result {
     match literal {
         HMIRLiteral::Unit => f.write_str("()"),
         HMIRLiteral::Int { value, ty } => {
             write!(f, "{value}:")?;
-            write_type(f, unit, *ty)
+            write_int_type(f, ty)
         }
         HMIRLiteral::Float { value, ty } => {
             write!(f, "{value}:")?;
-            write_type(f, unit, *ty)
+            write_float_type(f, ty)
         }
         HMIRLiteral::Str(value) => write!(f, "{value:?}"),
     }
 }
 
-pub(super) fn write_type(f: &mut Formatter<'_>, unit: &HMIRUnit, id: HMIRTypeID) -> fmt::Result {
-    write_generic_type(
+fn write_int_type(f: &mut Formatter<'_>, ty: &HMIRIntType) -> fmt::Result {
+    write!(
         f,
-        unit.resolve_type(id),
-        &|f, inner| write_type(f, unit, *inner),
-        &|f, length| write!(f, "{length}"),
+        "{}{}",
+        if ty.signed() { "i" } else { "u" },
+        ty.width().bytes() * 8
     )
+}
+
+fn write_float_type(f: &mut Formatter<'_>, ty: &HMIRFloatType) -> fmt::Result {
+    write!(f, "f{}", ty.width().bytes() * 8)
 }
 
 pub(super) fn write_generic_type<T, L, M>(
@@ -52,15 +56,8 @@ pub(super) fn write_generic_type<T, L, M>(
         HMIRGenericTypeKind::Unreachable => f.write_str("never"),
         HMIRGenericTypeKind::Type => f.write_str("@type"),
         HMIRGenericTypeKind::Str => f.write_str("str"),
-        HMIRGenericTypeKind::Int(ty) => {
-            write!(
-                f,
-                "{}{}",
-                if ty.signed() { "i" } else { "u" },
-                ty.width().bytes() * 8
-            )
-        }
-        HMIRGenericTypeKind::Float(ty) => write!(f, "f{}", ty.width().bytes() * 8),
+        HMIRGenericTypeKind::Int(ty) => write_int_type(f, ty),
+        HMIRGenericTypeKind::Float(ty) => write_float_type(f, ty),
         HMIRGenericTypeKind::PointerTo(inner) => {
             write_inner(f, inner)?;
             f.write_str("*")

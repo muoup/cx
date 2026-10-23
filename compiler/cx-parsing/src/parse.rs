@@ -337,14 +337,6 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
         return parse_fn_merge(data, prototype, inherited_external);
     }
 
-    if comptime {
-        return parse_point_error(
-            &data.tokens,
-            &EXPECTED_SYNTAX,
-            ("comptime function parameters".into(), None),
-        );
-    }
-
     match next_kind!(data.tokens)? {
         TokenKind::Assignment(_) => {
             let initial_value = parse_expr(data)?;
@@ -353,6 +345,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
             data.add_stmt(HIRStmt::GlobalVariableDefinition {
                 visibility: data.visibility,
                 variable: HIRGlobalVariable::Standard {
+                    comptime,
                     name: name.clone(),
                     ty: return_type.clone(),
                     is_mutable: true,
@@ -371,6 +364,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                 linkage,
                 symbol_naming,
                 inherited_external,
+                comptime,
                 None,
             );
         }
@@ -383,6 +377,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                 linkage,
                 symbol_naming,
                 inherited_external,
+                comptime,
                 None,
             );
 
@@ -411,6 +406,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                     linkage,
                     symbol_naming,
                     inherited_external,
+                    comptime,
                     initializer,
                 );
 
@@ -450,11 +446,13 @@ fn add_global_variable(
     linkage: LinkageMode,
     symbol_naming: HIRSymbolNameScheme,
     inherited_external: bool,
+    comptime: bool,
     initializer: Option<HIRExpression>,
 ) {
     data.add_stmt(HIRStmt::GlobalVariableDefinition {
         visibility: data.visibility,
         variable: HIRGlobalVariable::Standard {
+            comptime,
             name,
             ty,
             is_mutable: true,

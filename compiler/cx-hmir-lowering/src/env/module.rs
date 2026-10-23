@@ -7,6 +7,7 @@ use cx_mir::{
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
+use index_vec::IndexVec;
 
 ///
 /// Handles the internals of generating an MIRUnit via an API compatible with HMIR lowering. Used as an internal component
@@ -168,10 +169,10 @@ pub struct MIRFunctionBuilder {
     prototype: MIRFnPrototype,
 
     parameters: Vec<MIRPlaceID>,
-    blocks: Vec<MIRBasicBlock>,
-    registers: Vec<MIRRegisterDecl>,
-    places: Vec<MIRPlaceDecl>,
-    scopes: Vec<MIRScopeDecl>,
+    blocks: IndexVec<MIRBasicBlockID, MIRBasicBlock>,
+    registers: IndexVec<MIRRegister, MIRRegisterDecl>,
+    places: IndexVec<MIRPlaceID, MIRPlaceDecl>,
+    scopes: IndexVec<MIRScopeID, MIRScopeDecl>,
     address_labels: Vec<(String, MIRBasicBlockID)>,
 
     current_block: MIRBasicBlockID,
@@ -180,15 +181,17 @@ pub struct MIRFunctionBuilder {
 impl MIRFunctionBuilder {
     pub fn new(prototype: MIRFnPrototype) -> Self {
         let entry = MIRBasicBlockID::new(0);
+        let mut blocks = IndexVec::new();
+        blocks.push(MIRBasicBlock::new(entry, None));
 
         Self {
             prototype,
 
             parameters: Vec::new(),
-            blocks: vec![MIRBasicBlock::new(entry, None)],
-            registers: Vec::new(),
-            places: Vec::new(),
-            scopes: Vec::new(),
+            blocks,
+            registers: IndexVec::new(),
+            places: IndexVec::new(),
+            scopes: IndexVec::new(),
             address_labels: Vec::new(),
 
             current_block: entry,
@@ -212,19 +215,19 @@ impl MIRFunctionBuilder {
     }
 
     pub fn blocks(&self) -> &[MIRBasicBlock] {
-        &self.blocks
+        self.blocks.as_raw_slice()
     }
 
     pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
-        self.blocks.get(id.index())
+        self.blocks.get(id)
     }
 
     pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
-        self.blocks.get_mut(id.index())
+        self.blocks.get_mut(id)
     }
 
     pub fn add_block(&mut self, debug_name: Option<CXIdent>) -> MIRBasicBlockID {
-        let id = MIRBasicBlockID::new(self.blocks.len());
+        let id = self.blocks.next_idx();
         self.blocks.push(MIRBasicBlock::new(id, debug_name));
         id
     }
@@ -234,17 +237,17 @@ impl MIRFunctionBuilder {
     }
 
     pub fn current_block_reachable(&self) -> bool {
-        let mut visited = vec![false; self.blocks.len()];
+        let mut visited = IndexVec::from_vec(vec![false; self.blocks.len()]);
         let mut pending = vec![MIRBasicBlockID::new(0)];
         while let Some(id) = pending.pop() {
-            if visited[id.index()] {
+            if visited[id] {
                 continue;
             }
-            visited[id.index()] = true;
+            visited[id] = true;
             if id == self.current_block {
                 return true;
             }
-            let Some(instruction) = self.blocks[id.index()].last_instruction() else {
+            let Some(instruction) = self.blocks[id].last_instruction() else {
                 continue;
             };
             match &instruction.kind {
@@ -261,7 +264,7 @@ impl MIRFunctionBuilder {
 
     pub fn switch_to(&mut self, block: MIRBasicBlockID) {
         assert!(
-            block.index() < self.blocks.len(),
+            self.blocks.get(block).is_some(),
             "Attempt to switch to unknown block {block}"
         );
 
@@ -269,7 +272,7 @@ impl MIRFunctionBuilder {
     }
 
     pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
-        let block = &mut self.blocks[self.current_block.index()];
+        let block = &mut self.blocks[self.current_block];
         if block
             .last_instruction()
             .is_some_and(MIRInstruction::is_terminator)
@@ -281,41 +284,35 @@ impl MIRFunctionBuilder {
     }
 
     pub fn add_scope(&mut self, span: TokenRange) -> MIRScopeID {
-        let id = MIRScopeID::new(self.scopes.len());
-        self.scopes.push(MIRScopeDecl::new(span));
-        id
+        self.scopes.push(MIRScopeDecl::new(span))
     }
 
     pub fn places(&self) -> &[MIRPlaceDecl] {
-        &self.places
+        self.places.as_raw_slice()
     }
 
     pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
-        self.places.get(id.index())
+        self.places.get(id)
     }
 
     pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
-        self.places.get_mut(id.index())
+        self.places.get_mut(id)
     }
 
     pub fn allocate_place(&mut self, place: MIRPlaceDecl) -> MIRPlaceID {
-        let id = MIRPlaceID::new(self.places.len());
-        self.places.push(place);
-        id
+        self.places.push(place)
     }
 
     pub fn scopes(&self) -> &[MIRScopeDecl] {
-        &self.scopes
+        self.scopes.as_raw_slice()
     }
 
     pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
-        self.registers.get(id.index())
+        self.registers.get(id)
     }
 
     pub fn allocate_register(&mut self, register: MIRRegisterDecl) -> MIRRegister {
-        let id = MIRRegister::new(self.registers.len());
-        self.registers.push(register);
-        id
+        self.registers.push(register)
     }
 
     pub fn finish(self) -> MIRFunction {
@@ -323,11 +320,11 @@ impl MIRFunctionBuilder {
             self.prototype,
             Some(MIRBody::new(
                 MIRBasicBlockID::new(0),
-                self.blocks,
-                self.places,
+                self.blocks.raw,
+                self.places.raw,
                 self.parameters,
-                self.registers,
-                self.scopes,
+                self.registers.raw,
+                self.scopes.raw,
                 self.address_labels,
             )),
         )

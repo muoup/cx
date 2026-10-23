@@ -19,7 +19,8 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{EvalResult, complete, def::eval_def},
     log::hmir_error,
-    symbol::{self, CompletedSymbol},
+    symbol,
+    value::HMIRValueKind,
 };
 
 pub(crate) fn eval_name(
@@ -74,14 +75,19 @@ pub(crate) fn eval_name(
     ))
 }
 
-fn resolve(
+pub(crate) fn resolve(
     context: &mut LocalLoweringContext,
     span: &TokenRange,
     name: &QualifiedName,
     tag: Option<HIRTagKind>,
 ) -> CXResult<Option<HMIRDefID>> {
     let source = context.source();
-    let ids = context.env_mut().symbols_mut().lookup(source, name, tag);
+    let point = context.visible_through();
+    let mut ids = context.env_mut().symbols_mut().lookup(source, name, tag);
+    ids.retain(|id| {
+        let definition = context.env().symbols().resolve_definition(*id);
+        symbol::visible(definition, point).next().is_some()
+    });
     if let Some((&first, rest)) = ids.split_first() {
         if let Some(tag) = tag {
             let def = context.env().symbols().resolve_definition(first);
@@ -138,23 +144,39 @@ fn resolve(
 
 fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) -> CXResult<bool> {
     use cx_util::linkage::LinkageMode;
+    let point = context.visible_through();
     let env = context.env_mut();
-    let (a, b) = (symbol::complete(env, a)?, symbol::complete(env, b)?);
-    Ok(match (a, b) {
-        (CompletedSymbol::Function(a), CompletedSymbol::Function(b)) => {
-            a.linkage != LinkageMode::Static
-                && b.linkage != LinkageMode::Static
-                && a.symbol_name == b.symbol_name
-                && symbol::composite::signatures_alike(env, &a.signature, &b.signature)
-        }
-        (CompletedSymbol::Global(a), CompletedSymbol::Global(b)) => {
-            a.linkage != LinkageMode::Static
-                && b.linkage != LinkageMode::Static
-                && a.symbol_name == b.symbol_name
-                && symbol::composite::alike(env, a.ty, b.ty, true)
-        }
-        _ => false,
-    })
+    let (a_value, b_value) = (
+        symbol::binding(env, a, point)?,
+        symbol::binding(env, b, point)?,
+    );
+    let (Some(a_name), Some(b_name)) = (
+        symbol::link_name(env, a, point)?,
+        symbol::link_name(env, b, point)?,
+    ) else {
+        return Ok(false);
+    };
+    if a_name != b_name
+        || symbol::linkage(env, a, point)? == LinkageMode::Static
+        || symbol::linkage(env, b, point)? == LinkageMode::Static
+    {
+        return Ok(false);
+    }
+
+    Ok(
+        match (
+            env.resolve_kind(a_value.ty()),
+            env.resolve_kind(b_value.ty()),
+        ) {
+            (HMIRTypeKind::Function(a), HMIRTypeKind::Function(b)) => {
+                symbol::composite::signatures_alike(env, a, b)
+            }
+            (HMIRTypeKind::ReferenceTo(a), HMIRTypeKind::ReferenceTo(b)) => {
+                symbol::composite::alike(env, *a, *b, true)
+            }
+            _ => false,
+        },
+    )
 }
 
 fn constructor(
@@ -175,9 +197,12 @@ fn constructor(
     let Some(id) = resolve(context, span, &parent, None)? else {
         return Ok(None);
     };
-    let CompletedSymbol::Type(ty) = symbol::complete(context.env_mut(), id)? else {
+    let point = context.visible_through();
+    let parent = symbol::binding(context.env_mut(), id, point)?;
+    let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = parent.kind() else {
         return Ok(None);
     };
+    let ty = *ty;
     let HMIRTypeKind::TaggedUnion { fields } = context.env().resolve_kind(ty) else {
         return Ok(None);
     };

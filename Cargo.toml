@@ -16,6 +16,9 @@ exclude = [
     "compiler/cx-backend-llvm",
 ]
 
+[workspace.dependencies]
+index_vec = "0.1.4"
+
 [profile.release-with-debug]
 inherits = "release"
 debug = true

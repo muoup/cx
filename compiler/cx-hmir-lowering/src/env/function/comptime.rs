@@ -2,13 +2,14 @@ use std::collections::HashMap;
 
 use cx_hmir::{body::HMIRLocalID, ty::HMIRTypeID};
 use cx_util::identifier::CXIdent;
+use index_vec::IndexVec;
 
 use crate::value::{HMIRSlotID, HMIRValue, constant::HMIRConstant};
 
 #[derive(Debug, Default)]
 pub struct ComptimeContext {
     locals: HashMap<HMIRLocalID, HMIRValue>,
-    slots: Vec<ComptimeSlot>,
+    slots: IndexVec<HMIRSlotID, ComptimeSlot>,
 }
 
 #[derive(Debug)]
@@ -51,21 +52,19 @@ impl ComptimeContext {
     }
 
     pub fn slot(&self, slot: HMIRSlotID) -> &ComptimeSlot {
-        &self.slots[slot.index()]
+        &self.slots[slot]
     }
 
     pub fn slot_mut(&mut self, slot: HMIRSlotID) -> &mut ComptimeSlot {
-        &mut self.slots[slot.index()]
+        &mut self.slots[slot]
     }
 
     pub fn allocate_slot(&mut self, ty: HMIRTypeID, name: Option<CXIdent>) -> HMIRSlotID {
-        let slot = HMIRSlotID::new(self.slots.len());
         self.slots.push(ComptimeSlot {
             ty,
             name,
             state: ComptimeSlotState::Uninitialized,
-        });
-        slot
+        })
     }
 }
 

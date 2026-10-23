@@ -1,7 +1,7 @@
 pub(crate) mod validate;
 
 use cx_hmir::{
-    HMIRBody, HMIRFnSignature,
+    HMIRBody, HMIRDefID, HMIRFnSignature,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind,
@@ -9,6 +9,7 @@ use cx_hmir::{
         context::HMIRTypeContext,
         intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
     },
+    unit::def::HMIRDeclarationPoint,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{
@@ -22,7 +23,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{EvalResult, eval_type, flow, types},
     log::log_hmir_error,
-    symbol::CompletedFunction,
+    symbol,
 };
 
 pub(crate) fn eval_signature(
@@ -56,13 +57,17 @@ pub(crate) fn lower_signature(
 
 pub(crate) fn lower_prototype(
     env: &mut HMIREnvironment,
-    function: &CompletedFunction,
+    def: HMIRDefID,
+    point: Option<HMIRDeclarationPoint>,
     span: &TokenRange,
 ) -> CXResult<MIRFnPrototype> {
+    let symbol_name = symbol::link_name(env, def, point)?.expect("a prototype names a function");
+    let linkage = symbol::linkage(env, def, point)?;
+    let signature = symbol::signature(env, def, point)?;
     Ok(MIRFnPrototype::new(
-        lower_signature(env, &function.signature, span)?,
-        function.linkage,
-        function.symbol_name.clone(),
+        lower_signature(env, &signature, span)?,
+        linkage,
+        symbol_name,
         None,
     ))
 }
@@ -72,6 +77,14 @@ pub(crate) fn lower_type(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
+    {
+        let mut context = LocalLoweringContext::new(
+            env,
+            None,
+            crate::env::function::FnContext::Comptime(crate::env::function::ComptimeContext::new()),
+        );
+        context.prepare_type(ty, span)?;
+    }
     let ty = env.underlying(ty);
     if let Some(id) = env.resolver().lowered_type(ty) {
         return Ok(id);

@@ -11,6 +11,7 @@ pub enum HIRGlobalVariable {
     EnumDefinition(HIREnumDefinition),
 
     Standard {
+        comptime: bool,
         name: CXIdent,
         ty: HIRType,
         is_mutable: bool,

@@ -1,14 +1,14 @@
 mod aggregate;
 mod binding;
 mod call;
-mod coerce;
+pub(crate) mod coerce;
 mod complete;
-mod comptime;
+pub(crate) mod comptime;
 mod control;
 mod def;
 mod literal;
 mod name;
-mod op;
+pub(crate) mod op;
 mod place;
 mod storage;
 
@@ -16,6 +16,7 @@ pub(crate) mod flow;
 pub(crate) mod types;
 
 pub(crate) use comptime::eval_comptime;
+pub(crate) use def::type_value;
 pub(crate) use flow::EvalResult;
 
 use cx_hmir::{
@@ -49,7 +50,6 @@ use crate::{
         place::{eval_address_of, eval_assign, eval_dereference, eval_leak, eval_move},
     },
     log::hmir_error,
-    symbol::CompletedFunction,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
@@ -57,23 +57,24 @@ pub(crate) fn lower_runtime_function<'hmir>(
     env: &mut HMIREnvironment<'_, 'hmir>,
     id: cx_hmir::HMIRDefID,
     function: &HMIRFunction,
-    completed: &CompletedFunction,
+    signature: &HMIRFnSignature<HMIRTypeID>,
 ) -> CXResult<MIRFunction> {
     let body = function.body();
-    let signature = function.signature();
+    let source_signature = function.signature();
     let def = function
         .def()
         .expect("Runtime function lowered without a definition");
     let span = body.expr(def.root()).span();
 
-    let prototype = types::lower_prototype(env, completed, span)?;
+    let prototype = types::lower_prototype(env, id, None, span)?;
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
-    let mut context = LocalLoweringContext::new(env, Some(signature), runtime)
+    let mut context = LocalLoweringContext::new(env, Some(source_signature), runtime)
         .sourced(id.brand())
-        .with_return_type(*completed.signature.return_type());
+        .at(body.visible_through())
+        .with_return_type(*signature.return_type());
 
     emit::open_scope(&mut context, span.clone());
-    let completion = runtime_definition(&mut context, function, def, &completed.signature);
+    let completion = runtime_definition(&mut context, function, def, signature);
     emit::close_scope(&mut context, span.clone());
     flow::top(flow::catch_diverged(completion))?;
 
@@ -135,13 +136,8 @@ pub(crate) fn eval(
         HMIRExprKind::Literal(literal) => {
             Ok(Evaluation::Ready(eval_literal(context, span, literal)))
         }
-        HMIRExprKind::TypeRef(ty) => {
-            let source = context.source();
-            let ty = context.env_mut().import_type(source, *ty);
-            complete::type_result(context, ty, span)
-        }
-        HMIRExprKind::Type(ty) => {
-            let ty = eval_declared_type(context, body, id, ty)?;
+        HMIRExprKind::Type(_) => {
+            let ty = eval_declared_type(context, body, id)?;
             complete::type_result(context, ty, span)
         }
         HMIRExprKind::Local(local) => eval_local(context, body, span, *local),
@@ -213,10 +209,7 @@ pub(crate) fn eval(
             HMIROp::AddressOf(operand) => eval_address_of(context, body, span, *operand),
             HMIROp::Dereference(pointer) => eval_dereference(context, body, span, *pointer),
 
-            HMIROp::Type(op) => {
-                let ty = eval_type_op(context, body, span, op)?;
-                complete::type_result(context, ty, span)
-            }
+            HMIROp::Type(op) => eval_type_op(context, body, span, op),
             HMIROp::Control(control) => todo!("HMIROp::Control({})", control.path()),
             HMIROp::OwnershipOp(HMIROwnershipOp::Move(operand)) => {
                 eval_move(context, body, span, *operand)
@@ -258,7 +251,11 @@ pub(crate) fn eval_type(
     if matches!(context.context(), FnContext::Runtime(_)) {
         return comptime::type_expression(context, body, id);
     }
-    let value = eval(context, body, id)?;
+    let ty = context.deferred_type(id);
+    let value = context.evaluate(
+        crate::env::resolver::HMIRResolver::type_memo(ty),
+        body.expr(id).span(),
+    )?;
     if matches!(value, Evaluation::Stop(_)) {
         return Err(hmir_error(
             body.expr(id).span(),
@@ -278,11 +275,20 @@ fn described_type(
     let partial = value.known().and_then(type_constant);
     let span = span.clone();
     value.and_then(context, body, partial, move |context, _, value, _| {
-        Ok(Evaluation::Ready(require_type(context, value, &span)?))
+        let ty = require_type(context, value, &span)?;
+        Ok(match complete::type_result(context, ty, &span)? {
+            Evaluation::Ready(_) => Evaluation::Ready(ty),
+            Evaluation::Incomplete(incomplete) => {
+                Evaluation::Incomplete(incomplete.project(|value| {
+                    type_constant(&value).expect("type completion returns a type")
+                }))
+            }
+            Evaluation::Stop(stop) => Evaluation::Stop(stop),
+        })
     })
 }
 
-fn type_constant(value: &HMIRValue) -> Option<HMIRTypeID> {
+pub(crate) fn type_constant(value: &HMIRValue) -> Option<HMIRTypeID> {
     match value.kind() {
         HMIRValueKind::Constant(HMIRConstant::Type(ty)) => Some(*ty),
         _ => None,
@@ -296,7 +302,10 @@ fn require_type(
 ) -> CXResult<HMIRTypeID> {
     let value = coerce::std_rvalue(context, value, span)?;
     match type_constant(&value) {
-        Some(ty) => Ok(ty),
+        Some(ty) => {
+            context.prepare_type(ty, span)?;
+            Ok(ty)
+        }
         None => Err(hmir_error(
             span,
             &typecheck::EXPECTED_TYPE,

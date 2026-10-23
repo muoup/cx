@@ -1,0 +1,24 @@
+#include <stdio.h>
+
+struct Pair { char c; long l; };
+comptime @type Node = struct { Node* next; int value; };
+
+int base = 4;
+int derived = base + 2;
+int self_size = sizeof(self_size);
+Pair sparse = { 'a' };
+long sparse_tail = sparse.l;
+int *first = (int*)&second;
+int *second = (int*)&first;
+Node tail = { (Node*)0, 3 };
+Node head = { &tail, 1 };
+
+int main() {
+    base = 9;
+    int local[3];
+    printf("%d %d %d %ld\n", base, derived, self_size, sparse_tail);
+    printf("%d %d\n", first == (int*)&second, second == (int*)&first);
+    printf("%d %d\n", head.next->value, (int)sizeof(Node));
+    printf("%d %d %d %d\n", (int)sizeof(Pair), (int)alignof(Pair), (int)sizeof(local), (int)sizeof("abc"));
+    return 0;
+}

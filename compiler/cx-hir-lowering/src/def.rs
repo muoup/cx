@@ -8,7 +8,7 @@ use cx_hmir::{
     HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
     expr::HMIRExprID,
     ty::{
-        HMIRType, HMIRTypeKind,
+        HMIRExprTypeKind,
         aggregate::HMIRTypeSemantics,
         intrinsic::{HMIRIntType, HMIRIntWidth},
     },
@@ -20,7 +20,6 @@ use cx_tokens::TokenRange;
 
 use crate::{
     body::BodyLowering,
-    builder::HMIRTypeBuilder,
     expr::{lower_expr, lower_initial_value, lower_scope_statements},
     plan::{DefSource, PlannedSymbol},
     ty::{lower_type, staged_signature},
@@ -29,7 +28,6 @@ use crate::{
 
 pub(crate) fn lower_symbol(
     unit: &UnitContext,
-    types: &mut HMIRTypeBuilder,
     id: HMIRDefID,
     symbol: &PlannedSymbol,
 ) -> CXResult<HMIRDef> {
@@ -38,26 +36,29 @@ pub(crate) fn lower_symbol(
         .first()
         .and_then(|declaration| declaration.tag());
     let name = def_name(symbol.name().clone(), tag);
-    let mut opaque = None;
     let mut declarations = Vec::new();
     for declaration in symbol.declarations() {
         let namespace = declaration.namespace().clone();
-        let mut context = BodyLowering::new(unit, types, namespace, false).owned_by(id);
+        let point = declaration.ordered().then_some(declaration.point());
+        let mut context = BodyLowering::new(unit, namespace, false)
+            .owned_by(id)
+            .at(point);
         let kind = match declaration.source() {
             Some(source) => Some(lower_def(context, &name, source)?),
-            None if symbol.is_defined() => None,
-            None => Some(HMIRDefKind::Type(*opaque.get_or_insert_with(|| {
-                let kind = HMIRTypeKind::Opaque {
-                    size: 0,
-                    alignment: 1,
-                };
-                context.declare_type(HMIRType::new(
-                    kind,
+            None => {
+                let ty = context.type_of_types(declaration.span());
+                let initializer = context.expr_type(
+                    HMIRExprTypeKind::Opaque {
+                        size: 0,
+                        alignment: 1,
+                    },
                     HMIRTypeSemantics::default(),
-                    declaration.span().clone(),
-                    Some(name.to_string()),
-                ))
-            }))),
+                    Some(&name.name),
+                    declaration.span(),
+                );
+                let global = HMIRComptimeGlobal::new(context.finish(), ty, initializer);
+                Some(HMIRDefKind::ComptimeGlobal(Box::new(global)))
+            }
         };
         declarations.push(declaration.lowered(kind));
     }
@@ -76,10 +77,11 @@ fn lower_def(
             let initializer = lower_type(&mut context, ty)?;
             let global = HMIRComptimeGlobal::new(context.finish(), ty_of, initializer);
 
-            Ok(HMIRDefKind::TypeDef(Box::new(global)))
+            Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)))
         }
         DefSource::Function { prototype, body } => lower_function(context, name, prototype, *body),
         DefSource::Global {
+            comptime,
             ty,
             initializer,
             linkage,
@@ -90,6 +92,18 @@ fn lower_def(
             let initializer = initializer
                 .map(|initializer| lower_initial_value(&mut context, ty, initializer))
                 .transpose()?;
+            if *comptime {
+                let Some(initializer) = initializer else {
+                    let subject = "the initial value of a compile-time global".into();
+                    return crate::log::log_hir_error(
+                        &TokenRange::internal(),
+                        &cx_log::catalogue::typecheck::CANNOT_INFER,
+                        subject,
+                    );
+                };
+                let global = HMIRComptimeGlobal::new(context.finish(), ty, initializer);
+                return Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)));
+            }
             let global = HMIRGlobal::new(context.finish(), ty, initializer, *linkage, link_name);
 
             Ok(HMIRDefKind::Global(Box::new(global)))
@@ -181,7 +195,7 @@ fn lower_enum_variant(
 ) -> CXResult<HMIRDefKind> {
     let span = TokenRange::internal();
     let int = HMIRIntType::new(HMIRIntWidth::I32, true);
-    let ty = context.type_ref(HMIRTypeKind::Int(int), &span);
+    let ty = context.type_ref(HMIRExprTypeKind::Int(int), &span);
     // Implicit values count from the nearest explicit one rather than the previous variant, so
     // evaluating a long enum does not recurse through every variant before it
     let explicit = variants[..index]

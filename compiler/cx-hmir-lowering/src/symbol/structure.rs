@@ -2,46 +2,120 @@ use std::mem::discriminant;
 
 use cx_hmir::{
     HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefKind, HMIRFunction, HMIRFunctionStage,
-    HMIRGlobal,
+    expr::HMIRExprKind, ty::HMIRExprTypeKind, unit::def::HMIRDeclarationPoint,
 };
 use cx_log::{CXResult, catalogue::typecheck, error::CXError};
 use cx_util::linkage::LinkageMode;
 
 use crate::log::hmir_error;
 
-pub(crate) fn check(def: &HMIRDef) -> CXResult<Shape> {
-    let declarations = def.declarations();
-    let tag = declarations[0].tag();
-    if let Some(conflict) = declarations.iter().find(|other| other.tag() != tag) {
-        let name = def.name().to_string();
-        return Err(hmir_error(
-            conflict.span(),
-            &typecheck::INCOMPATIBLE_TAG,
-            name,
-        ));
-    }
-
-    let mut lowered = declarations
+pub(crate) fn visible(
+    def: &HMIRDef,
+    point: Option<HMIRDeclarationPoint>,
+) -> impl Iterator<Item = (usize, &HMIRDeclaration)> {
+    def.declarations()
         .iter()
         .enumerate()
-        .filter_map(|(index, declaration)| Some((index, declaration, declaration.kind()?)));
-    let (first, _, kind) = lowered
-        .next()
-        .expect("a symbol has a declaration that lowers");
-    if let Some((_, conflict, _)) =
-        lowered.find(|(_, _, other)| discriminant(*other) != discriminant(kind))
-    {
-        return Err(incompatible(def, conflict));
-    }
+        .filter(move |(_, declaration)| {
+            point.is_none_or(|point| {
+                declaration.point().brand() != point.brand()
+                    || declaration.point().index() <= point.index()
+            })
+        })
+}
 
-    match kind {
-        HMIRDefKind::Function(_) => function(def),
-        HMIRDefKind::Global(_) => global(def),
-        HMIRDefKind::TypeDef(_) if tag.is_none() => Ok(Shape::Alias),
-        HMIRDefKind::TypeDef(_) => Ok(Shape::Type(definition(def)?.unwrap_or(first))),
-        HMIRDefKind::ComptimeGlobal(_) => Ok(Shape::Constant(definition(def)?.unwrap_or(first))),
-        HMIRDefKind::Type(_) => Ok(Shape::Type(first)),
+pub(crate) fn is_type(declaration: &HMIRDeclaration) -> bool {
+    let Some(HMIRDefKind::ComptimeGlobal(global)) = declaration.kind() else {
+        return false;
+    };
+    let HMIRExprKind::Type(ty) = global.body().expr(global.ty()).kind() else {
+        return false;
+    };
+    matches!(ty.kind(), HMIRExprTypeKind::Type)
+}
+
+pub(crate) fn select(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> CXResult<usize> {
+    let declarations = visible(def, point).collect::<Vec<_>>();
+    let Some((_, first)) = declarations.first() else {
+        return Err(hmir_error(
+            &def.declarations()[0].span(),
+            &typecheck::UNKNOWN_SYMBOL,
+            def.name().to_string(),
+        ));
+    };
+    let kind = declarations
+        .iter()
+        .find_map(|(_, declaration)| declaration.kind());
+    for (_, declaration) in &declarations {
+        if declaration.tag() != first.tag() {
+            return Err(hmir_error(
+                declaration.span(),
+                &typecheck::INCOMPATIBLE_TAG,
+                def.name().to_string(),
+            ));
+        }
+        if let (Some(kind), Some(other)) = (kind, declaration.kind()) {
+            if discriminant(kind) != discriminant(other) {
+                return Err(incompatible(def, declaration));
+            }
+        }
     }
+    let mut definitions = declarations
+        .iter()
+        .filter(|(_, declaration)| declaration.role() == HMIRDeclarationRole::Definition);
+    if let Some((_, _)) = definitions.next() {
+        if let Some((_, duplicate)) = definitions.next() {
+            if first.tag().is_some() || !is_type(first) {
+                return Err(hmir_error(
+                    duplicate.span(),
+                    &typecheck::DUPLICATE_ITEM,
+                    (
+                        format!("definition of '{}'", def.name()),
+                        "this unit".into(),
+                    ),
+                ));
+            }
+        }
+    }
+    let selected = declarations
+        .iter()
+        .filter(|(_, declaration)| declaration.kind().is_some())
+        .max_by_key(|(index, declaration)| (declaration.role(), std::cmp::Reverse(*index)))
+        .map(|(index, _)| *index)
+        .expect("a symbol has declaration content");
+    let chosen = &def.declarations()[selected];
+    for (_, declaration) in &declarations {
+        match (chosen.kind(), declaration.kind()) {
+            (Some(HMIRDefKind::Function(a)), Some(HMIRDefKind::Function(b))) => {
+                let (a_sig, b_sig) = (a.signature(), b.signature());
+                if a_sig.stage() != b_sig.stage()
+                    || a_sig.is_variadic() != b_sig.is_variadic()
+                    || a_sig.params().len() != b_sig.params().len()
+                    || a_sig
+                        .params()
+                        .iter()
+                        .zip(b_sig.params())
+                        .any(|(a, b)| a.comptime() != b.comptime())
+                    || a.prototype().symbol_name() != b.prototype().symbol_name()
+                {
+                    return Err(incompatible(def, declaration));
+                }
+            }
+            (Some(HMIRDefKind::Global(a)), Some(HMIRDefKind::Global(b)))
+                if a.symbol_name() != b.symbol_name() =>
+            {
+                return Err(incompatible(def, declaration));
+            }
+            (Some(HMIRDefKind::ComptimeGlobal(_)), Some(HMIRDefKind::ComptimeGlobal(_)))
+                if is_type(chosen) != is_type(declaration) =>
+            {
+                return Err(incompatible(def, declaration));
+            }
+            _ => {}
+        }
+    }
+    reconcile_linkage(def, point)?;
+    Ok(selected)
 }
 
 pub(crate) fn is_staged(function: &HMIRFunction) -> bool {
@@ -53,132 +127,44 @@ pub(crate) fn is_staged(function: &HMIRFunction) -> bool {
             .any(|param| param.comptime())
 }
 
-fn function(def: &HMIRDef) -> CXResult<Shape> {
-    let definition = definition(def)?;
-    let declaration = definition.unwrap_or(0);
-    let functions = def
-        .declarations()
-        .iter()
-        .map(|declaration| match declaration.kind() {
-            Some(HMIRDefKind::Function(function)) => (declaration, &**function),
-            _ => unreachable!("every declaration of a function declares a function"),
-        })
-        .collect::<Vec<_>>();
-
-    let selected = functions[declaration].1;
-    let expected = selected.signature();
-    for (declaration, function) in &functions {
-        let signature = function.signature();
-        let alike = signature.stage() == expected.stage()
-            && signature.is_variadic() == expected.is_variadic()
-            && signature.params().len() == expected.params().len()
-            && signature
-                .params()
-                .iter()
-                .zip(expected.params())
-                .all(|(param, expected)| param.comptime() == expected.comptime())
-            && function.prototype().symbol_name() == selected.prototype().symbol_name();
-        if !alike {
+pub(crate) fn reconcile_linkage(
+    def: &HMIRDef,
+    point: Option<HMIRDeclarationPoint>,
+) -> CXResult<LinkageMode> {
+    let mut linkages =
+        visible(def, point).filter_map(|(_, declaration)| match declaration.kind()? {
+            HMIRDefKind::Function(function) => {
+                Some((declaration, function.prototype().linkage(), true))
+            }
+            HMIRDefKind::Global(global) => Some((declaration, global.linkage(), false)),
+            _ => None,
+        });
+    let Some((_, first, inherits)) = linkages.next() else {
+        return Ok(LinkageMode::Standard);
+    };
+    let internal = first == LinkageMode::Static;
+    let mut selected = first;
+    for (declaration, linkage, _) in linkages {
+        if linkage == LinkageMode::Static && !internal
+            || linkage == LinkageMode::Standard && internal && !inherits
+        {
             return Err(incompatible(def, declaration));
         }
-    }
-
-    let linkages = functions
-        .iter()
-        .map(|(declaration, function)| (*declaration, function.prototype().linkage()));
-    let linkage = linkage(def, linkages, selected.prototype().linkage(), true)?;
-
-    Ok(Shape::Function {
-        declaration,
-        linkage,
-        defined: definition.is_some(),
-        staged: is_staged(selected),
-    })
-}
-
-fn global(def: &HMIRDef) -> CXResult<Shape> {
-    let definition = definition(def)?;
-    let declarations = def.declarations();
-    let tentative = declarations
-        .iter()
-        .position(|declaration| declaration.role() == HMIRDeclarationRole::Tentative);
-    let declaration = definition.or(tentative).unwrap_or(0);
-    let globals = declarations
-        .iter()
-        .map(|declaration| match declaration.kind() {
-            Some(HMIRDefKind::Global(global)) => (declaration, &**global),
-            _ => unreachable!("every declaration of a global declares a global"),
-        })
-        .collect::<Vec<_>>();
-
-    let selected: &HMIRGlobal = globals[declaration].1;
-    if let Some((conflict, _)) = globals
-        .iter()
-        .find(|(_, global)| global.symbol_name() != selected.symbol_name())
-    {
-        return Err(incompatible(def, conflict));
-    }
-
-    let linkages = globals
-        .iter()
-        .map(|(declaration, global)| (*declaration, global.linkage()));
-    let linkage = linkage(def, linkages, selected.linkage(), false)?;
-
-    Ok(Shape::Global {
-        declaration,
-        linkage,
-        initialized: selected.initializer().is_some(),
-    })
-}
-
-fn definition(def: &HMIRDef) -> CXResult<Option<usize>> {
-    let mut definitions = def
-        .declarations()
-        .iter()
-        .enumerate()
-        .filter(|(_, declaration)| declaration.role() == HMIRDeclarationRole::Definition);
-    let first = definitions.next().map(|(index, _)| index);
-    match definitions.next() {
-        Some((_, duplicate)) => {
-            let subject = (
-                format!("definition of '{}'", def.name()),
-                "this unit".into(),
-            );
-            Err(hmir_error(
-                duplicate.span(),
-                &typecheck::DUPLICATE_ITEM,
-                subject,
-            ))
+        if linkage != LinkageMode::Extern {
+            selected = linkage;
         }
-        None => Ok(first),
     }
-}
-
-fn linkage<'d>(
-    def: &HMIRDef,
-    mut linkages: impl Iterator<Item = (&'d HMIRDeclaration, LinkageMode)>,
-    selected: LinkageMode,
-    inherits: bool,
-) -> CXResult<LinkageMode> {
-    let (_, first) = linkages.next().expect("a symbol has a declaration");
-    let internal = first == LinkageMode::Static;
-    let conflict = linkages.find(|(_, linkage)| match linkage {
-        LinkageMode::Static => !internal,
-        LinkageMode::Standard => internal && !inherits,
-        LinkageMode::Extern => false,
-    });
-    match conflict {
-        Some((declaration, _)) => Err(incompatible(def, declaration)),
-        None if internal => Ok(LinkageMode::Static),
-        None => Ok(selected),
-    }
+    Ok(if internal {
+        LinkageMode::Static
+    } else {
+        selected
+    })
 }
 
 pub(crate) fn incompatible(def: &HMIRDef, declaration: &HMIRDeclaration) -> CXError {
-    let name = def.name().to_string();
     hmir_error(
         declaration.span(),
         &typecheck::INCOMPATIBLE_DECLARATION,
-        name,
+        def.name().to_string(),
     )
 }
