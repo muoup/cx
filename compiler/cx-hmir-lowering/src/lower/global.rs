@@ -1,12 +1,7 @@
-use cx_hmir::{
-    HMIRGlobal,
-    ty::{HMIRTypeID, context::HMIRTypeContext},
-};
-use cx_log::{
-    CXResult,
-    catalogue::{mir, typecheck},
-};
+use cx_hmir::{HMIRDefID, HMIRDefKind, ty::context::HMIRTypeContext};
+use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{MIRGlobalID, MIRGlobalState, MIRGlobalVariable};
+use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
 
 use crate::{
@@ -15,91 +10,85 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
-    eval::{eval_comptime, eval_type, flow, types},
+    eval::{eval_comptime, types},
     log::hmir_error,
+    symbol::CompletedGlobal,
     value::HMIRValueKind,
 };
 
-pub fn declare(
-    global: &HMIRGlobal,
+pub(crate) fn declare(
     env: &mut HMIREnvironment,
-) -> CXResult<(HMIRTypeID, MIRGlobalID)> {
-    let mut context =
-        LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
-    let span = global.body().expr(global.ty()).span();
-    let ty = flow::top(eval_type(&mut context, global.body(), global.ty())?.description())?;
-    let external = global.initializer().is_none() && global.linkage() == LinkageMode::Extern;
-    if !external && !types::is_complete(context.env(), ty) {
-        let subject = format!("global of type '{}'", types::name(context.env(), ty));
-        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject));
-    }
-    let mir_ty = types::lower_type(context.env_mut(), ty, span)?;
-    let mutable = !context.env().semantics(ty).constant;
-    if let Some(id) = context
-        .env()
-        .module()
-        .declared_global(global.symbol_name().as_str())
-    {
-        let existing = context.env().module().global(id);
+    global: &CompletedGlobal,
+    span: &TokenRange,
+) -> CXResult<MIRGlobalID> {
+    let mir_ty = types::lower_type(env, global.ty, span)?;
+    let mutable = !env.semantics(global.ty).constant;
+    let name = global.symbol_name.as_str();
+    if let Some(id) = env.module().declared_global(name) {
+        let existing = env.module().global(id);
         if existing.ty() != mir_ty || existing.is_mutable() != mutable {
             return Err(hmir_error(
                 span,
                 &mir::INCOMPATIBLE_GLOBAL,
-                global.symbol_name().to_string(),
+                name.to_string(),
             ));
         }
-        return Ok((ty, id));
+        return Ok(id);
     }
-    let id = context
-        .env_mut()
-        .module_mut()
-        .declare_global(MIRGlobalVariable::new(
-            global.symbol_name().clone(),
-            global.linkage(),
-            mir_ty,
-            MIRGlobalState::External,
-            mutable,
-        ));
 
-    Ok((ty, id))
+    Ok(env.module_mut().declare_global(MIRGlobalVariable::new(
+        global.symbol_name.clone(),
+        global.linkage,
+        mir_ty,
+        MIRGlobalState::External,
+        mutable,
+    )))
 }
 
-pub fn lower(global: &HMIRGlobal, env: &mut HMIREnvironment) -> CXResult<MIRGlobalID> {
-    let (ty, id) = declare(global, env)?;
-    let mut context =
-        LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
-    if !matches!(
-        context.env().module().global(id).state(),
-        MIRGlobalState::External
-    ) {
-        if global.initializer().is_none() {
-            return Ok(id);
-        }
-        if matches!(
-            context.env().module().global(id).state(),
-            MIRGlobalState::Initialized(_)
-        ) {
-            let span = global.body().expr(global.initializer().unwrap()).span();
-            let subject = (
-                format!("global '{}'", global.symbol_name()),
-                "this unit".into(),
-            );
-            return Err(hmir_error(span, &mir::DUPLICATE_ENTITY, subject));
-        }
+pub(crate) fn lower(
+    env: &mut HMIREnvironment,
+    def: HMIRDefID,
+    global: &CompletedGlobal,
+) -> CXResult<()> {
+    let unit = env
+        .symbols_mut()
+        .owner(def.brand())
+        .expect("symbol owner is available");
+    let HMIRDefKind::Global(source) = unit.resolve_def(def).unwrap().declarations()
+        [global.declaration]
+        .kind()
+        .unwrap()
+    else {
+        unreachable!("a global symbol selects a global declaration")
+    };
+    let span = source.body().expr(source.ty()).span();
+    let id = declare(env, global, span)?;
+    if source.initializer().is_none() && global.linkage == LinkageMode::Extern {
+        return Ok(());
     }
-    let state = match (global.initializer(), global.linkage()) {
-        (Some(initializer), _) => {
-            let span = global.body().expr(initializer).span();
-            let value = eval_comptime(&mut context, global.body(), initializer, Some(ty))?;
+    if !matches!(env.module().global(id).state(), MIRGlobalState::External) {
+        let subject = (
+            format!("global '{}'", global.symbol_name),
+            "this unit".into(),
+        );
+        return Err(hmir_error(span, &mir::DUPLICATE_ENTITY, subject));
+    }
+
+    let state = match source.initializer() {
+        Some(initializer) => {
+            let mut context =
+                LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
+                    .sourced(def.brand());
+            let span = source.body().expr(initializer).span();
+            let value = eval_comptime(&mut context, source.body(), initializer, Some(global.ty))?;
             let HMIRValueKind::Constant(value) = value.kind() else {
                 unreachable!("an exported comptime value is a constant")
             };
             MIRGlobalState::Initialized(runtime::constant(context.env_mut(), value, span)?)
         }
-        (None, LinkageMode::Extern) => MIRGlobalState::External,
-        (None, _) => MIRGlobalState::ZeroInitialized,
+        None => MIRGlobalState::ZeroInitialized,
     };
-    context.env_mut().module_mut().define_global(id, state);
+    env.module_mut().define_global(id, state);
 
-    Ok(id)
+    Ok(())
 }

@@ -13,10 +13,9 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     body::{BodyLowering, Symbol},
-    expr::{lower_expr, lower_identifier, lower_quote},
+    expr::{lower_expr, lower_identifier},
     log::log_hir_error,
-    resolve::GlobalSymbol,
-    ty::{lower_constructor_sum, lower_type},
+    ty::lower_type,
 };
 
 fn comma_separated(expr: &HIRExpression) -> Vec<&HIRExpression> {
@@ -116,41 +115,27 @@ fn lower_callee_call(
         return Ok(intrinsic);
     }
 
-    match context.lookup(name, None, &callee.range)? {
+    match context.lookup(name, None) {
         Symbol::Local(binding) if binding.is_quoted() => {
             let quote = context.push(HMIRExprKind::Local(binding.local()), &callee.range);
             let args = lower_args(context, &args)?;
             Ok(context.push(HMIRExprKind::Splice { quote, args }, span))
         }
-        Symbol::Global(GlobalSymbol::ComptimeFunction(def, code, staged)) => {
-            let callee = context.push(HMIRExprKind::Def(def), span);
-            let args = args
-                .iter()
-                .enumerate()
-                .map(|(index, arg)| {
-                    // A piped subject is passed as code where the function takes code;
-                    // every other argument is quoted by the caller with 'emit'
-                    let quote = subjects[index]
-                        && staged.get(index).copied().unwrap_or(false)
-                        && !context.comptime()
-                        && !matches!(arg.kind, HIRExprKind::Emit { .. });
-                    if quote {
-                        lower_quote(context, &[], arg, &arg.range)
-                    } else {
-                        lower_expr(context, arg)
-                    }
-                })
-                .collect::<CXResult<_>>()?;
-            Ok(lower_comptime_call(context, callee, code, args, span))
-        }
-        Symbol::Global(GlobalSymbol::Constructor(data, variant, _)) => {
-            let sum = lower_constructor_sum(context, &data.union_type, span)?;
-            let value = lower_payload(context, &args, span)?;
-            Ok(lower_construct(context, sum, variant, value, span))
-        }
         _ => {
             let callee = lower_identifier(context, name, &callee.range)?;
-            lower_call_args(context, callee, &args, span)
+            let args = args
+                .iter()
+                .zip(&subjects)
+                .map(|(arg, piped)| {
+                    let value = lower_expr(context, arg)?;
+                    Ok(if *piped {
+                        context.push(HMIRExprKind::Piped(value), &arg.range)
+                    } else {
+                        value
+                    })
+                })
+                .collect::<CXResult<_>>()?;
+            Ok(context.push(HMIRExprKind::Call { callee, args }, span))
         }
     }
 }
@@ -170,32 +155,6 @@ fn lower_call_args(
 ) -> CXResult<HMIRExprID> {
     let args = lower_args(context, args)?;
     Ok(context.push(HMIRExprKind::Call { callee, args }, span))
-}
-
-// Outside comptime code the call runs at compile time, and code it returns is spliced in place
-fn lower_comptime_call(
-    context: &mut BodyLowering<'_>,
-    callee: HMIRExprID,
-    code: bool,
-    args: Vec<HMIRExprID>,
-    span: &TokenRange,
-) -> HMIRExprID {
-    let call = context.push(HMIRExprKind::Call { callee, args }, span);
-    if context.comptime() {
-        return call;
-    }
-
-    let staged = context.push(HMIRExprKind::Comptime(call), span);
-    if !code {
-        return staged;
-    }
-    context.push(
-        HMIRExprKind::Splice {
-            quote: staged,
-            args: Vec::new(),
-        },
-        span,
-    )
 }
 
 // The type a 'base::variant(...)' constructor builds. A base left to the compiler, '_' or a

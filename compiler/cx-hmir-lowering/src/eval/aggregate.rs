@@ -1,4 +1,4 @@
-mod initializer;
+pub(crate) mod initializer;
 
 use initializer::initialize;
 

@@ -5,9 +5,8 @@ use cx_hir::ast::{
     types::{HIRTagKind, HIRType, HIRTypeKind},
 };
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBody, HMIRCoerceMode, HMIRContract, HMIRControlOp, HMIRDef, HMIRDefID,
-    HMIRDefKind, HMIRDefRef, HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
-    HMIROwnershipOp,
+    HMIRAggregateOp, HMIRBody, HMIRCoerceMode, HMIRContract, HMIRControlOp, HMIRDefID, HMIRDefKind,
+    HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp, HMIROwnershipOp,
     body::{HMIRHole, HMIRLocal, HMIRLocalID},
     expr::{HMIRExpr, HMIRExprID, HMIRExprKind, literal::HMIRLiteral, op::HMIRTypeOp},
     ty::{
@@ -27,8 +26,8 @@ use crate::{
     def::declared_params,
     expr::{lower_expr, lower_initial_value},
     log::log_hir_error,
-    resolve::{GlobalSymbol, Resolver},
     ty::lower_type,
+    unit::UnitContext,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -45,7 +44,8 @@ enum ScopeEntry {
 
 pub(crate) enum Symbol {
     Local(Binding),
-    Global(GlobalSymbol),
+    Def(HMIRDefID),
+    Name,
 }
 
 pub(crate) enum ScopeKind {
@@ -68,7 +68,7 @@ struct Scope {
 }
 
 pub(crate) struct BodyLowering<'a> {
-    resolver: &'a Resolver<'a>,
+    unit: &'a UnitContext,
     types: &'a mut HMIRTypeBuilder,
     namespace: NamespacePath,
     body: HMIRBody,
@@ -100,13 +100,13 @@ impl Binding {
 
 impl<'a> BodyLowering<'a> {
     pub(crate) fn new(
-        resolver: &'a Resolver<'a>,
+        unit: &'a UnitContext,
         types: &'a mut HMIRTypeBuilder,
         namespace: NamespacePath,
         comptime: bool,
     ) -> Self {
         Self {
-            resolver,
+            unit,
             types,
             namespace,
             body: HMIRBody::new(),
@@ -126,13 +126,13 @@ impl<'a> BodyLowering<'a> {
         if !self.address_labels.contains(name) {
             self.address_labels.push(name.clone());
         }
-        let function = self.owner.map(HMIRDefRef::Local);
+        let function = self.owner;
         let name = name.clone();
         self.control(HMIRControlOp::LabelAddress { function, name }, span)
     }
 
-    pub(crate) fn resolver(&self) -> &'a Resolver<'a> {
-        self.resolver
+    pub(crate) fn unit(&self) -> &'a UnitContext {
+        self.unit
     }
 
     pub(crate) fn finish(self) -> HMIRBody {
@@ -141,7 +141,7 @@ impl<'a> BodyLowering<'a> {
 
     // A lowering for a body of its own, which sees none of the locals of this one
     pub(crate) fn detached(&mut self, comptime: bool) -> BodyLowering<'_> {
-        BodyLowering::new(self.resolver, self.types, self.namespace.clone(), comptime)
+        BodyLowering::new(self.unit, self.types, self.namespace.clone(), comptime)
     }
 
     // The signature parameters that the locals of a definition were declared from
@@ -195,8 +195,7 @@ impl<'a> BodyLowering<'a> {
     }
 
     pub(crate) fn def_expr(&mut self, name: QualifiedName, span: &TokenRange) -> HMIRExprID {
-        let def = self.resolver.def_ref(name);
-        self.push(HMIRExprKind::Def(def), span)
+        self.push(HMIRExprKind::Name { name, tag: None }, span)
     }
 
     pub(crate) fn primitive(&mut self, kind: HMIRTypeKind) -> HMIRTypeID {
@@ -300,12 +299,9 @@ impl<'a> BodyLowering<'a> {
         quoted: bool,
         span: &TokenRange,
     ) -> HMIRLocalID {
-        let local = self.body.declare_local(HMIRLocal::new(
-            name.cloned(),
-            ty,
-            span.clone(),
-            comptime,
-        ));
+        let local =
+            self.body
+                .declare_local(HMIRLocal::new(name.cloned(), ty, span.clone(), comptime));
         if let Some(name) = name {
             self.scopes
                 .last_mut()
@@ -325,12 +321,7 @@ impl<'a> BodyLowering<'a> {
         self.declare(name, ty, self.comptime, false, span)
     }
 
-    pub(crate) fn lookup(
-        &self,
-        name: &QualifiedName,
-        tag: Option<HIRTagKind>,
-        span: &TokenRange,
-    ) -> CXResult<Symbol> {
+    pub(crate) fn lookup(&self, name: &QualifiedName, tag: Option<HIRTagKind>) -> Symbol {
         if tag.is_none()
             && let Some(root) = name.root_name_ref()
             && let Some(entry) = self
@@ -339,16 +330,13 @@ impl<'a> BodyLowering<'a> {
                 .rev()
                 .find_map(|scope| scope.symbols.get(root))
         {
-            return Ok(match *entry {
+            return match *entry {
                 ScopeEntry::Local(binding) => Symbol::Local(binding),
-                ScopeEntry::Static(def) => {
-                    Symbol::Global(GlobalSymbol::Def(HMIRDefRef::Local(def)))
-                }
-            });
+                ScopeEntry::Static(def) => Symbol::Def(def),
+            };
         }
 
-        let symbol = self.resolver.resolve(&self.namespace, name, tag, span)?;
-        Ok(Symbol::Global(symbol))
+        Symbol::Name
     }
 
     pub(crate) fn returning_block(&mut self, value: HMIRExprID, span: &TokenRange) -> HMIRExprID {
@@ -363,10 +351,7 @@ impl<'a> BodyLowering<'a> {
         span: &TokenRange,
     ) -> HMIRExprID {
         let ty = self.primitive(HMIRTypeKind::Int(ty));
-        self.push(
-            HMIRExprKind::Literal(HMIRLiteral::Int { value, ty }),
-            span,
-        )
+        self.push(HMIRExprKind::Literal(HMIRLiteral::Int { value, ty }), span)
     }
 
     pub(crate) fn control(&mut self, op: HMIRControlOp, span: &TokenRange) -> HMIRExprID {
@@ -427,9 +412,9 @@ pub(crate) fn lower_variant_constructor(
     variant: &CXIdent,
     span: &TokenRange,
 ) -> HMIRExprID {
-    let id = context.resolver.next_static();
+    let id = context.unit.next_static();
     let mut ctor = BodyLowering::new(
-        context.resolver,
+        context.unit,
         context.types,
         context.namespace.clone(),
         false,
@@ -472,12 +457,12 @@ pub(crate) fn lower_variant_constructor(
     let def = ctor.finish_definition(params, root);
     let function = HMIRFunction::new(ctor.finish(), prototype, Some(def));
 
-    context.resolver.push_static(HMIRDef::new(
+    context.unit.push_static(
         QualifiedName::new(context.namespace.clone(), name),
-        span.clone(),
+        span,
         HMIRDefKind::Function(Box::new(function)),
-    ));
-    let callee = context.push(HMIRExprKind::Def(HMIRDefRef::Local(id)), span);
+    );
+    let callee = context.push(HMIRExprKind::Def(id), span);
     context.push(
         HMIRExprKind::Call {
             callee,
@@ -514,9 +499,9 @@ pub(crate) fn lower_reify(
         );
     };
 
-    let id = context.resolver.next_static();
+    let id = context.unit.next_static();
     let mut anon = BodyLowering::new(
-        context.resolver,
+        context.unit,
         context.types,
         context.namespace.clone(),
         false,
@@ -524,7 +509,7 @@ pub(crate) fn lower_reify(
     .owned_by(id);
 
     let mut params = Vec::new();
-    for param in declared_params(&anon, prototype)? {
+    for param in declared_params(prototype) {
         let ty = lower_type(&mut anon, &param.ty)?;
         params.push(anon.declare(param.name.as_ref(), ty, false, false, &param.ty.range));
     }
@@ -551,12 +536,12 @@ pub(crate) fn lower_reify(
     let def = anon.finish_definition(params, root);
     let function = HMIRFunction::new(anon.finish(), prototype, Some(def));
 
-    context.resolver.push_static(HMIRDef::new(
+    context.unit.push_static(
         QualifiedName::new(context.namespace.clone(), name),
-        span.clone(),
+        span,
         HMIRDefKind::Function(Box::new(function)),
-    ));
-    Ok(context.push(HMIRExprKind::Def(HMIRDefRef::Local(id)), span))
+    );
+    Ok(context.push(HMIRExprKind::Def(id), span))
 }
 
 // Lowers a function-level static into its own global def visible from this scope
@@ -568,9 +553,9 @@ pub(crate) fn lower_static(
     linkage: LinkageMode,
     span: &TokenRange,
 ) -> CXResult<()> {
-    let id = context.resolver.next_static();
+    let id = context.unit.next_static();
     let mut global = BodyLowering::new(
-        context.resolver,
+        context.unit,
         context.types,
         context.namespace.clone(),
         false,
@@ -590,11 +575,9 @@ pub(crate) fn lower_static(
     let global = HMIRGlobal::new(global.finish(), global_ty, initializer, linkage, link_name);
 
     let qualified = QualifiedName::new(context.namespace.clone(), name.clone());
-    context.resolver.push_static(HMIRDef::new(
-        qualified,
-        span.clone(),
-        HMIRDefKind::Global(Box::new(global)),
-    ));
+    context
+        .unit
+        .push_static(qualified, span, HMIRDefKind::Global(Box::new(global)));
     for label in labels {
         if !context.address_labels.contains(&label) {
             context.address_labels.push(label);

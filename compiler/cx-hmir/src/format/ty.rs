@@ -3,29 +3,13 @@ use std::fmt::{self, Formatter};
 use crate::{
     expr::literal::HMIRLiteral,
     ty::{HMIRGenericType, HMIRGenericTypeKind, HMIRTypeID, aggregate::HMIRFieldDef},
-    unit::{HMIRUnit, def::HMIRDefRef},
+    unit::{HMIRUnit, def::HMIRDefID},
 };
 
-pub(super) fn write_def_ref(
-    f: &mut Formatter<'_>,
-    unit: &HMIRUnit,
-    def: &HMIRDefRef,
-) -> fmt::Result {
-    match def {
-        HMIRDefRef::Local(id) => match unit.resolve_def(*id) {
-            Some(def) => write!(f, "@{}", def.name()),
-            None => write!(f, "@{id}"),
-        },
-        HMIRDefRef::External(name) => write!(f, "@{name}"),
-        HMIRDefRef::Candidates(candidates) => {
-            for (index, candidate) in candidates.iter().enumerate() {
-                if index > 0 {
-                    f.write_str(" | ")?;
-                }
-                write_def_ref(f, unit, candidate)?;
-            }
-            Ok(())
-        }
+pub(super) fn write_def(f: &mut Formatter<'_>, unit: &HMIRUnit, def: HMIRDefID) -> fmt::Result {
+    match unit.resolve_def(def) {
+        Some(def) => write!(f, "@{}", def.name()),
+        None => write!(f, "@{def}"),
     }
 }
 

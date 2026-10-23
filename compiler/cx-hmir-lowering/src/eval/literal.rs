@@ -14,7 +14,19 @@ pub(crate) fn eval_literal(
     span: &TokenRange,
     literal: &HMIRLiteral,
 ) -> HMIRValue {
-    match literal {
+    let source = context.source();
+    let literal = match literal {
+        HMIRLiteral::Int { value, ty } => HMIRLiteral::Int {
+            value: *value,
+            ty: context.env_mut().import_type(source, *ty),
+        },
+        HMIRLiteral::Float { value, ty } => HMIRLiteral::Float {
+            value: *value,
+            ty: context.env_mut().import_type(source, *ty),
+        },
+        other => other.clone(),
+    };
+    match &literal {
         HMIRLiteral::Unit => unit(context, span),
 
         HMIRLiteral::Str(value) => {

@@ -31,12 +31,21 @@ impl Display for HMIRUnit {
 }
 
 fn write_def(f: &mut Formatter<'_>, unit: &HMIRUnit, def: &HMIRDef) -> fmt::Result {
-    match def.kind() {
-        HMIRDefKind::Function(function) => write_function(f, unit, def, function),
-        HMIRDefKind::Global(global) => write_global(f, unit, def, global),
-        HMIRDefKind::ComptimeGlobal(global) => write_comptime_global(f, unit, def, global),
-        HMIRDefKind::Type(ty) => write_type_def(f, unit, def, *ty),
+    for (index, declaration) in def.declarations().iter().enumerate() {
+        if index != 0 {
+            writeln!(f)?;
+        }
+        match declaration.kind() {
+            Some(HMIRDefKind::Function(function)) => write_function(f, unit, def, function)?,
+            Some(HMIRDefKind::Global(global)) => write_global(f, unit, def, global)?,
+            Some(HMIRDefKind::ComptimeGlobal(global) | HMIRDefKind::TypeDef(global)) => {
+                write_comptime_global(f, unit, def, global)?
+            }
+            Some(HMIRDefKind::Type(ty)) => write_type_def(f, unit, def, *ty)?,
+            None => write!(f, "declare @{};", def.name())?,
+        }
     }
+    Ok(())
 }
 
 fn write_linkage(f: &mut Formatter<'_>, linkage: LinkageMode) -> fmt::Result {

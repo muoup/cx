@@ -1,9 +1,11 @@
+use cx_hir::ast::types::HIRTagKind;
 use cx_intrinsics::Intrinsic;
+use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    HMIRDefRef, HMIROp, HMIRPattern,
+    HMIRDefID, HMIROp, HMIRPattern,
     body::{HMIRBodyID, HMIRHoleID, HMIRLocalID},
     expr::literal::HMIRLiteral,
     ty::{HMIRExprType, HMIRTypeID},
@@ -33,7 +35,11 @@ pub enum HMIRExprKind {
     // A type of the unit's table; input HMIR never holds the slots or addresses of an evaluation
     TypeRef(HMIRTypeID),
     Local(HMIRLocalID),
-    Def(HMIRDefRef),
+    Def(HMIRDefID),
+    Name {
+        name: QualifiedName,
+        tag: Option<HIRTagKind>,
+    },
     Hole(HMIRHoleID),
     Type(Box<HMIRExprType>),
 
@@ -59,6 +65,7 @@ pub enum HMIRExprKind {
         callee: HMIRExprID,
         args: Vec<HMIRExprID>,
     },
+    Piped(HMIRExprID),
 
     Block {
         statements: Vec<HMIRExprID>,

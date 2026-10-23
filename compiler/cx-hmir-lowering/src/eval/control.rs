@@ -475,7 +475,10 @@ pub(crate) fn return_value(
     let Some(return_type) = context.signature().map(|sig| *sig.return_type()) else {
         return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into());
     };
-    let ty = ready!(eval_type(context, body, return_type));
+    let ty = match context.return_type() {
+        Some(ty) => ty,
+        None => ready!(eval_type(context, body, return_type)),
+    };
     let returns_void = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Unreachable => {
             return Err(hmir_error(span, &typecheck::NORETURN_RETURN, ()).into());
@@ -536,7 +539,10 @@ pub(crate) fn fallthrough(
     let Some(return_type) = context.signature().map(|sig| *sig.return_type()) else {
         unreachable!("fallthrough in a context without a signature")
     };
-    let ty = ready!(eval_type(context, body, return_type));
+    let ty = match context.return_type() {
+        Some(ty) => ty,
+        None => ready!(eval_type(context, body, return_type)),
+    };
 
     match context.env().resolve_kind(ty) {
         HMIRTypeKind::Void => return_value(context, body, None, false, span),

@@ -20,7 +20,7 @@ pub struct HMIRUnitRegistry {
 #[derive(Debug, Default)]
 struct UnitIndex {
     namespaces: HashMap<HMIRUnitID, NamespacePath>,
-    names: HashMap<(QualifiedName, HMIRLookupClass), Vec<Vec<HMIRDefID>>>,
+    names: HashMap<(QualifiedName, HMIRLookupClass), Vec<HMIRDefID>>,
 }
 
 impl HMIRUnitRegistry {
@@ -57,7 +57,7 @@ impl HMIRUnitRegistry {
         self.get(&namespace).filter(|unit| unit.id() == id)
     }
 
-    pub fn groups(&self, name: &QualifiedName, class: HMIRLookupClass) -> Vec<Vec<HMIRDefID>> {
+    pub fn symbols(&self, name: &QualifiedName, class: HMIRLookupClass) -> Vec<HMIRDefID> {
         self.read()
             .names
             .get(&(name.clone(), class))
@@ -75,23 +75,23 @@ impl HMIRUnitRegistry {
 impl UnitIndex {
     fn add(&mut self, unit: &HMIRUnit) {
         self.namespaces.insert(unit.id(), unit.namespace().clone());
-        for (name, class, defs) in unit.symbols().groups() {
+        for (name, class, def) in unit.symbols().symbols() {
             self.names
                 .entry((name.clone(), class))
                 .or_default()
-                .push(defs.to_vec());
+                .push(def);
         }
     }
 
     fn remove(&mut self, unit: &HMIRUnit) {
         self.namespaces.remove(&unit.id());
-        for (name, class, _) in unit.symbols().groups() {
+        for (name, class, _) in unit.symbols().symbols() {
             let key = (name.clone(), class);
-            let Some(groups) = self.names.get_mut(&key) else {
+            let Some(defs) = self.names.get_mut(&key) else {
                 continue;
             };
-            groups.retain(|group| group[0].brand() != unit.id());
-            if groups.is_empty() {
+            defs.retain(|def| def.brand() != unit.id());
+            if defs.is_empty() {
                 self.names.remove(&key);
             }
         }

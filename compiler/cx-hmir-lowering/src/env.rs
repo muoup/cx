@@ -5,7 +5,7 @@ pub(crate) mod resolver;
 pub(crate) mod symbols;
 
 use cx_hmir::{
-    HMIRDef, HMIRDefKind, HMIRDefRef, HMIRUnit,
+    HMIRUnit, HMIRUnitID,
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_mir::MIRUnit;
@@ -19,7 +19,6 @@ use crate::env::{
 
 #[derive(Debug)]
 pub struct HMIREnvironment<'global, 'hmir> {
-    global: &'global ModuleData,
     architecture: ArchitectureConfig,
     require_explicit_return: bool,
 
@@ -37,7 +36,6 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
         require_explicit_return: bool,
     ) -> Self {
         Self {
-            global,
             architecture,
             require_explicit_return,
 
@@ -46,6 +44,20 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
             resolver: HMIRResolver::new(),
             generation: GenerationQueue::new(),
         }
+    }
+
+    pub fn import_type(&mut self, owner: HMIRUnitID, ty: HMIRTypeID) -> HMIRTypeID {
+        if owner == self.symbols.local_unit().id() {
+            return ty;
+        }
+        if let Some(id) = self.resolver.imported.get(&(owner, ty)) {
+            return *id;
+        }
+        let unit = self.symbols.owner(owner).expect("type owner is available");
+        let value = unit.resolve_type(ty).clone();
+        let id = self.resolver.realize_type(value);
+        self.resolver.imported.insert((owner, ty), id);
+        id
     }
 
     pub fn require_explicit_return(&self) -> bool {
@@ -101,27 +113,6 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
 
             _ => false,
         }
-    }
-
-    // A reference to a function or global is what requests its generation
-    pub fn resolve_def(&mut self, def: &HMIRDefRef) -> &'hmir HMIRDef {
-        let HMIRDefRef::Local(id) = def else {
-            todo!("reference to an external definition")
-        };
-        let def = self
-            .symbols
-            .local_unit()
-            .resolve_def(*id)
-            .expect("Local symbol not found");
-
-        if matches!(
-            def.kind(),
-            HMIRDefKind::Function(_) | HMIRDefKind::Global(_)
-        ) {
-            self.generation.request(*id);
-        }
-
-        def
     }
 
     pub fn module(&self) -> &MIRModuleBuilder {

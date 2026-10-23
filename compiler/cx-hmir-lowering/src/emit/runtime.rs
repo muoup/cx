@@ -5,12 +5,9 @@ mod global;
 pub use op::{binary, cast, difference, offset, unary};
 pub use storage::{allocate, copy, initialize, invalidate, lift, parameter, scratch, write};
 
-use cx_hmir::{
-    HMIRDefKind,
-    ty::{
-        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
-        intrinsic::HMIRIntWidth,
-    },
+use cx_hmir::ty::{
+    HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+    intrinsic::HMIRIntWidth,
 };
 use cx_log::CXResult;
 use cx_mir::{
@@ -29,6 +26,7 @@ use crate::{
         function::{LocalLoweringContext, runtime::Emission},
     },
     eval::types::{self, mir_float, mir_int},
+    symbol::{self, CompletedSymbol},
     value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
@@ -163,11 +161,10 @@ pub fn constant(
             }).collect::<CXResult<_>>()?,
         },
         HMIRConstant::Function { def, args } if args.is_empty() => {
-            let HMIRDefKind::Function(function) = env.symbols().resolve_definition(*def).kind()
-            else {
+            let CompletedSymbol::Function(function) = symbol::completed(env, *def) else {
                 unreachable!("function constant of a definition that is not a function")
             };
-            let name = function.prototype().symbol_name().as_str();
+            let name = function.symbol_name.as_str();
 
             MIRConstant::Function(
                 env.module()

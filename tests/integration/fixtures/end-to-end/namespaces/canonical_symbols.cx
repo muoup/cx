@@ -1,0 +1,16 @@
+#include <stdio.h>
+import _canonical_symbols as lib;
+import _canonical_symbols as other;
+import _canonical_symbols::Pair as nested;
+
+typedef struct Local { double unrelated; } Local;
+
+int main() {
+    lib::Pair p = { 4, 8 };
+    lib::Pair& alias = p;
+    other::Pair& again = alias;
+    long first = lib::offset;
+    lib::offset = first + 1;
+    printf("%d %ld %ld %d %d %g\n", lib::total(again), lib::local_copy(6), lib::offset, lib::Pair::associated(p), nested::only_nested(), lib::marker());
+    return 0;
+}

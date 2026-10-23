@@ -9,7 +9,6 @@ use cx_hmir::{
         context::HMIRTypeContext,
         intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
     },
-    unit::function::HMIRFnPrototype,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{
@@ -23,6 +22,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{EvalResult, eval_type, flow, types},
     log::log_hmir_error,
+    symbol::CompletedFunction,
 };
 
 pub(crate) fn eval_signature(
@@ -56,14 +56,13 @@ pub(crate) fn lower_signature(
 
 pub(crate) fn lower_prototype(
     env: &mut HMIREnvironment,
-    prototype: &HMIRFnPrototype,
-    signature: &HMIRFnSignature<HMIRTypeID>,
+    function: &CompletedFunction,
     span: &TokenRange,
 ) -> CXResult<MIRFnPrototype> {
     Ok(MIRFnPrototype::new(
-        lower_signature(env, signature, span)?,
-        prototype.linkage(),
-        prototype.symbol_name().clone(),
+        lower_signature(env, &function.signature, span)?,
+        function.linkage,
+        function.symbol_name.clone(),
         None,
     ))
 }

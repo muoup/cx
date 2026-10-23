@@ -1,10 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
 use cx_hmir::{
+    HMIRDefID, HMIRUnitID,
     expr::HMIRExprID,
     ty::{HMIRType, HMIRTypeID},
 };
 use cx_mir::MIRTypeID;
+
+use crate::symbol::{
+    SymbolState,
+    recursive::{ProvisionalType, TypeFrame},
+};
 
 const REALIZED_BIT: usize = 1 << 63;
 
@@ -14,6 +20,10 @@ pub(crate) struct HMIRResolver {
     declared: HashMap<HMIRExprID, HMIRTypeID>,
     incomplete: HashSet<HMIRTypeID>,
     lowered: HashMap<HMIRTypeID, MIRTypeID>,
+    symbols: HashMap<HMIRDefID, SymbolState>,
+    pub imported: HashMap<(HMIRUnitID, HMIRTypeID), HMIRTypeID>,
+    pub defining_types: Vec<TypeFrame>,
+    pub active_symbols: Vec<HMIRDefID>,
 }
 
 impl HMIRResolver {
@@ -23,6 +33,10 @@ impl HMIRResolver {
             declared: HashMap::new(),
             incomplete: HashSet::new(),
             lowered: HashMap::new(),
+            symbols: HashMap::new(),
+            imported: HashMap::new(),
+            defining_types: Vec::new(),
+            active_symbols: Vec::new(),
         }
     }
 
@@ -30,6 +44,37 @@ impl HMIRResolver {
         let id = HMIRTypeID::new(self.realized.len() | REALIZED_BIT);
         self.realized.insert(id, ty);
         id
+    }
+
+    pub fn publish_type(&mut self, ty: HMIRTypeID) {
+        let pending = self
+            .defining_types
+            .iter()
+            .filter(|frame| {
+                matches!(
+                    self.symbols.get(&frame.def),
+                    Some(SymbolState::InProgress(None))
+                )
+            })
+            .map(|frame| (frame.def, frame.constructors.clone()))
+            .collect::<Vec<_>>();
+        for (id, constructors) in pending {
+            let provisional = constructors
+                .into_iter()
+                .rev()
+                .fold(ty, |inner, constructor| constructor.apply(self, inner));
+            self.symbols.insert(
+                id,
+                SymbolState::InProgress(Some(ProvisionalType {
+                    ty: provisional,
+                    reservation: ty,
+                })),
+            );
+        }
+    }
+
+    pub fn forget_symbol(&mut self, id: HMIRDefID) {
+        self.symbols.remove(&id);
     }
 
     pub fn realized_type(&self, ty: HMIRTypeID) -> Option<&HMIRType> {
@@ -67,5 +112,13 @@ impl HMIRResolver {
 
     pub fn cache_lowered(&mut self, ty: HMIRTypeID, mir: MIRTypeID) {
         self.lowered.insert(ty, mir);
+    }
+
+    pub fn symbol_state(&self, def: HMIRDefID) -> Option<&SymbolState> {
+        self.symbols.get(&def)
+    }
+
+    pub fn set_symbol_state(&mut self, def: HMIRDefID, state: SymbolState) {
+        self.symbols.insert(def, state);
     }
 }

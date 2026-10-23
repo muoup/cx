@@ -2,6 +2,9 @@
 
 #include <stdio.h>
 
+typedef struct CallbackValue (*CallbackFactory)(void);
+struct CallbackValue { CallbackFactory callbacks[1]; int value; };
+
 typedef struct list_s* list_ptr;
 struct list_s {
     int value;
@@ -22,6 +25,7 @@ static int ticked;
 static void tick(thinker_t* t) { ticked = t->prev == NULL; }
 
 int main(void) {
+    CallbackFactory factory = NULL;
     list_ptr head = NULL;
     struct list_s n2 = { 2, head };
     struct list_s n1 = { 1, &n2 };

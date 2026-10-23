@@ -11,7 +11,7 @@ use cx_mir_analysis::{MIRAnalysisOptions, analyze};
 use cx_mir_lowering::generate_lmir;
 use cx_namespace::module::{ModulePath, NamespacePath, QualifiedName};
 use cx_parsing::preparse::PreparseConfig;
-use cx_parsing::{ast_extract_symbols, parse_ast, preparse};
+use cx_parsing::{parse_ast, preparse};
 use cx_pipeline_data::db::ModuleMap;
 use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
 use cx_pipeline_data::jobs::{
@@ -456,29 +456,6 @@ pub(crate) fn perform_job(
                 dump_data(&parsed_ast);
             }
 
-            let namespace = job.unit.namespace().clone();
-            let decomposition = ast_extract_symbols(&namespace, &parsed_ast);
-
-            for (namespace, bucket) in decomposition.symbol_buckets {
-                if let Some((namespace, _)) = context
-                    .module_db
-                    .symbol_registry
-                    .insert_module(namespace, bucket)
-                {
-                    return Err(pipeline_error(
-                        &catalogue::DUPLICATE_NAMESPACE,
-                        format!("{}", namespace),
-                    ));
-                }
-            }
-
-            for (namespace, friend) in decomposition.namespace_friends {
-                context
-                    .module_db
-                    .symbol_registry
-                    .insert_namespace_friend(namespace, friend);
-            }
-
             context
                 .module_db
                 .hir
@@ -487,15 +464,13 @@ pub(crate) fn perform_job(
 
         CompilationStep::HMIR => {
             let hir = context.module_db.hir.get(job.unit.namespace());
-            let registry = &context.module_db.symbol_registry;
-            let architecture = context.config.architecture;
+            let root_exports = context.module_db.exports_at_root(job.unit.namespace());
 
             let hmir = generate_hmir(
                 hir.as_ref(),
                 context.module_db.hmir.allocate(),
                 job.unit.namespace().clone(),
-                registry,
-                architecture,
+                root_exports,
             )?;
 
             if !job.unit.is_std_lib() || context.config.verbose {

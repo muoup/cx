@@ -35,24 +35,78 @@ pub(crate) fn eval_declared_type(
     declaration: HMIRExprID,
     ty: &HMIRExprType,
 ) -> CXResult<HMIRTypeID> {
-    match ty.kind() {
-        HMIRExprTypeKind::Nominal(inner) => {
-            let inner = flow::top(eval_type(context, body, *inner)?.description())?;
-            let specifiers = ty
-                .semantics()
-                .map(|declared| declared_move(context, body, declared))?;
-            Ok(specify(context, inner, specifiers, ty.decl_span()))
-        }
+    if matches!(
+        ty.kind(),
         HMIRExprTypeKind::Struct { .. }
-        | HMIRExprTypeKind::Union { .. }
-        | HMIRExprTypeKind::TaggedUnion { .. } => eval_aggregate(context, body, declaration, ty),
-        _ => {
-            let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
-            let ty = evaluate(context, body, ty, move_semantics)?;
-            types::validate::declaration(context.env(), &ty)?;
-            Ok(context.env_mut().resolver_mut().realize_type(ty))
+            | HMIRExprTypeKind::Union { .. }
+            | HMIRExprTypeKind::TaggedUnion { .. }
+    ) {
+        return eval_aggregate(context, body, declaration, ty);
+    }
+    if matches!(ty.kind(), HMIRExprTypeKind::Function(_)) {
+        let semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
+        let unresolved = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+            HMIRTypeKind::Opaque {
+                size: 0,
+                alignment: 1,
+            },
+            HMIRTypeSemantics::default(),
+            ty.decl_span().clone(),
+            None,
+        ));
+        context.env_mut().resolver_mut().mark_incomplete(unresolved);
+        let provisional = ty.map(
+            &mut (),
+            |_, _| CXResult::Ok(unresolved),
+            |_, _| unreachable!(),
+            |_, _| Ok(semantics),
+        )?;
+        let id = context.env_mut().resolver_mut().realize_type(provisional);
+        context.env_mut().resolver_mut().mark_incomplete(id);
+        context.env_mut().resolver_mut().publish_type(id);
+        let complete = evaluate(context, body, ty, semantics)?;
+        context.env_mut().resolver_mut().complete_type(id, complete);
+        return Ok(id);
+    }
+    let semantics = ty
+        .semantics()
+        .map(|declared| declared_move(context, body, declared))?;
+    let constructor =
+        crate::symbol::recursive::TypeConstructor::new(ty.kind(), semantics, ty.decl_span());
+    let outer = context.env().resolver().defining_types.len();
+    let held = if let Some(constructor) = constructor {
+        for frame in &mut context.env_mut().resolver_mut().defining_types {
+            frame.constructors.push(constructor.clone());
+        }
+        None
+    } else {
+        Some(std::mem::take(
+            &mut context.env_mut().resolver_mut().defining_types,
+        ))
+    };
+    let result = (|| {
+        if let HMIRExprTypeKind::Nominal(inner) = ty.kind() {
+            let inner = flow::top(eval_type(context, body, *inner)?.description())?;
+            return Ok(specify(context, inner, semantics, ty.decl_span()));
+        }
+        let ty = evaluate(context, body, ty, semantics.move_semantics)?;
+        types::validate::declaration(context.env(), &ty)?;
+        Ok(context.env_mut().resolver_mut().realize_type(ty))
+    })();
+    if let Some(held) = held {
+        context.env_mut().resolver_mut().defining_types = held;
+    } else {
+        for frame in context
+            .env_mut()
+            .resolver_mut()
+            .defining_types
+            .iter_mut()
+            .take(outer)
+        {
+            frame.constructors.pop();
         }
     }
+    result
 }
 
 // The fields of an aggregate may refer back to it, which finds it incomplete until they are all evaluated
@@ -85,6 +139,7 @@ fn eval_aggregate(
         .env_mut()
         .resolver_mut()
         .declare_type(declaration, incomplete);
+    context.env_mut().resolver_mut().publish_type(id);
     let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
     let complete = evaluate(context, body, ty, move_semantics)?;
     types::validate::declaration(context.env(), &complete)?;

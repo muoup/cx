@@ -1,9 +1,13 @@
-use cx_hmir::{HMIRDefID, HMIRDefKind, ty::HMIRTypeID};
+use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
 use cx_log::CXResult;
 use cx_mir::MIRGlobalRef;
 use cx_tokens::TokenRange;
 
-use crate::{env::function::LocalLoweringContext, eval::types};
+use crate::{
+    env::function::LocalLoweringContext,
+    eval::types,
+    symbol::{self, CompletedSymbol},
+};
 
 pub fn reference(
     context: &mut LocalLoweringContext,
@@ -11,13 +15,13 @@ pub fn reference(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRGlobalRef> {
-    let HMIRDefKind::Global(global) = context.env().symbols().resolve_definition(def).kind() else {
+    let CompletedSymbol::Global(global) = symbol::completed(context.env(), def) else {
         unreachable!("a global place names a global variable")
     };
     let global = context
         .env()
         .module()
-        .declared_global(global.symbol_name().as_str())
+        .declared_global(global.symbol_name.as_str())
         .expect("global referenced before its declaration");
     let ty = types::lower_type(context.env_mut(), ty, span)?;
 

@@ -1,0 +1,2 @@
+public:
+int only_nested() { return 12; }

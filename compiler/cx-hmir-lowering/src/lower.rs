@@ -1,25 +1,24 @@
 pub(crate) mod global;
 
-pub use global::lower as lower_global;
-
-use crate::{env::HMIREnvironment, eval};
-use cx_hmir::{HMIRDef, HMIRDefID, HMIRDefKind, HMIRFunction, HMIRFunctionStage, HMIRUnit};
+use crate::{
+    env::HMIREnvironment,
+    eval,
+    symbol::{self, CompletedFunction, CompletedSymbol},
+};
+use cx_hmir::{HMIRDefID, HMIRDefKind, HMIRFunction, HMIRUnit};
 use cx_log::CXResult;
-use cx_util::linkage::LinkageMode;
 
 pub fn lower_unit<'hmir>(
     unit: &'hmir HMIRUnit,
     env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
-    let mut roots = unit
-        .defs()
-        .filter(|(_, def)| is_root(def))
-        .map(|(id, _)| *id)
-        .collect::<Vec<_>>();
-    roots.sort();
+    let mut defs = unit.defs().map(|(id, _)| *id).collect::<Vec<_>>();
+    defs.sort();
 
-    for root in roots {
-        env.generation_mut().request(root);
+    for id in defs {
+        if symbol::validate(env, id)?.is_root() {
+            env.generation_mut().request(id);
+        }
     }
 
     while let Some(id) = env.generation_mut().next() {
@@ -29,61 +28,44 @@ pub fn lower_unit<'hmir>(
     Ok(())
 }
 
-// What other units may link against is generated regardless of use; everything else waits for a reference
-fn is_root(def: &HMIRDef) -> bool {
-    match def.kind() {
-        HMIRDefKind::Function(function) => {
-            function.def().is_some() && function.prototype().linkage() != LinkageMode::Static
-        }
-        HMIRDefKind::Global(global) => match global.linkage() {
-            LinkageMode::Standard => true,
-            LinkageMode::Extern => global.initializer().is_some(),
-            LinkageMode::Static => false,
-        },
-        HMIRDefKind::ComptimeGlobal(_) | HMIRDefKind::Type(_) => false,
-    }
-}
-
-pub(crate) fn is_staged(function: &HMIRFunction) -> bool {
-    function.signature().stage() == HMIRFunctionStage::Comptime
-        || function
-            .signature()
-            .params()
-            .iter()
-            .any(|param| param.comptime())
-}
-
-fn generate<'hmir>(id: HMIRDefID, env: &mut HMIREnvironment<'_, 'hmir>) -> CXResult<()> {
-    let def = env
-        .symbols()
-        .local_unit()
-        .resolve_def(id)
-        .expect("Local symbol not found");
-
-    match def.kind() {
-        HMIRDefKind::Function(function) => {
-            if function.def().is_none() || is_staged(function) {
+fn generate(id: HMIRDefID, env: &mut HMIREnvironment) -> CXResult<()> {
+    let unit = env
+        .symbols_mut()
+        .owner(id.brand())
+        .expect("symbol owner is available");
+    let source = unit.resolve_def(id).expect("symbol exists");
+    match symbol::complete(env, id)? {
+        CompletedSymbol::Function(function) => {
+            let HMIRDefKind::Function(source) =
+                source.declarations()[function.declaration].kind().unwrap()
+            else {
+                unreachable!("a function symbol selects a function declaration")
+            };
+            if source.def().is_none() {
                 return Ok(());
             }
 
-            lower_function(function, env)
+            lower_function(source, id, &function, env)
         }
-        HMIRDefKind::Global(global) => lower_global(global, env).map(|_| ()),
-        HMIRDefKind::ComptimeGlobal(_) | HMIRDefKind::Type(_) => {
+        CompletedSymbol::Global(global) => global::lower(env, id, &global),
+        CompletedSymbol::StagedFunction => Ok(()),
+        CompletedSymbol::Constant(_) | CompletedSymbol::Type(_) => {
             unreachable!("generation requested for a definition that is never emitted")
         }
     }
 }
 
-pub fn lower_function<'hmir>(
-    function: &'hmir HMIRFunction,
+fn lower_function<'hmir>(
+    source: &HMIRFunction,
+    id: HMIRDefID,
+    function: &CompletedFunction,
     env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
-    let function = eval::lower_runtime_function(env, function)?;
+    let lowered = eval::lower_runtime_function(env, id, source, function)?;
     let id = env
         .module_mut()
-        .declare_function(function.prototype().clone());
-    env.module_mut().define_function(id, function);
+        .declare_function(lowered.prototype().clone());
+    env.module_mut().define_function(id, lowered);
 
     Ok(())
 }

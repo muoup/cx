@@ -27,6 +27,22 @@ pub(crate) fn eval_call(
     args: &[HMIRExprID],
 ) -> EvalResult<HMIRValue> {
     let callee = ready!(eval(context, body, callee));
+    if let HMIRValueKind::Constant(HMIRConstant::Constructor { ty, variant }) = callee.kind() {
+        if args.len() != 1 {
+            return Err(hmir_error(
+                span,
+                &typecheck::ARGUMENT_COUNT,
+                ("variant constructor".into(), 1, args.len(), false),
+            ));
+        }
+        return super::aggregate::initializer::initialize(
+            context,
+            body,
+            span,
+            *ty,
+            &[(Some(variant.clone()), args[0])],
+        );
+    }
     let callee = coerce::std_rvalue(context, callee, span)?;
 
     let env = context.env();

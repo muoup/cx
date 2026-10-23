@@ -27,14 +27,12 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     body::{BodyLowering, ScopeKind, Symbol, lower_reify, lower_static, lower_variant_constructor},
-    def::is_void,
-    expr::call::{lower_call, lower_construct, lower_scope_base},
+    expr::call::{lower_call, lower_scope_base},
     expr::control::{lower_case, lower_for, lower_if, lower_match, lower_switch, lower_while},
     expr::literal::{lower_float_literal, lower_int_literal},
     expr::op::{lower_binop, lower_unop},
     log::log_hir_error,
-    resolve::GlobalSymbol,
-    ty::{lower_constructor_sum, lower_type, staged_signature},
+    ty::{lower_type, staged_signature},
 };
 
 pub(crate) fn lower_expr(
@@ -271,7 +269,7 @@ pub(crate) fn lower_identifier(
     name: &QualifiedName,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
-    Ok(match context.lookup(name, None, span)? {
+    Ok(match context.lookup(name, None) {
         Symbol::Local(binding) => {
             let local = context.push(HMIRExprKind::Local(binding.local()), span);
             if !binding.is_quoted() || context.comptime() {
@@ -281,25 +279,14 @@ pub(crate) fn lower_identifier(
             let args = Vec::new();
             context.push(HMIRExprKind::Splice { quote: local, args }, span)
         }
-        Symbol::Global(GlobalSymbol::Primitive(kind)) => context.type_ref(kind, span),
-        Symbol::Global(
-            GlobalSymbol::Def(def)
-            | GlobalSymbol::Function(def)
-            | GlobalSymbol::ComptimeFunction(def, ..),
-        ) => context.push(HMIRExprKind::Def(def), span),
-        Symbol::Global(GlobalSymbol::Constructor(data, variant, def)) => {
-            let carries_payload = match context.resolver().constructor_payload(&data) {
-                Some(payload) => !is_void(context, &payload)?,
-                None => false,
-            };
-            if carries_payload {
-                return Ok(context.push(HMIRExprKind::Def(def), span));
-            }
-
-            let unit = context.push(HMIRExprKind::Literal(HMIRLiteral::Unit), span);
-            let sum = lower_constructor_sum(context, &data.union_type, span)?;
-            lower_construct(context, sum, variant, unit, span)
-        }
+        Symbol::Def(def) => context.push(HMIRExprKind::Def(def), span),
+        Symbol::Name => context.push(
+            HMIRExprKind::Name {
+                name: name.clone(),
+                tag: None,
+            },
+            span,
+        ),
     })
 }
 

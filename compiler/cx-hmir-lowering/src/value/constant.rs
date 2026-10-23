@@ -24,6 +24,7 @@ pub enum HMIRConstant {
         def: HMIRDefID,
         args: Vec<HMIRConstant>,
     },
+    Constructor { ty: HMIRTypeID, variant: CXIdent },
     Quote(QuoteRef),
     Aggregate {
         ty: HMIRTypeID,

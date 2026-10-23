@@ -7,6 +7,7 @@ mod comptime;
 mod control;
 mod def;
 mod literal;
+mod name;
 mod op;
 mod place;
 mod storage;
@@ -18,7 +19,8 @@ pub(crate) use comptime::eval_comptime;
 pub(crate) use flow::EvalResult;
 
 use cx_hmir::{
-    HMIRBody, HMIRCoerceMode, HMIRControlOp, HMIRFunction, HMIROp, HMIROwnershipOp,
+    HMIRBody, HMIRCoerceMode, HMIRControlOp, HMIRFnSignature, HMIRFunction, HMIROp,
+    HMIROwnershipOp,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::HMIRTypeID,
@@ -32,7 +34,7 @@ use crate::{
     emit::{self, runtime},
     env::{
         HMIREnvironment,
-        function::{ComptimeContext, FnContext, LocalLoweringContext, RuntimeContext},
+        function::{FnContext, LocalLoweringContext, RuntimeContext},
     },
     eval::{
         aggregate::eval_aggregate,
@@ -47,12 +49,15 @@ use crate::{
         place::{eval_address_of, eval_assign, eval_dereference, eval_leak, eval_move},
     },
     log::hmir_error,
+    symbol::CompletedFunction,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) fn lower_runtime_function<'hmir>(
     env: &mut HMIREnvironment<'_, 'hmir>,
-    function: &'hmir HMIRFunction,
+    id: cx_hmir::HMIRDefID,
+    function: &HMIRFunction,
+    completed: &CompletedFunction,
 ) -> CXResult<MIRFunction> {
     let body = function.body();
     let signature = function.signature();
@@ -61,20 +66,14 @@ pub(crate) fn lower_runtime_function<'hmir>(
         .expect("Runtime function lowered without a definition");
     let span = body.expr(def.root()).span();
 
-    let mut staging = LocalLoweringContext::new(
-        env,
-        Some(signature),
-        FnContext::Comptime(ComptimeContext::new()),
-    );
-    let evaluated = flow::top(types::eval_signature(&mut staging, body, signature))?;
-    let prototype =
-        types::lower_prototype(staging.env_mut(), function.prototype(), &evaluated, span)?;
-
+    let prototype = types::lower_prototype(env, completed, span)?;
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
-    let mut context = staging.child(Some(signature), runtime, None);
+    let mut context = LocalLoweringContext::new(env, Some(signature), runtime)
+        .sourced(id.brand())
+        .with_return_type(*completed.signature.return_type());
 
     emit::open_scope(&mut context, span.clone());
-    let completion = runtime_definition(&mut context, function, def);
+    let completion = runtime_definition(&mut context, function, def, &completed.signature);
     emit::close_scope(&mut context, span.clone());
     flow::top(flow::catch_diverged(completion))?;
 
@@ -88,16 +87,14 @@ fn runtime_definition(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
     def: &HMIRFnDefinition,
+    signature: &HMIRFnSignature<HMIRTypeID>,
 ) -> EvalResult<HMIRValue> {
     let body = function.body();
     let root = body.expr(def.root());
-    let Some(signature) = context.signature() else {
-        unreachable!("runtime function lowered without a signature")
-    };
 
     for (param, local) in signature.params().iter().zip(def.params()) {
         let decl = body.local(*local);
-        let ty = ready!(eval_type(context, body, *param.ty())?.description());
+        let ty = *param.ty();
         let value = runtime::parameter(context, ty, decl.name().cloned(), decl.span())?;
         let reference = types::reference(context.env_mut(), ty, decl.span());
         let value = value.with_ty(reference);
@@ -138,7 +135,11 @@ pub(crate) fn eval(
         HMIRExprKind::Literal(literal) => {
             Ok(Evaluation::Ready(eval_literal(context, span, literal)))
         }
-        HMIRExprKind::TypeRef(ty) => complete::type_result(context, *ty, span),
+        HMIRExprKind::TypeRef(ty) => {
+            let source = context.source();
+            let ty = context.env_mut().import_type(source, *ty);
+            complete::type_result(context, ty, span)
+        }
         HMIRExprKind::Type(ty) => {
             let ty = eval_declared_type(context, body, id, ty)?;
             complete::type_result(context, ty, span)
@@ -229,7 +230,9 @@ pub(crate) fn eval(
             HMIROp::AggregateOp(aggregate) => eval_aggregate(context, body, span, aggregate),
         },
 
-        HMIRExprKind::Def(def) => eval_def(context, span, def),
+        HMIRExprKind::Def(def) => eval_def(context, span, *def),
+        HMIRExprKind::Name { name, tag } => name::eval_name(context, span, name, *tag),
+        HMIRExprKind::Piped(value) => eval(context, body, *value),
         HMIRExprKind::Call { callee, args } => eval_call(context, body, span, *callee, args),
 
         HMIRExprKind::Hole(_) => complete::hole(context, span),

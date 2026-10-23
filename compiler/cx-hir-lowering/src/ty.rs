@@ -7,7 +7,7 @@ use cx_hir::ast::{
     },
 };
 use cx_hmir::{
-    HMIRContract, HMIRDefRef, HMIRFnSignature, HMIRFunctionStage,
+    HMIRContract, HMIRFnSignature, HMIRFunctionStage,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprTypeKind,
@@ -15,7 +15,7 @@ use cx_hmir::{
     },
     unit::function::HMIRFnParam,
 };
-use cx_log::{CXResult, catalogue::typecheck};
+use cx_log::CXResult;
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -23,8 +23,6 @@ use cx_util::identifier::CXIdent;
 use crate::{
     body::{BodyLowering, Symbol},
     expr::lower_expr,
-    log::log_hir_error,
-    resolve::GlobalSymbol,
 };
 
 pub(crate) fn lower_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXResult<HMIRExprID> {
@@ -119,21 +117,16 @@ fn lower_type_name(
     tag: Option<HIRTagKind>,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
-    Ok(match context.lookup(name, tag, span)? {
+    Ok(match context.lookup(name, tag) {
         Symbol::Local(binding) => context.push(HMIRExprKind::Local(binding.local()), span),
-        Symbol::Global(GlobalSymbol::Primitive(kind)) => context.type_ref(kind, span),
-        Symbol::Global(
-            GlobalSymbol::Def(def)
-            | GlobalSymbol::Function(def)
-            | GlobalSymbol::ComptimeFunction(def, ..),
-        ) => context.push(HMIRExprKind::Def(def), span),
-        Symbol::Global(GlobalSymbol::Constructor(..)) => {
-            return log_hir_error(
-                span,
-                &typecheck::EXPECTED_TYPE,
-                format!("constructor '{name}'"),
-            );
-        }
+        Symbol::Def(def) => context.push(HMIRExprKind::Def(def), span),
+        Symbol::Name => context.push(
+            HMIRExprKind::Name {
+                name: name.clone(),
+                tag,
+            },
+            span,
+        ),
     })
 }
 
@@ -179,23 +172,6 @@ fn lower_staged_type(
 
     let kind = HMIRExprTypeKind::StagedExpr { params, result };
     Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
-}
-
-// The sum a constructor builds, as the def of its type
-pub(crate) fn lower_constructor_sum(
-    context: &mut BodyLowering<'_>,
-    union_type: &HIRType,
-    span: &TokenRange,
-) -> CXResult<HMIRExprID> {
-    let HIRTypeKind::Identifier { name, .. } = &union_type.kind else {
-        return lower_type(context, union_type);
-    };
-    let def = match context.lookup(name, union_type.tag_kind(), span)? {
-        Symbol::Global(GlobalSymbol::Def(def)) => def,
-        _ => HMIRDefRef::External(name.clone()),
-    };
-
-    Ok(context.push(HMIRExprKind::Def(def), span))
 }
 
 fn lower_function_type(

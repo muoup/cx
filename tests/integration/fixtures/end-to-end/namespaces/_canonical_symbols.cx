@@ -1,0 +1,23 @@
+import _canonical_dependency as dep;
+
+public:
+struct Pair;
+
+private:
+struct Pair {
+    int first;
+    long second;
+};
+public:
+static double marker() { return 1.5; }
+
+private:
+static int adjustment = 3;
+static int hidden(int n) { return n + adjustment; }
+
+public:
+typedef struct Pair Pair;
+int total(Pair& p) { return hidden(p.first) + p.second; }
+static dep::Number local_copy(dep::Number n) { return hidden(2) + n; }
+dep::Number offset = 9;
+int Pair::associated(Pair& p) { return hidden(p.first); }

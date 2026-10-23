@@ -1,5 +1,5 @@
-import _alias_left as dup;
-import _alias_right as dup;
+import _ambiguous_types_a as dup;
+import _ambiguous_types_b as dup;
 
 int main() {
     dup::thing value = (dup::thing) { .value = 1 };

@@ -1,7 +1,6 @@
 use crate::CompilationUnit;
 use crate::hmir::HMIRUnitRegistry;
 use cx_hir::ast::HIR;
-use cx_hir::registry::GlobalSymbolRegistry;
 use cx_lmir::LMIRUnit;
 use cx_mir::MIRUnit;
 use cx_namespace::module::NamespacePath;
@@ -19,7 +18,7 @@ pub struct ModuleData {
     module_units: RwLock<HashMap<NamespacePath, CompilationUnit>>,
 
     pub preparse_registry: GlobalPreparseRegistry,
-    pub symbol_registry: GlobalSymbolRegistry,
+    root_exports: RwLock<Vec<NamespacePath>>,
 
     pub lex_tokens: ModuleMap<Box<[Token]>>,
     pub preparse_base: ModuleMap<PreparseContents>,
@@ -38,7 +37,7 @@ impl ModuleData {
             module_units: RwLock::new(HashMap::new()),
 
             preparse_registry: GlobalPreparseRegistry::default(),
-            symbol_registry: GlobalSymbolRegistry::default(),
+            root_exports: RwLock::new(Vec::new()),
 
             lex_tokens: ModuleMap::new(".cx-tokens"),
             preparse_base: ModuleMap::new(".cx-preparse"),
@@ -56,6 +55,21 @@ impl ModuleData {
             .write()
             .expect("register_unit: Deadlock detected")
             .insert(unit.namespace().clone(), unit.clone());
+    }
+
+    pub fn export_at_root(&self, namespace: NamespacePath) {
+        self.root_exports
+            .write()
+            .expect("export_at_root: Deadlock detected")
+            .push(namespace);
+    }
+
+    pub fn exports_at_root(&self, namespace: &NamespacePath) -> bool {
+        self.root_exports
+            .read()
+            .expect("exports_at_root: Deadlock detected")
+            .iter()
+            .any(|root| namespace.clone().strip_prefix(root).is_some())
     }
 
     pub fn unit_for_namespace(&self, namespace: &NamespacePath) -> Option<CompilationUnit> {

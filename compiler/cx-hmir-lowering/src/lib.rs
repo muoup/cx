@@ -2,6 +2,7 @@ mod eval;
 mod emit;
 mod lower;
 mod log;
+mod symbol;
 
 pub mod env;
 pub mod value;

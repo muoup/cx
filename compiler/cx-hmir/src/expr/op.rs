@@ -2,7 +2,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     expr::{HMIRExprID, aggregate::HMIRAggregateOp},
-    unit::def::HMIRDefRef,
+    unit::def::HMIRDefID,
 };
 
 #[derive(Debug, Clone)]
@@ -90,7 +90,7 @@ pub enum HMIRControlOp {
     IndirectGoto(HMIRExprID),
     // 'function' owns the label; a function-level static takes the address outside of its body
     LabelAddress {
-        function: Option<HMIRDefRef>,
+        function: Option<HMIRDefID>,
         name: CXIdent,
     },
 

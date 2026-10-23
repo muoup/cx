@@ -1,13 +1,12 @@
 use cx_hir::ast::{
     function::{HIRFunctionBody, HIRFunctionPrototype, HIRParameter},
     global_var::HIREnumVariant,
-    modifiers::HIRSymbolNameScheme,
     types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBinaryOp, HMIRBody, HMIRComptimeGlobal, HMIRContract, HMIRDefKind,
-    HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp, HMIROwnershipOp,
-    expr::{HMIRExprID, HMIRExprKind},
+    HMIRBinaryOp, HMIRBody, HMIRComptimeGlobal, HMIRContract, HMIRDef, HMIRDefID, HMIRDefKind,
+    HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
+    expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeKind,
         aggregate::HMIRTypeSemantics,
@@ -18,50 +17,75 @@ use cx_hmir::{
 use cx_log::CXResult;
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
-use cx_util::linkage::LinkageMode;
 
 use crate::{
-    body::{BodyLowering, Symbol},
+    body::BodyLowering,
+    builder::HMIRTypeBuilder,
     expr::{lower_expr, lower_initial_value, lower_scope_statements},
-    plan::{DefSource, PlannedDef},
-    resolve::GlobalSymbol,
+    plan::{DefSource, PlannedSymbol},
     ty::{lower_type, staged_signature},
+    unit::{UnitContext, def_name},
 };
 
-pub(crate) fn lower_def(mut context: BodyLowering<'_>, plan: &PlannedDef) -> CXResult<HMIRDefKind> {
-    let span = plan.span();
-    match plan.source() {
-        DefSource::OpaqueType => {
-            let kind = HMIRTypeKind::Opaque {
-                size: 0,
-                alignment: 1,
-            };
-            let ty = context.declare_type(HMIRType::new(
-                kind,
-                HMIRTypeSemantics::default(),
-                span.clone(),
-                Some(plan.name().to_string()),
-            ));
+pub(crate) fn lower_symbol(
+    unit: &UnitContext,
+    types: &mut HMIRTypeBuilder,
+    id: HMIRDefID,
+    symbol: &PlannedSymbol,
+) -> CXResult<HMIRDef> {
+    let tag = symbol
+        .declarations()
+        .first()
+        .and_then(|declaration| declaration.tag());
+    let name = def_name(symbol.name().clone(), tag);
+    let mut opaque = None;
+    let mut declarations = Vec::new();
+    for declaration in symbol.declarations() {
+        let namespace = declaration.namespace().clone();
+        let mut context = BodyLowering::new(unit, types, namespace, false).owned_by(id);
+        let kind = match declaration.source() {
+            Some(source) => Some(lower_def(context, &name, source)?),
+            None if symbol.is_defined() => None,
+            None => Some(HMIRDefKind::Type(*opaque.get_or_insert_with(|| {
+                let kind = HMIRTypeKind::Opaque {
+                    size: 0,
+                    alignment: 1,
+                };
+                context.declare_type(HMIRType::new(
+                    kind,
+                    HMIRTypeSemantics::default(),
+                    declaration.span().clone(),
+                    Some(name.to_string()),
+                ))
+            }))),
+        };
+        declarations.push(declaration.lowered(kind));
+    }
 
-            Ok(HMIRDefKind::Type(ty))
-        }
+    Ok(HMIRDef::new(name, declarations))
+}
+
+fn lower_def(
+    mut context: BodyLowering<'_>,
+    name: &QualifiedName,
+    source: &DefSource,
+) -> CXResult<HMIRDefKind> {
+    match source {
         DefSource::Type { ty } => {
-            let ty_of = context.type_of_types(span);
+            let ty_of = context.type_of_types(&ty.range);
             let initializer = lower_type(&mut context, ty)?;
             let global = HMIRComptimeGlobal::new(context.finish(), ty_of, initializer);
 
-            Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)))
+            Ok(HMIRDefKind::TypeDef(Box::new(global)))
         }
-        DefSource::Function { prototype, body } => {
-            lower_function(context, plan.name(), prototype, *body)
-        }
+        DefSource::Function { prototype, body } => lower_function(context, name, prototype, *body),
         DefSource::Global {
             ty,
             initializer,
             linkage,
             naming,
         } => {
-            let link_name = context.resolver().link_name(plan.name(), *naming);
+            let link_name = context.unit().link_name(name, *naming);
             let ty = lower_type(&mut context, ty)?;
             let initializer = initializer
                 .map(|initializer| lower_initial_value(&mut context, ty, initializer))
@@ -71,12 +95,8 @@ pub(crate) fn lower_def(mut context: BodyLowering<'_>, plan: &PlannedDef) -> CXR
             Ok(HMIRDefKind::Global(Box::new(global)))
         }
         DefSource::EnumVariant { variants, index } => {
-            lower_enum_variant(context, plan.name(), variants, *index)
+            lower_enum_variant(context, name, variants, *index)
         }
-        DefSource::Constructor {
-            union_type,
-            payload,
-        } => lower_constructor(context, plan.name(), union_type, payload, span),
     }
 }
 
@@ -89,7 +109,7 @@ fn lower_function(
     let (params, return_type, contract, root) =
         context.with_stage(prototype.comptime, |this| -> CXResult<_> {
             let mut params = Vec::new();
-            for param in declared_params(this, prototype)? {
+            for param in declared_params(prototype) {
                 let ty = lower_type(this, &param.ty)?;
                 params.push(this.declare(
                     param.name.as_ref(),
@@ -120,7 +140,7 @@ fn lower_function(
         prototype.var_args,
         contract,
     );
-    let symbol_name = context.resolver().link_name(name, prototype.symbol_naming);
+    let symbol_name = context.unit().link_name(name, prototype.symbol_naming);
     let prototype = HMIRFnPrototype::new(symbol_name, prototype.linkage, signature);
     let def = root.map(|root| context.finish_definition(params, root));
 
@@ -132,75 +152,25 @@ fn lower_function(
 }
 
 // A parameter list of a lone unnamed 'void' declares no parameters
-pub(crate) fn declared_params<'h>(
-    context: &BodyLowering<'_>,
-    prototype: &'h HIRFunctionPrototype,
-) -> CXResult<&'h [HIRParameter]> {
-    Ok(match prototype.params.as_slice() {
-        [param] if param.name.is_none() && is_void(context, &param.ty)? => &[],
+pub(crate) fn declared_params<'h>(prototype: &'h HIRFunctionPrototype) -> &'h [HIRParameter] {
+    match prototype.params.as_slice() {
+        [param] if param.name.is_none() && is_void(&param.ty) => &[],
         params => params,
-    })
+    }
 }
 
-pub(crate) fn is_void(context: &BodyLowering<'_>, ty: &HIRType) -> CXResult<bool> {
+fn is_void(ty: &HIRType) -> bool {
     let HIRTypeKind::Identifier {
         name,
         lookup: HIRTypeLookup::Standard,
         args: None,
     } = &ty.kind
     else {
-        return Ok(false);
+        return false;
     };
 
-    Ok(matches!(
-        context.lookup(name, None, &ty.range)?,
-        Symbol::Global(GlobalSymbol::Primitive(HMIRTypeKind::Void))
-    ))
-}
-
-// A sum variant used as a value is a function building the sum from the variant's payload
-fn lower_constructor(
-    mut context: BodyLowering<'_>,
-    name: &QualifiedName,
-    union_type: &HIRType,
-    payload: &HIRType,
-    span: &TokenRange,
-) -> CXResult<HMIRDefKind> {
-    let payload = lower_type(&mut context, payload)?;
-    let value = context.declare(None, payload, false, false, span);
-    let params = vec![value];
-    let return_type = lower_type(&mut context, union_type)?;
-
-    let ty = lower_type(&mut context, union_type)?;
-    let moved = context.push(HMIRExprKind::Local(value), span);
-    let moved = context.ownership(HMIROwnershipOp::Move(moved), span);
-    let sum = context.aggregate_op(
-        HMIRAggregateOp::Initialize {
-            ty,
-            fields: vec![(Some(name.name.clone()), moved)],
-        },
-        span,
-    );
-    let root = context.returning_block(sum, span);
-
-    let signature = HMIRFnSignature::new(
-        HMIRFunctionStage::Runtime,
-        context.fn_params(&params),
-        return_type,
-        false,
-        HMIRContract::default(),
-    );
-    let symbol_name = context
-        .resolver()
-        .link_name(name, HIRSymbolNameScheme::Namespaced);
-    let prototype = HMIRFnPrototype::new(symbol_name, LinkageMode::Static, signature);
-    let def = context.finish_definition(params, root);
-
-    Ok(HMIRDefKind::Function(Box::new(HMIRFunction::new(
-        context.finish(),
-        prototype,
-        Some(def),
-    ))))
+    name.root_name_ref()
+        .is_some_and(|name| name.as_str() == "void")
 }
 
 fn lower_enum_variant(
@@ -246,7 +216,7 @@ fn lower_contract(
         return Ok(HMIRContract::new(body, params, contract.safe, None, None));
     }
 
-    let declared = declared_params(context, prototype)?;
+    let declared = declared_params(prototype);
     let mut conditions = context.detached(prototype.comptime);
     let params = declared
         .iter()

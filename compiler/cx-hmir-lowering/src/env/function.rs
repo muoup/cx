@@ -1,6 +1,8 @@
 use std::cell::Cell;
 
-use cx_hmir::{HMIRFnSignature, HMIRFunctionStage, body::HMIRLocalID, expr::HMIRExprID};
+use cx_hmir::{
+    HMIRFnSignature, HMIRFunctionStage, HMIRUnitID, body::HMIRLocalID, expr::HMIRExprID,
+};
 use cx_util::dense_id;
 
 pub mod comptime;
@@ -28,10 +30,12 @@ impl EvaluationID {
 #[derive(Debug)]
 pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     env: &'env mut HMIREnvironment<'global, 'hmir>,
-    signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
+    signature: Option<&'env HMIRFnSignature<HMIRExprID>>,
     context: FnContext,
     evaluation: EvaluationID,
     permission: Permission,
+    source: HMIRUnitID,
+    return_type: Option<cx_hmir::ty::HMIRTypeID>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -50,7 +54,7 @@ pub enum FnContext {
 impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
     pub fn new(
         env: &'env mut HMIREnvironment<'global, 'hmir>,
-        signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
+        signature: Option<&'env HMIRFnSignature<HMIRExprID>>,
         context: FnContext,
     ) -> Self {
         // A comptime context may stage a runtime signature, as prototype resolution does
@@ -62,7 +66,10 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             );
         }
 
+        let source = env.symbols().local_unit().id();
         Self {
+            source,
+            return_type: None,
             env,
             signature,
             context,
@@ -76,7 +83,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
 
     pub fn child<'parent>(
         &'parent mut self,
-        signature: Option<&'hmir HMIRFnSignature<HMIRExprID>>,
+        signature: Option<&'parent HMIRFnSignature<HMIRExprID>>,
         context: FnContext,
         evaluation: Option<EvaluationID>,
     ) -> LocalLoweringContext<'parent, 'global, 'hmir> {
@@ -85,7 +92,27 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             child.evaluation = evaluation;
             child.permission = self.permission;
         }
+        child.source = self.source;
+        child.return_type = self.return_type;
         child
+    }
+
+    pub fn sourced(mut self, source: HMIRUnitID) -> Self {
+        self.source = source;
+        self
+    }
+
+    pub fn source(&self) -> HMIRUnitID {
+        self.source
+    }
+
+    pub fn return_type(&self) -> Option<cx_hmir::ty::HMIRTypeID> {
+        self.return_type
+    }
+
+    pub fn with_return_type(mut self, ty: cx_hmir::ty::HMIRTypeID) -> Self {
+        self.return_type = Some(ty);
+        self
     }
 
     pub fn env(&self) -> &HMIREnvironment<'global, 'hmir> {
@@ -96,7 +123,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         self.env
     }
 
-    pub fn signature(&self) -> Option<&'hmir HMIRFnSignature<HMIRExprID>> {
+    pub fn signature(&self) -> Option<&'env HMIRFnSignature<HMIRExprID>> {
         self.signature
     }
 

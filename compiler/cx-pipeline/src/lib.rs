@@ -11,7 +11,6 @@ use crate::linker::{link, link_objects, link_relocatable};
 use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop_collect_errors;
 use crate::scheduler::{scheduling_loop, scheduling_loop_many};
-use cx_hir::registry::ExportNameMode;
 use cx_log::CXResult;
 use cx_namespace::module::{ModulePath, NamespacePath};
 use cx_pipeline_data::config::{BinaryEntry, CXProjectConfig, TargetConfig};
@@ -58,8 +57,7 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
     if compiler_context.config.module_mode {
         compiler_context
             .module_db
-            .symbol_registry
-            .set_export_name_mode(entry_unit.namespace().clone(), ExportNameMode::Root);
+            .export_at_root(entry_unit.namespace().clone());
     }
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
@@ -148,8 +146,7 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
                 );
                 compiler_context
                     .module_db
-                    .symbol_registry
-                    .set_export_name_mode(entry_unit.namespace().clone(), ExportNameMode::Root);
+                    .export_at_root(entry_unit.namespace().clone());
                 Ok(CompilationJob::new(
                     vec![],
                     CompilationStep::PreParse,
@@ -205,8 +202,7 @@ pub fn library_compilation(
     );
     compiler_context
         .module_db
-        .symbol_registry
-        .set_export_name_mode(entry_unit.namespace().clone(), ExportNameMode::Root);
+        .export_at_root(entry_unit.namespace().clone());
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
 

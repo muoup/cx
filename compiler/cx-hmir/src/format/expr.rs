@@ -10,7 +10,7 @@ use crate::expr::{
 
 use super::{
     body::{BodyPrinter, indent},
-    ty::{write_def_ref, write_generic_type, write_literal, write_type},
+    ty::{write_def, write_generic_type, write_literal, write_type},
 };
 
 impl std::fmt::Display for HMIRExprID {
@@ -25,7 +25,12 @@ impl BodyPrinter<'_> {
             HMIRExprKind::Literal(literal) => write_literal(f, self.unit(), literal),
             HMIRExprKind::TypeRef(ty) => write_type(f, self.unit(), *ty),
             HMIRExprKind::Local(local) => self.local(f, *local),
-            HMIRExprKind::Def(def) => write_def_ref(f, self.unit(), def),
+            HMIRExprKind::Def(def) => write_def(f, self.unit(), *def),
+            HMIRExprKind::Name { name, tag: None } => write!(f, "{name}"),
+            HMIRExprKind::Name {
+                name,
+                tag: Some(tag),
+            } => write!(f, "{} {name}", tag.prefix()),
             HMIRExprKind::Hole(hole) => write!(f, "{hole}"),
             HMIRExprKind::Type(ty) => write_generic_type(
                 f,
@@ -80,6 +85,11 @@ impl BodyPrinter<'_> {
                 self.expr(f, *callee, depth)?;
                 f.write_str("(")?;
                 self.list(f, args, depth, Self::expr)?;
+                f.write_str(")")
+            }
+            HMIRExprKind::Piped(value) => {
+                f.write_str("piped(")?;
+                self.expr(f, *value, depth)?;
                 f.write_str(")")
             }
 

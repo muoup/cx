@@ -8,7 +8,7 @@ use cx_hir::ast::{
 };
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
-use cx_namespace::lookup::{QualifiedLookup, QualifiedLookupResult};
+use cx_namespace::lookup::candidates;
 use cx_namespace::module::{ModulePath, NamespacePath, QualifiedName};
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_preparse_data::symbol_data::PreparseSymbolKind;
@@ -175,21 +175,38 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn symbol_kind(&self, name: &QualifiedName) -> CXResult<Option<PreparseSymbolKind>> {
-        match self.qualified_lookup(&self.current_module_namespace(), name) {
-            QualifiedLookupResult::Found { value, .. } => Ok(Some(value)),
-            QualifiedLookupResult::NotFound => Ok(None),
-            QualifiedLookupResult::Ambiguous { candidates } => parse_point_error(
-                &self.tokens,
-                &AMBIGUOUS_LOOKUP,
-                (
-                    name.to_string(),
-                    candidates
-                        .iter()
-                        .map(|n| n.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                ),
-            ),
+        let lexical_namespace = self.current_module_namespace();
+        let mut priority = (0, false);
+        let mut found = Vec::new();
+        for candidate in candidates(&lexical_namespace, name, &self.namespace_aliases) {
+            let Some(kind) = self.registry.get_symbol(&candidate.namespace, &candidate.name) else {
+                continue;
+            };
+            let rank = (
+                if candidate.namespace == lexical_namespace { 2 } else { 0 },
+                kind == PreparseSymbolKind::Type,
+            );
+            if rank > priority {
+                found.clear();
+                priority = rank;
+            }
+            if rank == priority {
+                found.push((candidate, kind));
+            }
+        }
+
+        match found.as_slice() {
+            [] => Ok(None),
+            [(_, kind), rest @ ..] if rest.iter().all(|(_, other)| other == kind) => Ok(Some(*kind)),
+            _ => {
+                let mut candidates = found.iter().map(|(name, _)| name.to_string()).collect::<Vec<_>>();
+                candidates.sort();
+                parse_point_error(
+                    &self.tokens,
+                    &AMBIGUOUS_LOOKUP,
+                    (name.to_string(), candidates.join(", ")),
+                )
+            }
         }
     }
 
@@ -215,44 +232,5 @@ impl<'a> ParserData<'a> {
                 }
             }
         }
-    }
-}
-
-impl QualifiedLookup for ParserData<'_> {
-    type Output = PreparseSymbolKind;
-
-    fn lookup_exact(
-        &self,
-        _lexical_namespace: &NamespacePath,
-        name: &QualifiedName,
-    ) -> Option<PreparseSymbolKind> {
-        self.registry.get_symbol(&name.namespace, &name.name)
-    }
-
-    fn resolve_aliases(
-        &self,
-        _lexical_namespace: &NamespacePath,
-        namespace: &NamespacePath,
-    ) -> Vec<NamespacePath> {
-        self.namespace_aliases
-            .get(namespace)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn priority(
-        &self,
-        lexical_namespace: &NamespacePath,
-        name: &QualifiedName,
-        value: &PreparseSymbolKind,
-    ) -> (u8, bool) {
-        (
-            if &name.namespace == lexical_namespace {
-                2
-            } else {
-                0
-            },
-            *value == PreparseSymbolKind::Type,
-        )
     }
 }

@@ -2,51 +2,39 @@ mod body;
 mod builder;
 mod def;
 mod expr;
-mod external;
 mod log;
 mod plan;
-mod resolve;
 mod symbols;
 mod ty;
+mod unit;
 
-use cx_hir::{ast::HIR, registry::GlobalSymbolRegistry};
-use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit, HMIRUnitID};
+use cx_hir::ast::HIR;
+use cx_hmir::{HMIRDefID, HMIRUnit, HMIRUnitID};
 use cx_log::CXResult;
 use cx_namespace::module::NamespacePath;
-use cx_target::ArchitectureConfig;
 
 use crate::{
-    body::BodyLowering, builder::HMIRUnitBuilder, def::lower_def, plan::plan_defs,
-    resolve::Resolver, symbols::symbol_table,
+    builder::HMIRUnitBuilder, def::lower_symbol, plan::plan_symbols, symbols::symbol_table,
+    unit::UnitContext,
 };
-
-pub use external::generate_external_hmir;
 
 pub fn generate_hmir(
     hir: &HIR,
     id: HMIRUnitID,
     namespace: NamespacePath,
-    registry: &GlobalSymbolRegistry,
-    architecture: ArchitectureConfig,
+    root_exports: bool,
 ) -> CXResult<HMIRUnit> {
-    let plans = plan_defs(hir, &namespace);
+    let planned = plan_symbols(hir, &namespace);
+    let context = UnitContext::new(id, root_exports, planned.len());
 
-    let mut resolver = Resolver::new(registry, architecture, id, plans.len());
-    for (index, plan) in plans.iter().enumerate() {
-        resolver.declare_def(plan.name().clone(), HMIRDefID::new(id, index));
-    }
-
-    let symbols = symbol_table(hir, id, &namespace, registry, &plans);
+    let symbols = symbol_table(hir, id, &planned);
     let mut unit = HMIRUnitBuilder::new(id, namespace);
-    for (index, plan) in plans.iter().enumerate() {
-        let namespace = plan.namespace().clone();
-        let context = BodyLowering::new(&resolver, unit.types_mut(), namespace, false)
-            .owned_by(HMIRDefID::new(id, index));
-        let kind = lower_def(context, plan)?;
-
-        unit.push_def(HMIRDef::new(plan.name().clone(), plan.span().clone(), kind));
+    for (index, symbol) in planned.iter().enumerate() {
+        let def = HMIRDefID::new(id, index);
+        let def = lower_symbol(&context, unit.types_mut(), def, symbol)?;
+        unit.push_def(def);
     }
-    for def in resolver.take_statics() {
+    for def in context.take_statics() {
         unit.push_def(def);
     }
 

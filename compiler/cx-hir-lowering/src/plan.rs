@@ -1,22 +1,19 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use cx_hir::ast::{
     HIR, HIRStmt,
     expression::HIRExpression,
     function::{HIRFunctionBody, HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
-    modifiers::{HIRSymbolNameScheme, LinkageMode},
+    modifiers::{HIRSymbolNameScheme, LinkageMode, VisibilityMode},
     types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
-use cx_hmir::unit::symbols::HMIRDeclaration;
-use cx_util::identifier::CXIdent;
+use cx_hmir::{HMIRDeclaration, HMIRDeclarationRole, HMIRDefKind, unit::symbols::HMIRLookupClass};
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::TokenRange;
-
-use crate::resolve::def_name;
+use cx_util::identifier::CXIdent;
 
 pub(crate) enum DefSource<'h> {
-    OpaqueType,
     Type {
         ty: &'h HIRType,
     },
@@ -34,40 +31,25 @@ pub(crate) enum DefSource<'h> {
         variants: &'h [HIREnumVariant],
         index: usize,
     },
-    Constructor {
-        union_type: &'h HIRType,
-        payload: HIRType,
-    },
 }
 
-pub(crate) struct PlannedDef<'h> {
-    name: QualifiedName,
+pub(crate) struct PlannedDeclaration<'h> {
     namespace: NamespacePath,
     span: TokenRange,
-    source: DefSource<'h>,
-    declarations: Vec<HMIRDeclaration>,
+    role: HMIRDeclarationRole,
+    tag: Option<HIRTagKind>,
+    visibility: VisibilityMode,
+    naming: Option<HIRSymbolNameScheme>,
+    source: Option<DefSource<'h>>,
 }
 
-impl<'h> PlannedDef<'h> {
-    pub(crate) fn new(
-        name: QualifiedName,
-        namespace: NamespacePath,
-        span: TokenRange,
-        source: DefSource<'h>,
-    ) -> Self {
-        Self {
-            name,
-            namespace,
-            span,
-            source,
-            declarations: Vec::new(),
-        }
-    }
+pub(crate) struct PlannedSymbol<'h> {
+    name: QualifiedName,
+    class: HMIRLookupClass,
+    declarations: Vec<PlannedDeclaration<'h>>,
+}
 
-    pub(crate) fn name(&self) -> &QualifiedName {
-        &self.name
-    }
-
+impl<'h> PlannedDeclaration<'h> {
     pub(crate) fn namespace(&self) -> &NamespacePath {
         &self.namespace
     }
@@ -76,19 +58,43 @@ impl<'h> PlannedDef<'h> {
         &self.span
     }
 
-    pub(crate) fn source(&self) -> &DefSource<'h> {
-        &self.source
+    pub(crate) fn tag(&self) -> Option<HIRTagKind> {
+        self.tag
     }
 
-    pub(crate) fn declarations(&self) -> &[HMIRDeclaration] {
+    pub(crate) fn source(&self) -> Option<&DefSource<'h>> {
+        self.source.as_ref()
+    }
+
+    pub(crate) fn lowered(&self, kind: Option<HMIRDefKind>) -> HMIRDeclaration {
+        HMIRDeclaration::new(
+            self.span.clone(),
+            self.role,
+            self.tag,
+            self.visibility,
+            self.naming,
+            kind,
+        )
+    }
+}
+
+impl<'h> PlannedSymbol<'h> {
+    pub(crate) fn name(&self) -> &QualifiedName {
+        &self.name
+    }
+
+    pub(crate) fn class(&self) -> HMIRLookupClass {
+        self.class
+    }
+
+    pub(crate) fn declarations(&self) -> &[PlannedDeclaration<'h>] {
         &self.declarations
     }
 
-    fn completes(&self, forward: &HMIRDeclaration) -> bool {
-        matches!(self.source, DefSource::Type { .. })
-            && self.declarations.first().is_some_and(|declaration| {
-                declaration.tag() == forward.tag() && declaration.name() == forward.name()
-            })
+    pub(crate) fn is_defined(&self) -> bool {
+        self.declarations
+            .iter()
+            .any(|declaration| declaration.role == HMIRDeclarationRole::Definition)
     }
 }
 
@@ -97,7 +103,7 @@ fn function_name(base: &NamespacePath, kind: &HIRFunctionKind) -> QualifiedName 
     QualifiedName::new(base.clone().join(key.namespace), key.name)
 }
 
-pub(crate) fn is_forward_declaration(name: &CXIdent, tag: Option<HIRTagKind>, ty: &HIRType) -> bool {
+fn is_forward_declaration(name: &CXIdent, tag: Option<HIRTagKind>, ty: &HIRType) -> bool {
     matches!(
         &ty.kind,
         HIRTypeKind::Identifier {
@@ -108,38 +114,9 @@ pub(crate) fn is_forward_declaration(name: &CXIdent, tag: Option<HIRTagKind>, ty
     )
 }
 
-pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<PlannedDef<'h>> {
-    let defined_types = hir
-        .definition_stmts
-        .iter()
-        .filter_map(|definition| match &definition.stmt {
-            HIRStmt::TypeDefinition {
-                name: Some(name),
-                ty,
-                tag,
-                ..
-            } if !is_forward_declaration(name, *tag, ty) => Some((name.clone(), *tag)),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-
-    let defined_functions = hir
-        .definition_stmts
-        .iter()
-        .filter_map(|definition| match &definition.stmt {
-            HIRStmt::FunctionDefinition {
-                prototype,
-                body: Some(_),
-                ..
-            } => Some(prototype.kind.into_key()),
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-
-    let mut plans = Vec::new();
-    // Declarations of a function defined in this unit go last, so that its name finds the definition
-    let mut redeclarations = Vec::new();
-    let mut forward_declarations = Vec::new();
+pub(crate) fn plan_symbols<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<PlannedSymbol<'h>> {
+    let mut symbols = Vec::<PlannedSymbol>::new();
+    let mut indices = HashMap::new();
     for definition in &hir.definition_stmts {
         let base = if definition.namespace.is_root() {
             &definition.namespace
@@ -149,27 +126,30 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
         let (HIRStmt::TypeDefinition { visibility, .. }
         | HIRStmt::FunctionDefinition { visibility, .. }
         | HIRStmt::GlobalVariableDefinition { visibility, .. }) = &definition.stmt;
-        let declare =
-            |name: QualifiedName, tag: Option<HIRTagKind>, naming: Option<HIRSymbolNameScheme>| {
-                HMIRDeclaration::new(name, tag, *visibility, naming)
-            };
-        let planned = |name: QualifiedName,
-                       tag: Option<HIRTagKind>,
-                       naming: Option<HIRSymbolNameScheme>,
-                       span: &TokenRange,
-                       source: DefSource<'h>| PlannedDef {
-            name: def_name(name.clone(), tag),
-            namespace: definition.namespace.clone(),
-            span: span.clone(),
-            source,
-            declarations: vec![declare(name, tag, naming)],
-        };
-        let mut plan = |name: QualifiedName,
-                        tag: Option<HIRTagKind>,
-                        naming: Option<HIRSymbolNameScheme>,
-                        span: &TokenRange,
-                        source: DefSource<'h>| {
-            plans.push(planned(name, tag, naming, span, source))
+        let mut declare = |name: QualifiedName,
+                           tag: Option<HIRTagKind>,
+                           naming: Option<HIRSymbolNameScheme>,
+                           span: &TokenRange,
+                           role: HMIRDeclarationRole,
+                           source: Option<DefSource<'h>>| {
+            let class = HMIRLookupClass::from(tag);
+            let index = *indices.entry((name.clone(), class)).or_insert_with(|| {
+                symbols.push(PlannedSymbol {
+                    name,
+                    class,
+                    declarations: Vec::new(),
+                });
+                symbols.len() - 1
+            });
+            symbols[index].declarations.push(PlannedDeclaration {
+                namespace: definition.namespace.clone(),
+                span: span.clone(),
+                role,
+                tag,
+                visibility: *visibility,
+                naming,
+                source,
+            });
         };
 
         match &definition.stmt {
@@ -178,49 +158,42 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                 ty,
                 tag,
                 ..
-            } if is_forward_declaration(name, *tag, ty) => {
-                let name = QualifiedName::new(base.clone(), name.clone());
-                if defined_types.contains(&(name.name.clone(), *tag)) {
-                    forward_declarations.push(declare(name, *tag, None));
+            } => {
+                let (role, source) = if is_forward_declaration(name, *tag, ty) {
+                    (HMIRDeclarationRole::Declaration, None)
                 } else {
-                    plan(name, *tag, None, &ty.range, DefSource::OpaqueType);
-                }
+                    (
+                        HMIRDeclarationRole::Definition,
+                        Some(DefSource::Type { ty }),
+                    )
+                };
+                declare(
+                    QualifiedName::new(base.clone(), name.clone()),
+                    *tag,
+                    None,
+                    &ty.range,
+                    role,
+                    source,
+                )
             }
-            HIRStmt::TypeDefinition {
-                name: Some(name),
-                ty,
-                tag,
-                ..
-            } => plan(
-                QualifiedName::new(base.clone(), name.clone()),
-                *tag,
-                None,
-                &ty.range,
-                DefSource::Type { ty },
-            ),
             HIRStmt::TypeDefinition { name: None, .. } => {}
 
             HIRStmt::FunctionDefinition {
                 prototype, body, ..
-            } => {
-                let declaration_only =
-                    body.is_none() && defined_functions.contains(&prototype.kind.into_key());
-                let def = planned(
-                    function_name(base, &prototype.kind),
-                    None,
-                    Some(prototype.symbol_naming),
-                    &prototype.range,
-                    DefSource::Function {
-                        prototype,
-                        body: body.as_ref(),
-                    },
-                );
-                if declaration_only {
-                    redeclarations.push(def);
-                } else {
-                    plans.push(def);
-                }
-            }
+            } => declare(
+                function_name(base, &prototype.kind),
+                None,
+                Some(prototype.symbol_naming),
+                &prototype.range,
+                match body {
+                    Some(_) => HMIRDeclarationRole::Definition,
+                    None => HMIRDeclarationRole::Declaration,
+                },
+                Some(DefSource::Function {
+                    prototype,
+                    body: body.as_ref(),
+                }),
+            ),
 
             HIRStmt::GlobalVariableDefinition { variable, .. } => match variable {
                 HIRGlobalVariable::Standard {
@@ -230,42 +203,40 @@ pub(crate) fn plan_defs<'h>(hir: &'h HIR, namespace: &NamespacePath) -> Vec<Plan
                     linkage,
                     symbol_name_scheme,
                     ..
-                } => plan(
+                } => declare(
                     QualifiedName::new(base.clone(), name.clone()),
                     None,
                     Some(*symbol_name_scheme),
                     &ty.range,
-                    DefSource::Global {
+                    match (initializer, linkage) {
+                        (Some(_), _) => HMIRDeclarationRole::Definition,
+                        (None, LinkageMode::Extern) => HMIRDeclarationRole::Declaration,
+                        (None, _) => HMIRDeclarationRole::Tentative,
+                    },
+                    Some(DefSource::Global {
                         ty,
                         initializer: initializer.as_ref(),
                         linkage: *linkage,
                         naming: *symbol_name_scheme,
-                    },
+                    }),
                 ),
                 HIRGlobalVariable::EnumDefinition(enumeration) => {
                     for (index, variant) in enumeration.variants.iter().enumerate() {
-                        plan(
+                        declare(
                             QualifiedName::new(base.clone(), variant.name.clone()),
                             None,
                             None,
                             &TokenRange::internal(),
-                            DefSource::EnumVariant {
+                            HMIRDeclarationRole::Definition,
+                            Some(DefSource::EnumVariant {
                                 variants: &enumeration.variants,
                                 index,
-                            },
+                            }),
                         );
                     }
                 }
             },
         }
     }
-    for forward in forward_declarations {
-        let definition = plans
-            .iter_mut()
-            .find(|plan| plan.completes(&forward))
-            .expect("Forward declaration without a planned definition");
-        definition.declarations.push(forward);
-    }
-    plans.extend(redeclarations);
-    plans
+    symbols
 }

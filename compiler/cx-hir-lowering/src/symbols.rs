@@ -1,15 +1,13 @@
-use cx_hir::{ast::HIR, registry::GlobalSymbolRegistry};
+use cx_hir::ast::HIR;
 use cx_hmir::{HMIRDefID, HMIRUnitID, unit::symbols::HMIRSymbolTable};
 use cx_namespace::module::NamespacePath;
 
-use crate::plan::PlannedDef;
+use crate::plan::PlannedSymbol;
 
 pub(crate) fn symbol_table(
     hir: &HIR,
     id: HMIRUnitID,
-    namespace: &NamespacePath,
-    registry: &GlobalSymbolRegistry,
-    plans: &[PlannedDef],
+    planned: &[PlannedSymbol],
 ) -> HMIRSymbolTable {
     let mut imports = Vec::<NamespacePath>::new();
     for name in hir.imports.iter().flat_map(|import| &import.names) {
@@ -19,20 +17,14 @@ pub(crate) fn symbol_table(
         }
     }
 
-    let declarations = plans
+    let symbols = planned
         .iter()
         .enumerate()
-        .flat_map(|(index, plan)| {
-            plan.declarations()
-                .iter()
-                .map(move |declaration| (HMIRDefID::new(id, index), declaration.clone()))
+        .map(|(index, symbol)| {
+            let key = (symbol.name().clone(), symbol.class());
+            (key, HMIRDefID::new(id, index))
         })
         .collect();
 
-    HMIRSymbolTable::new(
-        imports,
-        hir.namespace_aliases.clone(),
-        registry.export_name_mode(namespace),
-        declarations,
-    )
+    HMIRSymbolTable::new(imports, hir.namespace_aliases.clone(), symbols)
 }
