@@ -21,35 +21,6 @@ use crate::{
     },
 };
 
-pub(crate) fn complete(
-    env: &mut HMIREnvironment,
-    id: HMIRDefID,
-    def: &HMIRDef,
-    shape: &Shape,
-) -> CXResult<CompletedSymbol> {
-    let declarations = def.declarations();
-    match *shape {
-        Shape::Function { staged: true, .. } => Ok(CompletedSymbol::StagedFunction),
-        Shape::Function {
-            declaration,
-            linkage,
-            ..
-        } => function(env, id, def, declaration, linkage),
-        Shape::Global {
-            declaration,
-            linkage,
-            ..
-        } => global(env, id, def, declaration, linkage),
-        Shape::Alias => alias(env, id, def),
-        Shape::Constant(declaration) => constant(env, id, &declarations[declaration]),
-        Shape::Type(declaration) => Ok(CompletedSymbol::Type(type_definition(
-            env,
-            id,
-            &declarations[declaration],
-        )?)),
-    }
-}
-
 pub(crate) fn type_definition(
     env: &mut HMIREnvironment,
     id: HMIRDefID,

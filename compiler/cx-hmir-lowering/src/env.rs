@@ -1,5 +1,6 @@
 pub(crate) mod function;
 pub(crate) mod generation;
+pub(crate) mod memo;
 pub(crate) mod module;
 pub(crate) mod resolver;
 pub(crate) mod symbols;
@@ -44,20 +45,6 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
             resolver: HMIRResolver::new(),
             generation: GenerationQueue::new(),
         }
-    }
-
-    pub fn import_type(&mut self, owner: HMIRUnitID, ty: HMIRTypeID) -> HMIRTypeID {
-        if owner == self.symbols.local_unit().id() {
-            return ty;
-        }
-        if let Some(id) = self.resolver.imported.get(&(owner, ty)) {
-            return *id;
-        }
-        let unit = self.symbols.owner(owner).expect("type owner is available");
-        let value = unit.resolve_type(ty).clone();
-        let id = self.resolver.realize_type(value);
-        self.resolver.imported.insert((owner, ty), id);
-        id
     }
 
     pub fn require_explicit_return(&self) -> bool {

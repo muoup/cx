@@ -9,62 +9,6 @@ use cx_util::linkage::LinkageMode;
 
 use crate::log::hmir_error;
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) enum Shape {
-    Function {
-        declaration: usize,
-        linkage: LinkageMode,
-        defined: bool,
-        staged: bool,
-    },
-    Global {
-        declaration: usize,
-        linkage: LinkageMode,
-        initialized: bool,
-    },
-    Alias,
-    Constant(usize),
-    Type(usize),
-}
-
-impl Shape {
-    pub(crate) fn is_root(&self) -> bool {
-        match *self {
-            Shape::Function {
-                linkage,
-                defined,
-                staged,
-                ..
-            } => defined && !staged && linkage != LinkageMode::Static,
-            Shape::Global {
-                linkage,
-                initialized,
-                ..
-            } => match linkage {
-                LinkageMode::Standard => true,
-                LinkageMode::Extern => initialized,
-                LinkageMode::Static => false,
-            },
-            Shape::Alias | Shape::Constant(_) | Shape::Type(_) => false,
-        }
-    }
-
-    pub(crate) fn reconciles(&self) -> bool {
-        match *self {
-            Shape::Function {
-                defined, staged, ..
-            } => defined && !staged,
-            Shape::Global {
-                linkage,
-                initialized,
-                ..
-            } => initialized || linkage != LinkageMode::Extern,
-            Shape::Alias => true,
-            Shape::Constant(_) | Shape::Type(_) => false,
-        }
-    }
-}
-
 pub(crate) fn check(def: &HMIRDef) -> CXResult<Shape> {
     let declarations = def.declarations();
     let tag = declarations[0].tag();

@@ -6,16 +6,14 @@ use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::branded_id;
 
-use crate::{
-    ty::HMIRTypeID,
-    unit::{
-        function::HMIRFunction,
-        global::{HMIRComptimeGlobal, HMIRGlobal},
-        id::HMIRUnitID,
-    },
+use crate::unit::{
+    function::HMIRFunction,
+    global::{HMIRComptimeGlobal, HMIRGlobal},
+    id::HMIRUnitID,
 };
 
 branded_id!(HMIRDefID, HMIRUnitID, "def");
+branded_id!(HMIRDeclarationPoint, HMIRUnitID, "decl");
 
 #[derive(Debug, Clone)]
 pub struct HMIRDef {
@@ -32,6 +30,7 @@ pub enum HMIRDeclarationRole {
 
 #[derive(Debug, Clone)]
 pub struct HMIRDeclaration {
+    point: HMIRDeclarationPoint,
     span: TokenRange,
     role: HMIRDeclarationRole,
     tag: Option<HIRTagKind>,
@@ -45,8 +44,6 @@ pub enum HMIRDefKind {
     Function(Box<HMIRFunction>),
     Global(Box<HMIRGlobal>),
     ComptimeGlobal(Box<HMIRComptimeGlobal>),
-    TypeDef(Box<HMIRComptimeGlobal>),
-    Type(HMIRTypeID),
 }
 
 impl HMIRDef {
@@ -65,6 +62,7 @@ impl HMIRDef {
 
 impl HMIRDeclaration {
     pub fn new(
+        point: HMIRDeclarationPoint,
         span: TokenRange,
         role: HMIRDeclarationRole,
         tag: Option<HIRTagKind>,
@@ -73,6 +71,7 @@ impl HMIRDeclaration {
         kind: Option<HMIRDefKind>,
     ) -> Self {
         Self {
+            point,
             span,
             role,
             tag,
@@ -80,6 +79,10 @@ impl HMIRDeclaration {
             naming,
             kind,
         }
+    }
+
+    pub fn point(&self) -> HMIRDeclarationPoint {
+        self.point
     }
 
     pub fn span(&self) -> &TokenRange {

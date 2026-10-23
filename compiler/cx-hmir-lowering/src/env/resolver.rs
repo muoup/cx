@@ -1,42 +1,39 @@
 use std::collections::{HashMap, HashSet};
 
-use cx_hmir::{
-    HMIRDefID, HMIRUnitID,
-    expr::HMIRExprID,
-    ty::{HMIRType, HMIRTypeID},
-};
+use cx_hmir::ty::{HMIRType, HMIRTypeID};
 use cx_mir::MIRTypeID;
 
-use crate::symbol::{
-    SymbolState,
-    recursive::{ProvisionalType, TypeFrame},
+use crate::{
+    env::memo::{MemoContext, MemoContextID, MemoEntry, MemoID, MemoKey},
+    value::HMIRValue,
 };
+
+pub mod memo;
 
 const REALIZED_BIT: usize = 1 << 63;
 
 #[derive(Debug)]
 pub(crate) struct HMIRResolver {
-    realized: HashMap<HMIRTypeID, HMIRType>,
-    declared: HashMap<HMIRExprID, HMIRTypeID>,
     incomplete: HashSet<HMIRTypeID>,
+    realized: HashMap<HMIRTypeID, HMIRType>,
     lowered: HashMap<HMIRTypeID, MIRTypeID>,
-    symbols: HashMap<HMIRDefID, SymbolState>,
-    pub imported: HashMap<(HMIRUnitID, HMIRTypeID), HMIRTypeID>,
-    pub defining_types: Vec<TypeFrame>,
-    pub active_symbols: Vec<HMIRDefID>,
+    
+    memo: HashMap<MemoKey, MemoID>,
+    entries: Vec<MemoEntry>,
+    contexts: Vec<MemoContext>,
+    active: Vec<MemoID>,
 }
 
 impl HMIRResolver {
     pub fn new() -> Self {
         Self {
             realized: HashMap::new(),
-            declared: HashMap::new(),
             incomplete: HashSet::new(),
             lowered: HashMap::new(),
-            symbols: HashMap::new(),
-            imported: HashMap::new(),
-            defining_types: Vec::new(),
-            active_symbols: Vec::new(),
+            memo: HashMap::new(),
+            entries: Vec::new(),
+            contexts: Vec::new(),
+            active: Vec::new(),
         }
     }
 
@@ -46,47 +43,24 @@ impl HMIRResolver {
         id
     }
 
-    pub fn publish_type(&mut self, ty: HMIRTypeID) {
-        let pending = self
-            .defining_types
-            .iter()
-            .filter(|frame| {
-                matches!(
-                    self.symbols.get(&frame.def),
-                    Some(SymbolState::InProgress(None))
-                )
-            })
-            .map(|frame| (frame.def, frame.constructors.clone()))
-            .collect::<Vec<_>>();
-        for (id, constructors) in pending {
-            let provisional = constructors
-                .into_iter()
-                .rev()
-                .fold(ty, |inner, constructor| constructor.apply(self, inner));
-            self.symbols.insert(
-                id,
-                SymbolState::InProgress(Some(ProvisionalType {
-                    ty: provisional,
-                    reservation: ty,
-                })),
-            );
-        }
+    pub fn intern_context(&mut self, context: MemoContext) -> MemoContextID {
+        todo!("Intern immutable binding handles, owner, declaration visibility, expected type, and any owning evaluation")
     }
 
-    pub fn forget_symbol(&mut self, id: HMIRDefID) {
-        self.symbols.remove(&id);
+    pub fn reserve(&mut self, key: MemoKey) -> MemoID {
+        todo!("Reuse or allocate a stable expression handle without evaluating it")
+    }
+
+    pub fn complete(&mut self, id: MemoID, value: HMIRValue) {
+        todo!("Complete the reserved entry with a settled value valid in its owning context")
+    }
+
+    pub fn forward(&mut self, alias: MemoID, target: MemoID) {
+        todo!("Forward an unresolved entry to another expression without forcing it; diagnose cycles when evaluated")
     }
 
     pub fn realized_type(&self, ty: HMIRTypeID) -> Option<&HMIRType> {
         self.realized.get(&ty)
-    }
-
-    // A declaration is one type however often it is evaluated. 'incomplete' stands for it until it is completed.
-    pub fn declare_type(&mut self, declaration: HMIRExprID, incomplete: HMIRType) -> HMIRTypeID {
-        let id = self.realize_type(incomplete);
-        self.declared.insert(declaration, id);
-        self.incomplete.insert(id);
-        id
     }
 
     pub fn complete_type(&mut self, id: HMIRTypeID, ty: HMIRType) {
@@ -102,23 +76,11 @@ impl HMIRResolver {
         self.incomplete.contains(&id)
     }
 
-    pub fn declared_type(&self, declaration: HMIRExprID) -> Option<HMIRTypeID> {
-        self.declared.get(&declaration).copied()
-    }
-
     pub fn lowered_type(&self, ty: HMIRTypeID) -> Option<MIRTypeID> {
         self.lowered.get(&ty).copied()
     }
 
     pub fn cache_lowered(&mut self, ty: HMIRTypeID, mir: MIRTypeID) {
         self.lowered.insert(ty, mir);
-    }
-
-    pub fn symbol_state(&self, def: HMIRDefID) -> Option<&SymbolState> {
-        self.symbols.get(&def)
-    }
-
-    pub fn set_symbol_state(&mut self, def: HMIRDefID, state: SymbolState) {
-        self.symbols.insert(def, state);
     }
 }
