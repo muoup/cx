@@ -6,7 +6,6 @@ mod contract;
 mod control;
 mod def;
 mod function;
-mod guard;
 mod literal;
 mod name;
 mod place;

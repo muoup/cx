@@ -1,10 +1,55 @@
 /* CX-STDOUT: red other 7 9 two */
+/* CX-STDOUT-NEXT: stored 1 3 0 */
+/* CX-STDOUT-NEXT: guards 1 1 1 1 */
+/* CX-STDOUT-NEXT: effects 2 2 */
+/* CX-STDOUT-NEXT: loop 6 0 */
+/* CX-STDOUT-NEXT: comptime 1121 */
 
 #include <stdio.h>
 
 enum color { RED, GREEN, BLUE };
 
 enum union shape { circle :: int, square :: int, empty :: void };
+
+struct Point { int x; int y; };
+
+enum union Maybe { none :: void, some :: Point };
+
+int fetched = 0;
+int touched = 0;
+
+Maybe fetch(int which) {
+    ++fetched;
+    if (which) return Maybe::some({which, which * 2});
+    return Maybe::none();
+}
+
+bool touch(bool result) {
+    ++touched;
+    return result;
+}
+
+comptime int comptime_guards() {
+    shape value = shape::circle(5);
+    shape empty = shape::empty();
+    int total = 0;
+    bool present = value is circle(auto& held);
+    if (present) total += held - 4;
+    bool absent = empty is circle(auto& missing);
+    if (!absent) total += 10;
+    if (empty is circle(auto& never) && never > 0) total += 1000;
+    if (!(value is circle(auto& seen)) || seen == 5) total += 100;
+    if ((shape::square(7)) is square(auto owned) && owned == 7) total += 1000;
+    if ((shape::empty()) is square(auto unused)) total += 5000;
+    int steps = 0;
+    while (value is circle(auto& step) && steps < step) {
+        steps++;
+        total += 2;
+    }
+    return total;
+}
+
+comptime int comptime_result = comptime_guards();
 
 const char* name(color c) {
     match (c) {
@@ -32,5 +77,39 @@ int main() {
         _ => yield "many";
     };
     printf("%s %s %d %d %s\n", name(RED), name(BLUE), r, r2, word);
+
+    Maybe present = Maybe::some({3, 4});
+    Maybe absent = Maybe::none();
+    bool stored = present is some(auto& kept);
+    bool unmatched = absent is some(auto& dangling);
+    int x = 0;
+    if (stored) x = kept.x;
+    printf("stored %d %d %d\n", stored, x, unmatched);
+
+    int and_hit = 0, not_hit = 0, or_hit = 0, nested_hit = 0;
+    if (absent is some(auto& a) && touch(a.x > 0)) return 1;
+    if (present is some(auto& b) && touch(b.x == 3)) and_hit = 1;
+    if (!(absent is some(auto& c))) not_hit = 1;
+    if (!(present is some(auto& d)) || d.y == 4) or_hit = 1;
+    if ((present is some(auto& e) && e.x == 3) || (absent is some(auto& f) && touch(f.x == 0))) nested_hit = 1;
+    printf("guards %d %d %d %d\n", and_hit, not_hit, or_hit, nested_hit);
+
+    if (fetch(1) is some(auto g) && g.y == 2) touch(true);
+    if (fetch(0) is some(auto h) && touch(h.x == 0)) return 1;
+    printf("effects %d %d\n", touched, fetched);
+
+    Maybe cursor = Maybe::some({3, 0});
+    int sum = 0;
+    while (cursor is some(auto& w)) {
+        sum += w.x;
+        if (w.x == 1) {
+            cursor = Maybe::none();
+        } else {
+            w.x--;
+        }
+    }
+    int remaining = cursor is some(_);
+    printf("loop %d %d\n", sum, remaining);
+    printf("comptime %d\n", comptime_result);
     return 0;
 }

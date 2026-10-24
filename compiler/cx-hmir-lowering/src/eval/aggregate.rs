@@ -57,7 +57,7 @@ pub(crate) fn eval_aggregate(
             Ok(Evaluation::Ready(dereference(context, element, span)?))
         }
         HMIRAggregateOp::Is { value, pattern } => {
-            eval_is(context, body, span, *value, pattern, None)
+            eval_is(context, body, span, *value, pattern)
         }
         HMIRAggregateOp::Unpack { value, bindings } => {
             eval_unpack(context, body, span, *value, bindings)

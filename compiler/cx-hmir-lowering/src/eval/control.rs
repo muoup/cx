@@ -4,7 +4,7 @@ use cx_hmir::{
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_log::catalogue::{mir, typecheck};
-use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind};
+use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, MIRValue};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
         binding::eval_scoped,
         coerce, contract, eval, eval_type,
         flow::{self, ComptimeStop, Evaluation, RuntimeStop, StopReason, ready},
-        guard, literal, storage, types,
+        literal, storage, types,
     },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
@@ -81,7 +81,14 @@ fn runtime_if(
 
     let Some(else_branch) = else_branch else {
         let merge = runtime::block(context, "if.merge");
-        ready!(guard::branch(context, body, condition, then_block, merge));
+        let condition = ready!(eval_condition(context, body, condition));
+        runtime::branch(
+            context,
+            condition,
+            MIRBlockTarget::new(then_block),
+            MIRBlockTarget::new(merge),
+            span.clone(),
+        );
 
         runtime::switch_to(context, then_block);
         ready!(flow::catch_diverged(eval_scoped(
@@ -96,9 +103,14 @@ fn runtime_if(
     };
 
     let else_block = runtime::block(context, "if.else");
-    ready!(guard::branch(
-        context, body, condition, then_block, else_block
-    ));
+    let condition = ready!(eval_condition(context, body, condition));
+    runtime::branch(
+        context,
+        condition,
+        MIRBlockTarget::new(then_block),
+        MIRBlockTarget::new(else_block),
+        span.clone(),
+    );
 
     runtime::switch_to(context, then_block);
     let then = flow::catch_diverged(eval_scoped(context, body, then_branch))?;
@@ -287,10 +299,8 @@ fn runtime_while(
     runtime::switch_to(context, condition_block);
     let scope_depth = context.runtime().open_scopes().len();
     emit::open_scope(context, span.clone());
-    let condition = ready!(flow::catch_diverged(guard::branch(
-        context, body, condition, body_block, exit
-    )));
-    let Some(()) = condition else {
+    let condition = ready!(flow::catch_diverged(eval_condition(context, body, condition)));
+    let Some(condition) = condition else {
         for block in [Some(body_block), increment_block, Some(exit)] {
             let Some(block) = block else { continue };
 
@@ -303,6 +313,14 @@ fn runtime_while(
         emit::close_scope(context, span.clone());
         return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
     };
+
+    runtime::branch(
+        context,
+        condition,
+        MIRBlockTarget::new(body_block),
+        MIRBlockTarget::new(exit),
+        span.clone(),
+    );
 
     let continue_block = increment_block.unwrap_or(condition_block);
     context.runtime_mut().push_exit(ExitFrame::new(
@@ -327,6 +345,17 @@ fn runtime_while(
 
     runtime::switch_to(context, exit);
     Ok(Evaluation::Ready(literal::unit(context, span)))
+}
+
+fn eval_condition(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    condition: HMIRExprID,
+) -> EvalResult<MIRValue> {
+    let span = body.expr(condition).span();
+    let value = ready!(eval(context, body, condition));
+    let value = coerce::condition(context, value, span)?;
+    Ok(Evaluation::Ready(runtime::lower_value(context, &value, span)?))
 }
 
 fn eval_logical_operand(

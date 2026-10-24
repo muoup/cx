@@ -8,12 +8,11 @@ use cx_hmir::{
     },
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::{MIRBasicBlockID, MIRBlockTarget};
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::{self, runtime},
-    env::function::{FnContext, LocalLoweringContext},
+    emit,
+    env::function::LocalLoweringContext,
     eval::{
         EvalResult, coerce, constructor, eval, eval_type,
         flow::{self, Evaluation, ready},
@@ -21,7 +20,7 @@ use crate::{
         storage, types,
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRValue, constant::HMIRConstant},
 };
 
 pub(crate) fn variant(
@@ -174,7 +173,6 @@ pub(crate) fn eval_is(
     span: &TokenRange,
     value: HMIRExprID,
     pattern: &HMIRPattern,
-    targets: Option<(MIRBasicBlockID, MIRBasicBlockID)>,
 ) -> EvalResult<HMIRValue> {
     if !matches!(pattern, HMIRPattern::Variant { .. }) {
         let feature = "an 'is' test against a pattern other than a variant".into();
@@ -206,64 +204,19 @@ pub(crate) fn eval_is(
     );
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = emit::binary(context, HMIRBinaryOp::Eq, &tag, &expected, boolean, span)?;
-    let binding = match pattern {
-        HMIRPattern::Variant {
-            inner: Some(inner), ..
-        } => match inner.as_ref() {
-            HMIRPattern::Binding(local) => Some(*local),
-            _ => None,
-        },
-        _ => None,
-    };
-    let bind_payload = |context: &mut LocalLoweringContext, local| {
+    if let HMIRPattern::Variant {
+        inner: Some(inner), ..
+    } = pattern
+        && let HMIRPattern::Binding(local) = inner.as_ref()
+    {
         let owned = !context.env().is_reference(subject.ty());
         let subject = if owned {
-            storage::temporary(context, subject.clone(), span)?
+            storage::temporary(context, subject, span)?
         } else {
-            subject.clone()
+            subject
         };
         let value = self::payload(context, &subject, index, payload, span)?;
-        bind(context, body, local, value, owned, span)
-    };
-    match context.context() {
-        FnContext::Comptime(_) => {
-            if matches!(result.kind(), HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) if *value != 0)
-                && let Some(local) = binding
-            {
-                bind_payload(context, local)?;
-            }
-        }
-        FnContext::Runtime(_) => {
-            if let Some((matched, unmatched)) = targets {
-                let success = if binding.is_some() {
-                    runtime::block(context, "pattern.bind")
-                } else {
-                    matched
-                };
-                let condition = runtime::lower_value(context, &result, span)?;
-                runtime::branch(
-                    context,
-                    condition,
-                    MIRBlockTarget::new(success),
-                    MIRBlockTarget::new(unmatched),
-                    span.clone(),
-                );
-                if let Some(local) = binding {
-                    runtime::switch_to(context, success);
-                    bind_payload(context, local)?;
-                    runtime::jump(context, matched, span.clone());
-                }
-            } else if binding.is_some() {
-                return Err(hmir_error(
-                    span,
-                    &typecheck::INVALID_CONTEXT,
-                    (
-                        "pattern binding".into(),
-                        "a value expression; use it in a condition".into(),
-                    ),
-                ));
-            }
-        }
+        bind(context, body, *local, value, owned, span)?;
     }
     Ok(Evaluation::Ready(result))
 }
