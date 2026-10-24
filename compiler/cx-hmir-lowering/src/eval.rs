@@ -28,7 +28,6 @@ use cx_hmir::{
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::HMIRTypeID,
-    unit::function::HMIRFnDefinition,
 };
 use cx_log::{
     CXResult,
@@ -81,7 +80,7 @@ pub(crate) fn lower_runtime_function<'hmir>(
         .with_return_type(*signature.return_type());
 
     emit::open_scope(&mut context, span.clone());
-    let completion = runtime_definition(&mut context, function, def, signature);
+    let completion = runtime_definition(&mut context, function, signature);
     emit::close_scope(&mut context, span.clone());
     flow::top(flow::catch_diverged(completion))?;
 
@@ -94,12 +93,11 @@ pub(crate) fn lower_runtime_function<'hmir>(
 fn runtime_definition(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
-    def: &HMIRFnDefinition,
     signature: &HMIRFnSignature<HMIRTypeID>,
 ) -> EvalResult<HMIRValue> {
     let body = function.body();
 
-    for (param, local) in signature.params().iter().zip(def.params()) {
+    for (param, local) in signature.params().iter().zip(function.params()) {
         let decl = body.local(*local);
         let ty = *param.ty();
         let value = runtime::parameter(context, ty, decl.name().cloned(), decl.span())?;

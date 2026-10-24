@@ -1,0 +1,7 @@
+comptime @type Box(@type T) => struct { T value; };
+
+int main() {
+    Box(int) integers = { .value = 1 };
+    Box(float) floats = integers;
+    return 0;
+}

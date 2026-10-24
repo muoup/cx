@@ -1,7 +1,7 @@
 use std::ptr;
 
 use cx_hmir::{
-    HMIRBody, HMIRDeclarationRole, HMIRDefID, HMIRDefKind,
+    HMIRBody, HMIRDeclarationRole, HMIRDefID, HMIRDefKind, HMIRFunctionStage,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
@@ -65,8 +65,22 @@ pub(crate) fn definition(
         .expect("selected declaration has content")
     {
         HMIRDefKind::Function(function) => {
-            if structure::needs_specialization(function) {
-                todo!("reference to a function with dependent parameters");
+            if function.signature().stage() == HMIRFunctionStage::Comptime
+                || structure::needs_specialization(function)
+            {
+                let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+                    HMIRTypeKind::FunctionItem(id),
+                    HMIRTypeSemantics::default(),
+                    span.clone(),
+                    None,
+                ));
+                return Ok(HMIRValue::constant(
+                    ty,
+                    HMIRConstant::Function {
+                        def: id,
+                        args: Vec::new(),
+                    },
+                ));
             }
             let mut canonical = None;
             for (_, declaration) in structure::visible(def, context.visible_through()) {

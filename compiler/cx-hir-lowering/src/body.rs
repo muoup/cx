@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, mem, rc::Rc};
 
 use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
@@ -153,13 +153,9 @@ impl<'a> BodyLowering<'a> {
             .collect()
     }
 
-    pub(crate) fn finish_definition(
-        &mut self,
-        params: Vec<HMIRLocalID>,
-        root: HMIRExprID,
-    ) -> HMIRFnDefinition {
-        let labels = std::mem::take(&mut self.address_labels);
-        HMIRFnDefinition::new(params.into(), root, labels)
+    pub(crate) fn finish_definition(&mut self, root: HMIRExprID) -> HMIRFnDefinition {
+        let labels = mem::take(&mut self.address_labels);
+        HMIRFnDefinition::new(root, labels)
     }
 
     pub(crate) fn push(&mut self, kind: HMIRExprKind, span: &TokenRange) -> HMIRExprID {
@@ -205,7 +201,7 @@ impl<'a> BodyLowering<'a> {
     }
 
     pub(crate) fn with_stage<T>(&mut self, comptime: bool, f: impl FnOnce(&mut Self) -> T) -> T {
-        let previous = std::mem::replace(&mut self.comptime, comptime);
+        let previous = mem::replace(&mut self.comptime, comptime);
         let result = f(self);
         self.comptime = previous;
         result
@@ -277,7 +273,7 @@ impl<'a> BodyLowering<'a> {
     // Records a 'default' label in the enclosing switch, returning whether it is the first
     pub(crate) fn declare_switch_default(&mut self) -> bool {
         self.enclosing_switch()
-            .is_some_and(|has_default| !std::mem::replace(has_default, true))
+            .is_some_and(|has_default| !mem::replace(has_default, true))
     }
 
     pub(crate) fn declare(
@@ -437,8 +433,8 @@ pub(crate) fn lower_variant_constructor(
         HMIRContract::default(),
     );
     let prototype = HMIRFnPrototype::new(name.clone(), LinkageMode::Static, signature);
-    let def = ctor.finish_definition(params, root);
-    let function = HMIRFunction::new(ctor.finish(), prototype, Some(def));
+    let def = ctor.finish_definition(root);
+    let function = HMIRFunction::new(ctor.finish(), prototype, params.into(), Some(def));
 
     context.unit.push_static(
         QualifiedName::new(context.namespace.clone(), name),
@@ -511,8 +507,8 @@ pub(crate) fn lower_reify(
         HMIRContract::default(),
     );
     let prototype = HMIRFnPrototype::new(name.clone(), LinkageMode::Static, signature);
-    let def = anon.finish_definition(params, root);
-    let function = HMIRFunction::new(anon.finish(), prototype, Some(def));
+    let def = anon.finish_definition(root);
+    let function = HMIRFunction::new(anon.finish(), prototype, params.into(), Some(def));
 
     context.unit.push_static(
         QualifiedName::new(context.namespace.clone(), name),
@@ -542,7 +538,7 @@ pub(crate) fn lower_static(
         Some(initializer) => Some(lower_initial_value(&mut global, global_ty, initializer)?),
         None => None,
     };
-    let labels = std::mem::take(&mut global.address_labels);
+    let labels = mem::take(&mut global.address_labels);
     let link_name = match linkage {
         LinkageMode::Extern => name.clone(),
         _ => CXIdent::from(format!("{name}.{}", id.index()).as_str()),

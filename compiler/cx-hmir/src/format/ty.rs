@@ -52,6 +52,7 @@ pub(super) fn write_generic_type<T, L, M>(
     write_length: &impl Fn(&mut Formatter<'_>, &L) -> fmt::Result,
 ) -> fmt::Result {
     match ty.kind() {
+        HMIRGenericTypeKind::FunctionItem(def) => write!(f, "callable({def})"),
         HMIRGenericTypeKind::Void => f.write_str("void"),
         HMIRGenericTypeKind::Unreachable => f.write_str("never"),
         HMIRGenericTypeKind::Type => f.write_str("@type"),

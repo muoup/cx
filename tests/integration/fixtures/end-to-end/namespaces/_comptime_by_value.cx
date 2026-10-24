@@ -10,3 +10,6 @@ comptime int add_module_bias(int value) {
 }
 
 comptime @type integer_type() => int;
+
+comptime @type Box(@type T) => struct { T value; };
+comptime Box(T) make_box(@type T, T value) => { .value = private_step(value) };

@@ -156,11 +156,12 @@ fn lower_function(
     );
     let symbol_name = context.unit().link_name(name, prototype.symbol_naming);
     let prototype = HMIRFnPrototype::new(symbol_name, prototype.linkage, signature);
-    let def = root.map(|root| context.finish_definition(params, root));
+    let def = root.map(|root| context.finish_definition(root));
 
     Ok(HMIRDefKind::Function(Box::new(HMIRFunction::new(
         context.finish(),
         prototype,
+        params.into(),
         def,
     ))))
 }

@@ -4,9 +4,14 @@ import _comptime_by_value as lib;
 
 comptime @type ImportedInteger = lib::integer_type();
 comptime int imported_result = lib::add_module_bias(38);
+typedef lib::Box(int) ImportedBox;
+comptime ImportedBox imported_box = lib::make_box(int, 38);
+
 
 int main() {
     ImportedInteger type_result = 42;
     printf("imported %d\ntype %d\n", imported_result, type_result);
+    lib::Box(ImportedInteger) copy = imported_box;
+    printf("generated %d\n", copy.value);
     return 0;
 }

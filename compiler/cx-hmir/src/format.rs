@@ -78,7 +78,7 @@ fn write_function(
         if index != 0 {
             f.write_str(", ")?;
         }
-        match function.def().and_then(|def| def.params().get(index)) {
+        match function.params().get(index) {
             Some(local) => printer.param_decl(f, *local)?,
             None => {
                 if param.comptime() {

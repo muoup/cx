@@ -9,12 +9,12 @@ use crate::{
 pub struct HMIRFunction {
     body: HMIRBody,
     prototype: HMIRFnPrototype,
+    params: Box<[HMIRLocalID]>,
     def: Option<HMIRFnDefinition>,
 }
 
 #[derive(Debug, Clone)]
 pub struct HMIRFnDefinition {
-    params: Box<[HMIRLocalID]>,
     root: HMIRExprID,
     address_labels: Vec<CXIdent>,
 }
@@ -59,16 +59,26 @@ pub enum HMIRFunctionStage {
 }
 
 impl HMIRFunction {
-    pub fn new(body: HMIRBody, prototype: HMIRFnPrototype, def: Option<HMIRFnDefinition>) -> Self {
+    pub fn new(
+        body: HMIRBody,
+        prototype: HMIRFnPrototype,
+        params: Box<[HMIRLocalID]>,
+        def: Option<HMIRFnDefinition>,
+    ) -> Self {
         Self {
             body,
             prototype,
+            params,
             def,
         }
     }
 
     pub fn body(&self) -> &HMIRBody {
         &self.body
+    }
+
+    pub fn params(&self) -> &[HMIRLocalID] {
+        &self.params
     }
 
     pub fn prototype(&self) -> &HMIRFnPrototype {
@@ -216,16 +226,11 @@ impl Default for HMIRContract {
 }
 
 impl HMIRFnDefinition {
-    pub fn new(params: Box<[HMIRLocalID]>, root: HMIRExprID, address_labels: Vec<CXIdent>) -> Self {
+    pub fn new(root: HMIRExprID, address_labels: Vec<CXIdent>) -> Self {
         Self {
-            params,
             root,
             address_labels,
         }
-    }
-
-    pub fn params(&self) -> &[HMIRLocalID] {
-        &self.params
     }
 
     pub fn root(&self) -> HMIRExprID {

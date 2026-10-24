@@ -12,13 +12,15 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::{ComptimeContext, FnContext, LocalLoweringContext},
+    env::function::{
+        ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeSlotState,
+    },
     eval::{
         EvalResult, coerce, eval,
         flow::{Evaluation, StopReason, ready},
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind},
+    value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 
 pub(crate) fn eval_comptime(
@@ -94,7 +96,20 @@ pub(crate) fn frozen_inputs(context: &LocalLoweringContext) -> Vec<(HMIRLocalID,
 
     match context.context() {
         FnContext::Runtime(runtime) => runtime.locals().filter_map(frozen).collect(),
-        FnContext::Comptime(comptime) => comptime.locals().filter_map(frozen).collect(),
+        FnContext::Comptime(comptime) => comptime
+            .locals()
+            .filter_map(|(local, value)| {
+                if let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = value.kind() {
+                    let slot = comptime.slot(*slot);
+                    if let ComptimeSlotState::Value(constant) = slot.state()
+                        && !constant.holds_local_address()
+                    {
+                        return Some((*local, HMIRValue::constant(slot.ty(), constant.clone())));
+                    }
+                }
+                frozen((local, value))
+            })
+            .collect(),
     }
 }
 

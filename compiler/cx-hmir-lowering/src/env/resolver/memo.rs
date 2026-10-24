@@ -111,6 +111,9 @@ impl LocalLoweringContext<'_, '_, '_> {
         initializer: bool,
     ) -> MemoContextID {
         let mut bindings = eval::comptime::frozen_inputs(self);
+        for (_, value) in &mut bindings {
+            *value = self.env_mut().canonical_value(value.clone());
+        }
         bindings.sort_by_key(|(local, _)| *local);
         let context = MemoContext {
             owner: self.source(),

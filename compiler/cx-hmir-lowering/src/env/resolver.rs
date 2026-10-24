@@ -8,12 +8,14 @@ use index_vec::IndexVec;
 use crate::value::{HMIRValue, constant::HMIRConstant};
 
 mod demand;
+mod identity;
 pub(crate) mod memo;
 
 use memo::{MemoContext, MemoContextID, MemoEntry, MemoID, MemoKey};
 
 #[derive(Debug)]
 pub(crate) struct HMIRResolver {
+    identities: HashMap<u64, Vec<HMIRTypeID>>,
     incomplete: HashSet<HMIRTypeID>,
     realized: HashMap<HMIRTypeID, HMIRType>,
     lowered: HashMap<HMIRTypeID, MIRTypeID>,
@@ -28,6 +30,7 @@ pub(crate) struct HMIRResolver {
 impl HMIRResolver {
     pub fn new() -> Self {
         Self {
+            identities: HashMap::new(),
             realized: HashMap::new(),
             incomplete: HashSet::new(),
             lowered: HashMap::new(),

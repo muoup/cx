@@ -29,6 +29,7 @@ pub(crate) fn alike(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID, qualifi
 
         (HMIRTypeKind::Int(left), HMIRTypeKind::Int(right)) => left == right,
         (HMIRTypeKind::Float(left), HMIRTypeKind::Float(right)) => left == right,
+        (HMIRTypeKind::FunctionItem(left), HMIRTypeKind::FunctionItem(right)) => left == right,
 
         (HMIRTypeKind::PointerTo(left), HMIRTypeKind::PointerTo(right))
         | (HMIRTypeKind::ReferenceTo(left), HMIRTypeKind::ReferenceTo(right)) => {

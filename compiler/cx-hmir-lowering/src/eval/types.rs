@@ -1,7 +1,7 @@
 pub(crate) mod validate;
 
 use cx_hmir::{
-    HMIRBody, HMIRDefID, HMIRFnSignature, HMIRFunctionStage,
+    HMIRBody, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind,
@@ -70,7 +70,11 @@ pub(crate) fn adjust_signature(
     ))
 }
 
-fn parameter(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+pub(crate) fn parameter(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> HMIRTypeID {
     let pointee = match element(context, ty, span) {
         Some(element) => element,
         None if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_)) => ty,
@@ -127,14 +131,26 @@ pub(crate) fn lower_prototype(
 ) -> CXResult<MIRFnPrototype> {
     let symbol_name = symbol::link_name(env, def, point)?.expect("a prototype names a function");
     let linkage = symbol::linkage(env, def, point)?;
-    let signature = symbol::signature(env, def, point)?;
-    if signature.stage() == HMIRFunctionStage::Comptime {
+    let value = symbol::binding(env, def, point)?;
+    if matches!(env.resolve_kind(value.ty()), HMIRTypeKind::FunctionItem(_)) {
+        let source = env.symbols().resolve_definition(def);
+        let selected = symbol::select(source, point)?;
+        if let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind()
+            && function.signature().stage() == HMIRFunctionStage::Runtime
+        {
+            return Err(hmir_error(
+                span,
+                &typecheck::UNSUPPORTED_FEATURE,
+                "runtime function specialization".into(),
+            ));
+        }
         return Err(hmir_error(
             span,
             &mir::COMPTIME_FUNCTION_AT_RUNTIME,
             symbol_name.to_string(),
         ));
     }
+    let signature = symbol::signature(env, def, point)?;
     Ok(MIRFnPrototype::new(
         lower_signature(env, &signature, span)?,
         linkage,
@@ -177,7 +193,7 @@ pub(crate) fn lower_type(
         HMIRTypeKind::Nominal(_) => unreachable!("an underlying type is not nominal"),
 
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
-        HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } => {
+        HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } | HMIRTypeKind::FunctionItem(_) => {
             return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, types::name(env, ty));
         }
         HMIRTypeKind::Str => MIRTypeKind::Str,
@@ -366,6 +382,7 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         HMIRTypeKind::Union { .. } => "union".into(),
         HMIRTypeKind::TaggedUnion { .. } => "enum union".into(),
         HMIRTypeKind::Function(_) => "function".into(),
+        HMIRTypeKind::FunctionItem(_) => "comptime callable".into(),
         HMIRTypeKind::StagedExpr { .. } => "expr".into(),
         HMIRTypeKind::Opaque { .. } => "opaque".into(),
     };

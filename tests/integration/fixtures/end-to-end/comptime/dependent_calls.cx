@@ -1,0 +1,60 @@
+#include <stdio.h>
+
+comptime @type Box(@type T) => struct { T value; };
+comptime U identity(@type U, U input);
+comptime T identity(@type T, T value) => value;
+comptime Box(T) box(@type T, T value) => { .value = value };
+
+typedef Box(int) IntBox;
+typedef int Integer;
+typedef @type Type;
+comptime T alias_identity(Type T, T value) => value;
+comptime @type Buffer(@type T, int length) => struct { T data[length]; };
+comptime @type Node(@type T) => struct { T value; Node(T)* next; };
+typedef Buffer(int, 3) Three;
+typedef Box(Integer*) PointerBox;
+struct Dimensions { int unused; int length; };
+comptime @type Sized(Dimensions dimensions) => struct { int data[dimensions.length]; };
+typedef Sized({ .unused = 0, .length = 3 }) SizedThree;
+
+comptime int single_evaluation() {
+    int calls = 0;
+    int first = identity(int, calls++);
+    int second = alias_identity(int, calls++);
+    return first * 100 + second * 10 + calls;
+}
+
+comptime @type forwarded(@type T) => Box(T);
+comptime int recursive(@type T, T value) {
+    if (value == 0) return 0;
+    return identity(int, 1) + recursive(T, value - 1);
+}
+comptime long wide = identity(long, 42);
+comptime int effects = single_evaluation();
+comptime int depth = recursive(int, 4);
+
+comptime int answer = identity(int, 42);
+comptime IntBox frozen = box(int, 17);
+
+int main() {
+    Box(int) first = { .value = 5 };
+    IntBox second = first;
+    printf("dependent %d %d %d\n", answer, frozen.value, second.value);
+    Box(Integer) alias = second;
+    forwarded(int) forwarded_value = alias;
+    Box(int*) pointer_box = { .value = 0 };
+    PointerBox pointer_copy = pointer_box;
+    Three three = { .data = { 1, 2, 3 } };
+    Buffer(Integer, 1 + 2) same_bound = three;
+    Buffer(int, 3u) unsigned_bound = same_bound;
+    Node(int) tail = { .value = 9, .next = 0 };
+    Node(Integer) head = { .value = 8, .next = &tail };
+    printf("aliases %d %d\n", alias.value, forwarded_value.value);
+    printf("bounds %d\n", unsigned_bound.data[2]);
+    printf("recursive %d %d\n", head.next->value, depth);
+    Sized({ .length = 3u }) sized = { .data = { 4, 5, 6 } };
+    SizedThree sized_copy = sized;
+    printf("aggregate key %d\n", sized_copy.data[2]);
+    printf("effects %d wide %ld\n", effects, wide);
+    return 0;
+}

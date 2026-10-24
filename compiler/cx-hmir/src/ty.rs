@@ -3,7 +3,7 @@ pub mod context;
 pub mod intrinsic;
 
 use crate::{
-    HMIRFnSignature,
+    HMIRDefID, HMIRFnSignature,
     expr::HMIRExprID,
     ty::{
         aggregate::{HMIRDeclaredMove, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
@@ -45,6 +45,7 @@ pub enum HMIRGenericTypeKind<T, L> {
     ReferenceTo(T),
     Array { element: T, length: Option<L> },
     Function(HMIRFnSignature<T>),
+    FunctionItem(HMIRDefID),
     StagedExpr { params: Vec<T>, result: T },
     Struct { fields: Vec<HMIRFieldDef<T>> },
     Union { fields: Vec<HMIRFieldDef<T>> },
@@ -169,6 +170,7 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
             Self::Function(signature) => {
                 HMIRGenericTypeKind::Function(signature.map(|param| ty(state, param))?)
             }
+            Self::FunctionItem(def) => HMIRGenericTypeKind::FunctionItem(*def),
             Self::StagedExpr { params, result } => HMIRGenericTypeKind::StagedExpr {
                 params: params
                     .iter()

@@ -46,6 +46,9 @@ pub(crate) fn eval_call(
         );
     }
     let callee = coerce::std_rvalue(context, callee, span)?;
+    if matches!(context.context(), FnContext::Comptime(_)) {
+        return function::call(context, &callee, body, args, span);
+    }
 
     let env = context.env();
     let function = env
@@ -89,10 +92,6 @@ pub(crate) fn eval_call(
     }
 
     let return_type = *signature.return_type();
-    if matches!(context.context(), FnContext::Comptime(_)) {
-        let value = function::call(context, &callee, &signature, &values, span)?;
-        return Ok(Evaluation::Ready(value));
-    }
     let result = emit::call(context, &callee, &values, return_type, span)?;
     if matches!(
         context.env().resolve_kind(return_type),

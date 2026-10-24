@@ -71,6 +71,7 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
 
             (HMIRTypeKind::Int(a), HMIRTypeKind::Int(b)) => a == b,
             (HMIRTypeKind::Float(a), HMIRTypeKind::Float(b)) => a == b,
+            (HMIRTypeKind::FunctionItem(a), HMIRTypeKind::FunctionItem(b)) => a == b,
 
             (HMIRTypeKind::PointerTo(a), HMIRTypeKind::PointerTo(b))
             | (HMIRTypeKind::ReferenceTo(a), HMIRTypeKind::ReferenceTo(b)) => {
