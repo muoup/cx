@@ -93,7 +93,9 @@ fn function_value(
         let prototype = types::lower_prototype(context.env_mut(), def, point, span)?;
         context.env_mut().module_mut().declare_function(prototype);
         let linkage = symbol::linkage(context.env_mut(), def, point)?;
-        if def.brand() == context.env().symbols().local_unit().id() || linkage == LinkageMode::Static {
+        if def.brand() == context.env().symbols().local_unit().id()
+            || linkage == LinkageMode::Static
+        {
             context.env_mut().generation_mut().request(def);
         }
     }

@@ -2,19 +2,20 @@ mod aggregate;
 mod binding;
 mod call;
 mod complete;
+mod contract;
 mod control;
 mod def;
-mod contract;
 mod function;
 mod literal;
 mod name;
 mod place;
+mod safety;
 mod storage;
 
+pub(crate) mod coerce;
 pub(crate) mod comptime;
 pub(crate) mod constructor;
 pub(crate) mod op;
-pub(crate) mod coerce;
 
 pub(crate) mod flow;
 pub(crate) mod types;
@@ -90,7 +91,7 @@ pub(crate) fn lower_runtime_function<'hmir>(
         .with_return_type(*signature.return_type());
 
     emit::open_scope(&mut context, span.clone());
-    let completion = runtime_definition(&mut context, function, signature, specialization);
+    let completion = runtime_definition(&mut context, function, signature, specialization, span);
     emit::close_scope(&mut context, span.clone());
     flow::top(flow::catch_diverged(completion))?;
 
@@ -105,6 +106,7 @@ fn runtime_definition(
     function: &HMIRFunction,
     signature: &HMIRFnSignature<HMIRTypeID>,
     specialization: Option<&Specialization>,
+    span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
     let body = function.body();
 
@@ -123,6 +125,7 @@ fn runtime_definition(
 
         emit::storage::bind_local(context, *local, value);
     }
+    contract::enter(context, function.params(), span)?;
 
     function::body(context, function)
 }
@@ -220,8 +223,10 @@ pub(crate) fn eval(
             HMIROp::OwnershipOp(HMIROwnershipOp::Leak(operand)) => {
                 eval_leak(context, body, span, *operand)
             }
-            HMIROp::OwnershipOp(ownership) => {
-                todo!("HMIROp::OwnershipOp({})", ownership.path())
+            HMIROp::OwnershipOp(HMIROwnershipOp::Adopt(_)) => {
+                safety::require_nonsafe(context, span, "@adopt")?;
+                safety::require_pure(context, span, "@adopt")?;
+                todo!("HMIROwnershipOp::Adopt")
             }
             HMIROp::AggregateOp(aggregate) => eval_aggregate(context, body, span, aggregate),
         },
@@ -258,10 +263,7 @@ pub(crate) fn eval_type(
         return comptime::type_expression(context, body, id);
     }
     let ty = context.deferred_type(id);
-    let value = context.evaluate(
-        HMIRResolver::type_memo(ty),
-        body.expr(id).span(),
-    )?;
+    let value = context.evaluate(HMIRResolver::type_memo(ty), body.expr(id).span())?;
     if matches!(value, Evaluation::Stop(_)) {
         return Err(hmir_error(
             body.expr(id).span(),

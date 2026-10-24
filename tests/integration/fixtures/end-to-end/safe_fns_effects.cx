@@ -1,0 +1,35 @@
+#include <stdio.h>
+
+comptime int frozen = 5;
+
+int threshold = 4;
+
+comptime int checked_frozen(int value) where pre: (value > threshold) {
+    return value;
+}
+
+comptime int frozen_result = checked_frozen(6);
+
+int increments_local(int value) safe {
+    value = value + 1;
+    return value;
+}
+
+int contract_helper(int value) {
+    value = value + 1;
+    return value;
+}
+
+int checked(int value) safe
+where pre: (@unsafe(contract_helper(value)) > value && value > frozen)
+{
+    return value + 1;
+}
+
+int main() {
+    int incremented = increments_local(10);
+    int overridden = @unsafe(contract_helper(20));
+    int checked_value = checked(6);
+    printf("%d %d %d %d\n", incremented, overridden, checked_value, frozen_result);
+    return 0;
+}

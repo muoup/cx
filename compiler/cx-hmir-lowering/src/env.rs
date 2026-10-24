@@ -3,6 +3,7 @@ pub(crate) mod generation;
 pub(crate) use resolver::memo;
 pub(crate) mod module;
 pub(crate) mod resolver;
+pub mod settings;
 pub(crate) mod symbols;
 
 use cx_hmir::{
@@ -15,14 +16,12 @@ use cx_target::ArchitectureConfig;
 
 use crate::env::{
     generation::GenerationQueue, module::MIRModuleBuilder, resolver::HMIRResolver,
-    symbols::HMIRSymbolEnv,
+    settings::HMIRSettings, symbols::HMIRSymbolEnv,
 };
 
 #[derive(Debug)]
 pub struct HMIREnvironment<'global, 'hmir> {
-    architecture: ArchitectureConfig,
-    require_explicit_return: bool,
-
+    settings: HMIRSettings,
     module: MIRModuleBuilder,
     symbols: HMIRSymbolEnv<'global, 'hmir>,
     resolver: HMIRResolver,
@@ -33,22 +32,20 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
     pub fn new(
         global: &'global ModuleData,
         unit: &'hmir HMIRUnit,
-        architecture: ArchitectureConfig,
-        require_explicit_return: bool,
+        settings: HMIRSettings,
     ) -> Self {
         Self {
-            architecture,
-            require_explicit_return,
+            settings,
 
-            module: MIRModuleBuilder::new(architecture),
+            module: MIRModuleBuilder::new(*settings.architecture()),
             symbols: HMIRSymbolEnv::new(&global.hmir, unit),
             resolver: HMIRResolver::new(),
             generation: GenerationQueue::new(),
         }
     }
 
-    pub fn require_explicit_return(&self) -> bool {
-        self.require_explicit_return
+    pub fn settings(&self) -> &HMIRSettings {
+        &self.settings
     }
 
     // Equivalent types are interchangeable views of one value, so they may differ in constness but never in the
@@ -142,7 +139,7 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
 
 impl HMIRTypeContext for HMIREnvironment<'_, '_> {
     fn architecture(&self) -> &ArchitectureConfig {
-        &self.architecture
+        self.settings.architecture()
     }
 
     fn resolve_type_id(&self, id: HMIRTypeID) -> &HMIRType {

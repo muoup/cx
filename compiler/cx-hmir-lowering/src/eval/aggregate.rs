@@ -104,12 +104,14 @@ fn eval_member(
         }
 
         let mut ty = *field.ty();
-        if context.env().semantics(owner).constant {
+        let semantics = context.env().semantics(owner);
+        if semantics.constant || semantics.volatile {
             ty = specify(
                 context,
                 ty,
                 HMIRTypeSemantics {
-                    constant: true,
+                    constant: semantics.constant,
+                    volatile: semantics.volatile,
                     ..Default::default()
                 },
                 span,

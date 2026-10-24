@@ -7,7 +7,7 @@ use cx_hmir::{
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
     unit::def::HMIRDeclarationPoint,
 };
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
@@ -18,6 +18,7 @@ use crate::{
         memo::{MemoContextID, MemoKey},
     },
     eval::flow,
+    log::hmir_error,
     value::HMIRValue,
 };
 
@@ -64,6 +65,17 @@ pub(crate) fn validate(env: &mut HMIREnvironment, id: HMIRDefID) -> CXResult<()>
     let def = unit.resolve_def(id).unwrap();
     let selected = select(def, None)?;
     let declaration = &def.declarations()[selected];
+    if let Some(HMIRDefKind::Function(function)) = declaration.kind()
+        && function.def().is_some()
+        && function.signature().is_variadic()
+        && function.signature().contract().is_safe()
+    {
+        return Err(hmir_error(
+            declaration.span(),
+            &typecheck::INVALID_CONTEXT,
+            ("Varargs".into(), "a safe function".into()),
+        ));
+    }
     let linkage = structure::reconcile_linkage(def, None)?;
     let root = linkage != LinkageMode::Static
         && match declaration.kind() {

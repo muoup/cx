@@ -1,0 +1,3 @@
+int apply(int (*callback)(int), int value) safe {
+    return callback(value);
+}

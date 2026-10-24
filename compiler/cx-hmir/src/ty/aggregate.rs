@@ -5,6 +5,7 @@ use crate::expr::HMIRExprID;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HMIRTypeSemantics<M = HMIRMoveSemantics> {
     pub constant: bool,
+    pub volatile: bool,
     pub unsafe_move: bool,
     pub move_semantics: M,
 }
@@ -44,6 +45,7 @@ impl HMIRTypeSemantics {
     pub fn apply(self, specifiers: Self) -> Self {
         Self {
             constant: self.constant || specifiers.constant,
+            volatile: self.volatile || specifiers.volatile,
             unsafe_move: self.unsafe_move || specifiers.unsafe_move,
             move_semantics: self.move_semantics.max(specifiers.move_semantics),
         }
@@ -57,6 +59,7 @@ impl<M> HMIRTypeSemantics<M> {
     ) -> Result<HMIRTypeSemantics<N>, E> {
         Ok(HMIRTypeSemantics {
             constant: self.constant,
+            volatile: self.volatile,
             unsafe_move: self.unsafe_move,
             move_semantics: move_semantics(&self.move_semantics)?,
         })

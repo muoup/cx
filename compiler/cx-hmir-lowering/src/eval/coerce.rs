@@ -5,7 +5,7 @@ mod promotion;
 mod result;
 mod truth;
 
-use cx_hmir::ty::HMIRTypeID;
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth};
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
@@ -13,10 +13,11 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         coerce::{promotion::arithmetic, result::Coercion},
+        safety::require_nonsafe,
         types,
     },
     log::hmir_error,
-    value::HMIRValue,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) fn implicit(
@@ -25,6 +26,7 @@ pub(crate) fn implicit(
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
+    require_unsafe_conversion(context, &value, target, span, false)?;
     let source = value.ty();
     let coercion = implicit::convert(context, value, target, span)?;
 
@@ -37,6 +39,7 @@ pub(crate) fn explicit(
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
+    require_unsafe_conversion(context, &value, target, span, true)?;
     let source = value.ty();
     let coercion = explicit::convert(context, value, target, span)?;
 
@@ -98,6 +101,52 @@ pub(crate) fn common(
     span: &TokenRange,
 ) -> Option<HMIRTypeID> {
     arithmetic::common(context, lhs, rhs, span)
+}
+
+fn require_unsafe_conversion(
+    context: &LocalLoweringContext,
+    value: &HMIRValue,
+    target: HMIRTypeID,
+    span: &TokenRange,
+    explicit: bool,
+) -> CXResult<()> {
+    let source = context
+        .env()
+        .reference_inner(value.ty())
+        .unwrap_or(value.ty());
+    let from = context.env().resolve_kind(source);
+    let to = context.env().resolve_kind(target);
+    let operation = match (from, to) {
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(int)) if int.width() != HMIRIntWidth::I1 => {
+            Some("Unsafe type conversion")
+        }
+        (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_))
+            if explicit
+                && !matches!(
+                    value.kind(),
+                    HMIRValueKind::Constant(HMIRConstant::Int { value: 0, .. })
+                ) =>
+        {
+            Some("Unsafe type conversion")
+        }
+        (HMIRTypeKind::PointerTo(pointee), HMIRTypeKind::ReferenceTo(inner))
+            if context.env().same_type(*pointee, *inner) =>
+        {
+            Some("Dereferencing a pointer")
+        }
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_))
+            if explicit
+                && (!compatible::compatible(context.env(), source, target)
+                    || !compatible::qualified(context.env(), source, target)) =>
+        {
+            Some("Unsafe type conversion")
+        }
+        _ => None,
+    };
+    if let Some(operation) = operation {
+        require_nonsafe(context, span, operation)?;
+    }
+    Ok(())
 }
 
 fn applied(

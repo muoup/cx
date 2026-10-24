@@ -14,6 +14,7 @@ use crate::{
         EvalResult, coerce, eval,
         flow::{Evaluation, ready},
         op::eval_operand,
+        safety::require_pure,
         types,
     },
     log::hmir_error,
@@ -38,6 +39,7 @@ pub(crate) fn eval_unary(
         | HMIRUnaryOp::PreDecrement
         | HMIRUnaryOp::PostIncrement
         | HMIRUnaryOp::PostDecrement => {
+            require_pure(context, span, "increment or decrement")?;
             let value = ready!(eval(context, body, operand));
             Ok(Evaluation::Ready(increment(context, span, op, value)?))
         }

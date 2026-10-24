@@ -68,10 +68,7 @@ pub(crate) fn type_result(
     )))
 }
 
-pub(crate) fn hole(
-    context: &mut LocalLoweringContext,
-    span: &TokenRange,
-) -> EvalResult<HMIRValue> {
+pub(crate) fn hole(context: &mut LocalLoweringContext, span: &TokenRange) -> EvalResult<HMIRValue> {
     let span = span.clone();
     Ok(Evaluation::Incomplete(Incomplete::new(
         context,

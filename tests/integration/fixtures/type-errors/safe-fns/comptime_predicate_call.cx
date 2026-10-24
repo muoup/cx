@@ -1,0 +1,5 @@
+comptime int helper() safe => 1;
+
+comptime int bad() safe where pre: (helper() == 1) => 1;
+
+comptime int result = bad();

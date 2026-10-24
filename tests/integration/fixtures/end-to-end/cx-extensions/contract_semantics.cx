@@ -1,0 +1,58 @@
+/* CX-STDOUT: 10 6 7 3 120 15 */
+/* CX-STDOUT-NEXT: 9 9 1 */
+
+#include <stdio.h>
+
+struct Owned : @nocopy {
+    int value;
+};
+
+int evaluations = 0;
+
+int counted(int value) {
+    evaluations = evaluations + 1;
+    return value;
+}
+
+int twice(int x) where pre: (x > 0), post(r): (r == x * 2) {
+    x = x + 100;
+    return (x - 100) * 2;
+}
+
+int successor(int x) where post(r): (r > x) => x + 1;
+
+void bump(int* p) where pre: (p != 0), post: (*p > 0) {
+    if (*p > 5) {
+        return;
+    }
+    *p = 7;
+}
+
+int peek(Owned& o) where pre: (o.value > 0), post(r): (r == o.value) {
+    return o.value;
+}
+
+int consume(Owned o) where pre: (o.value > 0), post(r): (r == o.value) {
+    return o.value;
+}
+
+int factorial(int n) where pre: (n >= 0), post(r): (r >= n) {
+    if (n == 0) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+T scaled(comptime @type T, comptime int k, T v) where pre: (k > 0), post(r): (r == v * k) => v * k;
+
+int main() {
+    int a = 3;
+    int value = 0;
+    bump(&value);
+    Owned owned = (Owned) { .value = 9 };
+    int observed = peek(owned);
+    int consumed = consume(move owned);
+    printf("%d %d %d %d %d %d\n", twice(counted(5)), successor(5), value, a, factorial(5), scaled(int, 5, a));
+    printf("%d %d %d\n", observed, consumed, evaluations);
+    return 0;
+}

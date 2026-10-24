@@ -11,9 +11,9 @@ use crate::{
     emit,
     env::function::{FnContext, LocalLoweringContext},
     eval::{
-        EvalResult, coerce, constructor, eval,
+        EvalResult, coerce, constructor, contract, eval,
         flow::{Evaluation, RuntimeStop, ready},
-        function, types,
+        function, safety, types,
     },
     log::hmir_error,
     value::{
@@ -72,6 +72,16 @@ pub(crate) fn eval_call(
         return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts).into());
     }
 
+    let source_defined = !matches!(
+        callee.kind(),
+        HMIRValueKind::Constant(HMIRConstant::Function {
+            function: HMIRFunctionRef::Constructor { .. },
+            ..
+        })
+    );
+    let safe = !source_defined || signature.contract().is_safe();
+    safety::require_call(context, span, safe, source_defined)?;
+
     let mut values = Vec::with_capacity(args.len());
     for (index, arg) in args.iter().enumerate() {
         let span = body.expr(*arg).span();
@@ -86,7 +96,18 @@ pub(crate) fn eval_call(
         values.push(value);
     }
 
-    finish(context, &callee, &values, *signature.return_type(), span)
+    let return_type = *signature.return_type();
+    match callee.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Function {
+            function: HMIRFunctionRef::Def(def),
+            ..
+        }) if matches!(context.context(), FnContext::Runtime(_)) => {
+            contract::call(context, *def, &values, span, |context| {
+                finish(context, &callee, &values, return_type, span)
+            })
+        }
+        _ => finish(context, &callee, &values, return_type, span),
+    }
 }
 
 pub(crate) fn finish(

@@ -89,6 +89,20 @@ fn intrinsic(
         .emit(MIRInstructionKind::IntrinsicOp(intrinsic.into()), span)
 }
 
+pub fn assert(
+    context: &mut LocalLoweringContext,
+    condition: MIRValue,
+    message: &str,
+    span: &TokenRange,
+) {
+    let message = Some(message.into());
+    intrinsic(context, MIRInternalIntrinsic::Assert { condition, message }, span.clone())
+}
+
+pub fn assume(context: &mut LocalLoweringContext, condition: MIRValue, span: &TokenRange) {
+    intrinsic(context, MIRInternalIntrinsic::Assume { condition }, span.clone())
+}
+
 fn store(
     context: &mut LocalLoweringContext,
     target: MIRTarget,
@@ -473,13 +487,11 @@ pub fn dereference(
         },
         span.clone(),
     );
-    intrinsic(
+    assert(
         context,
-        MIRInternalIntrinsic::Assert {
-            condition: MIRValue::Register(condition),
-            message: Some("dereferenced a null pointer".into()),
-        },
-        span.clone(),
+        MIRValue::Register(condition),
+        "dereferenced a null pointer",
+        span,
     );
 
     let reference_ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(

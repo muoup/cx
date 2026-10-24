@@ -31,7 +31,7 @@ use crate::{
 use super::{
     EvalResult, coerce, comptime, contract, control, eval, eval_type,
     flow::{self, ComptimeStop, Evaluation, StopReason, ready},
-    storage, types,
+    safety, storage, types,
 };
 
 struct Frame<'a> {
@@ -183,6 +183,7 @@ pub(crate) fn call(
         unreachable!("a function constant names a function")
     };
     let declared = function.signature();
+    safety::require_call(context, span, declared.contract().is_safe(), true)?;
     let runtime = matches!(context.context(), FnContext::Runtime(_));
     if runtime && declared.stage() == HMIRFunctionStage::Comptime {
         return Err(hmir_error(

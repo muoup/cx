@@ -13,7 +13,7 @@ use crate::{
     eval::{
         EvalResult,
         binding::eval_scoped,
-        coerce, eval, eval_type,
+        coerce, contract, eval, eval_type,
         flow::{self, ComptimeStop, Evaluation, RuntimeStop, StopReason, ready},
         literal, storage, types,
     },
@@ -448,7 +448,8 @@ pub(crate) fn eval_unsafe(
     body: &HMIRBody,
     operand: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
-    flow::with_permission(context, Permission::Unsafe, |context| {
+    let expectations = context.expectations().permitting(Permission::Unsafe);
+    flow::scoped(context, expectations, |context| {
         eval(context, body, operand)
     })
 }
@@ -512,6 +513,7 @@ pub(crate) fn return_value(
 
     match context.context() {
         FnContext::Runtime(_) => {
+            contract::exit(context, value.as_ref(), span)?;
             let value = match &value {
                 Some(value) => Some(runtime::lower_value(context, value, span)?),
                 None => None,
@@ -552,10 +554,15 @@ pub(crate) fn fallthrough(
         }
         _ => {
             if !matches!(context.env().resolve_kind(ty), HMIRTypeKind::Unreachable)
-                && context.env().require_explicit_return()
+                && context.env().settings().require_explicit_return()
                 && context.runtime().builder().current_block_reachable()
             {
-                let name = context.runtime().builder().prototype().display_name().to_string();
+                let name = context
+                    .runtime()
+                    .builder()
+                    .prototype()
+                    .display_name()
+                    .to_string();
                 return Err(hmir_error(span, &mir::FUNCTION_RETURN, name).into());
             }
             context

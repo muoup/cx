@@ -1,6 +1,6 @@
 use cx_hir::ast::{
     function::HIRFunctionPrototype,
-    modifiers::HIR_CONST,
+    modifiers::{HIR_CONST, HIR_VOLATILE},
     types::{
         ANONYMOUS_MEMBER_PREFIX, HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRTagKind,
         HIRType, HIRTypeKind,
@@ -28,15 +28,18 @@ use crate::{
 
 pub(crate) fn lower_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXResult<HMIRExprID> {
     let lowered = lower_unqualified_type(context, ty)?;
-    // The type 'auto' stands for brings its own qualifiers
-    if ty.specifiers & HIR_CONST == 0 || matches!(ty.kind, HIRTypeKind::Auto) {
+    if matches!(ty.kind, HIRTypeKind::Auto) {
         return Ok(lowered);
     }
 
     let semantics = HMIRTypeSemantics {
-        constant: true,
+        constant: ty.specifiers & HIR_CONST != 0,
+        volatile: ty.specifiers & HIR_VOLATILE != 0,
         ..HMIRTypeSemantics::default()
     };
+    if !semantics.constant && !semantics.volatile {
+        return Ok(lowered);
+    }
     let kind = HMIRExprTypeKind::Nominal(lowered);
     Ok(context.expr_type(kind, semantics, None, &ty.range))
 }
@@ -252,6 +255,7 @@ fn lower_aggregate_type(
     };
     let semantics = HMIRTypeSemantics {
         constant: false,
+        volatile: false,
         unsafe_move: attributes.unsafe_move,
         move_semantics,
     };

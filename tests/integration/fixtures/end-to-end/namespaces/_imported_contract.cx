@@ -1,0 +1,8 @@
+comptime int floor = 2;
+
+public:
+int checked_double(int value) where pre: (value > floor), post(result): (result == value * 2) {
+    return value * 2;
+}
+
+T checked_scale(comptime @type T, comptime int factor, T value) where pre: (factor > floor), post(result): (result == value * factor) => value * factor;

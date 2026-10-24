@@ -6,7 +6,7 @@ use cx_log::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::{ComptimeContext, EvaluationID, FnContext, LocalLoweringContext, Permission},
+    env::function::{ComptimeContext, EvaluationID, Expectations, FnContext, LocalLoweringContext},
     eval::flow::{EvalResult, Evaluation},
     log::hmir_error,
 };
@@ -83,16 +83,16 @@ impl<T: 'static> Incomplete<T> {
         })
     }
 
-    fn with_permission(self, permission: Permission) -> Self {
+    fn scoped(self, expectations: Expectations) -> Self {
         let Self {
             suspension,
             partial,
             resolve,
         } = self;
         Self::resume(suspension, partial, move |context, body, expected| {
-            let result =
-                context.with_permission(permission, |context| resolve(context, body, expected))?;
-            Ok(result.scoped(permission))
+            let result = context
+                .with_expectations(expectations, |context| resolve(context, body, expected))?;
+            Ok(result.scoped(expectations))
         })
     }
 
@@ -125,25 +125,27 @@ impl<T> Incomplete<T> {
             IncompleteReason::ExpectedType => "this type",
             IncompleteReason::ArrayBound => "the array bound",
         };
-        hmir_error(&self.suspension.span, &typecheck::CANNOT_INFER, subject.into())
+        hmir_error(
+            &self.suspension.span,
+            &typecheck::CANNOT_INFER,
+            subject.into(),
+        )
     }
 }
 
-pub(crate) fn with_permission<T: 'static>(
+pub(crate) fn scoped<T: 'static>(
     context: &mut LocalLoweringContext,
-    permission: Permission,
+    expectations: Expectations,
     eval: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<T>,
 ) -> EvalResult<T> {
-    let result = context.with_permission(permission, eval)?;
-    Ok(result.scoped(permission))
+    let result = context.with_expectations(expectations, eval)?;
+    Ok(result.scoped(expectations))
 }
 
 impl<T: 'static> Evaluation<T> {
-    fn scoped(self, permission: Permission) -> Self {
+    fn scoped(self, expectations: Expectations) -> Self {
         match self {
-            Self::Incomplete(incomplete) => {
-                Self::Incomplete(incomplete.with_permission(permission))
-            }
+            Self::Incomplete(incomplete) => Self::Incomplete(incomplete.scoped(expectations)),
             result => result,
         }
     }

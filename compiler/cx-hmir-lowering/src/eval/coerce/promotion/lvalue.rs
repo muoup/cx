@@ -6,13 +6,14 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::LocalLoweringContext,
+    env::function::{FnContext, LocalLoweringContext},
     eval::{
         coerce::{compatible, result::Coercion},
+        safety::require_pure,
         types,
     },
     log::hmir_error,
-    value::HMIRValue,
+    value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub fn apply(
@@ -42,6 +43,24 @@ pub fn apply(
         ));
     }
 
+    let semantics = context.env().semantics(inner);
+    let global = matches!(
+        value.kind(),
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(_))
+            | HMIRValueKind::Constant(HMIRConstant::Address {
+                place: HMIRPlace::Global(_),
+                ..
+            })
+    );
+    if semantics.volatile {
+        require_pure(context, span, "reading a volatile value")?;
+    } else if global
+        && !semantics.constant
+        && matches!(context.context(), FnContext::Runtime(_))
+    {
+        require_pure(context, span, "reading a mutable global")?;
+    }
+
     let ty = unqualified(context, inner, span);
     Ok(Coercion::Applied(
         emit::copy(context, value, span)?.with_ty(ty),
@@ -55,14 +74,16 @@ fn unqualified(
 ) -> HMIRTypeID {
     let env = context.env();
     let semantics = env.semantics(ty);
-    if !semantics.constant {
+    if !semantics.constant && !semantics.volatile {
         return ty;
     }
 
     let underlying = env.underlying(ty);
     let resolved = env.resolve_type_id(underlying);
     let kind = match resolved.kind() {
-        _ if !resolved.semantics().constant => HMIRTypeKind::Nominal(underlying),
+        _ if !resolved.semantics().constant && !resolved.semantics().volatile => {
+            HMIRTypeKind::Nominal(underlying)
+        }
         kind @ (HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_)) => {
             kind.clone()
         }
@@ -70,6 +91,7 @@ fn unqualified(
     };
     let semantics = HMIRTypeSemantics {
         constant: false,
+        volatile: false,
         ..semantics
     };
 

@@ -8,7 +8,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     env::{function::LocalLoweringContext, generation::Specialization},
-    eval::{EvalResult, call, types},
+    eval::{EvalResult, call, contract, safety, types},
     symbol,
     value::{
         HMIRValue, HMIRValueKind,
@@ -23,20 +23,21 @@ pub fn apply(
     values: Vec<HMIRValue>,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
+    safety::require_call(context, span, signature.contract().is_safe(), true)?;
     let mut bindings = Vec::with_capacity(values.len());
     let mut args = Vec::new();
     let mut runtime = Vec::new();
     let mut params = Vec::new();
-    for (param, value) in signature.params().iter().zip(values) {
+    for (param, value) in signature.params().iter().zip(&values) {
         if param.comptime() {
             let HMIRValueKind::Constant(constant) = value.kind() else {
                 unreachable!("comptime arguments were exported before specialization")
             };
             args.push(constant.clone());
-            bindings.push(Some(value));
+            bindings.push(Some(value.clone()));
         } else {
             bindings.push(None);
-            runtime.push(value);
+            runtime.push(value.clone());
             params.push(param.clone());
         }
     }
@@ -82,5 +83,7 @@ pub fn apply(
     let ty = types::pointer(context.env_mut(), ty, span);
     let function = HMIRFunctionRef::Def(def);
     let callee = HMIRValue::constant(ty, HMIRConstant::Function { function, args });
-    call::finish(context, &callee, &runtime, *signature.return_type(), span)
+    contract::call(context, def, &values, span, |context| {
+        call::finish(context, &callee, &runtime, *signature.return_type(), span)
+    })
 }

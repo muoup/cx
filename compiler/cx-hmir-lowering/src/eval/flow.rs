@@ -4,7 +4,7 @@ use crate::value::HMIRValue;
 
 mod incomplete;
 
-pub(crate) use incomplete::{Incomplete, IncompleteReason, with_permission};
+pub(crate) use incomplete::{Incomplete, IncompleteReason, scoped};
 
 pub(crate) type EvalResult<T> = CXResult<Evaluation<T>>;
 

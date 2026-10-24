@@ -10,12 +10,13 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::{LocalLoweringContext, Permission},
+    env::function::LocalLoweringContext,
     eval::{
         EvalResult, coerce, eval,
         flow::{Evaluation, ready},
         literal,
         op::{binary_operands, eval_operand},
+        safety::{require_nonsafe, require_pure},
         storage, types,
     },
     log::hmir_error,
@@ -30,6 +31,7 @@ pub(crate) fn eval_assign(
     op: Option<HMIRBinaryOp>,
     value: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
+    require_pure(context, span, "assignment")?;
     let target = ready!(eval(context, body, target));
 
     let Some(inner) = context.env().reference_inner(target.ty()) else {
@@ -70,6 +72,7 @@ pub(crate) fn eval_move(
     span: &TokenRange,
     operand: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
+    require_pure(context, span, "move")?;
     let value = ready!(eval(context, body, operand));
     let Some(inner) = context.env().reference_inner(value.ty()) else {
         return Ok(Evaluation::Ready(value));
@@ -99,6 +102,8 @@ pub(crate) fn eval_leak(
     span: &TokenRange,
     operand: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
+    require_nonsafe(context, span, "@leak")?;
+    require_pure(context, span, "@leak")?;
     let value = ready!(eval(context, body, operand));
     require_local(body, operand, span, "@leak")?;
     let Some(inner) = context.env().reference_inner(value.ty()) else {
@@ -113,8 +118,6 @@ pub(crate) fn eval_leak(
         )
         .into());
     };
-    require_nonsafe(context, span, "@leak")?;
-
     if !context.env().is_nodrop(inner) {
         return Ok(Evaluation::Ready(value));
     }
@@ -137,21 +140,6 @@ fn require_local(
             operation.into(),
         )),
     }
-}
-
-fn require_nonsafe(
-    context: &LocalLoweringContext,
-    span: &TokenRange,
-    operation: &str,
-) -> CXResult<()> {
-    if context.permission() < Permission::Nonsafe {
-        return Err(hmir_error(
-            span,
-            &typecheck::UNSAFE_OPERATION,
-            operation.into(),
-        ));
-    }
-    Ok(())
 }
 
 pub(crate) fn eval_address_of(
@@ -211,6 +199,7 @@ pub(crate) fn dereference(
         return Ok(HMIRValue::indirect(inner, pointer));
     }
 
+    require_nonsafe(context, span, "dereferencing a pointer")?;
     let storage = emit::dereference(context, pointer, inner, span)?;
     emit::reference(context, &storage, span)
 }

@@ -9,11 +9,16 @@ use cx_tokens::TokenRange;
 use cx_util::dense_id;
 
 pub mod comptime;
+pub mod expectation;
 pub mod runtime;
 
 use crate::{env::HMIREnvironment, log::hmir_error, value::HMIRValue};
 
-pub use self::{comptime::ComptimeContext, runtime::RuntimeContext};
+pub use self::{
+    comptime::ComptimeContext,
+    expectation::{Expectations, Permission},
+    runtime::RuntimeContext,
+};
 
 thread_local! {
     static NEXT_EVALUATION: Cell<usize> = Cell::new(0);
@@ -33,21 +38,18 @@ impl EvaluationID {
 #[derive(Debug)]
 pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     env: &'env mut HMIREnvironment<'global, 'hmir>,
-    signature: Option<&'env HMIRFnSignature<HMIRExprID>>,
-    context: FnContext,
-    evaluation: EvaluationID,
-    permission: Permission,
+    
     source: HMIRUnitID,
-    return_type: Option<HMIRTypeID>,
-    visible_through: Option<HMIRDeclarationPoint>,
-    call_depth: usize,
-}
+    evaluation: EvaluationID,
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Permission {
-    Safe,
-    Nonsafe,
-    Unsafe,
+    visible_through: Option<HMIRDeclarationPoint>,
+    signature: Option<&'env HMIRFnSignature<HMIRExprID>>,
+    return_type: Option<HMIRTypeID>,
+
+    context: FnContext,
+    expectations: Expectations,
+
+    call_depth: usize,
 }
 
 #[derive(Debug)]
@@ -81,10 +83,10 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             signature,
             context,
             evaluation: EvaluationID::fresh(),
-            permission: match signature {
+            expectations: Expectations::new(match signature {
                 Some(signature) if signature.contract().is_safe() => Permission::Safe,
                 _ => Permission::Nonsafe,
-            },
+            }),
         }
     }
 
@@ -97,7 +99,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         let mut child = LocalLoweringContext::new(&mut *self.env, signature, context);
         if let Some(evaluation) = evaluation {
             child.evaluation = evaluation;
-            child.permission = self.permission;
+            child.expectations = self.expectations;
         }
         child.source = self.source;
         child.return_type = self.return_type;
@@ -207,17 +209,21 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
     }
 
     pub fn permission(&self) -> Permission {
-        self.permission
+        self.expectations.permission()
     }
 
-    pub fn with_permission<R>(
+    pub fn expectations(&self) -> Expectations {
+        self.expectations
+    }
+
+    pub fn with_expectations<R>(
         &mut self,
-        permission: Permission,
+        expectations: Expectations,
         scoped: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        let outer = mem::replace(&mut self.permission, permission);
+        let outer = mem::replace(&mut self.expectations, expectations);
         let result = scoped(self);
-        self.permission = outer;
+        self.expectations = outer;
         result
     }
 

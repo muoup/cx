@@ -1,4 +1,5 @@
 /* CX-STDOUT: precondition checked */
+/* CX-STDOUT-NEXT: precondition checked */
 /* CX-STDOUT-NEXT: function body executed */
 /* CX-STDOUT-NEXT: postcondition checked */
 /* CX-STDOUT-NEXT: postcondition checked */
@@ -6,12 +7,9 @@
 
 import std::io as std;
 
-// Technically the conditions of the contract *should* be pure, to prevent metahacking like this
-// but for the sake of the test we allow side effects in pre/post conditions.
-
 int function(int input) where 
-    pre: (std::printf("precondition checked\n")),
-    post: (std::printf("postcondition checked\n"))
+    pre: (@unsafe(std::printf("precondition checked\n"))),
+    post: (@unsafe(std::printf("postcondition checked\n")))
 {
     std::printf("function body executed\n");
     

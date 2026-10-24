@@ -34,7 +34,9 @@ int consume(pinned value) safe {
 }
 
 void discharge(Resource value) safe {
-    printf("%d ", value.data);
+    @unsafe {
+        printf("%d ", value.data);
+    };
     @unsafe {
         @leak(value);
     };
@@ -47,9 +49,13 @@ void places() safe {
     @unsafe(@leak(plain)) = (Plain) {
         .data = 3
     };
-    printf("%d ", plain.data);
+    @unsafe {
+        printf("%d ", plain.data);
+    };
     @unsafe(plain).data = 4;
-    printf("%d\n", plain.data);
+    @unsafe {
+        printf("%d\n", plain.data);
+    };
 }
 
 void contextual(int cond) safe {
@@ -72,7 +78,9 @@ void contextual(int cond) safe {
         @unsafe({ .inner = move second, .tag = note(3) });
     });
     holder k = cond ? @unsafe({ .inner = move third, .tag = 0 }) : @unsafe({ .inner = move fourth, .tag = 1 });
-    printf("%d %d %d %d %d\n", h.inner.value, h.tag, g.inner.value, g.tag, k.inner.value);
+    @unsafe {
+        printf("%d %d %d %d %d\n", h.inner.value, h.tag, g.inner.value, g.tag, k.inner.value);
+    };
 }
 
 int early(int cond) safe {

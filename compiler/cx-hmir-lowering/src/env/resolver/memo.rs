@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 use cx_util::dense_id;
 
 use crate::{
-    env::function::{ComptimeContext, FnContext, LocalLoweringContext, Permission},
+    env::function::{ComptimeContext, Expectations, FnContext, LocalLoweringContext},
     eval::{self, coerce, flow},
     log::hmir_error,
     symbol,
@@ -28,7 +28,7 @@ pub(crate) struct MemoContext {
     visible_through: Option<HMIRDeclarationPoint>,
     bindings: Vec<(HMIRLocalID, HMIRValue)>,
     expected: Option<HMIRTypeID>,
-    permission: Permission,
+    expectations: Expectations,
     initializer: bool,
 }
 
@@ -120,7 +120,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             visible_through,
             bindings,
             expected,
-            permission: self.permission(),
+            expectations: self.expectations(),
             initializer,
         };
         self.env_mut().resolver_mut().intern_context(context)
@@ -162,7 +162,11 @@ impl LocalLoweringContext<'_, '_, '_> {
             for (local, value) in captured.bindings {
                 crate::emit::storage::bind_local(&mut child, local, value);
             }
-            child.with_permission(captured.permission, |child| match key {
+            let expectations = match key {
+                MemoKey::Definition(..) => Expectations::new(captured.expectations.permission()),
+                MemoKey::Expression(..) => captured.expectations,
+            };
+            child.with_expectations(expectations, |child| match key {
                 MemoKey::Definition(def, _) => {
                     symbol::definition(child, def, scope, span).map(flow::Evaluation::Ready)
                 }

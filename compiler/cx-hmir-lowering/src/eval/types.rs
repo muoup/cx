@@ -191,11 +191,8 @@ pub(crate) fn lower_type(
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
     {
-        let mut context = LocalLoweringContext::new(
-            env,
-            None,
-            FnContext::Comptime(ComptimeContext::new()),
-        );
+        let mut context =
+            LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
         context.prepare_type(ty, span)?;
     }
     let ty = env.underlying(ty);
@@ -324,7 +321,10 @@ pub(crate) fn array(
     };
     let semantics = env.semantics(ty);
     env.resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::Array { element, length: Some(length) },
+        HMIRTypeKind::Array {
+            element,
+            length: Some(length),
+        },
         semantics,
         span.clone(),
         None,
@@ -332,7 +332,10 @@ pub(crate) fn array(
 }
 
 pub(crate) fn unsized_array(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
-    matches!(env.resolve_kind(ty), HMIRTypeKind::Array { length: None, .. })
+    matches!(
+        env.resolve_kind(ty),
+        HMIRTypeKind::Array { length: None, .. }
+    )
 }
 
 pub(crate) fn owned_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRTypeSemantics {
@@ -359,7 +362,11 @@ pub(crate) fn is_complete(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     }
 }
 
-pub(crate) fn reference(env: &mut HMIREnvironment, inner: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+pub(crate) fn reference(
+    env: &mut HMIREnvironment,
+    inner: HMIRTypeID,
+    span: &TokenRange,
+) -> HMIRTypeID {
     env.resolver_mut().realize_type(HMIRType::new(
         HMIRTypeKind::ReferenceTo(inner),
         HMIRTypeSemantics::default(),

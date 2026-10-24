@@ -108,6 +108,7 @@ define_errors! {
     INCOMPATIBLE_TAG: String = "T0067" => |name| format!("incompatible tag declarations for '{name}'");
     UNSUPPORTED_LITERAL: String = "T0068" => |kind| format!("{kind} literals are not supported");
     BINDING_COPIES_IN_USE: String = "T0069" => |ty| format!("binding would copy '{ty}' out of a value that is still in use");
+    IMPURE_OPERATION: String = "T0070" => |feature| format!("{feature} is impure and so cannot be used in a contract condition, wrap this expression in an `@unsafe` block to bypass this restriction");
 
     POP_EMPTY_SCOPE: () = "TX001" => |()| "attempted to pop a scope from an empty scope stack".into();
 }

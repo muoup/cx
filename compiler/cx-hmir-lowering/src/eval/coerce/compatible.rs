@@ -35,7 +35,10 @@ pub fn qualified(env: &HMIREnvironment, from: HMIRTypeID, to: HMIRTypeID) -> boo
     let pointee = |ty| env.pointer_inner(ty).or_else(|| env.reference_inner(ty));
 
     match (pointee(from), pointee(to)) {
-        (Some(from), Some(to)) => !env.semantics(from).constant || env.semantics(to).constant,
+        (Some(from), Some(to)) => {
+            (!env.semantics(from).constant || env.semantics(to).constant)
+                && (!env.semantics(from).volatile || env.semantics(to).volatile)
+        }
         _ => true,
     }
 }
