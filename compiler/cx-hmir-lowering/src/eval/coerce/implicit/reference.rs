@@ -31,6 +31,7 @@ pub fn bind(
             }
             value
         }
+        _ if compatible::is_designator(env, value.ty()) => value,
         _ => storage::temporary(context, value, span)?,
     };
 

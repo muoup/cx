@@ -11,7 +11,10 @@ pub(crate) mod runtime;
 
 pub use storage::{allocate, copy, initialize, invalidate, lift, scratch, write};
 
-use cx_hmir::{HMIRBinaryOp, HMIRUnaryOp, ty::HMIRTypeID};
+use cx_hmir::{
+    HMIRBinaryOp, HMIRUnaryOp,
+    ty::{HMIRTypeID, context::HMIRTypeContext},
+};
 use cx_log::{CXResult, catalogue::mir};
 use cx_tokens::TokenRange;
 
@@ -55,6 +58,16 @@ pub fn address(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
+    match value.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Function { .. } | HMIRConstant::Str(_)) => {
+            return Ok(value.clone().with_ty(ty));
+        }
+        HMIRValueKind::Indirect(pointer) if context.env().pointer_inner(pointer.ty()).is_some() => {
+            return Ok(pointer.as_ref().clone().with_ty(ty));
+        }
+        _ => {}
+    }
+
     match context.context() {
         FnContext::Runtime(_) => runtime::address(context, value, ty, span),
         FnContext::Comptime(_) => Ok(comptime::address(value, ty)),

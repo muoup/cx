@@ -43,3 +43,10 @@ pub fn qualified(env: &HMIREnvironment, from: HMIRTypeID, to: HMIRTypeID) -> boo
 pub fn is_void(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     matches!(env.resolve_kind(ty), HMIRTypeKind::Void)
 }
+
+pub fn is_designator(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
+    matches!(
+        env.resolve_kind(ty),
+        HMIRTypeKind::Str | HMIRTypeKind::Function(_)
+    )
+}

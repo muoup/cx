@@ -2,7 +2,7 @@ use cx_hmir::{
     HMIRBinaryOp, HMIRBody,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRType, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext},
+    ty::{HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::expr::instruction::MIRInvalidationKind;
@@ -178,12 +178,7 @@ pub(crate) fn eval_address_of(
         todo!("address of a string")
     }
 
-    let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::PointerTo(inner),
-        HMIRTypeSemantics::default(),
-        span.clone(),
-        None,
-    ));
+    let ty = types::pointer(context.env_mut(), inner, span);
 
     Ok(Evaluation::Ready(emit::address(context, &value, ty, span)?))
 }
@@ -213,7 +208,7 @@ pub(crate) fn dereference(
         ));
     };
     if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Function(_)) {
-        todo!("dereference of a function pointer")
+        return Ok(HMIRValue::indirect(inner, pointer));
     }
 
     let storage = emit::dereference(context, pointer, inner, span)?;

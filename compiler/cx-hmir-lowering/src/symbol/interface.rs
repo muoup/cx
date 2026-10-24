@@ -221,7 +221,6 @@ pub(crate) fn initializer_value(
             FnContext::Comptime(ComptimeContext::new()),
             Some(evaluation),
         )
-        .initializing(true)
         .at(body.visible_through());
     let scope = child.memo_context(body.visible_through(), expected, true);
     let memo = child
@@ -252,7 +251,6 @@ pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> C
     let mut child = context
         .child(None, FnContext::Comptime(ComptimeContext::new()), None)
         .sourced(source)
-        .initializing(true)
         .at(global.body().visible_through());
     let declared = eval_type(&mut child, global.body(), global.ty())?;
     let value = match global.initializer() {

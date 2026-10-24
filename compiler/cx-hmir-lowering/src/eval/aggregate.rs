@@ -68,7 +68,12 @@ fn eval_member(
         .env()
         .reference_inner(value.ty())
         .unwrap_or(value.ty());
-    let mut value = if context.env().pointer_inner(subject).is_some() {
+    let indirect = context.env().pointer_inner(subject).is_some()
+        || matches!(
+            context.env().resolve_kind(subject),
+            HMIRTypeKind::Array { .. }
+        );
+    let mut value = if indirect {
         dereference(context, value, span)?
     } else if context.env().is_reference(value.ty()) {
         value

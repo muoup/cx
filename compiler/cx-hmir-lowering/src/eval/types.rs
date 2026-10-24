@@ -9,7 +9,7 @@ use cx_hmir::{
         context::HMIRTypeContext,
         intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
     },
-    unit::def::HMIRDeclarationPoint,
+    unit::{def::HMIRDeclarationPoint, function::HMIRFnParam},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::{
@@ -21,7 +21,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{EvalResult, eval_type, flow, types},
+    eval::{EvalResult, eval_type, flow, op::specify, types},
     log::log_hmir_error,
     symbol,
 };
@@ -31,8 +31,66 @@ pub(crate) fn eval_signature(
     body: &HMIRBody,
     signature: &HMIRFnSignature<HMIRExprID>,
 ) -> EvalResult<HMIRFnSignature<HMIRTypeID>> {
-    let signature = signature.map(|ty| flow::top(eval_type(context, body, *ty)?.description()))?;
-    Ok(flow::Evaluation::Ready(signature))
+    let evaluated = signature.map(|ty| flow::top(eval_type(context, body, *ty)?.description()))?;
+    Ok(flow::Evaluation::Ready(adjust_signature(
+        context, body, signature, &evaluated,
+    )?))
+}
+
+pub(crate) fn adjust_signature(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    source: &HMIRFnSignature<HMIRExprID>,
+    evaluated: &HMIRFnSignature<HMIRTypeID>,
+) -> CXResult<HMIRFnSignature<HMIRTypeID>> {
+    let params = source
+        .params()
+        .iter()
+        .zip(evaluated.params())
+        .map(|(source, param)| {
+            let span = body.expr(*source.ty()).span();
+            context.force_type(*param.ty(), span)?;
+            let ty = parameter(context, *param.ty(), span);
+            Ok(HMIRFnParam::new(param.comptime(), ty))
+        })
+        .collect::<CXResult<_>>()?;
+
+    Ok(HMIRFnSignature::new(
+        evaluated.stage(),
+        params,
+        *evaluated.return_type(),
+        evaluated.is_variadic(),
+        evaluated.contract().clone(),
+    ))
+}
+
+fn parameter(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+    let pointee = match element(context, ty, span) {
+        Some(element) => element,
+        None if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_)) => ty,
+        None => return ty,
+    };
+
+    pointer(context.env_mut(), pointee, span)
+}
+
+pub(crate) fn element(
+    context: &mut LocalLoweringContext,
+    array: HMIRTypeID,
+    span: &TokenRange,
+) -> Option<HMIRTypeID> {
+    let HMIRTypeKind::Array { element, .. } = *context.env().resolve_kind(array) else {
+        return None;
+    };
+    if !context.env().semantics(array).constant {
+        return Some(element);
+    }
+
+    let constant = HMIRTypeSemantics {
+        constant: true,
+        ..Default::default()
+    };
+    Some(specify(context, element, constant, span))
 }
 
 pub(crate) fn lower_signature(
@@ -249,6 +307,19 @@ pub(crate) fn is_complete(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
 pub(crate) fn reference(env: &mut HMIREnvironment, inner: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
     env.resolver_mut().realize_type(HMIRType::new(
         HMIRTypeKind::ReferenceTo(inner),
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ))
+}
+
+pub(crate) fn pointer(
+    env: &mut HMIREnvironment,
+    inner: HMIRTypeID,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    env.resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::PointerTo(inner),
         HMIRTypeSemantics::default(),
         span.clone(),
         None,

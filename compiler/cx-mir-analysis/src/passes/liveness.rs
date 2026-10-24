@@ -1,7 +1,7 @@
 use cx_log::{CXMaybeRawResult, CXResult, catalogue::analysis};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRBody, MIRInstruction, MIRInstructionKind, MIRLivenessState,
-    MIRPlaceID, MIRRegisterID, MIRTarget,
+    MIRBasicBlockID, MIRBindable, MIRBody, MIRInstruction, MIRInstructionKind,
+    MIRInternalIntrinsic, MIRIntrinsic, MIRLivenessState, MIRPlaceID, MIRRegisterID, MIRTarget,
     expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
 };
 use cx_tokens::TokenRange;
@@ -139,11 +139,19 @@ impl AnalysisPass for Liveness {
         instruction: &MIRInstruction,
     ) -> CXResult<()> {
         let mut unavailable = None;
-        visit_bindable_uses(&instruction.kind, |bindable| {
-            if unavailable.is_none() && !self.available(env, &bindable) {
-                unavailable = Some(bindable);
-            }
-        });
+        let addresses = matches!(
+            instruction.kind,
+            MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Internal(
+                MIRInternalIntrinsic::PlaceAddress { .. }
+            ))
+        );
+        if !addresses {
+            visit_bindable_uses(&instruction.kind, |bindable| {
+                if unavailable.is_none() && !self.available(env, &bindable) {
+                    unavailable = Some(bindable);
+                }
+            });
+        }
         if let Some(bindable) = unavailable {
             self.require_available(env, &bindable, "was used", &instruction.token_range)?;
         }

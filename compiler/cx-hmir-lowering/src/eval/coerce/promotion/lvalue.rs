@@ -7,7 +7,10 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{coerce::result::Coercion, types},
+    eval::{
+        coerce::{compatible, result::Coercion},
+        types,
+    },
     log::hmir_error,
     value::HMIRValue,
 };
@@ -22,8 +25,9 @@ pub fn apply(
     };
     if matches!(
         context.env().resolve_kind(inner),
-        HMIRTypeKind::Array { .. } | HMIRTypeKind::Str | HMIRTypeKind::Function(_)
-    ) {
+        HMIRTypeKind::Array { .. }
+    ) || compatible::is_designator(context.env(), inner)
+    {
         return Ok(Coercion::Unapplied(value));
     }
 

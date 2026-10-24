@@ -2,6 +2,11 @@ struct Data {
     int value;
 };
 
+struct Link {
+    Link *self;
+    int value;
+};
+
 void inspect(int number, Data first, Data second) {}
 
 void conditional(int condition) {
@@ -19,5 +24,7 @@ int main() {
     data = (Data) { .value = 2 };
     inspect(number, moved, data);
     conditional(1);
+    int counter = counter + 1;
+    Link link = (Link) { .self = &link, .value = link.value };
     return 0;
 }

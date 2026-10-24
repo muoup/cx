@@ -155,8 +155,7 @@ impl LocalLoweringContext<'_, '_, '_> {
                     Some(evaluation),
                 )
                 .sourced(owner)
-                .at(captured.visible_through)
-                .initializing(captured.initializer);
+                .at(captured.visible_through);
             for (local, value) in captured.bindings {
                 crate::emit::storage::bind_local(&mut child, local, value);
             }

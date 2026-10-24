@@ -1,12 +1,18 @@
 pub mod arithmetic;
-mod decay;
+mod array_to_ptr;
+mod fn_to_ptr;
 mod lvalue;
+mod str_to_char_ptr;
 
+use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::LocalLoweringContext, eval::coerce::result::Coercion, value::HMIRValue,
+    emit,
+    env::function::LocalLoweringContext,
+    eval::{coerce::result::Coercion, types},
+    value::HMIRValue,
 };
 
 pub fn step(
@@ -14,7 +20,10 @@ pub fn step(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<Coercion> {
-    decay::apply(context, value, span)?.or_else(|value| lvalue::apply(context, value, span))
+    array_to_ptr::apply(context, value, span)?
+        .or_else(|value| str_to_char_ptr::apply(context, value, span))?
+        .or_else(|value| fn_to_ptr::apply(context, value, span))?
+        .or_else(|value| lvalue::apply(context, value, span))
 }
 
 pub fn std_rvalue(
@@ -28,4 +37,28 @@ pub fn std_rvalue(
             Coercion::Unapplied(value) => return Ok(value),
         }
     }
+}
+
+fn designated(context: &LocalLoweringContext, value: &HMIRValue) -> HMIRTypeID {
+    context
+        .env()
+        .reference_inner(value.ty())
+        .unwrap_or(value.ty())
+}
+
+fn address(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    pointee: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<Coercion> {
+    let storage = match context.env().reference_inner(value.ty()) {
+        Some(inner) => HMIRValue::indirect(inner, value),
+        None => value,
+    };
+    let pointer = types::pointer(context.env_mut(), pointee, span);
+
+    Ok(Coercion::Applied(emit::address(
+        context, &storage, pointer, span,
+    )?))
 }

@@ -2,9 +2,12 @@ use cx_hmir::{
     HMIRBody,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::context::HMIRTypeContext,
+    ty::{HMIRTypeID, context::HMIRTypeContext},
 };
-use cx_log::catalogue::{mir, typecheck};
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -52,8 +55,7 @@ pub(crate) fn eval_local(
 }
 
 // A declaration is a statement, and evaluates to unit. Each evaluation binds a fresh instance of the local, so a
-// binding left by an earlier evaluation of the same declaration, as a comptime loop makes, is forgotten first. The
-// initializer is evaluated before the local is bound, and may itself name the local, which declares its storage early
+// binding left by an earlier evaluation of the same declaration, as a comptime loop makes, is forgotten first
 pub(crate) fn eval_let(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
@@ -75,6 +77,17 @@ pub(crate) fn eval_let(
         }
     };
 
+    let storage = match context.complete_object(ty) {
+        true => Some(declare(context, body, local_id, ty, span)?),
+        false => None,
+    };
+    let compatible = !context.env().semantics(ty).move_semantics.is_nocopy();
+    let initialized =
+        compatible && storage.is_some() && matches!(context.context(), FnContext::Runtime(_));
+    if initialized && let Some(storage) = &storage {
+        emit::initialize(context, storage, span);
+    }
+
     let value = match initializer {
         Some(initializer) => {
             let value = eval(context, body, initializer)?;
@@ -84,29 +97,46 @@ pub(crate) fn eval_let(
         None => None,
     };
 
-    let ty = match &value {
-        Some(value) => ready!(declared.complete(context, body, Some(value.ty()))),
-        None => ready!(declared.complete(context, body, None)),
+    let storage = match storage {
+        Some(storage) => storage,
+        None => {
+            let ty = match &value {
+                Some(value) => ready!(declared.complete(context, body, Some(value.ty()))),
+                None => ready!(declared.complete(context, body, None)),
+            };
+            declare(context, body, local_id, ty, span)?
+        }
     };
 
+    match value {
+        Some(value) if initialized => emit::write(context, &storage, &value, span)?,
+        Some(value) => storage::initialize(context, &storage, &value, span)?,
+        None if compatible && !initialized => emit::initialize(context, &storage, span),
+        None => {}
+    }
+
+    Ok(Evaluation::Ready(literal::unit(context, span)))
+}
+
+fn declare(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    local_id: HMIRLocalID,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let local = body.local(local_id);
     types::validate::object(context.env(), ty, span)?;
     if !context.complete_object(ty) {
         let subject = format!("variable of type '{}'", types::name(context.env(), ty));
-        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject).into());
+        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject));
     }
 
     let reference_type = types::reference(context.env_mut(), ty, local.span());
-    let local_storage = emit::allocate(context, ty, local.name().cloned(), span)
-        .map(|allocate| allocate.with_ty(reference_type))?;
+    let storage = emit::allocate(context, ty, local.name().cloned(), span)?.with_ty(reference_type);
+    emit::storage::bind_local(context, local_id, storage.clone());
 
-    if let Some(value) = value {
-        storage::initialize(context, &local_storage, &value, span)?;
-    } else if !context.env().semantics(ty).move_semantics.is_nocopy() {
-        emit::initialize(context, &local_storage, span);
-    }
-    emit::storage::bind_local(context, local_id, local_storage);
-
-    Ok(Evaluation::Ready(literal::unit(context, span)))
+    Ok(storage)
 }
 
 pub(crate) fn eval_block(

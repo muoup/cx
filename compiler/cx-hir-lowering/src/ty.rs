@@ -22,6 +22,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     body::{BodyLowering, Symbol},
+    def::declared_params,
     expr::lower_expr,
 };
 
@@ -178,8 +179,7 @@ fn lower_function_type(
     context: &mut BodyLowering<'_>,
     prototype: &HIRFunctionPrototype,
 ) -> CXResult<HMIRFnSignature<HMIRExprID>> {
-    let params = prototype
-        .params
+    let params = declared_params(prototype)
         .iter()
         .map(|param| {
             let ty = lower_type(context, &param.ty)?;

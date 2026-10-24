@@ -104,16 +104,6 @@ fn read_global(
     path: &[usize],
     span: &TokenRange,
 ) -> CXResult<HMIRConstant> {
-    if !context.initializer() || context.visible_through().is_some() {
-        return Err(hmir_error(
-            span,
-            &mir::COMPTIME_UNAVAILABLE,
-            format!(
-                "value of '{}'",
-                context.env().symbols().resolve_definition(def).name()
-            ),
-        ));
-    }
     let result = crate::symbol::initialize(context, def)?;
     let HMIRValueKind::Constant(mut constant) = result.kind().clone() else {
         unreachable!("a global initializer is frozen");

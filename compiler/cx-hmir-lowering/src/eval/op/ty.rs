@@ -156,12 +156,23 @@ pub(crate) fn construct_type(
         HMIRExprTypeKind::PointerTo(_)
         | HMIRExprTypeKind::ReferenceTo(_)
         | HMIRExprTypeKind::Function(_) => {
-            let complete = ty.map(
+            let mut complete = ty.map(
                 context,
                 |context, expr| CXResult::Ok(context.deferred_type(*expr)),
                 |_, _| unreachable!(),
                 |_, _| Ok(move_semantics),
             )?;
+            if let (HMIRExprTypeKind::Function(source), HMIRTypeKind::Function(signature)) =
+                (ty.kind(), complete.kind())
+            {
+                let signature = types::adjust_signature(context, body, source, signature)?;
+                complete = HMIRType::new(
+                    HMIRTypeKind::Function(signature),
+                    *complete.semantics(),
+                    complete.decl_span().clone(),
+                    complete.debug_name().map(str::to_owned),
+                );
+            }
             context.env_mut().resolver_mut().complete_type(id, complete);
             return Ok(id);
         }
