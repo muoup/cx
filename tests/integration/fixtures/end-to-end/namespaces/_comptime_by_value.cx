@@ -1,0 +1,12 @@
+comptime int module_bias = 4;
+
+int private_step(int value) {
+    return value + module_bias;
+}
+
+public:
+comptime int add_module_bias(int value) {
+    return private_step(value);
+}
+
+comptime @type integer_type() => int;

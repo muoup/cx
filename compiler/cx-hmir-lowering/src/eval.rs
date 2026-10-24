@@ -1,16 +1,19 @@
 mod aggregate;
 mod binding;
 mod call;
-pub(crate) mod coerce;
 mod complete;
-pub(crate) mod comptime;
 mod control;
 mod def;
+mod contract;
+mod function;
 mod literal;
 mod name;
-pub(crate) mod op;
 mod place;
 mod storage;
+
+pub(crate) mod comptime;
+pub(crate) mod op;
+pub(crate) mod coerce;
 
 pub(crate) mod flow;
 pub(crate) mod types;
@@ -20,14 +23,17 @@ pub(crate) use def::type_value;
 pub(crate) use flow::EvalResult;
 
 use cx_hmir::{
-    HMIRBody, HMIRCoerceMode, HMIRControlOp, HMIRFnSignature, HMIRFunction, HMIROp,
+    HMIRBody, HMIRCoerceMode, HMIRControlOp, HMIRDefID, HMIRFnSignature, HMIRFunction, HMIROp,
     HMIROwnershipOp,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::HMIRTypeID,
     unit::function::HMIRFnDefinition,
 };
-use cx_log::{CXResult, catalogue::typecheck};
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_mir::MIRFunction;
 use cx_tokens::TokenRange;
 
@@ -36,6 +42,7 @@ use crate::{
     env::{
         HMIREnvironment,
         function::{FnContext, LocalLoweringContext, RuntimeContext},
+        resolver::HMIRResolver,
     },
     eval::{
         aggregate::eval_aggregate,
@@ -55,7 +62,7 @@ use crate::{
 
 pub(crate) fn lower_runtime_function<'hmir>(
     env: &mut HMIREnvironment<'_, 'hmir>,
-    id: cx_hmir::HMIRDefID,
+    id: HMIRDefID,
     function: &HMIRFunction,
     signature: &HMIRFnSignature<HMIRTypeID>,
 ) -> CXResult<MIRFunction> {
@@ -91,7 +98,6 @@ fn runtime_definition(
     signature: &HMIRFnSignature<HMIRTypeID>,
 ) -> EvalResult<HMIRValue> {
     let body = function.body();
-    let root = body.expr(def.root());
 
     for (param, local) in signature.params().iter().zip(def.params()) {
         let decl = body.local(*local);
@@ -103,25 +109,7 @@ fn runtime_definition(
         emit::storage::bind_local(context, *local, value);
     }
 
-    match root.kind() {
-        HMIRExprKind::Block { .. } => {
-            ready!(eval(context, body, def.root()));
-            let is_main = function.prototype().symbol_name().as_str() == "main";
-            control::fallthrough(context, body, is_main, root.span())
-        }
-        _ => {
-            let value = eval(context, body, def.root())?;
-            control::return_value(context, body, Some(value), false, root.span())
-        }
-    }
-}
-
-pub(crate) fn eval_comptime_function<'hmir>(
-    _parent: &mut LocalLoweringContext<'_, '_, 'hmir>,
-    _function: &'hmir HMIRFunction,
-    _args: &[HMIRConstant],
-) -> CXResult<HMIRConstant> {
-    todo!("Evaluate a comptime child, catch its return, and freeze its result")
+    function::body(context, function)
 }
 
 pub(crate) fn eval(
@@ -253,13 +241,13 @@ pub(crate) fn eval_type(
     }
     let ty = context.deferred_type(id);
     let value = context.evaluate(
-        crate::env::resolver::HMIRResolver::type_memo(ty),
+        HMIRResolver::type_memo(ty),
         body.expr(id).span(),
     )?;
     if matches!(value, Evaluation::Stop(_)) {
         return Err(hmir_error(
             body.expr(id).span(),
-            &cx_log::catalogue::mir::COMPTIME_CONTROL_ESCAPE,
+            &mir::COMPTIME_CONTROL_ESCAPE,
             (),
         ));
     }

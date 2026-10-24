@@ -1,0 +1,3 @@
+comptime int declared(int value);
+
+comptime int result = declared(1);

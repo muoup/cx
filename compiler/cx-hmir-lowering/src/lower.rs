@@ -1,7 +1,10 @@
 pub(crate) mod global;
 
 use crate::{env::HMIREnvironment, eval, symbol};
-use cx_hmir::{HMIRDefID, HMIRDefKind, HMIRFunction, HMIRUnit};
+use cx_hmir::{
+    HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRUnit,
+    ty::HMIRTypeID,
+};
 use cx_log::CXResult;
 
 pub fn lower_unit<'hmir>(
@@ -33,7 +36,10 @@ fn generate(id: HMIRDefID, env: &mut HMIREnvironment) -> CXResult<()> {
 
     match kind {
         Some(HMIRDefKind::Function(function)) => {
-            if symbol::is_staged(&function) || function.def().is_none() {
+            if function.signature().stage() != HMIRFunctionStage::Runtime
+                || symbol::needs_specialization(&function)
+                || function.def().is_none()
+            {
                 return Ok(());
             }
             let signature = symbol::signature(env, id, None)?;
@@ -47,7 +53,7 @@ fn generate(id: HMIRDefID, env: &mut HMIREnvironment) -> CXResult<()> {
 fn lower_function<'hmir>(
     function: &HMIRFunction,
     id: HMIRDefID,
-    signature: &cx_hmir::HMIRFnSignature<cx_hmir::ty::HMIRTypeID>,
+    signature: &HMIRFnSignature<HMIRTypeID>,
     env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
     let lowered = eval::lower_runtime_function(env, id, function, signature)?;

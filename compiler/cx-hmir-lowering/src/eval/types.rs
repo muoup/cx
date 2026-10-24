@@ -1,7 +1,7 @@
 pub(crate) mod validate;
 
 use cx_hmir::{
-    HMIRBody, HMIRDefID, HMIRFnSignature,
+    HMIRBody, HMIRDefID, HMIRFnSignature, HMIRFunctionStage,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind,
@@ -11,7 +11,10 @@ use cx_hmir::{
     },
     unit::{def::HMIRDeclarationPoint, function::HMIRFnParam},
 };
-use cx_log::{CXResult, catalogue::typecheck};
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_mir::{
     MIRField, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRType,
     MIRTypeID, MIRTypeKind,
@@ -20,9 +23,12 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    env::{HMIREnvironment, function::LocalLoweringContext},
+    env::{
+        HMIREnvironment,
+        function::{ComptimeContext, FnContext, LocalLoweringContext},
+    },
     eval::{EvalResult, eval_type, flow, op::specify, types},
-    log::log_hmir_error,
+    log::{hmir_error, log_hmir_error},
     symbol,
 };
 
@@ -122,6 +128,13 @@ pub(crate) fn lower_prototype(
     let symbol_name = symbol::link_name(env, def, point)?.expect("a prototype names a function");
     let linkage = symbol::linkage(env, def, point)?;
     let signature = symbol::signature(env, def, point)?;
+    if signature.stage() == HMIRFunctionStage::Comptime {
+        return Err(hmir_error(
+            span,
+            &mir::COMPTIME_FUNCTION_AT_RUNTIME,
+            symbol_name.to_string(),
+        ));
+    }
     Ok(MIRFnPrototype::new(
         lower_signature(env, &signature, span)?,
         linkage,
@@ -139,7 +152,7 @@ pub(crate) fn lower_type(
         let mut context = LocalLoweringContext::new(
             env,
             None,
-            crate::env::function::FnContext::Comptime(crate::env::function::ComptimeContext::new()),
+            FnContext::Comptime(ComptimeContext::new()),
         );
         context.prepare_type(ty, span)?;
     }

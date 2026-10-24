@@ -1,0 +1,6 @@
+comptime int* escaped_address() {
+    int local = 5;
+    return &local;
+}
+
+comptime int* escaped = escaped_address();

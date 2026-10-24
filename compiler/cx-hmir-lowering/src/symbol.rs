@@ -3,7 +3,7 @@ mod interface;
 mod structure;
 
 use cx_hmir::{
-    HMIRDeclarationRole, HMIRDefID, HMIRDefKind, HMIRFnSignature,
+    HMIRDeclarationRole, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
     unit::def::HMIRDeclarationPoint,
 };
@@ -17,11 +17,12 @@ use crate::{
         function::{ComptimeContext, FnContext, LocalLoweringContext},
         memo::{MemoContextID, MemoKey},
     },
+    eval::flow,
     value::HMIRValue,
 };
 
 pub(crate) use interface::{definition, initialize, zero};
-pub(crate) use structure::{is_staged, select, visible};
+pub(crate) use structure::{needs_specialization, select, visible};
 
 pub(crate) fn resolve(
     context: &mut LocalLoweringContext,
@@ -33,7 +34,7 @@ pub(crate) fn resolve(
         .env_mut()
         .resolver_mut()
         .reserve(MemoKey::Definition(def, scope));
-    crate::eval::flow::top(context.evaluate(id, span))
+    flow::top(context.evaluate(id, span))
 }
 
 pub(crate) fn binding(
@@ -67,7 +68,9 @@ pub(crate) fn validate(env: &mut HMIREnvironment, id: HMIRDefID) -> CXResult<()>
     let root = linkage != LinkageMode::Static
         && match declaration.kind() {
             Some(HMIRDefKind::Function(function)) => {
-                !is_staged(function) && function.def().is_some()
+                function.signature().stage() == HMIRFunctionStage::Runtime
+                    && !needs_specialization(function)
+                    && function.def().is_some()
             }
             Some(HMIRDefKind::Global(global)) => {
                 global.initializer().is_some() || linkage != LinkageMode::Extern

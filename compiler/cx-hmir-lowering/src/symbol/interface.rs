@@ -1,3 +1,5 @@
+use std::ptr;
+
 use cx_hmir::{
     HMIRBody, HMIRDeclarationRole, HMIRDefID, HMIRDefKind,
     expr::HMIRExprID,
@@ -5,8 +7,12 @@ use cx_hmir::{
         HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
     },
 };
-use cx_log::{CXResult, catalogue::typecheck};
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_tokens::TokenRange;
+use cx_util::linkage::LinkageMode;
 
 use crate::{
     env::{
@@ -59,8 +65,8 @@ pub(crate) fn definition(
         .expect("selected declaration has content")
     {
         HMIRDefKind::Function(function) => {
-            if structure::is_staged(function) {
-                todo!("reference to a function with comptime parameters");
+            if structure::needs_specialization(function) {
+                todo!("reference to a function with dependent parameters");
             }
             let mut canonical = None;
             for (_, declaration) in structure::visible(def, context.visible_through()) {
@@ -77,7 +83,7 @@ pub(crate) fn definition(
                         return Err(incompatible(def, declaration));
                     }
                 }
-                if canonical.is_none() || std::ptr::eq(declaration, &def.declarations()[selected]) {
+                if canonical.is_none() || ptr::eq(declaration, &def.declarations()[selected]) {
                     canonical = Some(signature);
                 }
             }
@@ -130,7 +136,7 @@ pub(crate) fn definition(
             let mut ty = ty.expect("global has a type expression");
             if context.visible_through().is_none()
                 && types::unsized_array(context.env(), ty)
-                && structure::reconcile_linkage(def, None)? != cx_util::linkage::LinkageMode::Extern
+                && structure::reconcile_linkage(def, None)? != LinkageMode::Extern
             {
                 if let Some(HMIRDefKind::Global(global)) = declaration.kind() {
                     if global.initializer().is_none() {
@@ -142,7 +148,7 @@ pub(crate) fn definition(
                 && !(declaration.role() == HMIRDeclarationRole::Tentative
                     && types::unsized_array(context.env(), ty))
                 && structure::reconcile_linkage(def, context.visible_through())?
-                    != cx_util::linkage::LinkageMode::Extern
+                    != LinkageMode::Extern
             {
                 return Err(hmir_error(
                     span,
@@ -186,7 +192,7 @@ pub(crate) fn definition(
                 initializer_value(context, global.body(), global.initializer(), Some(declared))?
             };
             for (_, other) in structure::visible(def, context.visible_through()) {
-                if std::ptr::eq(other, declaration) || other.kind().is_none() {
+                if ptr::eq(other, declaration) || other.kind().is_none() {
                     continue;
                 }
                 let Some(HMIRDefKind::ComptimeGlobal(other_global)) = other.kind() else {
@@ -259,10 +265,10 @@ pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> C
         }
         None => {
             let ty = flow::top(declared.description())?;
-            if global.linkage() == cx_util::linkage::LinkageMode::Extern {
+            if global.linkage() == LinkageMode::Extern {
                 return Err(hmir_error(
                     declaration.span(),
-                    &cx_log::catalogue::mir::COMPTIME_UNAVAILABLE,
+                    &mir::COMPTIME_UNAVAILABLE,
                     format!("initial value of '{}'", def.name()),
                 ));
             }

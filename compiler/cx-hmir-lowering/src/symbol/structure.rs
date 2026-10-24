@@ -1,4 +1,4 @@
-use std::mem::discriminant;
+use std::{cmp::Reverse, mem::discriminant};
 
 use cx_hmir::{
     HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefKind, HMIRFunction, HMIRFunctionStage,
@@ -80,7 +80,7 @@ pub(crate) fn select(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> CXRe
     let selected = declarations
         .iter()
         .filter(|(_, declaration)| declaration.kind().is_some())
-        .max_by_key(|(index, declaration)| (declaration.role(), std::cmp::Reverse(*index)))
+        .max_by_key(|(index, declaration)| (declaration.role(), Reverse(*index)))
         .map(|(index, _)| *index)
         .expect("a symbol has declaration content");
     let chosen = &def.declarations()[selected];
@@ -118,13 +118,18 @@ pub(crate) fn select(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> CXRe
     Ok(selected)
 }
 
-pub(crate) fn is_staged(function: &HMIRFunction) -> bool {
-    function.signature().stage() == HMIRFunctionStage::Comptime
-        || function
-            .signature()
-            .params()
-            .iter()
-            .any(|param| param.comptime())
+pub(crate) fn needs_specialization(function: &HMIRFunction) -> bool {
+    function.signature().params().iter().any(|param| {
+        (param.comptime() && function.signature().stage() == HMIRFunctionStage::Runtime)
+            || matches!(
+                function.body().expr(*param.ty()).kind(),
+                HMIRExprKind::Type(ty)
+                    if matches!(
+                        ty.kind(),
+                        HMIRExprTypeKind::Type | HMIRExprTypeKind::StagedExpr { .. }
+                    )
+            )
+    })
 }
 
 pub(crate) fn reconcile_linkage(

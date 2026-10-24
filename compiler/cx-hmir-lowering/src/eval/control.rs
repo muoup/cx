@@ -488,7 +488,7 @@ pub(crate) fn return_value(
     };
 
     let value = match value {
-        Some(_) if returns_void && explicit && matches!(context.context(), FnContext::Runtime(_)) => {
+        Some(_) if returns_void && explicit => {
             return Err(hmir_error(span, &typecheck::VOID_RETURN_VALUE, ()).into());
         }
         Some(value) if returns_void => match value {
@@ -524,7 +524,7 @@ pub(crate) fn return_value(
             Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))
         }
         FnContext::Comptime(_) => {
-            let value = value.unwrap_or_else(|| literal::unit(context, span));
+            let value = value.unwrap_or_else(|| literal::unit(context, span).with_ty(ty));
             Ok(Evaluation::Stop(ComptimeStop::Return(value).into()))
         }
     }

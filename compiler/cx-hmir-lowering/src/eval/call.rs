@@ -9,11 +9,13 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::LocalLoweringContext,
+    env::function::{FnContext, LocalLoweringContext},
     eval::{
-        EvalResult, coerce, eval,
+        EvalResult,
+        aggregate::initializer,
+        coerce, eval,
         flow::{Evaluation, RuntimeStop, ready},
-        types,
+        function, types,
     },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
@@ -35,7 +37,7 @@ pub(crate) fn eval_call(
                 ("variant constructor".into(), 1, args.len(), false),
             ));
         }
-        return super::aggregate::initializer::initialize(
+        return initializer::initialize(
             context,
             body,
             span,
@@ -87,6 +89,10 @@ pub(crate) fn eval_call(
     }
 
     let return_type = *signature.return_type();
+    if matches!(context.context(), FnContext::Comptime(_)) {
+        let value = function::call(context, &callee, &signature, &values, span)?;
+        return Ok(Evaluation::Ready(value));
+    }
     let result = emit::call(context, &callee, &values, return_type, span)?;
     if matches!(
         context.env().resolve_kind(return_type),

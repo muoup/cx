@@ -1,0 +1,2 @@
+comptime int recur(int value) { return recur(value + 1); }
+int result = recur(0);

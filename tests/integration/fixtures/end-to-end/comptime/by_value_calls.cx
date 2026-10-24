@@ -1,0 +1,73 @@
+#include <stdio.h>
+
+int increment(int value) {
+    value += 1;
+    return value;
+}
+
+comptime int nested_comptime(int value) {
+    return increment(increment(value));
+}
+
+int overwrite(int value) {
+    value = 99;
+    return value;
+}
+
+comptime int isolation_check() {
+    int original = 7;
+    int changed = overwrite(original);
+    return original * 100 + changed;
+}
+
+int identity(int value) {
+    return value;
+}
+
+comptime int single_evaluation() {
+    int calls = 0;
+    int result = identity(calls++);
+    return result * 100 + calls;
+}
+
+comptime int preconditioned(int value) where pre: (value > 0) {
+    return value + 2;
+}
+
+comptime int postconditioned(int value) where post(result): (result > value) {
+    return value + 3;
+}
+
+int sum_to(int value) {
+    if (value <= 0) return 0;
+    return value + sum_to(value - 1);
+}
+
+comptime @type integer_type() => int;
+comptime @type IntegerAlias = integer_type();
+
+comptime int nested_result = nested_comptime(40);
+comptime int isolation_result = isolation_check();
+comptime int single_result = single_evaluation();
+comptime int recursive_result = sum_to(5);
+comptime int precondition_result = preconditioned(5);
+comptime int postcondition_result = postconditioned(5);
+
+struct Pair { int left; int right; };
+
+comptime Pair update_pair(Pair pair) {
+    pair.left += 1;
+    return pair;
+}
+
+comptime Pair original_pair = { .left = 5, .right = 9 };
+comptime Pair changed_pair = update_pair(original_pair);
+
+int main() {
+    IntegerAlias type_result = 42;
+    printf("nested %d\nisolation %d\nsingle %d\nrecursion %d\ntype %d\nprecondition %d\npostcondition %d\n",
+        nested_result, isolation_result, single_result, recursive_result, type_result,
+        precondition_result, postcondition_result);
+    printf("aggregate %d %d %d\n", original_pair.left, changed_pair.left, changed_pair.right);
+    return 0;
+}

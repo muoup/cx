@@ -1,14 +1,17 @@
-use std::cell::Cell;
+use std::{cell::Cell, mem};
 
 use cx_hmir::{
     HMIRFnSignature, HMIRFunctionStage, HMIRUnitID, body::HMIRLocalID, expr::HMIRExprID,
+    ty::HMIRTypeID, unit::def::HMIRDeclarationPoint,
 };
+use cx_log::{CXResult, catalogue::mir};
+use cx_tokens::TokenRange;
 use cx_util::dense_id;
 
 pub mod comptime;
 pub mod runtime;
 
-use crate::{env::HMIREnvironment, value::HMIRValue};
+use crate::{env::HMIREnvironment, log::hmir_error, value::HMIRValue};
 
 pub use self::{comptime::ComptimeContext, runtime::RuntimeContext};
 
@@ -35,8 +38,9 @@ pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     evaluation: EvaluationID,
     permission: Permission,
     source: HMIRUnitID,
-    return_type: Option<cx_hmir::ty::HMIRTypeID>,
-    visible_through: Option<cx_hmir::unit::def::HMIRDeclarationPoint>,
+    return_type: Option<HMIRTypeID>,
+    visible_through: Option<HMIRDeclarationPoint>,
+    call_depth: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -72,6 +76,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             source,
             return_type: None,
             visible_through: None,
+            call_depth: 0,
             env,
             signature,
             context,
@@ -97,7 +102,21 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         child.source = self.source;
         child.return_type = self.return_type;
         child.visible_through = self.visible_through;
+        child.call_depth = self.call_depth;
         child
+    }
+
+    pub(crate) fn enter_call(&mut self, span: &TokenRange) -> CXResult<()> {
+        const LIMIT: usize = 64;
+        if self.call_depth >= LIMIT {
+            return Err(hmir_error(
+                span,
+                &mir::COMPTIME_CALL_DEPTH,
+                LIMIT,
+            ));
+        }
+        self.call_depth += 1;
+        Ok(())
     }
 
     pub fn sourced(mut self, source: HMIRUnitID) -> Self {
@@ -109,20 +128,20 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         self.source
     }
 
-    pub fn at(mut self, point: Option<cx_hmir::unit::def::HMIRDeclarationPoint>) -> Self {
+    pub fn at(mut self, point: Option<HMIRDeclarationPoint>) -> Self {
         self.visible_through = point;
         self
     }
 
-    pub fn visible_through(&self) -> Option<cx_hmir::unit::def::HMIRDeclarationPoint> {
+    pub fn visible_through(&self) -> Option<HMIRDeclarationPoint> {
         self.visible_through
     }
 
-    pub fn return_type(&self) -> Option<cx_hmir::ty::HMIRTypeID> {
+    pub fn return_type(&self) -> Option<HMIRTypeID> {
         self.return_type
     }
 
-    pub fn with_return_type(mut self, ty: cx_hmir::ty::HMIRTypeID) -> Self {
+    pub fn with_return_type(mut self, ty: HMIRTypeID) -> Self {
         self.return_type = Some(ty);
         self
     }
@@ -196,7 +215,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         permission: Permission,
         scoped: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        let outer = std::mem::replace(&mut self.permission, permission);
+        let outer = mem::replace(&mut self.permission, permission);
         let result = scoped(self);
         self.permission = outer;
         result
