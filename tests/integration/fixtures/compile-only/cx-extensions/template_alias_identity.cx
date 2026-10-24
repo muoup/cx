@@ -1,9 +1,9 @@
-comptime @type Box(@type T) =>
+comptime @type Box(comptime @type T) =>
     struct {
         T value;
     };
 
-comptime @type Alias(@type T) => Box(T);
+comptime @type Alias(comptime @type T) => Box(T);
 
 Box(int) unwrap_alias(Alias(int) value) {
     return value;

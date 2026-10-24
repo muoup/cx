@@ -2,9 +2,9 @@
 
 #include <stdio.h>
 
-comptime @type Ptr(@type T) => T*;
+comptime @type Ptr(comptime @type T) => T*;
 
-comptime @type Data(@type T) =>
+comptime @type Data(comptime @type T) =>
     struct {
         Ptr(T) ptr;
     };

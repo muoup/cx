@@ -4,11 +4,11 @@
 
 #include <stdio.h>
 
-comptime expr(T) pass(@type T, expr(T) value) {
+comptime expr(T) pass(comptime @type T, expr(T) value) {
     return emit value;
 }
 
-comptime expr(T) choose_first(@type T, expr(T) lhs, expr(T) rhs) {
+comptime expr(T) choose_first(comptime @type T, expr(T) lhs, expr(T) rhs) {
     return emit lhs;
 }
 

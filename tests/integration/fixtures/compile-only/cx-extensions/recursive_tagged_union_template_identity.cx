@@ -1,4 +1,4 @@
-comptime @type wrapper(@type T) =>
+comptime @type wrapper(comptime @type T) =>
     struct {
         T* value;
     };

@@ -16,7 +16,7 @@ int sum(const int* values, int count) {
     return total;
 }
 
-T first(@type T, const T& a, const T& b) { return a; }
+T first(comptime @type T, const T& a, const T& b) { return a; }
 
 int read(const Pair& pair) { return pair.left + pair.right; }
 

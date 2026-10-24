@@ -1,4 +1,4 @@
-comptime @type Box(@type T) =>
+comptime @type Box(comptime @type T) =>
     struct {
         T value;
     };

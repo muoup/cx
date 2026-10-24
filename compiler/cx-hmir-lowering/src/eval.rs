@@ -41,6 +41,7 @@ use crate::{
     env::{
         HMIREnvironment,
         function::{FnContext, LocalLoweringContext, RuntimeContext},
+        generation::Specialization,
         resolver::HMIRResolver,
     },
     eval::{
@@ -64,6 +65,7 @@ pub(crate) fn lower_runtime_function<'hmir>(
     id: HMIRDefID,
     function: &HMIRFunction,
     signature: &HMIRFnSignature<HMIRTypeID>,
+    specialization: Option<&Specialization>,
 ) -> CXResult<MIRFunction> {
     let body = function.body();
     let source_signature = function.signature();
@@ -72,7 +74,14 @@ pub(crate) fn lower_runtime_function<'hmir>(
         .expect("Runtime function lowered without a definition");
     let span = body.expr(def.root()).span();
 
-    let prototype = types::lower_prototype(env, id, None, span)?;
+    let prototype = match specialization {
+        Some(specialization) => env
+            .module()
+            .function(specialization.function())
+            .prototype()
+            .clone(),
+        None => types::lower_prototype(env, id, None, span)?,
+    };
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
     let mut context = LocalLoweringContext::new(env, Some(source_signature), runtime)
         .sourced(id.brand())
@@ -80,7 +89,7 @@ pub(crate) fn lower_runtime_function<'hmir>(
         .with_return_type(*signature.return_type());
 
     emit::open_scope(&mut context, span.clone());
-    let completion = runtime_definition(&mut context, function, signature);
+    let completion = runtime_definition(&mut context, function, signature, specialization);
     emit::close_scope(&mut context, span.clone());
     flow::top(flow::catch_diverged(completion))?;
 
@@ -94,10 +103,17 @@ fn runtime_definition(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
     signature: &HMIRFnSignature<HMIRTypeID>,
+    specialization: Option<&Specialization>,
 ) -> EvalResult<HMIRValue> {
     let body = function.body();
 
-    for (param, local) in signature.params().iter().zip(function.params()) {
+    for (index, (param, local)) in signature.params().iter().zip(function.params()).enumerate() {
+        if let Some(value) =
+            specialization.and_then(|specialization| specialization.bindings()[index].as_ref())
+        {
+            emit::storage::bind_local(context, *local, value.clone());
+            continue;
+        }
         let decl = body.local(*local);
         let ty = *param.ty();
         let value = runtime::parameter(context, ty, decl.name().cloned(), decl.span())?;

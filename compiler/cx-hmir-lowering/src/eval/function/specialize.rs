@@ -1,0 +1,82 @@
+use cx_hmir::{
+    HMIRDefID, HMIRFnSignature,
+    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics},
+};
+use cx_mir::MIRFnPrototype;
+use cx_tokens::TokenRange;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
+
+use crate::{
+    env::{function::LocalLoweringContext, generation::Specialization},
+    eval::{EvalResult, call, types},
+    symbol,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+};
+
+pub fn apply(
+    context: &mut LocalLoweringContext,
+    def: HMIRDefID,
+    signature: &HMIRFnSignature<HMIRTypeID>,
+    values: Vec<HMIRValue>,
+    span: &TokenRange,
+) -> EvalResult<HMIRValue> {
+    let mut bindings = Vec::with_capacity(values.len());
+    let mut args = Vec::new();
+    let mut runtime = Vec::new();
+    let mut params = Vec::new();
+    for (param, value) in signature.params().iter().zip(values) {
+        if param.comptime() {
+            let HMIRValueKind::Constant(constant) = value.kind() else {
+                unreachable!("comptime arguments were exported before specialization")
+            };
+            args.push(constant.clone());
+            bindings.push(Some(value));
+        } else {
+            bindings.push(None);
+            runtime.push(value);
+            params.push(param.clone());
+        }
+    }
+    let concrete = HMIRFnSignature::new(
+        signature.stage(),
+        params,
+        *signature.return_type(),
+        signature.is_variadic(),
+        signature.contract().clone(),
+    );
+    if context
+        .env()
+        .generation()
+        .specialization(def, &args)
+        .is_none()
+    {
+        let env = context.env_mut();
+        let original =
+            symbol::link_name(env, def, None)?.expect("a specialization names a function");
+        let name = CXIdent::new(format!(
+            "{}.__cx_specialize.{}",
+            original,
+            env.generation().specialization_count()
+        ));
+        let prototype = MIRFnPrototype::new(
+            types::lower_signature(env, &concrete, span)?,
+            LinkageMode::Static,
+            name,
+            Some(original),
+        );
+        let function = env.module_mut().declare_function(prototype);
+        env.generation_mut().specialize(
+            args.clone(),
+            Specialization::new(def, function, signature.clone(), bindings),
+        );
+    }
+    let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        HMIRTypeKind::Function(concrete),
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ));
+    let ty = types::pointer(context.env_mut(), ty, span);
+    let callee = HMIRValue::constant(ty, HMIRConstant::Function { def, args });
+    call::finish(context, &callee, &runtime, *signature.return_type(), span)
+}

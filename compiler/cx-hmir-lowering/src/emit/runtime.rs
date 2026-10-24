@@ -17,7 +17,7 @@ use cx_mir::{
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use self::storage::slot;
 use crate::{
@@ -162,12 +162,21 @@ pub fn constant(
         }
         HMIRConstant::Aggregate { ty, fields } => MIRConstant::Aggregate {
             ty: types::lower_type(env, *ty, span)?,
-            fields: fields.iter().map(|(index, field)| {
-                Ok((*index, self::constant(env, field, span)?))
-            }).collect::<CXResult<_>>()?,
+            fields: fields
+                .iter()
+                .map(|(index, field)| Ok((*index, self::constant(env, field, span)?)))
+                .collect::<CXResult<_>>()?,
         },
-        HMIRConstant::Function { def, args } if args.is_empty() => {
+        HMIRConstant::Function { def, args } => {
+            if let Some(function) = env.generation().specialization(*def, args) {
+                return Ok(MIRConstant::Function(function));
+            }
             let prototype = types::lower_prototype(env, *def, None, span)?;
+            if def.brand() == env.symbols().local_unit().id()
+                || prototype.linkage == LinkageMode::Static
+            {
+                env.generation_mut().request(*def);
+            }
             MIRConstant::Function(env.module_mut().declare_function(prototype))
         }
         other => todo!("constant {other:?}"),
@@ -184,8 +193,8 @@ pub fn lower_value(
         HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => {
             place_address(context, *place, path, value.ty(), span)?
         }
-        HMIRValueKind::Constant(function @ HMIRConstant::Function { args, .. })
-            if args.is_empty() && context.env().pointer_inner(value.ty()).is_some() =>
+        HMIRValueKind::Constant(function @ HMIRConstant::Function { .. })
+            if context.env().pointer_inner(value.ty()).is_some() =>
         {
             let MIRConstant::Function(fn_id) = constant(context.env_mut(), function, span)? else {
                 unreachable!("function constant lowered to a non-function")
@@ -289,9 +298,7 @@ pub fn call(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let callee = match callee.kind() {
-        HMIRValueKind::Constant(function @ HMIRConstant::Function { args, .. })
-            if args.is_empty() =>
-        {
+        HMIRValueKind::Constant(function @ HMIRConstant::Function { .. }) => {
             MIRValue::Constant(constant(context.env_mut(), function, span)?)
         }
         _ => lower_value(context, callee, span)?,

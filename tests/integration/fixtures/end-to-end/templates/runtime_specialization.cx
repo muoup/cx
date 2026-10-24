@@ -1,0 +1,59 @@
+#include <stdio.h>
+
+typedef int Integer;
+typedef @type Type;
+
+T identity(comptime @type T, T value);
+U identity(comptime @type U, U input) => input;
+T alias_identity(comptime Type T, T value) => value;
+T forward(comptime @type T, T value) => identity(T, value);
+T factorial(comptime @type T, T value) {
+    if (value <= 1) return 1;
+    return value * factorial(T, value - 1);
+}
+T even(comptime @type T, T value);
+T odd(comptime @type T, T value) {
+    if (value == 0) return 0;
+    return even(T, value - 1);
+}
+T even(comptime @type T, T value) {
+    if (value == 0) return 1;
+    return odd(T, value - 1);
+}
+int offset(comptime int amount, int value) => value + amount;
+void update(comptime @type T, T& target, T value) { target = value; }
+
+static int increment(int value) => value + 1;
+int apply(comptime int (*function)(int), int value) => function(value);
+
+int counter;
+T tick(comptime @type T, T value) {
+    counter++;
+    return value;
+}
+
+comptime int compiletime_result = factorial(int, 4);
+
+int main() {
+    int effects = 0;
+    int first = identity(int, ++effects);
+    Integer second = identity(Integer, ++effects);
+    float fraction = identity(float, 3.5);
+    int forwarded = alias_identity(int, forward(int, 7));
+    int recursive = factorial(int, 5);
+    int mutual = even(int, 6);
+    int three = offset(1 + 2, 10);
+    int same = offset(3u, 20);
+    int different = offset(4, 20);
+    int updated = 0;
+    update(int, updated, 9);
+    tick(int, 1);
+    tick(Integer, 2);
+    int applied = apply(increment, 41);
+    printf("applied %d\n", applied);
+    printf("values %d %d %.1f %d\n", first, second, fraction, forwarded);
+    printf("recursion %d %d %d\n", recursive, mutual, compiletime_result);
+    printf("offsets %d %d %d\n", three, same, different);
+    printf("effects %d %d updated %d\n", effects, counter, updated);
+    return 0;
+}

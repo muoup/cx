@@ -1,4 +1,7 @@
-use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
+use cx_hmir::{
+    HMIRDefID, HMIRDefKind, HMIRFunctionStage,
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+};
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
@@ -71,6 +74,18 @@ fn function_value(
 ) -> EvalResult<HMIRValue> {
     let point = context.visible_through();
     if matches!(context.context(), FnContext::Runtime(_)) {
+        if matches!(
+            context.env().resolve_kind(value.ty()),
+            HMIRTypeKind::FunctionItem(_)
+        ) {
+            let source = context.env().symbols().resolve_definition(def);
+            let selected = symbol::select(source, point)?;
+            if let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind()
+                && function.signature().stage() == HMIRFunctionStage::Runtime
+            {
+                return Ok(Evaluation::Ready(value));
+            }
+        }
         let prototype = types::lower_prototype(context.env_mut(), def, point, span)?;
         context.env_mut().module_mut().declare_function(prototype);
         let linkage = symbol::linkage(context.env_mut(), def, point)?;

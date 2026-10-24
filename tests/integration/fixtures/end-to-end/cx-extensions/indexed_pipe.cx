@@ -5,7 +5,7 @@ import std::optional as std;
 
 int sub(int a, int b) { return a - b; }
 
-T second(@type T, T a, T b) { return b; }
+T second(comptime @type T, T a, T b) { return b; }
 
 int main() {
     int a = 10 |> sub(3);

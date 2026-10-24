@@ -1,0 +1,3 @@
+typedef @type Type;
+T identity(Type T, T value) => value;
+int main() { return identity(int, 1); }

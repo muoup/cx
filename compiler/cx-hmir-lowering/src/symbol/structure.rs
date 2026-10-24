@@ -126,7 +126,7 @@ pub(crate) fn needs_specialization(function: &HMIRFunction) -> bool {
                 HMIRExprKind::Type(ty)
                     if matches!(
                         ty.kind(),
-                        HMIRExprTypeKind::Type | HMIRExprTypeKind::StagedExpr { .. }
+                        HMIRExprTypeKind::StagedExpr { .. }
                     )
             )
     })

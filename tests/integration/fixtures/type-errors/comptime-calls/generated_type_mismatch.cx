@@ -1,4 +1,4 @@
-comptime @type Box(@type T) => struct { T value; };
+comptime @type Box(comptime @type T) => struct { T value; };
 
 int main() {
     Box(int) integers = { .value = 1 };

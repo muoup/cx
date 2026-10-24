@@ -1,6 +1,12 @@
 pub(crate) mod global;
 
-use crate::{env::HMIREnvironment, eval, symbol};
+use crate::{
+    env::{
+        HMIREnvironment,
+        generation::{Generation, Specialization},
+    },
+    eval, symbol,
+};
 use cx_hmir::{
     HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRUnit,
     ty::HMIRTypeID,
@@ -19,13 +25,22 @@ pub fn lower_unit<'hmir>(
     }
 
     while let Some(id) = env.generation_mut().next() {
-        generate(id, env)?;
+        match id {
+            Generation::Definition(id) => generate(id, env, None)?,
+            Generation::Specialization(specialization) => {
+                generate(specialization.def(), env, Some(&specialization))?
+            }
+        }
     }
 
     Ok(())
 }
 
-fn generate(id: HMIRDefID, env: &mut HMIREnvironment) -> CXResult<()> {
+fn generate(
+    id: HMIRDefID,
+    env: &mut HMIREnvironment,
+    specialization: Option<&Specialization>,
+) -> CXResult<()> {
     let unit = env
         .symbols_mut()
         .owner(id.brand())
@@ -36,6 +51,15 @@ fn generate(id: HMIRDefID, env: &mut HMIREnvironment) -> CXResult<()> {
 
     match kind {
         Some(HMIRDefKind::Function(function)) => {
+            if let Some(specialization) = specialization {
+                return lower_function(
+                    function,
+                    id,
+                    specialization.signature(),
+                    env,
+                    Some(specialization),
+                );
+            }
             if function.signature().stage() != HMIRFunctionStage::Runtime
                 || symbol::needs_specialization(&function)
                 || function.def().is_none()
@@ -43,7 +67,7 @@ fn generate(id: HMIRDefID, env: &mut HMIREnvironment) -> CXResult<()> {
                 return Ok(());
             }
             let signature = symbol::signature(env, id, None)?;
-            lower_function(function, id, &signature, env)
+            lower_function(function, id, &signature, env, None)
         }
         Some(HMIRDefKind::Global(_)) => global::lower(env, id),
         Some(HMIRDefKind::ComptimeGlobal(_)) | None => Ok(()),
@@ -55,11 +79,15 @@ fn lower_function<'hmir>(
     id: HMIRDefID,
     signature: &HMIRFnSignature<HMIRTypeID>,
     env: &mut HMIREnvironment<'_, 'hmir>,
+    specialization: Option<&Specialization>,
 ) -> CXResult<()> {
-    let lowered = eval::lower_runtime_function(env, id, function, signature)?;
-    let id = env
-        .module_mut()
-        .declare_function(lowered.prototype().clone());
+    let lowered = eval::lower_runtime_function(env, id, function, signature, specialization)?;
+    let id = match specialization {
+        Some(specialization) => specialization.function(),
+        None => env
+            .module_mut()
+            .declare_function(lowered.prototype().clone()),
+    };
     env.module_mut().define_function(id, lowered);
 
     Ok(())

@@ -2,15 +2,15 @@
 
 #include <stdio.h>
 
-comptime @type pair(@type A, @type B) {
+comptime @type pair(comptime @type A, comptime @type B) {
     return struct { A first; B second; };
 }
 
-comptime @type maybe(@type T) => enum union { nothing :: void, just :: T };
+comptime @type maybe(comptime @type T) => enum union { nothing :: void, just :: T };
 
-comptime @type ptr(@type T) => T*;
+comptime @type ptr(comptime @type T) => T*;
 
-A pair::first_of(@type A, @type B, pair(A, B)& p) { return p.first; }
+A pair::first_of(comptime @type A, comptime @type B, pair(A, B)& p) { return p.first; }
 
 int main() {
     pair(int, float) p = { 3, 4.0f };

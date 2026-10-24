@@ -3,11 +3,11 @@
 
 #include <stdio.h>
 
-comptime expr(T) twice(@type T, expr(T) value) {
+comptime expr(T) twice(comptime @type T, expr(T) value) {
     return emit value * 2;
 }
 
-comptime expr(T) add_ten(@type T, expr(T) value) {
+comptime expr(T) add_ten(comptime @type T, expr(T) value) {
     return emit value + 10;
 }
 

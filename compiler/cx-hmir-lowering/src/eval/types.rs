@@ -37,10 +37,25 @@ pub(crate) fn eval_signature(
     body: &HMIRBody,
     signature: &HMIRFnSignature<HMIRExprID>,
 ) -> EvalResult<HMIRFnSignature<HMIRTypeID>> {
-    let evaluated = signature.map(|ty| flow::top(eval_type(context, body, *ty)?.description()))?;
-    Ok(flow::Evaluation::Ready(adjust_signature(
-        context, body, signature, &evaluated,
-    )?))
+    let params = signature
+        .params()
+        .iter()
+        .map(|param| {
+            let expr = *param.ty();
+            let span = body.expr(expr).span();
+            let ty = flow::top(eval_type(context, body, expr)?.description())?;
+            let ty = parameter(context, ty, param.comptime(), span)?;
+            Ok(HMIRFnParam::new(param.comptime(), ty))
+        })
+        .collect::<CXResult<_>>()?;
+    let return_type = flow::top(eval_type(context, body, *signature.return_type())?.description())?;
+    Ok(flow::Evaluation::Ready(HMIRFnSignature::new(
+        signature.stage(),
+        params,
+        return_type,
+        signature.is_variadic(),
+        signature.contract().clone(),
+    )))
 }
 
 pub(crate) fn adjust_signature(
@@ -55,8 +70,7 @@ pub(crate) fn adjust_signature(
         .zip(evaluated.params())
         .map(|(source, param)| {
             let span = body.expr(*source.ty()).span();
-            context.force_type(*param.ty(), span)?;
-            let ty = parameter(context, *param.ty(), span);
+            let ty = parameter(context, *param.ty(), param.comptime(), span)?;
             Ok(HMIRFnParam::new(param.comptime(), ty))
         })
         .collect::<CXResult<_>>()?;
@@ -73,15 +87,27 @@ pub(crate) fn adjust_signature(
 pub(crate) fn parameter(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
+    comptime: bool,
     span: &TokenRange,
-) -> HMIRTypeID {
+) -> CXResult<HMIRTypeID> {
+    context.force_type(ty, span)?;
+    if !comptime && matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type) {
+        return Err(hmir_error(
+            span,
+            &typecheck::INVALID_CONTEXT,
+            (
+                "an '@type' parameter".into(),
+                "a function signature unless explicitly marked 'comptime'".into(),
+            ),
+        ));
+    }
     let pointee = match element(context, ty, span) {
         Some(element) => element,
         None if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_)) => ty,
-        None => return ty,
+        None => return Ok(ty),
     };
 
-    pointer(context.env_mut(), pointee, span)
+    Ok(pointer(context.env_mut(), pointee, span))
 }
 
 pub(crate) fn element(

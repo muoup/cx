@@ -1,3 +1,5 @@
+mod specialize;
+
 use std::mem;
 
 use cx_hmir::{
@@ -41,6 +43,7 @@ impl Frame<'_> {
         &mut self,
         caller: &mut LocalLoweringContext,
         index: usize,
+        runtime: bool,
         span: &TokenRange,
     ) -> CXResult<HMIRTypeID> {
         let function = self.function;
@@ -48,12 +51,17 @@ impl Frame<'_> {
             let expr = *function.signature().params()[index].ty();
             let span = function.body().expr(expr).span();
             let ty = flow::top(eval_type(child, function.body(), expr)?.description())?;
-            child.force_type(ty, span)?;
-            let ty = types::parameter(child, ty, span);
+            let ty = types::parameter(
+                child,
+                ty,
+                function.signature().params()[index].comptime(),
+                span,
+            )?;
             if matches!(
                 child.env().resolve_kind(ty),
-                HMIRTypeKind::ReferenceTo(_) | HMIRTypeKind::StagedExpr { .. }
-            ) {
+                HMIRTypeKind::StagedExpr { .. }
+            ) || (!runtime && child.env().is_reference(ty))
+            {
                 return Err(hmir_error(
                     span,
                     &mir::COMPTIME_INVALID_OPERATION,
@@ -169,15 +177,19 @@ pub(crate) fn call(
         unreachable!("a function constant names a function")
     };
     let declared = function.signature();
-    if !applied.is_empty()
-        || declared.is_variadic()
-        || (declared.stage() == HMIRFunctionStage::Runtime
-            && symbol::needs_specialization(function))
-    {
+    let runtime = matches!(context.context(), FnContext::Runtime(_));
+    if runtime && declared.stage() == HMIRFunctionStage::Comptime {
+        return Err(hmir_error(
+            span,
+            &mir::COMPTIME_FUNCTION_AT_RUNTIME,
+            source.name().to_string(),
+        ));
+    }
+    if !applied.is_empty() || declared.is_variadic() {
         return Err(hmir_error(
             span,
             &mir::COMPTIME_INVALID_OPERATION,
-            "a variadic, partially applied or runtime-specialized function call".into(),
+            "a variadic or partially applied function call".into(),
         ));
     }
     if args.len() != declared.params().len() {
@@ -193,6 +205,13 @@ pub(crate) fn call(
         ));
     }
     let Some(_) = function.def() else {
+        if runtime {
+            return Err(hmir_error(
+                span,
+                &typecheck::UNSUPPORTED_FEATURE,
+                "specializing a function without a definition".into(),
+            ));
+        }
         return Err(hmir_error(
             span,
             &mir::COMPTIME_NO_BODY,
@@ -208,17 +227,33 @@ pub(crate) fn call(
     let mut params = Vec::with_capacity(args.len());
     let mut values = Vec::with_capacity(args.len());
     for (index, (param, arg)) in declared.params().iter().zip(args).enumerate() {
-        let ty = frame.parameter(context, index, span)?;
+        let ty = frame.parameter(context, index, runtime, span)?;
+        let frozen = param.comptime();
         let arg_span = caller_body.expr(*arg).span();
-        let evaluated = eval(context, caller_body, *arg)?;
-        let value = ready!(evaluated.complete(context, caller_body, Some(ty)));
-        let value = coerce::implicit(context, value, ty, arg_span)?;
-        let value = flow::top(comptime::export(context, value, arg_span))?;
+        let value = if runtime && frozen {
+            comptime::eval_comptime(context, caller_body, *arg, Some(ty))?
+        } else {
+            let evaluated = eval(context, caller_body, *arg)?;
+            let value = ready!(evaluated.complete(context, caller_body, Some(ty)));
+            let value = coerce::implicit(context, value, ty, arg_span)?;
+            if runtime {
+                value
+            } else {
+                flow::top(comptime::export(context, value, arg_span))?
+            }
+        };
         if let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = value.kind() {
             context.prepare_type(*ty, arg_span)?;
         }
-        frame.bind(context, index, ty, &value, span)?;
-        params.push(HMIRFnParam::new(param.comptime(), ty));
+        let value = if runtime && frozen {
+            context.env_mut().canonical_value(value)
+        } else {
+            value
+        };
+        if !runtime || frozen {
+            frame.bind(context, index, ty, &value, span)?;
+        }
+        params.push(HMIRFnParam::new(frozen, ty));
         values.push(value);
     }
     let signature = frame.signature(context, params, span)?;
@@ -235,9 +270,16 @@ pub(crate) fn call(
             state: ComptimeContext::new(),
             return_type: None,
         };
+        if other.function.signature().params().len() != values.len() {
+            return Err(hmir_error(
+                declaration.span(),
+                &typecheck::INCOMPATIBLE_DECLARATION,
+                source.name().to_string(),
+            ));
+        }
         let mut params = Vec::with_capacity(values.len());
         for (index, (param, value)) in signature.params().iter().zip(&values).enumerate() {
-            let ty = other.parameter(context, index, span)?;
+            let ty = other.parameter(context, index, runtime, span)?;
             if !alike(context.env(), *param.ty(), ty, false) {
                 return Err(hmir_error(
                     declaration.span(),
@@ -245,8 +287,18 @@ pub(crate) fn call(
                     source.name().to_string(),
                 ));
             }
-            other.bind(context, index, ty, value, span)?;
-            params.push(HMIRFnParam::new(param.comptime(), ty));
+            let frozen = other.function.signature().params()[index].comptime();
+            if frozen != param.comptime() {
+                return Err(hmir_error(
+                    declaration.span(),
+                    &typecheck::INCOMPATIBLE_DECLARATION,
+                    source.name().to_string(),
+                ));
+            }
+            if !runtime || frozen {
+                other.bind(context, index, ty, value, span)?;
+            }
+            params.push(HMIRFnParam::new(frozen, ty));
         }
         let other = other.signature(context, params, span)?;
         if !signatures_alike(context.env(), &signature, &other) {
@@ -256,6 +308,9 @@ pub(crate) fn call(
                 source.name().to_string(),
             ));
         }
+    }
+    if runtime {
+        return specialize::apply(context, *def, &signature, values, span);
     }
     let value = frame.enter(context, span, |child| {
         execute(

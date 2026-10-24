@@ -2,7 +2,7 @@
 
 import std::io as std;
 
-void test(@type T, @type U, T a, U b) {
+void test(comptime @type T, comptime @type U, T a, U b) {
     std::printf("result: %.2f\n", (U) a + b);
 }
 

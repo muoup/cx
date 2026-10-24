@@ -5,10 +5,9 @@ use crate::{
 use cx_hir::ast::{
     function::{HIRFunctionContract, HIRFunctionKind, HIRFunctionPrototype, HIRParameter},
     modifiers::{HIRSymbolNameScheme, LinkageMode},
-    types::{HIRType, HIRTypeKind},
+    types::HIRType,
 };
-use cx_log::catalogue::parse::*;
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::parse::*};
 use cx_namespace::module::QualifiedName;
 use cx_tokens::{
     identifier, keyword, operator, punctuator,
@@ -62,12 +61,7 @@ pub fn try_function_parse(
         return Ok(None);
     };
 
-    let mut args = parse_params(data)?;
-    if comptime {
-        for param in &mut args.params {
-            param.comptime = true;
-        }
-    }
+    let args = parse_params(data)?;
 
     Ok(Some(HIRFunctionPrototype {
         return_type: attributes
@@ -235,10 +229,8 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             });
         }
 
-        // A '@type' parameter is a comptime parameter without the keyword
         let comptime = try_next!(data.tokens, keyword!(Comptime));
         let (name, ty, _) = parse_initializer(data)?;
-        let comptime = comptime || matches!(ty.kind, HIRTypeKind::Universe);
 
         params.push(HIRParameter { name, ty, comptime });
 

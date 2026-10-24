@@ -1,0 +1,2 @@
+T identity(comptime @type T, T value) => value;
+int main() { return identity(1, 2); }

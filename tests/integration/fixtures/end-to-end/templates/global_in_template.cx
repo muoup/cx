@@ -5,7 +5,7 @@ int printf(char* fmt, ...);
 
 int x;
 
-T increment(@type T) {
+T increment(comptime @type T) {
     x++;
     return x;
 }

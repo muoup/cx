@@ -3,12 +3,12 @@
 
 import std::io as std;
 
-comptime @type test(@type T) =>
+comptime @type test(comptime @type T) =>
     struct {
         T i;
     };
 
-test(U) test::map(@type T, @type U, test(T)& this, U (*func)(T)) {
+test(U) test::map(comptime @type T, comptime @type U, test(T)& this, U (*func)(T)) {
     return (test(U)) { .i = func(this.i) };
 }
 

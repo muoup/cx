@@ -1,7 +1,7 @@
 use cx_hmir::{
     HMIRBody,
     expr::HMIRExprID,
-    ty::{HMIRTypeKind, context::HMIRTypeContext},
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::catalogue::typecheck;
 use cx_mir::MIRInstructionKind;
@@ -46,7 +46,12 @@ pub(crate) fn eval_call(
         );
     }
     let callee = coerce::std_rvalue(context, callee, span)?;
-    if matches!(context.context(), FnContext::Comptime(_)) {
+    if matches!(context.context(), FnContext::Comptime(_))
+        || matches!(
+            context.env().resolve_kind(callee.ty()),
+            HMIRTypeKind::FunctionItem(_)
+        )
+    {
         return function::call(context, &callee, body, args, span);
     }
 
@@ -91,8 +96,17 @@ pub(crate) fn eval_call(
         values.push(value);
     }
 
-    let return_type = *signature.return_type();
-    let result = emit::call(context, &callee, &values, return_type, span)?;
+    finish(context, &callee, &values, *signature.return_type(), span)
+}
+
+pub(crate) fn finish(
+    context: &mut LocalLoweringContext,
+    callee: &HMIRValue,
+    values: &[HMIRValue],
+    return_type: HMIRTypeID,
+    span: &TokenRange,
+) -> EvalResult<HMIRValue> {
+    let result = emit::call(context, callee, values, return_type, span)?;
     if matches!(
         context.env().resolve_kind(return_type),
         HMIRTypeKind::Unreachable

@@ -13,5 +13,6 @@ int main() {
     printf("imported %d\ntype %d\n", imported_result, type_result);
     lib::Box(ImportedInteger) copy = imported_box;
     printf("generated %d\n", copy.value);
+    printf("runtime %d %d\n", lib::runtime_bias(int, 38), lib::runtime_forward(int, 39));
     return 0;
 }

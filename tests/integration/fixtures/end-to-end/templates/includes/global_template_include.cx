@@ -2,7 +2,7 @@ int x;
 
 public:
 
-T increment(@type T) {
+T increment(comptime @type T) {
     x++;
     return x;
 }

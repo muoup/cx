@@ -2,20 +2,20 @@ import std::panic as std;
 
 public:
 
-comptime @type rcell(@type T) =>
+comptime @type rcell(comptime @type T) =>
     struct : @copy_traits(T), @unsafe_move {
         T inner;
         i16 sema;
     };
 
-rcell(T) rcell::new(@type T, T val) {
+rcell(T) rcell::new(comptime @type T, T val) {
     return (rcell(T)) {
         .inner = val,
         .sema = 0
     };
 }
 
-comptime expr(void) rcell::borrow_const(@type T, expr(rcell(T)&) cell, @fn proc(expr(const T&)) -> expr(void)) =>
+comptime expr(void) rcell::borrow_const(comptime @type T, expr(rcell(T)&) cell, @fn proc(expr(const T&)) -> expr(void)) =>
     emit .{
         if (cell.sema < 0) {
             std::panic("Cannot immutably borrow cell while it is currently mutably borrowed");
@@ -26,7 +26,7 @@ comptime expr(void) rcell::borrow_const(@type T, expr(rcell(T)&) cell, @fn proc(
         proc(cell.inner);
     };
 
-comptime expr(void) rcell::borrow(@type T, expr(rcell(T)&) cell, @fn proc(expr(T&)) -> expr(void)) =>
+comptime expr(void) rcell::borrow(comptime @type T, expr(rcell(T)&) cell, @fn proc(expr(T&)) -> expr(void)) =>
     emit .{
         if (cell.sema != 0) {
             std::panic("Cannot mutably borrow cell while it is currently borrowed");
@@ -37,10 +37,10 @@ comptime expr(void) rcell::borrow(@type T, expr(rcell(T)&) cell, @fn proc(expr(T
         proc(cell.inner);
     };
 
-void rcell::release(@type T, rcell(T)& cell) /* not safe */ {
+void rcell::release(comptime @type T, rcell(T)& cell) /* not safe */ {
     cell.sema = 0;
 }
 
-void rcell::release_const(@type T, rcell(T)& cell) /* not safe */ {
+void rcell::release_const(comptime @type T, rcell(T)& cell) /* not safe */ {
     cell.sema--;
 }
