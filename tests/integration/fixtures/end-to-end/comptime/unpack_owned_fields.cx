@@ -1,0 +1,24 @@
+#include <stdio.h>
+
+struct Pair {
+    int left;
+    int right;
+};
+
+comptime int unpacked_sum() {
+    @unpack((Pair) {
+        .left = 20,
+        .right = 22
+    }) {
+        left: left,
+        right: right
+    };
+    return left + right;
+}
+
+comptime int folded_sum = unpacked_sum();
+
+int main() {
+    printf("unpack %d\n", folded_sum);
+    return 0;
+}

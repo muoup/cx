@@ -1,0 +1,81 @@
+#include <stdio.h>
+
+int signed_case(int value) {
+    switch (value) {
+        case -2: return 12;
+        case -2147483647 - 1: return 13;
+        case 2147483647: return 14;
+        default: return 15;
+    }
+}
+
+int wide_case(u64 value) {
+    switch (value) {
+        case 1ULL << 63: return 21;
+        case ~0ULL: return 22;
+        default: return 23;
+    }
+}
+
+int nested(int value) {
+    int total = 0;
+    for (int i = 0; i < 4; ++i) {
+        switch (i) {
+            case 0: total += 1;
+            case 1: total += 2; break;
+            case 2: continue;
+            default:
+                switch (value) {
+                    case 3: total += 4; break;
+                    default: total += 8;
+                }
+        }
+        total += 10;
+    }
+    return total;
+}
+
+int entered_loop(int choice) {
+    int value = 0;
+    switch (choice) {
+        case 0:
+            value = 1;
+            do {
+                value += 2;
+                case 1: value += 3;
+            } while (value < 8);
+            break;
+        default: value = 20;
+    }
+    return value;
+}
+
+int nested_labels(int value) {
+    switch (value) {
+        {
+            case 0: return 5;
+            case 1: return 6;
+        }
+        default: return 7;
+    }
+}
+
+int narrow(u8 value) {
+    switch (value) {
+        case 511: return 1;
+        default: return 2;
+    }
+}
+
+comptime int signed_result = signed_case(-2);
+comptime int wide_result = wide_case(~0ULL);
+comptime int nested_result = nested(3);
+comptime int entered_result = entered_loop(1);
+comptime int labels_result = nested_labels(1);
+
+int main() {
+    printf("%d %d %d %d %d %d\n", signed_case(-2), signed_case(-2147483647 - 1), wide_case(1ULL << 63), nested(3), entered_loop(0), narrow(255));
+    printf("%d %d %d %d\n", signed_result, wide_result, nested_result, entered_result);
+    printf("%d %d\n", nested_labels(1), labels_result);
+    return 0;
+}

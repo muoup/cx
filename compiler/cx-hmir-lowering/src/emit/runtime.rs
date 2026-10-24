@@ -526,7 +526,11 @@ pub fn field(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let stored = context.env().reference_inner(base.ty()).unwrap_or(base.ty());
-    let struct_ty = types::lower_type(context.env_mut(), stored, span)?;
+    let tagged = matches!(
+        context.env().resolve_kind(stored),
+        HMIRTypeKind::TaggedUnion { .. }
+    );
+    let aggregate_ty = types::lower_type(context.env_mut(), stored, span)?;
     let base = lower_value(context, base, span)?;
 
     let reference_ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
@@ -536,16 +540,22 @@ pub fn field(
         None,
     ));
     let (out, reference) = output(context, reference_ty, span)?;
-    intrinsic(
-        context,
+    let projection = if tagged {
+        MIRAggregateIntrinsic::SumVariant {
+            out,
+            base,
+            variant: index,
+            sum_ty: aggregate_ty,
+        }
+    } else {
         MIRAggregateIntrinsic::StructField {
             out,
             base,
             field: index,
-            struct_ty,
-        },
-        span.clone(),
-    );
+            struct_ty: aggregate_ty,
+        }
+    };
+    intrinsic(context, projection, span.clone());
     initialize(context, &reference, span);
 
     Ok(HMIRValue::indirect(ty, reference))

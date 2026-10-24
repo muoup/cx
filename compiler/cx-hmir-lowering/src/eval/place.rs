@@ -91,14 +91,21 @@ pub(crate) fn eval_move(
             )
             .into());
         }
-        todo!("move out of the referent of a reference local")
+        return Err(hmir_error(
+            span,
+            &typecheck::INVALID_CONTEXT,
+            (
+                "move out of a borrowed binding".into(),
+                "a reference binding".into(),
+            ),
+        ));
     }
 
     if context.env().semantics(inner).unsafe_move {
         require_nonsafe(context, span, "move of a type declared as @unsafe_move")?;
     }
 
-    let moved = emit::lift(context, &value, span)?;
+    let moved = emit::lift(context, &value, None, span)?;
     emit::invalidate(context, &value, MIRInvalidationKind::Move, span);
 
     Ok(Evaluation::Ready(moved))

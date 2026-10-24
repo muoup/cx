@@ -1,0 +1,8 @@
+int classify(u32 value) {
+    switch (value) {
+        case -1: return 1;
+        case 4294967295U: return 2;
+        default: return 0;
+    }
+}
+int main() { return 0; }

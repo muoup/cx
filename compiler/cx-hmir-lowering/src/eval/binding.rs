@@ -14,11 +14,9 @@ use crate::{
     emit,
     env::function::{FnContext, LocalLoweringContext},
     eval::{
-        EvalResult,
-        coerce, complete,
-        eval, eval_type,
-        flow::{Evaluation, ready},
-        literal, storage, types,
+        EvalResult, coerce, complete, eval, eval_type,
+        flow::{self, Evaluation, RuntimeStop, StopReason, ready},
+        literal, storage, switch, types,
     },
     log::hmir_error,
     value::HMIRValue,
@@ -161,18 +159,10 @@ pub(crate) fn eval_block(
 
     emit::open_scope(context, span.clone());
     let result = eval_statements(context, body, span, statements, yields);
-    match result {
-        Ok(result) => {
-            let span = span.clone();
-            Ok(result.finish(context, move |context| {
-                emit::close_scope(context, span.clone())
-            }))
-        }
-        Err(error) => {
-            emit::close_scope(context, span.clone());
-            Err(error)
-        }
-    }
+    let span = span.clone();
+    flow::finally(context, result, move |context| {
+        emit::close_scope(context, span)
+    })
 }
 
 fn eval_statements(
@@ -182,12 +172,24 @@ fn eval_statements(
     statements: &[HMIRExprID],
     yields: bool,
 ) -> EvalResult<HMIRValue> {
+    let mut stopped = false;
     for (index, statement) in statements.iter().enumerate() {
+        if stopped && !switch::contains_case(context, body, *statement) {
+            continue;
+        }
         let lifts = match context.context() {
             FnContext::Runtime(runtime) => Some(runtime.lift_count()),
             FnContext::Comptime(_) => None,
         };
         let result = eval(context, body, *statement);
+        stopped = matches!(context.context(), FnContext::Runtime(runtime) if runtime.in_switch())
+            && matches!(
+                result,
+                Ok(Evaluation::Stop(StopReason::Runtime(RuntimeStop::Diverged)))
+            );
+        if stopped {
+            continue;
+        }
         let yielded = yields && index + 1 == statements.len();
         if yielded {
             let result = result?;
@@ -206,6 +208,9 @@ fn eval_statements(
         if let Some(lifts) = lifts {
             context.runtime_mut().release_lifts(lifts);
         }
+    }
+    if stopped {
+        return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
     }
     Ok(Evaluation::Ready(literal::unit(context, span)))
 }

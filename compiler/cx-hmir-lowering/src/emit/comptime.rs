@@ -69,11 +69,11 @@ fn read(
         }) if context.env().is_reference(value.ty()) => Some((*def, path.as_slice())),
         _ => None,
     };
-    
+
     if let Some((def, path)) = global {
         return read_global(context, def, path, span);
     }
-    
+
     if let HMIRValueKind::Constant(HMIRConstant::Address {
         place: HMIRPlace::Local(slot),
         path,
@@ -86,7 +86,7 @@ fn read(
         let constant = read(context, &root, span)?;
         return project(context, constant, path, span);
     }
-    
+
     let slot = match (value.kind(), tracked_slot(context, value)) {
         (_, Some(slot)) => slot,
         (HMIRValueKind::Constant(constant), None)
@@ -308,14 +308,35 @@ pub fn dereference(
     Ok(HMIRValue::indirect(inner, pointer))
 }
 
-pub fn field(base: &HMIRValue, index: usize, ty: HMIRTypeID) -> HMIRValue {
+pub fn field(
+    context: &mut LocalLoweringContext,
+    base: &HMIRValue,
+    index: usize,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    if matches!(
+        base.kind(),
+        HMIRValueKind::Constant(HMIRConstant::Aggregate { .. })
+    ) {
+        let constant = read(context, base, span)?;
+        return Ok(HMIRValue::constant(
+            ty,
+            project(context, constant, &[index], span)?,
+        ));
+    }
+
     let address = address(base, ty);
     let HMIRValueKind::Constant(HMIRConstant::Address {
         place, mut path, ..
     }) = address.kind().clone()
     else {
-        unreachable!()
+        unreachable!("a comptime field projection has an address")
     };
     path.push(index);
-    HMIRValue::constant(ty, HMIRConstant::Address { place, path, ty })
+
+    Ok(HMIRValue::constant(
+        ty,
+        HMIRConstant::Address { place, path, ty },
+    ))
 }

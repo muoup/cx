@@ -63,10 +63,11 @@ pub fn copy(
 pub fn lift(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
+    origin: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::lift(context, value, span),
+        FnContext::Runtime(_) => runtime::lift(context, value, origin, span),
         FnContext::Comptime(_) => comptime::copy(context, value.clone(), span),
     }
 }

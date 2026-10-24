@@ -102,7 +102,7 @@ pub fn field(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::field(context, base, index, ty, span),
-        FnContext::Comptime(_) => Ok(comptime::field(base, index, ty)),
+        FnContext::Comptime(_) => comptime::field(context, base, index, ty, span),
     }
 }
 

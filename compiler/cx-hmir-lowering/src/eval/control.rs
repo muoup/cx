@@ -9,13 +9,13 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::{self, runtime},
-    env::function::{FnContext, LocalLoweringContext, Permission, runtime::LoopFrame},
+    env::function::{FnContext, LocalLoweringContext, Permission, runtime::ExitFrame},
     eval::{
         EvalResult,
         binding::eval_scoped,
         coerce, contract, eval, eval_type,
         flow::{self, ComptimeStop, Evaluation, RuntimeStop, StopReason, ready},
-        literal, storage, types,
+        guard, literal, storage, types,
     },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
@@ -36,16 +36,18 @@ pub(crate) fn eval_if(
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    let condition = ready!(eval(context, body, condition));
-
-    match context.context() {
+    emit::open_scope(context, span.clone());
+    let result = (|| match context.context() {
         FnContext::Runtime(_) => {
             runtime_if(context, body, span, condition, then_branch, else_branch)
         }
         FnContext::Comptime(_) => {
+            let condition = ready!(eval(context, body, condition));
             comptime_if(context, body, span, condition, then_branch, else_branch)
         }
-    }
+    })();
+    let span = span.clone();
+    flow::finally(context, result, move |context| emit::close_scope(context, span))
 }
 
 fn comptime_if(
@@ -67,31 +69,19 @@ fn comptime_if(
     }
 }
 
-struct Arm {
-    block: MIRBasicBlockID,
-    value: HMIRValue,
-}
-
 fn runtime_if(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     span: &TokenRange,
-    condition: HMIRValue,
+    condition: HMIRExprID,
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    let condition = runtime::lower_value(context, &condition, span)?;
     let then_block = runtime::block(context, "if.then");
 
     let Some(else_branch) = else_branch else {
         let merge = runtime::block(context, "if.merge");
-        runtime::branch(
-            context,
-            condition,
-            MIRBlockTarget::new(then_block),
-            MIRBlockTarget::new(merge),
-            span.clone(),
-        );
+        ready!(guard::branch(context, body, condition, then_block, merge));
 
         runtime::switch_to(context, then_block);
         ready!(flow::catch_diverged(eval_scoped(
@@ -106,19 +96,15 @@ fn runtime_if(
     };
 
     let else_block = runtime::block(context, "if.else");
-    runtime::branch(
-        context,
-        condition,
-        MIRBlockTarget::new(then_block),
-        MIRBlockTarget::new(else_block),
-        span.clone(),
-    );
+    ready!(guard::branch(
+        context, body, condition, then_block, else_block
+    ));
 
     runtime::switch_to(context, then_block);
     let then = flow::catch_diverged(eval_scoped(context, body, then_branch))?;
     let span = span.clone();
     then.and_then(context, body, None, move |context, body, then, expected| {
-        let mut arms: Vec<Arm> = arm(context, then).into_iter().collect();
+        let mut arms: Vec<(MIRBasicBlockID, HMIRValue)> = arm(context, then).into_iter().collect();
         runtime::switch_to(context, else_block);
         let otherwise = flow::catch_diverged(eval_scoped(context, body, else_branch))?
             .complete(context, body, expected)?;
@@ -129,14 +115,17 @@ fn runtime_if(
     })
 }
 
-fn arm(context: &mut LocalLoweringContext, value: Option<HMIRValue>) -> Option<Arm> {
+fn arm(
+    context: &mut LocalLoweringContext,
+    value: Option<HMIRValue>,
+) -> Option<(MIRBasicBlockID, HMIRValue)> {
     let block = runtime::current_block(context);
-    value.map(|value| Arm { block, value })
+    value.map(|value| (block, value))
 }
 
-fn merge(
+pub(crate) fn merge(
     context: &mut LocalLoweringContext,
-    arms: Vec<Arm>,
+    arms: Vec<(MIRBasicBlockID, HMIRValue)>,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
     if arms.is_empty() {
@@ -145,8 +134,8 @@ fn merge(
 
     let merge = runtime::block(context, "if.merge");
     let Some(ty) = merged_type(context, &arms, span) else {
-        for arm in arms {
-            runtime::switch_to(context, arm.block);
+        for (block, _) in arms {
+            runtime::switch_to(context, block);
             runtime::jump(context, merge, span.clone());
         }
 
@@ -155,9 +144,9 @@ fn merge(
     };
 
     let result = emit::scratch(context, ty, span)?;
-    for arm in arms {
-        runtime::switch_to(context, arm.block);
-        let value = coerce::implicit(context, arm.value, ty, span)?;
+    for (block, value) in arms {
+        runtime::switch_to(context, block);
+        let value = coerce::implicit(context, value, ty, span)?;
         storage::initialize(context, &result, &value, span)?;
         runtime::jump(context, merge, span.clone());
     }
@@ -168,13 +157,13 @@ fn merge(
 
 fn merged_type(
     context: &mut LocalLoweringContext,
-    arms: &[Arm],
+    arms: &[(MIRBasicBlockID, HMIRValue)],
     span: &TokenRange,
 ) -> Option<HMIRTypeID> {
     let mut merged: Option<HMIRTypeID> = None;
 
-    for arm in arms {
-        let ty = arm.value.ty();
+    for (_, value) in arms {
+        let ty = value.ty();
         if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Void) {
             return None;
         }
@@ -296,8 +285,12 @@ fn runtime_while(
     runtime::jump(context, entry, span.clone());
 
     runtime::switch_to(context, condition_block);
-    let condition = ready!(flow::catch_diverged(eval(context, body, condition)));
-    let Some(condition) = condition else {
+    let scope_depth = context.runtime().open_scopes().len();
+    emit::open_scope(context, span.clone());
+    let condition = ready!(flow::catch_diverged(guard::branch(
+        context, body, condition, body_block, exit
+    )));
+    let Some(()) = condition else {
         for block in [Some(body_block), increment_block, Some(exit)] {
             let Some(block) = block else { continue };
 
@@ -307,29 +300,22 @@ fn runtime_while(
                 .emit(MIRInstructionKind::Unreachable, span.clone());
         }
 
+        emit::close_scope(context, span.clone());
         return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
     };
 
-    let condition = runtime::lower_value(context, &condition, span)?;
-    runtime::branch(
-        context,
-        condition,
-        MIRBlockTarget::new(body_block),
-        MIRBlockTarget::new(exit),
-        span.clone(),
-    );
-
     let continue_block = increment_block.unwrap_or(condition_block);
-    let scope_depth = context.runtime().open_scopes().len();
-    context.runtime_mut().push_loop(LoopFrame {
-        continue_block,
-        break_block: exit,
+    context.runtime_mut().push_exit(ExitFrame::new(
+        exit,
+        Some(continue_block),
         scope_depth,
-    });
+        Vec::new(),
+    ));
 
     runtime::switch_to(context, body_block);
     let completion = flow::catch_diverged(eval_scoped(context, body, loop_body));
-    context.runtime_mut().pop_loop();
+    context.runtime_mut().pop_exit();
+    emit::close_scope(context, span.clone());
     ready!(completion);
     runtime::jump(context, continue_block, span.clone());
 
@@ -428,17 +414,34 @@ pub(crate) fn eval_loop_exit(
         return Ok(Evaluation::Stop(stop.into()));
     }
 
-    let Some(frame) = context.runtime().current_loop() else {
-        let exit = "'break' or 'continue'".into();
-        return Err(hmir_error(span, &typecheck::REQUIRED_CONTEXT, (exit, "a loop".into())).into());
-    };
-    let target = match stop {
-        ComptimeStop::Break => frame.break_block,
-        ComptimeStop::Continue => frame.continue_block,
+    let exit = match &stop {
+        ComptimeStop::Break => context
+            .runtime()
+            .current_exit()
+            .map(|frame| (frame.break_block(), frame.scope_depth())),
+        ComptimeStop::Continue => context.runtime().current_loop().map(|frame| {
+            (
+                frame
+                    .continue_block()
+                    .expect("a loop has a continue target"),
+                frame.scope_depth(),
+            )
+        }),
         _ => unreachable!("only 'break' and 'continue' exit a loop"),
     };
-
-    runtime::drop_scopes(context, frame.scope_depth, span);
+    let Some((target, depth)) = exit else {
+        let (feature, required) = match stop {
+            ComptimeStop::Break => ("'break'", "a loop or switch"),
+            ComptimeStop::Continue => ("'continue'", "a loop"),
+            _ => unreachable!("only 'break' and 'continue' exit a loop"),
+        };
+        return Err(hmir_error(
+            span,
+            &typecheck::REQUIRED_CONTEXT,
+            (feature.into(), required.into()),
+        ));
+    };
+    runtime::drop_scopes(context, depth, span);
     runtime::jump(context, target, span.clone());
     Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))
 }

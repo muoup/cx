@@ -6,12 +6,16 @@ mod contract;
 mod control;
 mod def;
 mod function;
+mod guard;
 mod literal;
 mod name;
 mod place;
 mod safety;
+mod selection;
 mod storage;
+mod switch;
 mod unevaluated;
+mod yielding;
 
 pub(crate) mod coerce;
 pub(crate) mod comptime;
@@ -58,6 +62,7 @@ use crate::{
         literal::eval_literal,
         op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
         place::{eval_address_of, eval_assign, eval_dereference, eval_leak, eval_move},
+        switch::{eval_case, eval_switch},
     },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
@@ -136,6 +141,11 @@ pub(crate) fn eval(
     body: &HMIRBody,
     id: HMIRExprID,
 ) -> EvalResult<HMIRValue> {
+    if let FnContext::Comptime(comptime) = context.context()
+        && let Some(selected) = comptime.selected_case()
+    {
+        return switch::seek(context, body, id, selected);
+    }
     let expr = body.expr(id);
     let span = expr.span();
 
@@ -208,6 +218,9 @@ pub(crate) fn eval(
             HMIROp::Control(HMIRControlOp::Continue) => {
                 eval_loop_exit(context, span, ComptimeStop::Continue)
             }
+            HMIROp::Control(HMIRControlOp::Yield(value)) => {
+                yielding::eval_yield(context, body, span, *value)
+            }
             HMIROp::Control(HMIRControlOp::Unsafe(operand)) => eval_unsafe(context, body, *operand),
 
             HMIROp::Assign { target, op, value } => {
@@ -248,9 +261,18 @@ pub(crate) fn eval(
         HMIRExprKind::Splice { .. } => todo!("HMIRExprKind::Splice"),
         HMIRExprKind::Intrinsic(_) => todo!("HMIRExprKind::Intrinsic"),
         HMIRExprKind::Error(_) => todo!("HMIRExprKind::Error"),
-        HMIRExprKind::Switch { .. } => todo!("HMIRExprKind::Switch"),
-        HMIRExprKind::Case { .. } => todo!("HMIRExprKind::Case"),
-        HMIRExprKind::Match { .. } => todo!("HMIRExprKind::Match"),
+        HMIRExprKind::Switch {
+            condition,
+            body: switch_body,
+        } => eval_switch(context, body, span, *condition, *switch_body),
+        HMIRExprKind::Case {
+            body: statement, ..
+        } => eval_case(context, body, id, *statement),
+        HMIRExprKind::Match {
+            scrutinee,
+            subject,
+            arms,
+        } => selection::eval_match(context, body, span, *scrutinee, *subject, arms),
         HMIRExprKind::Label { .. } => todo!("HMIRExprKind::Label"),
     }
 }

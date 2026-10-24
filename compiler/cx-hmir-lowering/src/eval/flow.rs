@@ -1,6 +1,6 @@
 use cx_log::CXResult;
 
-use crate::value::HMIRValue;
+use crate::{env::function::LocalLoweringContext, value::HMIRValue};
 
 mod incomplete;
 
@@ -49,11 +49,28 @@ macro_rules! ready {
 pub(crate) use ready;
 
 pub(crate) fn catch_diverged<T: 'static>(result: EvalResult<T>) -> EvalResult<Option<T>> {
-    match result? {
-        Evaluation::Stop(StopReason::Runtime(RuntimeStop::Diverged)) => Ok(Evaluation::Ready(None)),
-        Evaluation::Ready(value) => Ok(Evaluation::Ready(Some(value))),
-        Evaluation::Incomplete(incomplete) => Ok(Evaluation::Incomplete(incomplete.project(Some))),
-        Evaluation::Stop(stop) => Ok(Evaluation::Stop(stop)),
+    let value = match result? {
+        Evaluation::Ready(value) => Evaluation::Ready(Some(value)),
+        Evaluation::Incomplete(incomplete) => Evaluation::Incomplete(incomplete.project(Some)),
+        Evaluation::Stop(stop) => Evaluation::Stop(stop),
+    };
+    value.catch(|stop| match stop {
+        StopReason::Runtime(RuntimeStop::Diverged) => Ok(Evaluation::Ready(None)),
+        stop => Ok(Evaluation::Stop(stop)),
+    })
+}
+
+pub(crate) fn finally<T: 'static>(
+    context: &mut LocalLoweringContext,
+    result: EvalResult<T>,
+    finish: impl FnOnce(&mut LocalLoweringContext) + 'static,
+) -> EvalResult<T> {
+    match result {
+        Ok(result) => Ok(result.finish(context, finish)),
+        Err(error) => {
+            finish(context);
+            Err(error)
+        }
     }
 }
 

@@ -1,0 +1,52 @@
+#include <stdio.h>
+
+struct Pair { int left; int right; };
+enum union Entry { none :: void, pair :: Pair };
+enum union Referenced { slot :: int& };
+
+int effects = 0;
+Entry create_entry() { ++effects; return Entry::pair({3, 4}); }
+
+comptime int choose(int number) {
+    return match (number) {
+        1 => yield 12;
+        auto other => yield other + 20;
+    };
+}
+comptime int chosen = choose(2);
+
+comptime Pair contextual(int number) {
+    return match (number) {
+        0 => yield {1, 2};
+        _ => yield {3, 4};
+    };
+}
+comptime Pair constructed = contextual(0);
+
+int main() {
+    Entry value = create_entry();
+    int seen = 0;
+    if (value is pair(auto& pair) && pair.left == 3) {
+        pair.left = 7;
+        seen = pair.right;
+    }
+    Entry empty = Entry::none();
+    if (empty is pair(auto copied) && copied.left == 9) return 1;
+    Pair copy = match (value) {
+        pair(auto pair) => { pair.left = 9; yield pair; }
+        none() => yield {0, 0};
+    };
+    int original = match (value) {
+        pair(const auto& pair) => yield pair.left;
+        none() => yield 0;
+    };
+    Pair contextual_pair = match (effects) {
+        1 => yield {5, 6};
+        _ => yield {7, 8};
+    };
+    int scalar = 5;
+    Referenced reference = Referenced::slot(scalar);
+    int loaded = match (move reference) { slot(auto value) => yield value; };
+    printf("%d %d %d %d %d %d %d %d\n", effects, seen, copy.left, original, contextual_pair.right, chosen, constructed.right, loaded);
+    return 0;
+}

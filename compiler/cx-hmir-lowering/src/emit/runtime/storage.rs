@@ -1,7 +1,7 @@
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRScopeID, MIRTarget,
+    MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRScopeID, MIRTarget, MIRValue,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
@@ -160,11 +160,17 @@ pub fn invalidate(
 pub fn lift(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
+    origin: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let Some(source @ MIRBindable::Place(_)) = bindable(context, value) else {
-        unreachable!("only a place is lifted")
+    let source = match origin {
+        Some(_) => match lower_value(context, value, span)? {
+            MIRValue::Register(register) => MIRBindable::Register(register),
+            _ => unreachable!("a projected reference is held in a register"),
+        },
+        None => bindable(context, value).expect("a lift reads a tracked place"),
     };
+    let origin = bindable(context, origin.unwrap_or(value)).expect("a lift has a tracked origin");
     let Some(inner) = context.env().reference_inner(value.ty()) else {
         unreachable!("a lift reads through a reference")
     };
@@ -172,8 +178,8 @@ pub fn lift(
     context.runtime_mut().emit(
         MIRInstructionKind::Lift {
             out,
-            source: source.clone(),
-            origin: source,
+            source,
+            origin,
         },
         span.clone(),
     );

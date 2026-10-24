@@ -149,7 +149,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
             let param = runtime::parameter(&mut context, payload, None, &span)?;
             let reference = types::reference(context.env_mut(), payload, &span);
             let param = param.with_ty(reference);
-            let moved = emit::lift(&mut context, &param, &span)?;
+            let moved = emit::lift(&mut context, &param, None, &span)?;
             emit::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span);
             Some(moved)
         }

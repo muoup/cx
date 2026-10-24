@@ -53,17 +53,18 @@ pub(crate) fn lower_while(
     pre_eval: bool,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
-    let condition = lower_condition(context, condition)?;
-    let body = context.scoped(|this| lower_expr(this, body))?;
-
-    Ok(context.push(
-        HMIRExprKind::While {
-            condition,
-            body,
-            pre_eval,
-        },
-        span,
-    ))
+    context.scoped(|context| {
+        let condition = lower_condition(context, condition)?;
+        let body = context.scoped(|context| lower_expr(context, body))?;
+        Ok(context.push(
+            HMIRExprKind::While {
+                condition,
+                body,
+                pre_eval,
+            },
+            span,
+        ))
+    })
 }
 
 pub(crate) fn lower_for(

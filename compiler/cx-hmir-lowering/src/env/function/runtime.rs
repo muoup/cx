@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use cx_hmir::body::HMIRLocalID;
+use cx_hmir::{
+    body::HMIRLocalID,
+    expr::HMIRExprID,
+};
 use cx_mir::{
     MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRPlaceDecl,
     MIRScopeID, MIRTarget, MIRValue,
@@ -20,12 +23,47 @@ pub enum Emission {
     Unevaluated,
 }
 
-// Where 'break' and 'continue' lead, and how many scopes were open around the loop they leave
-#[derive(Debug, Clone, Copy)]
-pub struct LoopFrame {
-    pub continue_block: MIRBasicBlockID,
-    pub break_block: MIRBasicBlockID,
-    pub scope_depth: usize,
+#[derive(Debug)]
+pub(crate) struct ExitFrame {
+    continue_block: Option<MIRBasicBlockID>,
+    break_block: MIRBasicBlockID,
+    scope_depth: usize,
+    case_blocks: Vec<(HMIRExprID, MIRBasicBlockID)>,
+}
+
+impl ExitFrame {
+    pub(crate) fn new(
+        break_block: MIRBasicBlockID,
+        continue_block: Option<MIRBasicBlockID>,
+        scope_depth: usize,
+        case_blocks: Vec<(HMIRExprID, MIRBasicBlockID)>,
+    ) -> Self {
+        Self { continue_block, break_block, scope_depth, case_blocks }
+    }
+
+    pub(crate) fn continue_block(&self) -> Option<MIRBasicBlockID> {
+        self.continue_block
+    }
+
+    pub(crate) fn break_block(&self) -> MIRBasicBlockID {
+        self.break_block
+    }
+
+    pub(crate) fn scope_depth(&self) -> usize {
+        self.scope_depth
+    }
+
+    pub(crate) fn case_block(&self, case: HMIRExprID) -> Option<MIRBasicBlockID> {
+        self.case_blocks
+            .iter()
+            .find_map(|(label, block)| (*label == case).then_some(*block))
+    }
+}
+
+#[derive(Debug)]
+struct YieldFrame {
+    depth: usize,
+    values: Vec<(MIRBasicBlockID, HMIRValue)>,
 }
 
 #[derive(Debug)]
@@ -36,8 +74,9 @@ pub struct RuntimeContext {
     slots: IndexVec<HMIRSlotID, MIRBindable>,
     open_scopes: Vec<MIRScopeID>,
     scratch_scope: MIRScopeID,
-    loops: Vec<LoopFrame>,
+    exits: Vec<ExitFrame>,
     lifts: Vec<(HMIRSlotID, MIRBasicBlockID)>,
+    yields: Vec<YieldFrame>,
     emission: Emission,
 }
 
@@ -53,8 +92,9 @@ impl RuntimeContext {
             slots: IndexVec::new(),
             open_scopes: Vec::new(),
             scratch_scope,
-            loops: Vec::new(),
+            exits: Vec::new(),
             lifts: Vec::new(),
+            yields: Vec::new(),
             emission: Emission::Enabled,
         }
     }
@@ -110,7 +150,9 @@ impl RuntimeContext {
         let terminator = kind.is_terminator();
         if matches!(
             kind,
-            MIRInstructionKind::Jump { .. } | MIRInstructionKind::Branch { .. }
+            MIRInstructionKind::Jump { .. }
+                | MIRInstructionKind::Branch { .. }
+                | MIRInstructionKind::CaseBranch { .. }
         ) {
             self.preserve_lifts(&span);
         }
@@ -237,18 +279,58 @@ impl RuntimeContext {
             .expect("Attempt to pop a scope when none is open")
     }
 
-    pub fn current_loop(&self) -> Option<LoopFrame> {
-        self.loops.last().copied()
+    pub(crate) fn current_exit(&self) -> Option<&ExitFrame> {
+        self.exits.last()
     }
 
-    pub fn push_loop(&mut self, frame: LoopFrame) {
-        self.loops.push(frame);
+    pub(crate) fn current_loop(&self) -> Option<&ExitFrame> {
+        self.exits
+            .iter()
+            .rev()
+            .find(|frame| frame.continue_block().is_some())
     }
 
-    pub fn pop_loop(&mut self) -> LoopFrame {
-        self.loops
+    pub(crate) fn in_switch(&self) -> bool {
+        self.exits.iter().any(|frame| frame.continue_block().is_none())
+    }
+
+    pub(crate) fn case_block(&self, case: HMIRExprID) -> Option<MIRBasicBlockID> {
+        self.exits
+            .iter()
+            .rev()
+            .find_map(|frame| frame.case_block(case))
+    }
+
+    pub(crate) fn push_exit(&mut self, frame: ExitFrame) {
+        self.exits.push(frame);
+    }
+
+    pub(crate) fn pop_exit(&mut self) -> ExitFrame {
+        self.exits
             .pop()
-            .expect("Attempt to pop a loop when none is open")
+            .expect("Attempt to pop an exit frame when none is open")
+    }
+
+    pub fn begin_yield(&mut self, depth: usize) {
+        self.yields.push(YieldFrame {
+            depth,
+            values: Vec::new(),
+        });
+    }
+
+    pub fn yielding(&self) -> bool {
+        !self.yields.is_empty()
+    }
+
+    pub fn yield_value(&mut self, value: HMIRValue) -> usize {
+        let block = self.builder.current_block();
+        let frame = self.yields.last_mut().expect("yield has a target");
+        frame.values.push((block, value));
+        frame.depth
+    }
+
+    pub fn end_yield(&mut self) -> Vec<(MIRBasicBlockID, HMIRValue)> {
+        self.yields.pop().expect("yield scope exists").values
     }
 
     pub fn finish(self) -> MIRFunction {

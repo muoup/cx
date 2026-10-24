@@ -1,8 +1,10 @@
 pub(crate) mod initializer;
 pub(crate) mod pattern;
+pub(crate) mod unpack;
 
 use initializer::initialize;
 use pattern::eval_is;
+use unpack::eval_unpack;
 
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBody,
@@ -54,8 +56,12 @@ pub(crate) fn eval_aggregate(
 
             Ok(Evaluation::Ready(dereference(context, element, span)?))
         }
-        HMIRAggregateOp::Is { value, pattern } => eval_is(context, body, span, *value, pattern),
-        _ => todo!("HMIROp::AggregateOp({})", op.path()),
+        HMIRAggregateOp::Is { value, pattern } => {
+            eval_is(context, body, span, *value, pattern, None)
+        }
+        HMIRAggregateOp::Unpack { value, bindings } => {
+            eval_unpack(context, body, span, *value, bindings)
+        }
     }
 }
 

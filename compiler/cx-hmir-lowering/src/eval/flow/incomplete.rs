@@ -7,7 +7,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::function::{EvaluationID, Expectations, FnContext, LocalLoweringContext},
-    eval::flow::{EvalResult, Evaluation},
+    eval::flow::{EvalResult, Evaluation, StopReason, finally},
     log::hmir_error,
 };
 
@@ -147,6 +147,25 @@ impl<T: 'static> Evaluation<T> {
         }
     }
 
+    pub(crate) fn catch(
+        self,
+        handler: impl FnOnce(StopReason) -> EvalResult<T> + 'static,
+    ) -> EvalResult<T> {
+        match self {
+            Self::Stop(stop) => handler(stop),
+            Self::Incomplete(Incomplete {
+                suspension,
+                partial,
+                resolve,
+            }) => Ok(Self::Incomplete(Incomplete::resume(
+                suspension,
+                partial,
+                move |context, body, expected| resolve(context, body, expected)?.catch(handler),
+            ))),
+            value => Ok(value),
+        }
+    }
+
     pub(crate) fn known(&self) -> Option<&T> {
         match self {
             Self::Ready(value) => Some(value),
@@ -230,12 +249,9 @@ impl<T: 'static> Evaluation<T> {
             }) => Self::Incomplete(Incomplete::resume(
                 suspension,
                 partial,
-                move |context, body, expected| match resolve(context, body, expected) {
-                    Ok(result) => Ok(result.finish(context, finish)),
-                    Err(error) => {
-                        finish(context);
-                        Err(error)
-                    }
+                move |context, body, expected| {
+                    let result = resolve(context, body, expected);
+                    finally(context, result, finish)
                 },
             )),
             result => {

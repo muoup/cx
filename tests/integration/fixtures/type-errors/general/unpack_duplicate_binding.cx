@@ -1,0 +1,6 @@
+struct Pair { int left; int right; };
+int main() {
+    Pair pair = {1, 2};
+    @unpack(move pair) { left: value, right: value };
+    return 0;
+}
