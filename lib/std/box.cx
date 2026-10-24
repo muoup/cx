@@ -3,7 +3,7 @@ extern "C":
 
 public:
 
-comptime @type box(comptime @type T) =>
+comptime @type box(comptime @type T) safe =>
     struct : @nodrop {
         T* ptr;
     };

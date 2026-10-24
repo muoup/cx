@@ -197,15 +197,20 @@ fn qualified_constructor(
         return Ok(None);
     };
     let parent = QualifiedName::new(NamespacePath::new(namespace.to_vec()), parent.clone());
-    let Some(id) = resolve(context, span, &parent, None)? else {
-        return Ok(None);
-    };
-    let point = context.visible_through();
-    let parent = symbol::binding(context.env_mut(), id, point)?;
-    let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = parent.kind() else {
-        return Ok(None);
-    };
-    constructor::reference(context, *ty, &name.name, span)
+    for tag in [None, Some(HIRTagKind::Union)] {
+        let Some(id) = resolve(context, span, &parent, tag)? else {
+            continue;
+        };
+        let point = context.visible_through();
+        let parent = symbol::binding(context.env_mut(), id, point)?;
+        let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = parent.kind() else {
+            continue;
+        };
+        if let Some(value) = constructor::reference(context, *ty, &name.name, span)? {
+            return Ok(Some(value));
+        }
+    }
+    Ok(None)
 }
 
 pub(crate) fn eval_scope_access(
