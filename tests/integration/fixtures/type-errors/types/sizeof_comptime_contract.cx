@@ -1,0 +1,2 @@
+comptime int invalid() where pre: (0) => 7;
+int main() { return sizeof(invalid()); }

@@ -5,7 +5,7 @@ mod promotion;
 mod result;
 mod truth;
 
-use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth};
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext, intrinsic::HMIRIntWidth};
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
@@ -13,12 +13,27 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         coerce::{promotion::arithmetic, result::Coercion},
+        op::unspecify,
         safety::require_nonsafe,
         types,
     },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
+
+pub(crate) fn value_type(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    let ty = context.env().reference_inner(ty).unwrap_or(ty);
+    let qualifiers = HMIRTypeSemantics {
+        constant: true,
+        volatile: true,
+        ..Default::default()
+    };
+    unspecify(context, ty, qualifiers, span)
+}
 
 pub(crate) fn implicit(
     context: &mut LocalLoweringContext,

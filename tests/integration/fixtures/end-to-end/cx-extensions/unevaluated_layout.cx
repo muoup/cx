@@ -1,0 +1,44 @@
+#include <stdio.h>
+
+struct Pair { int left; int right; };
+struct Resource : @nodrop { int value; };
+int calls;
+Pair runtime_value() { calls++; return (Pair){ 1, 2 }; }
+comptime @type selected_type() => long long;
+comptime int selected_value() => 7;
+comptime @type dependent_type(int wide) => wide ? long long : int;
+usize bytes(comptime @type T) => sizeof(T);
+usize alignment(comptime @type T) => alignof(T);
+comptime usize folded_bytes(comptime @type T) => sizeof(T);
+comptime usize folded = folded_bytes(int);
+
+comptime int untouched() {
+    int value = 3;
+    usize size = sizeof(++value);
+    usize dependent = sizeof(dependent_type(value));
+    if (dependent != 8) return -1;
+    return value;
+}
+comptime int unchanged = untouched();
+
+int checked(int* pointer) safe { return sizeof(*pointer); }
+
+int main() {
+    int value = 3;
+    int array[3] = {1, 2, 3};
+    Resource resource = { 7 };
+    usize increment = sizeof(++value);
+    usize call = sizeof(runtime_value());
+    usize branch = sizeof(value ? runtime_value() : runtime_value());
+    usize null = sizeof(*(int*)0);
+    usize zero = sizeof(1 / 0);
+    usize ownership = sizeof(move resource);
+    usize type = sizeof(selected_type());
+    usize constant = sizeof(selected_value());
+    usize inferred = sizeof(array);
+    usize text = sizeof("abc");
+    @leak(resource);
+    printf("%d %d %d %zu %zu %zu %zu %zu %zu\n", value, calls, unchanged, increment, call, branch, null, zero, ownership);
+    printf("%zu %zu %zu %zu %zu %zu %zu %d\n", type, constant, inferred, text, bytes(int), alignment(int), folded, checked(0));
+    return 0;
+}

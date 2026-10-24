@@ -1,0 +1,9 @@
+T pick(comptime @type T, T& a, T& b) {
+    return a;
+}
+
+int main() {
+    const int x = 3;
+    int y = 4;
+    return pick(_, x, y);
+}

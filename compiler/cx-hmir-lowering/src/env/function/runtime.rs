@@ -10,13 +10,14 @@ use index_vec::IndexVec;
 
 use crate::{
     env::module::MIRFunctionBuilder,
-    value::{HMIRSlotID, HMIRValue},
+    value::{HMIRPlace, HMIRSlotID, HMIRValue, HMIRValueKind},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Emission {
     Enabled,
     Suppressed,
+    Unevaluated,
 }
 
 // Where 'break' and 'continue' lead, and how many scopes were open around the loop they leave
@@ -31,6 +32,7 @@ pub struct LoopFrame {
 pub struct RuntimeContext {
     builder: MIRFunctionBuilder,
     locals: HashMap<HMIRLocalID, HMIRValue>,
+    captures: Vec<(HMIRLocalID, HMIRValue)>,
     slots: IndexVec<HMIRSlotID, MIRBindable>,
     open_scopes: Vec<MIRScopeID>,
     scratch_scope: MIRScopeID,
@@ -47,6 +49,7 @@ impl RuntimeContext {
         Self {
             builder,
             locals: HashMap::new(),
+            captures: Vec::new(),
             slots: IndexVec::new(),
             open_scopes: Vec::new(),
             scratch_scope,
@@ -73,16 +76,46 @@ impl RuntimeContext {
     }
 
     pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
-        if self.emission == Emission::Suppressed {
+        if self.emission != Emission::Enabled {
+            if self.emission == Emission::Unevaluated {
+                let written = match &kind {
+                    MIRInstructionKind::Store {
+                        target: MIRTarget::Place(place),
+                        ..
+                    } => Some(MIRBindable::Place(*place)),
+                    MIRInstructionKind::Invalidate { place, .. } => Some(place.clone()),
+                    MIRInstructionKind::Store {
+                        target: MIRTarget::Indirect(_) | MIRTarget::Global(_),
+                        ..
+                    } => {
+                        self.captures.clear();
+                        None
+                    }
+                    _ => None,
+                };
+                if let Some(written) = written {
+                    self.captures.retain(|(local, _)| {
+                        match self.locals.get(local).map(HMIRValue::kind) {
+                            Some(HMIRValueKind::PlaceRef(HMIRPlace::Local(slot))) => {
+                                self.slots[*slot] != written
+                            }
+                            _ => true,
+                        }
+                    });
+                }
+            }
             return;
         }
-        
+
         let terminator = kind.is_terminator();
-        if matches!(kind, MIRInstructionKind::Jump { .. } | MIRInstructionKind::Branch { .. }) {
+        if matches!(
+            kind,
+            MIRInstructionKind::Jump { .. } | MIRInstructionKind::Branch { .. }
+        ) {
             self.preserve_lifts(&span);
         }
         self.builder.emit(kind, span);
-        
+
         if terminator {
             self.set_emission(Emission::Suppressed);
         }
@@ -161,6 +194,14 @@ impl RuntimeContext {
         self.slots.push(bindable)
     }
     
+    pub fn captures(&self) -> &[(HMIRLocalID, HMIRValue)] {
+        &self.captures
+    }
+
+    pub fn set_captures(&mut self, captures: Vec<(HMIRLocalID, HMIRValue)>) {
+        self.captures = captures;
+    }
+
     pub fn locals(&self) -> impl Iterator<Item = (&HMIRLocalID, &HMIRValue)> {
         self.locals.iter()
     }
@@ -170,6 +211,7 @@ impl RuntimeContext {
     }
 
     pub fn set_local(&mut self, local: HMIRLocalID, value: HMIRValue) {
+        self.captures.retain(|(id, _)| *id != local);
         self.locals.insert(local, value);
     }
 

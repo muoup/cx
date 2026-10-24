@@ -1,4 +1,7 @@
-use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
+use cx_hmir::{
+    HMIRBody,
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+};
 use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
 
@@ -84,4 +87,18 @@ pub(crate) fn hole(context: &mut LocalLoweringContext, span: &TokenRange) -> Eva
             )))
         },
     )))
+}
+
+pub(crate) fn value(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    evaluation: Evaluation<HMIRValue>,
+    expected: Option<HMIRTypeID>,
+) -> EvalResult<HMIRValue> {
+    match expected {
+        Some(expected) if matches!(context.env().resolve_kind(expected), HMIRTypeKind::Type) => {
+            Ok(evaluation)
+        }
+        _ => evaluation.complete(context, body, expected),
+    }
 }

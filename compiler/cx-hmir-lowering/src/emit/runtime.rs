@@ -50,7 +50,9 @@ pub fn switch_to(context: &mut LocalLoweringContext, block: MIRBasicBlockID) {
     let runtime = context.runtime_mut();
 
     runtime.builder_mut().switch_to(block);
-    runtime.set_emission(Emission::Enabled);
+    if runtime.emission() != Emission::Unevaluated {
+        runtime.set_emission(Emission::Enabled);
+    }
 }
 
 pub fn jump(context: &mut LocalLoweringContext, target: MIRBasicBlockID, span: TokenRange) {

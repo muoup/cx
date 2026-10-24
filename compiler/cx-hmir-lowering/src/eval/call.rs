@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBody, HMIRDefKind, HMIRFunctionStage,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
@@ -11,11 +11,12 @@ use crate::{
     emit,
     env::function::{FnContext, LocalLoweringContext},
     eval::{
-        EvalResult, coerce, constructor, contract, eval,
+        EvalResult, coerce, comptime, constructor, contract, eval,
         flow::{Evaluation, RuntimeStop, ready},
         function, safety, types,
     },
     log::hmir_error,
+    symbol,
     value::{
         HMIRValue, HMIRValueKind,
         constant::{HMIRConstant, HMIRFunctionRef},
@@ -31,6 +32,21 @@ pub(crate) fn eval_call(
 ) -> EvalResult<HMIRValue> {
     let callee = ready!(eval(context, body, callee));
     let callee = coerce::std_rvalue(context, callee, span)?;
+    if context.is_unevaluated()
+        && let HMIRValueKind::Constant(HMIRConstant::Function {
+            function: HMIRFunctionRef::Def(def),
+            ..
+        }) = callee.kind()
+    {
+        let source = context.env().symbols().resolve_definition(*def);
+        let selected = symbol::select(source, None)?;
+        if let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind()
+            && function.signature().stage() == HMIRFunctionStage::Comptime
+        {
+            let mut child = comptime::frozen_child(context);
+            return function::call(&mut child, &callee, body, args, span);
+        }
+    }
     if (matches!(context.context(), FnContext::Comptime(_)) && constructs(&callee).is_none())
         || matches!(
             context.env().resolve_kind(callee.ty()),
@@ -101,7 +117,7 @@ pub(crate) fn eval_call(
         HMIRValueKind::Constant(HMIRConstant::Function {
             function: HMIRFunctionRef::Def(def),
             ..
-        }) if matches!(context.context(), FnContext::Runtime(_)) => {
+        }) if matches!(context.context(), FnContext::Runtime(_)) && !context.is_unevaluated() => {
             contract::call(context, *def, &values, span, |context| {
                 finish(context, &callee, &values, return_type, span)
             })
@@ -117,6 +133,13 @@ pub(crate) fn finish(
     return_type: HMIRTypeID,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
+    if context.is_unevaluated() {
+        return Ok(Evaluation::Ready(emit::scratch(
+            context,
+            return_type,
+            span,
+        )?));
+    }
     if matches!(context.context(), FnContext::Comptime(_))
         && let Some((ty, variant)) = constructs(callee)
     {
@@ -137,6 +160,7 @@ pub(crate) fn finish(
 
     Ok(Evaluation::Ready(result))
 }
+
 
 fn constructs(callee: &HMIRValue) -> Option<(HMIRTypeID, usize)> {
     match callee.kind() {

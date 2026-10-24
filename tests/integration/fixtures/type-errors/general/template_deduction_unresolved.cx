@@ -1,0 +1,7 @@
+T zero(comptime @type T) {
+    return (T)0;
+}
+
+int main() {
+    return zero(_);
+}

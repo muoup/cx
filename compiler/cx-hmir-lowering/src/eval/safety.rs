@@ -11,7 +11,7 @@ pub(crate) fn require_nonsafe(
     span: &TokenRange,
     operation: &str,
 ) -> CXResult<()> {
-    if context.permission() < Permission::Nonsafe {
+    if !context.is_unevaluated() && context.permission() < Permission::Nonsafe {
         return Err(hmir_error(
             span,
             &typecheck::UNSAFE_OPERATION,
@@ -41,7 +41,7 @@ pub(crate) fn require_pure(
     span: &TokenRange,
     operation: &str,
 ) -> CXResult<()> {
-    if !context.expectations().allows_impure() {
+    if !context.is_unevaluated() && !context.expectations().allows_impure() {
         return Err(hmir_error(
             span,
             &typecheck::IMPURE_OPERATION,

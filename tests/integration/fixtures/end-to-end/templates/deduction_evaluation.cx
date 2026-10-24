@@ -1,0 +1,33 @@
+/* CX-STDOUT: 3 2 */
+/* CX-STDOUT-NEXT: 3 */
+/* CX-STDOUT-NEXT: 1 2 3 */
+
+#include <stdio.h>
+
+int count = 0;
+
+int bump() {
+    count = count + 1;
+    return count;
+}
+
+T add(comptime @type T, T a, T b) { return a + b; }
+
+int tick(comptime @type T, const T& value) {
+    static int calls = 0;
+    calls = calls + 1;
+    return calls;
+}
+
+int main() {
+    int sum = add(_, bump(), bump());
+    printf("%d %d\n", sum, count);
+    printf("%d\n", add(int, 1, 2.0));
+    const int x = 1;
+    int y = 2;
+    int a = tick(_, x);
+    int b = tick(int, y);
+    int c = tick(_, 3);
+    printf("%d %d %d\n", a, b, c);
+    return 0;
+}

@@ -1,6 +1,6 @@
 use cx_hmir::{
     HMIRBody,
-    expr::{HMIRExprID, HMIRExprKind, op::HMIRTypeOp},
+    expr::{HMIRExprID, op::HMIRTypeOp},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
         aggregate::{HMIRDeclaredMove, HMIRMoveSemantics, HMIRTypeSemantics},
@@ -8,6 +8,7 @@ use cx_hmir::{
         intrinsic::HMIRIntWidth,
     },
 };
+use cx_mir::ty::layout::calculate_type_layout;
 use cx_log::{
     CXResult,
     catalogue::{mir, typecheck},
@@ -17,12 +18,11 @@ use cx_tokens::TokenRange;
 use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
-        EvalResult, comptime, eval, eval_comptime, eval_type,
+        EvalResult, eval_comptime, eval_type, unevaluated,
         flow::{self, Evaluation},
-        name, types,
+        types,
     },
     log::hmir_error,
-    symbol,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant, scalar::int},
 };
 
@@ -35,80 +35,34 @@ pub(crate) fn eval_type_op(
     let (HMIRTypeOp::SizeOf(operand) | HMIRTypeOp::AlignOf(operand)) = op else {
         todo!("HMIRTypeOp: {}", op.path())
     };
-    let (size, alignment) = match operand_type(context, body, *operand)? {
-        Err(length) => (length, 1),
-        Ok(ty) => {
-            if !context.complete_object(ty) {
-                return Err(hmir_error(
-                    body.expr(*operand).span(),
-                    &typecheck::INCOMPLETE_TYPE,
-                    format!("operand of type '{}'", types::name(context.env(), ty)),
-                ));
-            }
-            let mir = types::lower_type(context.env_mut(), ty, span)?;
-            let layout = cx_mir::ty::layout::calculate_type_layout(context.env().module(), mir);
-            (layout.size(), layout.alignment())
-        }
-    };
-    let width = HMIRIntWidth::pointer_width(context.env().architecture());
-    let ty = types::int(context.env_mut(), width, false, span);
-    let value = if matches!(op, HMIRTypeOp::SizeOf(_)) {
-        size
-    } else {
-        alignment
-    };
-    Ok(Evaluation::Ready(HMIRValue::constant(
-        ty,
-        HMIRConstant::Int {
-            value: value as i128,
-            ty,
-        },
-    )))
-}
-
-fn operand_type(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBody,
-    operand: HMIRExprID,
-) -> CXResult<Result<HMIRTypeID, usize>> {
-    let span = body.expr(operand).span();
-    if let HMIRExprKind::Local(local) = body.expr(operand).kind()
-        && let Some(value) = context.get_local(local)
-    {
-        let ty = value.ty();
-        return Ok(Ok(context.env().reference_inner(ty).unwrap_or(ty)));
-    }
-    let context = &mut comptime::frozen_child(context);
-    let def = match body.expr(operand).kind() {
-        HMIRExprKind::Def(def) => Some(*def),
-        HMIRExprKind::Name { name, tag } => name::resolve(context, span, name, *tag)?,
-        HMIRExprKind::Literal(_) => {
-            let value = flow::top(eval(context, body, operand))?;
-            return Ok(match value.kind() {
-                HMIRValueKind::Constant(HMIRConstant::Str(string)) => Err(string.len() + 1),
-                _ => Ok(value.ty()),
-            });
-        }
-        HMIRExprKind::Type(_) => None,
-        _ => {
+    let ty = unevaluated::subject(context, body, *operand)?;
+    let span = span.clone();
+    let size = matches!(op, HMIRTypeOp::SizeOf(_));
+    ty.and_then(context, body, None, move |context, _, ty, _| {
+        if !context.complete_object(ty) {
             return Err(hmir_error(
-                span,
-                &typecheck::UNSUPPORTED_FEATURE,
-                "the size or alignment of a computed expression".into(),
+                &span,
+                &typecheck::INCOMPLETE_TYPE,
+                format!("operand of type '{}'", types::name(context.env(), ty)),
             ));
         }
-    };
-    if let Some(def) = def {
-        let point = context.visible_through();
-        let value = symbol::binding(context.env_mut(), def, point)?;
-        if !matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Type(_))) {
-            return Ok(Ok(context
-                .env()
-                .reference_inner(value.ty())
-                .unwrap_or(value.ty())));
-        }
-    }
-    flow::top(eval_type(context, body, operand)).map(Ok)
+        let mir = types::lower_type(context.env_mut(), ty, &span)?;
+        let layout = calculate_type_layout(context.env().module(), mir);
+        let value = if size {
+            layout.size()
+        } else {
+            layout.alignment()
+        };
+        let width = HMIRIntWidth::pointer_width(context.env().architecture());
+        let ty = types::int(context.env_mut(), width, false, &span);
+        Ok(Evaluation::Ready(HMIRValue::constant(
+            ty,
+            HMIRConstant::Int {
+                value: value as i128,
+                ty,
+            },
+        )))
+    })
 }
 
 pub(crate) fn eval_declared_type(
@@ -289,6 +243,44 @@ pub(crate) fn specify(
     env.resolver_mut()
         .realize_type(HMIRType::new(kind, semantics, span.clone(), None))
 }
+
+pub(crate) fn unspecify(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    qualifiers: HMIRTypeSemantics,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    let env = context.env();
+    let current = env.semantics(ty);
+    let semantics = HMIRTypeSemantics {
+        constant: current.constant && !qualifiers.constant,
+        volatile: current.volatile && !qualifiers.volatile,
+        ..current
+    };
+    if semantics == current {
+        return ty;
+    }
+
+    let underlying = env.underlying(ty);
+    let resolved = env.resolve_type_id(underlying);
+    let base = resolved.semantics();
+    let kind = match resolved.kind() {
+        _ if (!base.constant || semantics.constant) && (!base.volatile || semantics.volatile) => {
+            HMIRTypeKind::Nominal(underlying)
+        }
+        kind @ (HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_)) => {
+            kind.clone()
+        }
+        _ => return ty,
+    };
+    context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        kind,
+        semantics,
+        span.clone(),
+        None,
+    ))
+}
+
 
 fn array_length(
     context: &mut LocalLoweringContext,

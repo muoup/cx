@@ -1,0 +1,28 @@
+#include <stdio.h>
+
+struct Pair { int left; int right; };
+typedef int Values[];
+int calls;
+int next() { calls++; return 7; }
+
+comptime int inferred_local() {
+    auto value = 3;
+    value += 2;
+    return value;
+}
+comptime int folded = inferred_local();
+
+int main() {
+    const int source = 4;
+    auto value = source;
+    value += 2;
+    auto once = next();
+    auto pair = (Pair){ once, value };
+    pair.left++;
+    Values first = { next(), next() };
+    Values second = first;
+    second[0]++;
+    Pair contextual = .{ calls++; ({ 9, 10 }); };
+    printf("%d %d %d %d %d %d %d %d\n", value, once, pair.left, first[0], second[0], contextual.right, calls, folded);
+    return 0;
+}

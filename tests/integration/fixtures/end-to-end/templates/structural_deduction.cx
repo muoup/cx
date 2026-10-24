@@ -1,0 +1,28 @@
+/* CX-STDOUT: 7 5 6 5 9 4 42 42 43 11 */
+
+#include <stdio.h>
+
+T identity(comptime @type T, T value) { return value; }
+T first(comptime @type T, const T& a, const T& b) { return a; }
+T read(comptime @type T, T& value) { return value; }
+T load(comptime @type T, T* value) { return *value; }
+T head(comptime @type T, T values[]) { return values[0]; }
+T apply(comptime @type T, T (*f)(T), T value) { return f(value); }
+U convert(comptime @type T, comptime @type U, T value, U (*f)(T)) { return f(value); }
+comptime T twice(comptime @type T, T value) => value + value;
+
+int doubled(int x) { return x * 2; }
+float bumped(int x) { return (float)(x + 1); }
+
+comptime int folded = twice(_, 11) / 2;
+
+int main() {
+    const int x = 5;
+    int y = 6;
+    int values[3] = { 9, 8, 7 };
+    printf("%d %d %d %d %d %d %d %d %.0f %d\n",
+        identity(_, 7), first(_, x, y), first(_, y, x), read(_, x), head(_, values),
+        load(_, &values[2]) - load(_, &x) + 2, apply(_, doubled, 21), apply(_, &doubled, 21),
+        convert(_, _, 42, bumped), folded);
+    return 0;
+}

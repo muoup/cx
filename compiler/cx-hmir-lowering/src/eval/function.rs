@@ -1,3 +1,4 @@
+mod deduce;
 mod specialize;
 
 use std::mem;
@@ -28,8 +29,10 @@ use crate::{
     },
 };
 
+use self::deduce::Deduction;
+
 use super::{
-    EvalResult, coerce, comptime, contract, control, eval, eval_type,
+    EvalResult, coerce, complete, comptime, contract, control, eval, eval_type,
     flow::{self, ComptimeStop, Evaluation, StopReason, ready},
     safety, storage, types,
 };
@@ -39,6 +42,7 @@ struct Frame<'a> {
     def: HMIRDefID,
     state: ComptimeContext,
     return_type: Option<HMIRTypeID>,
+    runtime: bool,
 }
 
 impl Frame<'_> {
@@ -46,10 +50,10 @@ impl Frame<'_> {
         &mut self,
         caller: &mut LocalLoweringContext,
         index: usize,
-        runtime: bool,
         span: &TokenRange,
     ) -> CXResult<HMIRTypeID> {
         let function = self.function;
+        let runtime = self.runtime;
         self.enter(caller, span, |child| {
             let expr = *function.signature().params()[index].ty();
             let span = function.body().expr(expr).span();
@@ -73,6 +77,30 @@ impl Frame<'_> {
             }
             Ok(ty)
         })
+    }
+
+    fn argument(
+        &mut self,
+        caller: &mut LocalLoweringContext,
+        index: usize,
+        ty: HMIRTypeID,
+        value: HMIRValue,
+        span: &TokenRange,
+        arg_span: &TokenRange,
+    ) -> CXResult<HMIRValue> {
+        if let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = value.kind() {
+            caller.prepare_type(*ty, arg_span)?;
+        }
+        let frozen = self.function.signature().params()[index].comptime();
+        let value = if self.runtime && frozen {
+            caller.env_mut().canonical_value(value)
+        } else {
+            value
+        };
+        if !self.runtime || frozen {
+            self.bind(caller, index, ty, &value, span)?;
+        }
+        Ok(value)
     }
 
     fn bind(
@@ -230,39 +258,66 @@ pub(crate) fn call(
         def: *def,
         state: ComptimeContext::new(),
         return_type: None,
+        runtime,
     };
-    let mut params = Vec::with_capacity(args.len());
-    let mut values = Vec::with_capacity(args.len());
+    let mut deduction = Deduction::new(function, source.name().to_string());
+    let mut params: Vec<HMIRFnParam<HMIRTypeID>> = Vec::with_capacity(args.len());
+    let mut values = vec![None; args.len()];
     for (index, (param, arg)) in declared.params().iter().zip(args).enumerate() {
-        let ty = frame.parameter(context, index, runtime, span)?;
         let frozen = param.comptime();
         let arg_span = caller_body.expr(*arg).span();
-        let value = if runtime && frozen {
-            comptime::eval_comptime(context, caller_body, *arg, Some(ty))?
-        } else {
-            let evaluated = eval(context, caller_body, *arg)?;
-            let value = ready!(evaluated.complete(context, caller_body, Some(ty)));
-            let value = coerce::implicit(context, value, ty, arg_span)?;
-            if runtime {
-                value
-            } else {
-                flow::top(comptime::export(context, value, arg_span))?
+        let evaluated = match runtime && frozen {
+            true => None,
+            false => Some(eval(context, caller_body, *arg)?),
+        };
+        let actual = match &evaluated {
+            Some(Evaluation::Ready(value)) => Some(value.ty()),
+            _ => None,
+        };
+        for (pending, argument, ty) in deduction.infer(context, index, actual, span)? {
+            let value = ready!(argument.complete(context, caller_body, Some(ty)));
+            let arg_span = caller_body.expr(args[pending]).span();
+            let ty = *params[pending].ty();
+            values[pending] = Some(frame.argument(context, pending, ty, value, span, arg_span)?);
+        }
+        let ty = frame.parameter(context, index, span)?;
+        let argument = match evaluated {
+            None => comptime::frozen(context, caller_body, *arg, Some(ty))?,
+            Some(evaluated) => {
+                let arg_span = arg_span.clone();
+                complete::value(context, caller_body, evaluated, Some(ty))?.and_then(
+                    context,
+                    caller_body,
+                    None,
+                    move |context, _, value, _| {
+                        let value = coerce::implicit(context, value, ty, &arg_span)?;
+                        match runtime {
+                            true => Ok(Evaluation::Ready(value)),
+                            false => comptime::export(context, value, &arg_span),
+                        }
+                    },
+                )?
             }
         };
-        if let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = value.kind() {
-            context.prepare_type(*ty, arg_span)?;
-        }
-        let value = if runtime && frozen {
-            context.env_mut().canonical_value(value)
-        } else {
-            value
-        };
-        if !runtime || frozen {
-            frame.bind(context, index, ty, &value, span)?;
-        }
         params.push(HMIRFnParam::new(frozen, ty));
-        values.push(value);
+        match argument {
+            Evaluation::Ready(value) => {
+                values[index] = Some(frame.argument(context, index, ty, value, span, arg_span)?);
+            }
+            Evaluation::Incomplete(_)
+                if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type) =>
+            {
+                deduction.defer(index, argument);
+            }
+            Evaluation::Incomplete(incomplete) => return Err(incomplete.error()),
+            Evaluation::Stop(stop) => return Ok(Evaluation::Stop(stop)),
+        }
     }
+    deduction.finish(span)?;
+    let values = values
+        .into_iter()
+        .map(|value| value.expect("all arguments are complete"))
+        .collect::<Vec<_>>();
     let signature = frame.signature(context, params, span)?;
     for (index, declaration) in symbol::visible(source, context.visible_through()) {
         if index == selected {
@@ -276,6 +331,7 @@ pub(crate) fn call(
             def: *def,
             state: ComptimeContext::new(),
             return_type: None,
+            runtime,
         };
         if other.function.signature().params().len() != values.len() {
             return Err(hmir_error(
@@ -286,7 +342,7 @@ pub(crate) fn call(
         }
         let mut params = Vec::with_capacity(values.len());
         for (index, (param, value)) in signature.params().iter().zip(&values).enumerate() {
-            let ty = other.parameter(context, index, runtime, span)?;
+            let ty = other.parameter(context, index, span)?;
             if !alike(context.env(), *param.ty(), ty, false) {
                 return Err(hmir_error(
                     declaration.span(),
@@ -331,6 +387,7 @@ pub(crate) fn call(
     })?;
     Ok(Evaluation::Ready(value))
 }
+
 
 fn execute(
     context: &mut LocalLoweringContext,

@@ -1,6 +1,4 @@
-use cx_hmir::ty::{
-    HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
-};
+use cx_hmir::ty::{HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext};
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
@@ -9,6 +7,7 @@ use crate::{
     env::function::{FnContext, LocalLoweringContext},
     eval::{
         coerce::{compatible, result::Coercion},
+        op::unspecify,
         safety::require_pure,
         types,
     },
@@ -61,44 +60,13 @@ pub fn apply(
         require_pure(context, span, "reading a mutable global")?;
     }
 
-    let ty = unqualified(context, inner, span);
+    let qualifiers = HMIRTypeSemantics {
+        constant: true,
+        volatile: true,
+        ..Default::default()
+    };
+    let ty = unspecify(context, inner, qualifiers, span);
     Ok(Coercion::Applied(
         emit::copy(context, value, span)?.with_ty(ty),
-    ))
-}
-
-fn unqualified(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-) -> HMIRTypeID {
-    let env = context.env();
-    let semantics = env.semantics(ty);
-    if !semantics.constant && !semantics.volatile {
-        return ty;
-    }
-
-    let underlying = env.underlying(ty);
-    let resolved = env.resolve_type_id(underlying);
-    let kind = match resolved.kind() {
-        _ if !resolved.semantics().constant && !resolved.semantics().volatile => {
-            HMIRTypeKind::Nominal(underlying)
-        }
-        kind @ (HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_)) => {
-            kind.clone()
-        }
-        _ => return ty,
-    };
-    let semantics = HMIRTypeSemantics {
-        constant: false,
-        volatile: false,
-        ..semantics
-    };
-
-    context.env_mut().resolver_mut().realize_type(HMIRType::new(
-        kind,
-        semantics,
-        span.clone(),
-        None,
     ))
 }

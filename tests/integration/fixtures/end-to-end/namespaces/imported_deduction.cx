@@ -1,0 +1,13 @@
+/* CX-STDOUT: 12 12 */
+
+#include <stdio.h>
+
+import _imported_deduction as lib;
+
+comptime int floor = 100;
+
+int main() {
+    const int value = 4;
+    printf("%d %d\n", lib::scale(_, 3, value), lib::scale(int, 3, value));
+    return 0;
+}

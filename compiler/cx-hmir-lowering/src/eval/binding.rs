@@ -15,7 +15,7 @@ use crate::{
     env::function::{FnContext, LocalLoweringContext},
     eval::{
         EvalResult,
-        coerce::{self},
+        coerce, complete,
         eval, eval_type,
         flow::{Evaluation, ready},
         literal, storage, types,
@@ -69,53 +69,61 @@ pub(crate) fn eval_let(
     }
 
     let declared = eval_type(context, body, local.ty())?;
-    let ty = match declared.known() {
-        Some(ty) => *ty,
-        None => {
-            ready!(declared.complete(context, body, None));
-            unreachable!("a declaration without known type information is incomplete or stopped")
+    let storage = match declared.known().copied() {
+        Some(ty) if context.complete_object(ty) => {
+            Some(declare(context, body, local_id, ty, span)?)
         }
+        _ => None,
     };
-
-    let storage = match context.complete_object(ty) {
-        true => Some(declare(context, body, local_id, ty, span)?),
-        false => None,
-    };
-    let compatible = !context.env().semantics(ty).move_semantics.is_nocopy();
-    let initialized =
-        compatible && storage.is_some() && matches!(context.context(), FnContext::Runtime(_));
+    let initialized = storage.is_some()
+        && declared
+            .known()
+            .is_some_and(|ty| !context.env().is_nocopy(*ty))
+        && matches!(context.context(), FnContext::Runtime(_));
     if initialized && let Some(storage) = &storage {
         emit::initialize(context, storage, span);
     }
 
-    let value = match initializer {
-        Some(initializer) => {
-            let value = eval(context, body, initializer)?;
-            let value = ready!(value.complete(context, body, Some(ty)));
-            Some(coerce::implicit(context, value, ty, span)?)
+    let Some(initializer) = initializer else {
+        let ty = ready!(declared.complete(context, body, None));
+        let storage = match storage {
+            Some(storage) => storage,
+            None => declare(context, body, local_id, ty, span)?,
+        };
+        if !initialized && !context.env().is_nocopy(ty) {
+            emit::initialize(context, &storage, span);
         }
-        None => None,
+        return Ok(Evaluation::Ready(literal::unit(context, span)));
     };
 
-    let storage = match storage {
-        Some(storage) => storage,
-        None => {
-            let ty = match &value {
-                Some(value) => ready!(declared.complete(context, body, Some(value.ty()))),
-                None => ready!(declared.complete(context, body, None)),
-            };
-            declare(context, body, local_id, ty, span)?
-        }
-    };
-
-    match value {
-        Some(value) if initialized => emit::write(context, &storage, &value, span)?,
-        Some(value) => storage::initialize(context, &storage, &value, span)?,
-        None if compatible && !initialized => emit::initialize(context, &storage, span),
-        None => {}
-    }
-
-    Ok(Evaluation::Ready(literal::unit(context, span)))
+    let value = eval(context, body, initializer)?;
+    let value = complete::value(context, body, value, declared.known().copied())?;
+    let span = span.clone();
+    value.and_then(context, body, None, move |context, body, value, _| {
+        let value = match declared.known() {
+            Some(ty) => coerce::implicit(context, value, *ty, &span)?,
+            None => value,
+        };
+        let inferred = coerce::value_type(context, value.ty(), &span);
+        declared.complete(context, body, Some(inferred))?.and_then(
+            context,
+            body,
+            None,
+            move |context, body, ty, _| {
+                let value = coerce::implicit(context, value, ty, &span)?;
+                let storage = match storage {
+                    Some(storage) => storage,
+                    None => declare(context, body, local_id, ty, &span)?,
+                };
+                if initialized {
+                    emit::write(context, &storage, &value, &span)?;
+                } else {
+                    storage::initialize(context, &storage, &value, &span)?;
+                }
+                Ok(Evaluation::Ready(literal::unit(context, &span)))
+            },
+        )
+    })
 }
 
 fn declare(

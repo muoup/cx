@@ -6,7 +6,7 @@ use cx_log::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::{ComptimeContext, EvaluationID, Expectations, FnContext, LocalLoweringContext},
+    env::function::{EvaluationID, Expectations, FnContext, LocalLoweringContext},
     eval::flow::{EvalResult, Evaluation},
     log::hmir_error,
 };
@@ -60,7 +60,7 @@ impl<T: 'static> Incomplete<T> {
         }
     }
 
-    pub(crate) fn in_comptime(self, state: ComptimeContext) -> Self {
+    pub(crate) fn in_context(self, state: FnContext) -> Self {
         let Self {
             suspension,
             partial,
@@ -69,14 +69,11 @@ impl<T: 'static> Incomplete<T> {
         let span = suspension.span.clone();
         Self::resume(suspension, partial, move |context, body, expected| {
             let evaluation = context.evaluation();
-            let mut child = context.child(None, FnContext::Comptime(state), Some(evaluation));
+            let mut child = context.child(None, state, Some(evaluation));
             match resolve(&mut child, body, expected)? {
-                Evaluation::Incomplete(incomplete) => {
-                    let FnContext::Comptime(state) = child.into_context() else {
-                        unreachable!()
-                    };
-                    Ok(Evaluation::Incomplete(incomplete.in_comptime(state)))
-                }
+                Evaluation::Incomplete(incomplete) => Ok(Evaluation::Incomplete(
+                    incomplete.in_context(child.into_context()),
+                )),
                 Evaluation::Stop(_) => Err(hmir_error(&span, &mir::COMPTIME_CONTROL_ESCAPE, ())),
                 result => Ok(result),
             }

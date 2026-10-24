@@ -7,8 +7,9 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
+    emit,
     env::{function::LocalLoweringContext, generation::Specialization},
-    eval::{EvalResult, call, contract, safety, types},
+    eval::{EvalResult, call, contract, flow::Evaluation, safety, types},
     symbol,
     value::{
         HMIRValue, HMIRValueKind,
@@ -23,6 +24,10 @@ pub fn apply(
     values: Vec<HMIRValue>,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
+    if context.is_unevaluated() {
+        let ty = *signature.return_type();
+        return Ok(Evaluation::Ready(emit::scratch(context, ty, span)?));
+    }
     safety::require_call(context, span, signature.contract().is_safe(), true)?;
     let mut bindings = Vec::with_capacity(values.len());
     let mut args = Vec::new();

@@ -3,7 +3,7 @@ mod ty;
 mod unary;
 
 pub(crate) use binary::{binary_operands, eval_binary};
-pub(crate) use ty::{construct_type, eval_declared_type, eval_type_op, specify};
+pub(crate) use ty::{construct_type, eval_declared_type, eval_type_op, specify, unspecify};
 pub(crate) use unary::eval_unary;
 
 use cx_hmir::{HMIRBody, expr::HMIRExprID};

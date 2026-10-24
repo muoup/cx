@@ -43,7 +43,7 @@ pub(crate) fn eval_def(
             {
                 context.env_mut().generation_mut().request(*def);
             }
-            if matches!(context.context(), FnContext::Runtime(_)) {
+            if matches!(context.context(), FnContext::Runtime(_)) && !context.is_unevaluated() {
                 let ty = symbol::value_type(context.env_mut(), *def, None)?;
                 global::declare(context.env_mut(), *def, ty, span)?;
             }
@@ -58,7 +58,7 @@ pub(crate) fn type_value(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if matches!(context.context(), FnContext::Runtime(_)) {
+    if matches!(context.context(), FnContext::Runtime(_)) && !context.is_unevaluated() {
         let subject = (
             format!("type '{}'", types::name(context.env(), ty)),
             "a runtime expression".into(),
@@ -77,7 +77,7 @@ fn function_value(
     value: HMIRValue,
 ) -> EvalResult<HMIRValue> {
     let point = context.visible_through();
-    if matches!(context.context(), FnContext::Runtime(_)) {
+    if matches!(context.context(), FnContext::Runtime(_)) && !context.is_unevaluated() {
         if matches!(
             context.env().resolve_kind(value.ty()),
             HMIRTypeKind::FunctionItem(_)

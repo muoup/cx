@@ -204,6 +204,10 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         }
     }
 
+    pub fn is_unevaluated(&self) -> bool {
+        matches!(&self.context, FnContext::Runtime(runtime) if runtime.emission() == runtime::Emission::Unevaluated)
+    }
+
     pub fn evaluation(&self) -> EvaluationID {
         self.evaluation
     }
