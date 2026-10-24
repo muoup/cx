@@ -1,0 +1,9 @@
+enum union Maybe {
+    none :: void,
+    some :: int
+};
+int main() {
+    Maybe value = Maybe::none();
+    Maybe* pointer = &value;
+    return pointer is none();
+}

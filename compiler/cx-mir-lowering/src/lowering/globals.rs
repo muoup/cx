@@ -91,6 +91,27 @@ fn lower_initializer(
                     value: Box::new(lower_initializer(context, value, variant_ty)),
                 };
             }
+            if matches!(destination_kind, MIRTypeKind::TaggedUnion { .. }) {
+                let Some((index, value)) = fields.last() else {
+                    return LMIRGlobalInitializer::Null;
+                };
+                let variant_ty = aggregate_field_type(context, destination_ty, *index);
+                let data = if zero(value) {
+                    LMIRGlobalInitializer::Null
+                } else {
+                    LMIRGlobalInitializer::Overlay {
+                        ty: convert_type(variant_ty, context.unit.types()),
+                        value: Box::new(lower_initializer(context, value, variant_ty)),
+                    }
+                };
+                let tag = LMIRGlobalInitializer::Integer {
+                    value: *index as i128,
+                    ty: LMIRIntegerType::I8,
+                };
+                return LMIRGlobalInitializer::Aggregate {
+                    fields: vec![(0, data), (1, tag)],
+                };
+            }
             if let MIRTypeKind::Structured { fields: members } = &destination_kind {
                 return lower_struct_initializer(context, fields, destination_ty, members);
             }

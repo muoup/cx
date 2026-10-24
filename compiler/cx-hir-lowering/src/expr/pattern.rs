@@ -4,7 +4,6 @@ use cx_hir::ast::{
 };
 use cx_hmir::{
     HMIRPattern,
-    body::HMIRLocalID,
     expr::HMIRExprID,
     ty::{HMIRExprTypeKind, aggregate::HMIRTypeSemantics},
 };
@@ -19,10 +18,7 @@ pub(crate) fn lower_pattern(
     span: &TokenRange,
 ) -> CXResult<HMIRPattern> {
     Ok(match pattern {
-        HIRPattern::Wildcard => {
-            let ty = lower_binding_type(context, HIRBindingMode::Reference, span);
-            HMIRPattern::Binding(context.declare_local(None, ty, span))
-        }
+        HIRPattern::Wildcard => HMIRPattern::Wildcard,
         HIRPattern::Binding { name, mode } => {
             let ty = lower_binding_type(context, *mode, span);
             HMIRPattern::Binding(context.declare_local(Some(name), ty, span))
@@ -39,9 +35,10 @@ pub(crate) fn lower_pattern(
                 Some(HIRExprKind::Type(ty)) => Some(lower_type(context, ty)?),
                 _ => None,
             };
-            let inner = inner
-                .as_deref()
-                .map(|inner| lower_variant_payload(context, inner, span));
+            let inner = match inner.as_deref() {
+                Some(inner) => Some(Box::new(lower_pattern(context, inner, span)?)),
+                None => None,
+            };
             HMIRPattern::Variant {
                 sum,
                 name: name.clone(),
@@ -51,21 +48,7 @@ pub(crate) fn lower_pattern(
     })
 }
 
-fn lower_variant_payload(
-    context: &mut BodyLowering<'_>,
-    pattern: &HIRPattern,
-    span: &TokenRange,
-) -> HMIRLocalID {
-    let (name, mode) = match pattern {
-        HIRPattern::Binding { name, mode } => (Some(name), *mode),
-        _ => (None, HIRBindingMode::Reference),
-    };
-    let ty = lower_binding_type(context, mode, span);
-    context.declare_local(name, ty, span)
-}
-
-// 'auto x' takes the matched value, 'auto& x' refers to it where it is; a binding that is
-// never named takes nothing
+// 'auto x' takes the matched value, 'auto& x' refers to it where it is
 fn lower_binding_type(
     context: &mut BodyLowering<'_>,
     mode: HIRBindingMode,

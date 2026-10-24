@@ -1,21 +1,13 @@
-use cx_hir::ast::{
-    expression::{HIRBinOp, HIRExprKind, HIRExpression},
-    types::{HIRType, HIRTypeKind},
-};
-use cx_hmir::{
-    HMIRAggregateOp,
-    expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral},
-};
+use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
+use cx_hmir::expr::{HMIRExprID, HMIRExprKind};
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
-use cx_util::identifier::CXIdent;
 
 use crate::{
     body::{BodyLowering, Symbol},
     expr::{lower_expr, lower_identifier},
     log::log_hir_error,
-    ty::lower_type,
 };
 
 fn comma_separated(expr: &HIRExpression) -> Vec<&HIRExpression> {
@@ -98,11 +90,6 @@ fn lower_callee_call(
     let args = args.into_iter().map(|(arg, _)| arg).collect::<Vec<_>>();
     let name = match &callee.kind {
         HIRExprKind::Identifier { name } => name,
-        HIRExprKind::ScopeAccess { base, member } => {
-            let sum = lower_scope_base(context, base)?;
-            let value = lower_payload(context, &args, span)?;
-            return Ok(lower_construct(context, sum, member.clone(), value, span));
-        }
         _ => {
             let callee = lower_expr(context, callee)?;
             return lower_call_args(context, callee, &args, span);
@@ -155,69 +142,6 @@ fn lower_call_args(
 ) -> CXResult<HMIRExprID> {
     let args = lower_args(context, args)?;
     Ok(context.push(HMIRExprKind::Call { callee, args }, span))
-}
-
-// The type a 'base::variant(...)' constructor builds. A base left to the compiler, '_' or a
-// generator applied to holes, is completed from the type the value is expected to have.
-pub(crate) fn lower_scope_base(
-    context: &mut BodyLowering<'_>,
-    base: &HIRExpression,
-) -> CXResult<HMIRExprID> {
-    match &base.kind {
-        HIRExprKind::Hole => Ok(context.hole(&base.range)),
-        HIRExprKind::Type(ty) => match &ty.kind {
-            HIRTypeKind::Identifier {
-                name,
-                lookup,
-                args: Some(args),
-            } if args.iter().any(|arg| matches!(arg.kind, HIRExprKind::Hole)) => {
-                let generator = HIRType {
-                    kind: HIRTypeKind::Identifier {
-                        name: name.clone(),
-                        lookup: *lookup,
-                        args: None,
-                    },
-                    specifiers: ty.specifiers,
-                    range: ty.range.clone(),
-                };
-                lower_type(context, &generator)
-            }
-            _ => lower_type(context, ty),
-        },
-        _ => lower_expr(context, base),
-    }
-}
-
-fn lower_payload(
-    context: &mut BodyLowering<'_>,
-    args: &[&HIRExpression],
-    span: &TokenRange,
-) -> CXResult<HMIRExprID> {
-    match args {
-        [] => Ok(context.push(HMIRExprKind::Literal(HMIRLiteral::Unit), span)),
-        [value] => lower_expr(context, value),
-        _ => log_hir_error(
-            span,
-            &typecheck::ARGUMENT_COUNT,
-            ("variant constructor".into(), 1, args.len(), false),
-        ),
-    }
-}
-
-pub(crate) fn lower_construct(
-    context: &mut BodyLowering<'_>,
-    sum: HMIRExprID,
-    variant: CXIdent,
-    value: HMIRExprID,
-    span: &TokenRange,
-) -> HMIRExprID {
-    context.aggregate_op(
-        HMIRAggregateOp::Initialize {
-            ty: sum,
-            fields: vec![(Some(variant), value)],
-        },
-        span,
-    )
 }
 
 fn lower_builtin_call(

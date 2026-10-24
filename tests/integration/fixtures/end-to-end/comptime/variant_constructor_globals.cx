@@ -1,0 +1,53 @@
+/* CX-STDOUT: folded 0 42 0.00 */
+/* CX-STDOUT-NEXT: stored 0 5 0.00 */
+/* CX-STDOUT-NEXT: vacant 2 0 0.00 */
+/* CX-STDOUT-NEXT: designated 1 0 0.50 */
+/* CX-STDOUT-NEXT: global 1 0 4.00 */
+/* CX-STDOUT-NEXT: global-ctor 0 9 0.00 */
+/* CX-STDOUT-NEXT: identity 1 */
+
+#include <stdio.h>
+#include <string.h>
+
+enum union Shape {
+    circle :: int,
+    square :: double,
+    empty :: void
+};
+
+comptime Shape make_circle(int radius) {
+    return Shape::circle(radius * 2);
+}
+
+comptime Shape pick(int which) {
+    Shape (*ctor)(int) = Shape::circle;
+    if (which == 0) return Shape::empty();
+    return ctor(which);
+}
+
+comptime Shape folded = make_circle(21);
+comptime Shape stored = pick(5);
+comptime Shape vacant = pick(0);
+comptime Shape designated = { .square = 0.5 };
+Shape global_shape = Shape::square(4);
+Shape (*global_ctor)(int) = Shape::circle;
+
+void show(const char* label, Shape value) {
+    unsigned char* bytes = (unsigned char*)&value;
+    int integer;
+    double real;
+    memcpy(&integer, bytes, sizeof(integer));
+    memcpy(&real, bytes, sizeof(real));
+    printf("%s %d %d %.2f\n", label, bytes[8], integer, real);
+}
+
+int main() {
+    show("folded", folded);
+    show("stored", stored);
+    show("vacant", vacant);
+    show("designated", designated);
+    show("global", global_shape);
+    show("global-ctor", global_ctor(9));
+    printf("identity %d\n", global_ctor == Shape::circle);
+    return 0;
+}

@@ -30,6 +30,11 @@ pub fn lower_unit<'hmir>(
             Generation::Specialization(specialization) => {
                 generate(specialization.def(), env, Some(&specialization))?
             }
+            Generation::Constructor(constructor) => {
+                let function = eval::constructor::lower(env, &constructor)?;
+                env.module_mut()
+                    .define_function(constructor.function(), function);
+            }
         }
     }
 

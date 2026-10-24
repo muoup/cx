@@ -3,7 +3,10 @@ use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
 use cx_hmir::{HMIRDefID, HMIRFnSignature, ty::HMIRTypeID};
 use cx_mir::MIRFunctionID;
 
-use crate::value::{HMIRValue, constant::HMIRConstant};
+use crate::value::{
+    HMIRValue,
+    constant::{HMIRConstant, HMIRFunctionRef},
+};
 
 ///
 /// Tracks the definitions that the unit has to generate. A definition is requested by whatever refers to it, at
@@ -13,7 +16,7 @@ use crate::value::{HMIRValue, constant::HMIRConstant};
 pub struct GenerationQueue {
     requested: HashSet<HMIRDefID>,
     pending: VecDeque<Generation>,
-    specializations: HashMap<(HMIRDefID, Vec<HMIRConstant>), MIRFunctionID>,
+    generated: HashMap<(HMIRFunctionRef, Vec<HMIRConstant>), MIRFunctionID>,
 }
 
 impl GenerationQueue {
@@ -27,20 +30,35 @@ impl GenerationQueue {
         }
     }
 
-    pub fn specialization_count(&self) -> usize {
-        self.specializations.len()
+    pub fn generated_count(&self) -> usize {
+        self.generated.len()
     }
 
-    pub fn specialization(&self, def: HMIRDefID, args: &[HMIRConstant]) -> Option<MIRFunctionID> {
-        self.specializations.get(&(def, args.to_vec())).copied()
+    pub fn generated(
+        &self,
+        function: HMIRFunctionRef,
+        args: &[HMIRConstant],
+    ) -> Option<MIRFunctionID> {
+        self.generated.get(&(function, args.to_vec())).copied()
     }
 
     pub fn specialize(&mut self, args: Vec<HMIRConstant>, specialization: Specialization) {
-        let key = (specialization.def, args);
-        if let Entry::Vacant(entry) = self.specializations.entry(key) {
+        let key = (HMIRFunctionRef::Def(specialization.def), args);
+        if let Entry::Vacant(entry) = self.generated.entry(key) {
             entry.insert(specialization.function());
             self.pending
                 .push_back(Generation::Specialization(specialization));
+        }
+    }
+
+    pub fn construct(&mut self, constructor: Constructor) {
+        let function = HMIRFunctionRef::Constructor {
+            ty: constructor.ty,
+            variant: constructor.variant,
+        };
+        if let Entry::Vacant(entry) = self.generated.entry((function, Vec::new())) {
+            entry.insert(constructor.function);
+            self.pending.push_back(Generation::Constructor(constructor));
         }
     }
 
@@ -53,6 +71,7 @@ impl GenerationQueue {
 pub enum Generation {
     Definition(HMIRDefID),
     Specialization(Specialization),
+    Constructor(Constructor),
 }
 
 #[derive(Debug)]
@@ -89,5 +108,32 @@ impl Specialization {
     }
     pub fn bindings(&self) -> &[Option<HMIRValue>] {
         &self.bindings
+    }
+}
+
+#[derive(Debug)]
+pub struct Constructor {
+    ty: HMIRTypeID,
+    variant: usize,
+    function: MIRFunctionID,
+}
+
+impl Constructor {
+    pub fn new(ty: HMIRTypeID, variant: usize, function: MIRFunctionID) -> Self {
+        Self {
+            ty,
+            variant,
+            function,
+        }
+    }
+
+    pub fn ty(&self) -> HMIRTypeID {
+        self.ty
+    }
+    pub fn variant(&self) -> usize {
+        self.variant
+    }
+    pub fn function(&self) -> MIRFunctionID {
+        self.function
     }
 }

@@ -1,0 +1,53 @@
+/* CX-STDOUT: tested 1 1 1 0 */
+/* CX-STDOUT-NEXT: moved 1 7 */
+/* CX-STDOUT-NEXT: rvalue 1 */
+
+#include <stdio.h>
+
+struct Token : @nocopy {
+    int id;
+};
+
+struct Resource : @nodrop {
+    int value;
+};
+
+enum union Slot : @nocopy {
+    held :: Token,
+    vacant :: void
+};
+
+enum union Holder : @nodrop {
+    some :: Resource,
+    none :: void
+};
+
+bool check(Slot& slot) {
+    return slot is held(_);
+}
+
+Holder build(int value) {
+    Resource resource = { .value = value };
+    return Holder::some(move resource);
+}
+
+int consume(Slot slot) {
+    int tested = slot is held(_);
+    @leak(slot);
+    return tested;
+}
+
+int main() {
+    Token token = { .id = 7 };
+    Slot slot = Slot::held(move token);
+    Resource first = { .value = 3 };
+    Holder holder = Holder::some(move first);
+    printf("tested %d %d %d %d\n", slot is held(_), check(slot), holder is some(_), holder is none());
+
+    Slot moved = move slot;
+    int still = moved is held(_);
+    printf("moved %d %d\n", consume(move moved), still * 7);
+    printf("rvalue %d\n", (build(1)) is some(_));
+    @leak(holder);
+    return 0;
+}

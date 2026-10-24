@@ -1,0 +1,10 @@
+comptime @type Pair(comptime @type T) =>
+    enum union {
+        first :: T,
+        second :: T
+    };
+
+int main() {
+    Pair(int) value = Pair(int)::third(1);
+    return 0;
+}

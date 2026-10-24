@@ -1,0 +1,33 @@
+struct Token : @nocopy {
+    int id;
+};
+
+struct Resource : @nodrop {
+    int value;
+};
+
+enum union Slot : @nocopy {
+    held :: Token,
+    vacant :: void
+};
+
+enum union Holder : @nodrop {
+    some :: Resource,
+    none :: void
+};
+
+int main() {
+    Token token = { .id = 7 };
+    Slot held = Slot::held(move token);
+    Token other = { .id = 8 };
+    Slot designated = { .held = move other };
+
+    Resource first = { .value = 3 };
+    Holder direct = Holder::some(move first);
+    Holder (*make)(Resource) = Holder::some;
+    Resource second = { .value = 4 };
+    Holder stored = make(move second);
+    @leak(direct);
+    @leak(stored);
+    return 0;
+}

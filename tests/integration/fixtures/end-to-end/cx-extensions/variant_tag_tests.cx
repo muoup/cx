@@ -1,0 +1,55 @@
+/* CX-STDOUT: runtime 1 0 0 */
+/* CX-STDOUT-NEXT: indirect 1 1 */
+/* CX-STDOUT-NEXT: qualified 1 0 1 */
+/* CX-STDOUT-NEXT: once 1 1 */
+/* CX-STDOUT-NEXT: globals 1 1 1 */
+/* CX-STDOUT-NEXT: generated 1 0 1 0 */
+/* CX-STDOUT-NEXT: imported 1 1 1 0 */
+
+import std::optional;
+
+#include <stdio.h>
+
+enum union Shape {
+    circle :: int,
+    square :: double,
+    empty :: void
+};
+
+typedef Shape Figure;
+
+comptime @type maybe(comptime @type T) => enum union { nothing :: void, just :: T };
+typedef maybe(int) IntMaybe;
+typedef std::optional::opt(int) OptInt;
+
+int calls = 0;
+
+Shape make(int which) {
+    calls++;
+    if (which == 0) return Shape::empty();
+    return Shape::circle(which);
+}
+
+Shape global_shape = Shape::square(4);
+comptime Shape frozen = Shape::circle(1);
+Shape zeroed;
+
+int main() {
+    Shape s = Shape::circle(3);
+    Shape& r = s;
+    Shape* p = &s;
+    printf("runtime %d %d %d\n", s is circle(_), s is square(_), s is empty());
+    printf("indirect %d %d\n", r is circle(_), (*p) is circle(_));
+    printf("qualified %d %d %d\n", s is Figure::circle(_), s is Shape::empty(), r is Figure::circle(_));
+    printf("once %d %d\n", make(0) is empty(), calls);
+    printf("globals %d %d %d\n", global_shape is square(_), frozen is circle(_), zeroed is circle(_));
+
+    maybe(int) m = maybe(int)::just(5);
+    IntMaybe n = IntMaybe::nothing();
+    printf("generated %d %d %d %d\n", m is just(_), m is maybe(int)::nothing(), n is IntMaybe::nothing(), n is maybe(int)::just(_));
+
+    OptInt o = OptInt::some(7);
+    std::optional::opt(int) e = std::optional::opt(int)::none();
+    printf("imported %d %d %d %d\n", o is some(_), o is std::optional::opt(int)::some(_), e is OptInt::none(), e is some(_));
+    return 0;
+}

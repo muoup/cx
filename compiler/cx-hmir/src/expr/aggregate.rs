@@ -29,6 +29,7 @@ pub enum HMIRAggregateOp {
 
 #[derive(Debug, Clone)]
 pub enum HMIRPattern {
+    Wildcard,
     Binding(HMIRLocalID),
     Integer(i64),
     Float(FloatWrapper),
@@ -39,7 +40,7 @@ pub enum HMIRPattern {
     Variant {
         sum: Option<HMIRExprID>,
         name: CXIdent,
-        inner: Option<HMIRLocalID>,
+        inner: Option<Box<HMIRPattern>>,
     },
 }
 

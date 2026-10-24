@@ -1,0 +1,14 @@
+struct Token : @nocopy {
+    int id;
+};
+
+enum union Slot : @nocopy {
+    held :: Token,
+    vacant :: void
+};
+
+int main() {
+    Token token = { .id = 7 };
+    Slot held = Slot::held(token);
+    return 0;
+}

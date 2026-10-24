@@ -22,7 +22,10 @@ use crate::{
         self,
         composite::{alike, signatures_alike},
     },
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{
+        HMIRValue, HMIRValueKind,
+        constant::{HMIRConstant, HMIRFunctionRef},
+    },
 };
 
 use super::{
@@ -158,7 +161,10 @@ pub(crate) fn call(
     args: &[HMIRExprID],
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
-    let HMIRValueKind::Constant(HMIRConstant::Function { def, args: applied }) = callee.kind()
+    let HMIRValueKind::Constant(HMIRConstant::Function {
+        function: HMIRFunctionRef::Def(def),
+        args: applied,
+    }) = callee.kind()
     else {
         return Err(hmir_error(
             span,

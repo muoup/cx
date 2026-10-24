@@ -12,7 +12,10 @@ use crate::{
     log::hmir_error,
     lower::global,
     symbol,
-    value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{
+        HMIRPlace, HMIRValue, HMIRValueKind,
+        constant::{HMIRConstant, HMIRFunctionRef},
+    },
 };
 
 pub(crate) fn eval_def(
@@ -26,9 +29,10 @@ pub(crate) fn eval_def(
         HMIRValueKind::Constant(HMIRConstant::Type(ty)) => {
             complete::type_result(context, *ty, span)
         }
-        HMIRValueKind::Constant(HMIRConstant::Function { def, .. }) => {
-            function_value(context, span, *def, value)
-        }
+        HMIRValueKind::Constant(HMIRConstant::Function {
+            function: HMIRFunctionRef::Def(def),
+            ..
+        }) => function_value(context, span, *def, value),
         HMIRValueKind::Constant(HMIRConstant::Address {
             place: HMIRPlace::Global(def),
             ..

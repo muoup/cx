@@ -3,7 +3,8 @@ use cx_hir::{
     intrinsic_types::{HIRIntrinsicType, INTRINSIC_TYPES},
 };
 use cx_hmir::{
-    HMIRDefID,
+    HMIRBody, HMIRDefID,
+    expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeKind,
         aggregate::HMIRTypeSemantics,
@@ -12,15 +13,22 @@ use cx_hmir::{
     },
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_namespace::module::QualifiedName;
+use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::{
     env::function::LocalLoweringContext,
-    eval::{EvalResult, complete, def::eval_def},
+    eval::{
+        EvalResult, complete, constructor,
+        def::eval_def,
+        eval_type,
+        flow::{self, Evaluation},
+        types,
+    },
     log::hmir_error,
     symbol,
-    value::HMIRValueKind,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) fn eval_name(
@@ -28,14 +36,14 @@ pub(crate) fn eval_name(
     span: &TokenRange,
     name: &QualifiedName,
     tag: Option<HIRTagKind>,
-) -> EvalResult<crate::value::HMIRValue> {
+) -> EvalResult<HMIRValue> {
     if let Some(id) = resolve(context, span, name, tag)? {
         return eval_def(context, span, id);
     }
     if tag.is_none()
-        && let Some(value) = constructor(context, name, span)?
+        && let Some(value) = qualified_constructor(context, name, span)?
     {
-        return Ok(super::flow::Evaluation::Ready(value));
+        return Ok(Evaluation::Ready(value));
     }
     if tag.is_none()
         && let Some(name) = name.root_name_ref()
@@ -179,21 +187,16 @@ fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) ->
     )
 }
 
-fn constructor(
+fn qualified_constructor(
     context: &mut LocalLoweringContext,
     name: &QualifiedName,
     span: &TokenRange,
-) -> CXResult<Option<crate::value::HMIRValue>> {
-    use crate::value::{HMIRValue, constant::HMIRConstant};
-    use cx_hmir::{HMIRContract, HMIRFnSignature, HMIRFunctionStage, unit::function::HMIRFnParam};
+) -> CXResult<Option<HMIRValue>> {
     let segments = name.namespace.segments();
     let Some((parent, namespace)) = segments.split_last() else {
         return Ok(None);
     };
-    let parent = QualifiedName::new(
-        cx_namespace::module::NamespacePath::new(namespace.to_vec()),
-        parent.clone(),
-    );
+    let parent = QualifiedName::new(NamespacePath::new(namespace.to_vec()), parent.clone());
     let Some(id) = resolve(context, span, &parent, None)? else {
         return Ok(None);
     };
@@ -202,35 +205,29 @@ fn constructor(
     let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = parent.kind() else {
         return Ok(None);
     };
-    let ty = *ty;
-    let HMIRTypeKind::TaggedUnion { fields } = context.env().resolve_kind(ty) else {
-        return Ok(None);
-    };
-    let Some(field) = fields.iter().find(|field| field.name() == Some(&name.name)) else {
-        return Ok(None);
-    };
-    let payload = *field.ty();
-    if matches!(context.env().resolve_kind(payload), HMIRTypeKind::Void) {
-        todo!("tagged union initializers")
+    constructor::reference(context, *ty, &name.name, span)
+}
+
+pub(crate) fn eval_scope_access(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    base: HMIRExprID,
+    member: &CXIdent,
+) -> EvalResult<HMIRValue> {
+    let ty = flow::top(eval_type(context, body, base))?;
+    if !matches!(
+        context.env().resolve_kind(ty),
+        HMIRTypeKind::TaggedUnion { .. }
+    ) {
+        let kind = (types::name(context.env(), ty), "a tagged union".into());
+        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
     }
-    let signature = HMIRFnSignature::new(
-        HMIRFunctionStage::Runtime,
-        vec![HMIRFnParam::new(false, payload)],
-        ty,
-        false,
-        HMIRContract::default(),
-    );
-    let callable = context.env_mut().resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::Function(signature),
-        HMIRTypeSemantics::default(),
-        span.clone(),
-        None,
-    ));
-    Ok(Some(HMIRValue::constant(
-        callable,
-        HMIRConstant::Constructor {
-            ty,
-            variant: name.name.clone(),
-        },
-    )))
+    match constructor::reference(context, ty, member, span)? {
+        Some(value) => Ok(Evaluation::Ready(value)),
+        None => {
+            let member = (types::name(context.env(), ty), member.to_string());
+            Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into())
+        }
+    }
 }

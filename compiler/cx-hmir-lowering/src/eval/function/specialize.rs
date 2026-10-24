@@ -10,7 +10,10 @@ use crate::{
     env::{function::LocalLoweringContext, generation::Specialization},
     eval::{EvalResult, call, types},
     symbol,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{
+        HMIRValue, HMIRValueKind,
+        constant::{HMIRConstant, HMIRFunctionRef},
+    },
 };
 
 pub fn apply(
@@ -47,7 +50,7 @@ pub fn apply(
     if context
         .env()
         .generation()
-        .specialization(def, &args)
+        .generated(HMIRFunctionRef::Def(def), &args)
         .is_none()
     {
         let env = context.env_mut();
@@ -56,7 +59,7 @@ pub fn apply(
         let name = CXIdent::new(format!(
             "{}.__cx_specialize.{}",
             original,
-            env.generation().specialization_count()
+            env.generation().generated_count()
         ));
         let prototype = MIRFnPrototype::new(
             types::lower_signature(env, &concrete, span)?,
@@ -77,6 +80,7 @@ pub fn apply(
         None,
     ));
     let ty = types::pointer(context.env_mut(), ty, span);
-    let callee = HMIRValue::constant(ty, HMIRConstant::Function { def, args });
+    let function = HMIRFunctionRef::Def(def);
+    let callee = HMIRValue::constant(ty, HMIRConstant::Function { function, args });
     call::finish(context, &callee, &runtime, *signature.return_type(), span)
 }

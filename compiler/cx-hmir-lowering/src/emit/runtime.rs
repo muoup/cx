@@ -25,8 +25,14 @@ use crate::{
         HMIREnvironment,
         function::{LocalLoweringContext, runtime::Emission},
     },
-    eval::types::{self, mir_float, mir_int},
-    value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    eval::{
+        constructor,
+        types::{self, mir_float, mir_int},
+    },
+    value::{
+        HMIRPlace, HMIRValue, HMIRValueKind,
+        constant::{HMIRConstant, HMIRFunctionRef},
+    },
 };
 
 pub fn block(context: &mut LocalLoweringContext, name: &str) -> MIRBasicBlockID {
@@ -167,8 +173,15 @@ pub fn constant(
                 .map(|(index, field)| Ok((*index, self::constant(env, field, span)?)))
                 .collect::<CXResult<_>>()?,
         },
-        HMIRConstant::Function { def, args } => {
-            if let Some(function) = env.generation().specialization(*def, args) {
+        HMIRConstant::Function {
+            function: HMIRFunctionRef::Constructor { ty, variant },
+            ..
+        } => MIRConstant::Function(constructor::declare(env, *ty, *variant, span)?),
+        HMIRConstant::Function {
+            function: function @ HMIRFunctionRef::Def(def),
+            args,
+        } => {
+            if let Some(function) = env.generation().generated(*function, args) {
                 return Ok(MIRConstant::Function(function));
             }
             let prototype = types::lower_prototype(env, *def, None, span)?;
@@ -522,6 +535,35 @@ pub fn field(
     initialize(context, &reference, span);
 
     Ok(HMIRValue::indirect(ty, reference))
+}
+
+pub fn tag(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    if let HMIRValueKind::Constant(constant) = value.kind()
+        && let Some(tag) = constant.tag(ty)
+    {
+        return Ok(HMIRValue::constant(ty, tag));
+    }
+
+    let stored = context
+        .env()
+        .reference_inner(value.ty())
+        .unwrap_or(value.ty());
+    let sum_ty = types::lower_type(context.env_mut(), stored, span)?;
+    let value = lower_value(context, value, span)?;
+    let (out, result) = output(context, ty, span)?;
+    intrinsic(
+        context,
+        MIRAggregateIntrinsic::SumIndex { out, value, sum_ty },
+        span.clone(),
+    );
+    initialize(context, &result, span);
+
+    Ok(result)
 }
 
 pub fn aggregate(

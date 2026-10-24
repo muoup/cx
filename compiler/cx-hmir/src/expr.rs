@@ -40,6 +40,10 @@ pub enum HMIRExprKind {
     },
     Hole(HMIRHoleID),
     Type(Box<HMIRExprType>),
+    ScopeAccess {
+        base: HMIRExprID,
+        member: CXIdent,
+    },
 
     Comptime(HMIRExprID),
     Quote {

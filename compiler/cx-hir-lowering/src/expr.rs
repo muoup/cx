@@ -10,7 +10,7 @@ use cx_hir::ast::expression::{
     HIRBinOp, HIRBlockKind, HIRClosureParam, HIRExprKind, HIRExpression, HIRInitIndex,
     HIRUnpackBinding,
 };
-use cx_hir::ast::types::HIRType;
+use cx_hir::ast::types::{HIRType, HIRTypeKind};
 use cx_hmir::{
     HMIRAggregateOp, HMIRControlOp, HMIROwnershipOp,
     expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral, op::HMIRTypeOp},
@@ -26,8 +26,8 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    body::{BodyLowering, ScopeKind, Symbol, lower_reify, lower_static, lower_variant_constructor},
-    expr::call::{lower_call, lower_scope_base},
+    body::{BodyLowering, ScopeKind, Symbol, lower_reify, lower_static},
+    expr::call::lower_call,
     expr::control::{lower_case, lower_for, lower_if, lower_match, lower_switch, lower_while},
     expr::literal::{lower_float_literal, lower_int_literal},
     expr::op::{lower_binop, lower_unop},
@@ -64,8 +64,9 @@ pub(crate) fn lower_expr(
         HIRExprKind::Type(ty) => lower_type(context, ty)?,
         HIRExprKind::Hole => context.hole(span),
         HIRExprKind::ScopeAccess { base, member } => {
-            let sum = lower_scope_base(context, base)?;
-            lower_variant_constructor(context, sum, member, span)
+            let base = lower_scope_base(context, base)?;
+            let member = member.clone();
+            context.push(HMIRExprKind::ScopeAccess { base, member }, span)
         }
         HIRExprKind::IntLiteral {
             magnitude,
@@ -288,6 +289,37 @@ pub(crate) fn lower_identifier(
             span,
         ),
     })
+}
+
+// The type a 'base::variant(...)' constructor builds. A base left to the compiler, '_' or a
+// generator applied to holes, is completed from the type the value is expected to have.
+fn lower_scope_base(
+    context: &mut BodyLowering<'_>,
+    base: &HIRExpression,
+) -> CXResult<HMIRExprID> {
+    match &base.kind {
+        HIRExprKind::Hole => Ok(context.hole(&base.range)),
+        HIRExprKind::Type(ty) => match &ty.kind {
+            HIRTypeKind::Identifier {
+                name,
+                lookup,
+                args: Some(args),
+            } if args.iter().any(|arg| matches!(arg.kind, HIRExprKind::Hole)) => {
+                let generator = HIRType {
+                    kind: HIRTypeKind::Identifier {
+                        name: name.clone(),
+                        lookup: *lookup,
+                        args: None,
+                    },
+                    specifiers: ty.specifiers,
+                    range: ty.range.clone(),
+                };
+                lower_type(context, &generator)
+            }
+            _ => lower_type(context, ty),
+        },
+        _ => lower_expr(context, base),
+    }
 }
 
 fn lower_declaration(

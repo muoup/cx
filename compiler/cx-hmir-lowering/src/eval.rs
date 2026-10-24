@@ -12,6 +12,7 @@ mod place;
 mod storage;
 
 pub(crate) mod comptime;
+pub(crate) mod constructor;
 pub(crate) mod op;
 pub(crate) mod coerce;
 
@@ -227,6 +228,9 @@ pub(crate) fn eval(
 
         HMIRExprKind::Def(def) => eval_def(context, span, *def),
         HMIRExprKind::Name { name, tag } => name::eval_name(context, span, name, *tag),
+        HMIRExprKind::ScopeAccess { base, member } => {
+            name::eval_scope_access(context, body, span, *base, member)
+        }
         HMIRExprKind::Piped(value) => eval(context, body, *value),
         HMIRExprKind::Call { callee, args } => eval_call(context, body, span, *callee, args),
 

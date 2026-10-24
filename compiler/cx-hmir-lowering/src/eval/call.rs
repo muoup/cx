@@ -11,14 +11,15 @@ use crate::{
     emit,
     env::function::{FnContext, LocalLoweringContext},
     eval::{
-        EvalResult,
-        aggregate::initializer,
-        coerce, eval,
+        EvalResult, coerce, constructor, eval,
         flow::{Evaluation, RuntimeStop, ready},
         function, types,
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{
+        HMIRValue, HMIRValueKind,
+        constant::{HMIRConstant, HMIRFunctionRef},
+    },
 };
 
 pub(crate) fn eval_call(
@@ -29,24 +30,8 @@ pub(crate) fn eval_call(
     args: &[HMIRExprID],
 ) -> EvalResult<HMIRValue> {
     let callee = ready!(eval(context, body, callee));
-    if let HMIRValueKind::Constant(HMIRConstant::Constructor { ty, variant }) = callee.kind() {
-        if args.len() != 1 {
-            return Err(hmir_error(
-                span,
-                &typecheck::ARGUMENT_COUNT,
-                ("variant constructor".into(), 1, args.len(), false),
-            ));
-        }
-        return initializer::initialize(
-            context,
-            body,
-            span,
-            *ty,
-            &[(Some(variant.clone()), args[0])],
-        );
-    }
     let callee = coerce::std_rvalue(context, callee, span)?;
-    if matches!(context.context(), FnContext::Comptime(_))
+    if (matches!(context.context(), FnContext::Comptime(_)) && constructs(&callee).is_none())
         || matches!(
             context.env().resolve_kind(callee.ty()),
             HMIRTypeKind::FunctionItem(_)
@@ -72,9 +57,14 @@ pub(crate) fn eval_call(
     let params = signature.params();
     if args.len() < params.len() || (!signature.is_variadic() && args.len() > params.len()) {
         let subject = match callee.kind() {
-            HMIRValueKind::Constant(HMIRConstant::Function { def, .. }) => {
-                format!("'{}'", env.symbols().resolve_definition(*def).name())
-            }
+            HMIRValueKind::Constant(HMIRConstant::Function { function, .. }) => match function {
+                HMIRFunctionRef::Def(def) => {
+                    format!("'{}'", env.symbols().resolve_definition(*def).name())
+                }
+                HMIRFunctionRef::Constructor { ty, variant } => {
+                    format!("'{}'", constructor::name(env, *ty, *variant))
+                }
+            },
             _ => "function".into(),
         };
         let counts = (subject, params.len(), args.len(), signature.is_variadic());
@@ -106,6 +96,13 @@ pub(crate) fn finish(
     return_type: HMIRTypeID,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
+    if matches!(context.context(), FnContext::Comptime(_))
+        && let Some((ty, variant)) = constructs(callee)
+    {
+        let payload = values.first().cloned();
+        let value = constructor::construct(context, ty, variant, payload, span)?;
+        return Ok(Evaluation::Ready(value));
+    }
     let result = emit::call(context, callee, values, return_type, span)?;
     if matches!(
         context.env().resolve_kind(return_type),
@@ -118,4 +115,14 @@ pub(crate) fn finish(
     }
 
     Ok(Evaluation::Ready(result))
+}
+
+fn constructs(callee: &HMIRValue) -> Option<(HMIRTypeID, usize)> {
+    match callee.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Function {
+            function: HMIRFunctionRef::Constructor { ty, variant },
+            ..
+        }) => Some((*ty, *variant)),
+        _ => None,
+    }
 }

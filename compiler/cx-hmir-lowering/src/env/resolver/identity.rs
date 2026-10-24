@@ -113,8 +113,8 @@ impl HMIREnvironment<'_, '_> {
                 label,
                 ty: self.canonical_type(expected.unwrap_or(ty)),
             },
-            HMIRConstant::Function { def, args } => HMIRConstant::Function {
-                def,
+            HMIRConstant::Function { function, args } => HMIRConstant::Function {
+                function,
                 args: args
                     .into_iter()
                     .map(|arg| self.canonical_constant(arg, None))

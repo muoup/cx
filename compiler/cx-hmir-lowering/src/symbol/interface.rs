@@ -26,7 +26,10 @@ use crate::{
         composite::{alike, composite, signatures_alike},
         structure::{self, incompatible},
     },
-    value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{
+        HMIRPlace, HMIRValue, HMIRValueKind,
+        constant::{HMIRConstant, HMIRFunctionRef},
+    },
 };
 
 pub(crate) fn definition(
@@ -77,7 +80,7 @@ pub(crate) fn definition(
                 return Ok(HMIRValue::constant(
                     ty,
                     HMIRConstant::Function {
-                        def: id,
+                        function: HMIRFunctionRef::Def(id),
                         args: Vec::new(),
                     },
                 ));
@@ -110,7 +113,7 @@ pub(crate) fn definition(
             Ok(HMIRValue::constant(
                 ty,
                 HMIRConstant::Function {
-                    def: id,
+                    function: HMIRFunctionRef::Def(id),
                     args: Vec::new(),
                 },
             ))

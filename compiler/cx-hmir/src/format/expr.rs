@@ -37,6 +37,10 @@ impl BodyPrinter<'_> {
                 &|f, inner| self.expr(f, *inner, depth),
                 &|f, length| self.expr(f, *length, depth),
             ),
+            HMIRExprKind::ScopeAccess { base, member } => {
+                self.expr(f, *base, depth)?;
+                write!(f, "::{member}")
+            }
             HMIRExprKind::Error(_) => f.write_str("<error>"),
 
             HMIRExprKind::Comptime(inner) => {
@@ -224,6 +228,7 @@ impl BodyPrinter<'_> {
         depth: usize,
     ) -> fmt::Result {
         match pattern {
+            HMIRPattern::Wildcard => f.write_str("_"),
             HMIRPattern::Binding(local) => self.local_decl(f, *local),
             HMIRPattern::Integer(value) => write!(f, "{value}"),
             HMIRPattern::Float(value) => write!(f, "{value}"),
@@ -233,13 +238,11 @@ impl BodyPrinter<'_> {
                     self.expr(f, *sum, depth)?;
                     f.write_str("::")?;
                 }
-                write!(f, "{name}")?;
+                write!(f, "{name}(")?;
                 if let Some(inner) = inner {
-                    f.write_str("(")?;
-                    self.local_decl(f, *inner)?;
-                    f.write_str(")")?;
+                    self.pattern(f, inner, depth)?;
                 }
-                Ok(())
+                f.write_str(")")
             }
         }
     }

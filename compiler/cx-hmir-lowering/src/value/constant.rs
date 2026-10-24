@@ -19,12 +19,11 @@ pub enum HMIRConstant {
     Str(String),
     Null(HMIRTypeID),
     Type(HMIRTypeID),
-    // A function def with its leading comptime arguments applied
+    // A function with its leading comptime arguments applied
     Function {
-        def: HMIRDefID,
+        function: HMIRFunctionRef,
         args: Vec<HMIRConstant>,
     },
-    Constructor { ty: HMIRTypeID, variant: CXIdent },
     Quote(QuoteRef),
     Aggregate {
         ty: HMIRTypeID,
@@ -44,7 +43,23 @@ pub enum HMIRConstant {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HMIRFunctionRef {
+    Def(HMIRDefID),
+    // The constructor of a variant of a concrete tagged union
+    Constructor { ty: HMIRTypeID, variant: usize },
+}
+
 impl HMIRConstant {
+    // The tag of a tagged union, where a zeroed one holds its first variant
+    pub fn tag(&self, ty: HMIRTypeID) -> Option<HMIRConstant> {
+        let Self::Aggregate { fields, .. } = self else {
+            return None;
+        };
+        let value = fields.last().map_or(0, |(index, _)| *index) as i128;
+        Some(Self::Int { value, ty })
+    }
+
     pub fn holds_local_address(&self) -> bool {
         match self {
             Self::Address {

@@ -1,0 +1,38 @@
+/* CX-STDOUT: folded 1 0 */
+/* CX-STDOUT-NEXT: locals 1 */
+/* CX-STDOUT-NEXT: globals 1 1 1 */
+
+#include <stdio.h>
+
+enum union Maybe {
+    none :: void,
+    some :: int
+};
+
+typedef Maybe Alias;
+
+comptime bool folded_some = Maybe::some(3) is some(_);
+comptime bool folded_none = Maybe::some(3) is none();
+
+comptime bool local_test() {
+    Maybe value = Maybe::none();
+    Maybe& ref = value;
+    Maybe* pointer = &value;
+    return value is none() && !(ref is Alias::some(_)) && (*pointer) is none();
+}
+
+comptime bool local_flag = local_test();
+
+comptime Maybe frozen = Maybe::some(1);
+Maybe zeroed;
+
+comptime bool frozen_some = frozen is some(_);
+comptime bool zeroed_none = zeroed is none();
+comptime bool zeroed_some = zeroed is some(_);
+
+int main() {
+    printf("folded %d %d\n", folded_some, folded_none);
+    printf("locals %d\n", local_flag);
+    printf("globals %d %d %d\n", frozen_some, zeroed_none, !zeroed_some);
+    return 0;
+}

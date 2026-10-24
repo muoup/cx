@@ -13,7 +13,7 @@ pub use storage::{allocate, copy, initialize, invalidate, lift, scratch, write};
 
 use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,
-    ty::{HMIRTypeID, context::HMIRTypeContext},
+    ty::{HMIRTypeID, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_log::{CXResult, catalogue::mir};
 use cx_tokens::TokenRange;
@@ -115,6 +115,18 @@ pub fn aggregate(
     match context.context() {
         FnContext::Runtime(_) => runtime::aggregate(context, ty, fields, span),
         FnContext::Comptime(_) => comptime::aggregate(context, ty, fields, span),
+    }
+}
+
+pub fn tag(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let ty = types::int(context.env_mut(), HMIRIntWidth::I8, false, span);
+    match context.context() {
+        FnContext::Runtime(_) => runtime::tag(context, value, ty, span),
+        FnContext::Comptime(_) => comptime::tag(context, value, ty, span),
     }
 }
 

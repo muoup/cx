@@ -1,0 +1,47 @@
+/* CX-STDOUT: opt 1011 0 1003 */
+/* CX-STDOUT-NEXT: identity 1 1 0 */
+/* CX-STDOUT-NEXT: either 1 0 */
+/* CX-STDOUT-NEXT: identity 1 */
+
+#include <stdio.h>
+#include <string.h>
+
+import std::optional as std;
+
+comptime @type Either(comptime @type L, comptime @type R) =>
+    enum union {
+        left :: L,
+        right :: R
+    };
+
+typedef std::opt(int) maybe_int;
+typedef Either(int, double) IntOrDouble;
+
+int opt_state(std::opt(int) value) {
+    unsigned char* bytes = (unsigned char*)&value;
+    int payload;
+    memcpy(&payload, bytes, sizeof(payload));
+    return bytes[4] * 1000 + payload;
+}
+
+int either_tag(IntOrDouble value) {
+    unsigned char* bytes = (unsigned char*)&value;
+    return bytes[8];
+}
+
+int main() {
+    std::opt(int) some = std::opt(int)::some(11);
+    maybe_int none = maybe_int::none();
+    std::opt(int) (*make)(int) = std::opt(int)::some;
+    printf("opt %d %d %d\n", opt_state(some), opt_state(none), opt_state(make(3)));
+    printf("identity %d %d %d\n",
+        make == maybe_int::some,
+        std::opt(int)::some == std::opt(int)::some,
+        (void*)std::opt(int)::some == (void*)std::opt(long)::some);
+
+    IntOrDouble right = IntOrDouble::right(2.0);
+    Either(int, double) left = Either(int, double)::left(4);
+    printf("either %d %d\n", either_tag(right), either_tag(left));
+    printf("identity %d\n", IntOrDouble::left == Either(int, double)::left);
+    return 0;
+}

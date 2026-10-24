@@ -254,6 +254,19 @@ pub fn invalidate(context: &mut LocalLoweringContext, value: &HMIRValue, kind: M
     }
 }
 
+pub fn tag(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let Some(tag) = read(context, value, span)?.tag(ty) else {
+        unreachable!("a tagged union constant is an aggregate")
+    };
+
+    Ok(HMIRValue::constant(ty, tag))
+}
+
 pub fn address(value: &HMIRValue, ty: HMIRTypeID) -> HMIRValue {
     let (place, path) = match value.kind() {
         HMIRValueKind::PlaceRef(place) => (place, Vec::new()),

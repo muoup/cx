@@ -11,7 +11,7 @@ use crate::{
     emit,
     env::function::LocalLoweringContext,
     eval::{
-        EvalResult, coerce, eval,
+        EvalResult, coerce, constructor, eval,
         flow::{Evaluation, ready},
         types,
     },
@@ -31,7 +31,7 @@ pub fn initialize(
         HMIRTypeKind::Array { element, length } => {
             return array(context, body, span, ty, *element, *length, fields);
         }
-        HMIRTypeKind::TaggedUnion { .. } => todo!("tagged union initializers"),
+        HMIRTypeKind::TaggedUnion { .. } => return variant(context, body, span, ty, fields),
         _ => return initialize_scalar(context, body, span, ty, fields),
     };
     let mut values = Vec::with_capacity(fields.len());
@@ -115,6 +115,32 @@ fn array(
 
     Ok(Evaluation::Ready(emit::aggregate(
         context, ty, &values, span,
+    )?))
+}
+
+fn variant(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    ty: HMIRTypeID,
+    fields: &[(Option<CXIdent>, HMIRExprID)],
+) -> EvalResult<HMIRValue> {
+    let [(Some(name), value)] = fields else {
+        let subject = types::name(context.env(), ty);
+        return Err(hmir_error(span, &typecheck::LIST_INITIALIZATION, subject).into());
+    };
+    let Some((index, payload)) = constructor::variant(context.env(), ty, name) else {
+        let member = (types::name(context.env(), ty), name.to_string());
+        return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
+    };
+    let payload = ready!(field_value(context, body, *value, payload));
+
+    Ok(Evaluation::Ready(constructor::construct(
+        context,
+        ty,
+        index,
+        Some(payload),
+        span,
     )?))
 }
 
