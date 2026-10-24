@@ -10,6 +10,6 @@ static int included_parameter(int puts) {
     return puts;
 }
 
-T selected(@type T, T value) {
+T selected(comptime @type T, T value) {
     return value;
 }

@@ -4,7 +4,7 @@ use crate::expr::{
     HMIRExprID,
     aggregate::HMIRAggregateOp,
     op::HMIRTypeOp,
-    op::{HMIRControlOp, HMIROp, HMIROwnershipOp},
+    op::{HMIRControlOp, HMIROp, HMIRMemberStep, HMIROwnershipOp},
 };
 
 use super::body::BodyPrinter;
@@ -158,10 +158,19 @@ impl BodyPrinter<'_> {
             | HMIRTypeOp::IsPointer(ty)
             | HMIRTypeOp::IsSigned(ty) => self.call(f, op.path(), &[*ty], depth),
             HMIRTypeOp::Equal(lhs, rhs) => self.call(f, op.path(), &[*lhs, *rhs], depth),
-            HMIRTypeOp::OffsetOf { ty } => {
+            HMIRTypeOp::OffsetOf { ty, member } => {
                 write!(f, "{}(", op.path())?;
                 self.expr(f, *ty, depth)?;
-                f.write_str(", ")?;
+                for step in member {
+                    match step {
+                        HMIRMemberStep::Field(name) => write!(f, ".{name}")?,
+                        HMIRMemberStep::Index(index) => {
+                            f.write_str("[")?;
+                            self.expr(f, *index, depth)?;
+                            f.write_str("]")?;
+                        }
+                    }
+                }
                 f.write_str(")")
             }
         }

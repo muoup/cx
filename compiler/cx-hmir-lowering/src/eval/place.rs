@@ -83,6 +83,14 @@ pub(crate) fn eval_move(
         unreachable!("an evaluated local has a binding")
     };
     if context.env().reference_inner(binding.ty()) != Some(inner) {
+        if context.env().semantics(inner).constant {
+            return Err(hmir_error(
+                span,
+                &typecheck::MUTATE_CONST,
+                ("move out of".into(), types::name(context.env(), inner)),
+            )
+            .into());
+        }
         todo!("move out of the referent of a reference local")
     }
 

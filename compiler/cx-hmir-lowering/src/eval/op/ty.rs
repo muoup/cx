@@ -1,3 +1,5 @@
+mod offset;
+
 use cx_hmir::{
     HMIRBody,
     expr::{HMIRExprID, op::HMIRTypeOp},
@@ -32,6 +34,10 @@ pub(crate) fn eval_type_op(
     span: &TokenRange,
     op: &HMIRTypeOp,
 ) -> EvalResult<HMIRValue> {
+    if matches!(op, HMIRTypeOp::OffsetOf { .. }) {
+        return offset::eval_offsetof(context, body, span, op);
+    }
+
     let (HMIRTypeOp::SizeOf(operand) | HMIRTypeOp::AlignOf(operand)) = op else {
         todo!("HMIRTypeOp: {}", op.path())
     };

@@ -132,6 +132,14 @@ impl<'a> BodyLowering<'a> {
         self.unit
     }
 
+    fn bind_static(&mut self, name: &CXIdent, def: HMIRDefID) {
+        self.scopes
+            .last_mut()
+            .expect("body lowering always has a root scope")
+            .symbols
+            .insert(name.clone(), ScopeEntry::Static(def));
+    }
+
     pub(crate) fn finish(self) -> HMIRBody {
         self.body
     }
@@ -482,23 +490,19 @@ pub(crate) fn lower_static(
     let global = HMIRGlobal::new(global.finish(), global_ty, initializer, linkage, link_name);
 
     let qualified = QualifiedName::new(context.namespace.clone(), name.clone());
-    context.unit.push_static(
-        qualified,
-        span,
-        HMIRDefKind::Global(Box::new(global)),
-        context.body.visible_through(),
-    );
+    let kind = HMIRDefKind::Global(Box::new(global));
+    let id = if linkage == LinkageMode::Extern {
+        context.unit.push_extern(qualified, span, kind, context.body.visible_through())
+    } else {
+        context.unit.push_static(qualified, span, kind, context.body.visible_through());
+        id
+    };
     for label in labels {
         if !context.address_labels.contains(&label) {
             context.address_labels.push(label);
         }
     }
-    context
-        .scopes
-        .last_mut()
-        .expect("body lowering always has a root scope")
-        .symbols
-        .insert(name.clone(), ScopeEntry::Static(id));
+    context.bind_static(name, id);
 
     Ok(())
 }

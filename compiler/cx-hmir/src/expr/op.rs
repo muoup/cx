@@ -126,12 +126,19 @@ pub enum HMIRTypeOp {
     // The offset in bytes of the subobject of 'ty' that 'member' leads to
     OffsetOf {
         ty: HMIRExprID,
+        member: Vec<HMIRMemberStep>,
     },
     IsInt(HMIRExprID),
     IsFloat(HMIRExprID),
     IsPointer(HMIRExprID),
     IsSigned(HMIRExprID),
     Equal(HMIRExprID, HMIRExprID),
+}
+
+#[derive(Debug, Clone)]
+pub enum HMIRMemberStep {
+    Field(CXIdent),
+    Index(HMIRExprID),
 }
 
 impl HMIRBinaryOp {

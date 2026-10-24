@@ -8,12 +8,15 @@ use std::rc::Rc;
 
 use cx_hir::ast::expression::{
     HIRBinOp, HIRBlockKind, HIRClosureParam, HIRExprKind, HIRExpression, HIRInitIndex,
-    HIRUnpackBinding,
+    HIRMemberDesignator, HIRUnpackBinding,
 };
 use cx_hir::ast::types::{HIRType, HIRTypeKind};
 use cx_hmir::{
     HMIRAggregateOp, HMIRControlOp, HMIROwnershipOp,
-    expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral, op::HMIRTypeOp},
+    expr::{
+        HMIRExprID, HMIRExprKind, literal::HMIRLiteral,
+        op::{HMIRMemberStep, HMIRTypeOp},
+    },
     ty::intrinsic::{HMIRIntType, HMIRIntWidth},
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
@@ -133,8 +136,18 @@ pub(crate) fn lower_expr(
             let ty = lower_type(context, ty)?;
             context.type_op(HMIRTypeOp::AlignOf(ty), span)
         }
-        HIRExprKind::OffsetOf { .. } => {
-            return log_hir_error(span, &typecheck::UNSUPPORTED_FEATURE, "offsetof".into());
+        HIRExprKind::OffsetOf { ty, member } => {
+            let ty = lower_type(context, ty)?;
+            let member = member
+                .iter()
+                .map(|step| match step {
+                    HIRMemberDesignator::Field(name) => Ok(HMIRMemberStep::Field(name.clone())),
+                    HIRMemberDesignator::Index(index) => {
+                        Ok(HMIRMemberStep::Index(lower_expr(context, index)?))
+                    }
+                })
+                .collect::<CXResult<_>>()?;
+            context.type_op(HMIRTypeOp::OffsetOf { ty, member }, span)
         }
 
         HIRExprKind::VarDeclaration {

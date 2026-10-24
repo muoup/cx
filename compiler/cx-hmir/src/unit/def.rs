@@ -58,6 +58,12 @@ impl HMIRDef {
     pub fn declarations(&self) -> &[HMIRDeclaration] {
         &self.declarations
     }
+
+    pub fn extend(&mut self, declarations: impl IntoIterator<Item = HMIRDeclaration>) {
+        self.declarations.extend(declarations);
+        self.declarations
+            .sort_by_key(|declaration| declaration.point());
+    }
 }
 
 impl HMIRDeclaration {

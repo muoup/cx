@@ -25,7 +25,7 @@ pub fn generate_hmir(
     root_exports: bool,
 ) -> CXResult<HMIRUnit> {
     let planned = plan_symbols(hir, &namespace, id);
-    let context = UnitContext::new(id, root_exports, planned.len());
+    let context = UnitContext::new(id, root_exports, &planned);
 
     let symbols = symbol_table(hir, id, &planned);
     let mut unit = HMIRUnitBuilder::new(id, namespace);
@@ -36,6 +36,10 @@ pub fn generate_hmir(
     }
     for def in context.take_statics() {
         unit.push_def(def);
+    }
+
+    for (id, declarations) in context.take_externs() {
+        unit.extend_def(id, declarations);
     }
 
     Ok(unit.finish(symbols))

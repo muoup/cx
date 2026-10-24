@@ -65,6 +65,8 @@ pub(crate) fn validate(env: &mut HMIREnvironment, id: HMIRDefID) -> CXResult<()>
     let def = unit.resolve_def(id).unwrap();
     let selected = select(def, None)?;
     let declaration = &def.declarations()[selected];
+    let reconcile_global =
+        def.declarations().len() > 1 && matches!(declaration.kind(), Some(HMIRDefKind::Global(_)));
     if let Some(HMIRDefKind::Function(function)) = declaration.kind()
         && function.def().is_some()
         && function.signature().is_variadic()
@@ -95,6 +97,9 @@ pub(crate) fn validate(env: &mut HMIREnvironment, id: HMIRDefID) -> CXResult<()>
     let untagged_comptime = declaration.tag().is_none()
         && matches!(declaration.kind(), Some(HMIRDefKind::ComptimeGlobal(_)));
     if untagged_comptime && declaration.role() == HMIRDeclarationRole::Definition {
+        binding(env, id, None)?;
+    }
+    if reconcile_global {
         binding(env, id, None)?;
     }
     Ok(())
