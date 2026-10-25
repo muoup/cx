@@ -33,19 +33,18 @@ pub(crate) fn eval_def(
             function: HMIRFunctionRef::Def(def),
             ..
         }) => function_value(context, span, *def, value),
-        HMIRValueKind::Constant(HMIRConstant::Address {
-            place: HMIRPlace::Global(def),
-            ..
-        }) => {
-            let linkage = symbol::linkage(context.env_mut(), *def, point)?;
+        HMIRValueKind::Constant(HMIRConstant::Address(address))
+            if let Some(HMIRPlace::Global(def)) = address.whole_place() =>
+        {
+            let linkage = symbol::linkage(context.env_mut(), def, point)?;
             if def.brand() == context.env().symbols().local_unit().id()
                 || linkage == LinkageMode::Static
             {
-                context.env_mut().generation_mut().request(*def);
+                context.env_mut().generation_mut().request(def);
             }
             if matches!(context.context(), FnContext::Runtime(_)) && !context.is_unevaluated() {
-                let ty = symbol::value_type(context.env_mut(), *def, None)?;
-                global::declare(context.env_mut(), *def, ty, span)?;
+                let ty = symbol::value_type(context.env_mut(), def, None)?;
+                global::declare(context.env_mut(), def, ty, span)?;
             }
             Ok(Evaluation::Ready(value))
         }

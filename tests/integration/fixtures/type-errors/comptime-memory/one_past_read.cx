@@ -1,0 +1,9 @@
+comptime int read_past() {
+    int values[2] = { 1, 2 };
+    int* end = values + 2;
+    return *end;
+}
+
+comptime int result = read_past();
+
+int main() { return result; }

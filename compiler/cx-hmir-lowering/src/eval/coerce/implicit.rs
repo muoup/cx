@@ -144,7 +144,7 @@ fn step(
 
     Ok(match kinds {
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_)) if is_zero(&value) => {
-            Coercion::Applied(HMIRValue::constant(target, HMIRConstant::Null(target)))
+            Coercion::Applied(HMIRValue::constant(target, HMIRConstant::Null))
         }
 
         (
@@ -175,8 +175,5 @@ fn step(
 }
 
 fn is_zero(value: &HMIRValue) -> bool {
-    matches!(
-        value.kind(),
-        HMIRValueKind::Constant(HMIRConstant::Int { value: 0, .. })
-    )
+    matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Int(0)))
 }

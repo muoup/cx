@@ -137,10 +137,7 @@ fn require_unsafe_conversion(
         }
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_))
             if explicit
-                && !matches!(
-                    value.kind(),
-                    HMIRValueKind::Constant(HMIRConstant::Int { value: 0, .. })
-                ) =>
+                && !matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Int(0))) =>
         {
             Some("Unsafe type conversion")
         }

@@ -85,7 +85,7 @@ pub(crate) fn eval_offsetof(
                     let value = eval_comptime(context, body, *index, Some(size_type))?;
                     let (
                         HMIRTypeKind::Int(int_type),
-                        HMIRValueKind::Constant(HMIRConstant::Int { value, .. }),
+                        HMIRValueKind::Constant(HMIRConstant::Int(value)),
                     ) = (context.env().resolve_kind(value.ty()), value.kind())
                     else {
                         let index_span = body.expr(*index).span();
@@ -106,10 +106,7 @@ pub(crate) fn eval_offsetof(
 
         Ok(Evaluation::Ready(HMIRValue::constant(
             size_type,
-            HMIRConstant::Int {
-                value: offset,
-                ty: size_type,
-            },
+            HMIRConstant::Int(offset),
         )))
     })
 }

@@ -20,7 +20,7 @@ pub fn allocate(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::allocate(context, ty, name, span),
-        FnContext::Comptime(_) => Ok(comptime::allocate(context, ty, name)),
+        FnContext::Comptime(_) => comptime::allocate(context, ty, name, span),
     }
 }
 
@@ -33,7 +33,7 @@ pub fn scratch(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::scratch(context, ty, span),
-        FnContext::Comptime(_) => Ok(comptime::allocate(context, ty, None)),
+        FnContext::Comptime(_) => comptime::allocate(context, ty, None, span),
     }
 }
 
@@ -113,12 +113,12 @@ pub fn write(
 }
 
 // Marks the storage of 'value' as holding a live value. Storage behind a pointer is untracked and a register is
-// live once written, so neither is marked; a comptime slot is live exactly when it holds a payload, so there this
-// only asserts that a write preceded it
+// live once written, so neither is marked; a comptime slot tracks byte initialization separately, so bytes that
+// were never written stay unreadable
 pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) {
     match context.context() {
         FnContext::Runtime(_) => runtime::initialize(context, value, span),
-        FnContext::Comptime(_) => comptime::initialize(context, value),
+        FnContext::Comptime(_) => comptime::initialize(context, value, span),
     }
 }
 
@@ -133,6 +133,6 @@ pub fn invalidate(
 ) {
     match context.context() {
         FnContext::Runtime(_) => runtime::invalidate(context, value, kind, span),
-        FnContext::Comptime(_) => comptime::invalidate(context, value, kind),
+        FnContext::Comptime(_) => comptime::invalidate(context, value, kind, span),
     }
 }

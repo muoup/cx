@@ -12,7 +12,7 @@ use super::{global, intrinsic, lower_value, output, reference, register, store};
 use crate::{
     env::function::{LocalLoweringContext, runtime::Slot},
     eval::types,
-    value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRPlace, HMIRValue, HMIRValueKind, address::Addressable, constant::HMIRConstant},
 };
 
 fn allocate_place(
@@ -46,11 +46,12 @@ pub fn slot(
 fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBindable> {
     let is_reference = context.env().is_reference(value.ty());
     let place = match value.kind() {
-        HMIRValueKind::PlaceRef(place) => place,
-        HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. })
-            if is_reference && path.is_empty() =>
-        {
-            place
+        HMIRValueKind::PlaceRef(place) => *place,
+        HMIRValueKind::Constant(HMIRConstant::Address(address)) if is_reference => {
+            match address.whole_place() {
+                Some(place) => place,
+                None => return None,
+            }
         }
         _ => return None,
     };
@@ -58,7 +59,7 @@ fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBind
         return None;
     };
 
-    match context.runtime().slot(*slot).binding() {
+    match context.runtime().slot(slot).binding() {
         MIRBindable::Register(_) if is_reference => None,
         bindable => Some(bindable.clone()),
     }
@@ -70,13 +71,14 @@ fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRan
     let is_reference = context.env().is_reference(value.ty());
     Ok(match value.kind() {
         HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => Some(MIRTarget::Global(
-            global::address(context.env_mut(), *def, &[], value.ty(), span)?,
+            global::address(context.env_mut(), *def, 0, value.ty(), span)?,
         )),
-        HMIRValueKind::Constant(HMIRConstant::Address { place: HMIRPlace::Global(def), path, .. })
-            if is_reference && path.is_empty() =>
+        HMIRValueKind::Constant(HMIRConstant::Address(address))
+            if is_reference && let Addressable::Place(HMIRPlace::Global(def)) = address.base() =>
         {
             let inner = context.env().reference_inner(value.ty()).unwrap();
-            Some(MIRTarget::Global(global::address(context.env_mut(), *def, &[], inner, span)?))
+            let global = global::address(context.env_mut(), *def, address.offset(), inner, span)?;
+            Some(MIRTarget::Global(global))
         }
         HMIRValueKind::Indirect(pointer) if !is_reference => {
             Some(MIRTarget::Indirect(reference(context, pointer)))

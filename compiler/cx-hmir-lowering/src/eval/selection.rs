@@ -87,7 +87,7 @@ pub(crate) fn eval_match(
     let cases = cases(context, body, ty, dispatch.ty(), variants, arms, span)?;
     let result = match context.context() {
         FnContext::Comptime(_) => {
-            let HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) = dispatch.kind() else {
+            let HMIRValueKind::Constant(HMIRConstant::Int(value)) = dispatch.kind() else {
                 unreachable!("comptime dispatch is constant")
             };
             let selected = cases
@@ -206,7 +206,7 @@ fn cases(
             HMIRPattern::Value(expr) if variants.is_none() => {
                 let value = eval_comptime(context, body, *expr, Some(dispatch_ty))?;
                 match value.kind() {
-                    HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) => Some(*value),
+                    HMIRValueKind::Constant(HMIRConstant::Int(value)) => Some(*value),
                     _ => return Err(hmir_error(arm_span, &typecheck::VALUE_PATTERN_CONSTANT, ())),
                 }
             }

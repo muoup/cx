@@ -22,7 +22,7 @@ use crate::{
     value::HMIRValue,
 };
 
-pub(crate) use interface::{definition, initialize, zero};
+pub(crate) use interface::{definition, initialize};
 pub(crate) use structure::{needs_specialization, select, visible};
 
 pub(crate) fn resolve(

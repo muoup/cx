@@ -1,4 +1,8 @@
-use std::{cell::Cell, mem};
+use std::{
+    cell::{Cell, RefCell},
+    mem,
+    rc::Rc,
+};
 
 use cx_hmir::{
     HMIRFnSignature, HMIRFunctionStage, HMIRUnitID, body::HMIRLocalID, expr::HMIRExprID,
@@ -10,9 +14,11 @@ use cx_util::dense_id;
 
 pub mod comptime;
 pub mod expectation;
+pub(crate) mod memory;
 pub mod runtime;
 pub(crate) mod scope;
 
+use self::memory::Memory;
 use crate::{
     env::{HMIREnvironment, symbols::HMIRUnitHandle},
     log::hmir_error,
@@ -55,6 +61,7 @@ pub struct LocalLoweringContext<'env, 'global, 'hmir> {
 
     context: FnContext,
     expectations: Expectations,
+    memory: Rc<RefCell<Memory>>,
 
     // REVIEW: I don't think this should be unconditionally tracked here
     call_depth: usize,
@@ -91,6 +98,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             signature,
             context,
             evaluation: EvaluationID::fresh(),
+            memory: Rc::default(),
             expectations: Expectations::new(match signature {
                 Some(signature) if signature.contract().is_safe() => Permission::Safe,
                 _ => Permission::Nonsafe,
@@ -113,6 +121,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         child.return_type = self.return_type;
         child.visible_through = self.visible_through;
         child.call_depth = self.call_depth;
+        child.memory = Rc::clone(&self.memory);
         child
     }
 

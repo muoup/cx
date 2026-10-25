@@ -31,13 +31,7 @@ pub(crate) fn eval_literal(
 
         HMIRLiteral::Int { value, ty } => {
             let semantic_type = types::int(context.env_mut(), ty.width(), ty.signed(), span);
-            HMIRValue::constant(
-                semantic_type,
-                HMIRConstant::Int {
-                    value: *value,
-                    ty: semantic_type,
-                },
-            )
+            HMIRValue::constant(semantic_type, HMIRConstant::Int(*value))
         }
         HMIRLiteral::Float { value, ty } => {
             let semantic_type = context.env_mut().resolver_mut().realize_type(HMIRType::new(
@@ -46,13 +40,7 @@ pub(crate) fn eval_literal(
                 span.clone(),
                 None,
             ));
-            HMIRValue::constant(
-                semantic_type,
-                HMIRConstant::Float {
-                    value: *value,
-                    ty: semantic_type,
-                },
-            )
+            HMIRValue::constant(semantic_type, HMIRConstant::Float(*value))
         }
     }
 }

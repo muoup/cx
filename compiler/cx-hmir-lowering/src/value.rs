@@ -1,3 +1,4 @@
+pub mod address;
 pub mod constant;
 pub mod scalar;
 pub mod staged;
@@ -14,11 +15,13 @@ pub(crate) type Bindings = HashMap<HMIRLocalID, HMIRValue>;
 // One instantiation of a local or temporary, allocated by whichever context evaluates the body; slots, and the
 // addresses and values built on them, belong to that evaluation and are never written back into input HMIR
 dense_id!(HMIRSlotID, "$");
+dense_id!(HMIRRegionID, "mem");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HMIRPlace {
     Local(HMIRSlotID),
     Global(HMIRDefID),
+    Region(HMIRRegionID),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -49,10 +52,13 @@ impl HMIRValue {
     }
 
     pub fn indirect(ty: HMIRTypeID, pointer: HMIRValue) -> Self {
-        match pointer.kind {
-            HMIRValueKind::Constant(HMIRConstant::Address {
-                place, ref path, ..
-            }) if path.is_empty() => Self::place(ty, place),
+        match &pointer.kind {
+            HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
+                match address.whole_place() {
+                    Some(place) => Self::place(ty, place),
+                    None => Self::new(ty, HMIRValueKind::Indirect(Box::new(pointer))),
+                }
+            }
             _ => Self::new(ty, HMIRValueKind::Indirect(Box::new(pointer))),
         }
     }

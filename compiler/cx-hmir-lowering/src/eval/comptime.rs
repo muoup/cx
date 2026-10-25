@@ -20,7 +20,7 @@ use crate::{
         flow::{Evaluation, StopReason, ready},
     },
     log::hmir_error,
-    value::{HMIRPlace, HMIRValue, HMIRValueKind},
+    value::{HMIRPlace, HMIRValue, HMIRValueKind, address::HMIRAddress},
 };
 
 pub(crate) fn eval_comptime(
@@ -97,7 +97,7 @@ pub(crate) fn frozen_child<'a, 'global, 'hmir>(
     child
 }
 
-pub(crate) fn frozen_inputs(context: &LocalLoweringContext) -> Vec<(HMIRLocalID, HMIRValue)> {
+pub(crate) fn frozen_inputs(context: &mut LocalLoweringContext) -> Vec<(HMIRLocalID, HMIRValue)> {
     context
         .visible_locals()
         .into_iter()
@@ -105,23 +105,29 @@ pub(crate) fn frozen_inputs(context: &LocalLoweringContext) -> Vec<(HMIRLocalID,
         .collect()
 }
 
-pub(crate) fn known(context: &LocalLoweringContext, value: &HMIRValue) -> Option<HMIRValue> {
-    match (value.kind(), context.context()) {
-        (HMIRValueKind::Constant(constant), _) if !constant.holds_local_address() => {
-            Some(value.clone())
-        }
+pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<HMIRValue> {
+    let value = match (value.kind(), context.context()) {
+        (HMIRValueKind::Constant(_), _) => value.clone(),
         (HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)), FnContext::Runtime(runtime)) => {
-            runtime.slot(*slot).known().cloned()
+            runtime.slot(*slot).known().cloned()?
         }
-        (HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)), FnContext::Comptime(comptime)) => {
-            let slot = comptime.slot(*slot);
-            match slot.state() {
-                ComptimeSlotState::Value(constant) if !constant.holds_local_address() => {
-                    Some(HMIRValue::constant(slot.ty(), constant.clone()))
-                }
-                _ => None,
+        (
+            HMIRValueKind::PlaceRef(place @ HMIRPlace::Region(region)),
+            FnContext::Comptime(comptime),
+        ) => {
+            let slot = comptime.slot(*region)?;
+            if slot.state() != ComptimeSlotState::Live {
+                return None;
             }
+            let ty = slot.ty();
+            let address = HMIRAddress::place(*place);
+            let constant = context.load(&address, ty, &TokenRange::Internal).ok()?;
+            HMIRValue::constant(ty, constant)
         }
+        _ => return None,
+    };
+    match value.kind() {
+        HMIRValueKind::Constant(constant) if !constant.holds_local_address() => Some(value),
         _ => None,
     }
 }

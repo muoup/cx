@@ -103,15 +103,12 @@ fn increment(
 
     let updated = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Int(_) => {
-            let one = HMIRValue::constant(ty, HMIRConstant::Int { value: 1, ty });
+            let one = HMIRValue::constant(ty, HMIRConstant::Int(1));
             emit::binary(context, op, &current, &one, ty, span)?
         }
 
         HMIRTypeKind::Float(_) => {
-            let one = HMIRConstant::Float {
-                value: FloatWrapper::from(1.0),
-                ty,
-            };
+            let one = HMIRConstant::Float(FloatWrapper::from(1.0));
             let one = HMIRValue::constant(ty, one);
             emit::binary(context, op, &current, &one, ty, span)?
         }
@@ -119,10 +116,7 @@ fn increment(
         HMIRTypeKind::PointerTo(element) => {
             let element = *element;
             let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
-            let one = HMIRConstant::Int {
-                value: 1,
-                ty: offset_ty,
-            };
+            let one = HMIRConstant::Int(1);
             let one = HMIRValue::constant(offset_ty, one);
             emit::offset(
                 context,

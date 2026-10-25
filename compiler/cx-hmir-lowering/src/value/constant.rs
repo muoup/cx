@@ -1,44 +1,39 @@
-use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
-use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
+use cx_hmir::{
+    HMIRDefID,
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+};
+use cx_util::unsafe_float::FloatWrapper;
 
-use crate::value::{HMIRPlace, staged::QuoteRef};
+use crate::value::{
+    HMIRPlace, HMIRValue, HMIRValueKind,
+    address::{Addressable, HMIRAddress},
+    staged::QuoteRef,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HMIRConstant {
     Unit,
-    Int {
-        value: i128,
-        ty: HMIRTypeID,
-    },
-    Float {
-        value: FloatWrapper,
-        ty: HMIRTypeID,
-    },
+    Int(i128),
+    Float(FloatWrapper),
     Str(String),
-    Null(HMIRTypeID),
+    Null,
     Type(HMIRTypeID),
     // A function with its leading comptime arguments applied
     Function {
         function: HMIRFunctionRef,
-        args: Vec<HMIRConstant>,
+        args: Vec<HMIRValue>,
     },
     Quote(QuoteRef),
-    Aggregate {
-        ty: HMIRTypeID,
-        fields: Vec<(usize, Box<HMIRConstant>)>,
+    Aggregate(Vec<HMIRConstant>),
+    Union {
+        member: usize,
+        value: Box<HMIRConstant>,
     },
-    // The address of a place, or of the subobject that the field and element indices of 'path' lead to
-    Address {
-        place: HMIRPlace,
-        path: Vec<usize>,
-        ty: HMIRTypeID,
+    TaggedUnion {
+        variant: usize,
+        payload: Box<HMIRConstant>,
     },
-    // The address of a label of a runtime function
-    LabelAddress {
-        function: HMIRDefID,
-        label: CXIdent,
-        ty: HMIRTypeID,
-    },
+    Address(HMIRAddress),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -49,25 +44,56 @@ pub enum HMIRFunctionRef {
 }
 
 impl HMIRConstant {
-    // The tag of a tagged union, where a zeroed one holds its first variant
-    pub fn tag(&self, ty: HMIRTypeID) -> Option<HMIRConstant> {
-        let Self::Aggregate { fields, .. } = self else {
-            return None;
-        };
-        let value = fields.last().map_or(0, |(index, _)| *index) as i128;
-        Some(Self::Int { value, ty })
+    pub fn zero(env: &impl HMIRTypeContext, ty: HMIRTypeID) -> Option<Self> {
+        Some(match env.resolve_kind(ty) {
+            HMIRTypeKind::Int(_) => Self::Int(0),
+            HMIRTypeKind::Float(_) => Self::Float(0.0.into()),
+            HMIRTypeKind::PointerTo(_) => Self::Null,
+            HMIRTypeKind::Void => Self::Unit,
+            HMIRTypeKind::Array {
+                element,
+                length: Some(length),
+            } => Self::Aggregate(vec![Self::zero(env, *element)?; *length as usize]),
+            HMIRTypeKind::Struct { fields } => Self::Aggregate(
+                fields
+                    .iter()
+                    .map(|field| Self::zero(env, *field.ty()))
+                    .collect::<Option<_>>()?,
+            ),
+            HMIRTypeKind::Union { fields } => Self::Union {
+                member: 0,
+                value: Box::new(Self::zero(env, *fields.first()?.ty())?),
+            },
+            HMIRTypeKind::TaggedUnion { fields } => Self::TaggedUnion {
+                variant: 0,
+                payload: Box::new(Self::zero(env, *fields.first()?.ty())?),
+            },
+            _ => return None,
+        })
+    }
+
+    pub fn is_zero(&self) -> bool {
+        match self {
+            Self::Unit | Self::Int(0) | Self::Null => true,
+            Self::Float(value) => *value == 0.0.into(),
+            Self::Aggregate(items) => items.iter().all(Self::is_zero),
+            Self::Union { value, .. } => value.is_zero(),
+            _ => false,
+        }
     }
 
     pub fn holds_local_address(&self) -> bool {
         match self {
-            Self::Address {
-                place: HMIRPlace::Local(_),
-                ..
-            } => true,
-            Self::Aggregate { fields, .. } => {
-                fields.iter().any(|(_, field)| field.holds_local_address())
-            }
-            Self::Function { args, .. } => args.iter().any(Self::holds_local_address),
+            Self::Address(address) => matches!(
+                address.base(),
+                Addressable::Place(HMIRPlace::Local(_) | HMIRPlace::Region(_))
+            ),
+            Self::Aggregate(items) => items.iter().any(Self::holds_local_address),
+            Self::Union { value, .. } => value.holds_local_address(),
+            Self::TaggedUnion { payload, .. } => payload.holds_local_address(),
+            Self::Function { args, .. } => args.iter().any(|arg| {
+                matches!(arg.kind(), HMIRValueKind::Constant(constant) if constant.holds_local_address())
+            }),
             _ => false,
         }
     }

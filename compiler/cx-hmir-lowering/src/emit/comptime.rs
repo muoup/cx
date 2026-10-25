@@ -1,31 +1,38 @@
 mod op;
 
-pub use op::{binary, cast, unary};
+pub use op::{binary, cast, difference, offset, unary};
 
-use cx_hmir::{
-    HMIRDefID,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
-};
+use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    env::function::{LocalLoweringContext, comptime::ComptimeSlotState},
+    env::function::{
+        LocalLoweringContext,
+        comptime::ComptimeSlotState,
+        memory::{field_offset, layout},
+    },
+    eval::types,
     log::hmir_error,
-    symbol,
-    value::{HMIRPlace, HMIRSlotID, HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{
+        HMIRPlace, HMIRRegionID, HMIRValue, HMIRValueKind,
+        address::{Addressable, HMIRAddress},
+        constant::HMIRConstant,
+    },
 };
 
 pub fn allocate(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     name: Option<CXIdent>,
-) -> HMIRValue {
-    let slot = context.comptime_mut().allocate_slot(ty, name);
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let region = context.allocate(ty, span)?;
+    context.comptime_mut().declare_slot(region, ty, name);
 
-    HMIRValue::place(ty, HMIRPlace::Local(slot))
+    Ok(HMIRValue::place(ty, HMIRPlace::Region(region)))
 }
 
 pub fn aggregate(
@@ -34,83 +41,91 @@ pub fn aggregate(
     fields: &[(usize, HMIRValue)],
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let fields = fields.iter().map(|(index, value)| {
-        Ok((*index, Box::new(read(context, value, span)?)))
-    }).collect::<CXResult<_>>()?;
-
-    Ok(HMIRValue::constant(ty, HMIRConstant::Aggregate { ty, fields }))
-}
-
-// The slot whose state a value's liveness is recorded on; storage behind an address is untracked
-fn tracked_slot(context: &LocalLoweringContext, value: &HMIRValue) -> Option<HMIRSlotID> {
-    match value.kind() {
-        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => Some(*slot),
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) => None,
-        HMIRValueKind::Constant(HMIRConstant::Address {
-            place: HMIRPlace::Local(slot),
-            path,
-            ..
-        }) if path.is_empty() && context.env().is_reference(value.ty()) => Some(*slot),
-        HMIRValueKind::Constant(_) | HMIRValueKind::Indirect(_) => None,
+    let Some(mut constant) = HMIRConstant::zero(context.env(), ty) else {
+        unreachable!("an initialized aggregate has a zero value")
+    };
+    for (index, value) in fields {
+        let value = rvalue(context, value, span)?;
+        match &mut constant {
+            HMIRConstant::Aggregate(items) => items[*index] = value,
+            HMIRConstant::Union {
+                member,
+                value: slot,
+            }
+            | HMIRConstant::TaggedUnion {
+                variant: member,
+                payload: slot,
+            } => (*member, **slot) = (*index, value),
+            _ => unreachable!("an initialized aggregate has an aggregate zero value"),
+        }
     }
+
+    Ok(HMIRValue::constant(ty, constant))
 }
 
-fn read(
+fn storage(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
-) -> CXResult<HMIRConstant> {
-    let global = match value.kind() {
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => Some((*def, &[][..])),
-        HMIRValueKind::Constant(HMIRConstant::Address {
-            place: HMIRPlace::Global(def),
-            path,
-            ..
-        }) if context.env().is_reference(value.ty()) => Some((*def, path.as_slice())),
-        _ => None,
-    };
-
-    if let Some((def, path)) = global {
-        return read_global(context, def, path, span);
-    }
-
-    if let HMIRValueKind::Constant(HMIRConstant::Address {
-        place: HMIRPlace::Local(slot),
-        path,
-        ..
-    }) = value.kind()
-        && context.env().is_reference(value.ty())
-        && !path.is_empty()
-    {
-        let root = HMIRValue::place(context.comptime().slot(*slot).ty(), HMIRPlace::Local(*slot));
-        let constant = read(context, &root, span)?;
-        return project(context, constant, path, span);
-    }
-
-    let slot = match (value.kind(), tracked_slot(context, value)) {
-        (_, Some(slot)) => slot,
-        (HMIRValueKind::Constant(constant), None)
-            if !matches!(constant, HMIRConstant::Address { .. })
-                || !context.env().is_reference(value.ty()) =>
-        {
-            return Ok(constant.clone());
+) -> CXResult<Option<(HMIRAddress, HMIRTypeID)>> {
+    let inner = context.env().reference_inner(value.ty());
+    Ok(match value.kind() {
+        HMIRValueKind::PlaceRef(place @ HMIRPlace::Region(region)) => {
+            let slot = context.comptime().slot(*region).map(|slot| slot.ty());
+            Some((HMIRAddress::place(*place), slot.unwrap_or(value.ty())))
         }
-        _ => {
-            return Err(hmir_error(
-                span,
-                &mir::COMPTIME_INVALID_OPERATION,
-                "reading through this address".into(),
-            ));
+        HMIRValueKind::PlaceRef(place) => {
+            Some((HMIRAddress::place(*place), inner.unwrap_or(value.ty())))
         }
-    };
+        HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
+            inner.map(|inner| (address.clone(), inner))
+        }
+        HMIRValueKind::Indirect(pointer) => match rvalue(context, pointer, span)? {
+            HMIRConstant::Address(address) => Some((address, value.ty())),
+            _ => None,
+        },
+        HMIRValueKind::Constant(_) => None,
+    })
+}
 
-    let slot = context.comptime().slot(slot);
+fn tracked(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<Option<HMIRRegionID>> {
+    let Some((address, ty)) = storage(context, value, span)? else {
+        return Ok(None);
+    };
+    let Some(HMIRPlace::Region(region)) = address.whole_place() else {
+        return Ok(None);
+    };
+    let Some(slot) = context.comptime().slot(region).map(|slot| slot.ty()) else {
+        return Ok(None);
+    };
+    let whole = layout(context.env_mut(), ty, span)? == layout(context.env_mut(), slot, span)?;
+
+    Ok(whole.then_some(region))
+}
+
+fn live(
+    context: &LocalLoweringContext,
+    address: &HMIRAddress,
+    writing: bool,
+    span: &TokenRange,
+) -> CXResult<()> {
+    let Addressable::Place(HMIRPlace::Region(region)) = address.base() else {
+        return Ok(());
+    };
+    let Some(slot) = context.comptime().slot(*region) else {
+        return Ok(());
+    };
     let subject = match slot.name() {
         Some(name) => format!("'{name}'"),
         None => "this temporary".into(),
     };
     match slot.state() {
-        ComptimeSlotState::Value(constant) => Ok(constant.clone()),
+        ComptimeSlotState::Live => Ok(()),
+        ComptimeSlotState::Uninitialized if writing => Ok(()),
         ComptimeSlotState::Uninitialized => Err(hmir_error(span, &mir::COMPTIME_UNSET, subject)),
         ComptimeSlotState::Invalidated => Err(hmir_error(
             span,
@@ -120,48 +135,34 @@ fn read(
     }
 }
 
-fn read_global(
+fn read(
     context: &mut LocalLoweringContext,
-    def: HMIRDefID,
-    path: &[usize],
+    value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRConstant> {
-    let result = symbol::initialize(context, def)?;
-    let HMIRValueKind::Constant(constant) = result.kind().clone() else {
-        unreachable!("a global initializer is frozen");
+    let Some((address, ty)) = storage(context, value, span)? else {
+        let HMIRValueKind::Constant(constant) = value.kind() else {
+            unreachable!("a value without storage is a constant")
+        };
+        return Ok(constant.clone());
     };
-    project(context, constant, path, span)
+    live(context, &address, false, span)?;
+    context.load(&address, ty, span)
 }
 
-fn project(
+fn rvalue(
     context: &mut LocalLoweringContext,
-    mut constant: HMIRConstant,
-    path: &[usize],
+    value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRConstant> {
-    for index in path {
-        let HMIRConstant::Aggregate { ty, fields } = constant else {
-            return Err(hmir_error(
-                span,
-                &mir::COMPTIME_INVALID_OPERATION,
-                "reading an aggregate subobject".into(),
-            ));
-        };
-        constant = match fields.into_iter().find(|(field, _)| field == index) {
-            Some((_, value)) => *value,
-            None => {
-                let field = match context.env().resolve_kind(ty) {
-                    HMIRTypeKind::Array { element, .. } => *element,
-                    HMIRTypeKind::Struct { fields }
-                    | HMIRTypeKind::Union { fields }
-                    | HMIRTypeKind::TaggedUnion { fields } => *fields[*index].ty(),
-                    _ => unreachable!("a global subobject path indexes an aggregate"),
-                };
-                symbol::zero(context, field, span)?
-            }
-        };
+    match storage(context, value, span)? {
+        Some((address, stored))
+            if context.env().is_reference(value.ty()) && !context.env().is_reference(stored) =>
+        {
+            Ok(HMIRConstant::Address(address))
+        }
+        _ => read(context, value, span),
     }
-    Ok(constant)
 }
 
 pub fn copy(
@@ -182,76 +183,65 @@ pub fn write(
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<()> {
-    let payload = read(context, value, span)?;
-    if let HMIRValueKind::Constant(HMIRConstant::Address {
-        place: HMIRPlace::Local(slot),
-        path,
-        ..
-    }) = target.kind()
-        && !path.is_empty()
-    {
-        let root = HMIRValue::place(context.comptime().slot(*slot).ty(), HMIRPlace::Local(*slot));
-        let mut constant = read(context, &root, span)?;
-        replace(context, &mut constant, path, payload, span)?;
-        *context.comptime_mut().slot_mut(*slot).state_mut() = ComptimeSlotState::Value(constant);
-        return Ok(());
-    }
-    let Some(slot) = tracked_slot(context, target) else {
+    let Some((address, ty)) = storage(context, target, span)? else {
         return Err(hmir_error(
             span,
             &mir::COMPTIME_INVALID_OPERATION,
             "writing through this address".into(),
         ));
     };
-    *context.comptime_mut().slot_mut(slot).state_mut() = ComptimeSlotState::Value(payload);
+    if tracked(context, target, span)?.is_none() {
+        live(context, &address, true, span)?;
+    }
+    match storage(context, value, span)? {
+        Some((source, stored))
+            if !context.env().is_reference(ty) || context.env().is_reference(stored) =>
+        {
+            live(context, &source, false, span)?;
+            context.copy(&address, &source, ty, span)?;
+        }
+        _ => {
+            let constant = rvalue(context, value, span)?;
+            context.store(&address, ty, &constant, span)?;
+        }
+    }
+    if let Addressable::Place(HMIRPlace::Region(region)) = address.base()
+        && let Some(slot) = context.comptime_mut().slot_mut(*region)
+    {
+        slot.set_state(ComptimeSlotState::Live);
+    }
 
     Ok(())
 }
 
-fn replace(
+fn mark(
     context: &mut LocalLoweringContext,
-    constant: &mut HMIRConstant,
-    path: &[usize],
-    value: HMIRConstant,
+    value: &HMIRValue,
+    state: ComptimeSlotState,
     span: &TokenRange,
-) -> CXResult<()> {
-    let Some((index, rest)) = path.split_first() else {
-        *constant = value;
-        return Ok(());
-    };
-    let missing = project(context, constant.clone(), &[*index], span)?;
-    let HMIRConstant::Aggregate { fields, .. } = constant else {
-        unreachable!("a projected value is an aggregate")
-    };
-    let position = match fields.iter().position(|(field, _)| field == index) {
-        Some(position) => position,
-        None => {
-            fields.push((*index, Box::new(missing)));
-            fields.len() - 1
-        }
-    };
-    replace(context, &mut fields[position].1, rest, value, span)
-}
-
-pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue) {
-    if let Some(slot) = tracked_slot(context, value) {
-        debug_assert!(
-            matches!(
-                context.comptime().slot(slot).state(),
-                ComptimeSlotState::Value(_)
-            ),
-            "comptime slot initialized before it was written"
-        );
+) {
+    if let Ok(Some(region)) = tracked(context, value, span)
+        && let Some(slot) = context.comptime_mut().slot_mut(region)
+    {
+        slot.set_state(state);
     }
 }
 
-pub fn invalidate(context: &mut LocalLoweringContext, value: &HMIRValue, kind: MIRInvalidationKind) {
-    if let Some(slot) = tracked_slot(context, value) {
-        *context.comptime_mut().slot_mut(slot).state_mut() = match kind {
-            MIRInvalidationKind::Drop => ComptimeSlotState::Uninitialized,
-            MIRInvalidationKind::Move | MIRInvalidationKind::Leak => ComptimeSlotState::Invalidated,
-        };
-    }
+pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) {
+    mark(context, value, ComptimeSlotState::Live, span);
+}
+
+pub fn invalidate(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    kind: MIRInvalidationKind,
+    span: &TokenRange,
+) {
+    let state = match kind {
+        MIRInvalidationKind::Drop => ComptimeSlotState::Uninitialized,
+        MIRInvalidationKind::Move | MIRInvalidationKind::Leak => ComptimeSlotState::Invalidated,
+    };
+    mark(context, value, state, span);
 }
 
 pub fn tag(
@@ -260,34 +250,24 @@ pub fn tag(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let Some(tag) = read(context, value, span)?.tag(ty) else {
-        unreachable!("a tagged union constant is an aggregate")
+    let HMIRConstant::TaggedUnion { variant, .. } = read(context, value, span)? else {
+        unreachable!("a tagged union constant names its variant")
     };
 
-    Ok(HMIRValue::constant(ty, tag))
+    Ok(HMIRValue::constant(ty, HMIRConstant::Int(variant as i128)))
 }
 
-pub fn address(value: &HMIRValue, ty: HMIRTypeID) -> HMIRValue {
-    let (place, path) = match value.kind() {
-        HMIRValueKind::PlaceRef(place) => (place, Vec::new()),
-        HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => (place, path.clone()),
-        HMIRValueKind::Indirect(pointer) => match pointer.kind() {
-            HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => {
-                (place, path.clone())
-            }
-            _ => todo!("comptime address through a pointer that holds no address"),
-        },
-        HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),
+pub fn address(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let Some((address, _)) = storage(context, value, span)? else {
+        unreachable!("only storage has an address")
     };
 
-    HMIRValue::constant(
-        ty,
-        HMIRConstant::Address {
-            place: *place,
-            path,
-            ty,
-        },
-    )
+    Ok(HMIRValue::constant(ty, HMIRConstant::Address(address)))
 }
 
 pub fn dereference(
@@ -296,16 +276,19 @@ pub fn dereference(
     inner: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointer = HMIRValue::constant(pointer.ty(), read(context, &pointer, span)?);
-    if !matches!(
-        pointer.kind(),
-        HMIRValueKind::Constant(HMIRConstant::Address { .. })
-    ) {
+    let HMIRConstant::Address(address) = rvalue(context, &pointer, span)? else {
         let operation = "dereference".into();
-        return Err(hmir_error(span, &mir::COMPTIME_UNDEFINED_ARITHMETIC, operation));
-    }
+        return Err(hmir_error(
+            span,
+            &mir::COMPTIME_UNDEFINED_ARITHMETIC,
+            operation,
+        ));
+    };
 
-    Ok(HMIRValue::indirect(inner, pointer))
+    Ok(HMIRValue::indirect(
+        inner,
+        HMIRValue::constant(pointer.ty(), HMIRConstant::Address(address)),
+    ))
 }
 
 pub fn field(
@@ -315,28 +298,46 @@ pub fn field(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if matches!(
-        base.kind(),
-        HMIRValueKind::Constant(HMIRConstant::Aggregate { .. })
-    ) {
-        let constant = read(context, base, span)?;
-        return Ok(HMIRValue::constant(
-            ty,
-            project(context, constant, &[index], span)?,
-        ));
-    }
-
-    let address = address(base, ty);
-    let HMIRValueKind::Constant(HMIRConstant::Address {
-        place, mut path, ..
-    }) = address.kind().clone()
-    else {
-        unreachable!("a comptime field projection has an address")
+    let (address, owner) = match (storage(context, base, span)?, base.kind()) {
+        (Some(storage), _) => storage,
+        (None, HMIRValueKind::Constant(HMIRConstant::Aggregate(items))) => {
+            return Ok(HMIRValue::constant(ty, items[index].clone()));
+        }
+        (
+            None,
+            HMIRValueKind::Constant(
+                HMIRConstant::Union { member, value }
+                | HMIRConstant::TaggedUnion {
+                    variant: member,
+                    payload: value,
+                },
+            ),
+        ) if *member == index => {
+            return Ok(HMIRValue::constant(ty, value.as_ref().clone()));
+        }
+        (None, _) => {
+            let temporary = allocate(context, base.ty(), None, span)?;
+            write(context, &temporary, base, span)?;
+            (
+                HMIRAddress::place(match temporary.kind() {
+                    HMIRValueKind::PlaceRef(place) => *place,
+                    _ => unreachable!("comptime storage is a place"),
+                }),
+                base.ty(),
+            )
+        }
     };
-    path.push(index);
+    let offset = field_offset(context.env_mut(), owner, index, span)?;
+    let Some(address) = i64::try_from(offset)
+        .ok()
+        .and_then(|offset| address.checked_add(offset))
+    else {
+        return Err(hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ()));
+    };
+    let reference = types::reference(context.env_mut(), ty, span);
 
-    Ok(HMIRValue::constant(
+    Ok(HMIRValue::indirect(
         ty,
-        HMIRConstant::Address { place, path, ty },
+        HMIRValue::constant(reference, HMIRConstant::Address(address)),
     ))
 }

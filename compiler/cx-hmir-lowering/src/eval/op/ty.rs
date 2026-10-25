@@ -63,10 +63,7 @@ pub(crate) fn eval_type_op(
         let ty = types::int(context.env_mut(), width, false, &span);
         Ok(Evaluation::Ready(HMIRValue::constant(
             ty,
-            HMIRConstant::Int {
-                value: value as i128,
-                ty,
-            },
+            HMIRConstant::Int(value as i128),
         )))
     })
 }
@@ -295,7 +292,7 @@ fn array_length(
 ) -> CXResult<u64> {
     let span = body.expr(length).span();
     let value = eval_comptime(context, body, length, None)?;
-    let (HMIRTypeKind::Int(ty), HMIRValueKind::Constant(HMIRConstant::Int { value, .. })) =
+    let (HMIRTypeKind::Int(ty), HMIRValueKind::Constant(HMIRConstant::Int(value))) =
         (context.env().resolve_kind(value.ty()), value.kind())
     else {
         let subject = ("array length".into(), "integer".into());

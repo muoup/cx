@@ -78,7 +78,7 @@ pub fn address(
 
     match context.context() {
         FnContext::Runtime(_) => runtime::address(context, value, ty, span),
-        FnContext::Comptime(_) => Ok(comptime::address(value, ty)),
+        FnContext::Comptime(_) => comptime::address(context, value, ty, span),
     }
 }
 
@@ -90,7 +90,7 @@ pub fn dereference(
 ) -> CXResult<HMIRValue> {
     if matches!(
         pointer.kind(),
-        HMIRValueKind::Constant(HMIRConstant::Address { .. })
+        HMIRValueKind::Constant(HMIRConstant::Address(_))
     ) {
         return Ok(HMIRValue::indirect(inner, pointer));
     }
@@ -199,7 +199,9 @@ pub fn offset(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::offset(context, pointer, index, element, subtract, span),
-        FnContext::Comptime(_) => unsupported(span, "pointer arithmetic"),
+        FnContext::Comptime(_) => {
+            comptime::offset(context, pointer, index, element, subtract, span)
+        }
     }
 }
 
@@ -213,6 +215,6 @@ pub fn difference(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::difference(context, lhs, rhs, element, result, span),
-        FnContext::Comptime(_) => unsupported(span, "pointer arithmetic"),
+        FnContext::Comptime(_) => comptime::difference(context, lhs, rhs, element, result, span),
     }
 }

@@ -221,15 +221,15 @@ pub fn offset(
     let size = element_size(context, element, span)?;
 
     let (ptr, offset) = match index.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) => {
+        HMIRValueKind::Constant(HMIRConstant::Int(value)) => {
             let value = value * size;
-            let offset = HMIRValue::constant(ty, HMIRConstant::Int { value, ty });
+            let offset = HMIRValue::constant(ty, HMIRConstant::Int(value));
 
             let ptr = lower_value(context, pointer, span)?;
             (ptr, lower_value(context, &offset, span)?)
         }
         _ => {
-            let size = HMIRValue::constant(ty, HMIRConstant::Int { value: size, ty });
+            let size = HMIRValue::constant(ty, HMIRConstant::Int(size));
             let lhs = lower_value(context, index, span)?;
             let rhs = lower_value(context, &size, span)?;
             let ptr = lower_value(context, pointer, span)?;

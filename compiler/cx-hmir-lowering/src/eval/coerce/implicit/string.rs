@@ -30,19 +30,10 @@ pub fn array(
         let limit = ("string".into(), usize::try_from(length).ok());
         return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit));
     }
-    let fields = string
-        .bytes()
-        .enumerate()
-        .map(|(index, byte)| {
-            (
-                index,
-                Box::new(HMIRConstant::Int {
-                    value: byte as i128,
-                    ty: element,
-                }),
-            )
-        })
-        .collect();
+    let mut items = vec![HMIRConstant::Int(0); length as usize];
+    for (item, byte) in items.iter_mut().zip(string.bytes()) {
+        *item = HMIRConstant::Int(byte as i128);
+    }
     let ty = match types::unsized_array(context.env(), target) {
         true => types::array(context.env_mut(), target, length, span),
         false => target,
@@ -50,6 +41,6 @@ pub fn array(
 
     Ok(Coercion::Applied(HMIRValue::constant(
         ty,
-        HMIRConstant::Aggregate { ty, fields },
+        HMIRConstant::Aggregate(items),
     )))
 }

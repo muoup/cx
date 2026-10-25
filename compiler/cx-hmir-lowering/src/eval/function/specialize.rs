@@ -35,10 +35,10 @@ pub fn apply(
     let mut params = Vec::new();
     for (param, value) in signature.params().iter().zip(&values) {
         if param.comptime() {
-            let HMIRValueKind::Constant(constant) = value.kind() else {
+            let HMIRValueKind::Constant(_) = value.kind() else {
                 unreachable!("comptime arguments were exported before specialization")
             };
-            args.push(constant.clone());
+            args.push(value.clone());
             bindings.push(Some(value.clone()));
         } else {
             bindings.push(None);

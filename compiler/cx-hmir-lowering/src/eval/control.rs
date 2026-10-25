@@ -23,7 +23,7 @@ use crate::{
 
 fn comptime_truth(condition: &HMIRValue) -> bool {
     match condition.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) => *value != 0,
+        HMIRValueKind::Constant(HMIRConstant::Int(value)) => *value != 0,
         _ => unreachable!("a comptime condition reads as an integer constant"),
     }
 }
@@ -594,7 +594,7 @@ pub(crate) fn fallthrough(
     match context.env().resolve_kind(ty) {
         HMIRTypeKind::Void => return_value(context, body, None, false, span),
         HMIRTypeKind::Int(_) if is_main => {
-            let zero = HMIRValue::constant(ty, HMIRConstant::Int { value: 0, ty });
+            let zero = HMIRValue::constant(ty, HMIRConstant::Int(0));
             return_value(context, body, Some(Evaluation::Ready(zero)), false, span)
         }
         _ => {

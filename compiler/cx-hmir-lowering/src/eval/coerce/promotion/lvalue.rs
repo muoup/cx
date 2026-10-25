@@ -12,7 +12,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRPlace, HMIRValue, HMIRValueKind, address::Addressable, constant::HMIRConstant},
 };
 
 pub fn apply(
@@ -43,14 +43,13 @@ pub fn apply(
     }
 
     let semantics = context.env().semantics(inner);
-    let global = matches!(
-        value.kind(),
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(_))
-            | HMIRValueKind::Constant(HMIRConstant::Address {
-                place: HMIRPlace::Global(_),
-                ..
-            })
-    );
+    let global = match value.kind() {
+        HMIRValueKind::PlaceRef(place) => matches!(place, HMIRPlace::Global(_)),
+        HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
+            matches!(address.base(), Addressable::Place(HMIRPlace::Global(_)))
+        }
+        _ => false,
+    };
     if semantics.volatile {
         require_pure(context, span, "reading a volatile value")?;
     } else if global

@@ -46,6 +46,7 @@ define_errors! {
     COMPTIME_UNDEFINED_ARITHMETIC: String = "M0037" => |operation| format!("'{operation}' has no defined result for these operands at compile time");
     COMPTIME_NO_TRUTH_VALUE: String = "M0038" => |value| format!("{value} has no truth value at compile time");
     COMPTIME_CONTROL_ESCAPE: () = "M0039" => |()| "control flow cannot leave a compile-time expression".into();
+    COMPTIME_INVALID_ACCESS: String = "M0040" => |reason| format!("invalid compile-time memory access: {reason}");
 
     MISSING_MAPPING: (String, String) = "MX001" => |(entity, mapping)| format!("no {mapping} mapping for {entity}");
     RECURSIVE_TYPE: String = "MX002" => |id| format!("cannot compute layout of recursive MIR type {id}");

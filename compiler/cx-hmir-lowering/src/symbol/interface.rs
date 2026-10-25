@@ -28,6 +28,7 @@ use crate::{
     },
     value::{
         HMIRPlace, HMIRValue, HMIRValueKind,
+        address::HMIRAddress,
         constant::{HMIRConstant, HMIRFunctionRef},
     },
 };
@@ -176,11 +177,7 @@ pub(crate) fn definition(
             let reference = types::reference(context.env_mut(), ty, span);
             Ok(HMIRValue::constant(
                 reference,
-                HMIRConstant::Address {
-                    place: HMIRPlace::Global(id),
-                    path: Vec::new(),
-                    ty: reference,
-                },
+                HMIRConstant::Address(HMIRAddress::place(HMIRPlace::Global(id))),
             ))
         }
         HMIRDefKind::ComptimeGlobal(global) => {
@@ -314,27 +311,11 @@ pub(crate) fn zero(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRConstant> {
-    Ok(match context.env().resolve_kind(ty).clone() {
-        HMIRTypeKind::Int(_) => HMIRConstant::Int { value: 0, ty },
-        HMIRTypeKind::Float(_) => HMIRConstant::Float {
-            value: 0.0.into(),
-            ty,
-        },
-        HMIRTypeKind::PointerTo(_) => HMIRConstant::Null(ty),
-        HMIRTypeKind::Array { .. }
-        | HMIRTypeKind::Struct { .. }
-        | HMIRTypeKind::Union { .. }
-        | HMIRTypeKind::TaggedUnion { .. } => HMIRConstant::Aggregate {
-            ty,
-            fields: Vec::new(),
-        },
-        HMIRTypeKind::Void => HMIRConstant::Unit,
-        _ => {
-            return Err(hmir_error(
-                span,
-                &typecheck::INCOMPLETE_TYPE,
-                format!("global of type '{}'", types::name(context.env(), ty)),
-            ));
-        }
+    HMIRConstant::zero(context.env(), ty).ok_or_else(|| {
+        hmir_error(
+            span,
+            &typecheck::INCOMPLETE_TYPE,
+            format!("global of type '{}'", types::name(context.env(), ty)),
+        )
     })
 }

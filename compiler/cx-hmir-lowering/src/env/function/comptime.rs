@@ -1,16 +1,14 @@
+use std::collections::HashMap;
+
 use cx_hmir::{expr::HMIRExprID, ty::HMIRTypeID};
 use cx_util::identifier::CXIdent;
-use index_vec::IndexVec;
 
-use crate::{
-    env::function::scope::Scopes,
-    value::{HMIRSlotID, constant::HMIRConstant},
-};
+use crate::{env::function::scope::Scopes, value::HMIRRegionID};
 
 #[derive(Debug, Default)]
 pub struct ComptimeContext {
     scopes: Scopes<ComptimeScope>,
-    slots: IndexVec<HMIRSlotID, ComptimeSlot>,
+    slots: HashMap<HMIRRegionID, ComptimeSlot>,
 }
 
 #[derive(Debug)]
@@ -20,10 +18,10 @@ pub struct ComptimeSlot {
     state: ComptimeSlotState,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComptimeSlotState {
     Uninitialized,
-    Value(HMIRConstant),
+    Live,
     Invalidated,
 }
 
@@ -65,24 +63,17 @@ impl ComptimeContext {
         self.scopes.control_mut(index).switch = Some(Switch::Active);
     }
 
-    pub fn slots(&self) -> impl Iterator<Item = &ComptimeSlot> {
-        self.slots.iter()
+    pub fn slot(&self, region: HMIRRegionID) -> Option<&ComptimeSlot> {
+        self.slots.get(&region)
     }
 
-    pub fn slot(&self, slot: HMIRSlotID) -> &ComptimeSlot {
-        &self.slots[slot]
+    pub fn slot_mut(&mut self, region: HMIRRegionID) -> Option<&mut ComptimeSlot> {
+        self.slots.get_mut(&region)
     }
 
-    pub fn slot_mut(&mut self, slot: HMIRSlotID) -> &mut ComptimeSlot {
-        &mut self.slots[slot]
-    }
-
-    pub fn allocate_slot(&mut self, ty: HMIRTypeID, name: Option<CXIdent>) -> HMIRSlotID {
-        self.slots.push(ComptimeSlot {
-            ty,
-            name,
-            state: ComptimeSlotState::Uninitialized,
-        })
+    pub fn declare_slot(&mut self, region: HMIRRegionID, ty: HMIRTypeID, name: Option<CXIdent>) {
+        let state = ComptimeSlotState::Uninitialized;
+        self.slots.insert(region, ComptimeSlot { ty, name, state });
     }
 }
 
@@ -95,12 +86,12 @@ impl ComptimeSlot {
         self.name.as_ref()
     }
 
-    pub fn state(&self) -> &ComptimeSlotState {
-        &self.state
+    pub fn state(&self) -> ComptimeSlotState {
+        self.state
     }
 
-    pub fn state_mut(&mut self) -> &mut ComptimeSlotState {
-        &mut self.state
+    pub fn set_state(&mut self, state: ComptimeSlotState) {
+        self.state = state;
     }
 }
 

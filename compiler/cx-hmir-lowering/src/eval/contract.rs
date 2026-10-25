@@ -62,8 +62,7 @@ pub(crate) fn check(
     let (owner, point) = (context.source(), context.visible_through());
     let value = condition(context, contract, owner, point, expression, span);
     restore(context, bindings);
-    if !matches!(value?.kind(), HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) if *value != 0)
-    {
+    if !matches!(value?.kind(), HMIRValueKind::Constant(HMIRConstant::Int(value)) if *value != 0) {
         return Err(hmir_error(
             span,
             &mir::COMPTIME_ASSERTION,

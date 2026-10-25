@@ -150,10 +150,8 @@ fn collect_labels(
         let case_value = if let Some(value) = value {
             let span = body.expr(*value).span();
             let value = eval_comptime(context, body, *value, None)?;
-            let (
-                HMIRTypeKind::Int(source_type),
-                HMIRValueKind::Constant(HMIRConstant::Int { value, .. }),
-            ) = (context.env().resolve_kind(value.ty()), value.kind())
+            let (HMIRTypeKind::Int(source_type), HMIRValueKind::Constant(HMIRConstant::Int(value))) =
+                (context.env().resolve_kind(value.ty()), value.kind())
             else {
                 return Err(hmir_error(
                     span,
@@ -320,7 +318,7 @@ fn comptime_switch(
     condition: HMIRValue,
     integer: HMIRIntType,
 ) -> EvalResult<HMIRValue> {
-    let HMIRValueKind::Constant(HMIRConstant::Int { value, .. }) = condition.kind() else {
+    let HMIRValueKind::Constant(HMIRConstant::Int(value)) = condition.kind() else {
         unreachable!("a comptime integer condition is constant")
     };
     let value = int::normalize(*value, integer);

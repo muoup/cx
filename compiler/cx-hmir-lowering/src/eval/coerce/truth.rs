@@ -27,34 +27,28 @@ pub fn apply(
         HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I1 => {
             return Ok(Coercion::Applied(value));
         }
-        HMIRTypeKind::Int(_) => HMIRConstant::Int { value: 0, ty },
-        HMIRTypeKind::Float(_) => HMIRConstant::Float {
-            value: FloatWrapper::from(0.0),
-            ty,
-        },
-        HMIRTypeKind::PointerTo(_) => HMIRConstant::Null(ty),
+        HMIRTypeKind::Int(_) => HMIRConstant::Int(0),
+        HMIRTypeKind::Float(_) => HMIRConstant::Float(FloatWrapper::from(0.0)),
+        HMIRTypeKind::PointerTo(_) => HMIRConstant::Null,
         _ => return Ok(Coercion::Unapplied(value)),
     };
 
     let zero = HMIRValue::constant(ty, zero);
     let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let constant = match (value.kind(), context.env().resolve_kind(ty)) {
-        (HMIRValueKind::Constant(HMIRConstant::Int { value, .. }), HMIRTypeKind::Int(ty)) => {
+        (HMIRValueKind::Constant(HMIRConstant::Int(value)), HMIRTypeKind::Int(ty)) => {
             Some(int::normalize(*value, *ty) != 0)
         }
-        (HMIRValueKind::Constant(HMIRConstant::Float { value, .. }), HMIRTypeKind::Float(ty)) => {
+        (HMIRValueKind::Constant(HMIRConstant::Float(value)), HMIRTypeKind::Float(ty)) => {
             Some(float::round(f64::from(value), ty.width()) != 0.0)
         }
-        (HMIRValueKind::Constant(HMIRConstant::Null(_)), HMIRTypeKind::PointerTo(_)) => Some(false),
+        (HMIRValueKind::Constant(HMIRConstant::Null), HMIRTypeKind::PointerTo(_)) => Some(false),
         _ => None,
     };
     if let Some(value) = constant {
         return Ok(Coercion::Applied(HMIRValue::constant(
             bool_ty,
-            HMIRConstant::Int {
-                value: i128::from(value),
-                ty: bool_ty,
-            },
+            HMIRConstant::Int(i128::from(value)),
         )));
     }
     let truth = emit::binary(context, HMIRBinaryOp::Neq, &value, &zero, bool_ty, span)?;

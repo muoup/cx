@@ -3,10 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
 use cx_hmir::{HMIRDefID, HMIRFnSignature, ty::HMIRTypeID};
 use cx_mir::MIRFunctionID;
 
-use crate::value::{
-    HMIRValue,
-    constant::{HMIRConstant, HMIRFunctionRef},
-};
+use crate::value::{HMIRValue, constant::HMIRFunctionRef};
 
 ///
 /// Tracks the definitions that the unit has to generate. A definition is requested by whatever refers to it, at
@@ -16,7 +13,7 @@ use crate::value::{
 pub struct GenerationQueue {
     requested: HashSet<HMIRDefID>,
     pending: VecDeque<Generation>,
-    generated: HashMap<(HMIRFunctionRef, Vec<HMIRConstant>), MIRFunctionID>,
+    generated: HashMap<(HMIRFunctionRef, Vec<HMIRValue>), MIRFunctionID>,
 }
 
 impl GenerationQueue {
@@ -37,12 +34,12 @@ impl GenerationQueue {
     pub fn generated(
         &self,
         function: HMIRFunctionRef,
-        args: &[HMIRConstant],
+        args: &[HMIRValue],
     ) -> Option<MIRFunctionID> {
         self.generated.get(&(function, args.to_vec())).copied()
     }
 
-    pub fn specialize(&mut self, args: Vec<HMIRConstant>, specialization: Specialization) {
+    pub fn specialize(&mut self, args: Vec<HMIRValue>, specialization: Specialization) {
         let key = (HMIRFunctionRef::Def(specialization.def), args);
         if let Entry::Vacant(entry) = self.generated.entry(key) {
             entry.insert(specialization.function());

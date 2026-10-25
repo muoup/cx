@@ -12,7 +12,7 @@ use cx_hmir::ty::{
     HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
     intrinsic::HMIRIntWidth,
 };
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRConstant,
     MIRInstructionKind, MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceID, MIRPtrIntrinsic,
@@ -35,8 +35,10 @@ use crate::{
         constructor,
         types::{self, mir_float, mir_int},
     },
+    log::hmir_error,
     value::{
         Bindings, HMIRPlace, HMIRValue, HMIRValueKind,
+        address::{Addressable, HMIRAddress},
         constant::{HMIRConstant, HMIRFunctionRef},
     },
 };
@@ -159,50 +161,78 @@ fn output(
 pub fn constant(
     env: &mut HMIREnvironment,
     constant: &HMIRConstant,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRConstant> {
-    Ok(match constant {
-        HMIRConstant::Unit => MIRConstant::Unit,
-        HMIRConstant::Int { value, ty } => match env.resolve_kind(*ty) {
-            HMIRTypeKind::Int(int) => MIRConstant::Integer {
-                ty: mir_int(int.width()),
-                value: *value,
-            },
-            other => todo!("integer constant of type {other:?}"),
+    Ok(match (constant, env.resolve_kind(ty).clone()) {
+        (HMIRConstant::Unit, _) => MIRConstant::Unit,
+        (HMIRConstant::Int(value), HMIRTypeKind::Int(int)) => MIRConstant::Integer {
+            ty: mir_int(int.width()),
+            value: *value,
         },
-        HMIRConstant::Float { value, ty } => match env.resolve_kind(*ty) {
-            HMIRTypeKind::Float(float) => MIRConstant::Float {
-                value: *value,
-                ty: mir_float(float.width()),
-            },
-            other => todo!("float constant of type {other:?}"),
+        (HMIRConstant::Float(value), HMIRTypeKind::Float(float)) => MIRConstant::Float {
+            value: *value,
+            ty: mir_float(float.width()),
         },
-        HMIRConstant::Null(ty) => MIRConstant::Nullptr {
-            ty: types::lower_type(env, *ty, span)?,
+        (HMIRConstant::Null, _) => MIRConstant::Nullptr {
+            ty: types::lower_type(env, ty, span)?,
         },
-        HMIRConstant::Str(value) => MIRConstant::String(value.clone()),
-        HMIRConstant::Address { place: HMIRPlace::Global(def), path, ty } => {
+        (HMIRConstant::Str(value), _) => MIRConstant::String(value.clone()),
+        (HMIRConstant::Address(address), _) => {
+            let Addressable::Place(HMIRPlace::Global(def)) = address.base() else {
+                return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
+            };
             let inner = env
-                .reference_inner(*ty)
-                .or_else(|| env.pointer_inner(*ty))
+                .reference_inner(ty)
+                .or_else(|| env.pointer_inner(ty))
                 .expect("a global address has pointer or reference type");
-            MIRConstant::GlobalRef(global::address(env, *def, path, inner, span)?)
+            MIRConstant::GlobalRef(global::address(env, *def, address.offset(), inner, span)?)
         }
-        HMIRConstant::Aggregate { ty, fields } => MIRConstant::Aggregate {
-            ty: types::lower_type(env, *ty, span)?,
-            fields: fields
-                .iter()
-                .map(|(index, field)| Ok((*index, self::constant(env, field, span)?)))
-                .collect::<CXResult<_>>()?,
+        (HMIRConstant::Aggregate(items), kind) => {
+            let mut fields = Vec::new();
+            for (index, item) in items.iter().enumerate() {
+                let field = match &kind {
+                    HMIRTypeKind::Array { element, .. } => *element,
+                    HMIRTypeKind::Struct { fields } => *fields[index].ty(),
+                    _ => unreachable!("an aggregate constant is an array or structure"),
+                };
+                if !item.is_zero() {
+                    fields.push((index, self::constant(env, item, field, span)?));
+                }
+            }
+            MIRConstant::Aggregate {
+                ty: types::lower_type(env, ty, span)?,
+                fields,
+            }
+        }
+        (
+            HMIRConstant::Union { member, value }
+            | HMIRConstant::TaggedUnion {
+                variant: member,
+                payload: value,
+            },
+            HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields },
+        ) => MIRConstant::Aggregate {
+            ty: types::lower_type(env, ty, span)?,
+            fields: vec![(
+                *member,
+                self::constant(env, value, *fields[*member].ty(), span)?,
+            )],
         },
-        HMIRConstant::Function {
-            function: HMIRFunctionRef::Constructor { ty, variant },
-            ..
-        } => MIRConstant::Function(constructor::declare(env, *ty, *variant, span)?),
-        HMIRConstant::Function {
-            function: function @ HMIRFunctionRef::Def(def),
-            args,
-        } => {
+        (
+            HMIRConstant::Function {
+                function: HMIRFunctionRef::Constructor { ty, variant },
+                ..
+            },
+            _,
+        ) => MIRConstant::Function(constructor::declare(env, *ty, *variant, span)?),
+        (
+            HMIRConstant::Function {
+                function: function @ HMIRFunctionRef::Def(def),
+                args,
+            },
+            _,
+        ) => {
             if let Some(function) = env.generation().generated(*function, args) {
                 return Ok(MIRConstant::Function(function));
             }
@@ -214,7 +244,7 @@ pub fn constant(
             }
             MIRConstant::Function(env.module_mut().declare_function(prototype))
         }
-        other => todo!("constant {other:?}"),
+        (other, _) => todo!("constant {other:?}"),
     })
 }
 
@@ -225,13 +255,15 @@ pub fn lower_value(
     span: &TokenRange,
 ) -> CXResult<MIRValue> {
     Ok(match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => {
-            place_address(context, *place, path, value.ty(), span)?
+        HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
+            place_address(context, address, value.ty(), span)?
         }
         HMIRValueKind::Constant(function @ HMIRConstant::Function { .. })
             if context.env().pointer_inner(value.ty()).is_some() =>
         {
-            let MIRConstant::Function(fn_id) = constant(context.env_mut(), function, span)? else {
+            let MIRConstant::Function(fn_id) =
+                constant(context.env_mut(), function, value.ty(), span)?
+            else {
                 unreachable!("function constant lowered to a non-function")
             };
             let out = register(context, value.ty(), span)?;
@@ -245,9 +277,12 @@ pub fn lower_value(
             );
             MIRValue::Register(out)
         }
-        HMIRValueKind::Constant(value) => {
-            MIRValue::Constant(constant(context.env_mut(), value, span)?)
-        }
+        HMIRValueKind::Constant(constant) => MIRValue::Constant(self::constant(
+            context.env_mut(),
+            constant,
+            value.ty(),
+            span,
+        )?),
         HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
             match context.runtime().slot(*slot).binding() {
                 MIRBindable::Register(register) => MIRValue::Register(*register),
@@ -255,8 +290,11 @@ pub fn lower_value(
             }
         }
         HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => MIRValue::Constant(MIRConstant::GlobalRef(
-            global::address(context.env_mut(), *def, &[], value.ty(), span)?,
+            global::address(context.env_mut(), *def, 0, value.ty(), span)?,
         )),
+        HMIRValueKind::PlaceRef(HMIRPlace::Region(_)) => {
+            return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
+        }
         HMIRValueKind::Indirect(pointer) => MIRValue::Register(reference(context, pointer)),
     })
 }
@@ -277,25 +315,19 @@ fn reference(context: &mut LocalLoweringContext, pointer: &HMIRValue) -> MIRRegi
 
 fn place_address(
     context: &mut LocalLoweringContext,
-    place: HMIRPlace,
-    path: &[usize],
+    address: &HMIRAddress,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRValue> {
-    let slot = match place {
-        HMIRPlace::Local(slot) => {
-            if !path.is_empty() {
-                todo!("address of a compile-time local subobject at runtime");
-            }
-            slot
-        }
-        HMIRPlace::Global(def) => {
+    let slot = match (address.base(), address.offset()) {
+        (Addressable::Place(HMIRPlace::Local(slot)), 0) => *slot,
+        (Addressable::Place(HMIRPlace::Global(def)), offset) => {
             let inner = context
                 .env()
                 .reference_inner(ty)
                 .or_else(|| context.env().pointer_inner(ty))
                 .expect("an address is a pointer or reference");
-            let global = global::address(context.env_mut(), def, path, inner, span)?;
+            let global = global::address(context.env_mut(), *def, offset, inner, span)?;
             if context.env().is_reference(ty) {
                 return Ok(MIRValue::Constant(MIRConstant::GlobalRef(global)));
             }
@@ -303,6 +335,7 @@ fn place_address(
             intrinsic(context, MIRInternalIntrinsic::GlobalAddress { out: MIRTarget::Register(out), global }, span.clone());
             return Ok(MIRValue::Register(out));
         }
+        _ => return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ())),
     };
     let MIRBindable::Place(place) = *context.runtime().slot(slot).binding() else {
         unreachable!("only a place has an address");
@@ -334,7 +367,7 @@ pub fn call(
 ) -> CXResult<HMIRValue> {
     let callee = match callee.kind() {
         HMIRValueKind::Constant(function @ HMIRConstant::Function { .. }) => {
-            MIRValue::Constant(constant(context.env_mut(), function, span)?)
+            MIRValue::Constant(constant(context.env_mut(), function, callee.ty(), span)?)
         }
         _ => lower_value(context, callee, span)?,
     };
@@ -418,35 +451,24 @@ pub fn address(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let reference = match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Address { place, path, .. }) => {
+        HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
             return Ok(HMIRValue::constant(
                 ty,
-                HMIRConstant::Address {
-                    place: *place,
-                    path: path.clone(),
-                    ty,
-                },
+                HMIRConstant::Address(address.clone()),
             ));
         }
         HMIRValueKind::PlaceRef(place) => match place {
             HMIRPlace::Local(slot) => match context.runtime().slot(*slot).binding() {
                 MIRBindable::Place(_) => {
-                    return Ok(HMIRValue::constant(
-                        ty,
-                        HMIRConstant::Address {
-                            place: *place,
-                            path: Vec::new(),
-                            ty,
-                        },
-                    ));
+                    let address = HMIRAddress::place(*place);
+                    return Ok(HMIRValue::constant(ty, HMIRConstant::Address(address)));
                 }
                 MIRBindable::Register(_) if context.env().is_reference(value.ty()) => value,
                 MIRBindable::Register(_) => unreachable!("a register has no address"),
             },
-            HMIRPlace::Global(_) => {
-                return Ok(HMIRValue::constant(ty, HMIRConstant::Address {
-                    place: *place, path: Vec::new(), ty,
-                }));
+            HMIRPlace::Global(_) | HMIRPlace::Region(_) => {
+                let address = HMIRAddress::place(*place);
+                return Ok(HMIRValue::constant(ty, HMIRConstant::Address(address)));
             }
         },
         HMIRValueKind::Indirect(pointer) => pointer,
@@ -565,10 +587,8 @@ pub fn tag(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if let HMIRValueKind::Constant(constant) = value.kind()
-        && let Some(tag) = constant.tag(ty)
-    {
-        return Ok(HMIRValue::constant(ty, tag));
+    if let HMIRValueKind::Constant(HMIRConstant::TaggedUnion { variant, .. }) = value.kind() {
+        return Ok(HMIRValue::constant(ty, HMIRConstant::Int(*variant as i128)));
     }
 
     let stored = context

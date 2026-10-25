@@ -1,0 +1,15 @@
+union Punned {
+    int* pointer;
+    char bytes[8];
+};
+
+comptime int leak_byte() {
+    int value = 1;
+    union Punned punned;
+    punned.pointer = &value;
+    return punned.bytes[0];
+}
+
+comptime int result = leak_byte();
+
+int main() { return result; }

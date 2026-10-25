@@ -79,11 +79,12 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
                 LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
                     .sourced(def.brand());
             let value = symbol::initialize(&mut context, def)?;
-            let HMIRValueKind::Constant(value) = value.kind() else {
+            let HMIRValueKind::Constant(constant) = value.kind() else {
                 unreachable!("an exported comptime value is a constant")
             };
             let span = source.body().expr(initializer).span();
-            MIRGlobalState::Initialized(runtime::constant(context.env_mut(), value, span)?)
+            let constant = runtime::constant(context.env_mut(), constant, value.ty(), span)?;
+            MIRGlobalState::Initialized(constant)
         }
         None => MIRGlobalState::ZeroInitialized,
     };

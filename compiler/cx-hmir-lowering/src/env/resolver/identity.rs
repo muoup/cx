@@ -39,98 +39,55 @@ impl HMIREnvironment<'_, '_> {
 
     pub fn canonical_value(&mut self, value: HMIRValue) -> HMIRValue {
         let ty = self.canonical_type(value.ty());
-        let kind = match value.kind() {
-            HMIRValueKind::Constant(constant) => {
-                self.canonical_constant(constant.clone(), Some(ty))
-            }
-            _ => return value,
+        let HMIRValueKind::Constant(constant) = value.kind() else {
+            return value;
         };
-        HMIRValue::constant(ty, kind)
+        HMIRValue::constant(ty, self.canonical_constant(constant.clone(), ty))
     }
 
-    fn canonical_constant(
-        &mut self,
-        value: HMIRConstant,
-        expected: Option<HMIRTypeID>,
-    ) -> HMIRConstant {
-        match value {
-            HMIRConstant::Type(ty) => HMIRConstant::Type(self.canonical_type(ty)),
-            HMIRConstant::Int { value, ty } => {
-                let ty = self.canonical_type(expected.unwrap_or(ty));
-                let value = match self.resolve_kind(ty) {
-                    HMIRTypeKind::Int(integer) => int::normalize(value, *integer),
-                    _ => value,
-                };
-                HMIRConstant::Int { value, ty }
+    fn canonical_constant(&mut self, value: HMIRConstant, ty: HMIRTypeID) -> HMIRConstant {
+        let kind = self.resolve_kind(ty).clone();
+        match (value, &kind) {
+            (HMIRConstant::Type(ty), _) => HMIRConstant::Type(self.canonical_type(ty)),
+            (HMIRConstant::Int(value), HMIRTypeKind::Int(integer)) => {
+                HMIRConstant::Int(int::normalize(value, *integer))
             }
-            HMIRConstant::Float { value, ty } => HMIRConstant::Float {
-                value,
-                ty: self.canonical_type(expected.unwrap_or(ty)),
-            },
-            HMIRConstant::Null(ty) => {
-                HMIRConstant::Null(self.canonical_type(expected.unwrap_or(ty)))
-            }
-            HMIRConstant::Aggregate { ty, fields } => {
-                let ty = self.canonical_type(expected.unwrap_or(ty));
-                let kind = self.resolve_kind(ty).clone();
-                let sparse = matches!(
-                    kind,
-                    HMIRTypeKind::Struct { .. } | HMIRTypeKind::Array { .. }
-                );
-                let mut fields = fields
+            (HMIRConstant::Aggregate(items), _) => HMIRConstant::Aggregate(
+                items
                     .into_iter()
-                    .map(|(index, value)| {
+                    .enumerate()
+                    .map(|(index, item)| {
                         let field = match &kind {
-                            HMIRTypeKind::Array { element, .. } => Some(*element),
-                            HMIRTypeKind::Struct { fields }
-                            | HMIRTypeKind::Union { fields }
-                            | HMIRTypeKind::TaggedUnion { fields } => {
-                                fields.get(index).map(|field| *field.ty())
-                            }
-                            _ => None,
+                            HMIRTypeKind::Array { element, .. } => *element,
+                            HMIRTypeKind::Struct { fields } => *fields[index].ty(),
+                            _ => unreachable!("an aggregate constant is an array or structure"),
                         };
-                        (index, Box::new(self.canonical_constant(*value, field)))
+                        self.canonical_constant(item, field)
                     })
-                    .collect::<Vec<_>>();
-                fields.sort_by_key(|(index, _)| *index);
-                fields.dedup_by_key(|(index, _)| *index);
-                if sparse {
-                    fields.retain(|(_, value)| !zero(value));
+                    .collect(),
+            ),
+            (HMIRConstant::Union { member, value }, HMIRTypeKind::Union { fields }) => {
+                HMIRConstant::Union {
+                    member,
+                    value: Box::new(self.canonical_constant(*value, *fields[member].ty())),
                 }
-                HMIRConstant::Aggregate { ty, fields }
             }
-            HMIRConstant::Address { place, path, ty } => HMIRConstant::Address {
-                place,
-                path,
-                ty: self.canonical_type(expected.unwrap_or(ty)),
+            (
+                HMIRConstant::TaggedUnion { variant, payload },
+                HMIRTypeKind::TaggedUnion { fields },
+            ) => HMIRConstant::TaggedUnion {
+                variant,
+                payload: Box::new(self.canonical_constant(*payload, *fields[variant].ty())),
             },
-            HMIRConstant::LabelAddress {
-                function,
-                label,
-                ty,
-            } => HMIRConstant::LabelAddress {
-                function,
-                label,
-                ty: self.canonical_type(expected.unwrap_or(ty)),
-            },
-            HMIRConstant::Function { function, args } => HMIRConstant::Function {
+            (HMIRConstant::Function { function, args }, _) => HMIRConstant::Function {
                 function,
                 args: args
                     .into_iter()
-                    .map(|arg| self.canonical_constant(arg, None))
+                    .map(|arg| self.canonical_value(arg))
                     .collect(),
             },
-            value => value,
+            (value, _) => value,
         }
-    }
-}
-
-fn zero(value: &HMIRConstant) -> bool {
-    match value {
-        HMIRConstant::Unit | HMIRConstant::Int { value: 0, .. } | HMIRConstant::Null(_) => true,
-        HMIRConstant::Float { value, .. } => *value == 0.0.into(),
-        HMIRConstant::Aggregate { fields, .. } => fields.is_empty(),
-        _ => false,
     }
 }
 

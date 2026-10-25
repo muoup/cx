@@ -1,0 +1,156 @@
+/* CX-STDOUT: offsets 40 10 30 */
+/* CX-STDOUT-NEXT: difference 3 -3 1 */
+/* CX-STDOUT-NEXT: copies 7 9 */
+/* CX-STDOUT-NEXT: unions 65 2 1 */
+/* CX-STDOUT-NEXT: mutation 11 22 5 */
+/* CX-STDOUT-NEXT: layout 8 4 120 */
+/* CX-STDOUT-NEXT: globals 7 30 1 */
+/* CX-STDOUT-NEXT: types 4 8 */
+
+#include <stdio.h>
+
+struct Holder {
+    int* target;
+    int extra;
+};
+
+struct Padded {
+    char tag;
+    int value;
+};
+
+union Bits {
+    Padded padded;
+    char bytes[8];
+};
+
+union Number {
+    int whole;
+    float fraction;
+};
+
+enum union Shape {
+    empty :: void,
+    square :: int,
+    pair :: Holder
+};
+
+comptime int offsets(int which) {
+    int values[5] = { 10, 20, 30, 40, 50 };
+    int* last = &values[4];
+    int* end = values + 5;
+    int* back = end - 2;
+    if (end == last + 1 && back < end) {
+        if (which == 0) return *back;
+        if (which == 1) return *(last - 4);
+        return *(back - 1);
+    }
+    return -1;
+}
+
+comptime int difference(int which) {
+    Holder holders[4];
+    Holder* first = &holders[0];
+    Holder* fourth = first + 3;
+    char bytes[6];
+    if (which == 0) return fourth - first;
+    if (which == 1) return first - fourth;
+    return &bytes[5] - &bytes[4];
+}
+
+comptime int copies(int which) {
+    int seven = 7;
+    int nine = 9;
+    Holder original = { &seven, 1 };
+    Holder copy = original;
+    Holder rows[2] = { copy, { &nine, 2 } };
+    Holder moved = rows[1];
+    if (which == 0) return *copy.target;
+    return *moved.target;
+}
+
+comptime int unions(int which) {
+    union Bits bits;
+    bits.bytes[0] = 65;
+    Shape shape = Shape::square(2);
+    Shape other = shape;
+    union Number number = { .whole = 1 };
+    if (which == 0) return bits.bytes[0];
+    if (which == 1) return match (other) { square(auto side) => yield side; _ => yield 0; };
+    return number.whole;
+}
+
+comptime int mutation(int which) {
+    Holder holder = { 0, 0 };
+    int value = 1;
+    int& alias = value;
+    alias = 11;
+    int& extra = holder.extra;
+    extra = 22;
+    holder.target = &value;
+    *holder.target -= 6;
+    if (which == 0) return alias + 6;
+    if (which == 1) return holder.extra;
+    return value;
+}
+
+comptime int layout(int which) {
+    union Bits bits;
+    bits.padded = { 'x', 0x01020304 };
+    if (which == 0) return sizeof(Padded);
+    if (which == 1) return bits.bytes[4];
+    return bits.bytes[0];
+}
+
+int initial = 7;
+int table[3] = { 10, 20, 30 };
+Holder self_holder = { &self_holder.extra, 3 };
+
+comptime int globals(int which) {
+    if (which == 0) return initial;
+    if (which == 1) return table[2];
+    return self_holder.target == &self_holder.extra;
+}
+
+comptime @type chosen(int which) {
+    @type types[2];
+    types[0] = int;
+    types[1] = long;
+    @type copy = types[which];
+    return copy;
+}
+
+comptime int offsets_0 = offsets(0);
+comptime int offsets_1 = offsets(1);
+comptime int offsets_2 = offsets(2);
+comptime int difference_0 = difference(0);
+comptime int difference_1 = difference(1);
+comptime int difference_2 = difference(2);
+comptime int copies_0 = copies(0);
+comptime int copies_1 = copies(1);
+comptime int unions_0 = unions(0);
+comptime int unions_1 = unions(1);
+comptime int unions_2 = unions(2);
+comptime int mutation_0 = mutation(0);
+comptime int mutation_1 = mutation(1);
+comptime int mutation_2 = mutation(2);
+comptime int layout_0 = layout(0);
+comptime int layout_1 = layout(1);
+comptime int layout_2 = layout(2);
+comptime int globals_0 = globals(0);
+comptime int globals_1 = globals(1);
+comptime int globals_2 = globals(2);
+comptime @type chosen_0 = chosen(0);
+comptime @type chosen_1 = chosen(1);
+
+int main() {
+    printf("offsets %d %d %d\n", offsets_0, offsets_1, offsets_2);
+    printf("difference %d %d %d\n", difference_0, difference_1, difference_2);
+    printf("copies %d %d\n", copies_0, copies_1);
+    printf("unions %d %d %d\n", unions_0, unions_1, unions_2);
+    printf("mutation %d %d %d\n", mutation_0, mutation_1, mutation_2);
+    printf("layout %d %d %d\n", layout_0, layout_1, layout_2);
+    printf("globals %d %d %d\n", globals_0, globals_1, globals_2);
+    printf("types %d %d\n", (int) sizeof(chosen_0), (int) sizeof(chosen_1));
+    return 0;
+}
