@@ -10,7 +10,7 @@ use cx_hir::ast::expression::{
     HIRBinOp, HIRBlockKind, HIRClosureParam, HIRExprKind, HIRExpression, HIRInitIndex,
     HIRMemberDesignator, HIRUnpackBinding,
 };
-use cx_hir::ast::types::{HIRType, HIRTypeKind};
+use cx_hir::ast::types::HIRType;
 use cx_hmir::{
     HMIRAggregateOp, HMIRControlOp, HMIROwnershipOp,
     expr::{
@@ -312,25 +312,7 @@ fn lower_scope_base(
 ) -> CXResult<HMIRExprID> {
     match &base.kind {
         HIRExprKind::Hole => Ok(context.hole(&base.range)),
-        HIRExprKind::Type(ty) => match &ty.kind {
-            HIRTypeKind::Identifier {
-                name,
-                lookup,
-                args: Some(args),
-            } if args.iter().any(|arg| matches!(arg.kind, HIRExprKind::Hole)) => {
-                let generator = HIRType {
-                    kind: HIRTypeKind::Identifier {
-                        name: name.clone(),
-                        lookup: *lookup,
-                        args: None,
-                    },
-                    specifiers: ty.specifiers,
-                    range: ty.range.clone(),
-                };
-                lower_type(context, &generator)
-            }
-            _ => lower_type(context, ty),
-        },
+        HIRExprKind::Type(ty) => lower_type(context, ty),
         _ => lower_expr(context, base),
     }
 }

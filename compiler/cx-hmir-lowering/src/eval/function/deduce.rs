@@ -1,7 +1,5 @@
-use std::iter;
-
 use cx_hmir::{
-    HMIRFunction,
+    HMIRDefID, HMIRDefKind, HMIRFunction,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRTypeID, HMIRTypeKind,
@@ -14,11 +12,21 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::function::LocalLoweringContext,
-    eval::{coerce, flow::Evaluation, op::unspecify, types},
+    eval::{
+        coerce, eval,
+        flow::{self, Evaluation},
+        op::unspecify,
+        type_constant, types,
+    },
     log::hmir_error,
     symbol::composite::alike,
-    value::HMIRValue,
+    value::{
+        HMIRValue, HMIRValueKind,
+        constant::{HMIRConstant, HMIRFunctionRef},
+    },
 };
+
+use super::Frame;
 
 pub struct Deduction<'a> {
     function: &'a HMIRFunction,
@@ -48,6 +56,7 @@ impl<'a> Deduction<'a> {
     pub fn infer(
         &mut self,
         context: &mut LocalLoweringContext,
+        frame: &mut Frame,
         index: usize,
         actual: Option<HMIRTypeID>,
         span: &TokenRange,
@@ -58,7 +67,7 @@ impl<'a> Deduction<'a> {
         let form = *self.function.signature().params()[index].ty();
         let actual = actual.map(|actual| self.argument(context, form, actual, span));
         let mut unresolved = Vec::new();
-        self.unify(context, form, actual, &mut unresolved, span)?;
+        self.unify(context, frame, form, actual, &mut unresolved, span)?;
 
         let (resolved, pending) = self
             .pending
@@ -100,6 +109,7 @@ impl<'a> Deduction<'a> {
     fn unify(
         &mut self,
         context: &mut LocalLoweringContext,
+        frame: &mut Frame,
         form: HMIRExprID,
         actual: Option<HMIRTypeID>,
         unresolved: &mut Vec<usize>,
@@ -114,12 +124,22 @@ impl<'a> Deduction<'a> {
                 }
             }
             HMIRExprKind::Call { callee, args } => {
-                for form in iter::once(callee).chain(args) {
-                    self.unify(context, *form, None, unresolved, span)?;
+                self.unify(context, frame, *callee, None, unresolved, span)?;
+                let applied = actual.and_then(|actual| {
+                    let (def, prefix) = self.generator(context, frame, *callee, span)?;
+                    let values = instance(context, def, actual)?;
+                    Some(values.into_iter().skip(prefix).collect::<Vec<_>>())
+                });
+                for (index, form) in args.iter().enumerate() {
+                    let actual = applied
+                        .as_ref()
+                        .and_then(|values| values.get(index))
+                        .and_then(type_constant);
+                    self.unify(context, frame, *form, actual, unresolved, span)?;
                 }
                 Ok(())
             }
-            HMIRExprKind::Type(ty) => self.structure(context, ty, actual, unresolved, span),
+            HMIRExprKind::Type(ty) => self.structure(context, frame, ty, actual, unresolved, span),
             _ => Ok(()),
         }
     }
@@ -127,6 +147,7 @@ impl<'a> Deduction<'a> {
     fn structure(
         &mut self,
         context: &mut LocalLoweringContext,
+        frame: &mut Frame,
         ty: &'a HMIRExprType,
         actual: Option<HMIRTypeID>,
         unresolved: &mut Vec<usize>,
@@ -141,18 +162,18 @@ impl<'a> Deduction<'a> {
                         .pointer_inner(actual)
                         .or_else(|| env.array_inner(actual)),
                 });
-                self.unify(context, *inner, actual, unresolved, span)
+                self.unify(context, frame, *inner, actual, unresolved, span)
             }
             HMIRExprTypeKind::ReferenceTo { inner, .. } => {
                 let actual = actual.map(|actual| env.reference_inner(actual).unwrap_or(actual));
-                self.unify(context, *inner, actual, unresolved, span)
+                self.unify(context, frame, *inner, actual, unresolved, span)
             }
             HMIRExprTypeKind::Array { element, .. } => {
                 let actual = actual.and_then(|actual| {
                     env.array_inner(actual)
                         .or_else(|| env.pointer_inner(actual))
                 });
-                self.unify(context, *element, actual, unresolved, span)
+                self.unify(context, frame, *element, actual, unresolved, span)
             }
             HMIRExprTypeKind::Nominal(inner) => {
                 let declared = ty.semantics();
@@ -165,14 +186,14 @@ impl<'a> Deduction<'a> {
                     !declared.unsafe_move && declared.move_semantics == HMIRDeclaredMove::default()
                 });
                 let actual = actual.map(|actual| unspecify(context, actual, qualifiers, span));
-                self.unify(context, *inner, actual, unresolved, span)
+                self.unify(context, frame, *inner, actual, unresolved, span)
             }
             HMIRExprTypeKind::Staged(inner) => {
                 let actual = actual.map(|actual| match env.resolve_kind(actual) {
                     HMIRTypeKind::Staged(inner) => *inner,
                     _ => actual,
                 });
-                self.unify(context, *inner, actual, unresolved, span)
+                self.unify(context, frame, *inner, actual, unresolved, span)
             }
             HMIRExprTypeKind::Function(signature) => {
                 let actual = actual
@@ -188,12 +209,44 @@ impl<'a> Deduction<'a> {
                     });
                 for (index, param) in signature.params().iter().enumerate() {
                     let actual = actual.as_ref().map(|actual| *actual.params()[index].ty());
-                    self.unify(context, *param.ty(), actual, unresolved, span)?;
+                    self.unify(context, frame, *param.ty(), actual, unresolved, span)?;
                 }
                 let actual = actual.map(|actual| *actual.return_type());
-                self.unify(context, *signature.return_type(), actual, unresolved, span)
+                self.unify(
+                    context,
+                    frame,
+                    *signature.return_type(),
+                    actual,
+                    unresolved,
+                    span,
+                )
             }
             _ => Ok(()),
+        }
+    }
+
+    fn generator(
+        &self,
+        context: &mut LocalLoweringContext,
+        frame: &mut Frame,
+        callee: HMIRExprID,
+        span: &TokenRange,
+    ) -> Option<(HMIRDefID, usize)> {
+        let body = self.function.body();
+        let value = frame
+            .enter(context, span, |child| flow::top(eval(child, body, callee)))
+            .ok()?;
+        let (callee, prefix) = match value.kind() {
+            HMIRValueKind::Constant(HMIRConstant::Curried { callee, args }) => {
+                (callee.as_ref(), args.len())
+            }
+            _ => (&value, 0),
+        };
+        match callee.kind() {
+            HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) => {
+                Some((*def, prefix))
+            }
+            _ => None,
         }
     }
 
@@ -259,4 +312,36 @@ impl<'a> Deduction<'a> {
             ),
         )
     }
+}
+
+// The arguments 'def' was applied to when one of its type expressions produced 'ty'
+pub(super) fn instance(
+    context: &mut LocalLoweringContext,
+    def: HMIRDefID,
+    ty: HMIRTypeID,
+) -> Option<Vec<HMIRValue>> {
+    let ty = context.env().underlying(ty);
+    let (expr, bindings) = context.env().resolver().origin(ty)?;
+    let bindings = bindings.to_vec();
+    let unit = context.env_mut().symbols_mut().owner(def.brand())?;
+    let generator = unit
+        .resolve_def(def)?
+        .declarations()
+        .iter()
+        .find_map(|declaration| match declaration.kind() {
+            Some(HMIRDefKind::Function(function)) if function.body().id() == expr.body() => {
+                Some(function)
+            }
+            _ => None,
+        })?;
+    generator
+        .params()
+        .iter()
+        .map(|param| {
+            bindings
+                .iter()
+                .find(|(local, _)| local == param)
+                .map(|(_, value)| value.clone())
+        })
+        .collect()
 }

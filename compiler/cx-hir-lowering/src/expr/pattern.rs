@@ -59,7 +59,10 @@ fn lower_binding_type(
     match mode {
         HIRBindingMode::Owned => hole,
         HIRBindingMode::Reference => {
-            let kind = HMIRExprTypeKind::ReferenceTo { inner: hole, bitfield: None };
+            let kind = HMIRExprTypeKind::ReferenceTo {
+                inner: hole,
+                bitfield: None,
+            };
             context.expr_type(kind, semantics, None, span)
         }
         HIRBindingMode::ConstReference => {
@@ -68,7 +71,10 @@ fn lower_binding_type(
                 ..semantics
             };
             let inner = context.expr_type(HMIRExprTypeKind::Nominal(hole), constant, None, span);
-            let kind = HMIRExprTypeKind::ReferenceTo { inner, bitfield: None };
+            let kind = HMIRExprTypeKind::ReferenceTo {
+                inner,
+                bitfield: None,
+            };
             context.expr_type(kind, semantics, None, span)
         }
     }

@@ -83,6 +83,14 @@ impl HMIRResolver {
             _ => None,
         }
     }
+    pub fn origin(&self, ty: HMIRTypeID) -> Option<(HMIRExprID, &[(HMIRLocalID, HMIRValue)])> {
+        match &self.entries[Self::type_memo(ty)].key {
+            Some(MemoKey::Expression(expr, scope)) => {
+                Some((*expr, self.context(*scope).bindings.as_slice()))
+            }
+            _ => None,
+        }
+    }
     pub fn cycle(&self, id: MemoID, span: &TokenRange) -> cx_log::error::CXError {
         let start = self
             .active

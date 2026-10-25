@@ -6,12 +6,13 @@ use std::mem;
 use cx_hmir::{
     HMIRBody, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::{HMIRExprTypeKind, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
     unit::function::HMIRFnParam,
 };
 use cx_log::{
     CXResult,
     catalogue::{mir, typecheck},
+    error::CXError,
 };
 use cx_tokens::TokenRange;
 
@@ -33,7 +34,7 @@ use self::deduce::Deduction;
 
 use super::{
     EvalResult, coerce, complete, comptime, contract, control, eval, eval_type,
-    flow::{self, ComptimeStop, Evaluation, StopReason, ready},
+    flow::{self, ComptimeStop, Evaluation, Incomplete, IncompleteReason, StopReason, ready},
     safety, staged, storage, types, unevaluated,
 };
 
@@ -297,7 +298,7 @@ pub(crate) fn call(
             true => actual_type(context, caller_body, *arg)?,
             false => None,
         };
-        for (pending, argument, ty) in deduction.infer(context, index, actual, span)? {
+        for (pending, argument, ty) in deduction.infer(context, &mut frame, index, actual, span)? {
             let value = ready!(argument.complete(context, caller_body, Some(ty)));
             let Some(Argument::Expression(expr)) = &arguments[pending] else {
                 unreachable!()
@@ -348,7 +349,12 @@ pub(crate) fn call(
             Evaluation::Stop(stop) => return Ok(Evaluation::Stop(stop)),
         }
     }
-    deduction.finish(span)?;
+    if let Err(undeduced) = deduction.finish(span) {
+        return match !partial && generates_type(function) {
+            true => Ok(generated(context, callee, values, undeduced, span)),
+            false => Err(undeduced),
+        };
+    }
     if partial
         && (declared.stage() == HMIRFunctionStage::Comptime
             || declared.params()[params.len()..]
@@ -450,19 +456,66 @@ pub(crate) fn call(
     }
 }
 
+fn generates_type(function: &HMIRFunction) -> bool {
+    let signature = function.signature();
+    signature.params().iter().all(|param| param.comptime())
+        && matches!(
+            function.body().expr(*signature.return_type()).kind(),
+            HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::Type)
+        )
+}
+
+// A type left with holes is the type expected of it, when this generator produced that type
+fn generated(
+    context: &LocalLoweringContext,
+    callee: &HMIRValue,
+    values: Vec<Option<HMIRValue>>,
+    undeduced: CXError,
+    span: &TokenRange,
+) -> Evaluation<HMIRValue> {
+    let callee = callee.clone();
+    let span = span.clone();
+    Evaluation::Incomplete(Incomplete::new(
+        context,
+        &span.clone(),
+        IncompleteReason::ExpectedType,
+        None,
+        move |context, body, expected| {
+            let HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) =
+                callee.kind()
+            else {
+                unreachable!("a generated type has a generator")
+            };
+            let expected = context.env().reference_inner(expected).unwrap_or(expected);
+            let Some(instance) = deduce::instance(context, *def, expected) else {
+                return Err(undeduced);
+            };
+            let applied = values
+                .into_iter()
+                .zip(instance)
+                .map(|(value, bound)| value.unwrap_or(bound))
+                .collect::<Vec<_>>();
+            call(context, &callee, body, &[], &applied, &span)
+        },
+    ))
+}
+
 fn actual_type(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     arg: HMIRExprID,
 ) -> CXResult<Option<HMIRTypeID>> {
     let mut operand = arg;
-    while let HMIRExprKind::Piped(inner) | HMIRExprKind::Quote { body: inner, .. } =
-        body.expr(operand).kind()
-    {
-        operand = *inner;
-    }
-    if matches!(body.expr(operand).kind(), HMIRExprKind::Hole(_)) {
-        return Ok(None);
+    loop {
+        match body.expr(operand).kind() {
+            HMIRExprKind::Piped(inner) => operand = *inner,
+            HMIRExprKind::Quote {
+                params,
+                body: inner,
+            } if params.is_empty() => operand = *inner,
+            HMIRExprKind::Hole(_) | HMIRExprKind::Quote { .. } => return Ok(None),
+            _ => break,
+        }
     }
     Ok(Some(flow::top(unevaluated::subject(context, body, operand))?))
 }
