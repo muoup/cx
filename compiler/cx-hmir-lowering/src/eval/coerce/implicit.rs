@@ -1,3 +1,4 @@
+mod function;
 mod reference;
 mod string;
 
@@ -164,6 +165,9 @@ fn step(
                 && compatible::qualified(context.env(), source, target) =>
         {
             Coercion::Applied(value.with_ty(target))
+        }
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => {
+            function::discard(context, value, target, span)?
         }
 
         _ => Coercion::Unapplied(value),

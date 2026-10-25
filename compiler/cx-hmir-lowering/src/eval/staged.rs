@@ -81,6 +81,21 @@ pub(crate) fn is_code(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {
     shape(context.env(), ty).is_some()
 }
 
+pub(crate) fn splice(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> EvalResult<HMIRValue> {
+    let value = ready!(comptime::export(context, value, span));
+    let staged = matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Staged(_));
+    match value.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Quote(_)) if staged => {
+            materialize(context, &value, &[])
+        }
+        _ => Ok(Evaluation::Ready(value)),
+    }
+}
+
 pub(crate) fn capture(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,

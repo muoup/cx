@@ -208,8 +208,8 @@ pub(crate) fn call(
     };
     let declared = function.signature();
     let at_runtime = matches!(context.context(), FnContext::Runtime(_));
-    let generator = at_runtime && declared.stage() == HMIRFunctionStage::Comptime;
-    let runtime = at_runtime && !generator;
+    let spliced = at_runtime && declared.stage() == HMIRFunctionStage::Comptime;
+    let runtime = at_runtime && !spliced;
     if declared.is_variadic() {
         return Err(hmir_error(
             span,
@@ -316,7 +316,7 @@ pub(crate) fn call(
         }
         let argument = if staged::is_code(context, ty) {
             staged::argument(context, caller_body, *arg, ty)?
-        } else if (runtime && frozen) || generator {
+        } else if (runtime && frozen) || spliced {
             comptime::frozen(context, caller_body, *arg, Some(ty))?
         } else {
             let evaluated = eval(context, caller_body, *arg)?;
@@ -367,10 +367,6 @@ pub(crate) fn call(
         params.push(HMIRFnParam::new(false, ty));
     }
     let signature = frame.signature(context, params, span)?;
-    if generator && !staged::is_code(context, *signature.return_type()) {
-        let name = source.name().to_string();
-        return Err(hmir_error(span, &mir::COMPTIME_FUNCTION_AT_RUNTIME, name));
-    }
     for (index, declaration) in symbol::visible(source, context.visible_through()) {
         if index == selected {
             continue;
@@ -448,8 +444,8 @@ pub(crate) fn call(
             span,
         )
     })?;
-    match generator {
-        true => staged::materialize(context, &value, &[]),
+    match spliced {
+        true => staged::splice(context, value, span),
         false => Ok(Evaluation::Ready(value)),
     }
 }
