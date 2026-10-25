@@ -13,7 +13,7 @@ use crate::{
     eval::{
         EvalResult,
         binding::eval_scoped,
-        coerce, contract, eval, eval_type,
+        coerce, contract, defer, eval, eval_type,
         flow::{self, ComptimeStop, Evaluation, RuntimeStop, StopReason, ready},
         literal, storage, types,
     },
@@ -47,7 +47,9 @@ pub(crate) fn eval_if(
         }
     })();
     let span = span.clone();
-    flow::finally(context, result, move |context| emit::close_scope(context, span))
+    flow::finally(context, body, result, move |context, body, completed| {
+        defer::close(context, body, completed, &span)
+    })
 }
 
 fn comptime_if(
@@ -214,9 +216,10 @@ pub(crate) fn eval_for(
         Ok(Evaluation::Stop(stop)) => Ok(Evaluation::Stop(stop)),
         Err(error) => Err(error),
     };
-    emit::close_scope(context, span.clone());
-
-    result
+    let span = span.clone();
+    flow::finally(context, body, result, move |context, body, completed| {
+        defer::close(context, body, completed, &span)
+    })
 }
 
 // 'increment' runs after each iteration of the body, and is where 'continue' leads
@@ -297,7 +300,7 @@ fn runtime_while(
     runtime::jump(context, entry, span.clone());
 
     runtime::switch_to(context, condition_block);
-    let scope_depth = context.runtime().open_scopes().len();
+    let scope_depth = context.runtime().scope_depth();
     emit::open_scope(context, span.clone());
     let condition = ready!(flow::catch_diverged(eval_condition(context, body, condition)));
     let Some(condition) = condition else {
@@ -436,6 +439,7 @@ fn runtime_short_circuit(
 
 pub(crate) fn eval_loop_exit(
     context: &mut LocalLoweringContext,
+    body: &HMIRBody,
     span: &TokenRange,
     stop: ComptimeStop,
 ) -> EvalResult<HMIRValue> {
@@ -459,6 +463,13 @@ pub(crate) fn eval_loop_exit(
         _ => unreachable!("only 'break' and 'continue' exit a loop"),
     };
     let Some((target, depth)) = exit else {
+        if context.expectations().deferred() {
+            let jump = match stop {
+                ComptimeStop::Break => "break",
+                _ => "continue",
+            };
+            return Err(hmir_error(span, &typecheck::DEFER_JUMP, jump.into()));
+        }
         let (feature, required) = match stop {
             ComptimeStop::Break => ("'break'", "a loop or switch"),
             ComptimeStop::Continue => ("'continue'", "a loop"),
@@ -470,7 +481,7 @@ pub(crate) fn eval_loop_exit(
             (feature.into(), required.into()),
         ));
     };
-    runtime::drop_scopes(context, depth, span);
+    defer::exit(context, body, depth, span)?;
     runtime::jump(context, target, span.clone());
     Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))
 }
@@ -492,6 +503,9 @@ pub(crate) fn eval_return(
     span: &TokenRange,
     value: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
+    if context.expectations().deferred() {
+        return Err(hmir_error(span, &typecheck::DEFER_JUMP, "return".into()));
+    }
     let value = value.map(|value| eval(context, body, value)).transpose()?;
 
     return_value(context, body, value, true, span)
@@ -546,12 +560,21 @@ pub(crate) fn return_value(
     match context.context() {
         FnContext::Runtime(_) => {
             contract::exit(context, value.as_ref(), span)?;
+            let value = match value {
+                Some(value)
+                    if context.runtime().defers_past(0)
+                        && !context.env().is_reference(value.ty())
+                        && !matches!(value.kind(), HMIRValueKind::Constant(_)) =>
+                {
+                    Some(storage::temporary(context, value, span)?)
+                }
+                value => value,
+            };
+            defer::exit(context, body, 0, span)?;
             let value = match &value {
                 Some(value) => Some(runtime::lower_value(context, value, span)?),
                 None => None,
             };
-
-            runtime::drop_scopes(context, 0, span);
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Return { value }, span.clone());

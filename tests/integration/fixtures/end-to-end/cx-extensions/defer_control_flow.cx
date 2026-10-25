@@ -15,8 +15,9 @@
 
 #include <stdio.h>
 
-void mark(int value) {
+int mark(int value) {
     printf("mark %d\n", value);
+    return value;
 }
 
 void same_scope_lifo() {
@@ -73,6 +74,10 @@ result preserve_return_value() {
 }
 
 int main() {
+    FILE* stream = tmpfile();
+    if (!stream) return 1;
+    defer fclose(stream);
+
     same_scope_lifo();
     printf("returned %d\n", nested_return());
     loop_exits();

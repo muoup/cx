@@ -9,6 +9,7 @@ pub enum Permission {
 pub struct Expectations {
     permission: Permission,
     pure: bool,
+    deferred: bool,
 }
 
 impl Expectations {
@@ -16,6 +17,7 @@ impl Expectations {
         Self {
             permission,
             pure: false,
+            deferred: false,
         }
     }
 
@@ -31,6 +33,15 @@ impl Expectations {
     pub fn expecting_pure(mut self) -> Self {
         self.pure = true;
         self
+    }
+
+    pub fn deferring(mut self) -> Self {
+        self.deferred = true;
+        self
+    }
+
+    pub fn deferred(self) -> bool {
+        self.deferred
     }
 
     pub fn allows_impure(self) -> bool {

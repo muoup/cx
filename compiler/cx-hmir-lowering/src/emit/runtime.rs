@@ -3,7 +3,10 @@ mod storage;
 mod global;
 
 pub use op::{binary, cast, difference, offset, unary};
-pub use storage::{allocate, copy, initialize, invalidate, lift, parameter, scratch, write};
+pub use storage::{
+    adopt, allocate, copy, initialize, invalidate, lift, parameter, place_held, scratch,
+    scratch_held, write,
+};
 
 use cx_hmir::ty::{
     HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
@@ -13,7 +16,7 @@ use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRConstant,
     MIRInstructionKind, MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceID, MIRPtrIntrinsic,
-    MIRRegister, MIRRegisterDecl, MIRScopeID, MIRTarget, MIRTypeID, MIRValue,
+    MIRRegister, MIRRegisterDecl, MIRTarget, MIRTypeID, MIRValue,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
@@ -369,29 +372,17 @@ pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
 }
 
 pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
-    let scope = context.runtime_mut().pop_scope();
-
-    drop_scope(context, scope, &span);
+    let index = context.runtime().scope_depth() - 1;
+    drop_scope(context, index, &span);
+    context.runtime_mut().pop_scope();
 }
 
-// Drops what the scopes opened past the first 'depth' hold, without closing them
-pub fn drop_scopes(
+pub fn drop_scope(
     context: &mut LocalLoweringContext,
-    depth: usize,
+    index: usize,
     span: &TokenRange,
 ) {
-    let scopes = context.runtime_mut().open_scopes()[depth..].to_vec();
-
-    for scope in scopes.into_iter().rev() {
-        drop_scope(context, scope, span);
-    }
-}
-
-fn drop_scope(
-    context: &mut LocalLoweringContext,
-    scope: MIRScopeID,
-    span: &TokenRange,
-) {
+    let scope = context.runtime().scope(index);
     let places = context
         .runtime()
         .builder()

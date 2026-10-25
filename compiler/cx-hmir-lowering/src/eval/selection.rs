@@ -18,7 +18,7 @@ use crate::{
     eval::{
         EvalResult,
         aggregate::pattern,
-        coerce, control, eval, eval_comptime,
+        coerce, control, defer, eval, eval_comptime,
         flow::{self, ComptimeStop, Evaluation, StopReason, ready},
         literal, storage, types,
     },
@@ -111,8 +111,9 @@ pub(crate) fn eval_match(
                             stop => Ok(Evaluation::Stop(stop)),
                         })
                 });
-            flow::finally(context, result, |context| {
-                context.comptime_mut().end_yield()
+            flow::finally(context, body, result, |context, _, _| {
+                context.comptime_mut().end_yield();
+                Ok(())
             })
         }
         FnContext::Runtime(_) => {
@@ -147,7 +148,7 @@ pub(crate) fn eval_match(
                     .runtime_mut()
                     .emit(MIRInstructionKind::Unreachable, span.clone());
             }
-            let depth = context.runtime().open_scopes().len() - 1;
+            let depth = context.runtime().scope_depth() - 1;
             context.runtime_mut().begin_yield(depth);
             lower_arms(
                 context,
@@ -165,8 +166,8 @@ pub(crate) fn eval_match(
         }
     };
     let span = span.clone();
-    flow::finally(context, result, move |context| {
-        emit::close_scope(context, span)
+    flow::finally(context, body, result, move |context, body, completed| {
+        defer::close(context, body, completed, &span)
     })
 }
 
@@ -314,11 +315,12 @@ fn lower_arms(
     let result = eval(context, body, state.arms[index].1);
     let span = state.span.clone();
     let source = (!context.env().is_reference(state.subject.ty())).then(|| state.subject.clone());
-    let result = flow::finally(context, result, move |context| {
-        emit::close_scope(context, span.clone());
+    let result = flow::finally(context, body, result, move |context, body, completed| {
+        defer::close(context, body, completed, &span)?;
         if let Some(source) = source {
             emit::invalidate(context, &source, MIRInvalidationKind::Drop, &span);
         }
+        Ok(())
     });
     let result = flow::catch_diverged(result)?.complete(context, body, expected)?;
     result.and_then(

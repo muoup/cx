@@ -1,3 +1,4 @@
+use cx_hmir::HMIRBody;
 use cx_log::CXResult;
 
 use crate::{env::function::LocalLoweringContext, value::HMIRValue};
@@ -62,13 +63,20 @@ pub(crate) fn catch_diverged<T: 'static>(result: EvalResult<T>) -> EvalResult<Op
 
 pub(crate) fn finally<T: 'static>(
     context: &mut LocalLoweringContext,
+    body: &HMIRBody,
     result: EvalResult<T>,
-    finish: impl FnOnce(&mut LocalLoweringContext) + 'static,
+    finish: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, bool) -> CXResult<()> + 'static,
 ) -> EvalResult<T> {
     match result {
-        Ok(result) => Ok(result.finish(context, finish)),
+        Ok(Evaluation::Incomplete(incomplete)) => {
+            Ok(Evaluation::Incomplete(incomplete.finally(finish)))
+        }
+        Ok(result) => {
+            finish(context, body, matches!(result, Evaluation::Ready(_)))?;
+            Ok(result)
+        }
         Err(error) => {
-            finish(context);
+            finish(context, body, false)?;
             Err(error)
         }
     }

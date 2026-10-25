@@ -1,0 +1,94 @@
+/* CX-STDOUT: switch 1 */
+/* CX-STDOUT-NEXT: switch 0 */
+/* CX-STDOUT-NEXT: arm 2 */
+/* CX-STDOUT-NEXT: yielded 7 */
+/* CX-STDOUT-NEXT: inner 2 */
+/* CX-STDOUT-NEXT: outer 1 */
+/* CX-STDOUT-NEXT: loop 3 */
+/* CX-STDOUT-NEXT: loop 2 */
+/* CX-STDOUT-NEXT: loop 1 */
+/* CX-STDOUT-NEXT: early 5 */
+/* CX-STDOUT-NEXT: late 5 */
+/* CX-STDOUT-NEXT: late 6 */
+/* CX-STDOUT-NEXT: unsafe 9 */
+
+#include <stdio.h>
+
+void say(const char* label, int value) {
+    printf("%s %d\n", label, value);
+}
+
+void exit_switch(int value) {
+    switch (value) {
+        case 1: {
+            defer say("switch", value);
+            break;
+        }
+        default: {
+            defer say("switch", value);
+        }
+    }
+}
+
+int yield_arm(int value) {
+    int result = match (value) {
+        2 => {
+            defer say("arm", value);
+            yield value + 5;
+        }
+        _ => yield 0;
+    };
+    printf("yielded %d\n", result);
+    return result;
+}
+
+void shadowed() {
+    int value = 1;
+    defer say("outer", value);
+    {
+        int value = 2;
+        defer say("inner", value);
+    }
+}
+
+void loop_cleanup() {
+    int count = 3;
+    while (count > 0) {
+        defer .{ count -= 1; };
+        defer say("loop", count);
+        if (count > 1) {
+            continue;
+        }
+    }
+}
+
+int counted(int value) {
+    defer .{
+        int seen = value;
+        say("late", seen);
+    };
+    if (value == 5) {
+        printf("early %d\n", value);
+        return value;
+    }
+    return value + 1;
+}
+
+void unsafe_cleanup(int* pointer) {
+    @unsafe {
+        defer say("unsafe", *pointer);
+    };
+}
+
+int main() {
+    exit_switch(1);
+    exit_switch(0);
+    yield_arm(2);
+    shadowed();
+    loop_cleanup();
+    counted(5);
+    counted(6);
+    int nine = 9;
+    unsafe_cleanup(&nine);
+    return 0;
+}

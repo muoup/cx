@@ -9,7 +9,9 @@ pub mod storage;
 
 pub(crate) mod runtime;
 
-pub use storage::{allocate, copy, initialize, invalidate, lift, scratch, write};
+pub use storage::{
+    adopt, allocate, copy, initialize, invalidate, lift, place_held, scratch, scratch_held, write,
+};
 
 use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,

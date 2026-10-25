@@ -5,6 +5,7 @@ mod complete;
 mod contract;
 mod control;
 mod def;
+mod defer;
 mod function;
 mod literal;
 mod name;
@@ -60,7 +61,9 @@ use crate::{
         flow::{Evaluation, ready},
         literal::eval_literal,
         op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
-        place::{eval_address_of, eval_assign, eval_dereference, eval_leak, eval_move},
+        place::{
+            eval_address_of, eval_adopt, eval_assign, eval_dereference, eval_leak, eval_move,
+        },
         switch::{eval_case, eval_switch},
     },
     log::hmir_error,
@@ -212,15 +215,18 @@ pub(crate) fn eval(
                 eval_return(context, body, span, *value)
             }
             HMIROp::Control(HMIRControlOp::Break) => {
-                eval_loop_exit(context, span, ComptimeStop::Break)
+                eval_loop_exit(context, body, span, ComptimeStop::Break)
             }
             HMIROp::Control(HMIRControlOp::Continue) => {
-                eval_loop_exit(context, span, ComptimeStop::Continue)
+                eval_loop_exit(context, body, span, ComptimeStop::Continue)
             }
             HMIROp::Control(HMIRControlOp::Yield(value)) => {
                 yielding::eval_yield(context, body, span, *value)
             }
             HMIROp::Control(HMIRControlOp::Unsafe(operand)) => eval_unsafe(context, body, *operand),
+            HMIROp::Control(HMIRControlOp::Defer(operand)) => {
+                defer::eval_defer(context, body, span, *operand)
+            }
 
             HMIROp::Assign { target, op, value } => {
                 eval_assign(context, body, span, *target, *op, *value)
@@ -236,10 +242,8 @@ pub(crate) fn eval(
             HMIROp::OwnershipOp(HMIROwnershipOp::Leak(operand)) => {
                 eval_leak(context, body, span, *operand)
             }
-            HMIROp::OwnershipOp(HMIROwnershipOp::Adopt(_)) => {
-                safety::require_nonsafe(context, span, "@adopt")?;
-                safety::require_pure(context, span, "@adopt")?;
-                todo!("HMIROwnershipOp::Adopt")
+            HMIROp::OwnershipOp(HMIROwnershipOp::Adopt(operand)) => {
+                eval_adopt(context, body, span, *operand)
             }
             HMIROp::AggregateOp(aggregate) => eval_aggregate(context, body, span, aggregate),
         },

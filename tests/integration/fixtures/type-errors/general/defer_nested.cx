@@ -1,0 +1,2 @@
+void mark() {}
+void bad() { defer .{ defer mark(); }; }

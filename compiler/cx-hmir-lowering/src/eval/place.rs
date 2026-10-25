@@ -4,13 +4,16 @@ use cx_hmir::{
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRTypeKind, context::HMIRTypeContext},
 };
-use cx_log::{CXResult, catalogue::typecheck};
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+};
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::LocalLoweringContext,
+    env::function::{FnContext, LocalLoweringContext},
     eval::{
         EvalResult, coerce, eval,
         flow::{Evaluation, ready},
@@ -139,6 +142,50 @@ pub(crate) fn eval_leak(
 
     emit::invalidate(context, &value, MIRInvalidationKind::Leak, span);
     Ok(Evaluation::Ready(literal::unit(context, span)))
+}
+
+pub(crate) fn eval_adopt(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    operand: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    require_nonsafe(context, span, "@adopt")?;
+    require_pure(context, span, "@adopt")?;
+    if matches!(context.context(), FnContext::Comptime(_)) {
+        return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, "'@adopt'".into()));
+    }
+    let value = ready!(eval(context, body, operand));
+    let Some(inner) = context.env().reference_inner(value.ty()) else {
+        return Err(hmir_error(
+            span,
+            &typecheck::TYPE_MISMATCH,
+            (
+                "@adopt".into(),
+                "memory reference type".into(),
+                types::name(context.env(), value.ty()),
+            ),
+        ));
+    };
+    if context.env().semantics(inner).constant {
+        return Err(hmir_error(
+            span,
+            &typecheck::TYPE_MISMATCH,
+            (
+                "@adopt".into(),
+                "non-const type".into(),
+                types::name(context.env(), inner),
+            ),
+        ));
+    }
+    if emit::place_held(context, &value) {
+        return Err(hmir_error(span, &typecheck::ADOPT_LOCAL, ()));
+    }
+
+    let storage = emit::scratch(context, inner, span)?;
+    emit::adopt(context, &storage, &value, span)?;
+
+    Ok(Evaluation::Ready(storage))
 }
 
 fn require_local(

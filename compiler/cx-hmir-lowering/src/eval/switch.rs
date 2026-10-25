@@ -92,7 +92,7 @@ pub(crate) fn eval_case(
         )
         .into()),
         FnContext::Runtime(_) => {
-            let Some(target) = context.runtime().case_block(id) else {
+            let Some((target, depth)) = context.runtime().case_block(id) else {
                 return Err(hmir_error(
                     span,
                     &typecheck::REQUIRED_CONTEXT,
@@ -100,6 +100,13 @@ pub(crate) fn eval_case(
                 )
                 .into());
             };
+            if context.runtime().defers_past(depth) {
+                return Err(hmir_error(
+                    span,
+                    &typecheck::INVALID_CONTEXT,
+                    ("case label".into(), "the scope of a deferred expression".into()),
+                ));
+            }
             if context.runtime().emission() == Emission::Enabled {
                 runtime::jump(context, target, span.clone());
             }
@@ -233,15 +240,16 @@ fn runtime_switch(
     );
 
     runtime::switch_to(context, entry);
-    let scope_depth = context.runtime().open_scopes().len();
+    let scope_depth = context.runtime().scope_depth();
     context
         .runtime_mut()
         .push_exit(ExitFrame::new(exit, None, scope_depth, blocks));
     let completion = eval_scoped(context, body, switch_body);
     let span = span.clone();
     let finish_span = span.clone();
-    let completion = flow::finally(context, completion, move |context| {
-        finish_runtime_switch(context, exit, &finish_span)
+    let completion = flow::finally(context, body, completion, move |context, _, _| {
+        finish_runtime_switch(context, exit, &finish_span);
+        Ok(())
     });
     let completion = flow::catch_diverged(completion)?;
     completion.and_then(context, body, None, move |context, _, _, _| {
@@ -311,8 +319,9 @@ fn comptime_switch(
                 Ok(Evaluation::Ready(literal::unit(context, &span)))
             })
     });
-    flow::finally(context, result, |context| {
-        context.comptime_mut().end_switch()
+    flow::finally(context, body, result, |context, _, _| {
+        context.comptime_mut().end_switch();
+        Ok(())
     })
 }
 

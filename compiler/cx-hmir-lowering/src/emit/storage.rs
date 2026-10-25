@@ -4,7 +4,7 @@ use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{comptime, runtime};
+use super::{comptime, runtime, unsupported};
 use crate::{
     env::function::{FnContext, LocalLoweringContext},
     value::HMIRValue,
@@ -34,6 +34,32 @@ pub fn scratch(
     match context.context() {
         FnContext::Runtime(_) => runtime::scratch(context, ty, span),
         FnContext::Comptime(_) => Ok(comptime::allocate(context, ty, None)),
+    }
+}
+
+pub fn adopt(
+    context: &mut LocalLoweringContext,
+    target: &HMIRValue,
+    source: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<()> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::adopt(context, target, source, span),
+        FnContext::Comptime(_) => unsupported(span, "'@adopt'"),
+    }
+}
+
+pub fn scratch_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::scratch_held(context, value),
+        FnContext::Comptime(_) => false,
+    }
+}
+
+pub fn place_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::place_held(context, value),
+        FnContext::Comptime(_) => false,
     }
 }
 

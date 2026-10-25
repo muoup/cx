@@ -1,0 +1,8 @@
+int bad(int value) {
+    return match (value) {
+        _ => {
+            defer .{ yield 1; };
+            yield 0;
+        }
+    };
+}

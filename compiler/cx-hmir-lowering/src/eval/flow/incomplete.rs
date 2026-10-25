@@ -1,5 +1,6 @@
 use cx_hmir::{HMIRBody, ty::HMIRTypeID};
 use cx_log::{
+    CXResult,
     catalogue::{mir, typecheck},
     error::CXError,
 };
@@ -90,6 +91,21 @@ impl<T: 'static> Incomplete<T> {
             let result = context
                 .with_expectations(expectations, |context| resolve(context, body, expected))?;
             Ok(result.scoped(expectations))
+        })
+    }
+
+    pub(crate) fn finally(
+        self,
+        finish: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, bool) -> CXResult<()> + 'static,
+    ) -> Self {
+        let Self {
+            suspension,
+            partial,
+            resolve,
+        } = self;
+        Self::resume(suspension, partial, move |context, body, expected| {
+            let result = resolve(context, body, expected);
+            finally(context, body, result, finish)
         })
     }
 
@@ -233,31 +249,6 @@ impl<T: 'static> Evaluation<T> {
                     )
                 },
             ))),
-        }
-    }
-
-    pub(crate) fn finish(
-        self,
-        context: &mut LocalLoweringContext,
-        finish: impl FnOnce(&mut LocalLoweringContext) + 'static,
-    ) -> Self {
-        match self {
-            Self::Incomplete(Incomplete {
-                suspension,
-                partial,
-                resolve,
-            }) => Self::Incomplete(Incomplete::resume(
-                suspension,
-                partial,
-                move |context, body, expected| {
-                    let result = resolve(context, body, expected);
-                    finally(context, result, finish)
-                },
-            )),
-            result => {
-                finish(context);
-                result
-            }
         }
     }
 }

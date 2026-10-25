@@ -12,9 +12,9 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::{FnContext, LocalLoweringContext},
+    env::function::{FnContext, LocalLoweringContext, runtime::Emission},
     eval::{
-        EvalResult, coerce, complete, eval, eval_type,
+        EvalResult, coerce, complete, defer, eval, eval_type,
         flow::{self, Evaluation, RuntimeStop, StopReason, ready},
         literal, storage, switch, types,
     },
@@ -43,6 +43,9 @@ pub(crate) fn eval_local(
         }
     };
 
+    if let FnContext::Runtime(runtime) = context.context_mut() {
+        runtime.unreserve(local);
+    }
     let stored = context.env().reference_inner(value.ty());
     match stored {
         Some(inner) if context.env().is_reference(inner) => Ok(Evaluation::Ready(
@@ -94,6 +97,10 @@ pub(crate) fn eval_let(
         return Ok(Evaluation::Ready(literal::unit(context, span)));
     };
 
+    let is_runtime = matches!(context.context(), FnContext::Runtime(_));
+    if is_runtime && storage.is_some() {
+        context.runtime_mut().reserve(local_id);
+    }
     let value = eval(context, body, initializer)?;
     let value = complete::value(context, body, value, declared.known().copied())?;
     let span = span.clone();
@@ -109,11 +116,18 @@ pub(crate) fn eval_let(
             None,
             move |context, body, ty, _| {
                 let value = coerce::implicit(context, value, ty, &span)?;
+                let reserved = storage.is_some();
                 let storage = match storage {
                     Some(storage) => storage,
                     None => declare(context, body, local_id, ty, &span)?,
                 };
-                if initialized {
+                let reusable = is_runtime
+                    && (!reserved || context.runtime_mut().unreserve(local_id))
+                    && context.runtime().emission() == Emission::Enabled
+                    && emit::scratch_held(context, &value);
+                if reusable {
+                    emit::adopt(context, &storage, &value, &span)?;
+                } else if initialized {
                     emit::write(context, &storage, &value, &span)?;
                 } else {
                     storage::initialize(context, &storage, &value, &span)?;
@@ -160,8 +174,8 @@ pub(crate) fn eval_block(
     emit::open_scope(context, span.clone());
     let result = eval_statements(context, body, span, statements, yields);
     let span = span.clone();
-    flow::finally(context, result, move |context| {
-        emit::close_scope(context, span)
+    flow::finally(context, body, result, move |context, body, completed| {
+        defer::close(context, body, completed, &span)
     })
 }
 

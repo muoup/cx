@@ -1,0 +1,13 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+int main() {
+    Resource* ptr = malloc(sizeof(Resource));
+    *ptr = (Resource) { .data = 1 };
+    Resource value = @unsafe(@adopt(*ptr));
+    free(ptr);
+    return 0;
+}
+
+#include <stdlib.h>

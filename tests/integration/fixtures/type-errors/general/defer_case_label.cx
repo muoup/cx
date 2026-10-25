@@ -1,0 +1,9 @@
+void mark() {}
+void bad(int value) {
+    switch (value) {
+        case 0:
+            defer mark();
+        case 1:
+            mark();
+    }
+}

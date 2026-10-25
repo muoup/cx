@@ -1,13 +1,14 @@
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBindable, MIRInstructionKind, MIRPlaceDecl, MIRScopeID, MIRTarget, MIRValue,
+    MIRBindable, MIRInstructionKind, MIRInternalIntrinsic, MIRPlaceDecl, MIRScopeID, MIRTarget,
+    MIRValue,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{global, lower_value, output, reference, register, store};
+use super::{global, intrinsic, lower_value, output, reference, register, store};
 use crate::{
     env::function::LocalLoweringContext,
     eval::types,
@@ -101,11 +102,7 @@ pub fn allocate(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let nodrop = context.env().is_nodrop(ty);
-    let scope = *context
-        .runtime()
-        .open_scopes()
-        .last()
-        .expect("Place allocated outside of a scope");
+    let scope = context.runtime().current_scope();
 
     allocate_place(context, ty, name, scope, nodrop, span)
 }
@@ -118,6 +115,46 @@ pub fn scratch(
     let scope = context.runtime().scratch_scope();
 
     allocate_place(context, ty, None, scope, false, span)
+}
+
+pub fn scratch_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
+    let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = value.kind() else {
+        return false;
+    };
+    let runtime = context.runtime();
+    match runtime.slot(*slot) {
+        MIRBindable::Place(place) if !context.env().is_reference(value.ty()) => runtime
+            .builder()
+            .place(*place)
+            .is_some_and(|place| place.scope() == runtime.scratch_scope()),
+        _ => false,
+    }
+}
+
+pub fn place_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
+    let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = value.kind() else {
+        return false;
+    };
+    matches!(context.runtime().slot(*slot), MIRBindable::Place(_))
+}
+
+pub fn adopt(
+    context: &mut LocalLoweringContext,
+    target: &HMIRValue,
+    source: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<()> {
+    let Some(MIRBindable::Place(place)) = bindable(context, target) else {
+        unreachable!("only a place adopts storage")
+    };
+    let address = lower_value(context, source, span)?;
+    let builder = context.runtime_mut().builder_mut();
+    let decl = builder.place_mut(place).expect("an adopting place is declared");
+    *decl = MIRPlaceDecl::new(decl.ty(), decl.debug_name().cloned(), decl.scope(), decl.nodrop(), true);
+    intrinsic(context, MIRInternalIntrinsic::AdoptPlace { place, address }, span.clone());
+    initialize(context, target, span);
+
+    Ok(())
 }
 
 pub fn parameter(
