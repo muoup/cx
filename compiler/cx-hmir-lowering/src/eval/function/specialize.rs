@@ -2,6 +2,7 @@ use cx_hmir::{
     HMIRDefID, HMIRFnSignature,
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics},
 };
+use cx_log::CXResult;
 use cx_mir::MIRFnPrototype;
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -9,12 +10,9 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 use crate::{
     emit,
     env::{function::LocalLoweringContext, generation::Specialization},
-    eval::{EvalResult, call, contract, flow::Evaluation, safety, types},
+    eval::{EvalResult, call, contract, flow::Evaluation, types},
     symbol,
-    value::{
-        HMIRValue, HMIRValueKind,
-        constant::{HMIRConstant, HMIRFunctionRef},
-    },
+    value::{HMIRValue, constant::HMIRFunctionRef},
 };
 
 pub fn apply(
@@ -25,27 +23,45 @@ pub fn apply(
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
     if context.is_unevaluated() {
-        let ty = *signature.return_type();
-        return Ok(Evaluation::Ready(emit::scratch(context, ty, span)?));
+        return Ok(Evaluation::Ready(emit::scratch(
+            context,
+            *signature.return_type(),
+            span,
+        )?));
     }
-    safety::require_call(context, span, signature.contract().is_safe(), true)?;
-    let mut bindings = Vec::with_capacity(values.len());
-    let mut args = Vec::new();
-    let mut runtime = Vec::new();
-    let mut params = Vec::new();
-    for (param, value) in signature.params().iter().zip(&values) {
-        if param.comptime() {
-            let HMIRValueKind::Constant(_) = value.kind() else {
-                unreachable!("comptime arguments were exported before specialization")
-            };
-            args.push(value.clone());
-            bindings.push(Some(value.clone()));
-        } else {
-            bindings.push(None);
-            runtime.push(value.clone());
-            params.push(param.clone());
-        }
-    }
+    let bindings = signature
+        .params()
+        .iter()
+        .zip(&values)
+        .map(|(param, value)| param.comptime().then(|| value.clone()))
+        .collect();
+    let callee = declare(context, def, signature, bindings, span)?;
+    let runtime = signature
+        .params()
+        .iter()
+        .zip(&values)
+        .filter(|(param, _)| !param.comptime())
+        .map(|(_, value)| value.clone())
+        .collect::<Vec<_>>();
+    contract::call(context, def, &values, span, |context| {
+        call::finish(context, &callee, &runtime, *signature.return_type(), span)
+    })
+}
+
+pub fn declare(
+    context: &mut LocalLoweringContext,
+    def: HMIRDefID,
+    signature: &HMIRFnSignature<HMIRTypeID>,
+    bindings: Vec<Option<HMIRValue>>,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let args = bindings.iter().flatten().cloned().collect::<Vec<_>>();
+    let params = signature
+        .params()
+        .iter()
+        .filter(|param| !param.comptime())
+        .cloned()
+        .collect();
     let concrete = HMIRFnSignature::new(
         signature.stage(),
         params,
@@ -53,11 +69,12 @@ pub fn apply(
         signature.is_variadic(),
         signature.contract().clone(),
     );
-    if context
-        .env()
-        .generation()
-        .generated(HMIRFunctionRef::Def(def), &args)
-        .is_none()
+    if !context.is_unevaluated()
+        && context
+            .env()
+            .generation()
+            .generated(HMIRFunctionRef::Def(def), &args)
+            .is_none()
     {
         let env = context.env_mut();
         let original =
@@ -86,9 +103,6 @@ pub fn apply(
         None,
     ));
     let ty = types::pointer(context.env_mut(), ty, span);
-    let function = HMIRFunctionRef::Def(def);
-    let callee = HMIRValue::constant(ty, HMIRConstant::Function { function, args });
-    contract::call(context, def, &values, span, |context| {
-        call::finish(context, &callee, &runtime, *signature.return_type(), span)
-    })
+    let callee = symbol::binding(context.env_mut(), def, None)?;
+    Ok(HMIRValue::curried(ty, callee, args))
 }

@@ -47,6 +47,21 @@ impl HMIRValue {
         Self::new(ty, HMIRValueKind::Constant(constant))
     }
 
+    pub fn curried(ty: HMIRTypeID, callee: Self, mut args: Vec<Self>) -> Self {
+        let callee = match callee.kind {
+            HMIRValueKind::Constant(HMIRConstant::Curried {
+                callee,
+                args: mut applied,
+            }) => {
+                applied.append(&mut args);
+                args = applied;
+                callee
+            }
+            _ => Box::new(callee),
+        };
+        Self::constant(ty, HMIRConstant::Curried { callee, args })
+    }
+
     pub fn place(ty: HMIRTypeID, place: HMIRPlace) -> Self {
         Self::new(ty, HMIRValueKind::PlaceRef(place))
     }

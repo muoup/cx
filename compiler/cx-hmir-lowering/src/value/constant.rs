@@ -1,3 +1,5 @@
+use std::iter;
+
 use cx_hmir::{
     HMIRDefID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
@@ -18,9 +20,9 @@ pub enum HMIRConstant {
     Str(String),
     Null,
     Type(HMIRTypeID),
-    // A function with its leading comptime arguments applied
-    Function {
-        function: HMIRFunctionRef,
+    Function(HMIRFunctionRef),
+    Curried {
+        callee: Box<HMIRValue>,
         args: Vec<HMIRValue>,
     },
     Quote(QuoteRef),
@@ -91,8 +93,8 @@ impl HMIRConstant {
             Self::Aggregate(items) => items.iter().any(Self::holds_local_address),
             Self::Union { value, .. } => value.holds_local_address(),
             Self::TaggedUnion { payload, .. } => payload.holds_local_address(),
-            Self::Function { args, .. } => args.iter().any(|arg| {
-                matches!(arg.kind(), HMIRValueKind::Constant(constant) if constant.holds_local_address())
+            Self::Curried { callee, args } => iter::once(callee.as_ref()).chain(args).any(|value| {
+                matches!(value.kind(), HMIRValueKind::Constant(constant) if constant.holds_local_address())
             }),
             _ => false,
         }

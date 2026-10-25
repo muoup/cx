@@ -220,22 +220,13 @@ pub fn constant(
             )],
         },
         (
-            HMIRConstant::Function {
-                function: HMIRFunctionRef::Constructor { ty, variant },
-                ..
-            },
+            HMIRConstant::Function(HMIRFunctionRef::Constructor { ty, variant }),
             _,
         ) => MIRConstant::Function(constructor::declare(env, *ty, *variant, span)?),
         (
-            HMIRConstant::Function {
-                function: function @ HMIRFunctionRef::Def(def),
-                args,
-            },
+            HMIRConstant::Function(HMIRFunctionRef::Def(def)),
             _,
         ) => {
-            if let Some(function) = env.generation().generated(*function, args) {
-                return Ok(MIRConstant::Function(function));
-            }
             let prototype = types::lower_prototype(env, *def, None, span)?;
             if def.brand() == env.symbols().local_unit().id()
                 || prototype.linkage == LinkageMode::Static
@@ -243,6 +234,15 @@ pub fn constant(
                 env.generation_mut().request(*def);
             }
             MIRConstant::Function(env.module_mut().declare_function(prototype))
+        }
+        (HMIRConstant::Curried { callee, args }, _) => {
+            if let HMIRValueKind::Constant(HMIRConstant::Function(function)) = callee.kind()
+                && let Some(function) = env.generation().generated(*function, args)
+            {
+                return Ok(MIRConstant::Function(function));
+            }
+            return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION,
+                "lowering an unresolved curried callable to runtime".into()));
         }
         (other, _) => todo!("constant {other:?}"),
     })
@@ -258,7 +258,7 @@ pub fn lower_value(
         HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
             place_address(context, address, value.ty(), span)?
         }
-        HMIRValueKind::Constant(function @ HMIRConstant::Function { .. })
+        HMIRValueKind::Constant(function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. }))
             if context.env().pointer_inner(value.ty()).is_some() =>
         {
             let MIRConstant::Function(fn_id) =
@@ -366,7 +366,7 @@ pub fn call(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let callee = match callee.kind() {
-        HMIRValueKind::Constant(function @ HMIRConstant::Function { .. }) => {
+        HMIRValueKind::Constant(function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. })) => {
             MIRValue::Constant(constant(context.env_mut(), function, callee.ty(), span)?)
         }
         _ => lower_value(context, callee, span)?,

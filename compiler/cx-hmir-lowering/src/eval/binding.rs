@@ -130,6 +130,10 @@ pub(crate) fn eval_let(
             None,
             move |context, body, ty, _| {
                 let value = coerce::implicit(context, value, ty, &span)?;
+                if is_runtime && matches!(context.env().resolve_kind(ty), HMIRTypeKind::FunctionItem(_)) {
+                    emit::storage::bind_local(context, local_id, value);
+                    return Ok(Evaluation::Ready(literal::unit(context, &span)));
+                }
                 let reserved = storage.is_some();
                 let storage = match storage {
                     Some(storage) => storage,

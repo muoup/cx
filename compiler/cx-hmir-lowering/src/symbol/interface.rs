@@ -80,10 +80,7 @@ pub(crate) fn definition(
                 ));
                 return Ok(HMIRValue::constant(
                     ty,
-                    HMIRConstant::Function {
-                        function: HMIRFunctionRef::Def(id),
-                        args: Vec::new(),
-                    },
+                    HMIRConstant::Function(HMIRFunctionRef::Def(id)),
                 ));
             }
             let mut canonical = None;
@@ -113,10 +110,7 @@ pub(crate) fn definition(
             ));
             Ok(HMIRValue::constant(
                 ty,
-                HMIRConstant::Function {
-                    function: HMIRFunctionRef::Def(id),
-                    args: Vec::new(),
-                },
+                HMIRConstant::Function(HMIRFunctionRef::Def(id)),
             ))
         }
         HMIRDefKind::Global(_) => {

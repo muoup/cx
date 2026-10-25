@@ -29,10 +29,7 @@ pub(crate) fn eval_def(
         HMIRValueKind::Constant(HMIRConstant::Type(ty)) => {
             complete::type_result(context, *ty, span)
         }
-        HMIRValueKind::Constant(HMIRConstant::Function {
-            function: HMIRFunctionRef::Def(def),
-            ..
-        }) => function_value(context, span, *def, value),
+        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) => function_value(context, span, *def, value),
         HMIRValueKind::Constant(HMIRConstant::Address(address))
             if let Some(HMIRPlace::Global(def)) = address.whole_place() =>
         {

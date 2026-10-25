@@ -49,11 +49,15 @@ fn evaluate(
         return staged::apply(context, body, callee, args, span);
     }
     let callee = coerce::std_rvalue(context, callee, span)?;
+    let (callee, applied) = match callee.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Curried { callee, args }) => {
+            (callee.as_ref().clone(), args.clone())
+        }
+        _ => (callee, Vec::new()),
+    };
     if context.is_unevaluated()
-        && let HMIRValueKind::Constant(HMIRConstant::Function {
-            function: HMIRFunctionRef::Def(def),
-            ..
-        }) = callee.kind()
+        && let HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) =
+            callee.kind()
     {
         let source = context.env().symbols().resolve_definition(*def);
         let selected = symbol::select(source, None)?;
@@ -61,7 +65,7 @@ fn evaluate(
             && function.signature().stage() == HMIRFunctionStage::Comptime
         {
             let mut child = comptime::frozen_child(context);
-            return function::call(&mut child, &callee, body, args, span);
+            return function::call(&mut child, &callee, body, args, &applied, span);
         }
     }
     if (matches!(context.context(), FnContext::Comptime(_)) && constructs(&callee).is_none())
@@ -70,7 +74,7 @@ fn evaluate(
             HMIRTypeKind::FunctionItem(_)
         )
     {
-        return function::call(context, &callee, body, args, span);
+        return function::call(context, &callee, body, args, &applied, span);
     }
 
     let env = context.env();
@@ -88,9 +92,10 @@ fn evaluate(
     let signature = signature.clone();
 
     let params = signature.params();
-    if args.len() < params.len() || (!signature.is_variadic() && args.len() > params.len()) {
+    let count = applied.len() + args.len();
+    if count < params.len() || (!signature.is_variadic() && count > params.len()) {
         let subject = match callee.kind() {
-            HMIRValueKind::Constant(HMIRConstant::Function { function, .. }) => match function {
+            HMIRValueKind::Constant(HMIRConstant::Function(function)) => match function {
                 HMIRFunctionRef::Def(def) => {
                     format!("'{}'", env.symbols().resolve_definition(*def).name())
                 }
@@ -100,25 +105,22 @@ fn evaluate(
             },
             _ => "function".into(),
         };
-        let counts = (subject, params.len(), args.len(), signature.is_variadic());
+        let counts = (subject, params.len(), count, signature.is_variadic());
 
         return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts).into());
     }
 
     let source_defined = !matches!(
         callee.kind(),
-        HMIRValueKind::Constant(HMIRConstant::Function {
-            function: HMIRFunctionRef::Constructor { .. },
-            ..
-        })
+        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Constructor { .. }))
     );
     let safe = !source_defined || signature.contract().is_safe();
     safety::require_call(context, span, safe, source_defined)?;
 
-    let mut values = Vec::with_capacity(args.len());
-    for (index, arg) in args.iter().enumerate() {
+    let mut values = applied;
+    for arg in args {
         let span = body.expr(*arg).span();
-        let param = params.get(index).map(|param| *param.ty());
+        let param = params.get(values.len()).map(|param| *param.ty());
         let evaluated = eval(context, body, *arg)?;
         let value = ready!(evaluated.complete(context, body, param));
         let value = match param {
@@ -131,10 +133,9 @@ fn evaluate(
 
     let return_type = *signature.return_type();
     match callee.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Function {
-            function: HMIRFunctionRef::Def(def),
-            ..
-        }) if matches!(context.context(), FnContext::Runtime(_)) && !context.is_unevaluated() => {
+        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def)))
+            if matches!(context.context(), FnContext::Runtime(_)) && !context.is_unevaluated() =>
+        {
             contract::call(context, *def, &values, span, |context| {
                 finish(context, &callee, &values, return_type, span)
             })
@@ -181,10 +182,10 @@ pub(crate) fn finish(
 
 fn constructs(callee: &HMIRValue) -> Option<(HMIRTypeID, usize)> {
     match callee.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Function {
-            function: HMIRFunctionRef::Constructor { ty, variant },
-            ..
-        }) => Some((*ty, *variant)),
+        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Constructor {
+            ty,
+            variant,
+        })) => Some((*ty, *variant)),
         _ => None,
     }
 }

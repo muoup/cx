@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
@@ -55,16 +57,32 @@ fn unsupported<T>(span: &TokenRange, operation: String) -> CXResult<T> {
 
 fn compare(op: HMIRBinaryOp, lhs: &HMIRConstant, rhs: &HMIRConstant) -> Option<bool> {
     let ordering = match (lhs, rhs) {
-        (HMIRConstant::Null, HMIRConstant::Null) => std::cmp::Ordering::Equal,
+        (HMIRConstant::Null, HMIRConstant::Null) => Ordering::Equal,
         (HMIRConstant::Address(lhs), HMIRConstant::Address(rhs)) if lhs.base() == rhs.base() => {
             lhs.offset().cmp(&rhs.offset())
         }
-        (HMIRConstant::Null, HMIRConstant::Address(_) | HMIRConstant::Function { .. })
-        | (HMIRConstant::Address(_) | HMIRConstant::Function { .. }, HMIRConstant::Null)
+        (
+            HMIRConstant::Null,
+            HMIRConstant::Address(_) | HMIRConstant::Function(_) | HMIRConstant::Curried { .. },
+        )
+        | (
+            HMIRConstant::Address(_) | HMIRConstant::Function(_) | HMIRConstant::Curried { .. },
+            HMIRConstant::Null,
+        )
         | (HMIRConstant::Address(_), HMIRConstant::Address(_)) => {
             return match op {
                 HMIRBinaryOp::Eq => Some(false),
                 HMIRBinaryOp::Neq => Some(true),
+                _ => None,
+            };
+        }
+        (
+            HMIRConstant::Function(_) | HMIRConstant::Curried { .. },
+            HMIRConstant::Function(_) | HMIRConstant::Curried { .. },
+        ) => {
+            return match op {
+                HMIRBinaryOp::Eq => Some(lhs == rhs),
+                HMIRBinaryOp::Neq => Some(lhs != rhs),
                 _ => None,
             };
         }

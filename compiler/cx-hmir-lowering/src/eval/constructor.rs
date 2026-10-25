@@ -88,10 +88,9 @@ pub(crate) fn reference(
         None,
     ));
     let function = HMIRFunctionRef::Constructor { ty, variant };
-    let args = Vec::new();
     Ok(Some(HMIRValue::constant(
         callable,
-        HMIRConstant::Function { function, args },
+        HMIRConstant::Function(function),
     )))
 }
 

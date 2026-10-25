@@ -79,8 +79,8 @@ impl HMIREnvironment<'_, '_> {
                 variant,
                 payload: Box::new(self.canonical_constant(*payload, *fields[variant].ty())),
             },
-            (HMIRConstant::Function { function, args }, _) => HMIRConstant::Function {
-                function,
+            (HMIRConstant::Curried { callee, args }, _) => HMIRConstant::Curried {
+                callee: Box::new(self.canonical_value(*callee)),
                 args: args
                     .into_iter()
                     .map(|arg| self.canonical_value(arg))

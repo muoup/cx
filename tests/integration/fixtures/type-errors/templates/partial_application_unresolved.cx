@@ -1,0 +1,5 @@
+A combine(comptime @type A, comptime @type B, A first, B second) => first + second;
+int main() {
+    int (*callee)(int, long) = combine(int);
+    return 0;
+}

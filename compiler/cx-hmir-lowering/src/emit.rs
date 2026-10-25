@@ -67,7 +67,7 @@ pub fn address(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Function { .. } | HMIRConstant::Str(_)) => {
+        HMIRValueKind::Constant(HMIRConstant::Function(_) | HMIRConstant::Curried { .. } | HMIRConstant::Str(_)) => {
             return Ok(value.clone().with_ty(ty));
         }
         HMIRValueKind::Indirect(pointer) if context.env().pointer_inner(pointer.ty()).is_some() => {

@@ -1,0 +1,63 @@
+#include <stdio.h>
+
+int add(comptime int amount, int value)
+where pre: (value > 0), post(result): (result == value + amount)
+{
+    return value + amount;
+}
+
+A combine(comptime @type A, comptime @type B, A first, B second) {
+    return first + second;
+}
+
+int between(comptime int first, int value, comptime int last) {
+    return first + value + last;
+}
+
+comptime int once() {
+    int counter = 0;
+    auto applied = add(++counter);
+    return applied(5) + applied(6) + counter * 100;
+}
+
+comptime int counted = once();
+
+comptime expr(T) identity(comptime @type T, expr(T) value) => emit value;
+
+typedef int (*Callback)(int);
+comptime Callback make_callback() => add(2);
+comptime int call_callback(Callback callback) {
+    Callback repeated = add(2);
+    if (callback != 0 && callback == repeated) return callback(7);
+    return -1;
+}
+comptime Callback cached = make_callback();
+comptime int called = call_callback(cached);
+
+int form_only() safe {
+    auto partial = combine(int);
+    return 1;
+}
+
+int indirect(int (*callee)(int, long), int value) {
+    return callee(value, 4L);
+}
+
+int main() {
+    auto first = combine(int);
+    auto second = first(long);
+    int (*direct)(int, long) = combine(int, long);
+    int (*same)(int, long) = first(long);
+    auto add_three = add(3);
+    printf("%d %d %d %d\n", second(2, 3L), ((combine(int))(long))(3, 4L),
+        indirect(direct, 4), same == direct);
+    printf("%d %d %d %d\n", add_three(5), add(4)(6), counted, form_only());
+    auto middle = between(1);
+    printf("%d %d\n", between(1, 2, 3), middle(2, 3));
+    printf("%d %d\n", cached(6), called);
+    auto generator = identity(int);
+    int counter = 0;
+    int generated = generator(emit ++counter);
+    printf("%d %d\n", generated, counter);
+    return 0;
+}
