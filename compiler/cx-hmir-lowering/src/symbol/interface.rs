@@ -150,7 +150,7 @@ pub(crate) fn definition(
                     format!("global of type '{}'", types::name(context.env(), ty)),
                 ));
             }
-            let reference = types::reference(context.env_mut(), ty, span);
+            let reference = types::reference(context.env_mut(), ty, None, span);
             Ok(HMIRValue::constant(
                 reference,
                 HMIRConstant::Address(HMIRAddress::place(HMIRPlace::Global(id))),

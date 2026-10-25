@@ -92,15 +92,6 @@ pub(crate) fn eval_unpack(
                 binding.to_string(),
             ));
         }
-        if field.bit_width().is_some() {
-            return Err(hmir_error(
-                span,
-                &typecheck::UNSUPPORTED_FEATURE,
-                "unpacking bitfields".into(),
-            )
-            .into());
-        }
-
         projections.push((index, binding.clone(), *local, *field.ty()));
     }
 
@@ -141,10 +132,13 @@ pub(crate) fn eval_unpack(
             projected
         } else {
             let reference = emit::reference(context, &projected, span)?;
-            emit::lift(context, &reference, Some(&source), span)?
+            match types::bitfield(context.env(), &reference) {
+                Some(_) => emit::copy(context, reference, span)?,
+                None => emit::lift(context, &reference, Some(&source), span)?,
+            }
         };
         let target = emit::allocate(context, ty, Some(name), span)?;
-        let reference = types::reference(context.env_mut(), ty, body.local(local).span());
+        let reference = types::reference(context.env_mut(), ty, None, body.local(local).span());
         let target = target.with_ty(reference);
         storage::initialize(context, &target, &value, span)?;
         emit::storage::bind_local(context, local, target);

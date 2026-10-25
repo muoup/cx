@@ -90,7 +90,7 @@ impl<'a> Deduction<'a> {
     ) -> HMIRTypeID {
         if matches!(
             self.function.body().expr(form).kind(),
-            HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::ReferenceTo(_))
+            HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::ReferenceTo { .. })
         ) {
             return actual;
         }
@@ -143,7 +143,7 @@ impl<'a> Deduction<'a> {
                 });
                 self.unify(context, *inner, actual, unresolved, span)
             }
-            HMIRExprTypeKind::ReferenceTo(inner) => {
+            HMIRExprTypeKind::ReferenceTo { inner, .. } => {
                 let actual = actual.map(|actual| env.reference_inner(actual).unwrap_or(actual));
                 self.unify(context, *inner, actual, unresolved, span)
             }

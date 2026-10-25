@@ -141,14 +141,14 @@ fn require_unsafe_conversion(
         {
             Some("Unsafe type conversion")
         }
-        (HMIRTypeKind::PointerTo(pointee), HMIRTypeKind::ReferenceTo(inner))
+        (HMIRTypeKind::PointerTo(pointee), HMIRTypeKind::ReferenceTo { inner, .. })
             if context.env().same_type(*pointee, *inner)
                 || (explicit && context.env().is_str(*inner)
                     && matches!(context.env().resolve_kind(*pointee), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8)) =>
         {
             Some("Dereferencing a pointer")
         }
-        (HMIRTypeKind::Array { element, .. }, HMIRTypeKind::ReferenceTo(inner))
+        (HMIRTypeKind::Array { element, .. }, HMIRTypeKind::ReferenceTo { inner, .. })
             if explicit && context.env().is_str(*inner)
                 && matches!(context.env().resolve_kind(*element), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8) =>
         {

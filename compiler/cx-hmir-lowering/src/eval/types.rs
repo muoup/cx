@@ -5,7 +5,7 @@ use cx_hmir::{
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind,
-        aggregate::{HMIRFieldDef, HMIRTypeSemantics},
+        aggregate::{HMIRBitfield, HMIRFieldDef, HMIRTypeSemantics},
         context::HMIRTypeContext,
         intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
     },
@@ -30,6 +30,7 @@ use crate::{
     eval::{EvalResult, eval_type, flow, op::specify, staged, types},
     log::{hmir_error, log_hmir_error},
     symbol,
+    value::{HMIRValue, HMIRValueKind},
 };
 
 // A slot naming a parameter is only fixed by the arguments of a call, so the shape leaves it dependent
@@ -242,7 +243,7 @@ pub(crate) fn lower_type(
         HMIRTypeKind::PointerTo(inner) => MIRTypeKind::PointerTo {
             inner: lower_type(env, inner, span)?,
         },
-        HMIRTypeKind::ReferenceTo(inner) => MIRTypeKind::MemoryReference {
+        HMIRTypeKind::ReferenceTo { inner, .. } => MIRTypeKind::MemoryReference {
             inner: lower_type(env, inner, span)?,
         },
         HMIRTypeKind::Array { element, length } => {
@@ -378,14 +379,27 @@ pub(crate) fn is_complete(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
 pub(crate) fn reference(
     env: &mut HMIREnvironment,
     inner: HMIRTypeID,
+    bitfield: Option<HMIRBitfield>,
     span: &TokenRange,
 ) -> HMIRTypeID {
     env.resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::ReferenceTo(inner),
+        HMIRTypeKind::ReferenceTo { inner, bitfield },
         HMIRTypeSemantics::default(),
         span.clone(),
         None,
     ))
+}
+
+// The bitfield behind a reference, or behind the reference an indirect place was reached through
+pub(crate) fn bitfield(env: &HMIREnvironment, value: &HMIRValue) -> Option<HMIRBitfield> {
+    let reference = match value.kind() {
+        HMIRValueKind::Indirect(pointer) => pointer.ty(),
+        _ => value.ty(),
+    };
+    match env.resolve_kind(reference) {
+        HMIRTypeKind::ReferenceTo { bitfield, .. } => *bitfield,
+        _ => None,
+    }
 }
 
 pub(crate) fn pointer(
@@ -418,7 +432,10 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         ),
         HMIRTypeKind::Float(float) => format!("f{}", float.width().bytes() * 8),
         HMIRTypeKind::PointerTo(inner) => format!("{}*", name(env, *inner)),
-        HMIRTypeKind::ReferenceTo(inner) => format!("{}&", name(env, *inner)),
+        HMIRTypeKind::ReferenceTo { inner, bitfield } => match bitfield {
+            Some(bitfield) => format!("{}&[{}:{}]", name(env, *inner), bitfield.offset, bitfield.width),
+            None => format!("{}&", name(env, *inner)),
+        },
         HMIRTypeKind::Array { element, length } => format!(
             "{}[{}]",
             name(env, *element),

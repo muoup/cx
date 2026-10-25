@@ -111,7 +111,7 @@ pub(crate) fn construct_type(
     let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
     let complete = match ty.kind() {
         HMIRExprTypeKind::PointerTo(_)
-        | HMIRExprTypeKind::ReferenceTo(_)
+        | HMIRExprTypeKind::ReferenceTo { .. }
         | HMIRExprTypeKind::Function(_) => {
             let mut complete = ty.map(
                 context,

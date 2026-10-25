@@ -9,14 +9,14 @@ pub use storage::{
 };
 
 use cx_hmir::ty::{
-    HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+    HMIRTypeID, HMIRTypeKind, aggregate::HMIRBitfield, context::HMIRTypeContext,
     intrinsic::HMIRIntWidth,
 };
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRConstant,
     MIRInstructionKind, MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceID, MIRPtrIntrinsic,
-    MIRRegister, MIRRegisterDecl, MIRTarget, MIRTypeID, MIRValue,
+    MIRRegister, MIRRegisterDecl, MIRStoreBitfield, MIRTarget, MIRTypeID, MIRValue,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
@@ -118,6 +118,7 @@ fn store(
     target: MIRTarget,
     value: MIRValue,
     ty: MIRTypeID,
+    bitfield: Option<MIRStoreBitfield>,
     span: TokenRange,
 ) {
     context.runtime_mut().emit(
@@ -125,7 +126,7 @@ fn store(
             target,
             value,
             ty,
-            bitfield: None,
+            bitfield,
         },
         span,
     )
@@ -341,7 +342,7 @@ fn place_address(
         unreachable!("only a place has an address");
     };
 
-    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::ReferenceTo(_)) {
+    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::ReferenceTo { .. }) {
         return Ok(MIRValue::PlaceRef(place));
     }
 
@@ -516,12 +517,7 @@ pub fn dereference(
         span,
     );
 
-    let reference_ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::ReferenceTo(inner),
-        HMIRTypeSemantics::default(),
-        span.clone(),
-        None,
-    ));
+    let reference_ty = types::reference(context.env_mut(), inner, None, span);
     let target_ty = types::lower_type(context.env_mut(), reference_ty, span)?;
     let (out, reference) = output(context, reference_ty, span)?;
     intrinsic(
@@ -543,6 +539,7 @@ pub fn field(
     base: &HMIRValue,
     index: usize,
     ty: HMIRTypeID,
+    bitfield: Option<HMIRBitfield>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let stored = context.env().reference_inner(base.ty()).unwrap_or(base.ty());
@@ -553,12 +550,7 @@ pub fn field(
     let aggregate_ty = types::lower_type(context.env_mut(), stored, span)?;
     let base = lower_value(context, base, span)?;
 
-    let reference_ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
-        HMIRTypeKind::ReferenceTo(ty),
-        HMIRTypeSemantics::default(),
-        span.clone(),
-        None,
-    ));
+    let reference_ty = types::reference(context.env_mut(), ty, bitfield, span);
     let (out, reference) = output(context, reference_ty, span)?;
     let projection = if tagged {
         MIRAggregateIntrinsic::SumVariant {

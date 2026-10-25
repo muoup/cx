@@ -21,7 +21,7 @@ use cx_log::{CXResult, catalogue::mir};
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope},
+    env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope, memory::placement},
     eval::types,
     log::log_hmir_error,
     value::{Bindings, HMIRValue, HMIRValueKind, constant::HMIRConstant},
@@ -56,8 +56,17 @@ pub fn reference(
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let ty = types::reference(context.env_mut(), value.ty(), span);
-    address(context, value, ty, span)
+    let bitfield = match value.kind() {
+        HMIRValueKind::Indirect(_) => types::bitfield(context.env(), value),
+        _ => None,
+    };
+    let ty = types::reference(context.env_mut(), value.ty(), bitfield, span);
+    match value.kind() {
+        HMIRValueKind::Indirect(pointer) if context.env().same_type(pointer.ty(), ty) => {
+            Ok(pointer.as_ref().clone())
+        }
+        _ => address(context, value, ty, span),
+    }
 }
 
 pub fn address(
@@ -108,9 +117,11 @@ pub fn field(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
+    let owner = context.env().reference_inner(base.ty()).unwrap_or(base.ty());
+    let bitfield = placement(context.env_mut(), owner, index, span)?;
     match context.context() {
-        FnContext::Runtime(_) => runtime::field(context, base, index, ty, span),
-        FnContext::Comptime(_) => comptime::field(context, base, index, ty, span),
+        FnContext::Runtime(_) => runtime::field(context, base, index, ty, bitfield, span),
+        FnContext::Comptime(_) => comptime::field(context, base, index, ty, bitfield, span),
     }
 }
 

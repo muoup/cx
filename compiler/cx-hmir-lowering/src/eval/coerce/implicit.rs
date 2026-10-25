@@ -3,7 +3,7 @@ mod reference;
 mod string;
 
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth};
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -13,6 +13,7 @@ use crate::{
         coerce::{compatible, promotion, result::Coercion, truth},
         types,
     },
+    log::hmir_error,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
@@ -76,7 +77,7 @@ fn step(
 
     match &kinds {
         (
-            HMIRTypeKind::ReferenceTo(inner),
+            HMIRTypeKind::ReferenceTo { inner, .. },
             HMIRTypeKind::Array {
                 element: to,
                 length: target_length,
@@ -105,20 +106,33 @@ fn step(
                 emit::copy(context, value, span)?.with_ty(ty),
             ));
         }
-        (HMIRTypeKind::ReferenceTo(inner), HMIRTypeKind::ReferenceTo(_))
+        (HMIRTypeKind::ReferenceTo { inner, .. }, HMIRTypeKind::ReferenceTo { .. })
             if context.env().is_reference(*inner) =>
         {
             return promotion::step(context, value, span);
         }
-        (HMIRTypeKind::ReferenceTo(_), HMIRTypeKind::ReferenceTo(_)) => {
+        (
+            HMIRTypeKind::ReferenceTo {
+                inner: from,
+                bitfield: Some(_),
+            },
+            HMIRTypeKind::ReferenceTo {
+                inner: to,
+                bitfield: None,
+            },
+        ) if compatible::compatible(context.env(), *from, *to) => {
+            let usage = "bind a reference to".into();
+            return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage));
+        }
+        (HMIRTypeKind::ReferenceTo { .. }, HMIRTypeKind::ReferenceTo { .. }) => {
             return Ok(Coercion::Unapplied(value));
         }
-        (HMIRTypeKind::ReferenceTo(_), _) => return promotion::step(context, value, span),
+        (HMIRTypeKind::ReferenceTo { .. }, _) => return promotion::step(context, value, span),
 
         (HMIRTypeKind::Staged(_), target) if !matches!(target, HMIRTypeKind::Staged(_)) => {
             return promotion::step(context, value, span);
         }
-        (_, HMIRTypeKind::ReferenceTo(inner)) => {
+        (_, HMIRTypeKind::ReferenceTo { inner, .. }) => {
             return reference::bind(context, value, *inner, target, span);
         }
 

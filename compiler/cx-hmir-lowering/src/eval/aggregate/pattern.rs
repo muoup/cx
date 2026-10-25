@@ -112,7 +112,7 @@ pub(crate) fn bind(
     let local_info = body.local(local);
     let reference = match body.expr(local_info.ty()).kind() {
         HMIRExprKind::Type(declared) => match declared.kind() {
-            HMIRExprTypeKind::ReferenceTo(inner) => Some(
+            HMIRExprTypeKind::ReferenceTo { inner, .. } => Some(
                 matches!(body.expr(*inner).kind(), HMIRExprKind::Type(inner) if inner.semantics().constant),
             ),
             _ => None,
@@ -146,7 +146,7 @@ pub(crate) fn bind(
             } else {
                 ty
             };
-            let target = types::reference(context.env_mut(), target, span);
+            let target = types::reference(context.env_mut(), target, None, span);
             (coerce::implicit(context, source, target, span)?, target)
         }
         None => {
@@ -160,7 +160,7 @@ pub(crate) fn bind(
         }
     };
     let destination = emit::allocate(context, binding_ty, local_info.name().cloned(), span)?;
-    let binding = types::reference(context.env_mut(), binding_ty, span);
+    let binding = types::reference(context.env_mut(), binding_ty, None, span);
     let destination = destination.with_ty(binding);
     storage::initialize(context, &destination, &value, span)?;
     emit::storage::bind_local(context, local, destination);

@@ -227,6 +227,10 @@ pub(crate) fn eval_address_of(
     if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Str) {
         todo!("address of a string")
     }
+    if types::bitfield(context.env(), &value).is_some() {
+        let usage = "take the address of".into();
+        return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage).into());
+    }
 
     let ty = types::pointer(context.env_mut(), inner, span);
 

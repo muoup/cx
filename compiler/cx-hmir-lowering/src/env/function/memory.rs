@@ -6,7 +6,10 @@ use std::{
     ops::Range,
 };
 
-use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
+use cx_hmir::{
+    HMIRDefID,
+    ty::{HMIRTypeID, aggregate::HMIRBitfield},
+};
 use cx_log::{CXResult, catalogue::mir, error::CXError};
 use cx_tokens::TokenRange;
 
@@ -21,7 +24,7 @@ use crate::{
     },
 };
 
-pub(crate) use codec::{field_offset, layout};
+pub(crate) use codec::{field_offset, layout, placement};
 
 thread_local! {
     static NEXT_REGION: Counter<usize> = const { Counter::new(0) };
@@ -221,6 +224,7 @@ impl LocalLoweringContext<'_, '_, '_> {
         &mut self,
         address: &HMIRAddress,
         ty: HMIRTypeID,
+        bitfield: Option<HMIRBitfield>,
         span: &TokenRange,
     ) -> CXResult<HMIRConstant> {
         let region = self.region(address, false, span)?;
@@ -230,7 +234,10 @@ impl LocalLoweringContext<'_, '_, '_> {
             .borrow()
             .load(region, address.offset(), size)
             .map_err(|fault| fault.error(span))?;
-        codec::decode(self.env_mut(), ty, &image, 0, span)
+        match bitfield {
+            Some(bitfield) => codec::extract(self.env(), ty, &image, bitfield, span),
+            None => codec::decode(self.env_mut(), ty, &image, 0, span),
+        }
     }
 
     pub(crate) fn store(
@@ -238,10 +245,22 @@ impl LocalLoweringContext<'_, '_, '_> {
         address: &HMIRAddress,
         ty: HMIRTypeID,
         value: &HMIRConstant,
+        bitfield: Option<HMIRBitfield>,
         span: &TokenRange,
     ) -> CXResult<()> {
         let region = self.region(address, true, span)?;
-        let image = codec::encode(self.env_mut(), ty, value, span)?;
+        let image = match bitfield {
+            Some(bitfield) => {
+                let size = layout(self.env_mut(), ty, span)?.size();
+                let unit = self
+                    .memory
+                    .borrow()
+                    .load(region, address.offset(), size)
+                    .map_err(|fault| fault.error(span))?;
+                codec::insert(&unit, value, bitfield)
+            }
+            None => codec::encode(self.env_mut(), ty, value, span)?,
+        };
         self.memory
             .borrow_mut()
             .store(region, address.offset(), &image)

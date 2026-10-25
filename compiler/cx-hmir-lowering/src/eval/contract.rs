@@ -235,7 +235,7 @@ fn observe(
         ..Default::default()
     };
     let ty = specify(context, storage.ty(), constant, span);
-    let reference = types::reference(context.env_mut(), ty, span);
+    let reference = types::reference(context.env_mut(), ty, None, span);
     Ok(storage.with_ty(reference))
 }
 

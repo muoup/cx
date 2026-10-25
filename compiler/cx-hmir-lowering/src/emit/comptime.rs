@@ -2,7 +2,7 @@ mod op;
 
 pub use op::{binary, cast, difference, offset, unary};
 
-use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
+use cx_hmir::ty::{HMIRTypeID, aggregate::HMIRBitfield, context::HMIRTypeContext};
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
@@ -147,7 +147,8 @@ fn read(
         return Ok(constant.clone());
     };
     live(context, &address, false, span)?;
-    context.load(&address, ty, span)
+    let bitfield = types::bitfield(context.env(), value);
+    context.load(&address, ty, bitfield, span)
 }
 
 fn rvalue(
@@ -193,16 +194,19 @@ pub fn write(
     if tracked(context, target, span)?.is_none() {
         live(context, &address, true, span)?;
     }
+    let bitfield = types::bitfield(context.env(), target);
+    let packed = bitfield.is_some() || types::bitfield(context.env(), value).is_some();
     match storage(context, value, span)? {
         Some((source, stored))
-            if !context.env().is_reference(ty) || context.env().is_reference(stored) =>
+            if !packed
+                && (!context.env().is_reference(ty) || context.env().is_reference(stored)) =>
         {
             live(context, &source, false, span)?;
             context.copy(&address, &source, ty, span)?;
         }
         _ => {
             let constant = rvalue(context, value, span)?;
-            context.store(&address, ty, &constant, span)?;
+            context.store(&address, ty, &constant, bitfield, span)?;
         }
     }
     if let Addressable::Place(HMIRPlace::Region(region)) = address.base()
@@ -296,6 +300,7 @@ pub fn field(
     base: &HMIRValue,
     index: usize,
     ty: HMIRTypeID,
+    bitfield: Option<HMIRBitfield>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let (address, owner) = match (storage(context, base, span)?, base.kind()) {
@@ -334,10 +339,12 @@ pub fn field(
     else {
         return Err(hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ()));
     };
-    let reference = types::reference(context.env_mut(), ty, span);
+    let reference = types::reference(context.env_mut(), ty, bitfield, span);
+    let pointer = HMIRValue::constant(reference, HMIRConstant::Address(address));
 
-    Ok(HMIRValue::indirect(
-        ty,
-        HMIRValue::constant(reference, HMIRConstant::Address(address)),
-    ))
+    // A bitfield only covers part of its storage unit, so it never names a whole place
+    Ok(match bitfield {
+        Some(_) => HMIRValue::new(ty, HMIRValueKind::Indirect(Box::new(pointer))),
+        None => HMIRValue::indirect(ty, pointer),
+    })
 }

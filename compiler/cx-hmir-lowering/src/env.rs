@@ -71,8 +71,17 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
             (HMIRTypeKind::Float(a), HMIRTypeKind::Float(b)) => a == b,
 
             (HMIRTypeKind::PointerTo(a), HMIRTypeKind::PointerTo(b))
-            | (HMIRTypeKind::ReferenceTo(a), HMIRTypeKind::ReferenceTo(b))
             | (HMIRTypeKind::Staged(a), HMIRTypeKind::Staged(b)) => self.same_type(*a, *b),
+            (
+                HMIRTypeKind::ReferenceTo {
+                    inner: a,
+                    bitfield: a_bitfield,
+                },
+                HMIRTypeKind::ReferenceTo {
+                    inner: b,
+                    bitfield: b_bitfield,
+                },
+            ) => a_bitfield == b_bitfield && self.same_type(*a, *b),
 
             (
                 HMIRTypeKind::Array {

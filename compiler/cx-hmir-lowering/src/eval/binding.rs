@@ -178,7 +178,7 @@ fn declare(
         return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject));
     }
 
-    let reference_type = types::reference(context.env_mut(), ty, local.span());
+    let reference_type = types::reference(context.env_mut(), ty, None, local.span());
     let storage = emit::allocate(context, ty, local.name().cloned(), span)?.with_ty(reference_type);
     emit::storage::bind_local(context, local_id, storage.clone());
 

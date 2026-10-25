@@ -102,7 +102,7 @@ fn evaluate(
                 let name = body.local(*local).name().cloned();
                 let storage = emit::allocate(context, target, name, span)?;
                 storage::initialize(context, &storage, &value, span)?;
-                let ty = types::reference(context.env_mut(), target, span);
+                let ty = types::reference(context.env_mut(), target, None, span);
                 storage.with_ty(ty)
             }
         };

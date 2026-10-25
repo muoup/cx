@@ -63,9 +63,13 @@ pub(super) fn write_generic_type<T, L, M>(
             write_inner(f, inner)?;
             f.write_str("*")
         }
-        HMIRGenericTypeKind::ReferenceTo(inner) => {
+        HMIRGenericTypeKind::ReferenceTo { inner, bitfield } => {
             write_inner(f, inner)?;
-            f.write_str("&")
+            f.write_str("&")?;
+            match bitfield {
+                Some(bitfield) => write!(f, "[{}:{}]", bitfield.offset, bitfield.width),
+                None => Ok(()),
+            }
         }
         HMIRGenericTypeKind::Array { element, length } => {
             write_inner(f, element)?;

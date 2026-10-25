@@ -129,7 +129,7 @@ fn runtime_definition(
         let decl = body.local(*local);
         let ty = *param.ty();
         let value = runtime::parameter(context, ty, decl.name().cloned(), decl.span())?;
-        let reference = types::reference(context.env_mut(), ty, decl.span());
+        let reference = types::reference(context.env_mut(), ty, None, decl.span());
         let value = value.with_ty(reference);
 
         emit::storage::bind_local(context, *local, value);

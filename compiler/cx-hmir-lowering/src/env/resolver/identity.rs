@@ -123,7 +123,9 @@ fn fingerprint(env: &HMIREnvironment, ty: HMIRTypeID, hash: &mut impl Hasher) ->
     match kind {
         HMIRTypeKind::Int(int) => int.hash(hash),
         HMIRTypeKind::Float(float) => float.hash(hash),
-        HMIRTypeKind::PointerTo(inner) | HMIRTypeKind::ReferenceTo(inner) => {
+        HMIRTypeKind::PointerTo(inner) => fingerprint(env, *inner, hash)?,
+        HMIRTypeKind::ReferenceTo { inner, bitfield } => {
+            bitfield.hash(hash);
             fingerprint(env, *inner, hash)?;
         }
         HMIRTypeKind::Array { element, length } => {

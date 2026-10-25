@@ -119,7 +119,7 @@ impl Frame<'_> {
             let target =
                 emit::allocate(child, ty, declaration.name().cloned(), declaration.span())?;
             storage::initialize(child, &target, value, declaration.span())?;
-            let reference = types::reference(child.env_mut(), ty, declaration.span());
+            let reference = types::reference(child.env_mut(), ty, None, declaration.span());
             emit::storage::bind_local(child, local, target.with_ty(reference));
             Ok(())
         })

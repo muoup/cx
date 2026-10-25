@@ -32,10 +32,19 @@ pub(crate) fn alike(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID, qualifi
         (HMIRTypeKind::Float(left), HMIRTypeKind::Float(right)) => left == right,
 
         (HMIRTypeKind::PointerTo(left), HMIRTypeKind::PointerTo(right))
-        | (HMIRTypeKind::ReferenceTo(left), HMIRTypeKind::ReferenceTo(right))
         | (HMIRTypeKind::Staged(left), HMIRTypeKind::Staged(right)) => {
             alike(env, *left, *right, true)
         }
+        (
+            HMIRTypeKind::ReferenceTo {
+                inner: left,
+                bitfield: left_bitfield,
+            },
+            HMIRTypeKind::ReferenceTo {
+                inner: right,
+                bitfield: right_bitfield,
+            },
+        ) => left_bitfield == right_bitfield && alike(env, *left, *right, true),
         (
             HMIRTypeKind::Array {
                 element: left,

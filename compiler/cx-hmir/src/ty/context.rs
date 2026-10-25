@@ -35,7 +35,7 @@ pub trait HMIRTypeContext {
     }
 
     fn is_reference(&self, ty: HMIRTypeID) -> bool {
-        matches!(self.resolve_kind(ty), HMIRTypeKind::ReferenceTo(_))
+        matches!(self.resolve_kind(ty), HMIRTypeKind::ReferenceTo { .. })
     }
 
     fn array_inner(&self, ty: HMIRTypeID) -> Option<HMIRTypeID> {

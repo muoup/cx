@@ -31,6 +31,13 @@ pub struct HMIRFieldDef<T> {
     bit_width: Option<usize>,
 }
 
+// Where a bitfield sits within the storage unit its reference addresses, in bits
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HMIRBitfield {
+    pub offset: usize,
+    pub width: usize,
+}
+
 impl HMIRMoveSemantics {
     pub fn is_nocopy(&self) -> bool {
         matches!(self, HMIRMoveSemantics::Nocopy | HMIRMoveSemantics::Nodrop)

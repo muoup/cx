@@ -1,6 +1,6 @@
 use cx_hmir::ty::{
     HMIRTypeID, HMIRTypeKind,
-    aggregate::HMIRFieldDef,
+    aggregate::{HMIRBitfield, HMIRFieldDef},
     context::HMIRTypeContext,
     intrinsic::{HMIRFloatWidth, HMIRIntType},
 };
@@ -71,20 +71,66 @@ pub(crate) fn field_offset(
     span: &TokenRange,
 ) -> CXResult<usize> {
     match env.resolve_kind(ty) {
-        HMIRTypeKind::Struct { .. } => match fields(env, ty, span)?.swap_remove(index) {
-            MIRFieldLayout::Bitfield { .. } => Err(hmir_error(
-                span,
-                &mir::COMPTIME_INVALID_OPERATION,
-                "addressing a bitfield".into(),
-            )),
-            layout => Ok(layout.offset()),
-        },
+        HMIRTypeKind::Struct { .. } => Ok(fields(env, ty, span)?.swap_remove(index).offset()),
         HMIRTypeKind::Array { element, .. } => {
             let element = *element;
             Ok(index * layout(env, element, span)?.size())
         }
         _ => Ok(0),
     }
+}
+
+pub(crate) fn placement(
+    env: &mut HMIREnvironment,
+    ty: HMIRTypeID,
+    index: usize,
+    span: &TokenRange,
+) -> CXResult<Option<HMIRBitfield>> {
+    let declared = match env.resolve_kind(ty) {
+        HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => {
+            fields.get(index).and_then(HMIRFieldDef::bit_width)
+        }
+        _ => None,
+    };
+    if declared.is_none() {
+        return Ok(None);
+    }
+    let MIRFieldLayout::Bitfield {
+        bit_offset,
+        bit_width,
+        ..
+    } = fields(env, ty, span)?.swap_remove(index)
+    else {
+        unreachable!("a declared bitfield is laid out as one")
+    };
+    Ok(Some(HMIRBitfield {
+        offset: bit_offset,
+        width: bit_width,
+    }))
+}
+
+pub(super) fn extract(
+    env: &HMIREnvironment,
+    ty: HMIRTypeID,
+    unit: &Image,
+    bitfield: HMIRBitfield,
+    span: &TokenRange,
+) -> CXResult<HMIRConstant> {
+    let HMIRTypeKind::Int(int) = *env.resolve_kind(ty) else {
+        unreachable!("a bitfield holds an integer")
+    };
+    let word = unit.bytes(0..unit.len()).map_err(|fault| fault.error(span))?;
+    Ok(HMIRConstant::Int(bits(word, int::signed(int), bitfield)))
+}
+
+pub(super) fn insert(unit: &Image, value: &HMIRConstant, bitfield: HMIRBitfield) -> Image {
+    let HMIRConstant::Int(value) = value else {
+        unreachable!("a bitfield holds an integer")
+    };
+    let mut image = Image::zeroed(unit.len());
+    image.bytes.copy_from_slice(&unit.bytes);
+    set_bits(&mut image.bytes, *value, bitfield);
+    image
 }
 
 fn tag_offset(
@@ -101,11 +147,28 @@ fn tag_offset(
     Ok(size.div_ceil(alignment) * alignment)
 }
 
-fn bitfield(word: &[u8], bit_offset: usize, bit_width: usize) -> (u128, u128) {
+fn word(bytes: &[u8], bitfield: HMIRBitfield) -> (u128, u128) {
     let mut buffer = [0; 16];
-    buffer[..word.len()].copy_from_slice(word);
-    let mask = (u128::MAX >> (128 - bit_width)) << bit_offset;
+    buffer[..bytes.len()].copy_from_slice(bytes);
+    let mask = (u128::MAX >> (128 - bitfield.width)) << bitfield.offset;
     (u128::from_le_bytes(buffer), mask)
+}
+
+fn bits(bytes: &[u8], signed: bool, bitfield: HMIRBitfield) -> i128 {
+    let (word, mask) = word(bytes, bitfield);
+    let bits = ((word & mask) >> bitfield.offset) as i128;
+    let shift = 128 - bitfield.width;
+    match signed {
+        true => bits << shift >> shift,
+        false => bits,
+    }
+}
+
+fn set_bits(bytes: &mut [u8], value: i128, bitfield: HMIRBitfield) {
+    let (current, mask) = word(bytes, bitfield);
+    let word = (current & !mask) | ((value as u128) << bitfield.offset & mask);
+    let length = bytes.len();
+    bytes.copy_from_slice(&word.to_le_bytes()[..length]);
 }
 
 pub(super) fn encode(
@@ -149,7 +212,7 @@ fn write(
             let layouts = self::fields(env, ty, span)?;
             for ((field, layout), item) in fields.iter().zip(layouts).zip(items) {
                 let MIRFieldLayout::Bitfield {
-                    offset: word,
+                    offset: unit,
                     bit_offset,
                     bit_width,
                     ..
@@ -170,10 +233,12 @@ fn write(
                 else {
                     unreachable!("a bitfield holds an integer")
                 };
-                let range = offset + word..offset + word + int.width().bytes();
-                let (current, mask) = bitfield(&image.bytes[range.clone()], bit_offset, bit_width);
-                let bits = (current & !mask) | ((*value as u128) << bit_offset & mask);
-                image.put(range.start, &bits.to_le_bytes()[..range.len()]);
+                let range = offset + unit..offset + unit + int.width().bytes();
+                let bitfield = HMIRBitfield {
+                    offset: bit_offset,
+                    width: bit_width,
+                };
+                set_bits(&mut image.bytes[range], *value, bitfield);
             }
         }
         (HMIRTypeKind::Union { fields }, HMIRConstant::Union { member, value }) => {
@@ -229,7 +294,7 @@ pub(super) fn decode(
             let mut items = Vec::with_capacity(fields.len());
             for (field, layout) in fields.iter().zip(layouts) {
                 let MIRFieldLayout::Bitfield {
-                    offset: word,
+                    offset: unit,
                     bit_offset,
                     bit_width,
                     ..
@@ -247,15 +312,13 @@ pub(super) fn decode(
                 let HMIRTypeKind::Int(int) = *env.resolve_kind(*field.ty()) else {
                     unreachable!("a bitfield holds an integer")
                 };
-                let range = offset + word..offset + word + int.width().bytes();
-                let (word, mask) =
-                    bitfield(image.bytes(range).map_err(fault)?, bit_offset, bit_width);
-                let bits = ((word & mask) >> bit_offset) as i128;
-                let value = match int::signed(int) {
-                    true => bits << (128 - bit_width) >> (128 - bit_width),
-                    false => bits,
+                let range = offset + unit..offset + unit + int.width().bytes();
+                let bitfield = HMIRBitfield {
+                    offset: bit_offset,
+                    width: bit_width,
                 };
-                items.push(HMIRConstant::Int(value));
+                let bytes = image.bytes(range).map_err(fault)?;
+                items.push(HMIRConstant::Int(bits(bytes, int::signed(int), bitfield)));
             }
             HMIRConstant::Aggregate(items)
         }

@@ -77,9 +77,10 @@ fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXRes
             let length = None;
             HMIRExprTypeKind::Array { element, length }
         }
-        HIRTypeKind::MemoryReference { inner_type, .. } => {
-            HMIRExprTypeKind::ReferenceTo(lower_type(context, inner_type)?)
-        }
+        HIRTypeKind::MemoryReference { inner_type, .. } => HMIRExprTypeKind::ReferenceTo {
+            inner: lower_type(context, inner_type)?,
+            bitfield: None,
+        },
         HIRTypeKind::PointerTo { inner_type } => {
             HMIRExprTypeKind::PointerTo(lower_type(context, inner_type)?)
         }

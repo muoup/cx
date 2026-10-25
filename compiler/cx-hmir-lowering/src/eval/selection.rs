@@ -71,7 +71,7 @@ pub(crate) fn eval_match(
     let (subject, dispatch) = if owned {
         let storage = emit::allocate(context, ty, body.local(local).name().cloned(), span)?;
         storage::initialize(context, &storage, &subject, span)?;
-        let reference = types::reference(context.env_mut(), ty, span);
+        let reference = types::reference(context.env_mut(), ty, None, span);
         emit::storage::bind_local(context, local, storage.clone().with_ty(reference));
         (storage, subject)
     } else {

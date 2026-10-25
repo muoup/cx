@@ -179,8 +179,8 @@ fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) ->
             (HMIRTypeKind::Function(a), HMIRTypeKind::Function(b)) => {
                 symbol::composite::signatures_alike(env, a, b)
             }
-            (HMIRTypeKind::ReferenceTo(a), HMIRTypeKind::ReferenceTo(b)) => {
-                symbol::composite::alike(env, *a, *b, true)
+            (HMIRTypeKind::ReferenceTo { .. }, HMIRTypeKind::ReferenceTo { .. }) => {
+                symbol::composite::alike(env, a_value.ty(), b_value.ty(), true)
             }
             _ => false,
         },

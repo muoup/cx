@@ -77,7 +77,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             .clone();
         let children = match kind {
             HMIRTypeKind::PointerTo(inner)
-            | HMIRTypeKind::ReferenceTo(inner)
+            | HMIRTypeKind::ReferenceTo { inner, .. }
             | HMIRTypeKind::Nominal(inner)
             | HMIRTypeKind::Staged(inner) => vec![inner],
             HMIRTypeKind::Array { element, .. } => vec![element],

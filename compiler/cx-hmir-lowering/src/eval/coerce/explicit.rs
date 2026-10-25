@@ -63,7 +63,7 @@ fn extension(
         (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => {
             Coercion::Applied(value.with_ty(target))
         }
-        (HMIRTypeKind::PointerTo(char), HMIRTypeKind::ReferenceTo(string))
+        (HMIRTypeKind::PointerTo(char), HMIRTypeKind::ReferenceTo { inner: string, .. })
             if context.env().is_str(*string)
                 && matches!(context.env().resolve_kind(*char), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8) =>
         {

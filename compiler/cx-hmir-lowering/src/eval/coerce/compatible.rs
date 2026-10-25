@@ -15,9 +15,16 @@ pub fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bo
         (HMIRTypeKind::PointerTo(lhs), HMIRTypeKind::PointerTo(rhs)) => {
             is_void(env, *lhs) || is_void(env, *rhs) || compatible(env, *lhs, *rhs)
         }
-        (HMIRTypeKind::ReferenceTo(lhs), HMIRTypeKind::ReferenceTo(rhs)) => {
-            compatible(env, *lhs, *rhs)
-        }
+        (
+            HMIRTypeKind::ReferenceTo {
+                inner: lhs,
+                bitfield: lhs_bitfield,
+            },
+            HMIRTypeKind::ReferenceTo {
+                inner: rhs,
+                bitfield: rhs_bitfield,
+            },
+        ) => lhs_bitfield == rhs_bitfield && compatible(env, *lhs, *rhs),
         (
             HMIRTypeKind::Array {
                 element: lhs,

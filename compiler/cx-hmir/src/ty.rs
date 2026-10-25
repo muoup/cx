@@ -6,7 +6,9 @@ use crate::{
     HMIRFnSignature,
     expr::HMIRExprID,
     ty::{
-        aggregate::{HMIRDeclaredMove, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
+        aggregate::{
+            HMIRBitfield, HMIRDeclaredMove, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics,
+        },
         intrinsic::{HMIRFloatType, HMIRIntType},
     },
 };
@@ -42,7 +44,7 @@ pub enum HMIRGenericTypeKind<T, L> {
     Int(HMIRIntType),
     Float(HMIRFloatType),
     PointerTo(T),
-    ReferenceTo(T),
+    ReferenceTo { inner: T, bitfield: Option<HMIRBitfield> },
     Array { element: T, length: Option<L> },
     Function(HMIRFnSignature<T>),
     Struct { fields: Vec<HMIRFieldDef<T>> },
@@ -97,7 +99,7 @@ impl<T, L, M> HMIRGenericType<T, L, M> {
 
     pub fn reference_inner(&self) -> Option<&T> {
         match &self.kind {
-            HMIRGenericTypeKind::ReferenceTo(inner) => Some(inner),
+            HMIRGenericTypeKind::ReferenceTo { inner, .. } => Some(inner),
             _ => None,
         }
     }
@@ -158,7 +160,10 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
             },
 
             Self::PointerTo(inner) => HMIRGenericTypeKind::PointerTo(ty(state, inner)?),
-            Self::ReferenceTo(inner) => HMIRGenericTypeKind::ReferenceTo(ty(state, inner)?),
+            Self::ReferenceTo { inner, bitfield } => HMIRGenericTypeKind::ReferenceTo {
+                inner: ty(state, inner)?,
+                bitfield: *bitfield,
+            },
             Self::Nominal(inner) => HMIRGenericTypeKind::Nominal(ty(state, inner)?),
             Self::Array {
                 element,

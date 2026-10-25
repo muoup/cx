@@ -1,8 +1,8 @@
-use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRBitfield, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBindable, MIRInstructionKind, MIRInternalIntrinsic, MIRPlaceDecl, MIRScopeID, MIRTarget,
-    MIRValue,
+    MIRBindable, MIRBitfieldAccess, MIRInstructionKind, MIRInternalIntrinsic, MIRPlaceDecl,
+    MIRScopeID, MIRStoreBitfield, MIRTarget, MIRValue,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
@@ -231,13 +231,11 @@ pub fn copy(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let runtime_value = lower_value(context, &value, span)?;
-
-    // Keep this as not a reference_inner because we need the bitfield data later
-    let HMIRTypeKind::ReferenceTo(result_type) = context.env().resolve_type_id(value.ty()).kind()
-    else {
+    let Some(result_type) = context.env().reference_inner(value.ty()) else {
         unreachable!("read from type: {}", types::name(context.env(), value.ty()))
     };
-    let result_type = *result_type;
+    let bitfield = types::bitfield(context.env(), &value)
+        .map(|bitfield| MIRStoreBitfield::Source(access(context, result_type, bitfield)));
 
     let ty = types::lower_type(context.env_mut(), result_type, span)?;
     let (out, result) = output(context, result_type, span)?;
@@ -246,9 +244,7 @@ pub fn copy(
             target: out,
             value: runtime_value,
             ty,
-
-            // TODO: Implement
-            bitfield: None,
+            bitfield,
         },
         span.clone(),
     );
@@ -270,9 +266,22 @@ pub fn write(
         .env()
         .reference_inner(target.ty())
         .unwrap_or(target.ty());
+    let bitfield = types::bitfield(context.env(), target)
+        .map(|bitfield| MIRStoreBitfield::Target(access(context, stored, bitfield)));
     let ty = types::lower_type(context.env_mut(), stored, span)?;
     let source = lower_value(context, value, span)?;
-    store(context, destination, source, ty, span.clone());
+    store(context, destination, source, ty, bitfield, span.clone());
 
     Ok(())
+}
+
+fn access(context: &LocalLoweringContext, ty: HMIRTypeID, bitfield: HMIRBitfield) -> MIRBitfieldAccess {
+    let HMIRTypeKind::Int(int) = context.env().resolve_kind(ty) else {
+        unreachable!("a bitfield holds an integer")
+    };
+    MIRBitfieldAccess {
+        bit_offset: bitfield.offset,
+        bit_width: bitfield.width,
+        signed: int.signed(),
+    }
 }

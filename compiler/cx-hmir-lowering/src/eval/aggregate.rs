@@ -105,10 +105,6 @@ fn eval_member(
 
     for index in path {
         let field = &member_fields(context.env(), owner)[index];
-        if field.bit_width().is_some() {
-            todo!("bitfield member access");
-        }
-
         let mut ty = *field.ty();
         let semantics = context.env().semantics(owner);
         if semantics.constant || semantics.volatile {

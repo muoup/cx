@@ -121,7 +121,7 @@ pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Op
             }
             let ty = slot.ty();
             let address = HMIRAddress::place(*place);
-            let constant = context.load(&address, ty, &TokenRange::Internal).ok()?;
+            let constant = context.load(&address, ty, None, &TokenRange::Internal).ok()?;
             HMIRValue::constant(ty, constant)
         }
         _ => return None,
