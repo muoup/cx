@@ -241,12 +241,49 @@ pub(crate) fn parse_expr_op_concat(
         },
     )?;
 
-    op_stack.push(PrecOperator::BinOp(op));
-
-    parse_expr_val(data, expr_stack, op_stack)?;
+    // REVIEW: This is a code smell -- this should be better generalizable
+    if matches!(op, HIRBinOp::MethodCall) {
+        let start_index = data.tokens.index;
+        let callee = expr_stack.pop().expect("a call has a callee");
+        let call = parse_call(data, callee)?;
+        expr_stack.push(parse_scope_suffix(data, call, start_index)?);
+        parse_postfix(data, expr_stack, op_stack)?;
+    } else {
+        op_stack.push(PrecOperator::BinOp(op));
+        parse_expr_val(data, expr_stack, op_stack)?;
+    }
     Ok(Some(()))
 }
 
+fn parse_call(data: &mut ParserData, callee: HIRExpression) -> CXResult<HIRExpression> {
+    let start_index = data.tokens.index;
+    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+    let args = if try_next!(data.tokens, punctuator!(CloseParen)) {
+        HIRExprKind::Void.into_expr(
+            start_index,
+            data.tokens.index,
+            data.token_range(start_index, data.tokens.index),
+        )
+    } else {
+        data.change_comma_mode(true);
+        let args = parse_expr(data);
+        data.pop_comma_mode();
+        let args = args?;
+        assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+        args
+    };
+    let range = callee
+        .range
+        .cover(&data.token_range(start_index, data.tokens.index));
+    Ok(HIRExprKind::BinOp {
+        op: HIRBinOp::MethodCall,
+        lhs: Box::new(callee),
+        rhs: Box::new(args),
+    }
+    .into_expr(start_index, data.tokens.index, range))
+}
+
+// REVIEW: Why is va_arg special cased in parsing here?
 fn is_va_arg_callee(expression: &HIRExpression) -> bool {
     matches!(
         &expression.kind,
@@ -643,11 +680,6 @@ pub(crate) fn parse_expr_val(
                 return Ok(());
             }
 
-            let is_argument_list = matches!(
-                op_stack.last(),
-                Some(PrecOperator::BinOp(HIRBinOp::MethodCall))
-            );
-
             data.change_comma_mode(true);
 
             let expr = parse_expr(data)?;
@@ -665,7 +697,7 @@ pub(crate) fn parse_expr_val(
                     lhs,
                     rhs,
                     op: HIRBinOp::Comma,
-                } if !is_argument_list => HIRExprKind::BinOp {
+                } => HIRExprKind::BinOp {
                     lhs,
                     rhs,
                     op: HIRBinOp::GroupedComma,
@@ -717,6 +749,14 @@ pub(crate) fn parse_expr_val(
 
     expr_stack.push(parse_scope_suffix(data, acc, start_index)?);
 
+    parse_postfix(data, expr_stack, op_stack)
+}
+
+fn parse_postfix(
+    data: &mut ParserData,
+    expr_stack: &mut Vec<HIRExpression>,
+    op_stack: &mut Vec<PrecOperator>,
+) -> CXResult<()> {
     while let Some(op) = parse_postfix_unop(data)? {
         let prec = unop_prec(op.clone());
 
