@@ -1,0 +1,2 @@
+const int* integers(const _str& text) => text;
+int main() { return 0; }

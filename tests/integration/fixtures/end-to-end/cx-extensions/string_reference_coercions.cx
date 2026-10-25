@@ -1,0 +1,21 @@
+#include <stdio.h>
+
+struct Text {
+    const u8* data;
+};
+
+const _str& view(const Text& text) => (const _str&) text.data;
+const char* bytes(const _str& text) => text;
+char* mutable_bytes(_str& text) => text;
+
+int main() {
+    Text text = { (const u8*) "hello" };
+    const _str& borrowed = view(text);
+    const void* erased = borrowed;
+    char buffer[4] = { 'c', 'a', 't', 0 };
+    _str& mutable_view = (_str&) buffer;
+    mutable_bytes(mutable_view)[0] = 'b';
+    printf("%s %s %s %s %d\n", borrowed, bytes(borrowed), view(text),
+        mutable_view, erased == (const void*) bytes(borrowed));
+    return 0;
+}

@@ -1,0 +1,2 @@
+char* mutable_bytes(const _str& text) => text;
+int main() { return 0; }

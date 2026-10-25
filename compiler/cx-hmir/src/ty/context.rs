@@ -56,6 +56,10 @@ pub trait HMIRTypeContext {
         matches!(self.resolve_kind(ty), HMIRTypeKind::Int(_))
     }
 
+    fn is_str(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Str)
+    }
+
     // The qualifiers of 'ty' itself; those of a type it references or points to are not its own
     fn semantics(&self, ty: HMIRTypeID) -> HMIRTypeSemantics {
         let resolved = self.resolve_type_id(ty);

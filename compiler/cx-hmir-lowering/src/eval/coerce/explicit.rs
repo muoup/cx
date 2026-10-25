@@ -1,4 +1,4 @@
-use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth};
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
@@ -6,7 +6,7 @@ use crate::{
     emit,
     env::function::LocalLoweringContext,
     eval::{
-        coerce::{implicit, result::Coercion},
+        coerce::{implicit, promotion, result::Coercion},
         literal,
     },
     value::HMIRValue,
@@ -34,6 +34,20 @@ fn extension(
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<Coercion> {
+    // REVIEW: The logic here is just messy, we should refactor this into a grander match
+    
+    let subject = context
+        .env()
+        .reference_inner(value.ty())
+        .unwrap_or(value.ty());
+    let value = if matches!(
+        context.env().resolve_kind(subject),
+        HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Array { .. }
+    ) {
+        promotion::std_rvalue(context, value, span)?
+    } else {
+        value
+    };
     let source = value.ty();
     if context.env().semantics(source).move_semantics
         != context.env().semantics(target).move_semantics
@@ -47,6 +61,12 @@ fn extension(
     );
     Ok(match kinds {
         (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => {
+            Coercion::Applied(value.with_ty(target))
+        }
+        (HMIRTypeKind::PointerTo(char), HMIRTypeKind::ReferenceTo(string))
+            if context.env().is_str(*string)
+                && matches!(context.env().resolve_kind(*char), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8) =>
+        {
             Coercion::Applied(value.with_ty(target))
         }
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_)) => {

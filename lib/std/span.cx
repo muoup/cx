@@ -27,7 +27,11 @@ span(const u8) span::str_as_bytes(const _str& this) {
     };
 }
 
-_str& span::as_str(span(const u8)& this) {
+const _str& span::as_str(span(const u8)& this) {
+    return (const _str&) this.data;
+}
+
+_str& span::as_str_mut(span(u8)& this) {
     return (_str&) this.data;
 }
 

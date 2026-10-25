@@ -67,11 +67,7 @@ fn step(
 
     let designated = context.env().reference_inner(source).unwrap_or(source);
     match (context.env().resolve_kind(designated), &kinds.1) {
-        (HMIRTypeKind::Str, HMIRTypeKind::PointerTo(_)) => {
-            let decayed = promotion::step(context, value, span)?;
-            return Ok(decayed.map(|value| value.with_ty(target)));
-        }
-        (HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) => {
+        (HMIRTypeKind::Str | HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) => {
             return promotion::step(context, value, span);
         }
         _ => {}
@@ -117,6 +113,7 @@ fn step(
             return Ok(Coercion::Unapplied(value));
         }
         (HMIRTypeKind::ReferenceTo(_), _) => return promotion::step(context, value, span),
+
         (HMIRTypeKind::StagedExpr { .. }, target)
             if !matches!(target, HMIRTypeKind::StagedExpr { .. }) =>
         {
@@ -164,8 +161,9 @@ fn step(
         }
 
         (HMIRTypeKind::PointerTo(from), HMIRTypeKind::PointerTo(to))
-            if compatible::is_void(context.env(), from)
-                || compatible::is_void(context.env(), to) =>
+            if (compatible::is_void(context.env(), from)
+                || compatible::is_void(context.env(), to))
+                && compatible::qualified(context.env(), source, target) =>
         {
             Coercion::Applied(value.with_ty(target))
         }

@@ -41,23 +41,17 @@ std::opt(string) string::try_new_string() {
     };
 }
 
-string string::clone(const string& this) {
-    string result = string::new();
-    result |> string::append(this |> string::as_str());
-    return move result;
-}
+string string::clone(const string& this) =>
+    string::new()
+        |> string::append(this |> string::as_str());
 
-string string::from_str(const _str& s) {
-    string result = string::new();
-    result |> string::append(s);
-    return move result;
-}
+string string::from_str(const _str& s) =>
+    string::new()
+        |> string::append(s);
 
-string string::from_span(const std::span(const char)& s) {
-    string result = string::new();
-    result |> string::append(s |> std::span::as_str());
-    return move result;
-}
+string string::from_span(const std::span(const char)& s) =>
+    string::new();
+        |> string::append(s |> std::span::as_str());
 
 void string::append(string& this, const _str& s) {
     u64 str_length = strlen(s);
@@ -87,10 +81,15 @@ void string::drop(string this) {
     };
 }
 
-_str& string::as_str(string& this) {
+const _str& string::as_str(string& this) {
     // SAFETY: We ensure via our API that our internal const char* is a valid c-string with null-termination,
     // so this cast is safe as long as the caller does not mutate the string data through the returned reference.
     return @unsafe((_str&) this.data);
+}
+
+_str& string::as_str_mut(const string& this) {
+    // SAFETY: See string::as_str above
+    return @unsafe((const _str&) this.data);
 }
 
 usize string::str_length(const _str& this) {

@@ -64,6 +64,7 @@ pub(crate) fn lower_call<'h>(
             lower_callee_call(context, lhs, args, &call.range)
         }
         HIRBinOp::Pipe(index) => {
+            // REVIEW: We might want to consider consolidating this into HMIR eval, i.e. have this be a standard operation
             piped.push((*index as usize, lhs.as_ref()));
             lower_call(context, rhs, piped, append)
         }
