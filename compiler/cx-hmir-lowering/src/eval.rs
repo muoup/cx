@@ -12,6 +12,7 @@ mod name;
 mod place;
 mod safety;
 mod selection;
+pub(crate) mod staged;
 mod storage;
 mod switch;
 mod unevaluated;
@@ -32,9 +33,8 @@ pub(crate) use flow::EvalResult;
 use cx_hmir::{
     HMIRBody, HMIRCoerceMode, HMIRControlOp, HMIRDefID, HMIRFnSignature, HMIRFunction, HMIROp,
     HMIROwnershipOp,
-    body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::HMIRTypeID,
+    ty::{HMIRType, HMIRTypeID, HMIRTypeKind},
 };
 use cx_log::{
     CXResult,
@@ -47,7 +47,7 @@ use crate::{
     emit::{self, runtime},
     env::{
         HMIREnvironment,
-        function::{FnContext, LocalLoweringContext, RuntimeContext},
+        function::{FnContext, LocalLoweringContext, RuntimeContext, runtime::Emission},
         generation::Specialization,
         resolver::HMIRResolver,
     },
@@ -57,8 +57,7 @@ use crate::{
         call::eval_call,
         control::{eval_for, eval_if, eval_loop_exit, eval_return, eval_unsafe, eval_while},
         def::eval_def,
-        flow::ComptimeStop,
-        flow::{Evaluation, ready},
+        flow::{ComptimeStop, Evaluation, RuntimeStop, StopReason, ready},
         literal::eval_literal,
         op::{eval_binary, eval_declared_type, eval_type_op, eval_unary},
         place::{
@@ -98,7 +97,9 @@ pub(crate) fn lower_runtime_function<'hmir>(
         .at(body.visible_through())
         .with_return_type(*signature.return_type());
 
-    emit::open_scope(&mut context, span.clone());
+    let root = emit::open_scope(&mut context, span.clone());
+    let scopes = context.runtime_mut().scopes_mut();
+    scopes.control_mut(root).set_return(id.brand(), body.visible_through());
     let completion = runtime_definition(&mut context, function, signature, specialization, span);
     emit::close_scope(&mut context, span.clone());
     flow::top(flow::catch_diverged(completion))?;
@@ -139,6 +140,25 @@ fn runtime_definition(
 }
 
 pub(crate) fn eval(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    id: HMIRExprID,
+) -> EvalResult<HMIRValue> {
+    let result = eval_inner(context, body, id)?;
+    let partial = result.known().cloned();
+    result.and_then(context, body, partial, |context, _, value, _| {
+        let suppressed = matches!(
+            context.context(),
+            FnContext::Runtime(runtime) if runtime.emission() == Emission::Suppressed
+        );
+        match suppressed {
+            true => Ok(Evaluation::Stop(RuntimeStop::Diverged.into())),
+            false => Ok(Evaluation::Ready(value)),
+        }
+    })
+}
+
+fn eval_inner(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     id: HMIRExprID,
@@ -215,10 +235,10 @@ pub(crate) fn eval(
                 eval_return(context, body, span, *value)
             }
             HMIROp::Control(HMIRControlOp::Break) => {
-                eval_loop_exit(context, body, span, ComptimeStop::Break)
+                eval_loop_exit(context, span, ComptimeStop::Break)
             }
             HMIROp::Control(HMIRControlOp::Continue) => {
-                eval_loop_exit(context, body, span, ComptimeStop::Continue)
+                eval_loop_exit(context, span, ComptimeStop::Continue)
             }
             HMIROp::Control(HMIRControlOp::Yield(value)) => {
                 yielding::eval_yield(context, body, span, *value)
@@ -260,8 +280,13 @@ pub(crate) fn eval(
         HMIRExprKind::Comptime(inner) => Ok(Evaluation::Ready(eval_comptime(
             context, body, *inner, None,
         )?)),
-        HMIRExprKind::Quote { .. } => todo!("HMIRExprKind::Quote"),
-        HMIRExprKind::Splice { .. } => todo!("HMIRExprKind::Splice"),
+        HMIRExprKind::Quote { params, body: root } => {
+            staged::capture(context, body, params, *root)
+        }
+        HMIRExprKind::Splice { quote, args } => {
+            let code = ready!(eval(context, body, *quote));
+            staged::apply(context, body, code, args, span)
+        }
         HMIRExprKind::Intrinsic(_) => todo!("HMIRExprKind::Intrinsic"),
         HMIRExprKind::Error(_) => todo!("HMIRExprKind::Error"),
         HMIRExprKind::Switch {
@@ -352,26 +377,17 @@ fn require_type(
 }
 
 pub(crate) fn operand(
-    _context: &mut LocalLoweringContext,
-    _result: EvalResult<HMIRValue>,
-    _span: &TokenRange,
+    context: &mut LocalLoweringContext,
+    result: EvalResult<HMIRValue>,
+    span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
-    todo!("Propagate comptime exits; suppress runtime emission and provide a bottom operand")
-}
-
-pub(crate) fn quote(
-    _context: &mut LocalLoweringContext,
-    _body: &HMIRBody,
-    _params: &[HMIRLocalID],
-    _root: HMIRExprID,
-) -> EvalResult<HMIRValue> {
-    todo!("Capture an unevaluated HMIR body and frozen values as a staged DAG")
-}
-
-pub(crate) fn splice(
-    _context: &mut LocalLoweringContext,
-    _quote: HMIRValue,
-    _args: &[HMIRValue],
-) -> EvalResult<HMIRValue> {
-    todo!("Materialize staged code into the runtime context with fresh local bindings")
+    match result? {
+        Evaluation::Stop(StopReason::Runtime(_)) => {
+            let unreachable =
+                HMIRType::new(HMIRTypeKind::Unreachable, Default::default(), span.clone(), None);
+            let ty = context.env_mut().resolver_mut().realize_type(unreachable);
+            Ok(Evaluation::Ready(literal::unit(context, span).with_ty(ty)))
+        }
+        other => Ok(other),
+    }
 }

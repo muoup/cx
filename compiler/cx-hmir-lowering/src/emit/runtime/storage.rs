@@ -10,7 +10,7 @@ use cx_util::identifier::CXIdent;
 
 use super::{global, intrinsic, lower_value, output, reference, register, store};
 use crate::{
-    env::function::LocalLoweringContext,
+    env::function::{LocalLoweringContext, runtime::Slot},
     eval::types,
     value::{HMIRPlace, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
@@ -38,7 +38,7 @@ pub fn slot(
     ty: HMIRTypeID,
     bindable: MIRBindable,
 ) -> HMIRValue {
-    let slot = context.runtime_mut().allocate_slot(bindable);
+    let slot = context.runtime_mut().allocate_slot(Slot::new(bindable, None));
 
     HMIRValue::place(ty, HMIRPlace::Local(slot))
 }
@@ -58,7 +58,7 @@ fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBind
         return None;
     };
 
-    match context.runtime().slot(*slot) {
+    match context.runtime().slot(*slot).binding() {
         MIRBindable::Register(_) if is_reference => None,
         bindable => Some(bindable.clone()),
     }
@@ -83,7 +83,7 @@ fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRan
         }
         HMIRValueKind::Indirect(_) => todo!("write to a stored reference"),
         HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) if is_reference => {
-            match context.runtime().slot(*slot) {
+            match context.runtime().slot(*slot).binding() {
                 MIRBindable::Register(register) => Some(MIRTarget::Indirect(*register)),
                 MIRBindable::Place(place) => Some(MIRTarget::Place(*place)),
             }
@@ -122,7 +122,7 @@ pub fn scratch_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
         return false;
     };
     let runtime = context.runtime();
-    match runtime.slot(*slot) {
+    match runtime.slot(*slot).binding() {
         MIRBindable::Place(place) if !context.env().is_reference(value.ty()) => runtime
             .builder()
             .place(*place)
@@ -135,7 +135,7 @@ pub fn place_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
     let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = value.kind() else {
         return false;
     };
-    matches!(context.runtime().slot(*slot), MIRBindable::Place(_))
+    matches!(context.runtime().slot(*slot).binding(), MIRBindable::Place(_))
 }
 
 pub fn adopt(
@@ -220,11 +220,7 @@ pub fn lift(
         },
         span.clone(),
     );
-    let runtime = context.runtime_mut();
-    let lifted = runtime.allocate_slot(MIRBindable::Register(out));
-    runtime.add_lift(lifted);
-
-    Ok(HMIRValue::place(inner, HMIRPlace::Local(lifted)))
+    Ok(slot(context, inner, MIRBindable::Register(out)))
 }
 
 pub fn copy(

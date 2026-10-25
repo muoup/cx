@@ -9,7 +9,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::{self, runtime},
-    env::function::{FnContext, LocalLoweringContext, Permission, runtime::ExitFrame},
+    env::function::{FnContext, LocalLoweringContext, Permission, runtime::Exit},
     eval::{
         EvalResult,
         binding::eval_scoped,
@@ -47,8 +47,8 @@ pub(crate) fn eval_if(
         }
     })();
     let span = span.clone();
-    flow::finally(context, body, result, move |context, body, completed| {
-        defer::close(context, body, completed, &span)
+    flow::finally(context, body, result, move |context, _, completed| {
+        defer::close(context, completed, &span)
     })
 }
 
@@ -217,8 +217,8 @@ pub(crate) fn eval_for(
         Err(error) => Err(error),
     };
     let span = span.clone();
-    flow::finally(context, body, result, move |context, body, completed| {
-        defer::close(context, body, completed, &span)
+    flow::finally(context, body, result, move |context, _, completed| {
+        defer::close(context, completed, &span)
     })
 }
 
@@ -300,8 +300,7 @@ fn runtime_while(
     runtime::jump(context, entry, span.clone());
 
     runtime::switch_to(context, condition_block);
-    let scope_depth = context.runtime().scope_depth();
-    emit::open_scope(context, span.clone());
+    let scope = emit::open_scope(context, span.clone());
     let condition = ready!(flow::catch_diverged(eval_condition(context, body, condition)));
     let Some(condition) = condition else {
         for block in [Some(body_block), increment_block, Some(exit)] {
@@ -326,16 +325,14 @@ fn runtime_while(
     );
 
     let continue_block = increment_block.unwrap_or(condition_block);
-    context.runtime_mut().push_exit(ExitFrame::new(
-        exit,
-        Some(continue_block),
-        scope_depth,
-        Vec::new(),
-    ));
+    context
+        .runtime_mut()
+        .scopes_mut()
+        .control_mut(scope)
+        .set_exit(Exit::new(exit, Some(continue_block), Vec::new()));
 
     runtime::switch_to(context, body_block);
     let completion = flow::catch_diverged(eval_scoped(context, body, loop_body));
-    context.runtime_mut().pop_exit();
     emit::close_scope(context, span.clone());
     ready!(completion);
     runtime::jump(context, continue_block, span.clone());
@@ -439,7 +436,6 @@ fn runtime_short_circuit(
 
 pub(crate) fn eval_loop_exit(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
     span: &TokenRange,
     stop: ComptimeStop,
 ) -> EvalResult<HMIRValue> {
@@ -450,20 +446,14 @@ pub(crate) fn eval_loop_exit(
     let exit = match &stop {
         ComptimeStop::Break => context
             .runtime()
-            .current_exit()
-            .map(|frame| (frame.break_block(), frame.scope_depth())),
-        ComptimeStop::Continue => context.runtime().current_loop().map(|frame| {
-            (
-                frame
-                    .continue_block()
-                    .expect("a loop has a continue target"),
-                frame.scope_depth(),
-            )
-        }),
+            .target(|scope| scope.exit().map(Exit::break_block)),
+        ComptimeStop::Continue => context
+            .runtime()
+            .target(|scope| scope.exit().and_then(Exit::continue_block)),
         _ => unreachable!("only 'break' and 'continue' exit a loop"),
     };
-    let Some((target, depth)) = exit else {
-        if context.expectations().deferred() {
+    let Some((depth, target)) = exit else {
+        if context.runtime().deferred() {
             let jump = match stop {
                 ComptimeStop::Break => "break",
                 _ => "continue",
@@ -481,7 +471,7 @@ pub(crate) fn eval_loop_exit(
             (feature.into(), required.into()),
         ));
     };
-    defer::exit(context, body, depth, span)?;
+    defer::exit(context, depth, span)?;
     runtime::jump(context, target, span.clone());
     Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))
 }
@@ -503,7 +493,7 @@ pub(crate) fn eval_return(
     span: &TokenRange,
     value: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    if context.expectations().deferred() {
+    if matches!(context.context(), FnContext::Runtime(runtime) if runtime.deferred()) {
         return Err(hmir_error(span, &typecheck::DEFER_JUMP, "return".into()));
     }
     let value = value.map(|value| eval(context, body, value)).transpose()?;
@@ -570,7 +560,7 @@ pub(crate) fn return_value(
                 }
                 value => value,
             };
-            defer::exit(context, body, 0, span)?;
+            defer::exit(context, 0, span)?;
             let value = match &value {
                 Some(value) => Some(runtime::lower_value(context, value, span)?),
                 None => None,

@@ -1,9 +1,7 @@
-use std::rc::Rc;
-
-use cx_hmir::{HMIRDefID, expr::HMIRExprID, ty::HMIRTypeID};
+use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
-use crate::value::HMIRPlace;
+use crate::value::{HMIRPlace, staged::QuoteRef};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HMIRConstant {
@@ -74,12 +72,3 @@ impl HMIRConstant {
         }
     }
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Quote {
-    def: HMIRDefID,
-    body: HMIRExprID,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct QuoteRef(Rc<Quote>);

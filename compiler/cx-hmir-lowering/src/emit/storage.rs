@@ -66,8 +66,8 @@ pub fn place_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
 // Binds a local to an existing value; the value is not copied, moved or consumed, and the local is not marked
 pub fn bind_local(context: &mut LocalLoweringContext, local: HMIRLocalID, value: HMIRValue) {
     match context.context_mut() {
-        FnContext::Runtime(context) => context.set_local(local, value),
-        FnContext::Comptime(context) => context.set_local(local, value),
+        FnContext::Runtime(context) => context.scopes_mut().bind(local, value),
+        FnContext::Comptime(context) => context.scopes_mut().bind(local, value),
     }
 }
 
@@ -85,7 +85,7 @@ pub fn copy(
 }
 
 // The current contents of the place a reference names, captured without copying them; the place stays live, so a
-// move out of it is a separate invalidation. A runtime capture may only be used within the current block
+// move out of it is a separate invalidation
 pub fn lift(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,

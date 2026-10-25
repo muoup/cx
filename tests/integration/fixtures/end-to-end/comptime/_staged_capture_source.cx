@@ -1,0 +1,6 @@
+int bias = 40;
+int private_value() { return bias + 2; }
+
+public:
+comptime expr(int) value() => emit private_value();
+comptime expr(void) exit_here(expr(int) value) => emit return value;

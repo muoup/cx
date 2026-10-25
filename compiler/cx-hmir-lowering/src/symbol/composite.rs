@@ -45,6 +45,20 @@ pub(crate) fn alike(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID, qualifi
                 length: right_length,
             },
         ) => left_length == right_length && alike(env, *left, *right, true),
+        (
+            HMIRTypeKind::StagedExpr {
+                params: left,
+                result: left_result,
+            },
+            HMIRTypeKind::StagedExpr {
+                params: right,
+                result: right_result,
+            },
+        ) => {
+            left.len() == right.len()
+                && left.iter().zip(right).all(|(l, r)| alike(env, *l, *r, true))
+                && alike(env, *left_result, *right_result, true)
+        }
         (HMIRTypeKind::Function(left), HMIRTypeKind::Function(right)) => {
             signatures_alike(env, left, right)
         }

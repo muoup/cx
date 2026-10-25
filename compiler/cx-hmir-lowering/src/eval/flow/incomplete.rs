@@ -1,4 +1,6 @@
-use cx_hmir::{HMIRBody, ty::HMIRTypeID};
+use cx_hmir::{
+    HMIRBody, HMIRUnitID, body::HMIRBodyID, ty::HMIRTypeID, unit::def::HMIRDeclarationPoint,
+};
 use cx_log::{
     CXResult,
     catalogue::{mir, typecheck},
@@ -17,6 +19,7 @@ type Resolver<T> = dyn FnOnce(&mut LocalLoweringContext, &HMIRBody, HMIRTypeID) 
 pub(crate) enum IncompleteReason {
     ExpectedType,
     ArrayBound,
+    YieldType,
 }
 
 struct Suspension {
@@ -61,6 +64,41 @@ impl<T: 'static> Incomplete<T> {
         }
     }
 
+    pub(crate) fn yielding(mut self) -> Self {
+        self.suspension.reason = IncompleteReason::YieldType;
+        self
+    }
+
+    pub(crate) fn is_yielding(&self) -> bool {
+        matches!(self.suspension.reason, IncompleteReason::YieldType)
+    }
+
+    pub(crate) fn in_source(
+        self,
+        source: HMIRUnitID,
+        point: Option<HMIRDeclarationPoint>,
+        body: HMIRBodyID,
+    ) -> Self {
+        let Self {
+            suspension,
+            partial,
+            resolve,
+        } = self;
+        Self::resume(suspension, partial, move |context, _, expected| {
+            let unit = context.unit(source);
+            let source_body = unit.body(body).expect("a suspended source body exists");
+            let result = context.relocated(source, point, |context| {
+                resolve(context, source_body, expected)
+            })?;
+            Ok(match result {
+                Evaluation::Incomplete(pending) => {
+                    Evaluation::Incomplete(pending.in_source(source, point, body))
+                }
+                result => result,
+            })
+        })
+    }
+
     pub(crate) fn in_context(self, state: FnContext) -> Self {
         let Self {
             suspension,
@@ -98,6 +136,14 @@ impl<T: 'static> Incomplete<T> {
         self,
         finish: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, bool) -> CXResult<()> + 'static,
     ) -> Self {
+        self.settle(move |context, body, result| finally(context, body, result, finish))
+    }
+
+    pub(crate) fn settle(
+        self,
+        settle: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, EvalResult<T>) -> EvalResult<T>
+        + 'static,
+    ) -> Self {
         let Self {
             suspension,
             partial,
@@ -105,7 +151,7 @@ impl<T: 'static> Incomplete<T> {
         } = self;
         Self::resume(suspension, partial, move |context, body, expected| {
             let result = resolve(context, body, expected);
-            finally(context, body, result, finish)
+            settle(context, body, result)
         })
     }
 
@@ -137,6 +183,7 @@ impl<T> Incomplete<T> {
         let subject = match self.suspension.reason {
             IncompleteReason::ExpectedType => "this type",
             IncompleteReason::ArrayBound => "the array bound",
+            IncompleteReason::YieldType => "the yielded type",
         };
         hmir_error(
             &self.suspension.span,

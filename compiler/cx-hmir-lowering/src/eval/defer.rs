@@ -10,7 +10,10 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::{self, runtime},
-    env::function::{FnContext, LocalLoweringContext, runtime::Emission},
+    env::function::{
+        FnContext, LocalLoweringContext,
+        runtime::{Defer, Emission, RuntimeScope},
+    },
     eval::{
         EvalResult,
         binding::{eval_block, eval_scoped},
@@ -18,7 +21,7 @@ use crate::{
         literal, unevaluated,
     },
     log::hmir_error,
-    value::HMIRValue,
+    value::{Bindings, HMIRValue},
 };
 
 pub(crate) fn eval_defer(
@@ -30,18 +33,16 @@ pub(crate) fn eval_defer(
     if matches!(context.context(), FnContext::Comptime(_)) {
         return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, "'defer'".into()));
     }
-    if context.expectations().deferred() {
+    if context.runtime().deferred() {
         return Err(hmir_error(
             span,
             &typecheck::INVALID_CONTEXT,
             ("'defer'".into(), "a deferred expression".into()),
         ));
     }
-    let expectations = context.expectations().deferring();
     let operand_span = body.expr(operand).span();
-    let mut child = unevaluated::detached(context, Emission::Enabled, operand_span)?;
-    let result = child.with_expectations(expectations, |child| deferred(child, body, operand))?;
-    match result {
+    let mut child = unevaluated::detached(context, Emission::Enabled, true, operand_span)?;
+    match deferred(&mut child, body, operand)? {
         Evaluation::Ready(_) => {}
         Evaluation::Incomplete(incomplete) => return Err(incomplete.error()),
         Evaluation::Stop(_) => {
@@ -50,18 +51,25 @@ pub(crate) fn eval_defer(
     }
     drop(child);
 
-    context.runtime_mut().defer(operand, expectations);
+    let defer = Defer::new(
+        operand,
+        context.expectations(),
+        context.source(),
+        context.visible_through(),
+    );
+    let runtime = context.runtime_mut();
+    let top = runtime.scopes().top();
+    runtime.scopes_mut().control_mut(top).defer(defer);
     Ok(Evaluation::Ready(literal::unit(context, span)))
 }
 
 pub(crate) fn close(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
     completed: bool,
     span: &TokenRange,
 ) -> CXResult<()> {
     if completed && let FnContext::Runtime(runtime) = context.context() {
-        expand(context, body, runtime.scope_depth() - 1)?;
+        expand(context, runtime.scopes().top())?;
     }
     emit::close_scope(context, span.clone());
 
@@ -70,28 +78,35 @@ pub(crate) fn close(
 
 pub(crate) fn exit(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
     depth: usize,
     span: &TokenRange,
 ) -> CXResult<()> {
-    for index in (depth..context.runtime().scope_depth()).rev() {
-        expand(context, body, index)?;
+    for index in (depth..context.runtime().scopes().len()).rev() {
+        expand(context, index)?;
         runtime::drop_scope(context, index, span);
     }
 
     Ok(())
 }
 
-fn expand(context: &mut LocalLoweringContext, body: &HMIRBody, index: usize) -> CXResult<()> {
-    let defers = context.runtime().defers(index).to_vec();
-    for (expr, expectations) in defers.into_iter().rev() {
-        let lifts = context.runtime().lift_count();
-        let result =
-            context.with_expectations(expectations, |context| deferred(context, body, expr))?;
-        if let Evaluation::Incomplete(incomplete) = result {
+fn expand(context: &mut LocalLoweringContext, index: usize) -> CXResult<()> {
+    let defers = context.runtime().scopes().control(index).defers().to_vec();
+    for defer in defers.into_iter().rev() {
+        let unit = context.unit(defer.source());
+        let body = unit
+            .body(defer.expr().body())
+            .expect("a deferred expression belongs to its source");
+        let scopes = context.runtime_mut().scopes_mut();
+        scopes.push(RuntimeScope::new(None, true), Some(index), Bindings::new());
+        let result = context.relocated(defer.source(), defer.visible_through(), |context| {
+            context.with_expectations(defer.expectations(), |context| {
+                deferred(context, body, defer.expr())
+            })
+        });
+        context.runtime_mut().scopes_mut().pop();
+        if let Evaluation::Incomplete(incomplete) = result? {
             return Err(incomplete.error());
         }
-        context.runtime_mut().release_lifts(lifts);
     }
 
     Ok(())

@@ -10,9 +10,16 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     emit,
-    env::function::{FnContext, LocalLoweringContext, RuntimeContext, runtime::Emission},
+    env::function::{
+        FnContext, LocalLoweringContext, RuntimeContext,
+        runtime::{Emission, RuntimeScope},
+    },
     log::hmir_error,
-    value::{HMIRValueKind, constant::HMIRConstant},
+    value::{
+        Bindings, HMIRPlace, HMIRValue, HMIRValueKind,
+        constant::HMIRConstant,
+        staged::{Quote, QuoteRef},
+    },
 };
 
 use super::{EvalResult, coerce, comptime, eval, flow::Evaluation, types};
@@ -23,7 +30,7 @@ pub(crate) fn subject(
     operand: HMIRExprID,
 ) -> EvalResult<HMIRTypeID> {
     let span = body.expr(operand).span();
-    let mut child = detached(context, Emission::Unevaluated, span)?;
+    let mut child = detached(context, Emission::Unevaluated, false, span)?;
     let result = eval(&mut child, body, operand)?;
     let span = span.clone();
     let result = result.and_then(&mut child, body, None, move |context, _, value, _| {
@@ -71,15 +78,10 @@ pub(crate) fn subject(
 pub(crate) fn detached<'parent, 'global, 'hmir>(
     context: &'parent mut LocalLoweringContext<'_, 'global, 'hmir>,
     emission: Emission,
+    deferred: bool,
     span: &TokenRange,
 ) -> CXResult<LocalLoweringContext<'parent, 'global, 'hmir>> {
-    let locals = match context.context() {
-        FnContext::Runtime(runtime) => runtime.locals().collect::<Vec<_>>(),
-        FnContext::Comptime(comptime) => comptime.locals().collect::<Vec<_>>(),
-    }
-    .into_iter()
-    .map(|(id, value)| (*id, value.clone()))
-    .collect::<Vec<_>>();
+    let locals = context.visible_locals();
     let frozen = comptime::frozen_inputs(context);
     let void = context
         .env_mut()
@@ -95,26 +97,66 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
     runtime.set_emission(emission);
     let evaluation = context.evaluation();
     let mut child = context.child(None, FnContext::Runtime(runtime), Some(evaluation));
+    let scope = child.runtime_mut().builder_mut().add_scope(span.clone());
     for (local, value) in locals {
-        let frozen_type = frozen.iter().find(|(id, value)| {
-            *id == local && matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Type(_)))
-        });
-        let value = if let Some((_, value)) = frozen_type {
-            value.clone()
-        } else if matches!(value.kind(), HMIRValueKind::Constant(constant) if !constant.holds_local_address())
-        {
-            value
-        } else {
-            let ty = child
-                .env()
-                .reference_inner(value.ty())
-                .unwrap_or(value.ty());
-            emit::scratch(&mut child, ty, span)?.with_ty(value.ty())
+        let known = frozen
+            .iter()
+            .find_map(|(id, known)| (*id == local).then_some(known));
+        let value = match known {
+            Some(known)
+                if matches!(known.kind(), HMIRValueKind::Constant(HMIRConstant::Type(_)))
+                    || known == &value =>
+            {
+                shadow(&mut child, known.clone(), span)?
+            }
+            _ => {
+                let ty = child
+                    .env()
+                    .reference_inner(value.ty())
+                    .unwrap_or(value.ty());
+                let storage = emit::scratch(&mut child, ty, span)?;
+                if let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = storage.kind() {
+                    child.runtime_mut().slot_mut(*slot).set_known(known.cloned());
+                }
+                storage.with_ty(value.ty())
+            }
         };
         emit::storage::bind_local(&mut child, local, value);
     }
-    child.runtime_mut().set_captures(frozen);
-    emit::open_scope(&mut child, span.clone());
+    let scopes = child.runtime_mut().scopes_mut();
+    let parent = scopes.top();
+    scopes.push(RuntimeScope::new(Some(scope), deferred), Some(parent), Bindings::new());
 
     Ok(child)
+}
+
+fn shadow(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    if let HMIRValueKind::Constant(HMIRConstant::Quote(node)) = value.kind() {
+        let quote = node.get();
+        let mut captures = Bindings::new();
+        for (local, captured) in quote.captures() {
+            captures.insert(*local, shadow(context, captured.clone(), span)?);
+        }
+        let code = Quote::new(
+            quote.source(),
+            quote.root(),
+            quote.params().to_vec(),
+            captures,
+            quote.visible_through(),
+        );
+        return Ok(HMIRValue::constant(value.ty(), HMIRConstant::Quote(QuoteRef::new(code))));
+    }
+    let frozen = matches!(
+        value.kind(),
+        HMIRValueKind::Constant(constant) if !constant.holds_local_address()
+    );
+    if frozen {
+        return Ok(value);
+    }
+    let ty = context.env().reference_inner(value.ty()).unwrap_or(value.ty());
+    Ok(emit::scratch(context, ty, span)?.with_ty(value.ty()))
 }

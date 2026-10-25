@@ -1,0 +1,67 @@
+/* CX-STDOUT: frozen 7 7 */
+/* CX-STDOUT-NEXT: repeated 1 1 */
+/* CX-STDOUT-NEXT: alias 12 */
+/* CX-STDOUT-NEXT: duplicated 3 2 */
+/* CX-STDOUT-NEXT: cleanup 9 */
+/* CX-STDOUT-NEXT: returned 7 */
+/* CX-STDOUT-NEXT: snapshot 23 23 */
+/* CX-STDOUT-NEXT: imported 42 11 */
+
+#include <stdio.h>
+import _staged_capture_source as lib;
+
+comptime expr(int) freeze_value() {
+    int captured = 7;
+    expr(int) code = emit captured;
+    captured = 99;
+    return code;
+}
+comptime expr(int) saved = freeze_value();
+comptime expr(int) fresh() => emit .{
+    int local = 0;
+    local += 1;
+    yield local;
+};
+comptime expr(int) repeat(expr(int) value) => emit value + value;
+comptime expr(void) change(expr(int&) value) => emit .{ value += 5; };
+comptime expr(void) leave() => emit return 7;
+
+int with_cleanup() {
+    int marker = 9;
+    defer printf("cleanup %d\n", marker);
+    leave();
+    return 0;
+}
+
+struct Pair { int left; int right; };
+int rewrite(Pair* pair) { pair->left = 100; return 3; }
+int take(Pair pair, int other) { return pair.left + pair.right + other; }
+
+const int floor_value = 10;
+int imported_exit(int input) where post(result): (result >= floor_value) {
+    lib::exit_here(emit input);
+    return 0;
+}
+
+int main() {
+    int first = saved;
+    int second = saved;
+    printf("frozen %d %d\n", first, second);
+    printf("repeated %d %d\n", fresh(), fresh());
+    int value = 7;
+    change(emit value);
+    printf("alias %d\n", value);
+    int counter = 0;
+    int duplicated = repeat(emit ++counter);
+    printf("duplicated %d %d\n", duplicated, counter);
+    printf("returned %d\n", with_cleanup());
+    Pair a = {10, 10};
+    Pair b = {10, 12};
+    int left = take(move a, value ? rewrite(&a) : 0);
+    int right = take(move b, value && rewrite(&b));
+    printf("snapshot %d %d\n", left, right);
+    expr(int) code = emit lib::value();
+    int imported = code;
+    printf("imported %d %d\n", imported, imported_exit(11));
+    return 0;
+}

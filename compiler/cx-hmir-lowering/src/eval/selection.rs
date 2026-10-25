@@ -27,6 +27,7 @@ use crate::{
 };
 
 struct Match {
+    scope: usize,
     subject: HMIRValue,
     arms: Vec<(HMIRPattern, HMIRExprID)>,
     blocks: Vec<MIRBasicBlockID>,
@@ -66,7 +67,7 @@ pub(crate) fn eval_match(
             ));
         }
     };
-    emit::open_scope(context, span.clone());
+    let scope = emit::open_scope(context, span.clone());
     let (subject, dispatch) = if owned {
         let storage = emit::allocate(context, ty, body.local(local).name().cloned(), span)?;
         storage::initialize(context, &storage, &subject, span)?;
@@ -94,7 +95,11 @@ pub(crate) fn eval_match(
                 .position(|case| *case == Some(*value))
                 .or_else(|| cases.iter().position(Option::is_none))
                 .expect("match coverage was checked");
-            context.comptime_mut().begin_yield();
+            context
+                .comptime_mut()
+                .scopes_mut()
+                .control_mut(scope)
+                .begin_yield();
             let result = bind_arm(context, body, &subject, &arms[selected].0, span)
                 .map_err(Into::into)
                 .and_then(|()| eval(context, body, arms[selected].1))
@@ -111,10 +116,7 @@ pub(crate) fn eval_match(
                             stop => Ok(Evaluation::Stop(stop)),
                         })
                 });
-            flow::finally(context, body, result, |context, _, _| {
-                context.comptime_mut().end_yield();
-                Ok(())
-            })
+            result
         }
         FnContext::Runtime(_) => {
             let blocks = arms
@@ -148,12 +150,16 @@ pub(crate) fn eval_match(
                     .runtime_mut()
                     .emit(MIRInstructionKind::Unreachable, span.clone());
             }
-            let depth = context.runtime().scope_depth() - 1;
-            context.runtime_mut().begin_yield(depth);
+            context
+                .runtime_mut()
+                .scopes_mut()
+                .control_mut(scope)
+                .begin_yield();
             lower_arms(
                 context,
                 body,
                 Match {
+                    scope,
                     subject,
                     arms: arms.to_vec(),
                     blocks,
@@ -166,8 +172,8 @@ pub(crate) fn eval_match(
         }
     };
     let span = span.clone();
-    flow::finally(context, body, result, move |context, body, completed| {
-        defer::close(context, body, completed, &span)
+    flow::finally(context, body, result, move |context, _, completed| {
+        defer::close(context, completed, &span)
     })
 }
 
@@ -286,7 +292,12 @@ fn lower_arms(
     expected: Option<HMIRTypeID>,
 ) -> EvalResult<HMIRValue> {
     if index == state.arms.len() {
-        state.exits.extend(context.runtime_mut().end_yield());
+        let yields = context
+            .runtime_mut()
+            .scopes_mut()
+            .control_mut(state.scope)
+            .end_yield();
+        state.exits.extend(yields);
         let has_void = state
             .exits
             .iter()
@@ -315,8 +326,8 @@ fn lower_arms(
     let result = eval(context, body, state.arms[index].1);
     let span = state.span.clone();
     let source = (!context.env().is_reference(state.subject.ty())).then(|| state.subject.clone());
-    let result = flow::finally(context, body, result, move |context, body, completed| {
-        defer::close(context, body, completed, &span)?;
+    let result = flow::finally(context, body, result, move |context, _, completed| {
+        defer::close(context, completed, &span)?;
         if let Some(source) = source {
             emit::invalidate(context, &source, MIRInvalidationKind::Drop, &span);
         }

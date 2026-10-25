@@ -15,7 +15,10 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::{self, runtime},
-    env::function::{ComptimeContext, Expectations, FnContext, LocalLoweringContext, Permission},
+    env::function::{
+        ComptimeContext, Expectations, FnContext, LocalLoweringContext, Permission,
+        runtime::RuntimeScope,
+    },
     log::hmir_error,
     symbol,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
@@ -146,6 +149,26 @@ pub(crate) fn enter(
 }
 
 pub(crate) fn exit(
+    context: &mut LocalLoweringContext,
+    result: Option<&HMIRValue>,
+    span: &TokenRange,
+) -> CXResult<()> {
+    let origin = context
+        .runtime()
+        .scopes()
+        .controls()
+        .find_map(|(index, scope)| Some((index, scope.returning()?)));
+    let Some((index, (source, point))) = origin else {
+        return exit_condition(context, result, span);
+    };
+    let view = RuntimeScope::default();
+    context.runtime_mut().scopes_mut().push(view, Some(index), Default::default());
+    let checked = context.relocated(source, point, |context| exit_condition(context, result, span));
+    context.runtime_mut().scopes_mut().pop();
+    checked
+}
+
+fn exit_condition(
     context: &mut LocalLoweringContext,
     result: Option<&HMIRValue>,
     span: &TokenRange,

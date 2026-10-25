@@ -11,8 +11,13 @@ use cx_util::dense_id;
 pub mod comptime;
 pub mod expectation;
 pub mod runtime;
+pub(crate) mod scope;
 
-use crate::{env::HMIREnvironment, log::hmir_error, value::HMIRValue};
+use crate::{
+    env::{HMIREnvironment, symbols::HMIRUnitHandle},
+    log::hmir_error,
+    value::{Bindings, HMIRValue},
+};
 
 pub use self::{
     comptime::ComptimeContext,
@@ -42,13 +47,16 @@ pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     source: HMIRUnitID,
     evaluation: EvaluationID,
 
+    // REVIEW: What is this?
     visible_through: Option<HMIRDeclarationPoint>,
     signature: Option<&'env HMIRFnSignature<HMIRExprID>>,
+    // REVIEW: Unclear why 'signature' uses the expr form here so we need to track this
     return_type: Option<HMIRTypeID>,
 
     context: FnContext,
     expectations: Expectations,
 
+    // REVIEW: I don't think this should be unconditionally tracked here
     call_depth: usize,
 }
 
@@ -137,6 +145,28 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
 
     pub fn visible_through(&self) -> Option<HMIRDeclarationPoint> {
         self.visible_through
+    }
+
+    pub(crate) fn relocated<R>(
+        &mut self,
+        source: HMIRUnitID,
+        visible_through: Option<HMIRDeclarationPoint>,
+        scoped: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let outer = (
+            mem::replace(&mut self.source, source),
+            mem::replace(&mut self.visible_through, visible_through),
+        );
+        let result = scoped(self);
+        (self.source, self.visible_through) = outer;
+        result
+    }
+
+    pub(crate) fn unit(&mut self, source: HMIRUnitID) -> HMIRUnitHandle<'hmir> {
+        self.env
+            .symbols_mut()
+            .owner(source)
+            .expect("an evaluated source unit is loaded")
     }
 
     pub fn return_type(&self) -> Option<HMIRTypeID> {
@@ -237,15 +267,22 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
 
     pub fn remove_local(&mut self, id: HMIRLocalID) {
         match &mut self.context {
-            FnContext::Runtime(context) => context.remove_local(id),
-            FnContext::Comptime(context) => context.remove_local(id),
+            FnContext::Runtime(context) => context.scopes_mut().remove(id),
+            FnContext::Comptime(context) => context.scopes_mut().remove(id),
         };
     }
 
     pub fn get_local(&self, id: &HMIRLocalID) -> Option<&HMIRValue> {
         match &self.context {
-            FnContext::Runtime(context) => context.local(*id),
-            FnContext::Comptime(context) => context.local(*id),
+            FnContext::Runtime(context) => context.scopes().local(*id),
+            FnContext::Comptime(context) => context.scopes().local(*id),
+        }
+    }
+
+    pub(crate) fn visible_locals(&self) -> Bindings {
+        match &self.context {
+            FnContext::Runtime(context) => context.scopes().visible(),
+            FnContext::Comptime(context) => context.scopes().visible(),
         }
     }
 }

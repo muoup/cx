@@ -87,7 +87,7 @@ pub enum MIRInstructionKind {
     },
 
     // Produces the value addressed by 'source' (a place, or a reference register read through) into 'out'.
-    // 'out' captures the current value and may only be used later in this basic block. 'origin' must be live and
+    // 'out' captures the current value and stays valid wherever its definition dominates. 'origin' must be live and
     // stays live: a move out of it is a separate Invalidate that follows
     Lift {
         out: MIRRegisterID,

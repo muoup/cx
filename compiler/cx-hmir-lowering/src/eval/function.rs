@@ -34,7 +34,7 @@ use self::deduce::Deduction;
 use super::{
     EvalResult, coerce, complete, comptime, contract, control, eval, eval_type,
     flow::{self, ComptimeStop, Evaluation, StopReason, ready},
-    safety, storage, types,
+    safety, staged, storage, types, unevaluated,
 };
 
 struct Frame<'a> {
@@ -64,10 +64,8 @@ impl Frame<'_> {
                 function.signature().params()[index].comptime(),
                 span,
             )?;
-            if matches!(
-                child.env().resolve_kind(ty),
-                HMIRTypeKind::StagedExpr { .. }
-            ) || (!runtime && child.env().is_reference(ty))
+            if (runtime && matches!(child.env().resolve_kind(ty), HMIRTypeKind::StagedExpr { .. }))
+                || (!runtime && child.env().is_reference(ty))
             {
                 return Err(hmir_error(
                     span,
@@ -135,10 +133,9 @@ impl Frame<'_> {
         let return_type = self.enter(caller, span, |child| {
             flow::top(eval_type(child, function.body(), *declared.return_type())?.description())
         })?;
-        if matches!(
-            caller.env().resolve_kind(return_type),
-            HMIRTypeKind::StagedExpr { .. }
-        ) {
+        if self.runtime
+            && matches!(caller.env().resolve_kind(return_type), HMIRTypeKind::StagedExpr { .. })
+        {
             return Err(hmir_error(
                 span,
                 &mir::COMPTIME_INVALID_OPERATION,
@@ -212,14 +209,9 @@ pub(crate) fn call(
     };
     let declared = function.signature();
     safety::require_call(context, span, declared.contract().is_safe(), true)?;
-    let runtime = matches!(context.context(), FnContext::Runtime(_));
-    if runtime && declared.stage() == HMIRFunctionStage::Comptime {
-        return Err(hmir_error(
-            span,
-            &mir::COMPTIME_FUNCTION_AT_RUNTIME,
-            source.name().to_string(),
-        ));
-    }
+    let at_runtime = matches!(context.context(), FnContext::Runtime(_));
+    let generator = at_runtime && declared.stage() == HMIRFunctionStage::Comptime;
+    let runtime = at_runtime && !generator;
     if !applied.is_empty() || declared.is_variadic() {
         return Err(hmir_error(
             span,
@@ -266,13 +258,9 @@ pub(crate) fn call(
     for (index, (param, arg)) in declared.params().iter().zip(args).enumerate() {
         let frozen = param.comptime();
         let arg_span = caller_body.expr(*arg).span();
-        let evaluated = match runtime && frozen {
-            true => None,
-            false => Some(eval(context, caller_body, *arg)?),
-        };
-        let actual = match &evaluated {
-            Some(Evaluation::Ready(value)) => Some(value.ty()),
-            _ => None,
+        let actual = match deduction.needs_actual() {
+            true => actual_type(context, caller_body, *arg)?,
+            false => None,
         };
         for (pending, argument, ty) in deduction.infer(context, index, actual, span)? {
             let value = ready!(argument.complete(context, caller_body, Some(ty)));
@@ -281,23 +269,26 @@ pub(crate) fn call(
             values[pending] = Some(frame.argument(context, pending, ty, value, span, arg_span)?);
         }
         let ty = frame.parameter(context, index, span)?;
-        let argument = match evaluated {
-            None => comptime::frozen(context, caller_body, *arg, Some(ty))?,
-            Some(evaluated) => {
-                let arg_span = arg_span.clone();
-                complete::value(context, caller_body, evaluated, Some(ty))?.and_then(
-                    context,
-                    caller_body,
-                    None,
-                    move |context, _, value, _| {
-                        let value = coerce::implicit(context, value, ty, &arg_span)?;
-                        match runtime {
-                            true => Ok(Evaluation::Ready(value)),
-                            false => comptime::export(context, value, &arg_span),
-                        }
-                    },
-                )?
-            }
+        let staged = matches!(context.env().resolve_kind(ty), HMIRTypeKind::StagedExpr { .. });
+        let argument = if staged {
+            staged::argument(context, caller_body, *arg, ty)?
+        } else if (runtime && frozen) || generator {
+            comptime::frozen(context, caller_body, *arg, Some(ty))?
+        } else {
+            let evaluated = eval(context, caller_body, *arg)?;
+            let arg_span = arg_span.clone();
+            complete::value(context, caller_body, evaluated, Some(ty))?.and_then(
+                context,
+                caller_body,
+                None,
+                move |context, _, value, _| {
+                    let value = coerce::implicit(context, value, ty, &arg_span)?;
+                    match runtime {
+                        true => Ok(Evaluation::Ready(value)),
+                        false => comptime::export(context, value, &arg_span),
+                    }
+                },
+            )?
         };
         params.push(HMIRFnParam::new(frozen, ty));
         match argument {
@@ -319,6 +310,14 @@ pub(crate) fn call(
         .map(|value| value.expect("all arguments are complete"))
         .collect::<Vec<_>>();
     let signature = frame.signature(context, params, span)?;
+    let returns_code = matches!(
+        context.env().resolve_kind(*signature.return_type()),
+        HMIRTypeKind::StagedExpr { .. }
+    );
+    if generator && !returns_code {
+        let name = source.name().to_string();
+        return Err(hmir_error(span, &mir::COMPTIME_FUNCTION_AT_RUNTIME, name));
+    }
     for (index, declaration) in symbol::visible(source, context.visible_through()) {
         if index == selected {
             continue;
@@ -385,7 +384,27 @@ pub(crate) fn call(
             span,
         )
     })?;
-    Ok(Evaluation::Ready(value))
+    match generator {
+        true => staged::materialize(context, &value, &[]),
+        false => Ok(Evaluation::Ready(value)),
+    }
+}
+
+fn actual_type(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    arg: HMIRExprID,
+) -> CXResult<Option<HMIRTypeID>> {
+    let mut operand = arg;
+    while let HMIRExprKind::Piped(inner) | HMIRExprKind::Quote { body: inner, .. } =
+        body.expr(operand).kind()
+    {
+        operand = *inner;
+    }
+    if matches!(body.expr(operand).kind(), HMIRExprKind::Hole(_)) {
+        return Ok(None);
+    }
+    Ok(Some(flow::top(unevaluated::subject(context, body, operand))?))
 }
 
 

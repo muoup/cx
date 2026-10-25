@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRDefID, HMIRDefKind, HMIRFunctionStage,
+    HMIRDefID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue::typecheck};
@@ -82,13 +82,7 @@ fn function_value(
             context.env().resolve_kind(value.ty()),
             HMIRTypeKind::FunctionItem(_)
         ) {
-            let source = context.env().symbols().resolve_definition(def);
-            let selected = symbol::select(source, point)?;
-            if let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind()
-                && function.signature().stage() == HMIRFunctionStage::Runtime
-            {
-                return Ok(Evaluation::Ready(value));
-            }
+            return Ok(Evaluation::Ready(value));
         }
         let prototype = types::lower_prototype(context.env_mut(), def, point, span)?;
         context.env_mut().module_mut().declare_function(prototype);

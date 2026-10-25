@@ -11,6 +11,20 @@ pub fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bo
     }
 
     match (env.resolve_kind(lhs), env.resolve_kind(rhs)) {
+        (
+            HMIRTypeKind::StagedExpr {
+                params: lhs,
+                result: lhs_result,
+            },
+            HMIRTypeKind::StagedExpr {
+                params: rhs,
+                result: rhs_result,
+            },
+        ) => {
+            lhs.len() == rhs.len()
+                && lhs.iter().zip(rhs).all(|(l, r)| compatible(env, *l, *r))
+                && compatible(env, *lhs_result, *rhs_result)
+        }
         (HMIRTypeKind::PointerTo(lhs), HMIRTypeKind::PointerTo(rhs)) => {
             is_void(env, *lhs) || is_void(env, *rhs) || compatible(env, *lhs, *rhs)
         }

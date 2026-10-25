@@ -21,27 +21,33 @@ use cx_log::{CXResult, catalogue::mir};
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::{FnContext, LocalLoweringContext},
+    env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope},
     eval::types,
     log::log_hmir_error,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{Bindings, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 fn unsupported<T>(span: &TokenRange, operation: &str) -> CXResult<T> {
     log_hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation.into())
 }
 
-pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
-    match context.context() {
+pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) -> usize {
+    match context.context_mut() {
         FnContext::Runtime(_) => runtime::open_scope(context, span),
-        FnContext::Comptime(_) => {}
+        FnContext::Comptime(comptime) => {
+            let scopes = comptime.scopes_mut();
+            let parent = scopes.top();
+            scopes.push(ComptimeScope::default(), Some(parent), Bindings::new())
+        }
     }
 }
 
 pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
-    match context.context() {
+    match context.context_mut() {
         FnContext::Runtime(_) => runtime::close_scope(context, span),
-        FnContext::Comptime(_) => {}
+        FnContext::Comptime(comptime) => {
+            comptime.scopes_mut().pop();
+        }
     }
 }
 

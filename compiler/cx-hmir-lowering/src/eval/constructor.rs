@@ -143,7 +143,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
     let mut context = LocalLoweringContext::new(env, None, runtime);
 
-    emit::open_scope(&mut context, span.clone());
+    let scope = emit::open_scope(&mut context, span.clone());
     let payload = match payload(context.env(), ty, variant) {
         Some(payload) => {
             let param = runtime::parameter(&mut context, payload, None, &span)?;
@@ -157,7 +157,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
     };
     let value = construct(&mut context, ty, variant, payload, &span)?;
     let value = Some(runtime::lower_value(&mut context, &value, &span)?);
-    runtime::drop_scope(&mut context, 0, &span);
+    runtime::drop_scope(&mut context, scope, &span);
     context
         .runtime_mut()
         .emit(MIRInstructionKind::Return { value }, span.clone());

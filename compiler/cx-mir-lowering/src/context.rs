@@ -16,7 +16,6 @@ use cx_mir::{
 use cx_util::identifier::CXIdent;
 
 use crate::lowering::typing::convert_type;
-use crate::lowering::lifts::Lifts;
 
 /// The LMIR name of a MIR block, which a block address elsewhere in the unit names it by.
 pub(crate) fn block_id(block: MIRBasicBlockID) -> LMIRBlockID {
@@ -91,7 +90,6 @@ pub(crate) struct FunctionContext<'a, 'mir> {
     pub current_block: usize,
     pub next_register: usize,
     pub places: HashMap<MIRPlaceID, LMIRValue>,
-    pub lifts: Lifts,
 }
 
 impl<'a, 'mir> FunctionContext<'a, 'mir> {
@@ -111,7 +109,6 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
             current_block: 0,
             next_register: 0,
             places: HashMap::new(),
-            lifts: Lifts::default(),
         }
     }
 
@@ -132,10 +129,6 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
             register: LMIRRegister::new(format!("mir.{}", id.index())),
             ty: self.ty(self.body.register(id).ty()),
         }
-    }
-
-    pub fn value(&self, id: MIRRegister) -> LMIRValue {
-        self.lifts.value(id).unwrap_or_else(|| self.reg(id))
     }
 
     pub fn emit(&mut self, kind: LMIRInstructionKind, ty: LMIRType, result: Option<LMIRRegister>) {

@@ -11,10 +11,10 @@ use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind};
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::runtime,
+    emit::{self, runtime},
     env::function::{
         FnContext, LocalLoweringContext,
-        runtime::{Emission, ExitFrame},
+        runtime::{Emission, Exit},
     },
     eval::{
         EvalResult,
@@ -84,7 +84,9 @@ pub(crate) fn eval_case(
 ) -> EvalResult<HMIRValue> {
     let span = body.expr(id).span();
     match context.context() {
-        FnContext::Comptime(comptime) if comptime.in_switch() => eval(context, body, statement),
+        FnContext::Comptime(comptime) if comptime.switch().is_some() => {
+            eval(context, body, statement)
+        }
         FnContext::Comptime(_) => Err(hmir_error(
             span,
             &typecheck::REQUIRED_CONTEXT,
@@ -92,7 +94,7 @@ pub(crate) fn eval_case(
         )
         .into()),
         FnContext::Runtime(_) => {
-            let Some((target, depth)) = context.runtime().case_block(id) else {
+            let Some((depth, target)) = case_block(context, id) else {
                 return Err(hmir_error(
                     span,
                     &typecheck::REQUIRED_CONTEXT,
@@ -240,10 +242,12 @@ fn runtime_switch(
     );
 
     runtime::switch_to(context, entry);
-    let scope_depth = context.runtime().scope_depth();
+    let scope = emit::open_scope(context, span.clone());
     context
         .runtime_mut()
-        .push_exit(ExitFrame::new(exit, None, scope_depth, blocks));
+        .scopes_mut()
+        .control_mut(scope)
+        .set_exit(Exit::new(exit, None, blocks));
     let completion = eval_scoped(context, body, switch_body);
     let span = span.clone();
     let finish_span = span.clone();
@@ -262,7 +266,7 @@ fn finish_runtime_switch(
     exit: MIRBasicBlockID,
     span: &TokenRange,
 ) {
-    context.runtime_mut().pop_exit();
+    emit::close_scope(context, span.clone());
     match context.runtime().emission() {
         Emission::Enabled => {
             runtime::jump(context, exit, span.clone());
@@ -272,13 +276,36 @@ fn finish_runtime_switch(
     runtime::switch_to(context, exit);
 }
 
+fn case_block(
+    context: &LocalLoweringContext,
+    case: HMIRExprID,
+) -> Option<(usize, MIRBasicBlockID)> {
+    context
+        .runtime()
+        .target(|scope| scope.exit().and_then(|exit| exit.case_block(case)))
+}
+
+pub(crate) fn in_switch(context: &LocalLoweringContext) -> bool {
+    match context.context() {
+        FnContext::Runtime(runtime) => runtime
+            .target(|scope| {
+                scope
+                    .exit()
+                    .is_some_and(|exit| exit.continue_block().is_none())
+                    .then_some(())
+            })
+            .is_some(),
+        FnContext::Comptime(_) => false,
+    }
+}
+
 pub(crate) fn contains_case(
     context: &LocalLoweringContext,
     body: &HMIRBody,
     id: HMIRExprID,
 ) -> bool {
     match body.expr(id).kind() {
-        HMIRExprKind::Case { .. } => context.runtime().case_block(id).is_some(),
+        HMIRExprKind::Case { .. } => case_block(context, id).is_some(),
         _ => children(body, id)
             .into_iter()
             .any(|child| contains_case(context, body, child)),
@@ -306,8 +333,14 @@ fn comptime_switch(
     let Some(selected) = selected else {
         return Ok(Evaluation::Ready(literal::unit(context, span)));
     };
-    context.comptime_mut().begin_switch(selected.id);
+    let scope = emit::open_scope(context, span.clone());
+    context
+        .comptime_mut()
+        .scopes_mut()
+        .control_mut(scope)
+        .begin_switch(selected.id);
     let span = span.clone();
+    let close = span.clone();
     let result = eval(context, body, switch_body).and_then(|result| {
         let unit = literal::unit(context, &span);
         result
@@ -319,8 +352,8 @@ fn comptime_switch(
                 Ok(Evaluation::Ready(literal::unit(context, &span)))
             })
     });
-    flow::finally(context, body, result, |context, _, _| {
-        context.comptime_mut().end_switch();
+    flow::finally(context, body, result, move |context, _, _| {
+        emit::close_scope(context, close);
         Ok(())
     })
 }

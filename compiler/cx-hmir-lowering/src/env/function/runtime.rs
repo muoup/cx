@@ -1,20 +1,17 @@
-use std::collections::HashMap;
-
-use cx_hmir::{
-    body::HMIRLocalID,
-    expr::HMIRExprID,
-};
-use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRPlaceDecl,
-    MIRScopeID, MIRTarget, MIRValue,
-};
+use cx_mir::{MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRScopeID, MIRTarget};
 use cx_tokens::TokenRange;
 use index_vec::IndexVec;
 
 use crate::{
-    env::{function::Expectations, module::MIRFunctionBuilder},
-    value::{HMIRPlace, HMIRSlotID, HMIRValue, HMIRValueKind},
+    env::{function::scope::Scopes, module::MIRFunctionBuilder},
+    value::{HMIRSlotID, HMIRValue},
 };
+
+mod scope;
+mod slot;
+
+pub(crate) use scope::{Defer, Exit, RuntimeScope};
+pub(crate) use slot::Slot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Emission {
@@ -24,67 +21,12 @@ pub enum Emission {
 }
 
 #[derive(Debug)]
-pub(crate) struct ExitFrame {
-    continue_block: Option<MIRBasicBlockID>,
-    break_block: MIRBasicBlockID,
-    scope_depth: usize,
-    case_blocks: Vec<(HMIRExprID, MIRBasicBlockID)>,
-}
-
-impl ExitFrame {
-    pub(crate) fn new(
-        break_block: MIRBasicBlockID,
-        continue_block: Option<MIRBasicBlockID>,
-        scope_depth: usize,
-        case_blocks: Vec<(HMIRExprID, MIRBasicBlockID)>,
-    ) -> Self {
-        Self { continue_block, break_block, scope_depth, case_blocks }
-    }
-
-    pub(crate) fn continue_block(&self) -> Option<MIRBasicBlockID> {
-        self.continue_block
-    }
-
-    pub(crate) fn break_block(&self) -> MIRBasicBlockID {
-        self.break_block
-    }
-
-    pub(crate) fn scope_depth(&self) -> usize {
-        self.scope_depth
-    }
-
-    pub(crate) fn case_block(&self, case: HMIRExprID) -> Option<MIRBasicBlockID> {
-        self.case_blocks
-            .iter()
-            .find_map(|(label, block)| (*label == case).then_some(*block))
-    }
-}
-
-#[derive(Debug)]
-struct YieldFrame {
-    depth: usize,
-    values: Vec<(MIRBasicBlockID, HMIRValue)>,
-}
-
-#[derive(Debug)]
-struct Scope {
-    id: MIRScopeID,
-    defers: Vec<(HMIRExprID, Expectations)>,
-}
-
-#[derive(Debug)]
 pub struct RuntimeContext {
     builder: MIRFunctionBuilder,
-    locals: HashMap<HMIRLocalID, HMIRValue>,
-    captures: Vec<(HMIRLocalID, HMIRValue)>,
-    slots: IndexVec<HMIRSlotID, MIRBindable>,
-    scopes: Vec<Scope>,
-    reserved: Vec<HMIRLocalID>,
-    scratch_scope: MIRScopeID,
-    exits: Vec<ExitFrame>,
-    lifts: Vec<(HMIRSlotID, MIRBasicBlockID)>,
-    yields: Vec<YieldFrame>,
     emission: Emission,
+    slots: IndexVec<HMIRSlotID, Slot>,
+    scopes: Scopes<RuntimeScope>,
+    scratch_scope: MIRScopeID,
 }
 
 impl RuntimeContext {
@@ -94,15 +36,9 @@ impl RuntimeContext {
 
         Self {
             builder,
-            locals: HashMap::new(),
-            captures: Vec::new(),
             slots: IndexVec::new(),
-            scopes: Vec::new(),
-            reserved: Vec::new(),
+            scopes: Scopes::default(),
             scratch_scope,
-            exits: Vec::new(),
-            lifts: Vec::new(),
-            yields: Vec::new(),
             emission: Emission::Enabled,
         }
     }
@@ -136,34 +72,25 @@ impl RuntimeContext {
                         target: MIRTarget::Indirect(_) | MIRTarget::Global(_),
                         ..
                     } => {
-                        self.captures.clear();
+                        for slot in &mut self.slots {
+                            slot.set_known(None);
+                        }
                         None
                     }
                     _ => None,
                 };
                 if let Some(written) = written {
-                    self.captures.retain(|(local, _)| {
-                        match self.locals.get(local).map(HMIRValue::kind) {
-                            Some(HMIRValueKind::PlaceRef(HMIRPlace::Local(slot))) => {
-                                self.slots[*slot] != written
-                            }
-                            _ => true,
+                    for slot in &mut self.slots {
+                        if slot.binding() == &written {
+                            slot.set_known(None);
                         }
-                    });
+                    }
                 }
             }
             return;
         }
 
         let terminator = kind.is_terminator();
-        if matches!(
-            kind,
-            MIRInstructionKind::Jump { .. }
-                | MIRInstructionKind::Branch { .. }
-                | MIRInstructionKind::CaseBranch { .. }
-        ) {
-            self.preserve_lifts(&span);
-        }
         self.builder.emit(kind, span);
 
         if terminator {
@@ -171,209 +98,73 @@ impl RuntimeContext {
         }
     }
 
-    pub fn add_lift(&mut self, slot: HMIRSlotID) {
-        let block = self.builder.current_block();
-        self.lifts.push((slot, block));
-    }
-
-    pub fn lift_count(&self) -> usize {
-        self.lifts.len()
-    }
-
-    pub fn release_lifts(&mut self, count: usize) {
-        self.lifts.truncate(count);
-    }
-
-    // A lift register is only valid in its defining block, so before evaluation continues in another block, a
-    // capture that may still be used is moved into scratch storage, which carries no obligations
-    fn preserve_lifts(&mut self, span: &TokenRange) {
-        let block = self.builder.current_block();
-        let (preserved, pending) = std::mem::take(&mut self.lifts)
-            .into_iter()
-            .partition(|(_, defined)| *defined == block);
-        self.lifts = pending;
-
-        for (slot, _) in preserved {
-            let MIRBindable::Register(register) = self.slots[slot] else {
-                continue;
-            };
-            let ty = self
-                .builder
-                .register(register)
-                .expect("a lift register is declared")
-                .ty();
-            let place = self.builder.allocate_place(MIRPlaceDecl::new(
-                ty,
-                None,
-                self.scratch_scope,
-                false,
-                false,
-            ));
-            self.builder.emit(
-                MIRInstructionKind::Store {
-                    target: MIRTarget::Place(place),
-                    value: MIRValue::Register(register),
-                    ty,
-                    bitfield: None,
-                },
-                span.clone(),
-            );
-            self.builder.emit(
-                MIRInstructionKind::Initialize {
-                    place: MIRBindable::Place(place),
-                },
-                span.clone(),
-            );
-            self.slots[slot] = MIRBindable::Place(place);
-        }
-    }
-
-    pub fn slots(&self) -> impl Iterator<Item = &MIRBindable> {
-        self.slots.iter()
-    }
-
-    pub fn slot(&self, slot: HMIRSlotID) -> &MIRBindable {
+    pub(crate) fn slot(&self, slot: HMIRSlotID) -> &Slot {
         &self.slots[slot]
     }
 
-    pub fn slot_mut(&mut self, slot: HMIRSlotID) -> &mut MIRBindable {
+    pub(crate) fn slot_mut(&mut self, slot: HMIRSlotID) -> &mut Slot {
         &mut self.slots[slot]
     }
 
-    pub fn allocate_slot(&mut self, bindable: MIRBindable) -> HMIRSlotID {
-        self.slots.push(bindable)
-    }
-    
-    pub fn captures(&self) -> &[(HMIRLocalID, HMIRValue)] {
-        &self.captures
+    pub(crate) fn allocate_slot(&mut self, slot: Slot) -> HMIRSlotID {
+        self.slots.push(slot)
     }
 
-    pub fn set_captures(&mut self, captures: Vec<(HMIRLocalID, HMIRValue)>) {
-        self.captures = captures;
+    pub(crate) fn scopes(&self) -> &Scopes<RuntimeScope> {
+        &self.scopes
     }
 
-    pub fn locals(&self) -> impl Iterator<Item = (&HMIRLocalID, &HMIRValue)> {
-        self.locals.iter()
+    pub(crate) fn scopes_mut(&mut self) -> &mut Scopes<RuntimeScope> {
+        &mut self.scopes
     }
 
-    pub fn local(&self, local: HMIRLocalID) -> Option<&HMIRValue> {
-        self.locals.get(&local)
+    pub(crate) fn current_scope(&self) -> MIRScopeID {
+        self.scopes
+            .controls()
+            .rev()
+            .find_map(|(_, scope)| scope.mir())
+            .expect("Place allocated outside of a scope")
     }
 
-    pub fn set_local(&mut self, local: HMIRLocalID, value: HMIRValue) {
-        self.captures.retain(|(id, _)| *id != local);
-        self.locals.insert(local, value);
+    pub(crate) fn deferred(&self) -> bool {
+        self.scopes.controls().any(|(_, scope)| scope.deferred())
     }
 
-    pub fn remove_local(&mut self, local: HMIRLocalID) {
-        self.locals.remove(&local);
+    pub(crate) fn target<T>(
+        &self,
+        find: impl Fn(&RuntimeScope) -> Option<T>,
+    ) -> Option<(usize, T)> {
+        for (index, scope) in self.scopes.controls().rev() {
+            if let Some(target) = find(scope) {
+                return Some((index, target));
+            }
+            if scope.deferred() {
+                break;
+            }
+        }
+        None
     }
 
-    pub fn reserve(&mut self, local: HMIRLocalID) {
-        self.reserved.push(local);
+    pub(crate) fn defers_past(&self, depth: usize) -> bool {
+        self.scopes
+            .controls()
+            .skip(depth)
+            .any(|(_, scope)| !scope.defers().is_empty())
     }
 
-    pub fn unreserve(&mut self, local: HMIRLocalID) -> bool {
-        let count = self.reserved.len();
-        self.reserved.retain(|reserved| *reserved != local);
-        self.reserved.len() != count
+    pub(crate) fn yield_target(&self) -> Option<usize> {
+        self.target(|scope| scope.yields().then_some(()))
+            .map(|(index, ())| index)
     }
 
-    pub fn scope_depth(&self) -> usize {
-        self.scopes.len()
-    }
-
-    pub fn scope(&self, index: usize) -> MIRScopeID {
-        self.scopes[index].id
-    }
-
-    pub fn current_scope(&self) -> MIRScopeID {
-        self.scopes.last().expect("Place allocated outside of a scope").id
+    pub(crate) fn yield_value(&mut self, value: HMIRValue) {
+        let index = self.yield_target().expect("yield has a target");
+        let block = self.builder.current_block();
+        self.scopes.control_mut(index).push_yield(block, value);
     }
 
     pub fn scratch_scope(&self) -> MIRScopeID {
         self.scratch_scope
-    }
-
-    pub fn push_scope(&mut self, id: MIRScopeID) {
-        self.scopes.push(Scope { id, defers: Vec::new() });
-    }
-
-    pub fn pop_scope(&mut self) -> MIRScopeID {
-        self.scopes
-            .pop()
-            .expect("Attempt to pop a scope when none is open")
-            .id
-    }
-
-    pub(crate) fn defer(&mut self, expr: HMIRExprID, expectations: Expectations) {
-        let scope = self.scopes.last_mut().expect("defer registered outside of a scope");
-        scope.defers.push((expr, expectations));
-    }
-
-    pub(crate) fn defers(&self, index: usize) -> &[(HMIRExprID, Expectations)] {
-        &self.scopes[index].defers
-    }
-
-    pub(crate) fn defers_past(&self, depth: usize) -> bool {
-        self.scopes[depth..].iter().any(|scope| !scope.defers.is_empty())
-    }
-
-    pub(crate) fn current_exit(&self) -> Option<&ExitFrame> {
-        self.exits.last()
-    }
-
-    pub(crate) fn current_loop(&self) -> Option<&ExitFrame> {
-        self.exits
-            .iter()
-            .rev()
-            .find(|frame| frame.continue_block().is_some())
-    }
-
-    pub(crate) fn in_switch(&self) -> bool {
-        self.exits.iter().any(|frame| frame.continue_block().is_none())
-    }
-
-    pub(crate) fn case_block(&self, case: HMIRExprID) -> Option<(MIRBasicBlockID, usize)> {
-        self.exits
-            .iter()
-            .rev()
-            .find_map(|frame| Some((frame.case_block(case)?, frame.scope_depth())))
-    }
-
-    pub(crate) fn push_exit(&mut self, frame: ExitFrame) {
-        self.exits.push(frame);
-    }
-
-    pub(crate) fn pop_exit(&mut self) -> ExitFrame {
-        self.exits
-            .pop()
-            .expect("Attempt to pop an exit frame when none is open")
-    }
-
-    pub fn begin_yield(&mut self, depth: usize) {
-        self.yields.push(YieldFrame {
-            depth,
-            values: Vec::new(),
-        });
-    }
-
-    pub fn yielding(&self) -> bool {
-        !self.yields.is_empty()
-    }
-
-    pub fn yield_depth(&self) -> usize {
-        self.yields.last().expect("yield has a target").depth
-    }
-
-    pub fn yield_value(&mut self, value: HMIRValue) {
-        let block = self.builder.current_block();
-        let frame = self.yields.last_mut().expect("yield has a target");
-        frame.values.push((block, value));
-    }
-
-    pub fn end_yield(&mut self) -> Vec<(MIRBasicBlockID, HMIRValue)> {
-        self.yields.pop().expect("yield scope exists").values
     }
 
     pub fn finish(self) -> MIRFunction {

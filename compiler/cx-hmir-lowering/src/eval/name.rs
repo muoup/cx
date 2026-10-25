@@ -23,7 +23,7 @@ use crate::{
         EvalResult, complete, constructor,
         def::eval_def,
         eval_type,
-        flow::{self, Evaluation},
+        flow::Evaluation,
         types,
     },
     log::hmir_error,
@@ -220,19 +220,20 @@ pub(crate) fn eval_scope_access(
     base: HMIRExprID,
     member: &CXIdent,
 ) -> EvalResult<HMIRValue> {
-    let ty = flow::top(eval_type(context, body, base))?;
-    if !matches!(
-        context.env().resolve_kind(ty),
-        HMIRTypeKind::TaggedUnion { .. }
-    ) {
-        let kind = (types::name(context.env(), ty), "a tagged union".into());
-        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
-    }
-    match constructor::reference(context, ty, member, span)? {
-        Some(value) => Ok(Evaluation::Ready(value)),
-        None => {
-            let member = (types::name(context.env(), ty), member.to_string());
-            Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into())
+    let evaluated = eval_type(context, body, base)?;
+    let span = span.clone();
+    let member = member.clone();
+    evaluated.and_then(context, body, None, move |context, _, ty, _| {
+        if !matches!(context.env().resolve_kind(ty), HMIRTypeKind::TaggedUnion { .. }) {
+            let kind = (types::name(context.env(), ty), "a tagged union".into());
+            return Err(hmir_error(&span, &typecheck::UNEXPECTED_KIND, kind));
         }
-    }
+        match constructor::reference(context, ty, &member, &span)? {
+            Some(value) => Ok(Evaluation::Ready(value)),
+            None => {
+                let member = (types::name(context.env(), ty), member.to_string());
+                Err(hmir_error(&span, &typecheck::UNKNOWN_MEMBER, member))
+            }
+        }
+    })
 }

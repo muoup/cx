@@ -37,6 +37,10 @@ impl<'a> Deduction<'a> {
         }
     }
 
+    pub fn needs_actual(&self) -> bool {
+        !self.pending.is_empty() || !self.inferred.is_empty()
+    }
+
     pub fn defer(&mut self, index: usize, argument: Evaluation<HMIRValue>) {
         self.pending.push((index, argument));
     }
@@ -162,6 +166,13 @@ impl<'a> Deduction<'a> {
                 });
                 let actual = actual.map(|actual| unspecify(context, actual, qualifiers, span));
                 self.unify(context, *inner, actual, unresolved, span)
+            }
+            HMIRExprTypeKind::StagedExpr { result, .. } => {
+                let actual = actual.map(|actual| match env.resolve_kind(actual) {
+                    HMIRTypeKind::StagedExpr { result, .. } => *result,
+                    _ => actual,
+                });
+                self.unify(context, *result, actual, unresolved, span)
             }
             HMIRExprTypeKind::Function(signature) => {
                 let actual = actual

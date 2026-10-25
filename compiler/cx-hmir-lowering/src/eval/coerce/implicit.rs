@@ -117,6 +117,11 @@ fn step(
             return Ok(Coercion::Unapplied(value));
         }
         (HMIRTypeKind::ReferenceTo(_), _) => return promotion::step(context, value, span),
+        (HMIRTypeKind::StagedExpr { .. }, target)
+            if !matches!(target, HMIRTypeKind::StagedExpr { .. }) =>
+        {
+            return promotion::step(context, value, span);
+        }
         (_, HMIRTypeKind::ReferenceTo(inner)) => {
             return reference::bind(context, value, *inner, target, span);
         }

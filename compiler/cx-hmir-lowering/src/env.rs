@@ -96,6 +96,21 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
                     && self.same_type(*a.return_type(), *b.return_type())
             }
 
+            (
+                HMIRTypeKind::StagedExpr {
+                    params: a,
+                    result: a_result,
+                },
+                HMIRTypeKind::StagedExpr {
+                    params: b,
+                    result: b_result,
+                },
+            ) => {
+                a.len() == b.len()
+                    && a.iter().zip(b).all(|(a, b)| self.same_type(*a, *b))
+                    && self.same_type(*a_result, *b_result)
+            }
+
             _ => false,
         }
     }

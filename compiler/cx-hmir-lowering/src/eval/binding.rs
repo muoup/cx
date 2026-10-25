@@ -2,7 +2,7 @@ use cx_hmir::{
     HMIRBody,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeID, context::HMIRTypeContext},
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::{
     CXResult,
@@ -16,10 +16,10 @@ use crate::{
     eval::{
         EvalResult, coerce, complete, defer, eval, eval_type,
         flow::{self, Evaluation, RuntimeStop, StopReason, ready},
-        literal, storage, switch, types,
+        literal, staged, storage, switch, types,
     },
     log::hmir_error,
-    value::HMIRValue,
+    value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 
 pub(crate) fn eval_local(
@@ -43,8 +43,10 @@ pub(crate) fn eval_local(
         }
     };
 
-    if let FnContext::Runtime(runtime) = context.context_mut() {
-        runtime.unreserve(local);
+    if let FnContext::Runtime(runtime) = context.context_mut()
+        && let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = value.kind()
+    {
+        runtime.slot_mut(*slot).observe();
     }
     let stored = context.env().reference_inner(value.ty());
     match stored {
@@ -70,6 +72,21 @@ pub(crate) fn eval_let(
     }
 
     let declared = eval_type(context, body, local.ty())?;
+    if let Some(ty) = declared.known().copied()
+        && matches!(context.context(), FnContext::Runtime(_))
+        && matches!(context.env().resolve_kind(ty), HMIRTypeKind::StagedExpr { .. })
+    {
+        let Some(initializer) = initializer else {
+            let kind = ("staged local".into(), "a declaration without an initializer".into());
+            return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind));
+        };
+        let value = staged::argument(context, body, initializer, ty)?;
+        let span = span.clone();
+        return value.and_then(context, body, None, move |context, _, value, _| {
+            emit::storage::bind_local(context, local_id, value);
+            Ok(Evaluation::Ready(literal::unit(context, &span)))
+        });
+    }
     let storage = match declared.known().copied() {
         Some(ty) if context.complete_object(ty) => {
             Some(declare(context, body, local_id, ty, span)?)
@@ -98,9 +115,6 @@ pub(crate) fn eval_let(
     };
 
     let is_runtime = matches!(context.context(), FnContext::Runtime(_));
-    if is_runtime && storage.is_some() {
-        context.runtime_mut().reserve(local_id);
-    }
     let value = eval(context, body, initializer)?;
     let value = complete::value(context, body, value, declared.known().copied())?;
     let span = span.clone();
@@ -122,7 +136,7 @@ pub(crate) fn eval_let(
                     None => declare(context, body, local_id, ty, &span)?,
                 };
                 let reusable = is_runtime
-                    && (!reserved || context.runtime_mut().unreserve(local_id))
+                    && (!reserved || !observed(context, &storage))
                     && context.runtime().emission() == Emission::Enabled
                     && emit::scratch_held(context, &value);
                 if reusable {
@@ -136,6 +150,13 @@ pub(crate) fn eval_let(
             },
         )
     })
+}
+
+fn observed(context: &LocalLoweringContext, storage: &HMIRValue) -> bool {
+    match storage.kind() {
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => context.runtime().slot(*slot).observed(),
+        _ => true,
+    }
 }
 
 fn declare(
@@ -174,8 +195,8 @@ pub(crate) fn eval_block(
     emit::open_scope(context, span.clone());
     let result = eval_statements(context, body, span, statements, yields);
     let span = span.clone();
-    flow::finally(context, body, result, move |context, body, completed| {
-        defer::close(context, body, completed, &span)
+    flow::finally(context, body, result, move |context, _, completed| {
+        defer::close(context, completed, &span)
     })
 }
 
@@ -191,12 +212,8 @@ fn eval_statements(
         if stopped && !switch::contains_case(context, body, *statement) {
             continue;
         }
-        let lifts = match context.context() {
-            FnContext::Runtime(runtime) => Some(runtime.lift_count()),
-            FnContext::Comptime(_) => None,
-        };
         let result = eval(context, body, *statement);
-        stopped = matches!(context.context(), FnContext::Runtime(runtime) if runtime.in_switch())
+        stopped = switch::in_switch(context)
             && matches!(
                 result,
                 Ok(Evaluation::Stop(StopReason::Runtime(RuntimeStop::Diverged)))
@@ -218,10 +235,17 @@ fn eval_statements(
                 )?))
             });
         }
-        ready!(result);
-        if let Some(lifts) = lifts {
-            context.runtime_mut().release_lifts(lifts);
-        }
+        match result {
+            Ok(Evaluation::Incomplete(pending)) if pending.is_yielding() => {
+                let remaining = statements[index + 1..].to_vec();
+                let span = span.clone();
+                let pending = Evaluation::Incomplete(pending);
+                return pending.and_then(context, body, None, move |context, body, _, _| {
+                    eval_statements(context, body, &span, &remaining, yields)
+                });
+            }
+            result => ready!(result),
+        };
     }
     if stopped {
         return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));

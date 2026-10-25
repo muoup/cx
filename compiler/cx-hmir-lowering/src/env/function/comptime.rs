@@ -1,16 +1,15 @@
-use std::collections::HashMap;
-
-use cx_hmir::{body::HMIRLocalID, expr::HMIRExprID, ty::HMIRTypeID};
+use cx_hmir::{expr::HMIRExprID, ty::HMIRTypeID};
 use cx_util::identifier::CXIdent;
 use index_vec::IndexVec;
 
-use crate::value::{HMIRSlotID, HMIRValue, constant::HMIRConstant};
+use crate::{
+    env::function::scope::Scopes,
+    value::{HMIRSlotID, constant::HMIRConstant},
+};
 
 #[derive(Debug, Default)]
 pub struct ComptimeContext {
-    locals: HashMap<HMIRLocalID, HMIRValue>,
-    yields: usize,
-    switches: Vec<Option<HMIRExprID>>,
+    scopes: Scopes<ComptimeScope>,
     slots: IndexVec<HMIRSlotID, ComptimeSlot>,
 }
 
@@ -33,52 +32,37 @@ impl ComptimeContext {
         Self::default()
     }
 
-    pub fn begin_yield(&mut self) {
-        self.yields += 1;
+    pub(crate) fn scopes(&self) -> &Scopes<ComptimeScope> {
+        &self.scopes
     }
 
-    pub fn end_yield(&mut self) {
-        self.yields -= 1;
+    pub(crate) fn scopes_mut(&mut self) -> &mut Scopes<ComptimeScope> {
+        &mut self.scopes
     }
 
-    pub fn yielding(&self) -> bool {
-        self.yields != 0
+    pub(crate) fn yielding(&self) -> bool {
+        self.scopes.controls().any(|(_, scope)| scope.yields)
     }
 
-    pub fn begin_switch(&mut self, selected: HMIRExprID) {
-        self.switches.push(Some(selected));
+    pub(crate) fn switch(&self) -> Option<Switch> {
+        self.scopes.controls().rev().find_map(|(_, scope)| scope.switch)
     }
 
-    pub fn end_switch(&mut self) {
-        self.switches.pop().expect("a switch is open");
+    pub(crate) fn selected_case(&self) -> Option<HMIRExprID> {
+        match self.switch() {
+            Some(Switch::Seeking(selected)) => Some(selected),
+            _ => None,
+        }
     }
 
-    pub fn selected_case(&self) -> Option<HMIRExprID> {
-        self.switches.last().copied().flatten()
-    }
-
-    pub fn activate_case(&mut self) {
-        *self.switches.last_mut().expect("a switch is open") = None;
-    }
-
-    pub fn in_switch(&self) -> bool {
-        !self.switches.is_empty()
-    }
-
-    pub fn locals(&self) -> impl Iterator<Item = (&HMIRLocalID, &HMIRValue)> {
-        self.locals.iter()
-    }
-
-    pub fn local(&self, local: HMIRLocalID) -> Option<&HMIRValue> {
-        self.locals.get(&local)
-    }
-
-    pub fn set_local(&mut self, local: HMIRLocalID, value: HMIRValue) {
-        self.locals.insert(local, value);
-    }
-
-    pub fn remove_local(&mut self, local: HMIRLocalID) {
-        self.locals.remove(&local);
+    pub(crate) fn activate_case(&mut self) {
+        let (index, _) = self
+            .scopes
+            .controls()
+            .rev()
+            .find(|(_, scope)| scope.switch.is_some())
+            .expect("a switch is open");
+        self.scopes.control_mut(index).switch = Some(Switch::Active);
     }
 
     pub fn slots(&self) -> impl Iterator<Item = &ComptimeSlot> {
@@ -117,5 +101,27 @@ impl ComptimeSlot {
 
     pub fn state_mut(&mut self) -> &mut ComptimeSlotState {
         &mut self.state
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Switch {
+    Seeking(HMIRExprID),
+    Active,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ComptimeScope {
+    yields: bool,
+    switch: Option<Switch>,
+}
+
+impl ComptimeScope {
+    pub(crate) fn begin_yield(&mut self) {
+        self.yields = true;
+    }
+
+    pub(crate) fn begin_switch(&mut self, selected: HMIRExprID) {
+        self.switch = Some(Switch::Seeking(selected));
     }
 }

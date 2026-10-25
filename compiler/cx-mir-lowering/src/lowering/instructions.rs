@@ -30,7 +30,7 @@ pub(super) fn lower_instruction(
             let MIRValue::Register(reference) = value else {
                 unreachable!("a bitfield load must read through a reference register")
             };
-            let unit = context.value(*reference);
+            let unit = context.reg(*reference);
             let value = values::read_bitfield(context, unit, *ty, access);
             values::write_target(context, *target, value);
         }

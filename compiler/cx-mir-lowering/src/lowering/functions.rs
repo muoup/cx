@@ -10,7 +10,6 @@ use cx_mir::{MIRBody, MIRFunction};
 use crate::context::{FunctionContext, GlobalContext, block_id};
 
 use super::instructions::lower_instruction;
-use super::lifts::{self, Lifts};
 use super::typing::convert_prototype;
 
 pub(super) fn lower_function<'mir>(
@@ -48,11 +47,8 @@ pub(super) fn lower_function<'mir>(
     
     for (id, block) in body.blocks() {
         context.current_block = context.block_indices[&id];
-        context.lifts = Lifts::new(block);
-        for (index, instruction) in block.instructions().iter().enumerate() {
-            lifts::before(&mut context, &instruction.kind);
+        for instruction in block.instructions() {
             lower_instruction(&mut context, instruction);
-            context.lifts.retire(index);
         }
     }
     Ok(context.finish())

@@ -98,38 +98,31 @@ pub(crate) fn frozen_child<'a, 'global, 'hmir>(
 }
 
 pub(crate) fn frozen_inputs(context: &LocalLoweringContext) -> Vec<(HMIRLocalID, HMIRValue)> {
-    let frozen = |(local, value): (&HMIRLocalID, &HMIRValue)| match value.kind() {
-        HMIRValueKind::Constant(constant) if !constant.holds_local_address() => {
-            Some((*local, value.clone()))
+    context
+        .visible_locals()
+        .into_iter()
+        .filter_map(|(local, value)| Some((local, known(context, &value)?)))
+        .collect()
+}
+
+pub(crate) fn known(context: &LocalLoweringContext, value: &HMIRValue) -> Option<HMIRValue> {
+    match (value.kind(), context.context()) {
+        (HMIRValueKind::Constant(constant), _) if !constant.holds_local_address() => {
+            Some(value.clone())
+        }
+        (HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)), FnContext::Runtime(runtime)) => {
+            runtime.slot(*slot).known().cloned()
+        }
+        (HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)), FnContext::Comptime(comptime)) => {
+            let slot = comptime.slot(*slot);
+            match slot.state() {
+                ComptimeSlotState::Value(constant) if !constant.holds_local_address() => {
+                    Some(HMIRValue::constant(slot.ty(), constant.clone()))
+                }
+                _ => None,
+            }
         }
         _ => None,
-    };
-
-    match context.context() {
-        FnContext::Runtime(runtime) => {
-            let mut inputs = runtime.captures().to_vec();
-            for (local, value) in runtime.locals().filter_map(frozen) {
-                match inputs.iter_mut().find(|(id, _)| *id == local) {
-                    Some((_, previous)) => *previous = value,
-                    None => inputs.push((local, value)),
-                }
-            }
-            inputs
-        }
-        FnContext::Comptime(comptime) => comptime
-            .locals()
-            .filter_map(|(local, value)| {
-                if let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = value.kind() {
-                    let slot = comptime.slot(*slot);
-                    if let ComptimeSlotState::Value(constant) = slot.state()
-                        && !constant.holds_local_address()
-                    {
-                        return Some((*local, HMIRValue::constant(slot.ty(), constant.clone())));
-                    }
-                }
-                frozen((local, value))
-            })
-            .collect(),
     }
 }
 

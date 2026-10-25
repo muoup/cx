@@ -4,14 +4,14 @@ mod fn_to_ptr;
 mod lvalue;
 mod str_to_char_ptr;
 
-use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::LocalLoweringContext,
-    eval::{coerce::result::Coercion, types},
+    env::function::{FnContext, LocalLoweringContext},
+    eval::{coerce::result::Coercion, flow, operand, staged, types},
     value::HMIRValue,
 };
 
@@ -20,6 +20,15 @@ pub fn step(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<Coercion> {
+    let staged = matches!(
+        context.env().resolve_kind(value.ty()),
+        HMIRTypeKind::StagedExpr { params, .. } if params.is_empty()
+    );
+    if staged && matches!(context.context(), FnContext::Runtime(_)) {
+        let evaluated = staged::materialize(context, &value, &[]);
+        let value = flow::top(operand(context, evaluated, span))?;
+        return Ok(Coercion::Applied(value));
+    }
     array_to_ptr::apply(context, value, span)?
         .or_else(|value| str_to_char_ptr::apply(context, value, span))?
         .or_else(|value| fn_to_ptr::apply(context, value, span))?

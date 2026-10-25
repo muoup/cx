@@ -13,7 +13,7 @@ use crate::{
     eval::{
         EvalResult, coerce, comptime, constructor, contract, eval,
         flow::{Evaluation, RuntimeStop, ready},
-        function, safety, types,
+        function, safety, staged, types,
     },
     log::hmir_error,
     symbol,
@@ -30,7 +30,24 @@ pub(crate) fn eval_call(
     callee: HMIRExprID,
     args: &[HMIRExprID],
 ) -> EvalResult<HMIRValue> {
-    let callee = ready!(eval(context, body, callee));
+    let evaluated = eval(context, body, callee)?;
+    let args = args.to_vec();
+    let span = span.clone();
+    evaluated.and_then(context, body, None, move |context, body, callee, expected| {
+        evaluate(context, body, &span, callee, &args)?.complete(context, body, expected)
+    })
+}
+
+fn evaluate(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    callee: HMIRValue,
+    args: &[HMIRExprID],
+) -> EvalResult<HMIRValue> {
+    if staged::is_code(context, callee.ty()) {
+        return staged::apply(context, body, callee, args, span);
+    }
     let callee = coerce::std_rvalue(context, callee, span)?;
     if context.is_unevaluated()
         && let HMIRValueKind::Constant(HMIRConstant::Function {

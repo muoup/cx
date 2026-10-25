@@ -23,11 +23,14 @@ pub(crate) fn eval_yield(
     span: &TokenRange,
     value: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    let available = match context.context() {
-        FnContext::Runtime(runtime) => runtime.yielding(),
-        FnContext::Comptime(comptime) => comptime.yielding(),
+    let (available, deferred) = match context.context() {
+        FnContext::Runtime(runtime) => (
+            runtime.yield_target().is_some(),
+            runtime.deferred(),
+        ),
+        FnContext::Comptime(comptime) => (comptime.yielding(), false),
     };
-    if !available && context.expectations().deferred() {
+    if !available && deferred {
         return Err(hmir_error(span, &typecheck::DEFER_JUMP, "yield".into()));
     }
     if !available {
@@ -41,8 +44,12 @@ pub(crate) fn eval_yield(
         Some(expr) => eval(context, body, expr)?,
         None => Evaluation::Ready(literal::unit(context, span)),
     };
+    let value = match value {
+        Evaluation::Incomplete(pending) => Evaluation::Incomplete(pending.yielding()),
+        other => other,
+    };
     let span = span.clone();
-    value.and_then(context, body, None, move |context, body, value, _| {
+    value.and_then(context, body, None, move |context, _, value, _| {
         let value = coerce::std_rvalue(context, value, &span)?;
         match context.context() {
             FnContext::Comptime(_) => Ok(Evaluation::Stop(ComptimeStop::Yield(value).into())),
@@ -53,8 +60,8 @@ pub(crate) fn eval_yield(
                 } else {
                     storage::temporary(context, value, &span)?
                 };
-                let depth = context.runtime().yield_depth();
-                defer::exit(context, body, depth, &span)?;
+                let depth = context.runtime().yield_target().expect("yield has a target");
+                defer::exit(context, depth, &span)?;
                 context.runtime_mut().yield_value(value);
                 context.runtime_mut().set_emission(Emission::Suppressed);
                 Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))

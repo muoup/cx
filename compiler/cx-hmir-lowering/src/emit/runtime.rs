@@ -26,14 +26,17 @@ use self::storage::slot;
 use crate::{
     env::{
         HMIREnvironment,
-        function::{LocalLoweringContext, runtime::Emission},
+        function::{
+            LocalLoweringContext,
+            runtime::{Emission, RuntimeScope},
+        },
     },
     eval::{
         constructor,
         types::{self, mir_float, mir_int},
     },
     value::{
-        HMIRPlace, HMIRValue, HMIRValueKind,
+        Bindings, HMIRPlace, HMIRValue, HMIRValueKind,
         constant::{HMIRConstant, HMIRFunctionRef},
     },
 };
@@ -246,7 +249,7 @@ pub fn lower_value(
             MIRValue::Constant(constant(context.env_mut(), value, span)?)
         }
         HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
-            match context.context_mut().runtime().slot(*slot) {
+            match context.runtime().slot(*slot).binding() {
                 MIRBindable::Register(register) => MIRValue::Register(*register),
                 MIRBindable::Place(place) => MIRValue::PlaceRef(*place),
             }
@@ -261,7 +264,7 @@ pub fn lower_value(
 fn reference(context: &mut LocalLoweringContext, pointer: &HMIRValue) -> MIRRegister {
     match pointer.kind() {
         HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => {
-            match context.context_mut().runtime().slot(*slot) {
+            match context.runtime().slot(*slot).binding() {
                 MIRBindable::Register(register) => *register,
                 MIRBindable::Place(_) => {
                     unreachable!("an indirect value addresses through a register")
@@ -301,7 +304,7 @@ fn place_address(
             return Ok(MIRValue::Register(out));
         }
     };
-    let MIRBindable::Place(place) = *context.context_mut().runtime().slot(slot) else {
+    let MIRBindable::Place(place) = *context.runtime().slot(slot).binding() else {
         unreachable!("only a place has an address");
     };
 
@@ -364,17 +367,19 @@ pub fn call(
     Ok(value)
 }
 
-pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) {
+pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) -> usize {
     let runtime = context.runtime_mut();
     let scope = runtime.builder_mut().add_scope(span);
+    let scopes = runtime.scopes_mut();
+    let parent = scopes.top();
 
-    runtime.push_scope(scope);
+    scopes.push(RuntimeScope::new(Some(scope), false), Some(parent), Bindings::new())
 }
 
 pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
-    let index = context.runtime().scope_depth() - 1;
+    let index = context.runtime().scopes().top();
     drop_scope(context, index, &span);
-    context.runtime_mut().pop_scope();
+    context.runtime_mut().scopes_mut().pop();
 }
 
 pub fn drop_scope(
@@ -382,7 +387,9 @@ pub fn drop_scope(
     index: usize,
     span: &TokenRange,
 ) {
-    let scope = context.runtime().scope(index);
+    let Some(scope) = context.runtime().scopes().control(index).mir() else {
+        return;
+    };
     let places = context
         .runtime()
         .builder()
@@ -422,7 +429,7 @@ pub fn address(
             ));
         }
         HMIRValueKind::PlaceRef(place) => match place {
-            HMIRPlace::Local(slot) => match context.runtime().slot(*slot) {
+            HMIRPlace::Local(slot) => match context.runtime().slot(*slot).binding() {
                 MIRBindable::Place(_) => {
                     return Ok(HMIRValue::constant(
                         ty,
