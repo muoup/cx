@@ -1,7 +1,4 @@
-use cx_hmir::{
-    HMIRDefID,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
-};
+use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
@@ -74,10 +71,7 @@ fn function_value(
 ) -> EvalResult<HMIRValue> {
     let point = context.visible_through();
     if matches!(context.context(), FnContext::Runtime(_)) && !context.is_unevaluated() {
-        if matches!(
-            context.env().resolve_kind(value.ty()),
-            HMIRTypeKind::FunctionItem(_)
-        ) {
+        if types::comptime_only(context.env(), value.ty()) {
             return Ok(Evaluation::Ready(value));
         }
         let prototype = types::lower_prototype(context.env_mut(), def, point, span)?;

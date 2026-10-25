@@ -1,6 +1,6 @@
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 
-use crate::env::HMIREnvironment;
+use crate::{env::HMIREnvironment, eval::types};
 
 pub fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bool {
     if env.same_type(lhs, rhs) {
@@ -11,20 +11,7 @@ pub fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bo
     }
 
     match (env.resolve_kind(lhs), env.resolve_kind(rhs)) {
-        (
-            HMIRTypeKind::StagedExpr {
-                params: lhs,
-                result: lhs_result,
-            },
-            HMIRTypeKind::StagedExpr {
-                params: rhs,
-                result: rhs_result,
-            },
-        ) => {
-            lhs.len() == rhs.len()
-                && lhs.iter().zip(rhs).all(|(l, r)| compatible(env, *l, *r))
-                && compatible(env, *lhs_result, *rhs_result)
-        }
+        (HMIRTypeKind::Staged(lhs), HMIRTypeKind::Staged(rhs)) => compatible(env, *lhs, *rhs),
         (HMIRTypeKind::PointerTo(lhs), HMIRTypeKind::PointerTo(rhs)) => {
             is_void(env, *lhs) || is_void(env, *rhs) || compatible(env, *lhs, *rhs)
         }
@@ -62,8 +49,9 @@ pub fn is_void(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
 }
 
 pub fn is_designator(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
-    matches!(
-        env.resolve_kind(ty),
-        HMIRTypeKind::Str | HMIRTypeKind::Function(_)
-    )
+    match env.resolve_kind(ty) {
+        HMIRTypeKind::Str => true,
+        HMIRTypeKind::Function(_) => !types::comptime_only(env, ty),
+        _ => false,
+    }
 }

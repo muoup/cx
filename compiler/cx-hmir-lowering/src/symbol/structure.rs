@@ -123,11 +123,13 @@ pub(crate) fn needs_specialization(function: &HMIRFunction) -> bool {
         (param.comptime() && function.signature().stage() == HMIRFunctionStage::Runtime)
             || matches!(
                 function.body().expr(*param.ty()).kind(),
-                HMIRExprKind::Type(ty)
-                    if matches!(
-                        ty.kind(),
-                        HMIRExprTypeKind::StagedExpr { .. }
-                    )
+                HMIRExprKind::Type(ty) if match ty.kind() {
+                    HMIRExprTypeKind::Staged(_) => true,
+                    HMIRExprTypeKind::Function(signature) => {
+                        signature.stage() == HMIRFunctionStage::Comptime
+                    }
+                    _ => false,
+                }
             )
     })
 }

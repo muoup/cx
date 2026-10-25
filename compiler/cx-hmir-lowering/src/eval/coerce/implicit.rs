@@ -114,9 +114,7 @@ fn step(
         }
         (HMIRTypeKind::ReferenceTo(_), _) => return promotion::step(context, value, span),
 
-        (HMIRTypeKind::StagedExpr { .. }, target)
-            if !matches!(target, HMIRTypeKind::StagedExpr { .. }) =>
-        {
+        (HMIRTypeKind::Staged(_), target) if !matches!(target, HMIRTypeKind::Staged(_)) => {
             return promotion::step(context, value, span);
         }
         (_, HMIRTypeKind::ReferenceTo(inner)) => {

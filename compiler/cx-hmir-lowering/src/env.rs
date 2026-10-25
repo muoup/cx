@@ -64,16 +64,15 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
             (HMIRTypeKind::Void, HMIRTypeKind::Void)
             | (HMIRTypeKind::Unreachable, HMIRTypeKind::Unreachable)
             | (HMIRTypeKind::Type, HMIRTypeKind::Type)
+            | (HMIRTypeKind::Dependent, HMIRTypeKind::Dependent)
             | (HMIRTypeKind::Str, HMIRTypeKind::Str) => true,
 
             (HMIRTypeKind::Int(a), HMIRTypeKind::Int(b)) => a == b,
             (HMIRTypeKind::Float(a), HMIRTypeKind::Float(b)) => a == b,
-            (HMIRTypeKind::FunctionItem(a), HMIRTypeKind::FunctionItem(b)) => a == b,
 
             (HMIRTypeKind::PointerTo(a), HMIRTypeKind::PointerTo(b))
-            | (HMIRTypeKind::ReferenceTo(a), HMIRTypeKind::ReferenceTo(b)) => {
-                self.same_type(*a, *b)
-            }
+            | (HMIRTypeKind::ReferenceTo(a), HMIRTypeKind::ReferenceTo(b))
+            | (HMIRTypeKind::Staged(a), HMIRTypeKind::Staged(b)) => self.same_type(*a, *b),
 
             (
                 HMIRTypeKind::Array {
@@ -94,21 +93,6 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
                         .zip(b.params())
                         .all(|(a, b)| self.same_type(*a.ty(), *b.ty()))
                     && self.same_type(*a.return_type(), *b.return_type())
-            }
-
-            (
-                HMIRTypeKind::StagedExpr {
-                    params: a,
-                    result: a_result,
-                },
-                HMIRTypeKind::StagedExpr {
-                    params: b,
-                    result: b_result,
-                },
-            ) => {
-                a.len() == b.len()
-                    && a.iter().zip(b).all(|(a, b)| self.same_type(*a, *b))
-                    && self.same_type(*a_result, *b_result)
             }
 
             _ => false,

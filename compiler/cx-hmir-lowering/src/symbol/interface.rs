@@ -1,7 +1,7 @@
 use std::ptr;
 
 use cx_hmir::{
-    HMIRBody, HMIRDeclarationRole, HMIRDefID, HMIRDefKind, HMIRFunctionStage,
+    HMIRBody, HMIRDeclarationRole, HMIRDefID, HMIRDefKind,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
@@ -68,31 +68,13 @@ pub(crate) fn definition(
         .kind()
         .expect("selected declaration has content")
     {
-        HMIRDefKind::Function(function) => {
-            if function.signature().stage() == HMIRFunctionStage::Comptime
-                || structure::needs_specialization(function)
-            {
-                let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
-                    HMIRTypeKind::FunctionItem(id),
-                    HMIRTypeSemantics::default(),
-                    span.clone(),
-                    None,
-                ));
-                return Ok(HMIRValue::constant(
-                    ty,
-                    HMIRConstant::Function(HMIRFunctionRef::Def(id)),
-                ));
-            }
+        HMIRDefKind::Function(_) => {
             let mut canonical = None;
             for (_, declaration) in structure::visible(def, context.visible_through()) {
                 let Some(HMIRDefKind::Function(function)) = declaration.kind() else {
                     continue;
                 };
-                let signature = flow::top(types::eval_signature(
-                    context,
-                    function.body(),
-                    function.signature(),
-                ))?;
+                let signature = flow::top(types::eval_signature(context, function))?;
                 if let Some(previous) = &canonical {
                     if !signatures_alike(context.env(), previous, &signature) {
                         return Err(incompatible(def, declaration));

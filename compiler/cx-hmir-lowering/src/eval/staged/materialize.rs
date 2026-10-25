@@ -33,10 +33,7 @@ pub(crate) fn materialize(
             subject,
         ));
     };
-    let HMIRTypeKind::StagedExpr { params, result } = context.env().resolve_kind(code.ty()).clone()
-    else {
-        unreachable!("a quote has a staged expression type")
-    };
+    let (params, result) = super::shape(context.env(), code.ty()).expect("a quote has a staged type");
     let quote = node.get();
     let unit = context.unit(quote.source());
     let body = unit

@@ -78,7 +78,8 @@ impl LocalLoweringContext<'_, '_, '_> {
         let children = match kind {
             HMIRTypeKind::PointerTo(inner)
             | HMIRTypeKind::ReferenceTo(inner)
-            | HMIRTypeKind::Nominal(inner) => vec![inner],
+            | HMIRTypeKind::Nominal(inner)
+            | HMIRTypeKind::Staged(inner) => vec![inner],
             HMIRTypeKind::Array { element, .. } => vec![element],
             HMIRTypeKind::Function(signature) => signature
                 .params()
@@ -90,10 +91,6 @@ impl LocalLoweringContext<'_, '_, '_> {
             | HMIRTypeKind::Union { fields }
             | HMIRTypeKind::TaggedUnion { fields } => {
                 fields.iter().map(|field| *field.ty()).collect()
-            }
-            HMIRTypeKind::StagedExpr { mut params, result } => {
-                params.push(result);
-                params
             }
             _ => Vec::new(),
         };

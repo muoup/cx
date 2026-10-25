@@ -4,9 +4,12 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::function::LocalLoweringContext,
-    eval::coerce::{
-        promotion::{address, designated},
-        result::Coercion,
+    eval::{
+        coerce::{
+            promotion::{address, designated},
+            result::Coercion,
+        },
+        types,
     },
     value::HMIRValue,
 };
@@ -17,10 +20,8 @@ pub fn apply(
     span: &TokenRange,
 ) -> CXResult<Coercion> {
     let subject = designated(context, &value);
-    if !matches!(
-        context.env().resolve_kind(subject),
-        HMIRTypeKind::Function(_)
-    ) {
+    let function = matches!(context.env().resolve_kind(subject), HMIRTypeKind::Function(_));
+    if !function || types::comptime_only(context.env(), subject) {
         return Ok(Coercion::Unapplied(value));
     }
 

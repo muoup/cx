@@ -25,7 +25,7 @@ pub(crate) fn layout(
     span: &TokenRange,
 ) -> CXResult<MIRTypeLayout> {
     match env.resolve_kind(ty).clone() {
-        HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } | HMIRTypeKind::FunctionItem(_) => {
+        _ if types::comptime_only(env, ty) => {
             let architecture = env.architecture();
             Ok(MIRTypeLayout::new(
                 architecture.pointer_size(),

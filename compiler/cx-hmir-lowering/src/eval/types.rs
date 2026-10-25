@@ -1,7 +1,7 @@
 pub(crate) mod validate;
 
 use cx_hmir::{
-    HMIRBody, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage,
+    HMIRBody, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind,
@@ -27,28 +27,37 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
-    eval::{EvalResult, eval_type, flow, op::specify, types},
+    eval::{EvalResult, eval_type, flow, op::specify, staged, types},
     log::{hmir_error, log_hmir_error},
     symbol,
 };
 
+// A slot naming a parameter is only fixed by the arguments of a call, so the shape leaves it dependent
 pub(crate) fn eval_signature(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
-    signature: &HMIRFnSignature<HMIRExprID>,
+    function: &HMIRFunction,
 ) -> EvalResult<HMIRFnSignature<HMIRTypeID>> {
+    let (body, signature) = (function.body(), function.signature());
+    let slot = |context: &mut LocalLoweringContext, expr: HMIRExprID| {
+        let references = staged::references(body, expr);
+        if !function.params().iter().any(|param| references.contains(param)) {
+            return flow::top(eval_type(context, body, expr)?.description());
+        }
+        let span = body.expr(expr).span().clone();
+        let ty = HMIRType::new(HMIRTypeKind::Dependent, Default::default(), span, None);
+        Ok(context.env_mut().resolver_mut().realize_type(ty))
+    };
     let params = signature
         .params()
         .iter()
         .map(|param| {
-            let expr = *param.ty();
-            let span = body.expr(expr).span();
-            let ty = flow::top(eval_type(context, body, expr)?.description())?;
+            let span = body.expr(*param.ty()).span();
+            let ty = slot(context, *param.ty())?;
             let ty = parameter(context, ty, param.comptime(), span)?;
             Ok(HMIRFnParam::new(param.comptime(), ty))
         })
         .collect::<CXResult<_>>()?;
-    let return_type = flow::top(eval_type(context, body, *signature.return_type())?.description())?;
+    let return_type = slot(context, *signature.return_type())?;
     Ok(flow::Evaluation::Ready(HMIRFnSignature::new(
         signature.stage(),
         params,
@@ -103,7 +112,8 @@ pub(crate) fn parameter(
     }
     let pointee = match element(context, ty, span) {
         Some(element) => element,
-        None if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_)) => ty,
+        None if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_))
+            && !comptime_only(context.env(), ty) => ty,
         None => return Ok(ty),
     };
 
@@ -158,7 +168,7 @@ pub(crate) fn lower_prototype(
     let symbol_name = symbol::link_name(env, def, point)?.expect("a prototype names a function");
     let linkage = symbol::linkage(env, def, point)?;
     let value = symbol::binding(env, def, point)?;
-    if matches!(env.resolve_kind(value.ty()), HMIRTypeKind::FunctionItem(_)) {
+    if comptime_only(env, value.ty()) {
         let source = env.symbols().resolve_definition(def);
         let selected = symbol::select(source, point)?;
         if let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind()
@@ -199,6 +209,9 @@ pub(crate) fn lower_type(
     if let Some(id) = env.resolver().lowered_type(ty) {
         return Ok(id);
     }
+    if comptime_only(env, ty) {
+        return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, types::name(env, ty));
+    }
 
     let kind = match env.resolve_kind(ty).clone() {
         HMIRTypeKind::Struct { fields } => {
@@ -216,8 +229,8 @@ pub(crate) fn lower_type(
         HMIRTypeKind::Nominal(_) => unreachable!("an underlying type is not nominal"),
 
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
-        HMIRTypeKind::Type | HMIRTypeKind::StagedExpr { .. } | HMIRTypeKind::FunctionItem(_) => {
-            return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, types::name(env, ty));
+        HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => {
+            unreachable!("comptime-only types are not lowered")
         }
         HMIRTypeKind::Str => MIRTypeKind::Str,
         HMIRTypeKind::Int(int) => MIRTypeKind::Integer {
@@ -415,14 +428,29 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         HMIRTypeKind::Union { .. } => "union".into(),
         HMIRTypeKind::TaggedUnion { .. } => "enum union".into(),
         HMIRTypeKind::Function(_) => "function".into(),
-        HMIRTypeKind::FunctionItem(_) => "comptime callable".into(),
-        HMIRTypeKind::StagedExpr { .. } => "expr".into(),
+        HMIRTypeKind::Staged(_) => "expr".into(),
+        HMIRTypeKind::Dependent => "_".into(),
         HMIRTypeKind::Opaque { .. } => "opaque".into(),
     };
     if constant {
         format!("const {base}")
     } else {
         base
+    }
+}
+
+pub(crate) fn comptime_only(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
+    match env.resolve_kind(ty) {
+        HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => true,
+        HMIRTypeKind::Function(signature) => {
+            signature.stage() == HMIRFunctionStage::Comptime
+                || signature
+                    .params()
+                    .iter()
+                    .any(|param| param.comptime() || comptime_only(env, *param.ty()))
+                || comptime_only(env, *signature.return_type())
+        }
+        _ => false,
     }
 }
 

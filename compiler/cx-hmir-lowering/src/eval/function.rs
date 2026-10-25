@@ -69,8 +69,7 @@ impl Frame<'_> {
                 function.signature().params()[index].comptime(),
                 span,
             )?;
-            if runtime && matches!(child.env().resolve_kind(ty), HMIRTypeKind::StagedExpr { .. })
-            {
+            if runtime && staged::is_code(child, ty) {
                 return Err(hmir_error(
                     span,
                     &mir::COMPTIME_INVALID_OPERATION,
@@ -137,9 +136,7 @@ impl Frame<'_> {
         let return_type = self.enter(caller, span, |child| {
             flow::top(eval_type(child, function.body(), *declared.return_type())?.description())
         })?;
-        if self.runtime
-            && matches!(caller.env().resolve_kind(return_type), HMIRTypeKind::StagedExpr { .. })
-        {
+        if self.runtime && staged::is_code(caller, return_type) {
             return Err(hmir_error(
                 span,
                 &mir::COMPTIME_INVALID_OPERATION,
@@ -317,11 +314,7 @@ pub(crate) fn call(
                 "a reference parameter".into(),
             ));
         }
-        let staged = matches!(
-            context.env().resolve_kind(ty),
-            HMIRTypeKind::StagedExpr { .. }
-        );
-        let argument = if staged {
+        let argument = if staged::is_code(context, ty) {
             staged::argument(context, caller_body, *arg, ty)?
         } else if (runtime && frozen) || generator {
             comptime::frozen(context, caller_body, *arg, Some(ty))?
@@ -374,11 +367,7 @@ pub(crate) fn call(
         params.push(HMIRFnParam::new(false, ty));
     }
     let signature = frame.signature(context, params, span)?;
-    let returns_code = matches!(
-        context.env().resolve_kind(*signature.return_type()),
-        HMIRTypeKind::StagedExpr { .. }
-    );
-    if generator && !returns_code {
+    if generator && !staged::is_code(context, *signature.return_type()) {
         let name = source.name().to_string();
         return Err(hmir_error(span, &mir::COMPTIME_FUNCTION_AT_RUNTIME, name));
     }

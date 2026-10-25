@@ -52,10 +52,10 @@ pub(super) fn write_generic_type<T, L, M>(
     write_length: &impl Fn(&mut Formatter<'_>, &L) -> fmt::Result,
 ) -> fmt::Result {
     match ty.kind() {
-        HMIRGenericTypeKind::FunctionItem(def) => write!(f, "callable({def})"),
         HMIRGenericTypeKind::Void => f.write_str("void"),
         HMIRGenericTypeKind::Unreachable => f.write_str("never"),
         HMIRGenericTypeKind::Type => f.write_str("@type"),
+        HMIRGenericTypeKind::Dependent => f.write_str("_"),
         HMIRGenericTypeKind::Str => f.write_str("str"),
         HMIRGenericTypeKind::Int(ty) => write_int_type(f, ty),
         HMIRGenericTypeKind::Float(ty) => write_float_type(f, ty),
@@ -101,16 +101,10 @@ pub(super) fn write_generic_type<T, L, M>(
         HMIRGenericTypeKind::TaggedUnion { fields } => {
             write_fields(f, "enum union", fields, write_inner)
         }
-        HMIRGenericTypeKind::StagedExpr { params, result } => {
+        HMIRGenericTypeKind::Staged(inner) => {
             f.write_str("expr(")?;
-            for (index, param) in params.iter().enumerate() {
-                if index != 0 {
-                    f.write_str(", ")?;
-                }
-                write_inner(f, param)?;
-            }
-            f.write_str(") -> ")?;
-            write_inner(f, result)
+            write_inner(f, inner)?;
+            f.write_str(")")
         }
         HMIRGenericTypeKind::Opaque { size, alignment } => {
             write!(f, "opaque({size}, {alignment})")

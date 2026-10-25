@@ -45,7 +45,8 @@ fn evaluate(
     callee: HMIRValue,
     args: &[HMIRExprID],
 ) -> EvalResult<HMIRValue> {
-    if staged::is_code(context, callee.ty()) {
+    let callee = staged::read(context, callee, span)?;
+    if matches!(callee.kind(), HMIRValueKind::Constant(HMIRConstant::Quote(_))) {
         return staged::apply(context, body, callee, args, span);
     }
     let callee = coerce::std_rvalue(context, callee, span)?;
@@ -69,10 +70,7 @@ fn evaluate(
         }
     }
     if (matches!(context.context(), FnContext::Comptime(_)) && constructs(&callee).is_none())
-        || matches!(
-            context.env().resolve_kind(callee.ty()),
-            HMIRTypeKind::FunctionItem(_)
-        )
+        || types::comptime_only(context.env(), callee.ty())
     {
         return function::call(context, &callee, body, args, &applied, span);
     }

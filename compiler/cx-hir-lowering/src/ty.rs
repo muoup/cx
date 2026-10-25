@@ -168,13 +168,22 @@ fn lower_staged_type(
     result: &HIRType,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
+    let staged = |context: &mut BodyLowering<'_>, carried: &HIRType| {
+        let kind = HMIRExprTypeKind::Staged(lower_type(context, carried)?);
+        Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
+    };
+    let result = staged(context, result)?;
+    if params.is_empty() {
+        return Ok(result);
+    }
     let params = params
         .into_iter()
-        .map(|param| lower_type(context, param))
+        .map(|param| Ok(HMIRFnParam::new(false, staged(context, param)?)))
         .collect::<CXResult<_>>()?;
-    let result = lower_type(context, result)?;
+    let stage = HMIRFunctionStage::Comptime;
+    let signature = HMIRFnSignature::new(stage, params, result, false, HMIRContract::default());
 
-    let kind = HMIRExprTypeKind::StagedExpr { params, result };
+    let kind = HMIRExprTypeKind::Function(signature);
     Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
 }
 

@@ -167,12 +167,12 @@ impl<'a> Deduction<'a> {
                 let actual = actual.map(|actual| unspecify(context, actual, qualifiers, span));
                 self.unify(context, *inner, actual, unresolved, span)
             }
-            HMIRExprTypeKind::StagedExpr { result, .. } => {
+            HMIRExprTypeKind::Staged(inner) => {
                 let actual = actual.map(|actual| match env.resolve_kind(actual) {
-                    HMIRTypeKind::StagedExpr { result, .. } => *result,
+                    HMIRTypeKind::Staged(inner) => *inner,
                     _ => actual,
                 });
-                self.unify(context, *result, actual, unresolved, span)
+                self.unify(context, *inner, actual, unresolved, span)
             }
             HMIRExprTypeKind::Function(signature) => {
                 let actual = actual

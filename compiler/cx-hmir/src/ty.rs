@@ -3,7 +3,7 @@ pub mod context;
 pub mod intrinsic;
 
 use crate::{
-    HMIRDefID, HMIRFnSignature,
+    HMIRFnSignature,
     expr::HMIRExprID,
     ty::{
         aggregate::{HMIRDeclaredMove, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
@@ -35,9 +35,9 @@ pub struct HMIRGenericType<T, L, M> {
 
 #[derive(Debug, Clone)]
 pub enum HMIRGenericTypeKind<T, L> {
+    // U_0
     Void,
     Unreachable,
-    Type,
     Str,
     Int(HMIRIntType),
     Float(HMIRFloatType),
@@ -45,14 +45,16 @@ pub enum HMIRGenericTypeKind<T, L> {
     ReferenceTo(T),
     Array { element: T, length: Option<L> },
     Function(HMIRFnSignature<T>),
-    FunctionItem(HMIRDefID),
-    StagedExpr { params: Vec<T>, result: T },
     Struct { fields: Vec<HMIRFieldDef<T>> },
     Union { fields: Vec<HMIRFieldDef<T>> },
     TaggedUnion { fields: Vec<HMIRFieldDef<T>> },
     Opaque { size: usize, alignment: usize },
-    // A transparent reference to another type, whose semantics only ever add specifiers to it
-    Nominal(T),
+    Nominal(T), // A transparent reference to another type, whose semantics only ever add specifiers to it
+
+    // U_1
+    Type,
+    Staged(T),
+    Dependent, // A signature slot whose type is fixed by an earlier comptime argument
 }
 
 impl<T, L, M> HMIRGenericType<T, L, M> {
@@ -146,6 +148,7 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
             Self::Void => HMIRGenericTypeKind::Void,
             Self::Unreachable => HMIRGenericTypeKind::Unreachable,
             Self::Type => HMIRGenericTypeKind::Type,
+            Self::Dependent => HMIRGenericTypeKind::Dependent,
             Self::Str => HMIRGenericTypeKind::Str,
             Self::Int(int) => HMIRGenericTypeKind::Int(*int),
             Self::Float(float) => HMIRGenericTypeKind::Float(*float),
@@ -170,14 +173,7 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
             Self::Function(signature) => {
                 HMIRGenericTypeKind::Function(signature.map(|param| ty(state, param))?)
             }
-            Self::FunctionItem(def) => HMIRGenericTypeKind::FunctionItem(*def),
-            Self::StagedExpr { params, result } => HMIRGenericTypeKind::StagedExpr {
-                params: params
-                    .iter()
-                    .map(|param| ty(state, param))
-                    .collect::<Result<_, E>>()?,
-                result: ty(state, result)?,
-            },
+            Self::Staged(inner) => HMIRGenericTypeKind::Staged(ty(state, inner)?),
 
             Self::Struct { fields: declared } => HMIRGenericTypeKind::Struct {
                 fields: fields(state, declared)?,

@@ -25,14 +25,15 @@ pub(crate) fn alike(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID, qualifi
         (HMIRTypeKind::Void, HMIRTypeKind::Void)
         | (HMIRTypeKind::Unreachable, HMIRTypeKind::Unreachable)
         | (HMIRTypeKind::Type, HMIRTypeKind::Type)
+        | (HMIRTypeKind::Dependent, HMIRTypeKind::Dependent)
         | (HMIRTypeKind::Str, HMIRTypeKind::Str) => true,
 
         (HMIRTypeKind::Int(left), HMIRTypeKind::Int(right)) => left == right,
         (HMIRTypeKind::Float(left), HMIRTypeKind::Float(right)) => left == right,
-        (HMIRTypeKind::FunctionItem(left), HMIRTypeKind::FunctionItem(right)) => left == right,
 
         (HMIRTypeKind::PointerTo(left), HMIRTypeKind::PointerTo(right))
-        | (HMIRTypeKind::ReferenceTo(left), HMIRTypeKind::ReferenceTo(right)) => {
+        | (HMIRTypeKind::ReferenceTo(left), HMIRTypeKind::ReferenceTo(right))
+        | (HMIRTypeKind::Staged(left), HMIRTypeKind::Staged(right)) => {
             alike(env, *left, *right, true)
         }
         (
@@ -45,20 +46,6 @@ pub(crate) fn alike(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID, qualifi
                 length: right_length,
             },
         ) => left_length == right_length && alike(env, *left, *right, true),
-        (
-            HMIRTypeKind::StagedExpr {
-                params: left,
-                result: left_result,
-            },
-            HMIRTypeKind::StagedExpr {
-                params: right,
-                result: right_result,
-            },
-        ) => {
-            left.len() == right.len()
-                && left.iter().zip(right).all(|(l, r)| alike(env, *l, *r, true))
-                && alike(env, *left_result, *right_result, true)
-        }
         (HMIRTypeKind::Function(left), HMIRTypeKind::Function(right)) => {
             signatures_alike(env, left, right)
         }
@@ -87,13 +74,14 @@ pub(crate) fn signatures_alike(
     a: &HMIRFnSignature<HMIRTypeID>,
     b: &HMIRFnSignature<HMIRTypeID>,
 ) -> bool {
-    a.contract().is_safe() == b.contract().is_safe()
+    a.stage() == b.stage()
+        && a.contract().is_safe() == b.contract().is_safe()
         && a.is_variadic() == b.is_variadic()
         && a.params().len() == b.params().len()
         && a.params()
             .iter()
             .zip(b.params())
-            .all(|(a, b)| alike(env, *a.ty(), *b.ty(), false))
+            .all(|(a, b)| a.comptime() == b.comptime() && alike(env, *a.ty(), *b.ty(), false))
         && alike(env, *a.return_type(), *b.return_type(), false)
 }
 

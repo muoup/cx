@@ -2,17 +2,21 @@ mod captures;
 mod materialize;
 
 use cx_hmir::{
-    HMIRBody,
+    HMIRBody, HMIRContract, HMIRFnSignature, HMIRFunctionStage,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    unit::function::HMIRFnParam,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::{ComptimeContext, FnContext, LocalLoweringContext},
+    env::{
+        HMIREnvironment,
+        function::{ComptimeContext, FnContext, LocalLoweringContext},
+    },
     eval::{
         EvalResult, coerce, comptime, eval, eval_type,
         flow::{self, Evaluation, Incomplete, IncompleteReason, ready},
@@ -26,6 +30,7 @@ use crate::{
     },
 };
 
+pub(crate) use captures::references;
 pub(crate) use materialize::materialize;
 
 fn signature(
@@ -34,17 +39,46 @@ fn signature(
     result: HMIRTypeID,
     span: &TokenRange,
 ) -> HMIRTypeID {
-    let kind = HMIRTypeKind::StagedExpr { params, result };
-    let ty = HMIRType::new(kind, Default::default(), span.clone(), None);
-    context.env_mut().resolver_mut().realize_type(ty)
+    let mut realize = |kind| {
+        let ty = HMIRType::new(kind, Default::default(), span.clone(), None);
+        context.env_mut().resolver_mut().realize_type(ty)
+    };
+    let result = realize(HMIRTypeKind::Staged(result));
+    if params.is_empty() {
+        return result;
+    }
+    let params = params
+        .into_iter()
+        .map(|param| HMIRFnParam::new(false, realize(HMIRTypeKind::Staged(param))))
+        .collect();
+    let stage = HMIRFunctionStage::Comptime;
+    let signature = HMIRFnSignature::new(stage, params, result, false, HMIRContract::default());
+    realize(HMIRTypeKind::Function(signature))
+}
+
+// The parameters and result carried by a staged type, 'expr(T)' or a comptime function from code to code
+pub(crate) fn shape(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<(Vec<HMIRTypeID>, HMIRTypeID)> {
+    let carried = |ty: HMIRTypeID| match env.resolve_kind(ty) {
+        HMIRTypeKind::Staged(inner) => Some(*inner),
+        _ => None,
+    };
+    let HMIRTypeKind::Function(signature) = env.resolve_kind(ty) else {
+        return Some((Vec::new(), carried(ty)?));
+    };
+    if signature.stage() != HMIRFunctionStage::Comptime || signature.is_variadic() {
+        return None;
+    }
+    let params = signature
+        .params()
+        .iter()
+        .map(|param| carried(*param.ty()).filter(|_| !param.comptime()))
+        .collect::<Option<_>>()?;
+    Some((params, carried(*signature.return_type())?))
 }
 
 pub(crate) fn is_code(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {
     let ty = context.env().reference_inner(ty).unwrap_or(ty);
-    matches!(
-        context.env().resolve_kind(ty),
-        HMIRTypeKind::StagedExpr { .. }
-    )
+    shape(context.env(), ty).is_some()
 }
 
 pub(crate) fn capture(
@@ -80,9 +114,9 @@ fn resolve(
     expected: HMIRTypeID,
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
-    let (params, result, insert) = match context.env().resolve_kind(expected) {
-        HMIRTypeKind::StagedExpr { params, result } => (params.clone(), *result, false),
-        _ => (Vec::new(), expected, true),
+    let (params, result, insert) = match shape(context.env(), expected) {
+        Some((params, result)) => (params, result, false),
+        None => (Vec::new(), expected, true),
     };
     let quoted = code.get().params().len();
     if params.len() != quoted {
@@ -179,7 +213,7 @@ pub(crate) fn argument(
     )
 }
 
-fn read(
+pub(crate) fn read(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
@@ -197,9 +231,7 @@ pub(crate) fn apply(
     args: &[HMIRExprID],
     span: &TokenRange,
 ) -> EvalResult<HMIRValue> {
-    let code = read(context, code, span)?;
-    let HMIRTypeKind::StagedExpr { params, result } = context.env().resolve_kind(code.ty()).clone()
-    else {
+    let Some((params, result)) = shape(context.env(), code.ty()) else {
         let kind = ("applied value".into(), "a staged expression".into());
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
     };

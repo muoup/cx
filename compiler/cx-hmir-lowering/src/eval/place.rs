@@ -213,7 +213,7 @@ pub(crate) fn eval_address_of(
     let value = ready!(eval(context, body, operand));
     let Some(inner) = context.env().reference_inner(value.ty()) else {
         return match context.env().resolve_kind(value.ty()) {
-            HMIRTypeKind::Function(_) => {
+            HMIRTypeKind::Function(_) if !types::comptime_only(context.env(), value.ty()) => {
                 Ok(Evaluation::Ready(coerce::std_rvalue(context, value, span)?))
             }
             _ => Err(hmir_error(

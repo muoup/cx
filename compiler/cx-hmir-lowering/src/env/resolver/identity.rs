@@ -104,7 +104,7 @@ fn fingerprint(env: &HMIREnvironment, ty: HMIRTypeID, hash: &mut impl Hasher) ->
             | HMIRTypeKind::Union { .. }
             | HMIRTypeKind::TaggedUnion { .. }
             | HMIRTypeKind::Opaque { .. }
-            | HMIRTypeKind::StagedExpr { .. }
+            | HMIRTypeKind::Staged(_)
     ) {
         let base = env.semantics(underlying);
         semantics.constant &= !base.constant;
@@ -141,7 +141,6 @@ fn fingerprint(env: &HMIREnvironment, ty: HMIRTypeID, hash: &mut impl Hasher) ->
             }
             fingerprint(env, *signature.return_type(), hash)?;
         }
-        HMIRTypeKind::FunctionItem(def) => def.hash(hash),
         HMIRTypeKind::Nominal(_) => unreachable!("underlying types are not aliases"),
         _ => {}
     }

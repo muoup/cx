@@ -74,7 +74,7 @@ pub(crate) fn eval_let(
     let declared = eval_type(context, body, local.ty())?;
     if let Some(ty) = declared.known().copied()
         && matches!(context.context(), FnContext::Runtime(_))
-        && matches!(context.env().resolve_kind(ty), HMIRTypeKind::StagedExpr { .. })
+        && staged::is_code(context, ty)
     {
         let Some(initializer) = initializer else {
             let kind = ("staged local".into(), "a declaration without an initializer".into());
@@ -130,7 +130,8 @@ pub(crate) fn eval_let(
             None,
             move |context, body, ty, _| {
                 let value = coerce::implicit(context, value, ty, &span)?;
-                if is_runtime && matches!(context.env().resolve_kind(ty), HMIRTypeKind::FunctionItem(_)) {
+                let function = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_));
+                if is_runtime && function && types::comptime_only(context.env(), ty) {
                     emit::storage::bind_local(context, local_id, value);
                     return Ok(Evaluation::Ready(literal::unit(context, &span)));
                 }

@@ -20,10 +20,7 @@ pub fn step(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<Coercion> {
-    let staged = matches!(
-        context.env().resolve_kind(value.ty()),
-        HMIRTypeKind::StagedExpr { params, .. } if params.is_empty()
-    );
+    let staged = matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Staged(_));
     if staged && matches!(context.context(), FnContext::Runtime(_)) {
         let evaluated = staged::materialize(context, &value, &[]);
         let value = flow::top(operand(context, evaluated, span))?;

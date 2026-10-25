@@ -56,6 +56,17 @@ pub(super) fn collect(
     Ok(captures)
 }
 
+pub(crate) fn references(body: &HMIRBody, root: HMIRExprID) -> HashSet<HMIRLocalID> {
+    let mut walk = Locals {
+        body,
+        seen: HashSet::new(),
+        references: HashSet::new(),
+        bound: HashSet::new(),
+    };
+    walk.visit(root);
+    walk.references
+}
+
 struct Locals<'a> {
     body: &'a HMIRBody,
     seen: HashSet<HMIRExprID>,
