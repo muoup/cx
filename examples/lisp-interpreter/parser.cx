@@ -150,7 +150,7 @@ lisp_node parser::parse_expr(parser& this) {
     }
 
     std::string token = this |> parser::parse_token();
-    if (is_number_token(token |> std::string::as_str())) {
+    if (is_number_token(token |> std::string::as_str_mut())) {
         f64 value = atof(token |> std::string::as_str());
         move token |> std::string::drop();
         

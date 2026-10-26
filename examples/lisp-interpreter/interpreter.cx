@@ -99,7 +99,7 @@ f64 interpreter::call_function(interpreter& this, _str& name, std::span(lisp_nod
                 }
 
                 binding local = {
-                    .name = fn_def.params.data[i] |> std::string::as_str(),
+                    .name = fn_def.params.data[i] |> std::string::as_str_mut(),
                     .value = arg_value
                 };
                 std::vector::push(binding, call_locals, move local);
@@ -135,7 +135,7 @@ f64 interpreter::eval(interpreter& this, lisp_node& node, std::span(binding) loc
             return result;
         }
         Number(auto& num) => return num,
-        Symbol(auto& name) => return find_local(locals, name |> std::string::as_str()),
+        Symbol(auto& name) => return find_local(locals, name |> std::string::as_str_mut()),
         FnDef(_) => return 0.0,
         FnCall(auto& fn_call) => {
             std::span(lisp_node) args = {
@@ -143,7 +143,7 @@ f64 interpreter::eval(interpreter& this, lisp_node& node, std::span(binding) loc
                 .length = fn_call.args.length
             };
 
-            return this |> interpreter::call_function(fn_call.name |> std::string::as_str(), args, locals);
+            return this |> interpreter::call_function(fn_call.name |> std::string::as_str_mut(), args, locals);
         }
         Plus(auto& plus) => return (this |> interpreter::eval(*(plus.left.ptr), locals)) + (this |> interpreter::eval(*(plus.right.ptr), locals)),
         Minus(auto& minus) => return (this |> interpreter::eval(*(minus.left.ptr), locals)) - (this |> interpreter::eval(*(minus.right.ptr), locals)),
