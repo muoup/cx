@@ -30,24 +30,25 @@ comptime expr T twice<T>(expr T value) {
             (qualified_name
               (identifier))))
         (identifier)))
-    (compound_statement
-      (return_statement
-        (keyword)
-        (expression
-          (primary_expression
-            (emit_expression
-              (keyword)
-              (expression
-                (binary_expression
-                  (expression
-                    (primary_expression
-                      (qualified_name
-                        (identifier))))
-                  (operator)
-                  (expression
-                    (primary_expression
-                      (literal
-                        (number_literal)))))))))))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (emit_expression
+                (keyword)
+                (expression
+                  (binary_expression
+                    (expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier))))
+                    (operator)
+                    (expression
+                      (primary_expression
+                        (literal
+                          (number_literal))))))))))))))
 
 ==================
 staged continuation and block
@@ -81,13 +82,14 @@ int run(int value) {
               (builtin_type)))
           (declarator
             (identifier)))))
-    (compound_statement
-      (return_statement
-        (keyword)
-        (expression
-          (primary_expression
-            (qualified_name
-              (identifier)))))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier))))))))
   (function_definition
     (type
       (builtin_type_sequence
@@ -103,56 +105,57 @@ int run(int value) {
               (builtin_type)))
           (declarator
             (identifier)))))
-    (compound_statement
-      (declaration
-        (variable_declaration
-          (type
-            (builtin_type_sequence
-              (builtin_type)))
-          (declarator_with_initializer
-            (declarator
-              (identifier))
-            (operator)
-            (expression
-              (binary_expression
-                (expression
-                  (unary_expression
-                    (operator)
-                    (expression
-                      (primary_expression
-                        (qualified_name
-                          (identifier))))))
-                (operator)
-                (expression
-                  (postfix_expression
-                    (primary_expression
-                      (qualified_name
-                        (identifier)))
-                    (argument_list
+    (function_body
+      (compound_statement
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (binary_expression
+                  (expression
+                    (unary_expression
+                      (operator)
                       (expression
                         (primary_expression
-                          (staged_block
-                            (compound_statement
-                              (defer_statement
-                                (keyword)
-                                (expression
-                                  (postfix_expression
+                          (qualified_name
+                            (identifier))))))
+                  (operator)
+                  (expression
+                    (postfix_expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier)))
+                      (argument_list
+                        (expression
+                          (primary_expression
+                            (staged_block
+                              (compound_statement
+                                (defer_statement
+                                  (keyword)
+                                  (expression
+                                    (postfix_expression
+                                      (primary_expression
+                                        (qualified_name
+                                          (identifier)))
+                                      (argument_list))))
+                                (return_statement
+                                  (keyword)
+                                  (expression
                                     (primary_expression
-                                      (qualified_name
-                                        (identifier)))
-                                    (argument_list))))
-                              (return_statement
-                                (keyword)
-                                (expression
-                                  (primary_expression
-                                    (literal
-                                      (number_literal)))))))))))))))))
-      (return_statement
-        (keyword)
-        (expression
-          (primary_expression
-            (qualified_name
-              (identifier))))))))
+                                      (literal
+                                        (number_literal)))))))))))))))))
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier)))))))))
 
 ==================
 lifetime reference boundaries
@@ -188,13 +191,14 @@ int 'a
               (operator)))
           (declarator
             (identifier)))))
-    (compound_statement
-      (return_statement
-        (keyword)
-        (expression
-          (primary_expression
-            (qualified_name
-              (identifier))))))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier)))))))))
 
 ==================
 function pointers and declarations
@@ -271,18 +275,19 @@ void apply(void (*callback)(int)) {
                   (type
                     (builtin_type_sequence
                       (builtin_type))))))))))
-    (compound_statement
-      (expression_statement
-        (expression
-          (postfix_expression
-            (primary_expression
-              (qualified_name
-                (identifier)))
-            (argument_list
-              (expression
-                (primary_expression
-                  (literal
-                    (number_literal)))))))))))
+    (function_body
+      (compound_statement
+        (expression_statement
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (argument_list
+                (expression
+                  (primary_expression
+                    (literal
+                      (number_literal))))))))))))
 
 ==================
 unpack and contracts
@@ -358,35 +363,36 @@ int sum(Pair pair) safe where pre: (true), post(ret): (ret >= 0) {
               (primary_expression
                 (literal
                   (number_literal))))))))
-    (compound_statement
-      (unpack_statement
-        (compiler_identifier)
-        (expression
-          (unary_expression
-            (operator)
-            (expression
-              (primary_expression
-                (qualified_name
-                  (identifier))))))
-        (unpack_binding
-          (identifier)
-          (identifier))
-        (unpack_binding
-          (identifier)
-          (identifier)))
-      (return_statement
-        (keyword)
-        (expression
-          (binary_expression
-            (expression
-              (primary_expression
-                (qualified_name
-                  (identifier))))
-            (operator)
-            (expression
-              (primary_expression
-                (qualified_name
-                  (identifier))))))))))
+    (function_body
+      (compound_statement
+        (unpack_statement
+          (compiler_identifier)
+          (expression
+            (unary_expression
+              (operator)
+              (expression
+                (primary_expression
+                  (qualified_name
+                    (identifier))))))
+          (unpack_binding
+            (identifier)
+            (identifier))
+          (unpack_binding
+            (identifier)
+            (identifier)))
+        (return_statement
+          (keyword)
+          (expression
+            (binary_expression
+              (expression
+                (primary_expression
+                  (qualified_name
+                    (identifier))))
+              (operator)
+              (expression
+                (primary_expression
+                  (qualified_name
+                    (identifier)))))))))))
 
 ==================
 C syntax and aliases
@@ -431,14 +437,15 @@ int cast_value(int value) {
         (qualified_name
           (identifier)))
       (parameter_list))
-    (compound_statement
-      (while_statement
-        (keyword)
-        (expression
-          (primary_expression
-            (literal
-              (number_literal))))
-        (compound_statement))))
+    (function_body
+      (compound_statement
+        (while_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (literal
+                (number_literal))))
+          (compound_statement)))))
   (function_definition
     (type
       (builtin_type_sequence
@@ -454,95 +461,97 @@ int cast_value(int value) {
               (builtin_type)))
           (declarator
             (identifier)))))
-    (compound_statement
-      (declaration
-        (variable_declaration
-          (type
-            (builtin_type_sequence
-              (builtin_type)))
-          (declarator_with_initializer
-            (declarator
-              (identifier))
-            (operator)
-            (expression
-              (primary_expression
-                (literal
-                  (number_literal)))))))
-      (for_statement
-        (keyword)
-        (expression
-          (binary_expression
-            (expression
-              (primary_expression
-                (qualified_name
-                  (identifier))))
-            (operator)
-            (expression
-              (primary_expression
-                (literal
-                  (number_literal))))))
-        (expression
-          (postfix_expression
-            (primary_expression
-              (qualified_name
-                (identifier)))
-            (operator)))
-        (compound_statement))
-      (return_statement
-        (keyword)
-        (expression
-          (conditional_expression
-            (conditional_condition
-              (primary_expression
-                (qualified_name
-                  (identifier))))
-            (expression
-              (primary_expression
-                (literal
-                  (number_literal))))
-            (expression
-              (postfix_expression
-                (primary_expression
-                  (qualified_name
-                    (identifier)))
-                (argument_list))))))))
-  (function_definition
-    (type
-      (builtin_type_sequence
-        (builtin_type)))
-    (function_declarator
-      (callable_name
-        (qualified_name
-          (identifier)))
-      (parameter_list
-        (parameter
-          (type
-            (builtin_type_sequence
-              (builtin_type)))
-          (declarator
-            (identifier)))))
-    (compound_statement
-      (return_statement
-        (keyword)
-        (expression
-          (postfix_expression
-            (primary_expression
-              (compiler_identifier))
-            (argument_list
+    (function_body
+      (compound_statement
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
               (expression
                 (primary_expression
-                  (cast_expression
-                    (type
-                      (type_qualifier
-                        (keyword))
-                      (builtin_type_sequence
-                        (builtin_type))
-                      (pointer_modifier
-                        (operator)))
-                    (expression
-                      (primary_expression
-                        (qualified_name
-                          (identifier))))))))))))))
+                  (literal
+                    (number_literal)))))))
+        (for_statement
+          (keyword)
+          (expression
+            (binary_expression
+              (expression
+                (primary_expression
+                  (qualified_name
+                    (identifier))))
+              (operator)
+              (expression
+                (primary_expression
+                  (literal
+                    (number_literal))))))
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (operator)))
+          (compound_statement))
+        (return_statement
+          (keyword)
+          (expression
+            (conditional_expression
+              (conditional_condition
+                (primary_expression
+                  (qualified_name
+                    (identifier))))
+              (expression
+                (primary_expression
+                  (literal
+                    (number_literal))))
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier)))
+                  (argument_list)))))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (postfix_expression
+              (primary_expression
+                (compiler_identifier))
+              (argument_list
+                (expression
+                  (primary_expression
+                    (cast_expression
+                      (type
+                        (type_qualifier
+                          (keyword))
+                        (builtin_type_sequence
+                          (builtin_type))
+                        (pointer_modifier
+                          (operator)))
+                      (expression
+                        (primary_expression
+                          (qualified_name
+                            (identifier)))))))))))))))
 
 ==================
 compound imports
@@ -590,8 +599,8 @@ match patterns
 ==================
 int select(int value) {
     return match (value) {
-        0 => yield 1;
-        other => yield other;
+        0 => yield 1,
+        auto other => yield other,
     };
 }
 
@@ -602,7 +611,7 @@ enum union Choice {
 
 void inspect(Choice& value) {
     match (value) {
-        Choice::some(inner) => {}
+        Choice::some(auto inner) => {}
         _ => {}
     }
 }
@@ -624,37 +633,40 @@ void inspect(Choice& value) {
               (builtin_type)))
           (declarator
             (identifier)))))
-    (compound_statement
-      (return_statement
-        (keyword)
-        (expression
-          (primary_expression
-            (match_expression
-              (keyword)
-              (expression
-                (primary_expression
-                  (qualified_name
-                    (identifier))))
-              (match_arm
-                (match_pattern
-                  (number_literal))
-                (operator)
-                (yield_statement
-                  (keyword)
-                  (expression
-                    (primary_expression
-                      (literal
-                        (number_literal))))))
-              (match_arm
-                (match_pattern
-                  (identifier))
-                (operator)
-                (yield_statement
-                  (keyword)
-                  (expression
-                    (primary_expression
-                      (qualified_name
-                        (identifier))))))))))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (match_expression
+                (keyword)
+                (expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier))))
+                (match_arm
+                  (match_pattern
+                    (number_literal))
+                  (operator)
+                  (yield_statement
+                    (keyword)
+                    (expression
+                      (primary_expression
+                        (literal
+                          (number_literal))))))
+                (match_arm
+                  (match_pattern
+                    (binding_pattern
+                      (builtin_type)
+                      (identifier)))
+                  (operator)
+                  (yield_statement
+                    (keyword)
+                    (expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier)))))))))))))
   (type_definition
     (enum_union_definition
       (keyword)
@@ -689,28 +701,34 @@ void inspect(Choice& value) {
               (operator)))
           (declarator
             (identifier)))))
-    (compound_statement
-      (match_statement
-        (keyword)
-        (expression
-          (primary_expression
-            (qualified_name
-              (identifier))))
-        (match_arm
-          (match_pattern
-            (variant_pattern
-              (qualified_name)
+    (function_body
+      (compound_statement
+        (match_statement
+          (keyword)
+          (expression
+            (primary_expression
               (qualified_name
-                (operator)
-                (identifier))
-              (identifier)))
-          (operator)
-          (compound_statement))
-        (match_arm
-          (match_pattern
-            (identifier))
-          (operator)
-          (compound_statement))))))
+                (identifier))))
+          (match_arm
+            (match_pattern
+              (variant_pattern
+                (qualified_name
+                  (identifier)
+                  (operator)
+                  (identifier))
+                (match_pattern
+                  (binding_pattern
+                    (builtin_type)
+                    (identifier)))))
+            (operator)
+            (compound_statement))
+          (match_arm
+            (match_pattern
+              (identifier))
+            (operator)
+            (expression
+              (primary_expression
+                (initializer_list)))))))))
 
 ==================
 default match arm rejected
@@ -732,15 +750,16 @@ int main() {
         (qualified_name
           (identifier)))
       (parameter_list))
-    (compound_statement
-      (match_statement
-        (keyword)
-        (expression
-          (primary_expression
-            (literal
-              (number_literal))))
-        (ERROR
-          (operator)))))
+    (function_body
+      (compound_statement
+        (match_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (literal
+                (number_literal))))
+          (ERROR
+            (operator))))))
   (ERROR))
 
 ==================
@@ -775,10 +794,604 @@ int 'a& read(int 'a& value) {
               (operator)))
           (declarator
             (identifier)))))
-    (compound_statement
-      (return_statement
-        (keyword)
-        (expression
-          (primary_expression
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier)))))))))
+
+==================
+match comma arms
+==================
+int pick(int value) {
+    return match (value) {
+        0 => 10,
+        1 => value + 1,
+        auto other => other * 2
+    };
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (match_expression
+                (keyword)
+                (expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier))))
+                (match_arm
+                  (match_pattern
+                    (number_literal))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (literal
+                        (number_literal)))))
+                (match_arm
+                  (match_pattern
+                    (number_literal))
+                  (operator)
+                  (expression
+                    (binary_expression
+                      (expression
+                        (primary_expression
+                          (qualified_name
+                            (identifier))))
+                      (operator)
+                      (expression
+                        (primary_expression
+                          (literal
+                            (number_literal)))))))
+                (match_arm
+                  (match_pattern
+                    (binding_pattern
+                      (builtin_type)
+                      (identifier)))
+                  (operator)
+                  (expression
+                    (binary_expression
+                      (expression
+                        (primary_expression
+                          (qualified_name
+                            (identifier))))
+                      (operator)
+                      (expression
+                        (primary_expression
+                          (literal
+                            (number_literal)))))))))))))))
+
+==================
+match braced arms without commas
+==================
+void run(int value) {
+    match (value) {
+        0 => { value = 1; }
+        1 => { value = 2; },
+        _ => {}
+    }
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (match_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier))))
+          (match_arm
+            (match_pattern
+              (number_literal))
+            (operator)
+            (compound_statement
+              (expression_statement
+                (expression
+                  (assignment_expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))
+                    (operator)
+                    (expression
+                      (primary_expression
+                        (literal
+                          (number_literal)))))))))
+          (match_arm
+            (match_pattern
+              (number_literal))
+            (operator)
+            (compound_statement
+              (expression_statement
+                (expression
+                  (assignment_expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))
+                    (operator)
+                    (expression
+                      (primary_expression
+                        (literal
+                          (number_literal)))))))))
+          (match_arm
+            (match_pattern
+              (identifier))
+            (operator)
+            (expression
+              (primary_expression
+                (initializer_list)))))))))
+
+==================
+match jump arms
+==================
+int scan(int value) {
+    for (;;) {
+        match (value) {
+            0 => return 1,
+            1 => return,
+            2 => yield value,
+            3 => yield,
+            4 => break,
+            _ => continue,
+        }
+    }
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (for_statement
+          (keyword)
+          (compound_statement
+            (match_statement
+              (keyword)
+              (expression
+                (primary_expression
+                  (qualified_name
+                    (identifier))))
+              (match_arm
+                (match_pattern
+                  (number_literal))
+                (operator)
+                (return_statement
+                  (keyword)
+                  (expression
+                    (primary_expression
+                      (literal
+                        (number_literal))))))
+              (match_arm
+                (match_pattern
+                  (number_literal))
+                (operator)
+                (return_statement
+                  (keyword)))
+              (match_arm
+                (match_pattern
+                  (number_literal))
+                (operator)
+                (yield_statement
+                  (keyword)
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier))))))
+              (match_arm
+                (match_pattern
+                  (number_literal))
+                (operator)
+                (yield_statement
+                  (keyword)))
+              (match_arm
+                (match_pattern
+                  (number_literal))
+                (operator)
+                (break_statement
+                  (keyword)))
+              (match_arm
+                (match_pattern
+                  (identifier))
+                (operator)
+                (continue_statement
+                  (keyword))))))))))
+
+==================
+match block expression arms
+==================
+int pick(int value) {
+    return match (value) {
+        0 => .{ yield 1; },
+        1 => .{
+            defer cleanup();
+            yield 2;
+        }
+        auto other => other,
+    };
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (match_expression
+                (keyword)
+                (expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier))))
+                (match_arm
+                  (match_pattern
+                    (number_literal))
+                  (operator)
+                  (staged_block
+                    (compound_statement
+                      (yield_statement
+                        (keyword)
+                        (expression
+                          (primary_expression
+                            (literal
+                              (number_literal))))))))
+                (match_arm
+                  (match_pattern
+                    (number_literal))
+                  (operator)
+                  (staged_block
+                    (compound_statement
+                      (defer_statement
+                        (keyword)
+                        (expression
+                          (postfix_expression
+                            (primary_expression
+                              (qualified_name
+                                (identifier)))
+                            (argument_list))))
+                      (yield_statement
+                        (keyword)
+                        (expression
+                          (primary_expression
+                            (literal
+                              (number_literal))))))))
+                (match_arm
+                  (match_pattern
+                    (binding_pattern
+                      (builtin_type)
+                      (identifier)))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))))))))))))
+
+==================
+match variant patterns
+==================
+int unwrap(Maybe& value) {
+    return match (value) {
+        some(auto& inner) => inner,
+        pair(const auto& both) => both,
+        none() => -1,
+        Shape::circle(_) => 0,
+        Color::RED => 1,
+    };
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
             (qualified_name
-              (identifier))))))))
+              (identifier))
+            (reference_modifier
+              (operator)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (match_expression
+                (keyword)
+                (expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier))))
+                (match_arm
+                  (match_pattern
+                    (variant_pattern
+                      (identifier)
+                      (match_pattern
+                        (binding_pattern
+                          (builtin_type)
+                          (operator)
+                          (identifier)))))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))))
+                (match_arm
+                  (match_pattern
+                    (variant_pattern
+                      (identifier)
+                      (match_pattern
+                        (binding_pattern
+                          (keyword)
+                          (builtin_type)
+                          (operator)
+                          (identifier)))))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))))
+                (match_arm
+                  (match_pattern
+                    (variant_pattern
+                      (identifier)))
+                  (operator)
+                  (expression
+                    (unary_expression
+                      (operator)
+                      (expression
+                        (primary_expression
+                          (literal
+                            (number_literal)))))))
+                (match_arm
+                  (match_pattern
+                    (variant_pattern
+                      (qualified_name
+                        (identifier)
+                        (operator)
+                        (identifier))
+                      (match_pattern
+                        (identifier))))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (literal
+                        (number_literal)))))
+                (match_arm
+                  (match_pattern
+                    (qualified_name
+                      (identifier)
+                      (operator)
+                      (identifier)))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (literal
+                        (number_literal)))))))))))))
+
+==================
+is patterns
+==================
+bool check(Shape value) {
+    return value is circle(auto& seen) && seen > 0;
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (qualified_name
+              (identifier)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (binary_expression
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier)))
+                  (operator)
+                  (match_pattern
+                    (variant_pattern
+                      (identifier)
+                      (match_pattern
+                        (binding_pattern
+                          (builtin_type)
+                          (operator)
+                          (identifier)))))))
+              (operator)
+              (expression
+                (binary_expression
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier))))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (literal
+                        (number_literal)))))))))))))
+
+==================
+goto and labels
+==================
+void jump(int* target) {
+    goto done;
+    again:
+    value = 1;
+    void* addr = &&again;
+    goto *addr;
+    goto *(target + 1);
+    done:
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type))
+            (pointer_modifier
+              (operator)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (goto_statement
+          (keyword)
+          (identifier))
+        (labeled_statement
+          (identifier)
+          (expression_statement
+            (expression
+              (assignment_expression
+                (primary_expression
+                  (qualified_name
+                    (identifier)))
+                (operator)
+                (expression
+                  (primary_expression
+                    (literal
+                      (number_literal))))))))
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type))
+              (pointer_modifier
+                (operator)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (primary_expression
+                  (label_address_expression
+                    (operator)
+                    (identifier)))))))
+        (goto_statement
+          (keyword)
+          (operator)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier)))))
+        (goto_statement
+          (keyword)
+          (operator)
+          (expression
+            (primary_expression
+              (parenthesized_expression
+                (expression
+                  (binary_expression
+                    (expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier))))
+                    (operator)
+                    (expression
+                      (primary_expression
+                        (literal
+                          (number_literal))))))))))
+        (labeled_statement
+          (identifier))))))

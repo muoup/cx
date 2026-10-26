@@ -745,56 +745,87 @@ module.exports = grammar({
                 "(",
                 $.expression,
                 ")",
+                $._match_body,
+            ),
+
+        _match_body: ($) =>
+            seq(
                 "{",
                 repeat($.match_arm),
+                optional(alias($._final_match_arm, $.match_arm)),
                 "}",
             ),
 
         match_arm: ($) =>
-            prec.right(
-                seq(
-                    $.match_pattern,
-                    op($, "=>"),
-                    choice(
-                        seq($.compound_statement, optional(",")),
-                        seq($._match_arm_value, optional(",")),
-                    ),
+            seq(
+                $.match_pattern,
+                op($, "=>"),
+                choice(
+                    seq($.compound_statement, optional(",")),
+                    prec(1, seq($.staged_block, optional(","))),
+                    seq($._match_arm_value, ","),
                 ),
             ),
+
+        _final_match_arm: ($) =>
+            seq($.match_pattern, op($, "=>"), $._match_arm_value),
 
         _match_arm_value: ($) =>
             choice(
                 $.expression,
-                alias(
-                    seq(keyword($, "return"), optional($.expression)),
-                    $.return_statement,
-                ),
-                alias(
-                    seq(keyword($, "yield"), optional($.expression)),
-                    $.yield_statement,
-                ),
-                alias(keyword($, "break"), $.break_statement),
-                alias(keyword($, "continue"), $.continue_statement),
+                alias($._arm_return, $.return_statement),
+                alias($._arm_yield, $.yield_statement),
+                alias($._arm_break, $.break_statement),
+                alias($._arm_continue, $.continue_statement),
             ),
+
+        _arm_return: ($) =>
+            prec.right(seq(keyword($, "return"), optional($.expression))),
+
+        _arm_yield: ($) =>
+            prec.right(seq(keyword($, "yield"), optional($.expression))),
+
+        _arm_break: ($) => keyword($, "break"),
+
+        _arm_continue: ($) => keyword($, "continue"),
 
         match_pattern: ($) =>
             choice(
                 $.number_literal,
-                reserved("match", $.identifier),
+                $.binding_pattern,
+                $._pattern_path,
                 $.variant_pattern,
             ),
 
-        variant_pattern: ($) =>
+        binding_pattern: ($) =>
             seq(
-                alias(
-                    seq(
-                        reserved("match", $.identifier),
-                        repeat1(seq(op($, "::"), $.identifier)),
-                    ),
-                    $.qualified_name,
+                optional(keyword($, "const")),
+                alias("auto", $.builtin_type),
+                optional(op($, "&")),
+                $.identifier,
+            ),
+
+        _pattern_path: ($) =>
+            choice(
+                reserved("match", $.identifier),
+                alias($._pattern_scoped_name, $.qualified_name),
+            ),
+
+        _pattern_scoped_name: ($) =>
+            seq(
+                reserved("match", $.identifier),
+                repeat1(seq(op($, "::"), $.identifier)),
+            ),
+
+        variant_pattern: ($) =>
+            prec(
+                1,
+                seq(
+                    $._pattern_path,
+                    "(",
+                    optional($.match_pattern),
+                    ")",
                 ),
-                optional($.template_arguments),
-                optional(seq("(", optional(reserved("match", $.identifier)), ")")),
             ),
 
         defer_statement: ($) =>
@@ -815,7 +846,11 @@ module.exports = grammar({
         continue_statement: ($) => seq(keyword($, "continue"), ";"),
 
         goto_statement: ($) =>
-            seq(keyword($, "goto"), $.identifier, ";"),
+            seq(
+                keyword($, "goto"),
+                choice($.identifier, seq(op($, "*"), $.expression)),
+                ";",
+            ),
 
         compiler_statement: ($) =>
             seq(
@@ -840,7 +875,8 @@ module.exports = grammar({
 
         unpack_binding: ($) => seq($.identifier, ":", $.identifier),
 
-        labeled_statement: ($) => seq($.identifier, ":", $._statement),
+        labeled_statement: ($) =>
+            prec.right(seq($.identifier, ":", optional($._statement))),
 
         staged_continuation_statement: ($) => $.staged_continuation_expression,
 
@@ -929,7 +965,7 @@ module.exports = grammar({
                 prec.left(PREC.bitwise_or, seq($.expression, op($, "|"), $.expression)),
                 prec.left(PREC.bitwise_xor, seq($.expression, op($, "^"), $.expression)),
                 prec.left(PREC.bitwise_and, seq($.expression, op($, "&"), $.expression)),
-                prec.left(PREC.equality, seq($.expression, choice(op($, "=="), op($, "!="), op($, "is")), $.expression)),
+                prec.left(PREC.equality, seq($.expression, choice(op($, "=="), op($, "!=")), $.expression)),
                 prec.left(PREC.comparison, seq($.expression, choice(op($, "<"), op($, ">"), op($, "<="), op($, ">=")), $.expression)),
                 prec.left(PREC.shift, seq($.expression, choice(op($, "<<"), op($, ">>")), $.expression)),
                 prec.left(PREC.additive, seq($.expression, choice(op($, "+"), op($, "-")), $.expression)),
@@ -966,6 +1002,7 @@ module.exports = grammar({
                             seq(choice(".", op($, "->")), $.identifier),
                             seq("[", $.expression, "]"),
                             choice(op($, "++"), op($, "--")),
+                            seq(op($, "is"), $.match_pattern),
                         ),
                     ),
                 ),
@@ -989,7 +1026,10 @@ module.exports = grammar({
                 $.sizeof_expression,
                 $.emit_expression,
                 $.then_expression,
+                $.label_address_expression,
             ),
+
+        label_address_expression: ($) => seq(op($, "&&"), $.identifier),
 
         literal: ($) =>
             choice(
@@ -1041,9 +1081,7 @@ module.exports = grammar({
                 "(",
                 $.expression,
                 ")",
-                "{",
-                repeat($.match_arm),
-                "}",
+                $._match_body,
             ),
 
         sizeof_expression: ($) =>
