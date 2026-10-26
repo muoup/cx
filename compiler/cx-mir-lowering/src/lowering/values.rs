@@ -62,10 +62,10 @@ pub(crate) fn lower_rvalue(
                 address
             };
         }
-        if context.ty(source_ty).is_memory_resident() {
+        if context.ty(expected).is_memory_resident() {
             return address;
         }
-        return memory::load(context, address, source_ty);
+        return memory::load(context, address, expected);
     }
     lower_value(context, value)
 }

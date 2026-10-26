@@ -80,20 +80,22 @@ fn classify_failure_stage(failure: &CompilationFailure) -> Option<FailureStage> 
     }
 }
 
-fn run_end_to_end_test(input: &Path) {
+fn run_end_to_end_test(input: &Path, llvm_only: bool) {
     let expected_output = expected_stdout(input)
         .unwrap_or_else(|error| panic!("Failed to parse {}: {error}", input.display()))
         .unwrap_or_else(|| panic!("Missing inline or sidecar stdout for {}", input.display()));
     let test_label = test_label(input);
     let mut failures = Vec::new();
 
-    if let Err(failure) = run_backend_end_to_end(
-        input,
-        &expected_output,
-        &test_label,
-        CompilerBackend::Cranelift,
-    ) {
-        failures.push(failure);
+    if !llvm_only {
+        if let Err(failure) = run_backend_end_to_end(
+            input,
+            &expected_output,
+            &test_label,
+            CompilerBackend::Cranelift,
+        ) {
+            failures.push(failure);
+        }
     }
 
     if cfg!(feature = "backend-llvm") {
