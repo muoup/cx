@@ -96,6 +96,36 @@ pub(crate) fn splice(
     }
 }
 
+// A quote spliced where it is written takes its staged type from its arguments and the type
+// expected of the splice
+pub(crate) fn splice_quote(
+    context: &mut LocalLoweringContext,
+    quote: HMIRExprID,
+    args: &[HMIRExprID],
+    span: &TokenRange,
+) -> EvalResult<HMIRValue> {
+    let args = args.to_vec();
+    let span = span.clone();
+    let reason = IncompleteReason::ExpectedType;
+    let pending = Incomplete::new(
+        context,
+        &span.clone(),
+        reason,
+        None,
+        move |context, body, expected| {
+            let mut params = Vec::new();
+            for arg in &args {
+                let value = ready!(eval(context, body, *arg));
+                params.push(coerce::value_type(context, value.ty(), &span));
+            }
+            let ty = signature(context, params, expected, &span);
+            let code = ready!(eval(context, body, quote)?.complete(context, body, Some(ty)));
+            apply(context, body, code, &args, &span)
+        },
+    );
+    Ok(Evaluation::Incomplete(pending))
+}
+
 pub(crate) fn capture(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,

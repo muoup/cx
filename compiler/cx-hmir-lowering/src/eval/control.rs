@@ -9,7 +9,10 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::{self, runtime},
-    env::function::{FnContext, LocalLoweringContext, Permission, runtime::Exit},
+    env::function::{
+        FnContext, LocalLoweringContext, Permission,
+        runtime::{Emission, Exit},
+    },
     eval::{
         EvalResult,
         binding::eval_scoped,
@@ -453,6 +456,9 @@ pub(crate) fn eval_loop_exit(
         _ => unreachable!("only 'break' and 'continue' exit a loop"),
     };
     let Some((depth, target)) = exit else {
+        if unevaluated(context) {
+            return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
+        }
         if context.runtime().deferred() {
             let jump = match stop {
                 ComptimeStop::Break => "break",
@@ -496,9 +502,17 @@ pub(crate) fn eval_return(
     if matches!(context.context(), FnContext::Runtime(runtime) if runtime.deferred()) {
         return Err(hmir_error(span, &typecheck::DEFER_JUMP, "return".into()));
     }
+    if unevaluated(context) {
+        return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
+    }
     let value = value.map(|value| eval(context, body, value)).transpose()?;
 
     return_value(context, body, value, true, span)
+}
+
+// A dry run has no targets to leave to, so an exit only marks its code as diverging
+pub(crate) fn unevaluated(context: &LocalLoweringContext) -> bool {
+    matches!(context.context(), FnContext::Runtime(runtime) if runtime.emission() == Emission::Unevaluated)
 }
 
 // Always stops evaluation: a runtime return diverges, and a comptime return carries its value to the caller

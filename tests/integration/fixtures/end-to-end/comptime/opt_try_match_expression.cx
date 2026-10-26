@@ -12,8 +12,8 @@ enum union Choice {
 
 std::opt(int) choose_optional(Choice choice) {
     match (choice) {
-        a(auto value) => return std::opt(int)::some(value);
-        b() => return std::opt(int)::none();
+        a(auto value) => return std::opt(int)::some(value),
+        b() => return std::opt(int)::none(),
     }
 }
 
@@ -25,8 +25,8 @@ std::opt(int) add_three(Choice choice) {
 
 void print_result(const char* label, std::opt(int) value) {
     match (value) {
-        some(auto inner) => printf("%s some %d\n", label, inner);
-        none() => printf("%s none\n", label);
+        some(auto inner) => printf("%s some %d\n", label, inner),
+        none() => printf("%s none\n", label),
     }
 }
 

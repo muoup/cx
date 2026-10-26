@@ -22,14 +22,14 @@ bool opt::is_none(comptime @type T, opt(T)& this) {
 
 opt(U) opt::map(comptime @type T, comptime @type U, opt(T) this, @fn func(T) -> U) {
     match (move this) {
-        some(auto value) => return opt(U)::some(func(move value));
-        none() => return opt(U)::none();
+        some(auto value) => return opt(U)::some(func(move value)),
+        none() => return opt(U)::none(),
     }
 }
 
 T opt::unwrap(comptime @type T, opt(T) this) {
     match (move this) {
-        some(auto val) => return move val;
+        some(auto val) => return move val,
         none() => {
             std::io::println("Error: called `opt::unwrap()` on a `None` value");
             exit(1);
@@ -39,26 +39,26 @@ T opt::unwrap(comptime @type T, opt(T) this) {
 
 T opt::unwrap_or(comptime @type T, opt(T) this, T default_value) {
     match (move this) {
-        some(auto val) => return move val;
-        none() => return default_value;
+        some(auto val) => return move val,
+        none() => return default_value,
     }
 }
 
-comptime expr(T) opt::unwrap_or_else(comptime @type T, expr(opt(T)) self, expr(unreachable) on_none) =>
+comptime expr(T) opt::unwrap_or_else(comptime @type T, expr(opt(T)) self, expr(T) on_none) =>
     emit match (self) {
-        some(auto value) => yield move value;
-        none() => on_none;
+        some(auto value) => move value,
+        none() => on_none,
     };
 
 comptime expr(T) opt::try(comptime @type T, expr(opt(T)) self) =>
     emit match (self) {
-        some(auto value) => yield move value;
-        none() => return _::none();
+        some(auto value) => move value,
+        none() => return _::none(),
     };
 
 comptime expr(T) opt::try_or(comptime @type T, expr(opt(T)) self, expr(void) on_none) =>
     emit match (self) {
-        some(auto value) => yield move value;
+        some(auto value) => move value,
         none() => {
             on_none;
             return _::none();

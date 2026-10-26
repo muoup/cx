@@ -27,15 +27,15 @@ int main() {
     std::opt(int) second = int_result();
     std::opt(float) third = float_result();
     match (first) {
-        some(auto value) => printf("int some %d\n", value);
-        none() => printf("int none\n");
+        some(auto value) => printf("int some %d\n", value),
+        none() => printf("int none\n"),
     }
     match (second) {
-        some(auto value) => printf("int repeat some %d\n", value);
-        none() => printf("int repeat none\n");
+        some(auto value) => printf("int repeat some %d\n", value),
+        none() => printf("int repeat none\n"),
     }
     match (third) {
-        some(auto value) => printf("float some %.1f\n", value);
-        none() => printf("float none\n");
+        some(auto value) => printf("float some %.1f\n", value),
+        none() => printf("float none\n"),
     }
 }

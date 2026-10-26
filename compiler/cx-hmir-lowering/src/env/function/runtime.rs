@@ -1,5 +1,12 @@
-use cx_mir::{MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRScopeID, MIRTarget};
+use std::collections::HashMap;
+
+use cx_hmir::body::HMIRBodyID;
+use cx_mir::{
+    MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRScopeID,
+    MIRTarget,
+};
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 use index_vec::IndexVec;
 
 use crate::{
@@ -27,6 +34,7 @@ pub struct RuntimeContext {
     slots: IndexVec<HMIRSlotID, Slot>,
     scopes: Scopes<RuntimeScope>,
     scratch_scope: MIRScopeID,
+    labels: HashMap<String, MIRBasicBlockID>,
 }
 
 impl RuntimeContext {
@@ -40,6 +48,7 @@ impl RuntimeContext {
             scopes: Scopes::default(),
             scratch_scope,
             emission: Emission::Enabled,
+            labels: HashMap::new(),
         }
     }
 
@@ -152,15 +161,43 @@ impl RuntimeContext {
             .any(|(_, scope)| !scope.defers().is_empty())
     }
 
-    pub(crate) fn yield_target(&self) -> Option<usize> {
-        self.target(|scope| scope.yields().then_some(()))
-            .map(|(index, ())| index)
+    // A yield written in 'body' targets only the scopes of quotes materialized from that body, so a quote spliced
+    // into another quote's code passes over that quote's yielding blocks
+    pub(crate) fn yield_target(&self, body: HMIRBodyID) -> Option<usize> {
+        let frame = |depth: usize| {
+            self.scopes
+                .controls()
+                .rev()
+                .filter(|(index, _)| *index < depth)
+                .find_map(|(_, scope)| scope.quote())
+        };
+        let mut current = frame(self.scopes.len());
+        for (index, scope) in self.scopes.controls().rev() {
+            if scope.yields() && current.is_none_or(|current| current == body) {
+                return Some(index);
+            }
+            if scope.deferred() {
+                break;
+            }
+            if scope.quote().is_some() {
+                current = frame(index);
+            }
+        }
+        None
     }
 
-    pub(crate) fn yield_value(&mut self, value: HMIRValue) {
-        let index = self.yield_target().expect("yield has a target");
+    pub(crate) fn yield_value(&mut self, depth: usize, value: HMIRValue) {
         let block = self.builder.current_block();
-        self.scopes.control_mut(index).push_yield(block, value);
+        self.scopes.control_mut(depth).push_yield(block, value);
+    }
+
+    pub(crate) fn label(&mut self, name: &CXIdent) -> MIRBasicBlockID {
+        if let Some(block) = self.labels.get(name.as_str()) {
+            return *block;
+        }
+        let block = self.builder.add_block(Some(name.clone()));
+        self.labels.insert(name.to_string(), block);
+        block
     }
 
     pub fn scratch_scope(&self) -> MIRScopeID {

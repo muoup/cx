@@ -9,7 +9,7 @@ use cx_tokens::TokenRange;
 use crate::{
     env::function::{FnContext, LocalLoweringContext, runtime::Emission},
     eval::{
-        EvalResult, coerce, defer, eval,
+        EvalResult, coerce, control, defer, eval,
         flow::{ComptimeStop, Evaluation, RuntimeStop},
         literal, storage,
     },
@@ -25,11 +25,14 @@ pub(crate) fn eval_yield(
 ) -> EvalResult<HMIRValue> {
     let (available, deferred) = match context.context() {
         FnContext::Runtime(runtime) => (
-            runtime.yield_target().is_some(),
+            runtime.yield_target(body.id()).is_some(),
             runtime.deferred(),
         ),
         FnContext::Comptime(comptime) => (comptime.yielding(), false),
     };
+    if !available && control::unevaluated(context) {
+        return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
+    }
     if !available && deferred {
         return Err(hmir_error(span, &typecheck::DEFER_JUMP, "yield".into()));
     }
@@ -49,6 +52,7 @@ pub(crate) fn eval_yield(
         other => other,
     };
     let span = span.clone();
+    let origin = body.id();
     value.and_then(context, body, None, move |context, _, value, _| {
         let value = coerce::std_rvalue(context, value, &span)?;
         match context.context() {
@@ -60,9 +64,12 @@ pub(crate) fn eval_yield(
                 } else {
                     storage::temporary(context, value, &span)?
                 };
-                let depth = context.runtime().yield_target().expect("yield has a target");
-                defer::exit(context, depth, &span)?;
-                context.runtime_mut().yield_value(value);
+                let depth = context
+                    .runtime()
+                    .yield_target(origin)
+                    .expect("yield has a target");
+                defer::exit(context, depth + 1, &span)?;
+                context.runtime_mut().yield_value(depth, value);
                 context.runtime_mut().set_emission(Emission::Suppressed);
                 Ok(Evaluation::Stop(RuntimeStop::Diverged.into()))
             }

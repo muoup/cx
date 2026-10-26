@@ -8,6 +8,7 @@ comptime expr(void) invoke(@fn proc(expr(int&)) -> expr(int)) {
 int main() {
     invoke(|value| emit .{
         value += 1;
+        yield;
     });
     return 0;
 }

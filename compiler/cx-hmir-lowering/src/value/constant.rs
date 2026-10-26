@@ -4,6 +4,7 @@ use cx_hmir::{
     HMIRDefID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
+use cx_mir::MIRFunctionID;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::value::{
@@ -36,6 +37,10 @@ pub enum HMIRConstant {
         payload: Box<HMIRConstant>,
     },
     Address(HMIRAddress),
+    BlockAddress {
+        function: MIRFunctionID,
+        label: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

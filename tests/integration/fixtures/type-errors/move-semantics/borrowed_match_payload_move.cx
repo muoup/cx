@@ -5,8 +5,8 @@ enum union Choice {
 
 int read(Choice& value) {
     return match (value) {
-        some(auto inner) => yield move inner;
-        none() => yield 0;
+        some(auto inner) => move inner,
+        none() => 0,
     };
 }
 

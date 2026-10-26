@@ -21,8 +21,8 @@ unwrap_or<P: permission, T: type>(
     expr<unreachable> [P | @yield<T>] or_else
 ) @safe {
     return emit match (operand) {
-        opt::some<T>(value) => yield move value;
-        opt::none<T>() => or_else;
+        opt::some<T>(value) => move value,
+        opt::none<T>() => or_else,
     };
 }
 ~~~

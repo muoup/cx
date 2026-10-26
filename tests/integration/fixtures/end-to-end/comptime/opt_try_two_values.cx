@@ -15,8 +15,8 @@ std::opt(int) add_optional_pair(std::opt(int) lhs, std::opt(int) rhs) {
 
 void print_result(const char* label, std::opt(int) value) {
     match (value) {
-        some(auto inner) => printf("%s some %d\n", label, inner);
-        none() => printf("%s none\n", label);
+        some(auto inner) => printf("%s some %d\n", label, inner),
+        none() => printf("%s none\n", label),
     }
 }
 

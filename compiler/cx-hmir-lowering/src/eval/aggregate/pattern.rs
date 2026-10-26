@@ -54,6 +54,7 @@ pub(crate) fn variant(
             let missing = (name.to_string(), types::name(context.env(), ty));
             return Err(hmir_error(span, &typecheck::MATCH_PAYLOAD_BINDING, missing));
         }
+        Some(HMIRPattern::Binding(_) | HMIRPattern::Wildcard) | None => {}
         Some(_) if void => {
             let subject = format!(
                 "the pattern of void variant '{}'",
@@ -62,7 +63,6 @@ pub(crate) fn variant(
             let invalid = (subject, "payload".into());
             return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid));
         }
-        Some(HMIRPattern::Binding(_) | HMIRPattern::Wildcard) | None => {}
         Some(_) => {
             let feature = "nested payload patterns".into();
             return Err(hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature));

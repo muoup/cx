@@ -42,7 +42,13 @@ pub fn convert(
         let ty = types::array(context.env_mut(), target, length, span);
         return Ok(Coercion::Applied(value.with_ty(ty)));
     }
-    if matches!(env.resolve_kind(source), HMIRTypeKind::Unreachable)
+    let unreachable = |ty| matches!(env.resolve_kind(ty), HMIRTypeKind::Unreachable);
+    let staged_unreachable = matches!(
+        (env.resolve_kind(source), env.resolve_kind(target)),
+        (HMIRTypeKind::Staged(inner), HMIRTypeKind::Staged(_)) if unreachable(*inner)
+    );
+    if unreachable(source)
+        || staged_unreachable
         || (compatible::compatible(env, source, target)
             && compatible::qualified(env, source, target))
     {

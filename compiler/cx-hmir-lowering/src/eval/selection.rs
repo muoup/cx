@@ -19,7 +19,7 @@ use crate::{
         EvalResult,
         aggregate::pattern,
         coerce, control, defer, eval, eval_comptime,
-        flow::{self, ComptimeStop, Evaluation, StopReason, ready},
+        flow::{self, Evaluation, ready},
         literal, storage, types,
     },
     log::hmir_error,
@@ -27,7 +27,6 @@ use crate::{
 };
 
 struct Match {
-    scope: usize,
     subject: HMIRValue,
     arms: Vec<(HMIRPattern, HMIRExprID)>,
     blocks: Vec<MIRBasicBlockID>,
@@ -67,7 +66,7 @@ pub(crate) fn eval_match(
             ));
         }
     };
-    let scope = emit::open_scope(context, span.clone());
+    emit::open_scope(context, span.clone());
     let (subject, dispatch) = if owned {
         let storage = emit::allocate(context, ty, body.local(local).name().cloned(), span)?;
         storage::initialize(context, &storage, &subject, span)?;
@@ -95,28 +94,9 @@ pub(crate) fn eval_match(
                 .position(|case| *case == Some(*value))
                 .or_else(|| cases.iter().position(Option::is_none))
                 .expect("match coverage was checked");
-            context
-                .comptime_mut()
-                .scopes_mut()
-                .control_mut(scope)
-                .begin_yield();
-            let result = bind_arm(context, body, &subject, &arms[selected].0, span)
-                .map_err(Into::into)
-                .and_then(|()| eval(context, body, arms[selected].1))
-                .and_then(|result| {
-                    let span = span.clone();
-                    result
-                        .and_then(context, body, None, move |context, _, _, _| {
-                            Ok(Evaluation::Ready(literal::unit(context, &span)))
-                        })?
-                        .catch(|stop| match stop {
-                            StopReason::Comptime(ComptimeStop::Yield(value)) => {
-                                Ok(Evaluation::Ready(value))
-                            }
-                            stop => Ok(Evaluation::Stop(stop)),
-                        })
-                });
-            result
+            bind_arm(context, body, &subject, &arms[selected].0, span)?;
+            let result = eval(context, body, arms[selected].1);
+            arm_value(context, body, result, span)
         }
         FnContext::Runtime(_) => {
             let blocks = arms
@@ -150,16 +130,10 @@ pub(crate) fn eval_match(
                     .runtime_mut()
                     .emit(MIRInstructionKind::Unreachable, span.clone());
             }
-            context
-                .runtime_mut()
-                .scopes_mut()
-                .control_mut(scope)
-                .begin_yield();
             lower_arms(
                 context,
                 body,
                 Match {
-                    scope,
                     subject,
                     arms: arms.to_vec(),
                     blocks,
@@ -269,6 +243,13 @@ fn bind_arm(
         HMIRPattern::Variant { inner, .. } => {
             let (index, payload) = pattern::variant(context, body, ty, pattern, span)?;
             match inner.as_deref() {
+                Some(HMIRPattern::Binding(local))
+                    if matches!(context.env().resolve_kind(payload), HMIRTypeKind::Void) =>
+                {
+                    let unit = literal::unit(context, span);
+                    emit::storage::bind_local(context, *local, unit);
+                    true
+                }
                 Some(HMIRPattern::Binding(local)) => {
                     let reference = pattern::payload(context, subject, index, payload, span)?;
                     pattern::bind(context, body, *local, reference, owned, span)?
@@ -292,12 +273,6 @@ fn lower_arms(
     expected: Option<HMIRTypeID>,
 ) -> EvalResult<HMIRValue> {
     if index == state.arms.len() {
-        let yields = context
-            .runtime_mut()
-            .scopes_mut()
-            .control_mut(state.scope)
-            .end_yield();
-        state.exits.extend(yields);
         let has_void = state
             .exits
             .iter()
@@ -306,11 +281,16 @@ fn lower_arms(
             !matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void)
         });
         if has_void && has_value {
-            return Err(hmir_error(
-                &state.span,
-                &typecheck::MISSING_YIELD,
-                "every match arm".into(),
-            ));
+            let found = state
+                .exits
+                .iter()
+                .find(|(_, value)| {
+                    !matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void)
+                })
+                .map(|(_, value)| types::name(context.env(), value.ty()))
+                .expect("a match arm has a value");
+            let mismatch = ("match arms".into(), "'void'".into(), format!("'{found}'"));
+            return Err(hmir_error(&state.span, &typecheck::TYPE_MISMATCH, mismatch));
         }
         return control::merge(context, state.exits, &state.span);
     }
@@ -324,6 +304,7 @@ fn lower_arms(
         &state.span,
     )?;
     let result = eval(context, body, state.arms[index].1);
+    let result = arm_value(context, body, result, &state.span);
     let span = state.span.clone();
     let source = (!context.env().is_reference(state.subject.ty())).then(|| state.subject.clone());
     let result = flow::finally(context, body, result, move |context, _, completed| {
@@ -339,13 +320,28 @@ fn lower_arms(
         body,
         None,
         move |context, body, value, expected| {
-            if value.is_some() {
-                state.exits.push((
-                    runtime::current_block(context),
-                    literal::unit(context, &state.span),
-                ));
+            if let Some(value) = value {
+                state.exits.push((runtime::current_block(context), value));
             }
             lower_arms(context, body, state, index + 1, expected)
         },
     )
+}
+
+fn arm_value(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    result: EvalResult<HMIRValue>,
+    span: &TokenRange,
+) -> EvalResult<HMIRValue> {
+    let span = span.clone();
+    result?.and_then(context, body, None, move |context, _, value, _| {
+        let value = coerce::std_rvalue(context, value, &span)?;
+        let void = matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void);
+        let value = match context.context() {
+            FnContext::Runtime(_) if !void => storage::temporary(context, value, &span)?,
+            _ => value,
+        };
+        Ok(Evaluation::Ready(value))
+    })
 }

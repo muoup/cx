@@ -11,8 +11,8 @@ std::opt(int) make_none() {
 
 void print_result(const char* label, std::opt(int) value) {
     match (value) {
-        some(auto inner) => printf("%s some %d\n", label, inner);
-        none() => printf("%s none\n", label);
+        some(auto inner) => printf("%s some %d\n", label, inner),
+        none() => printf("%s none\n", label),
     }
 }
 

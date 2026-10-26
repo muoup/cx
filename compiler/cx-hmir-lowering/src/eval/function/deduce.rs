@@ -258,6 +258,14 @@ impl<'a> Deduction<'a> {
         unresolved: &mut Vec<usize>,
         span: &TokenRange,
     ) -> CXResult<()> {
+        if actual.is_some_and(|actual| {
+            matches!(
+                context.env().resolve_kind(actual),
+                HMIRTypeKind::Unreachable
+            )
+        }) {
+            return Ok(());
+        }
         match (actual, self.deduced(index)) {
             (Some(actual), Some(first)) if !alike(context.env(), first, actual, true) => {
                 Err(hmir_error(

@@ -11,12 +11,12 @@ enum union MaybeInt {
 
 int pick(MaybeInt maybe, bool first) {
     int value = match (move maybe) {
-        some(auto inner) => {
+        some(auto inner) => .{
             if (first) yield inner;
 
             yield 2;
         }
-        none() => yield 3;
+        none() => 3,
     };
 
     return value;

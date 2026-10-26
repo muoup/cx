@@ -11,7 +11,7 @@ use cx_hmir::{
 };
 use cx_log::{
     CXResult,
-    catalogue::{mir, typecheck},
+    catalogue::{analysis, mir, typecheck},
     error::CXError,
 };
 use cx_tokens::TokenRange;
@@ -271,7 +271,7 @@ pub(crate) fn call(
     let mut frame = Frame {
         function,
         def: *def,
-        state: ComptimeContext::new(),
+        state: ComptimeContext::of(source.name().to_string()),
         return_type: None,
         runtime,
     };
@@ -539,6 +539,21 @@ fn execute(
         _ => unreachable!("a function body returns or diagnoses fallthrough"),
     };
     let value = flow::top(comptime::export(context, value, span))?;
+    let env = context.env();
+    if let Some(slot) = context.comptime().unconsumed(|ty| env.is_nodrop(ty)) {
+        let place = slot
+            .name()
+            .map_or_else(|| "temporary".into(), |place| place.to_string());
+        let discarded = place == "_";
+        let args = (
+            name.to_string(),
+            "variable".into(),
+            place,
+            "function".into(),
+            discarded,
+        );
+        return Err(hmir_error(span, &analysis::VALUE_NOT_CONSUMED, args));
+    }
     contract::check(
         context,
         signature.contract(),
@@ -557,7 +572,7 @@ pub(crate) fn body(
     let definition = function.def().expect("an executed function has a body");
     let body = function.body();
     let root = body.expr(definition.root());
-    if !matches!(root.kind(), HMIRExprKind::Block { .. }) {
+    if !matches!(root.kind(), HMIRExprKind::Block { yields: false, .. }) {
         let value = eval(context, body, definition.root())?;
         return control::return_value(context, body, Some(value), false, root.span());
     }

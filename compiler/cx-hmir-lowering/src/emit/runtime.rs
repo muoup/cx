@@ -245,6 +245,10 @@ pub fn constant(
             return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION,
                 "lowering an unresolved curried callable to runtime".into()));
         }
+        (HMIRConstant::BlockAddress { function, label }, _) => MIRConstant::BlockAddress {
+            function: *function,
+            label: label.clone(),
+        },
         (other, _) => todo!("constant {other:?}"),
     })
 }

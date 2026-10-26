@@ -7,6 +7,7 @@ mod control;
 mod def;
 mod defer;
 mod function;
+mod label;
 mod literal;
 mod name;
 mod place;
@@ -97,6 +98,13 @@ pub(crate) fn lower_runtime_function<'hmir>(
         .at(body.visible_through())
         .with_return_type(*signature.return_type());
 
+    for name in def.address_labels() {
+        let runtime = context.runtime_mut();
+        let block = runtime.label(name);
+        runtime
+            .builder_mut()
+            .add_address_label(name.to_string(), block);
+    }
     let root = emit::open_scope(&mut context, span.clone());
     let scopes = context.runtime_mut().scopes_mut();
     scopes.control_mut(root).set_return(id.brand(), body.visible_through());
@@ -255,6 +263,13 @@ fn eval_inner(
             HMIROp::Dereference(pointer) => eval_dereference(context, body, span, *pointer),
 
             HMIROp::Type(op) => eval_type_op(context, body, span, op),
+            HMIROp::Control(HMIRControlOp::Goto(name)) => label::eval_goto(context, span, name),
+            HMIROp::Control(HMIRControlOp::IndirectGoto(target)) => {
+                label::eval_indirect_goto(context, body, span, *target)
+            }
+            HMIROp::Control(HMIRControlOp::LabelAddress { function, name }) => {
+                label::eval_label_address(context, span, *function, name)
+            }
             HMIROp::Control(control) => todo!("HMIROp::Control({})", control.path()),
             HMIROp::OwnershipOp(HMIROwnershipOp::Move(operand)) => {
                 eval_move(context, body, span, *operand)
@@ -284,6 +299,13 @@ fn eval_inner(
             staged::capture(context, body, params, *root)
         }
         HMIRExprKind::Splice { quote, args } => {
+            let literal = match body.expr(*quote).kind() {
+                HMIRExprKind::Comptime(inner) => *inner,
+                _ => *quote,
+            };
+            if matches!(body.expr(literal).kind(), HMIRExprKind::Quote { .. }) {
+                return staged::splice_quote(context, literal, args, span);
+            }
             let code = ready!(eval(context, body, *quote));
             staged::apply(context, body, code, args, span)
         }
@@ -301,7 +323,10 @@ fn eval_inner(
             subject,
             arms,
         } => selection::eval_match(context, body, span, *scrutinee, *subject, arms),
-        HMIRExprKind::Label { .. } => todo!("HMIRExprKind::Label"),
+        HMIRExprKind::Label {
+            name,
+            body: statement,
+        } => label::eval_label(context, body, span, name, *statement),
     }
 }
 

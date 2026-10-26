@@ -12,7 +12,7 @@ void consume(wrapper(node) value) {}
 
 void inspect(node value) {
     match (value) {
-        link(auto link) => consume(link);
+        link(auto link) => consume(link),
         end() => {}
     }
 }

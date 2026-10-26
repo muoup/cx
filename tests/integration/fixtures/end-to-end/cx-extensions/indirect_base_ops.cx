@@ -28,15 +28,15 @@ int read_point_ptr(Point* value) {
 
 int match_point_ref(MaybePoint& value) {
     return match (value) {
-        some(auto& point) => yield point.x + point.y;
-        none() => yield -1;
+        some(auto& point) => point.x + point.y,
+        none() => -1,
     };
 }
 
 int match_point_ptr(MaybePoint* value) {
     return match (*value) {
-        some(auto& point) => yield point.x + point.y;
-        none() => yield -1;
+        some(auto& point) => point.x + point.y,
+        none() => -1,
     };
 }
 

@@ -53,8 +53,8 @@ comptime int comptime_result = comptime_guards();
 
 const char* name(color c) {
     match (c) {
-        RED => return "red";
-        auto other => return "other";
+        RED => return "red",
+        auto other => return "other",
     }
 }
 
@@ -66,15 +66,15 @@ int main() {
         radius = 9;
     }
     int r2 = match (s) {
-        circle(const auto& v) => yield v;
-        square(auto v) => yield v;
-        _ => yield 0;
+        circle(const auto& v) => v,
+        square(auto v) => v,
+        _ => 0,
     };
     int k = 2;
     const char* word = match (k) {
-        1 => yield "one";
-        2 => yield "two";
-        _ => yield "many";
+        1 => "one",
+        2 => "two",
+        _ => "many",
     };
     printf("%s %s %d %d %s\n", name(RED), name(BLUE), r, r2, word);
 

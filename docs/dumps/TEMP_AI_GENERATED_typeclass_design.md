@@ -52,7 +52,7 @@ usize iter::count(comptime @type T = _, iter(T)& it) {
     while (true) {
         match (it.next()) {
             some(auto value) => n++,
-            none() => break
+            none() => break,
         }
     }
     return n;
@@ -64,7 +64,7 @@ comptime ^void iter::for_each(@type T = _, ^iter(T)& it, @fn callback(^T) -> ^vo
         while (true) {
             match (it.next()) {
                 some(auto value) => callback(value),
-                none() => break
+                none() => break,
             }
         }
     };
@@ -73,7 +73,7 @@ usize drain(comptime @type T = _, iter(T)& it, sink(T) out) {
     while (true) {
         match (it.next()) {
             some(auto value) => out.push(value),
-            none() => break
+            none() => break,
         }
     }
     return (move out).finish();

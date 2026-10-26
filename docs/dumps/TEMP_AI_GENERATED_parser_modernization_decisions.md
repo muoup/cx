@@ -52,11 +52,11 @@ match (o) {
 
 // after
 match (o) {
-    some(auto value) => use(value);
-    none()           => ...;
+    some(auto value) => use(value),
+    none()           => ...,
 }
 if (this is some(auto& v)) { ... }
-match (c) { RED => ...; auto other => ...; }
+match (c) { RED => ..., auto other => ..., }
 ```
 
 - A bare identifier is a reference that must resolve; a typo is an error, never a catch-all.
@@ -104,8 +104,8 @@ caller:
 ```c
 comptime expr(T) opt::try(@type T, expr(opt(T)) self) =>
     emit match (self) {
-        some(auto value) => yield move value;
-        none()           => return _::none();
+        some(auto value) => move value,
+        none()           => return _::none(),
     };
 ```
 

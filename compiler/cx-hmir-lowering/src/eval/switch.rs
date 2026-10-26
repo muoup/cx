@@ -283,33 +283,6 @@ fn case_block(
         .target(|scope| scope.exit().and_then(|exit| exit.case_block(case)))
 }
 
-pub(crate) fn in_switch(context: &LocalLoweringContext) -> bool {
-    match context.context() {
-        FnContext::Runtime(runtime) => runtime
-            .target(|scope| {
-                scope
-                    .exit()
-                    .is_some_and(|exit| exit.continue_block().is_none())
-                    .then_some(())
-            })
-            .is_some(),
-        FnContext::Comptime(_) => false,
-    }
-}
-
-pub(crate) fn contains_case(
-    context: &LocalLoweringContext,
-    body: &HMIRBody,
-    id: HMIRExprID,
-) -> bool {
-    match body.expr(id).kind() {
-        HMIRExprKind::Case { .. } => case_block(context, id).is_some(),
-        _ => children(body, id)
-            .into_iter()
-            .any(|child| contains_case(context, body, child)),
-    }
-}
-
 fn comptime_switch(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,

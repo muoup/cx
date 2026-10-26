@@ -30,11 +30,11 @@ Output generate_output(int i) {
 
 void print_output(Output out) {
     match (out) {
-        integer(auto i) => printf("Integer: %d\n", i);
-        fp(auto d) => printf("Float: %f\n", d);
-        string(auto s) => printf("String: %s\n", s);
-        data(auto data) => printf("Data: a=%d, b=%f, c=%c\n", data.a, data.b, data.c);
-        error() => printf("Unknown type\n");
+        integer(auto i) => printf("Integer: %d\n", i),
+        fp(auto d) => printf("Float: %f\n", d),
+        string(auto s) => printf("String: %s\n", s),
+        data(auto data) => printf("Data: a=%d, b=%f, c=%c\n", data.a, data.b, data.c),
+        error() => printf("Unknown type\n"),
     }
 }
 

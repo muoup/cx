@@ -4,5 +4,5 @@ enum union Maybe {
 };
 int main() {
     Maybe value = Maybe::none();
-    return value is none(_);
+    return value is none(0);
 }

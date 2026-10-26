@@ -31,7 +31,8 @@ pub(crate) fn subject(
 ) -> EvalResult<HMIRTypeID> {
     let span = body.expr(operand).span();
     let mut child = detached(context, Emission::Unevaluated, false, span)?;
-    let result = eval(&mut child, body, operand)?;
+    let result = eval(&mut child, body, operand);
+    let result = super::operand(&mut child, result, span)?;
     let span = span.clone();
     let result = result.and_then(&mut child, body, None, move |context, _, value, _| {
         let ty = context

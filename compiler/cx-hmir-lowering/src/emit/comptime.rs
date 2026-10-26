@@ -3,7 +3,10 @@ mod op;
 pub use op::{binary, cast, difference, offset, unary};
 
 use cx_hmir::ty::{HMIRTypeID, aggregate::HMIRBitfield, context::HMIRTypeContext};
-use cx_log::{CXResult, catalogue::mir};
+use cx_log::{
+    CXResult,
+    catalogue::{analysis, mir},
+};
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -127,11 +130,19 @@ fn live(
         ComptimeSlotState::Live => Ok(()),
         ComptimeSlotState::Uninitialized if writing => Ok(()),
         ComptimeSlotState::Uninitialized => Err(hmir_error(span, &mir::COMPTIME_UNSET, subject)),
-        ComptimeSlotState::Invalidated => Err(hmir_error(
-            span,
-            &mir::COMPTIME_UNSET,
-            format!("{subject}, which was moved or leaked,"),
-        )),
+        ComptimeSlotState::Invalidated => {
+            let function = context.comptime().function().to_string();
+            let place = slot
+                .name()
+                .map_or_else(|| "temporary".into(), |name| name.to_string());
+            let discarded = place == "_";
+            let operation = match writing {
+                true => "is written",
+                false => "is used",
+            };
+            let args = (function, place, operation.into(), discarded);
+            Err(hmir_error(span, &analysis::AFTER_MOVE, args))
+        }
     }
 }
 

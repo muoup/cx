@@ -237,6 +237,10 @@ impl MIRFunctionBuilder {
     }
 
     pub fn current_block_reachable(&self) -> bool {
+        self.reachable()[self.current_block]
+    }
+
+    fn reachable(&self) -> IndexVec<MIRBasicBlockID, bool> {
         let mut visited = IndexVec::from_vec(vec![false; self.blocks.len()]);
         let mut pending = vec![MIRBasicBlockID::new(0)];
         while let Some(id) = pending.pop() {
@@ -244,9 +248,6 @@ impl MIRFunctionBuilder {
                 continue;
             }
             visited[id] = true;
-            if id == self.current_block {
-                return true;
-            }
             let Some(instruction) = self.blocks[id].last_instruction() else {
                 continue;
             };
@@ -259,7 +260,7 @@ impl MIRFunctionBuilder {
                 _ => pending.extend(successors(instruction).into_iter().map(|target| target.block)),
             }
         }
-        false
+        visited
     }
 
     pub fn switch_to(&mut self, block: MIRBasicBlockID) {
@@ -281,6 +282,14 @@ impl MIRFunctionBuilder {
         }
 
         block.push_instruction(MIRInstruction::new(kind, span));
+    }
+
+    pub fn add_address_label(&mut self, label: String, block: MIRBasicBlockID) {
+        self.address_labels.push((label, block));
+    }
+
+    pub fn address_labels(&self) -> &[(String, MIRBasicBlockID)] {
+        &self.address_labels
     }
 
     pub fn add_scope(&mut self, span: TokenRange) -> MIRScopeID {
@@ -315,7 +324,19 @@ impl MIRFunctionBuilder {
         self.registers.push(register)
     }
 
-    pub fn finish(self) -> MIRFunction {
+    pub fn finish(mut self) -> MIRFunction {
+        let reachable = self.reachable();
+        for (id, block) in self.blocks.iter_mut_enumerated() {
+            if !reachable[id]
+                && !block
+                    .last_instruction()
+                    .is_some_and(MIRInstruction::is_terminator)
+            {
+                let unreachable =
+                    MIRInstruction::new(MIRInstructionKind::Unreachable, TokenRange::internal());
+                block.push_instruction(unreachable);
+            }
+        }
         MIRFunction::new(
             self.prototype,
             Some(MIRBody::new(

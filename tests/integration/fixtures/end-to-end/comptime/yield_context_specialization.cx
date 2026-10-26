@@ -2,7 +2,7 @@
 import std::optional as std;
 
 comptime expr(void) yield_none() {
-    return emit .{ yield _::none(); };
+    return emit yield _::none();
 }
 
 comptime expr(void) forward_yield() {
@@ -11,26 +11,26 @@ comptime expr(void) forward_yield() {
 
 int main() {
     std::opt(int) integer = match (1) {
-        0 => yield std::opt(int)::some(1);
-        _ => {
+        0 => std::opt(int)::some(1),
+        _ => .{
             forward_yield();
             yield std::opt(int)::some(1);
         }
     };
     std::opt(float) floating = match (1) {
-        0 => yield std::opt(float)::some(1.0f);
-        _ => {
+        0 => std::opt(float)::some(1.0f),
+        _ => .{
             forward_yield();
             yield std::opt(float)::some(1.0f);
         }
     };
     match (move integer) {
-        none() => printf("integer none\n");
-        some(auto value) => printf("integer some\n");
+        none() => printf("integer none\n"),
+        some(auto value) => printf("integer some\n"),
     }
     match (move floating) {
-        none() => printf("float none\n");
-        some(auto value) => printf("float some\n");
+        none() => printf("float none\n"),
+        some(auto value) => printf("float some\n"),
     }
     return 0;
 }

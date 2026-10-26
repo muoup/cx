@@ -17,7 +17,7 @@ struct string : @nodrop {
 
 string string::new() {
     match (string::try_new_string()) {
-        some(auto val) => return move val;
+        some(auto val) => return move val,
         none() => {
             std::io::println("Failed to allocate memory for string");
             @unsafe(exit(1));

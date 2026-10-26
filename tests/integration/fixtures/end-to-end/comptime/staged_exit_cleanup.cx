@@ -42,9 +42,9 @@ int main() {
     ignore() <| |unused| emit .{ return 1; };
     printf("dropped return\n");
     int yielded = match (1) {
-        0 => yield 0;
-        _ => {
-            around() <| |unused| emit .{ yield 9; };
+        0 => 0,
+        _ => .{
+            around() <| |unused| emit yield 9;
             yield 0;
         }
     };

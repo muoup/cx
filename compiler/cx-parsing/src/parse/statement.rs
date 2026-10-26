@@ -82,6 +82,23 @@ pub(crate) fn parse_stmt(data: &mut ParserData) -> CXResult<HIRExpression> {
     Ok(stmt)
 }
 
+pub(crate) fn parse_arm(data: &mut ParserData) -> CXResult<HIRExpression> {
+    let start = data.tokens.index;
+
+    Ok(match next_kind!(data.tokens)? {
+        punctuator!(OpenBrace) => {
+            data.tokens.back();
+            parse_block(data)?
+        }
+        keyword!(Break) => data.expr_from(start, HIRExprKind::Break),
+        keyword!(Continue) => data.expr_from(start, HIRExprKind::Continue),
+        _ => {
+            data.tokens.back();
+            parse_expr(data)?
+        }
+    })
+}
+
 fn expects_semicolon(stmt: &HIRExpression) -> bool {
     !matches!(
         stmt.kind,

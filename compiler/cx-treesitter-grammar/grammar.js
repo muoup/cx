@@ -751,7 +751,31 @@ module.exports = grammar({
             ),
 
         match_arm: ($) =>
-            prec.right(seq($.match_pattern, op($, "=>"), $._statement)),
+            prec.right(
+                seq(
+                    $.match_pattern,
+                    op($, "=>"),
+                    choice(
+                        seq($.compound_statement, optional(",")),
+                        seq($._match_arm_value, optional(",")),
+                    ),
+                ),
+            ),
+
+        _match_arm_value: ($) =>
+            choice(
+                $.expression,
+                alias(
+                    seq(keyword($, "return"), optional($.expression)),
+                    $.return_statement,
+                ),
+                alias(
+                    seq(keyword($, "yield"), optional($.expression)),
+                    $.yield_statement,
+                ),
+                alias(keyword($, "break"), $.break_statement),
+                alias(keyword($, "continue"), $.continue_statement),
+            ),
 
         match_pattern: ($) =>
             choice(

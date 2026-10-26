@@ -9,6 +9,7 @@ use crate::{env::function::scope::Scopes, value::HMIRRegionID};
 pub struct ComptimeContext {
     scopes: Scopes<ComptimeScope>,
     slots: HashMap<HMIRRegionID, ComptimeSlot>,
+    function: String,
 }
 
 #[derive(Debug)]
@@ -28,6 +29,25 @@ pub enum ComptimeSlotState {
 impl ComptimeContext {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn of(function: String) -> Self {
+        Self {
+            function,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn function(&self) -> &str {
+        &self.function
+    }
+
+    pub(crate) fn unconsumed(&self, nodrop: impl Fn(HMIRTypeID) -> bool) -> Option<&ComptimeSlot> {
+        self.slots
+            .iter()
+            .filter(|(_, slot)| slot.state == ComptimeSlotState::Live && nodrop(slot.ty))
+            .min_by_key(|(region, _)| **region)
+            .map(|(_, slot)| slot)
     }
 
     pub(crate) fn scopes(&self) -> &Scopes<ComptimeScope> {

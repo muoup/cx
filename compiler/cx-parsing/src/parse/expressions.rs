@@ -21,7 +21,7 @@ use cx_util::unsafe_float::FloatWrapper;
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
-use crate::parse::statement::parse_stmt;
+use crate::parse::statement::parse_arm;
 use crate::parse::types::{is_type_decl, parse_comptime_args, parse_initializer};
 use crate::parse::{
     parse_block, parse_expression_block, parse_intrinsic, try_parse_qualified_name,
@@ -966,8 +966,23 @@ pub(crate) fn parse_keyword_expr(
 
                 let value = parse_pattern(data)?;
                 assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                let body = parse_stmt(data)?;
+                let body = parse_arm(data)?;
                 arms.push((value, body));
+
+                let braced = matches!(
+                    data.tokens.prev().map(|token| &token.kind),
+                    Some(punctuator!(CloseBrace))
+                );
+                if !try_next!(data.tokens, operator!(Comma))
+                    && !braced
+                    && !peek_kind!(data.tokens, punctuator!(CloseBrace))
+                {
+                    return parse_point_error(
+                        &data.tokens,
+                        &EXPECTED_SYNTAX,
+                        ("','".into(), Some("after a match arm".into())),
+                    );
+                }
             }
 
             data.pop_comma_mode();

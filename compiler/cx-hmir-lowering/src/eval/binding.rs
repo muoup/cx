@@ -11,12 +11,12 @@ use cx_log::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
+    emit::{self, runtime},
     env::function::{FnContext, LocalLoweringContext, runtime::Emission},
     eval::{
-        EvalResult, coerce, complete, defer, eval, eval_type,
-        flow::{self, Evaluation, RuntimeStop, StopReason, ready},
-        literal, staged, storage, switch, types,
+        EvalResult, coerce, complete, control, defer, eval, eval_type,
+        flow::{self, ComptimeStop, Evaluation, RuntimeStop, StopReason, ready},
+        literal, staged, storage, types,
     },
     log::hmir_error,
     value::{HMIRPlace, HMIRValue, HMIRValueKind},
@@ -124,6 +124,14 @@ pub(crate) fn eval_let(
             None => value,
         };
         let inferred = coerce::value_type(context, value.ty(), &span);
+        let decays = matches!(
+            context.env().resolve_kind(inferred),
+            HMIRTypeKind::Function(_)
+        ) && !types::comptime_only(context.env(), inferred);
+        let inferred = match decays {
+            true => types::pointer(context.env_mut(), inferred, &span),
+            false => inferred,
+        };
         declared.complete(context, body, Some(inferred))?.and_then(
             context,
             body,
@@ -197,11 +205,58 @@ pub(crate) fn eval_block(
         return eval_statements(context, body, span, statements, true);
     }
 
-    emit::open_scope(context, span.clone());
+    let scope = emit::open_scope(context, span.clone());
+    if yields {
+        match context.context_mut() {
+            FnContext::Runtime(runtime) => runtime.scopes_mut().control_mut(scope).begin_yield(),
+            FnContext::Comptime(comptime) => comptime.scopes_mut().control_mut(scope).begin_yield(),
+        }
+    }
     let result = eval_statements(context, body, span, statements, yields);
+    let result = match yields {
+        true => yielded(context, body, scope, result, span.clone()),
+        false => result,
+    };
     let span = span.clone();
     flow::finally(context, body, result, move |context, _, completed| {
         defer::close(context, completed, &span)
+    })
+}
+
+fn yielded(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    scope: usize,
+    result: EvalResult<HMIRValue>,
+    span: TokenRange,
+) -> EvalResult<HMIRValue> {
+    if let FnContext::Comptime(_) = context.context() {
+        return result?.catch(|stop| match stop {
+            StopReason::Comptime(ComptimeStop::Yield(value)) => Ok(Evaluation::Ready(value)),
+            stop => Ok(Evaluation::Stop(stop)),
+        });
+    }
+    flow::catch_diverged(result)?.and_then(context, body, None, move |context, _, value, _| {
+        let block = runtime::current_block(context);
+        let mut exits = context
+            .runtime_mut()
+            .scopes_mut()
+            .control_mut(scope)
+            .end_yield();
+        match value {
+            Some(value) if exits.is_empty() => return Ok(Evaluation::Ready(value)),
+            Some(value) => exits.push((block, value)),
+            None => {}
+        }
+        let void = |value: &HMIRValue| {
+            matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void)
+        };
+        if exits.iter().any(|(_, value)| void(value)) && !exits.iter().all(|(_, value)| void(value))
+        {
+            let subject = "every path of an expression block".into();
+            return Err(hmir_error(&span, &typecheck::MISSING_YIELD, subject));
+        }
+        control::merge(context, exits, &span)
     })
 }
 
@@ -212,21 +267,22 @@ fn eval_statements(
     statements: &[HMIRExprID],
     yields: bool,
 ) -> EvalResult<HMIRValue> {
-    let mut stopped = false;
+    let mut dead = false;
     for (index, statement) in statements.iter().enumerate() {
-        if stopped && !switch::contains_case(context, body, *statement) {
-            continue;
-        }
         let result = eval(context, body, *statement);
-        stopped = switch::in_switch(context)
-            && matches!(
-                result,
-                Ok(Evaluation::Stop(StopReason::Runtime(RuntimeStop::Diverged)))
-            );
-        if stopped {
+        if matches!(
+            result,
+            Ok(Evaluation::Stop(StopReason::Runtime(RuntimeStop::Diverged)))
+        ) {
+            dead = true;
+            unreachable(context);
             continue;
         }
         let yielded = yields && index + 1 == statements.len();
+        if yielded && dead && !reachable(context) {
+            result?;
+            return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
+        }
         if yielded {
             let result = result?;
             let partial = result
@@ -249,13 +305,32 @@ fn eval_statements(
                     eval_statements(context, body, &span, &remaining, yields)
                 });
             }
-            result => ready!(result),
+            result => {
+                let value = ready!(result);
+                if !context.env().is_reference(value.ty()) && context.env().is_nodrop(value.ty()) {
+                    let ty = types::name(context.env(), value.ty());
+                    let span = body.expr(*statement).span();
+                    return Err(hmir_error(span, &typecheck::NODROP_DISCARDED, ty));
+                }
+            }
         };
     }
-    if stopped {
+    if dead && !reachable(context) {
         return Ok(Evaluation::Stop(RuntimeStop::Diverged.into()));
     }
     Ok(Evaluation::Ready(literal::unit(context, span)))
+}
+
+// Code after a divergence is still checked, in a block nothing jumps to unless a label or case inside it is entered
+fn unreachable(context: &mut LocalLoweringContext) {
+    if !control::unevaluated(context) {
+        let block = runtime::block(context, "unreachable");
+        runtime::switch_to(context, block);
+    }
+}
+
+fn reachable(context: &LocalLoweringContext) -> bool {
+    !control::unevaluated(context) && context.runtime().builder().current_block_reachable()
 }
 
 pub(crate) fn eval_scoped(
@@ -268,5 +343,10 @@ pub(crate) fn eval_scoped(
         return eval(context, body, expr);
     }
 
-    eval_block(context, body, node.span(), &[expr], true, true)
+    let span = node.span().clone();
+    emit::open_scope(context, span.clone());
+    let result = eval_statements(context, body, &span, &[expr], true);
+    flow::finally(context, body, result, move |context, _, completed| {
+        defer::close(context, completed, &span)
+    })
 }

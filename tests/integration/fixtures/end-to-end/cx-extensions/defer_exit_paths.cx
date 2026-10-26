@@ -32,11 +32,11 @@ void exit_switch(int value) {
 
 int yield_arm(int value) {
     int result = match (value) {
-        2 => {
+        2 => .{
             defer say("arm", value);
             yield value + 5;
         }
-        _ => yield 0;
+        _ => 0,
     };
     printf("yielded %d\n", result);
     return result;

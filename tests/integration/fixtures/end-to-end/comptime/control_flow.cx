@@ -4,15 +4,15 @@ import std::optional as std;
 
 comptime int choose(int value) {
     return match (value) {
-        1 => 11;
-        auto other => other + 20;
+        1 => 11,
+        auto other => other + 20,
     };
 }
 
 comptime int unwrap(std::opt(int) value) {
     return match (move value) {
-        some(auto inner) => inner + 1;
-        none() => -1;
+        some(auto inner) => inner + 1,
+        none() => -1,
     };
 }
 

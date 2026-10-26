@@ -1,6 +1,6 @@
 int select(int value) {
     int result = match (value) {
-        _ => yield 1;
+        _ => 1,
     };
     return other;
 }

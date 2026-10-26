@@ -76,7 +76,7 @@ comptime int unions(int which) {
     Shape other = shape;
     union Number number = { .whole = 1 };
     if (which == 0) return bits.bytes[0];
-    if (which == 1) return match (other) { square(auto side) => yield side; _ => yield 0; };
+    if (which == 1) return match (other) { square(auto side) => side, _ => 0, };
     return number.whole;
 }
 
