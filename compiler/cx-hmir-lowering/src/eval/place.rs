@@ -245,12 +245,13 @@ pub(crate) fn eval_dereference(
 ) -> EvalResult<HMIRValue> {
     let value = ready!(eval(context, body, pointer));
 
-    Ok(Evaluation::Ready(dereference(context, value, span)?))
+    Ok(Evaluation::Ready(dereference(context, value, None, span)?))
 }
 
 pub(crate) fn dereference(
     context: &mut LocalLoweringContext,
     pointer: HMIRValue,
+    base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let pointer = coerce::std_rvalue(context, pointer, span)?;
@@ -266,6 +267,6 @@ pub(crate) fn dereference(
     }
 
     require_nonsafe(context, span, "dereferencing a pointer")?;
-    let storage = emit::dereference(context, pointer, inner, span)?;
+    let storage = emit::dereference(context, pointer, inner, base, span)?;
     emit::reference(context, &storage, span)
 }

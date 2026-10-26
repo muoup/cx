@@ -52,9 +52,18 @@ pub(crate) fn eval_aggregate(
         HMIRAggregateOp::Index { base, index } => {
             let base = ready!(eval_operand(context, body, span, *base));
             let index = ready!(eval_operand(context, body, span, *index));
+            let pointer = match context.env().pointer_inner(base.ty()) {
+                Some(_) => base.clone(),
+                None => index.clone(),
+            };
             let element = binary_operands(context, span, HMIRBinaryOp::Add, base, index)?;
 
-            Ok(Evaluation::Ready(dereference(context, element, span)?))
+            Ok(Evaluation::Ready(dereference(
+                context,
+                element,
+                Some(&pointer),
+                span,
+            )?))
         }
         HMIRAggregateOp::Is { value, pattern } => {
             eval_is(context, body, span, *value, pattern)
@@ -83,7 +92,7 @@ fn eval_member(
             HMIRTypeKind::Array { .. }
         );
     let mut value = if indirect {
-        dereference(context, value, span)?
+        dereference(context, value, None, span)?
     } else if context.env().is_reference(value.ty()) {
         value
     } else {

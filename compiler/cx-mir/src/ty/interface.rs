@@ -2,7 +2,11 @@ use std::collections::HashSet;
 
 use cx_target::ArchitectureConfig;
 
-use crate::ty::{MIRType, MIRTypeID, MIRTypeKind, comparison::same_type_inner};
+use crate::ty::{
+    MIRType, MIRTypeID, MIRTypeKind,
+    comparison::same_type_inner,
+    layout::{MIRTypeLayout, recursive_layout},
+};
 
 pub trait MTRegistry: Sized {
     // --- INTERFACE ---
@@ -14,6 +18,10 @@ pub trait MTRegistry: Sized {
     fn debug_name(&self, id: MIRTypeID) -> Option<&str>;
 
     // --- HELPERS ---
+
+    fn layout(&self, ty: MIRTypeID) -> MIRTypeLayout {
+        recursive_layout(self, ty, &mut HashSet::new())
+    }
 
     fn unit(&self) -> MIRTypeID {
         MIRTypeID::new(0)

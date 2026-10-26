@@ -58,6 +58,7 @@ pub struct FunctionState<'a> {
     pub(crate) global_ids: &'a [DataId],
 
     pub(crate) block_map: HashMap<CXIdent, Block>,
+    pub(crate) assert_fail: Option<Block>,
     pub(crate) builder: FunctionBuilder<'a>,
     pub(crate) fn_params: Vec<Value>,
 

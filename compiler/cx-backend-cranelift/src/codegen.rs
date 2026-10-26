@@ -82,6 +82,7 @@ pub(crate) fn codegen_function(
 
         variable_table: VariableTable::new(),
         block_map: HashMap::new(),
+        assert_fail: None,
         fn_params: Vec::new(),
 
         builder,

@@ -52,7 +52,15 @@ impl LocalLoweringContext<'_, '_, '_> {
     }
 
     pub fn prepare_type(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CXResult<()> {
-        self.prepare_type_inner(ty, span, &mut std::collections::HashSet::new())
+        let mut seen = std::collections::HashSet::new();
+        let mut complete = true;
+        self.prepare_type_inner(ty, span, &mut seen, &mut complete)?;
+        if complete {
+            for ty in seen {
+                self.env_mut().resolver_mut().mark_prepared(ty);
+            }
+        }
+        Ok(())
     }
 
     fn prepare_type_inner(
@@ -60,12 +68,14 @@ impl LocalLoweringContext<'_, '_, '_> {
         ty: HMIRTypeID,
         span: &TokenRange,
         seen: &mut std::collections::HashSet<HMIRTypeID>,
+        complete: &mut bool,
     ) -> CXResult<()> {
-        if !seen.insert(ty) {
+        if self.env().resolver().prepared(ty) || !seen.insert(ty) {
             return Ok(());
         }
         self.force_type(ty, span)?;
         if self.env().resolver().is_incomplete(ty) {
+            *complete = false;
             return Ok(());
         }
         let kind = self
@@ -95,7 +105,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             _ => Vec::new(),
         };
         for child in children {
-            self.prepare_type_inner(child, span, seen)?;
+            self.prepare_type_inner(child, span, seen, complete)?;
         }
         let defined = self
             .env()

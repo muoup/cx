@@ -451,6 +451,7 @@ dependencies = [
  "cx-target",
  "cx-tokens",
  "cx-util",
+ "index_vec",
  "speedy",
 ]
 

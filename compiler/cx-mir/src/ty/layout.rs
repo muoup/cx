@@ -58,8 +58,7 @@ pub fn calculate_type_layout<Registry: MTRegistry>(
     registry: &Registry,
     ty: MIRTypeID,
 ) -> MIRTypeLayout {
-    let mut active = HashSet::new();
-    layout_inner(registry, ty, &mut active)
+    registry.layout(ty)
 }
 
 pub fn calculate_field_layouts<Registry: MTRegistry>(
@@ -87,21 +86,24 @@ pub fn calculate_field_layout<Registry: MTRegistry>(
     calculate_field_layouts(registry, ty)?.get(index).copied()
 }
 
-fn layout_inner<Registry: MTRegistry>(
+pub(crate) fn recursive_layout<Registry: MTRegistry>(
     registry: &Registry,
     ty: MIRTypeID,
     active: &mut HashSet<MIRTypeID>,
 ) -> MIRTypeLayout {
-    fn aggregate_layout<Registry: MTRegistry>(
-        registry: &Registry,
-        fields: &[MIRField],
-        is_union: bool,
-        active: &mut HashSet<MIRTypeID>,
-    ) -> MIRTypeLayout {
-        layout_fields(fields, is_union, |ty| layout_inner(registry, ty, active)).1
-    }
-
     assert!(active.insert(ty), "recursive value type {ty}");
+    let layout = compute_layout(registry, ty, &mut |child| {
+        recursive_layout(registry, child, active)
+    });
+    active.remove(&ty);
+    layout
+}
+
+pub(crate) fn compute_layout<Registry: MTRegistry>(
+    registry: &Registry,
+    ty: MIRTypeID,
+    child: &mut impl FnMut(MIRTypeID) -> MIRTypeLayout,
+) -> MIRTypeLayout {
     let definition = registry.definition(ty).expect("MIR type has no definition");
     let layout = match definition.kind() {
         MIRTypeKind::Void => MIRTypeLayout::new(0, 1),
@@ -120,7 +122,7 @@ fn layout_inner<Registry: MTRegistry>(
             registry.architecture().pointer_alignment(),
         ),
         MIRTypeKind::Array { length, inner } => {
-            let element = layout_inner(registry, *inner, active);
+            let element = child(*inner);
             MIRTypeLayout::new(
                 element
                     .size
@@ -130,10 +132,10 @@ fn layout_inner<Registry: MTRegistry>(
             )
         }
         MIRTypeKind::IncompleteArray { .. } => panic!("incomplete array has no layout"),
-        MIRTypeKind::Structured { fields } => aggregate_layout(registry, fields, false, active),
-        MIRTypeKind::Union { variants } => aggregate_layout(registry, variants, true, active),
+        MIRTypeKind::Structured { fields } => layout_fields(fields, false, &mut *child).1,
+        MIRTypeKind::Union { variants } => layout_fields(variants, true, &mut *child).1,
         MIRTypeKind::TaggedUnion { variants } => {
-            let data = aggregate_layout(registry, variants, true, active);
+            let data = layout_fields(variants, true, &mut *child).1;
             MIRTypeLayout::new(
                 data.size.checked_add(1).expect("sum layout overflows"),
                 data.alignment,
@@ -143,7 +145,6 @@ fn layout_inner<Registry: MTRegistry>(
         MIRTypeKind::Str => MIRTypeLayout::new(1, 1),
         MIRTypeKind::Undefined => panic!("undefined MIR type {ty} has no layout"),
     };
-    active.remove(&ty);
 
     let alignment = layout.alignment.max(1);
     MIRTypeLayout::new(align_to(layout.size, alignment), alignment)

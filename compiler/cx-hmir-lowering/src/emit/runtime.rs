@@ -531,12 +531,15 @@ pub fn dereference(
     context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     inner: HMIRTypeID,
+    base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let value = lower_value(context, &pointer, span)?;
+    let base = base.unwrap_or(&pointer);
+    let checked = lower_value(context, base, span)?;
 
     let null = MIRConstant::Nullptr {
-        ty: types::lower_type(context.env_mut(), pointer.ty(), span)?,
+        ty: types::lower_type(context.env_mut(), base.ty(), span)?,
     };
     let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let condition = register(context, bool_ty, span)?;
@@ -544,7 +547,7 @@ pub fn dereference(
         context,
         MIRPtrIntrinsic::Neq {
             out: MIRTarget::Register(condition),
-            lhs: value.clone(),
+            lhs: checked,
             rhs: MIRValue::Constant(null),
         },
         span.clone(),

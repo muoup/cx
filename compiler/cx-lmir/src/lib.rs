@@ -422,6 +422,11 @@ pub enum LMIRInstructionKind {
         condition: LMIRValue,
     },
 
+    Assert {
+        condition: LMIRValue,
+        message: LMIRValue,
+    },
+
     Unreachable,
 }
 

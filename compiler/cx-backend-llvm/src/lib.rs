@@ -32,6 +32,7 @@ use crate::instruction::reset_num;
 use cx_pipeline_data::OptimizationLevel;
 use cx_util::format::{dump_data, dumps_enabled};
 use inkwell::basic_block::BasicBlock;
+use std::cell::Cell;
 use std::collections::HashMap;
 
 mod arithmetic;
@@ -65,6 +66,7 @@ pub(crate) struct FunctionState<'a, 'b> {
     block_map: HashMap<LMIRBlockID, BasicBlock<'a>>,
     value_map: HashMap<LMIRValue, CodegenValue<'a>>,
     block_params: HashMap<LMIRBlockID, Vec<(LMIRRegister, PhiValue<'a>)>>,
+    assert_fail: Cell<Option<(BasicBlock<'a>, PhiValue<'a>)>>,
 }
 
 impl<'a> FunctionState<'a, '_> {
@@ -386,6 +388,7 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> LLVMRe
         block_map: HashMap::new(),
         value_map: HashMap::new(),
         block_params: HashMap::new(),
+        assert_fail: Cell::new(None),
     };
 
     for (i, global) in global_state.globals.iter().enumerate() {

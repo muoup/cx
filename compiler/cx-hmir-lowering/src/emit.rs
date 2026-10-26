@@ -96,6 +96,7 @@ pub fn dereference(
     context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     inner: HMIRTypeID,
+    base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     if matches!(
@@ -106,7 +107,7 @@ pub fn dereference(
     }
 
     match context.context() {
-        FnContext::Runtime(_) => runtime::dereference(context, pointer, inner, span),
+        FnContext::Runtime(_) => runtime::dereference(context, pointer, inner, base, span),
         FnContext::Comptime(_) => comptime::dereference(context, pointer, inner, span),
     }
 }

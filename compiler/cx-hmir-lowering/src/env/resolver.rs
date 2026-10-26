@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use cx_hmir::ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics};
 use cx_mir::MIRTypeID;
@@ -13,12 +13,18 @@ pub(crate) mod memo;
 
 use memo::{MemoContext, MemoContextID, MemoEntry, MemoID, MemoKey};
 
+#[derive(Debug, Default)]
+struct TypeState {
+    realized: Option<HMIRType>,
+    incomplete: bool,
+    prepared: bool,
+    lowered: Option<MIRTypeID>,
+}
+
 #[derive(Debug)]
 pub(crate) struct HMIRResolver {
     identities: HashMap<u64, Vec<HMIRTypeID>>,
-    incomplete: HashSet<HMIRTypeID>,
-    realized: HashMap<HMIRTypeID, HMIRType>,
-    lowered: HashMap<HMIRTypeID, MIRTypeID>,
+    types: IndexVec<HMIRTypeID, TypeState>,
     memo: HashMap<MemoKey, MemoID>,
     entries: IndexVec<MemoID, MemoEntry>,
     contexts: IndexVec<MemoContextID, MemoContext>,
@@ -31,9 +37,7 @@ impl HMIRResolver {
     pub fn new() -> Self {
         Self {
             identities: HashMap::new(),
-            realized: HashMap::new(),
-            incomplete: HashSet::new(),
-            lowered: HashMap::new(),
+            types: IndexVec::new(),
             memo: HashMap::new(),
             entries: IndexVec::new(),
             contexts: IndexVec::new(),
@@ -56,7 +60,7 @@ impl HMIRResolver {
         let ty_id = Self::type_id(id);
         let value = HMIRValue::constant(universe.unwrap_or(ty_id), HMIRConstant::Type(ty_id));
         self.entries.push(MemoEntry::ready(value));
-        self.realized.insert(ty_id, ty);
+        self.state_mut(ty_id).realized = Some(ty);
         if universe.is_none() {
             self.universe = Some(ty_id);
         }
@@ -100,20 +104,31 @@ impl HMIRResolver {
         MemoID::new(ty.index())
     }
 
+    fn state(&self, ty: HMIRTypeID) -> Option<&TypeState> {
+        self.types.get(ty)
+    }
+    fn state_mut(&mut self, ty: HMIRTypeID) -> &mut TypeState {
+        if self.types.len() <= ty.index() {
+            self.types.resize_with(ty.index() + 1, TypeState::default);
+        }
+        &mut self.types[ty]
+    }
+
     pub fn realized_type(&self, ty: HMIRTypeID) -> Option<&HMIRType> {
-        self.realized.get(&ty)
+        self.state(ty)?.realized.as_ref()
     }
 
     pub fn settled(&self, ty: HMIRTypeID) -> bool {
-        match self.realized.get(&ty).map(HMIRType::kind) {
+        match self.realized_type(ty).map(HMIRType::kind) {
             Some(HMIRTypeKind::Nominal(inner)) => self.settled(*inner),
             realized => realized.is_some(),
         }
     }
 
     pub fn complete_type(&mut self, id: HMIRTypeID, ty: HMIRType) {
-        self.realized.insert(id, ty);
-        self.incomplete.remove(&id);
+        let state = self.state_mut(id);
+        state.realized = Some(ty);
+        state.incomplete = false;
     }
 
     pub fn alias_type(&mut self, id: HMIRTypeID, target: HMIRTypeID, span: &TokenRange) {
@@ -140,15 +155,21 @@ impl HMIRResolver {
     }
 
     pub fn mark_incomplete(&mut self, id: HMIRTypeID) {
-        self.incomplete.insert(id);
+        self.state_mut(id).incomplete = true;
     }
     pub fn is_incomplete(&self, id: HMIRTypeID) -> bool {
-        self.incomplete.contains(&id)
+        self.state(id).is_some_and(|state| state.incomplete)
+    }
+    pub fn prepared(&self, ty: HMIRTypeID) -> bool {
+        self.state(ty).is_some_and(|state| state.prepared)
+    }
+    pub fn mark_prepared(&mut self, ty: HMIRTypeID) {
+        self.state_mut(ty).prepared = true;
     }
     pub fn lowered_type(&self, ty: HMIRTypeID) -> Option<MIRTypeID> {
-        self.lowered.get(&ty).copied()
+        self.state(ty)?.lowered
     }
     pub fn cache_lowered(&mut self, ty: HMIRTypeID, mir: MIRTypeID) {
-        self.lowered.insert(ty, mir);
+        self.state_mut(ty).lowered = Some(mir);
     }
 }

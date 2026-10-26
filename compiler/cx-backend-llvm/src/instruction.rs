@@ -200,6 +200,9 @@ pub(crate) fn generate_instruction<'a, 'b>(
             // TODO: Implement assumptions in LLVM.
             Ok(CodegenValue::Null)
         }
+        LMIRInstructionKind::Assert { condition, message } => {
+            control_flow::generate_assert(global_state, function_state, condition, message)
+        }
         LMIRInstructionKind::Unreachable => control_flow::generate_unreachable(function_state),
     }
 }

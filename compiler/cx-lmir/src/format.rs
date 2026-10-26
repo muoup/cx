@@ -344,6 +344,9 @@ impl Display for LMIRInstruction {
             LMIRInstructionKind::CompilerAssumption { condition } => {
                 write!(f, "compiler_assumption {condition}")
             }
+            LMIRInstructionKind::Assert { condition, message } => {
+                write!(f, "assert {condition}, {message}")
+            }
             LMIRInstructionKind::Unreachable => f.write_str("unreachable"),
         }
     }

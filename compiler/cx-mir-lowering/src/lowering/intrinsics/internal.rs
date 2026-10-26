@@ -1,8 +1,6 @@
 use crate::lowering::memory;
-use cx_lmir::compiler_functions::ASSERTION;
 use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRValue};
 use cx_mir::{MIRInternalIntrinsic, MIRVAIntrinsic};
-use cx_util::identifier::CXIdent;
 
 use crate::context::FunctionContext;
 use crate::lowering::values::{global_address, lower_read, lower_value, write_target};
@@ -83,16 +81,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
                     .global
                     .string(message.as_deref().unwrap_or("assertion failed")),
             );
-            let symbol = ASSERTION.symbol_name();
-            let signature = context.global.prototypes[&symbol].signature.clone();
-            memory::void(
-                context,
-                LMIRInstructionKind::DirectCall {
-                    func: CXIdent::new(symbol),
-                    args: vec![condition, message],
-                    method_sig: signature,
-                },
-            );
+            memory::void(context, LMIRInstructionKind::Assert { condition, message });
         }
     }
 }

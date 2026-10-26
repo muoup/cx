@@ -19,7 +19,7 @@ use index_vec::IndexVec;
 pub struct MIRModuleBuilder {
     architecture: ArchitectureConfig,
 
-    types: HashMap<MIRTypeID, MIRType>,
+    types: IndexVec<MIRTypeID, MIRType>,
     interned: HashMap<MIRType, MIRTypeID>,
     debug_names: HashMap<MIRTypeID, String>,
     functions: BTreeMap<MIRFunctionID, MIRFunction>,
@@ -35,7 +35,7 @@ impl MIRModuleBuilder {
         Self {
             architecture,
 
-            types: HashMap::new(),
+            types: IndexVec::new(),
             interned: HashMap::new(),
             debug_names: HashMap::new(),
             functions: BTreeMap::new(),
@@ -48,7 +48,7 @@ impl MIRModuleBuilder {
     }
 
     pub fn resolve_type(&self, ty: MIRTypeID) -> &MIRType {
-        self.types.get(&ty).expect("Type not found in registry")
+        self.types.get(ty).expect("Type not found in registry")
     }
 
     pub fn intern_type(&mut self, ty: MIRType) -> MIRTypeID {
@@ -56,21 +56,18 @@ impl MIRModuleBuilder {
             return id;
         }
 
-        let id = MIRTypeID::new(self.types.len());
-        self.types.insert(id, ty.clone());
+        let id = self.types.push(ty.clone());
         self.interned.insert(ty, id);
         id
     }
 
     // An aggregate may refer to itself, so its ID exists before its definition does
     pub fn reserve_type(&mut self) -> MIRTypeID {
-        let id = MIRTypeID::new(self.types.len());
-        self.types.insert(id, MIRType::undefined());
-        id
+        self.types.push(MIRType::undefined())
     }
 
     pub fn define_type(&mut self, id: MIRTypeID, ty: MIRType, debug_name: Option<String>) {
-        self.types.insert(id, ty.clone());
+        self.types[id] = ty.clone();
         self.interned.entry(ty).or_insert(id);
 
         if let Some(name) = debug_name {
@@ -148,7 +145,7 @@ impl MTRegistry for MIRModuleBuilder {
     }
 
     fn definition(&self, id: MIRTypeID) -> Option<&MIRType> {
-        self.types.get(&id)
+        self.types.get(id)
     }
 
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID> {

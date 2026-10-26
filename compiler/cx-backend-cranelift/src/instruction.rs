@@ -10,7 +10,8 @@ use cranelift::codegen::ir::stackslot::StackSize;
 use cranelift::frontend::Switch;
 use cranelift::prelude::{InstBuilder, MemFlags, StackSlotData, StackSlotKind};
 use cranelift_module::Module;
-use cx_lmir::types::{LMIRFloatType, LMIRTypeKind};
+use cx_lmir::compiler_functions::ASSERTION;
+use cx_lmir::types::{LMIRFloatType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
     LMIRBlockTarget, LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstruction,
     LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRPtrBinOp, LMIRReturnABI,
@@ -31,6 +32,25 @@ fn block_arguments(
                 .map(|value| ir::BlockArg::Value(value.as_value()))
         })
         .collect()
+}
+
+fn assert_fail_block(context: &mut FunctionState, block: ir::Block) -> CXRawResult<()> {
+    context.builder.switch_to_block(block);
+    let message = context.builder.block_params(block)[0];
+    let symbol = ASSERTION.symbol_name();
+    let (_, function) = context.get_function(&symbol).ok_or_else(|| {
+        raw(
+            &MISSING_ENTITY,
+            (format!("function '{symbol}'"), "Cranelift module".into()),
+        )
+    })?;
+    let condition = context
+        .builder
+        .ins()
+        .iconst(get_cranelift_type(&LMIRType::bool())?, 0);
+    context.builder.ins().call(function, &[condition, message]);
+    context.builder.ins().trap(ir::TrapCode::unwrap_user(1));
+    Ok(())
 }
 
 fn load_return_slots(
@@ -815,6 +835,34 @@ pub(crate) fn codegen_instruction(
         }
 
         LMIRInstructionKind::CompilerAssumption { .. } => CodegenValue::Null,
+        LMIRInstructionKind::Assert { condition, message } => {
+            let condition = context.get_value(condition)?.as_value();
+            let message = context.get_value(message)?.as_value();
+            let (fail, fresh) = match context.assert_fail {
+                Some(fail) => (fail, false),
+                None => {
+                    let fail = context.builder.create_block();
+                    context
+                        .builder
+                        .append_block_param(fail, context.pointer_type);
+                    context.builder.set_cold_block(fail);
+                    context.assert_fail = Some(fail);
+                    (fail, true)
+                }
+            };
+
+            let next = context.builder.create_block();
+            context
+                .builder
+                .ins()
+                .brif(condition, next, &[], fail, &[ir::BlockArg::Value(message)]);
+            if fresh {
+                assert_fail_block(context, fail)?;
+            }
+            context.builder.switch_to_block(next);
+
+            CodegenValue::Null
+        }
         LMIRInstructionKind::Unreachable => {
             context.builder.ins().trap(ir::TrapCode::unwrap_user(1));
             CodegenValue::Null

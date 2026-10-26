@@ -201,6 +201,9 @@ pub(crate) fn lower_type(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
+    if let Some(id) = env.resolver().lowered_type(env.underlying(ty)) {
+        return Ok(id);
+    }
     {
         let mut context =
             LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
