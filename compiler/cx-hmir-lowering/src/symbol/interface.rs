@@ -97,16 +97,22 @@ pub(crate) fn definition(
         }
         HMIRDefKind::Global(_) => {
             let mut ty = None;
+            let mut provisional = false;
             for (_, declaration) in structure::visible(def, context.visible_through()) {
                 let Some(HMIRDefKind::Global(global)) = declaration.kind() else {
                     continue;
                 };
                 let declared = eval_type(context, global.body(), global.ty())?;
                 let known = declared.known().copied();
+                let initializing = global
+                    .initializer()
+                    .is_some_and(|expr| context.env().resolver().evaluating(expr));
+                provisional |= initializing;
                 let resolved = match known {
                     Some(known)
                         if types::is_complete(context.env(), known)
-                            || global.initializer().is_none() =>
+                            || global.initializer().is_none()
+                            || initializing =>
                     {
                         known
                     }
@@ -139,6 +145,7 @@ pub(crate) fn definition(
                 }
             }
             if !context.complete_object(ty)
+                && !provisional
                 && !(declaration.role() == HMIRDeclarationRole::Tentative
                     && types::unsized_array(context.env(), ty))
                 && structure::reconcile_linkage(def, context.visible_through())?

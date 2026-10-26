@@ -77,6 +77,11 @@ impl HMIRResolver {
     pub fn pending(&self, id: MemoID) -> bool {
         matches!(self.entries[id].state, MemoState::Reserved)
     }
+    pub fn evaluating(&self, expr: HMIRExprID) -> bool {
+        self.active.iter().any(|id| {
+            matches!(&self.entries[*id].key, Some(MemoKey::Expression(active, _)) if *active == expr)
+        })
+    }
     pub fn source_point(&self, ty: HMIRTypeID) -> Option<HMIRDeclarationPoint> {
         match &self.entries[Self::type_memo(ty)].key {
             Some(MemoKey::Expression(_, scope)) => self.context(*scope).visible_through,

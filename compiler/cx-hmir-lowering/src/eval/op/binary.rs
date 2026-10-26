@@ -79,6 +79,13 @@ pub(crate) fn binary_operands(
             let ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
             emit::difference(context, &lhs, &rhs, element, ty, span)
         }
+        (HMIRTypeKind::PointerTo(left), HMIRTypeKind::PointerTo(right)) if is_comparison(op) => {
+            let ty = coerce::pointer(context, *left, *right, span);
+            let lhs = coerce::implicit(context, lhs, ty, span)?;
+            let rhs = coerce::implicit(context, rhs, ty, span)?;
+            let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
+            emit::binary(context, op, &lhs, &rhs, ty, span)
+        }
         (HMIRTypeKind::PointerTo(_), _) if is_comparison(op) => {
             let rhs = coerce::implicit(context, rhs, lhs.ty(), span)?;
             let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);

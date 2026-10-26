@@ -7,6 +7,7 @@ mod control;
 mod def;
 mod defer;
 mod function;
+mod intrinsic;
 mod label;
 mod literal;
 mod name;
@@ -309,7 +310,7 @@ fn eval_inner(
             let code = ready!(eval(context, body, *quote));
             staged::apply(context, body, code, args, span)
         }
-        HMIRExprKind::Intrinsic(_) => todo!("HMIRExprKind::Intrinsic"),
+        HMIRExprKind::Intrinsic(op) => intrinsic::eval_intrinsic(context, body, span, op),
         HMIRExprKind::Error(_) => todo!("HMIRExprKind::Error"),
         HMIRExprKind::Switch {
             condition,

@@ -24,16 +24,17 @@ pub(crate) fn lower_if(
     condition: &HIRExpression,
     then_branch: &HIRExpression,
     else_branch: Option<&HIRExpression>,
+    statement: bool,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     let (condition, then_branch) = context.scoped(|this| -> CXResult<_> {
         let condition = lower_condition(this, condition)?;
-        let then_branch = this.scoped(|this| lower_expr(this, then_branch))?;
+        let then_branch = this.scoped(|this| lower_branch(this, then_branch, statement))?;
 
         Ok((condition, then_branch))
     })?;
     let else_branch = else_branch
-        .map(|branch| context.scoped(|this| lower_expr(this, branch)))
+        .map(|branch| context.scoped(|this| lower_branch(this, branch, statement)))
         .transpose()?;
 
     Ok(context.push(
@@ -44,6 +45,18 @@ pub(crate) fn lower_if(
         },
         span,
     ))
+}
+
+fn lower_branch(
+    context: &mut BodyLowering<'_>,
+    branch: &HIRExpression,
+    statement: bool,
+) -> CXResult<HMIRExprID> {
+    let lowered = lower_expr(context, branch)?;
+    if !statement || matches!(branch.kind, HIRExprKind::Block { .. }) {
+        return Ok(lowered);
+    }
+    Ok(context.block(vec![lowered], true, false, &branch.range))
 }
 
 pub(crate) fn lower_while(

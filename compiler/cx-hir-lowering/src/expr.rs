@@ -96,13 +96,21 @@ pub(crate) fn lower_expr(
             condition,
             then_branch,
             else_branch.as_deref(),
+            true,
             span,
         )?,
         HIRExprKind::Ternary {
             condition,
             then_branch,
             else_branch,
-        } => lower_if(context, condition, then_branch, Some(else_branch), span)?,
+        } => lower_if(
+            context,
+            condition,
+            then_branch,
+            Some(else_branch),
+            false,
+            span,
+        )?,
         HIRExprKind::While {
             condition,
             body,

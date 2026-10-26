@@ -13,7 +13,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         coerce::{promotion::arithmetic, result::Coercion},
-        op::unspecify,
+        op::{specify, unspecify},
         safety::require_nonsafe,
         types,
     },
@@ -116,6 +116,27 @@ pub(crate) fn common(
     span: &TokenRange,
 ) -> Option<HMIRTypeID> {
     arithmetic::common(context, lhs, rhs, span)
+}
+
+pub(crate) fn pointer(
+    context: &mut LocalLoweringContext,
+    left: HMIRTypeID,
+    right: HMIRTypeID,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    let env = context.env();
+    let (pointee, other) = match matches!(env.resolve_kind(right), HMIRTypeKind::Void) {
+        true => (right, left),
+        false => (left, right),
+    };
+    let other = env.semantics(other);
+    let qualifiers = HMIRTypeSemantics {
+        constant: other.constant,
+        volatile: other.volatile,
+        ..Default::default()
+    };
+    let pointee = specify(context, pointee, qualifiers, span);
+    types::pointer(context.env_mut(), pointee, span)
 }
 
 fn require_unsafe_conversion(

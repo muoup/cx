@@ -12,11 +12,12 @@ use cx_hmir::ty::{
     HMIRTypeID, HMIRTypeKind, aggregate::HMIRBitfield, context::HMIRTypeContext,
     intrinsic::HMIRIntWidth,
 };
+use cx_intrinsics::VAIntrinsic;
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRConstant,
     MIRInstructionKind, MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceID, MIRPtrIntrinsic,
-    MIRRegister, MIRRegisterDecl, MIRStoreBitfield, MIRTarget, MIRTypeID, MIRValue,
+    MIRRegister, MIRRegisterDecl, MIRStoreBitfield, MIRTarget, MIRTypeID, MIRVAIntrinsic, MIRValue,
     expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
@@ -403,6 +404,40 @@ pub fn call(
     );
 
     Ok(value)
+}
+
+pub fn variadic(
+    context: &mut LocalLoweringContext,
+    op: &VAIntrinsic<HMIRValue, HMIRTypeID>,
+    span: &TokenRange,
+) -> CXResult<Option<HMIRValue>> {
+    let (instruction, result) = match op {
+        VAIntrinsic::Start { list, last } => {
+            let list = lower_value(context, list, span)?;
+            let last = lower_value(context, last, span)?;
+            (MIRVAIntrinsic::VaStart { list, last }, None)
+        }
+        VAIntrinsic::End { list } => {
+            let list = lower_value(context, list, span)?;
+            (MIRVAIntrinsic::VaEnd { list }, None)
+        }
+        VAIntrinsic::Arg { list, ty } => {
+            let list = lower_value(context, list, span)?;
+            let mir_ty = types::lower_type(context.env_mut(), *ty, span)?;
+            let (out, result) = output(context, *ty, span)?;
+            let instruction = MIRVAIntrinsic::VaArg {
+                out,
+                list,
+                ty: mir_ty,
+            };
+            (instruction, Some(result))
+        }
+    };
+    intrinsic(context, instruction, span.clone());
+    if let Some(result) = &result {
+        initialize(context, result, span);
+    }
+    Ok(result)
 }
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) -> usize {

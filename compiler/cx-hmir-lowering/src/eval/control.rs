@@ -21,6 +21,7 @@ use crate::{
         literal, storage, types,
     },
     log::hmir_error,
+    symbol::composite::alike,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
@@ -187,8 +188,16 @@ fn merged_type(
 
         merged = Some(match merged {
             None => ty,
-            Some(current) if context.env().same_type(current, ty) => current,
-            Some(current) => coerce::common(context, current, ty, span).unwrap_or(current),
+            Some(current) if alike(context.env(), current, ty, true) => current,
+            Some(current) => {
+                let left = coerce::value_type(context, current, span);
+                let right = coerce::value_type(context, ty, span);
+                let env = context.env();
+                match (env.pointer_inner(left), env.pointer_inner(right)) {
+                    (Some(left), Some(right)) => coerce::pointer(context, left, right, span),
+                    _ => coerce::common(context, current, ty, span).unwrap_or(current),
+                }
+            }
         });
     }
 

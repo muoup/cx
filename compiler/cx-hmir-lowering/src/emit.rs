@@ -17,6 +17,7 @@ use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,
     ty::{HMIRTypeID, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
+use cx_intrinsics::VAIntrinsic;
 use cx_log::{CXResult, catalogue::mir};
 use cx_tokens::TokenRange;
 
@@ -184,6 +185,17 @@ pub fn cast(
     match context.context() {
         FnContext::Runtime(_) => runtime::cast(context, value, target, span),
         FnContext::Comptime(_) => comptime::cast(context, value, target, span),
+    }
+}
+
+pub fn variadic(
+    context: &mut LocalLoweringContext,
+    intrinsic: &VAIntrinsic<HMIRValue, HMIRTypeID>,
+    span: &TokenRange,
+) -> CXResult<Option<HMIRValue>> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::variadic(context, intrinsic, span),
+        FnContext::Comptime(_) => unsupported(span, intrinsic.path()),
     }
 }
 

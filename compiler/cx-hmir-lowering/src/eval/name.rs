@@ -6,7 +6,7 @@ use cx_hmir::{
     HMIRBody, HMIRDefID,
     expr::HMIRExprID,
     ty::{
-        HMIRType, HMIRTypeKind,
+        HMIRType, HMIRTypeID, HMIRTypeKind,
         aggregate::HMIRTypeSemantics,
         context::HMIRTypeContext,
         intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
@@ -47,33 +47,8 @@ pub(crate) fn eval_name(
     }
     if tag.is_none()
         && let Some(name) = name.root_name_ref()
-        && let Some((_, intrinsic)) = INTRINSIC_TYPES
-            .iter()
-            .find(|(builtin, _)| *builtin == name.as_str())
-        && let Some(intrinsic) = intrinsic(context.env().architecture())
+        && let Some(ty) = intrinsic_type(context, name.as_str(), span)
     {
-        let kind = match intrinsic {
-            HIRIntrinsicType::Void => HMIRTypeKind::Void,
-            HIRIntrinsicType::Unreachable => HMIRTypeKind::Unreachable,
-            HIRIntrinsicType::Str => HMIRTypeKind::Str,
-            HIRIntrinsicType::Bool => HMIRTypeKind::Int(HMIRIntType::new(HMIRIntWidth::I1, false)),
-            HIRIntrinsicType::Integer { signed, bytes } => HMIRTypeKind::Int(HMIRIntType::new(
-                HMIRIntWidth::from_bytes(bytes as usize).unwrap(),
-                signed,
-            )),
-            HIRIntrinsicType::Float { bytes } => HMIRTypeKind::Float(HMIRFloatType::new(
-                HMIRFloatWidth::from_bytes(bytes as usize).unwrap(),
-            )),
-            HIRIntrinsicType::Opaque { size, alignment } => {
-                HMIRTypeKind::Opaque { size, alignment }
-            }
-        };
-        let ty = context.env_mut().resolver_mut().realize_type(HMIRType::new(
-            kind,
-            HMIRTypeSemantics::default(),
-            span.clone(),
-            Some(name.to_string()),
-        ));
         return complete::type_result(context, ty, span);
     }
     Err(hmir_error(
@@ -81,6 +56,36 @@ pub(crate) fn eval_name(
         &typecheck::UNKNOWN_SYMBOL,
         name.to_string(),
     ))
+}
+
+pub(crate) fn intrinsic_type(
+    context: &mut LocalLoweringContext,
+    name: &str,
+    span: &TokenRange,
+) -> Option<HMIRTypeID> {
+    let (_, intrinsic) = INTRINSIC_TYPES
+        .iter()
+        .find(|(builtin, _)| *builtin == name)?;
+    let kind = match intrinsic(context.env().architecture())? {
+        HIRIntrinsicType::Void => HMIRTypeKind::Void,
+        HIRIntrinsicType::Unreachable => HMIRTypeKind::Unreachable,
+        HIRIntrinsicType::Str => HMIRTypeKind::Str,
+        HIRIntrinsicType::Bool => HMIRTypeKind::Int(HMIRIntType::new(HMIRIntWidth::I1, false)),
+        HIRIntrinsicType::Integer { signed, bytes } => HMIRTypeKind::Int(HMIRIntType::new(
+            HMIRIntWidth::from_bytes(bytes as usize).unwrap(),
+            signed,
+        )),
+        HIRIntrinsicType::Float { bytes } => HMIRTypeKind::Float(HMIRFloatType::new(
+            HMIRFloatWidth::from_bytes(bytes as usize).unwrap(),
+        )),
+        HIRIntrinsicType::Opaque { size, alignment } => HMIRTypeKind::Opaque { size, alignment },
+    };
+    Some(context.env_mut().resolver_mut().realize_type(HMIRType::new(
+        kind,
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        Some(name.to_string()),
+    )))
 }
 
 pub(crate) fn resolve(
