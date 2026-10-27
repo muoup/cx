@@ -113,11 +113,10 @@ fn branch(
 
             mir::switch_to(context, then_block);
             let then_expr = flow::catch_diverged(eval_scoped(context, body, then_branch))?;
+            let span = span.clone();
 
-            if let Some(else_branch) = else_branch {
-                let span = span.clone();
-
-                then_expr.and_then(context, body, None, move |context, body, then, expected| {
+            then_expr.and_then(context, body, None, move |context, body, then, expected| {
+                if let Some(else_branch) = else_branch {
                     let mut arms =
                         Vec::from_iter(then.map(|value| (mir::current_block(context), value)));
 
@@ -130,12 +129,12 @@ fn branch(
                             );
                             merge(context, arms, &span)
                         })
-                })
-            } else {
-                mir::jump(context, merge_block, span);
-                mir::switch_to(context, merge_block);
-                Ok(Evaluation::Ready(expr::unit(context, span)))
-            }
+                } else {
+                    mir::jump(context, merge_block, &span);
+                    mir::switch_to(context, merge_block);
+                    Ok(Evaluation::Ready(expr::unit(context, &span)))
+                }
+            })
         }
     }
 }

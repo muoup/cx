@@ -1,0 +1,25 @@
+#include <stdio.h>
+import std::optional as std;
+
+std::opt(int) choose(int flag) {
+    return match (1) {
+        _ => .{
+            if (flag) {
+                yield _::none();
+            }
+            yield std::opt(int)::some(7);
+        }
+    };
+}
+
+int main() {
+    match (choose(1)) {
+        none() => printf("none\n"),
+        some(auto value) => printf("some %d\n", value),
+    }
+    match (choose(0)) {
+        none() => printf("none\n"),
+        some(auto value) => printf("some %d\n", value),
+    }
+    return 0;
+}
