@@ -4,9 +4,10 @@ use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{comptime, runtime, unsupported};
+use super::{comptime, unsupported};
 use crate::{
     env::function::{FnContext, LocalLoweringContext},
+    lower::mir,
     value::HMIRValue,
 };
 
@@ -19,7 +20,7 @@ pub fn allocate(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::allocate(context, ty, name, span),
+        FnContext::Runtime(_) => mir::allocate(context, ty, name, span),
         FnContext::Comptime(_) => comptime::allocate(context, ty, name, span),
     }
 }
@@ -32,7 +33,7 @@ pub fn scratch(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::scratch(context, ty, span),
+        FnContext::Runtime(_) => mir::scratch(context, ty, span),
         FnContext::Comptime(_) => comptime::allocate(context, ty, None, span),
     }
 }
@@ -44,21 +45,21 @@ pub fn adopt(
     span: &TokenRange,
 ) -> CXResult<()> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::adopt(context, target, source, span),
+        FnContext::Runtime(_) => mir::adopt(context, target, source, span),
         FnContext::Comptime(_) => unsupported(span, "'@adopt'"),
     }
 }
 
 pub fn scratch_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
     match context.context() {
-        FnContext::Runtime(_) => runtime::scratch_held(context, value),
+        FnContext::Runtime(_) => mir::scratch_held(context, value),
         FnContext::Comptime(_) => false,
     }
 }
 
 pub fn place_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
     match context.context() {
-        FnContext::Runtime(_) => runtime::place_held(context, value),
+        FnContext::Runtime(_) => mir::place_held(context, value),
         FnContext::Comptime(_) => false,
     }
 }
@@ -79,7 +80,7 @@ pub fn copy(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::copy(context, value, span),
+        FnContext::Runtime(_) => mir::copy(context, value, span),
         FnContext::Comptime(_) => comptime::copy(context, value, span),
     }
 }
@@ -93,7 +94,7 @@ pub fn lift(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::lift(context, value, origin, span),
+        FnContext::Runtime(_) => mir::lift(context, value, origin, span),
         FnContext::Comptime(_) => comptime::copy(context, value.clone(), span),
     }
 }
@@ -107,19 +108,40 @@ pub fn write(
     span: &TokenRange,
 ) -> CXResult<()> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::write(context, target, value, span),
+        FnContext::Runtime(_) => mir::write(context, target, value, span),
         FnContext::Comptime(_) => comptime::write(context, target, value, span),
     }
 }
 
-// Marks the storage of 'value' as holding a live value. Storage behind a pointer is untracked and a register is
-// live once written, so neither is marked; a comptime slot tracks byte initialization separately, so bytes that
-// were never written stay unreadable
-pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) {
-    match context.context() {
-        FnContext::Runtime(_) => runtime::initialize(context, value, span),
-        FnContext::Comptime(_) => comptime::initialize(context, value, span),
+// Writes 'value', when given, into 'target' and marks the storage as holding a live value. Storage behind a
+// pointer is untracked and a register is live once written, so neither is marked; a comptime slot tracks byte
+// initialization separately, so bytes that were never written stay unreadable
+pub fn initialize(
+    context: &mut LocalLoweringContext,
+    target: &HMIRValue,
+    value: Option<&HMIRValue>,
+    span: &TokenRange,
+) -> CXResult<()> {
+    if let Some(value) = value {
+        write(context, target, value, span)?;
     }
+    match context.context() {
+        FnContext::Runtime(_) => mir::initialize(context, target, span),
+        FnContext::Comptime(_) => comptime::initialize(context, target, span),
+    }
+    Ok(())
+}
+
+// Scratch storage holding a value, for a value that needs an address
+pub fn temporary(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let storage = scratch(context, value.ty(), span)?;
+    initialize(context, &storage, Some(&value), span)?;
+
+    Ok(storage)
 }
 
 // Ends the liveness of the place a value names as a move, drop or leak; registers and storage behind a pointer
@@ -132,7 +154,7 @@ pub fn invalidate(
     span: &TokenRange,
 ) {
     match context.context() {
-        FnContext::Runtime(_) => runtime::invalidate(context, value, kind, span),
+        FnContext::Runtime(_) => mir::invalidate(context, value, kind, span),
         FnContext::Comptime(_) => comptime::invalidate(context, value, kind, span),
     }
 }

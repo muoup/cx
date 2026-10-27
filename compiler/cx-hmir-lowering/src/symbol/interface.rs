@@ -27,7 +27,7 @@ use crate::{
         structure::{self, incompatible},
     },
     value::{
-        HMIRPlace, HMIRValue, HMIRValueKind,
+        HMIRPlace, HMIRValue,
         address::HMIRAddress,
         constant::{HMIRConstant, HMIRFunctionRef},
     },
@@ -62,7 +62,7 @@ pub(crate) fn definition(
                 name,
             );
         }
-        return eval::type_value(context, ty, span);
+        return eval::name::type_value(context, ty, span);
     }
     match declaration
         .kind()
@@ -135,7 +135,7 @@ pub(crate) fn definition(
             }
             let mut ty = ty.expect("global has a type expression");
             if context.visible_through().is_none()
-                && types::unsized_array(context.env(), ty)
+                && matches!(context.env().resolve_kind(ty), HMIRTypeKind::Array { length: None, .. })
                 && structure::reconcile_linkage(def, None)? != LinkageMode::Extern
             {
                 if let Some(HMIRDefKind::Global(global)) = declaration.kind() {
@@ -147,7 +147,7 @@ pub(crate) fn definition(
             if !context.complete_object(ty)
                 && !provisional
                 && !(declaration.role() == HMIRDeclarationRole::Tentative
-                    && types::unsized_array(context.env(), ty))
+                    && matches!(context.env().resolve_kind(ty), HMIRTypeKind::Array { length: None, .. }))
                 && structure::reconcile_linkage(def, context.visible_through())?
                     != LinkageMode::Extern
             {
@@ -179,12 +179,12 @@ pub(crate) fn definition(
                     .env_mut()
                     .resolver_mut()
                     .alias_type(alias, target, span);
-                let identity = eval::type_value(context, alias, span)?;
+                let identity = eval::name::type_value(context, alias, span)?;
                 context.env_mut().resolver_mut().publish(memo, identity);
                 let ty = flow::top(
                     eval_type(context, global.body(), global.initializer())?.description(),
                 )?;
-                eval::type_value(context, ty, span)?
+                eval::name::type_value(context, ty, span)?
             } else {
                 initializer_value(context, global.body(), global.initializer(), Some(declared))?
             };
@@ -199,10 +199,10 @@ pub(crate) fn definition(
                     eval_type(context, other_global.body(), other_global.initializer())?
                         .description(),
                 )?;
-                let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = value.kind() else {
+                let Some(ty) = value.as_type() else {
                     return Err(incompatible(def, other));
                 };
-                if !alike(context.env(), *ty, other_ty, true) {
+                if !alike(context.env(), ty, other_ty, true) {
                     return Err(incompatible(def, other));
                 }
             }
@@ -269,7 +269,7 @@ pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> C
                     format!("initial value of '{}'", def.name()),
                 ));
             }
-            let ty = if types::unsized_array(child.env(), ty) {
+            let ty = if matches!(child.env().resolve_kind(ty), HMIRTypeKind::Array { length: None, .. }) {
                 types::array(child.env_mut(), ty, 1, declaration.span())
             } else {
                 ty

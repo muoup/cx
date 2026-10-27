@@ -243,6 +243,10 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         }
     }
 
+    pub fn is_runtime(&self) -> bool {
+        matches!(self.context, FnContext::Runtime(_))
+    }
+
     pub fn is_unevaluated(&self) -> bool {
         matches!(&self.context, FnContext::Runtime(runtime) if runtime.emission() == runtime::Emission::Unevaluated)
     }
@@ -274,6 +278,20 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         self.context
     }
 
+    pub fn into_runtime(self) -> RuntimeContext {
+        match self.context {
+            FnContext::Runtime(context) => context,
+            FnContext::Comptime(_) => unreachable!("runtime context requested in a comptime context"),
+        }
+    }
+
+    pub fn into_comptime(self) -> ComptimeContext {
+        match self.context {
+            FnContext::Runtime(_) => unreachable!("comptime context requested in a runtime context"),
+            FnContext::Comptime(context) => context,
+        }
+    }
+
     pub fn remove_local(&mut self, id: HMIRLocalID) {
         match &mut self.context {
             FnContext::Runtime(context) => context.scopes_mut().remove(id),
@@ -301,34 +319,6 @@ impl FnContext {
         match self {
             Self::Runtime(_) => HMIRFunctionStage::Runtime,
             Self::Comptime(_) => HMIRFunctionStage::Comptime,
-        }
-    }
-
-    pub fn runtime(&self) -> &RuntimeContext {
-        match self {
-            Self::Runtime(context) => context,
-            Self::Comptime(_) => unreachable!("runtime context requested in a comptime context"),
-        }
-    }
-
-    pub fn runtime_mut(&mut self) -> &mut RuntimeContext {
-        match self {
-            Self::Runtime(context) => context,
-            Self::Comptime(_) => unreachable!("runtime context requested in a comptime context"),
-        }
-    }
-
-    pub fn comptime(&self) -> &ComptimeContext {
-        match self {
-            Self::Runtime(_) => unreachable!("comptime context requested in a runtime context"),
-            Self::Comptime(context) => context,
-        }
-    }
-
-    pub fn comptime_mut(&mut self) -> &mut ComptimeContext {
-        match self {
-            Self::Runtime(_) => unreachable!("comptime context requested in a runtime context"),
-            Self::Comptime(context) => context,
         }
     }
 }

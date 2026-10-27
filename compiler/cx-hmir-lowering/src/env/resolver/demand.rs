@@ -112,7 +112,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             .resolver()
             .realized_type(ty)
             .expect("prepared type exists");
-        types::validate::declaration(self.env(), defined)?;
+        types::validate(self.env(), defined)?;
         Ok(())
     }
 

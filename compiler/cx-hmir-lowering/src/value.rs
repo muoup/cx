@@ -86,6 +86,20 @@ impl HMIRValue {
         &self.kind
     }
 
+    pub fn as_type(&self) -> Option<HMIRTypeID> {
+        match self.kind {
+            HMIRValueKind::Constant(HMIRConstant::Type(ty)) => Some(ty),
+            _ => None,
+        }
+    }
+
+    pub fn as_int(&self) -> Option<i128> {
+        match self.kind {
+            HMIRValueKind::Constant(HMIRConstant::Int(value)) => Some(value),
+            _ => None,
+        }
+    }
+
     pub fn with_ty(mut self, ty: HMIRTypeID) -> Self {
         self.ty = ty;
         self

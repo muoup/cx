@@ -38,6 +38,10 @@ pub trait HMIRTypeContext {
         matches!(self.resolve_kind(ty), HMIRTypeKind::ReferenceTo { .. })
     }
 
+    fn referent(&self, ty: HMIRTypeID) -> HMIRTypeID {
+        self.reference_inner(ty).unwrap_or(ty)
+    }
+
     fn array_inner(&self, ty: HMIRTypeID) -> Option<HMIRTypeID> {
         self.resolve_type_id(self.underlying(ty))
             .array_inner()
@@ -54,6 +58,10 @@ pub trait HMIRTypeContext {
 
     fn is_int(&self, ty: HMIRTypeID) -> bool {
         matches!(self.resolve_kind(ty), HMIRTypeKind::Int(_))
+    }
+
+    fn is_void(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Void)
     }
 
     fn is_str(&self, ty: HMIRTypeID) -> bool {

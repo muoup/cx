@@ -1,4 +1,4 @@
-use cx_hmir::HMIRDefID;
+use cx_mir::MIRFunctionID;
 use cx_util::identifier::CXIdent;
 
 use crate::value::HMIRPlace;
@@ -6,7 +6,7 @@ use crate::value::HMIRPlace;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Addressable {
     Place(HMIRPlace),
-    Label { function: HMIRDefID, label: CXIdent },
+    Label { function: MIRFunctionID, label: CXIdent },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

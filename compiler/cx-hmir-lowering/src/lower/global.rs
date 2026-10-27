@@ -1,16 +1,18 @@
-use cx_hmir::{HMIRDefID, HMIRDefKind, ty::context::HMIRTypeContext};
-use cx_log::{CXResult, catalogue::mir};
-use cx_mir::{MIRGlobalID, MIRGlobalState, MIRGlobalVariable};
+use cx_hmir::{
+    HMIRDefID, HMIRDefKind,
+    ty::{HMIRTypeID, context::HMIRTypeContext},
+};
+use cx_log::{CXResult, catalogue};
+use cx_mir::{MIRGlobalID, MIRGlobalRef, MIRGlobalState, MIRGlobalVariable};
 use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    emit::runtime,
     env::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
-    eval::types,
+    lower::{mir, types::lower_type},
     log::hmir_error,
     symbol,
     value::HMIRValueKind,
@@ -19,12 +21,12 @@ use crate::{
 pub(crate) fn declare(
     env: &mut HMIREnvironment,
     def: HMIRDefID,
-    ty: cx_hmir::ty::HMIRTypeID,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRGlobalID> {
     let symbol_name = symbol::link_name(env, def, None)?.expect("a global has a symbol name");
     let linkage = symbol::linkage(env, def, None)?;
-    let mir_ty = types::lower_type(env, ty, span)?;
+    let mir_ty = lower_type(env, ty, span)?;
     let mutable = !env.semantics(ty).constant;
     let name = symbol_name.as_str();
     if let Some(id) = env.module().declared_global(name) {
@@ -32,7 +34,7 @@ pub(crate) fn declare(
         if existing.ty() != mir_ty || existing.is_mutable() != mutable {
             return Err(hmir_error(
                 span,
-                &mir::INCOMPATIBLE_GLOBAL,
+                &catalogue::mir::INCOMPATIBLE_GLOBAL,
                 name.to_string(),
             ));
         }
@@ -70,7 +72,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
             format!("global '{}'", source.symbol_name()),
             "this unit".into(),
         );
-        return Err(hmir_error(&span, &mir::DUPLICATE_ENTITY, subject));
+        return Err(hmir_error(&span, &catalogue::mir::DUPLICATE_ENTITY, subject));
     }
 
     let state = match source.initializer() {
@@ -83,7 +85,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
                 unreachable!("an exported comptime value is a constant")
             };
             let span = source.body().expr(initializer).span();
-            let constant = runtime::constant(context.env_mut(), constant, value.ty(), span)?;
+            let constant = mir::constant(context.env_mut(), constant, value.ty(), span)?;
             MIRGlobalState::Initialized(constant)
         }
         None => MIRGlobalState::ZeroInitialized,
@@ -91,4 +93,20 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
     env.module_mut().define_global(id, state);
 
     Ok(())
+}
+
+pub fn address(
+    env: &mut HMIREnvironment,
+    def: HMIRDefID,
+    offset: i64,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<MIRGlobalRef> {
+    let object = symbol::value_type(env, def, None)?;
+    let global = declare(env, def, object, span)?;
+    Ok(MIRGlobalRef {
+        global,
+        offset,
+        ty: lower_type(env, ty, span)?,
+    })
 }

@@ -123,7 +123,7 @@ impl LocalLoweringContext<'_, '_, '_> {
         expected: Option<HMIRTypeID>,
         initializer: bool,
     ) -> MemoContextID {
-        let mut bindings = eval::comptime::frozen_inputs(self);
+        let mut bindings = eval::comptime::inputs(self);
         for (_, value) in &mut bindings {
             *value = self.env_mut().canonical_value(value.clone());
         }
@@ -173,7 +173,7 @@ impl LocalLoweringContext<'_, '_, '_> {
                 .sourced(owner)
                 .at(captured.visible_through);
             for (local, value) in captured.bindings {
-                crate::emit::storage::bind_local(&mut child, local, value);
+                crate::emit::bind_local(&mut child, local, value);
             }
             let expectations = match key {
                 MemoKey::Definition(..) => Expectations::new(captured.expectations.permission()),
@@ -226,19 +226,19 @@ fn expression(
         .body(expr.body())
         .expect("memo expression belongs to its owner");
     if let HMIRExprKind::Type(ty) = body.expr(expr).kind() {
-        let ty = eval::op::construct_type(context, body, ty, id)?;
-        return eval::type_value(context, ty, span).map(flow::Evaluation::Ready);
+        let ty = eval::types::construct_type(context, body, ty, id)?;
+        return eval::name::type_value(context, ty, span).map(flow::Evaluation::Ready);
     }
     let result = eval::eval(context, body, expr)?.complete(context, body, expected)?;
     let partial = result
         .known()
-        .filter(|value| eval::type_constant(value).is_some())
+        .filter(|value| value.as_type().is_some())
         .cloned();
     let span = span.clone();
     result.and_then(context, body, partial, move |context, _, value, _| {
         let value = match expected {
             Some(expected) => coerce::implicit(context, value, expected, &span)?,
-            None if initializer && eval::type_constant(&value).is_none() => {
+            None if initializer && value.as_type().is_none() => {
                 coerce::std_rvalue(context, value, &span)?
             }
             None => value,

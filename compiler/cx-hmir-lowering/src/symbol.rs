@@ -111,7 +111,7 @@ pub(crate) fn value_type(
     point: Option<HMIRDeclarationPoint>,
 ) -> CXResult<HMIRTypeID> {
     let value = binding(env, def, point)?;
-    Ok(env.reference_inner(value.ty()).unwrap_or(value.ty()))
+    Ok(env.referent(value.ty()))
 }
 
 pub(crate) fn signature(

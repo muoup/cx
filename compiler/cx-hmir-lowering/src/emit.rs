@@ -4,13 +4,11 @@
 // Avoid any routines in here that are hyper-specific and would only feasibly be used in one place
 
 mod comptime;
-
-pub mod storage;
-
-pub(crate) mod runtime;
+mod storage;
 
 pub use storage::{
-    adopt, allocate, copy, initialize, invalidate, lift, place_held, scratch, scratch_held, write,
+    adopt, allocate, bind_local, copy, initialize, invalidate, lift, place_held, scratch,
+    scratch_held, temporary, write,
 };
 
 use cx_hmir::{
@@ -18,23 +16,24 @@ use cx_hmir::{
     ty::{HMIRTypeID, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_intrinsics::VAIntrinsic;
-use cx_log::{CXResult, catalogue::mir};
+use cx_log::{CXResult, catalogue};
 use cx_tokens::TokenRange;
 
 use crate::{
     env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope, memory::placement},
     eval::types,
+    lower::mir,
     log::log_hmir_error,
     value::{Bindings, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 fn unsupported<T>(span: &TokenRange, operation: &str) -> CXResult<T> {
-    log_hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation.into())
+    log_hmir_error(span, &catalogue::mir::COMPTIME_INVALID_OPERATION, operation.into())
 }
 
-pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) -> usize {
+pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {
     match context.context_mut() {
-        FnContext::Runtime(_) => runtime::open_scope(context, span),
+        FnContext::Runtime(_) => mir::open_scope(context, span),
         FnContext::Comptime(comptime) => {
             let scopes = comptime.scopes_mut();
             let parent = scopes.top();
@@ -43,9 +42,9 @@ pub fn open_scope(context: &mut LocalLoweringContext, span: TokenRange) -> usize
     }
 }
 
-pub fn close_scope(context: &mut LocalLoweringContext, span: TokenRange) {
+pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
     match context.context_mut() {
-        FnContext::Runtime(_) => runtime::close_scope(context, span),
+        FnContext::Runtime(_) => mir::close_scope(context, span),
         FnContext::Comptime(comptime) => {
             comptime.scopes_mut().pop();
         }
@@ -87,7 +86,7 @@ pub fn address(
     }
 
     match context.context() {
-        FnContext::Runtime(_) => runtime::address(context, value, ty, span),
+        FnContext::Runtime(_) => mir::address(context, value, ty, span),
         FnContext::Comptime(_) => comptime::address(context, value, ty, span),
     }
 }
@@ -99,16 +98,10 @@ pub fn dereference(
     base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if matches!(
-        pointer.kind(),
-        HMIRValueKind::Constant(HMIRConstant::Address(_))
-    ) {
-        return Ok(HMIRValue::indirect(inner, pointer));
-    }
-
-    match context.context() {
-        FnContext::Runtime(_) => runtime::dereference(context, pointer, inner, base, span),
-        FnContext::Comptime(_) => comptime::dereference(context, pointer, inner, span),
+    match (pointer.kind(), context.context()) {
+        (HMIRValueKind::Constant(HMIRConstant::Address(_)), _) => Ok(HMIRValue::indirect(inner, pointer)),
+        (_, FnContext::Runtime(_)) => mir::dereference(context, pointer, inner, base, span),
+        (_, FnContext::Comptime(_)) => comptime::dereference(context, pointer, inner, span),
     }
 }
 
@@ -119,10 +112,10 @@ pub fn field(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let owner = context.env().reference_inner(base.ty()).unwrap_or(base.ty());
+    let owner = context.env().referent(base.ty());
     let bitfield = placement(context.env_mut(), owner, index, span)?;
     match context.context() {
-        FnContext::Runtime(_) => runtime::field(context, base, index, ty, bitfield, span),
+        FnContext::Runtime(_) => mir::field(context, base, index, ty, bitfield, span),
         FnContext::Comptime(_) => comptime::field(context, base, index, ty, bitfield, span),
     }
 }
@@ -134,7 +127,7 @@ pub fn aggregate(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::aggregate(context, ty, fields, span),
+        FnContext::Runtime(_) => mir::aggregate(context, ty, fields, span),
         FnContext::Comptime(_) => comptime::aggregate(context, ty, fields, span),
     }
 }
@@ -146,7 +139,7 @@ pub fn tag(
 ) -> CXResult<HMIRValue> {
     let ty = types::int(context.env_mut(), HMIRIntWidth::I8, false, span);
     match context.context() {
-        FnContext::Runtime(_) => runtime::tag(context, value, ty, span),
+        FnContext::Runtime(_) => mir::tag(context, value, ty, span),
         FnContext::Comptime(_) => comptime::tag(context, value, ty, span),
     }
 }
@@ -160,7 +153,7 @@ pub fn binary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::binary(context, op, lhs, rhs, result, span),
+        FnContext::Runtime(_) => mir::binary(context, op, lhs, rhs, result, span),
         FnContext::Comptime(_) => comptime::binary(context, op, lhs, rhs, result, span),
     }
 }
@@ -172,7 +165,7 @@ pub fn unary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::unary(context, op, value, span),
+        FnContext::Runtime(_) => mir::unary(context, op, value, span),
         FnContext::Comptime(_) => comptime::unary(context, op, value, span),
     }
 }
@@ -184,7 +177,7 @@ pub fn cast(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::cast(context, value, target, span),
+        FnContext::Runtime(_) => mir::cast(context, value, target, span),
         FnContext::Comptime(_) => comptime::cast(context, value, target, span),
     }
 }
@@ -195,7 +188,7 @@ pub fn variadic(
     span: &TokenRange,
 ) -> CXResult<Option<HMIRValue>> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::variadic(context, intrinsic, span),
+        FnContext::Runtime(_) => mir::variadic(context, intrinsic, span),
         FnContext::Comptime(_) => unsupported(span, intrinsic.path()),
     }
 }
@@ -208,7 +201,7 @@ pub fn call(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::call(context, callee, args, result, span),
+        FnContext::Runtime(_) => mir::call(context, callee, args, result, span),
         FnContext::Comptime(_) => unsupported(span, "a function call"),
     }
 }
@@ -222,10 +215,8 @@ pub fn offset(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::offset(context, pointer, index, element, subtract, span),
-        FnContext::Comptime(_) => {
-            comptime::offset(context, pointer, index, element, subtract, span)
-        }
+        FnContext::Runtime(_) => mir::offset(context, pointer, index, element, subtract, span),
+        FnContext::Comptime(_) => comptime::offset(context, pointer, index, element, subtract, span),
     }
 }
 
@@ -238,7 +229,7 @@ pub fn difference(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::difference(context, lhs, rhs, element, result, span),
+        FnContext::Runtime(_) => mir::difference(context, lhs, rhs, element, result, span),
         FnContext::Comptime(_) => comptime::difference(context, lhs, rhs, element, result, span),
     }
 }

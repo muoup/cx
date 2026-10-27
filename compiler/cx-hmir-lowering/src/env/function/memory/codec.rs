@@ -15,6 +15,7 @@ use super::{Fault, Image};
 use crate::{
     env::HMIREnvironment,
     eval::types,
+    lower::types::lower_type,
     log::hmir_error,
     value::{constant::HMIRConstant, scalar::int},
 };
@@ -49,7 +50,7 @@ pub(crate) fn layout(
             format!("storage of the incomplete type '{}'", types::name(env, ty)),
         )),
         _ => {
-            let lowered = types::lower_type(env, ty, span)?;
+            let lowered = lower_type(env, ty, span)?;
             Ok(calculate_type_layout(env.module(), lowered))
         }
     }
@@ -60,7 +61,7 @@ fn fields(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<Vec<MIRFieldLayout>> {
-    let lowered = types::lower_type(env, ty, span)?;
+    let lowered = lower_type(env, ty, span)?;
     Ok(calculate_field_layouts(env.module(), lowered).expect("an aggregate has field layouts"))
 }
 
