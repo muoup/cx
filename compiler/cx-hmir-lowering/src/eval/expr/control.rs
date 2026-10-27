@@ -22,7 +22,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::{LocalLoweringContext, Permission},
+    env::function::{FnContext, LocalLoweringContext, Permission},
     eval::{
         EvalResult,
         binding::eval_scoped,
@@ -47,14 +47,18 @@ pub(crate) fn eval_control(
         HMIRControlOp::Break => exit::eval_loop_exit(context, span, ComptimeStop::Break),
         HMIRControlOp::Continue => exit::eval_loop_exit(context, span, ComptimeStop::Continue),
         HMIRControlOp::Goto(name) => label::eval_goto(context, span, name),
-        HMIRControlOp::IndirectGoto(target) => label::eval_indirect_goto(context, body, span, *target),
+        HMIRControlOp::IndirectGoto(target) => {
+            label::eval_indirect_goto(context, body, span, *target)
+        }
         HMIRControlOp::LabelAddress { function, name } => {
             label::eval_label_address(context, span, *function, name)
         }
         HMIRControlOp::Defer(operand) => defer::eval_defer(context, body, span, *operand),
         HMIRControlOp::Unsafe(operand) => {
             let expectations = context.expectations().permitting(Permission::Unsafe);
-            flow::scoped(context, expectations, |context| eval(context, body, *operand))
+            flow::scoped(context, expectations, |context| {
+                eval(context, body, *operand)
+            })
         }
         HMIRControlOp::Unreachable => todo!("HMIRControlOp::Unreachable"),
     }
@@ -81,46 +85,62 @@ fn branch(
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
 ) -> EvalResult<HMIRValue> {
-    if !context.is_runtime() {
-        let condition = ready!(eval(context, body, condition));
-        return match (comptime_truth(&condition), else_branch) {
-            (true, Some(_)) => eval_scoped(context, body, then_branch),
-            (false, Some(else_branch)) => eval_scoped(context, body, else_branch),
-            (true, None) => {
-                ready!(eval_scoped(context, body, then_branch));
+    match context.context() {
+        FnContext::Comptime(_) => {
+            let condition = ready!(eval(context, body, condition));
+
+            return match (comptime_truth(&condition), else_branch) {
+                (true, Some(_)) => eval_scoped(context, body, then_branch),
+                (false, Some(else_branch)) => eval_scoped(context, body, else_branch),
+                (true, None) => {
+                    ready!(eval_scoped(context, body, then_branch));
+                    Ok(Evaluation::Ready(expr::unit(context, span)))
+                }
+                (false, None) => Ok(Evaluation::Ready(expr::unit(context, span))),
+            };
+        }
+        FnContext::Runtime(_) => {
+            let then_block = mir::block(context, "if.then");
+            let merge_block = mir::block(context, "if.merge");
+
+            let else_block = match else_branch {
+                Some(_) => mir::block(context, "if.else"),
+                None => merge_block,
+            };
+
+            let condition = ready!(eval_condition(context, body, condition));
+            mir::branch(context, condition, then_block, else_block, span);
+
+            mir::switch_to(context, then_block);
+            let then_expr = flow::catch_diverged(eval_scoped(
+                context,
+                body,
+                then_branch
+            ))?;
+            
+            if let Some(else_branch) = else_branch {
+                let span = span.clone();
+                
+                then_expr.and_then(context, body, None, move |context, body, then, expected| {
+                    let mut arms = Vec::from_iter(then.map(|value| (mir::current_block(context), value)));
+
+                    mir::switch_to(context, else_block);
+                    flow::catch_diverged(eval_scoped(
+                        context,
+                        body,
+                        else_branch
+                    ))?.complete(context, body, expected)?.and_then(context, body, None, move |context, _, otherwise, _| {
+                        arms.extend(otherwise.map(|value| (mir::current_block(context), value)));
+                        merge(context, arms, &span)
+                    })
+                })
+            } else {
+                mir::jump(context, merge_block, span);
+                mir::switch_to(context, merge_block);
                 Ok(Evaluation::Ready(expr::unit(context, span)))
             }
-            (false, None) => Ok(Evaluation::Ready(expr::unit(context, span))),
-        };
+        }
     }
-
-    let then_block = mir::block(context, "if.then");
-    let Some(else_branch) = else_branch else {
-        let merge = mir::block(context, "if.merge");
-        let condition = ready!(eval_condition(context, body, condition));
-        mir::branch(context, condition, then_block, merge, span);
-        mir::switch_to(context, then_block);
-        ready!(flow::catch_diverged(eval_scoped(context, body, then_branch)));
-        mir::jump(context, merge, span);
-        mir::switch_to(context, merge);
-        return Ok(Evaluation::Ready(expr::unit(context, span)));
-    };
-
-    let else_block = mir::block(context, "if.else");
-    let condition = ready!(eval_condition(context, body, condition));
-    mir::branch(context, condition, then_block, else_block, span);
-    mir::switch_to(context, then_block);
-    let then = flow::catch_diverged(eval_scoped(context, body, then_branch))?;
-    let span = span.clone();
-    then.and_then(context, body, None, move |context, body, then, expected| {
-        let mut arms = Vec::from_iter(then.map(|value| (mir::current_block(context), value)));
-        mir::switch_to(context, else_block);
-        let otherwise = flow::catch_diverged(eval_scoped(context, body, else_branch))?;
-        otherwise.complete(context, body, expected)?.and_then(context, body, None, move |context, _, otherwise, _| {
-            arms.extend(otherwise.map(|value| (mir::current_block(context), value)));
-            merge(context, arms, &span)
-        })
-    })
 }
 
 pub(crate) fn merge(
@@ -143,7 +163,9 @@ pub(crate) fn merge(
         mir::jump(context, merge, span);
     }
     mir::switch_to(context, merge);
-    Ok(Evaluation::Ready(result.unwrap_or_else(|| expr::unit(context, span))))
+    Ok(Evaluation::Ready(
+        result.unwrap_or_else(|| expr::unit(context, span)),
+    ))
 }
 
 fn merged_type(
@@ -175,10 +197,17 @@ fn merged_type(
 }
 
 pub(super) fn comptime_truth(condition: &HMIRValue) -> bool {
-    condition.as_int().expect("a comptime condition reads as an integer constant") != 0
+    condition
+        .as_int()
+        .expect("a comptime condition reads as an integer constant")
+        != 0
 }
 
-fn eval_condition(context: &mut LocalLoweringContext, body: &HMIRBody, condition: HMIRExprID) -> EvalResult<MIRValue> {
+fn eval_condition(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    condition: HMIRExprID,
+) -> EvalResult<MIRValue> {
     let span = body.expr(condition).span();
     let value = ready!(eval(context, body, condition));
     let value = coerce::condition(context, value, span)?;
@@ -222,7 +251,9 @@ pub(crate) fn eval_short_circuit(
     }
 
     mir::switch_to(context, rhs_block);
-    let right = ready!(flow::catch_diverged(logical_operand(context, body, span, rhs)));
+    let right = ready!(flow::catch_diverged(logical_operand(
+        context, body, span, rhs
+    )));
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = emit::scratch(context, ty, span)?;
     if let Some(right) = right {

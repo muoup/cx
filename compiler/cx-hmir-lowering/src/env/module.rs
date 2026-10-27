@@ -199,10 +199,12 @@ impl MIRFunctionBuilder {
         &self.prototype
     }
 
+    #[allow(dead_code)]
     pub fn parameters(&self) -> &[MIRPlaceID] {
         &self.parameters
     }
 
+    #[allow(dead_code)]
     pub fn parameter(&self, index: usize) -> Option<MIRPlaceID> {
         self.parameters.get(index).copied()
     }
@@ -211,14 +213,17 @@ impl MIRFunctionBuilder {
         self.parameters.push(param);
     }
 
+    #[allow(dead_code)]
     pub fn blocks(&self) -> &[MIRBasicBlock] {
         self.blocks.as_raw_slice()
     }
 
+    #[allow(dead_code)]
     pub fn block(&self, id: MIRBasicBlockID) -> Option<&MIRBasicBlock> {
         self.blocks.get(id)
     }
 
+    #[allow(dead_code)]
     pub fn block_mut(&mut self, id: MIRBasicBlockID) -> Option<&mut MIRBasicBlock> {
         self.blocks.get_mut(id)
     }
@@ -309,10 +314,12 @@ impl MIRFunctionBuilder {
         self.places.push(place)
     }
 
+    #[allow(dead_code)]
     pub fn scopes(&self) -> &[MIRScopeDecl] {
         self.scopes.as_raw_slice()
     }
 
+    #[allow(dead_code)]
     pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
         self.registers.get(id)
     }

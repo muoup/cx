@@ -124,10 +124,12 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
         &mut self.symbols
     }
 
+    #[allow(private_interfaces)]
     pub fn resolver(&self) -> &HMIRResolver {
         &self.resolver
     }
 
+    #[allow(private_interfaces)]
     pub fn resolver_mut(&mut self) -> &mut HMIRResolver {
         &mut self.resolver
     }
