@@ -30,24 +30,36 @@ pub(super) fn eval_defer(
     body: &HMIRBody,
     span: &TokenRange,
     operand: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if !context.is_runtime() {
-        return Err(hmir_error(span, &catalogue::mir::COMPTIME_INVALID_OPERATION, "'defer'".into()));
+        return Err(hmir_error(
+            span,
+            &catalogue::mir::COMPTIME_INVALID_OPERATION,
+            "'defer'".into(),
+        )
+        .into());
     }
     if context.runtime().deferred() {
         let invalid = ("'defer'".into(), "a deferred expression".into());
-        return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, invalid));
+        return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, invalid).into());
     }
     let operand_span = body.expr(operand).span();
     let mut child = deduce::detached(context, Emission::Enabled, true, operand_span)?;
-    match deferred(&mut child, body, operand)? {
+    let operand_span = operand_span.clone();
+    match flow::catch(deferred(&mut child, body, operand), move |_| {
+        Err(hmir_error(&operand_span, &typecheck::DEFER_FALLTHROUGH, ()).into())
+    })? {
         Evaluation::Ready(_) => {}
-        Evaluation::Incomplete(incomplete) => return Err(incomplete.error()),
-        Evaluation::Stop(_) => return Err(hmir_error(operand_span, &typecheck::DEFER_FALLTHROUGH, ())),
+        Evaluation::Incomplete(incomplete) => return Err(incomplete.error().into()),
     }
     drop(child);
 
-    let defer = Defer::new(operand, context.expectations(), context.source(), context.visible_through());
+    let defer = Defer::new(
+        operand,
+        context.expectations(),
+        context.source(),
+        context.visible_through(),
+    );
     let runtime = context.runtime_mut();
     let top = runtime.scopes().top();
     runtime.scopes_mut().control_mut(top).defer(defer);
@@ -57,9 +69,9 @@ pub(super) fn eval_defer(
 pub(crate) fn closing<T: 'static>(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
-    result: EvalResult<T>,
+    result: EvalResult<Evaluation<T>>,
     span: &TokenRange,
-) -> EvalResult<T> {
+) -> EvalResult<Evaluation<T>> {
     let span = span.clone();
     flow::finally(context, body, result, move |context, _, completed| {
         if completed && let FnContext::Runtime(runtime) = context.context() {
@@ -70,7 +82,11 @@ pub(crate) fn closing<T: 'static>(
     })
 }
 
-pub(super) fn leave(context: &mut LocalLoweringContext, depth: usize, span: &TokenRange) -> CXResult<()> {
+pub(super) fn leave(
+    context: &mut LocalLoweringContext,
+    depth: usize,
+    span: &TokenRange,
+) -> CXResult<()> {
     for index in (depth..context.runtime().scopes().len()).rev() {
         expand(context, index)?;
         mir::drop_scope(context, index, span);
@@ -82,26 +98,38 @@ fn expand(context: &mut LocalLoweringContext, index: usize) -> CXResult<()> {
     let defers = context.runtime().scopes().control(index).defers().to_vec();
     for defer in defers.into_iter().rev() {
         let unit = context.unit(defer.source());
-        let body = unit.body(defer.expr().body()).expect("a deferred expression belongs to its source");
+        let body = unit
+            .body(defer.expr().body())
+            .expect("a deferred expression belongs to its source");
         let scopes = context.runtime_mut().scopes_mut();
         scopes.push(RuntimeScope::new(None, true), Some(index), Bindings::new());
         let result = context.relocated(defer.source(), defer.visible_through(), |context| {
-            context.with_expectations(defer.expectations(), |context| deferred(context, body, defer.expr()))
+            context.with_expectations(defer.expectations(), |context| {
+                deferred(context, body, defer.expr())
+                    .and_then(|result| result.map(context, |_, _| Ok(())))
+            })
         });
         context.runtime_mut().scopes_mut().pop();
-        if let Evaluation::Incomplete(incomplete) = result? {
+        let result = flow::boundary(flow::catch(result, |_| Ok(Evaluation::Ready(()))))?;
+        if let Evaluation::Incomplete(incomplete) = result {
             return Err(incomplete.error());
         }
     }
     Ok(())
 }
 
-fn deferred(context: &mut LocalLoweringContext, body: &HMIRBody, expr: HMIRExprID) -> EvalResult<HMIRValue> {
+fn deferred(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    expr: HMIRExprID,
+) -> EvalResult<Evaluation<HMIRValue>> {
     let node = body.expr(expr);
     match node.kind() {
-        HMIRExprKind::Block { statements, scoped: true, .. } => {
-            eval_block(context, body, node.span(), statements, true, false)
-        }
+        HMIRExprKind::Block {
+            statements,
+            scoped: true,
+            ..
+        } => eval_block(context, body, node.span(), statements, true, false),
         _ => eval_scoped(context, body, expr),
     }
 }

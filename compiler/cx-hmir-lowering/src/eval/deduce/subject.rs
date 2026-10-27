@@ -22,21 +22,21 @@ use crate::{
     },
 };
 
-use crate::eval::{EvalResult, coerce, comptime, eval, flow::Evaluation, types};
+use crate::eval::{EvalResult, coerce, comptime, eval, flow::{EvalExit, Evaluation, RuntimeStop, StopReason}, types};
 
 // The type of an operand evaluated without emitting it; a diverging operand is typed unreachable
 pub(crate) fn subject(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     operand: HMIRExprID,
-) -> EvalResult<HMIRTypeID> {
+) -> EvalResult<Evaluation<HMIRTypeID>> {
     let span = body.expr(operand).span();
     let mut child = detached(context, Emission::Unevaluated, false, span)?;
-    let result = match eval(&mut child, body, operand)? {
-        result if result.is_diverged() => {
+    let result = match eval(&mut child, body, operand) {
+        Err(EvalExit::Stop(StopReason::Runtime(RuntimeStop::Diverged))) => {
             return Ok(Evaluation::Ready(types::realize(child.env_mut(), HMIRTypeKind::Unreachable, span)));
         }
-        result => result,
+        result => result?,
     };
     let span = span.clone();
     let result = result.map(&mut child, move |context, value| {

@@ -39,7 +39,7 @@ pub(crate) fn eval_name(
     span: &TokenRange,
     name: &QualifiedName,
     tag: Option<HIRTagKind>,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if let Some(id) = resolve(context, span, name, tag)? {
         return eval_def(context, span, id);
     }
@@ -54,14 +54,14 @@ pub(crate) fn eval_name(
     {
         return deduce::type_result(context, ty, span);
     }
-    Err(hmir_error(span, &typecheck::UNKNOWN_SYMBOL, name.to_string()))
+    Err(hmir_error(span, &typecheck::UNKNOWN_SYMBOL, name.to_string()).into())
 }
 
 pub(crate) fn eval_def(
     context: &mut LocalLoweringContext,
     span: &TokenRange,
     id: HMIRDefID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let point = context.visible_through();
     let value = symbol::binding(context.env_mut(), id, point)?;
     let emitting = context.is_runtime() && !context.is_unevaluated();
@@ -99,7 +99,7 @@ fn request(context: &mut LocalLoweringContext, def: HMIRDefID, point: Option<HMI
 pub(crate) fn type_value(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> CXResult<HMIRValue> {
     if context.is_runtime() && !context.is_unevaluated() {
         let subject = (format!("type '{}'", types::name(context.env(), ty)), "a runtime expression".into());
-        return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject));
+        return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject).into());
     }
     let universe = types::universe(context.env_mut(), span);
     Ok(HMIRValue::constant(universe, HMIRConstant::Type(ty)))
@@ -150,7 +150,7 @@ pub(crate) fn resolve(
         if let Some(tag) = tag {
             let def = context.env().symbols().resolve_definition(first);
             if def.declarations().iter().any(|decl| decl.tag() != Some(tag)) {
-                return Err(hmir_error(span, &typecheck::INCOMPATIBLE_TAG, name.to_string()));
+                return Err(hmir_error(span, &typecheck::INCOMPATIBLE_TAG, name.to_string()).into());
             }
         }
         let symbols = context.env().symbols();
@@ -169,7 +169,7 @@ pub(crate) fn resolve(
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                return Err(hmir_error(span, &typecheck::AMBIGUOUS_SYMBOL, names));
+                return Err(hmir_error(span, &typecheck::AMBIGUOUS_SYMBOL, names).into());
             }
         }
         return Ok(Some(first));
@@ -232,19 +232,19 @@ pub(crate) fn eval_scope_access(
     span: &TokenRange,
     base: HMIRExprID,
     member: &CXIdent,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let evaluated = eval_type(context, body, base)?;
     let (span, member) = (span.clone(), member.clone());
     evaluated.and_then(context, body, None, move |context, _, ty, _| {
         if !matches!(context.env().resolve_kind(ty), HMIRTypeKind::TaggedUnion { .. }) {
             let kind = (types::name(context.env(), ty), "a tagged union".into());
-            return Err(hmir_error(&span, &typecheck::UNEXPECTED_KIND, kind));
+            return Err(hmir_error(&span, &typecheck::UNEXPECTED_KIND, kind).into());
         }
         match variant::reference(context, ty, &member, &span)? {
             Some(value) => Ok(Evaluation::Ready(value)),
             None => {
                 let member = (types::name(context.env(), ty), member.to_string());
-                Err(hmir_error(&span, &typecheck::UNKNOWN_MEMBER, member))
+                Err(hmir_error(&span, &typecheck::UNKNOWN_MEMBER, member).into())
             }
         }
     })

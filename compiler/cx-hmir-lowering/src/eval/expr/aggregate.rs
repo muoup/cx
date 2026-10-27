@@ -24,7 +24,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
         EvalResult, eval, eval_type, expr,
-        flow::{Evaluation, ready},
+        flow::Evaluation,
         op::{binary_operands, eval_operand},
         place::dereference,
         types,
@@ -38,7 +38,7 @@ pub(crate) fn eval_aggregate(
     body: &HMIRBody,
     span: &TokenRange,
     op: &HMIRAggregateOp,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     match op {
         HMIRAggregateOp::Member { base, name } => eval_member(context, body, span, *base, name),
         HMIRAggregateOp::Initialize { ty, fields } => {
@@ -50,8 +50,8 @@ pub(crate) fn eval_aggregate(
             })
         }
         HMIRAggregateOp::Index { base, index } => {
-            let base = ready!(eval_operand(context, body, span, *base));
-            let index = ready!(eval_operand(context, body, span, *index));
+            let base = (eval_operand(context, body, span, *base))?.ready()?;
+            let index = (eval_operand(context, body, span, *index))?.ready()?;
             let pointer = match context.env().pointer_inner(base.ty()) {
                 Some(_) => base.clone(),
                 None => index.clone(),
@@ -71,8 +71,8 @@ fn eval_member(
     span: &TokenRange,
     base: HMIRExprID,
     name: &CXIdent,
-) -> EvalResult<HMIRValue> {
-    let value = ready!(eval(context, body, base));
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let value = (eval(context, body, base))?.ready()?;
     let subject = context.env().referent(value.ty());
     let indirect = context.env().pointer_inner(subject).is_some()
         || matches!(context.env().resolve_kind(subject), HMIRTypeKind::Array { .. });
@@ -90,7 +90,7 @@ fn eval_member(
     };
     let Some(path) = member_path(context.env(), owner, name) else {
         let member = (types::name(context.env(), owner), name.to_string());
-        return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member));
+        return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
     };
 
     for index in path {
@@ -117,7 +117,7 @@ fn unpack(
     span: &TokenRange,
     value: HMIRExprID,
     bindings: &[(CXIdent, HMIRLocalID)],
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     struct Projection {
         index: usize,
         name: CXIdent,
@@ -126,13 +126,13 @@ fn unpack(
     }
 
     expr::require_pure(context, span, "@unpack")?;
-    let source = ready!(eval(context, body, value));
+    let source = (eval(context, body, value))?.ready()?;
     let source_ty = source.ty();
     let fields = match context.env().resolve_kind(source_ty) {
         HMIRTypeKind::Struct { fields } if !context.env().is_reference(source_ty) => fields.clone(),
         _ => {
             let mismatch = ("@unpack".into(), "owned structured type".into(), types::name(context.env(), source_ty));
-            return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch));
+            return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch).into());
         }
     };
 
@@ -142,15 +142,15 @@ fn unpack(
     for (name, local) in bindings {
         let Some(index) = fields.iter().position(|field| field.name() == Some(name)) else {
             let member = (types::name(context.env(), source_ty), name.to_string());
-            return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member));
+            return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
         };
         if !seen_fields.insert(index) {
             let item = (name.to_string(), "@unpack binding".into());
-            return Err(hmir_error(span, &typecheck::DUPLICATE_ITEM, item));
+            return Err(hmir_error(span, &typecheck::DUPLICATE_ITEM, item).into());
         }
         let binding = body.local(*local).name().expect("an unpack binding is named");
         if !seen_bindings.insert(binding.clone()) {
-            return Err(hmir_error(span, &typecheck::INCOMPATIBLE_DECLARATION, binding.to_string()));
+            return Err(hmir_error(span, &typecheck::INCOMPATIBLE_DECLARATION, binding.to_string()).into());
         }
         projections.push(Projection { index, name: binding.clone(), local: *local, ty: *fields[index].ty() });
     }
@@ -162,7 +162,7 @@ fn unpack(
     if let Some((index, field)) = dropped {
         let name = field.name().map_or_else(|| format!("field {index}"), ToString::to_string);
         let entity = (format!("drop of @nodrop field {name}"), "@unpack statement".into());
-        return Err(hmir_error(span, &typecheck::MISSING_ENTITY, entity));
+        return Err(hmir_error(span, &typecheck::MISSING_ENTITY, entity).into());
     }
 
     let constant = matches!(source.kind(), HMIRValueKind::Constant(HMIRConstant::Aggregate { .. }));

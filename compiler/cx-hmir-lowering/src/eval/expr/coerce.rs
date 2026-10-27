@@ -15,7 +15,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
         EvalResult, eval, eval_type, expr,
-        flow::{Evaluation, ready},
+        flow::Evaluation,
         types,
     },
     log::hmir_error,
@@ -54,13 +54,13 @@ pub(crate) fn eval_coerce(
     mode: HMIRCoerceMode,
     value: HMIRExprID,
     target: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if matches!(mode, HMIRCoerceMode::Truthy) {
-        let value = ready!(eval(context, body, value));
+        let value = (eval(context, body, value))?.ready()?;
         return Ok(Evaluation::Ready(condition(context, value, span)?));
     }
-    let target = ready!(eval_type(context, body, target));
-    let value = ready!(eval(context, body, value)?.complete(context, body, Some(target)));
+    let target = (eval_type(context, body, target))?.ready()?;
+    let value = eval(context, body, value)?.complete(context, body, Some(target))?;
     Ok(Evaluation::Ready(match mode {
         HMIRCoerceMode::Implicit => implicit(context, value, target, span)?,
         _ => explicit(context, value, target, span)?,
@@ -164,7 +164,7 @@ pub(crate) fn condition(context: &mut LocalLoweringContext, value: HMIRValue, sp
     let source = value.ty();
     match truth(context, value, span)? {
         Coercion::Applied(value) => Ok(value),
-        Coercion::Unapplied(_) => Err(hmir_error(span, &typecheck::NO_TRUTH_VALUE, types::name(context.env(), source))),
+        Coercion::Unapplied(_) => Err(hmir_error(span, &typecheck::NO_TRUTH_VALUE, types::name(context.env(), source)).into()),
     }
 }
 
@@ -326,7 +326,7 @@ fn applied(
         Coercion::Applied(value) => Ok(value),
         Coercion::Unapplied(_) => {
             let names = (types::name(context.env(), source), types::name(context.env(), target));
-            Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names))
+            Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names).into())
         }
     }
 }

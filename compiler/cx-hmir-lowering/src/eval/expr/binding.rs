@@ -17,7 +17,7 @@ use crate::{
         EvalResult, coerce,
         control::{self, closing},
         deduce, eval, eval_type, expr,
-        flow::{self, ComptimeStop, Evaluation, StopReason, ready},
+        flow::{self, ComptimeStop, EvalExit, Evaluation, RuntimeStop, StopReason},
         staged, types,
     },
     log::hmir_error,
@@ -30,7 +30,7 @@ pub(crate) fn eval_local(
     body: &HMIRBody,
     span: &TokenRange,
     local: HMIRLocalID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let Some(value) = context.get_local(&local).cloned() else {
         if context.is_runtime() {
             todo!("local {local} has no binding in the evaluating context")
@@ -39,7 +39,7 @@ pub(crate) fn eval_local(
             Some(name) => format!("variable '{name}'"),
             None => "this variable".into(),
         };
-        return Err(hmir_error(span, &catalogue::mir::COMPTIME_UNAVAILABLE, subject));
+        return Err(hmir_error(span, &catalogue::mir::COMPTIME_UNAVAILABLE, subject).into());
     };
 
     if let FnContext::Runtime(runtime) = context.context_mut()
@@ -63,7 +63,7 @@ pub(crate) fn eval_let(
     span: &TokenRange,
     local_id: HMIRLocalID,
     initializer: Option<HMIRExprID>,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let local = body.local(local_id);
     if local.comptime() && context.is_runtime() {
         todo!("comptime let binding in a runtime context");
@@ -76,7 +76,7 @@ pub(crate) fn eval_let(
     {
         let Some(initializer) = initializer else {
             let kind = ("staged local".into(), "a declaration without an initializer".into());
-            return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind));
+            return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind).into());
         };
         let value = staged::argument(context, body, initializer, ty)?;
         let span = span.clone();
@@ -97,7 +97,7 @@ pub(crate) fn eval_let(
     }
 
     let Some(initializer) = initializer else {
-        let ty = ready!(declared.complete(context, body, None));
+        let ty = declared.complete(context, body, None)?;
         let storage = match storage {
             Some(storage) => storage,
             None => declare(context, body, local_id, ty, span)?,
@@ -124,7 +124,7 @@ pub(crate) fn eval_let(
         } else {
             inferred
         };
-        declared.complete(context, body, Some(inferred))?.and_then(context, body, None, move |context, body, ty, _| {
+        declared.try_complete(context, body, Some(inferred))?.and_then(context, body, None, move |context, body, ty, _| {
             let value = coerce::implicit(context, value, ty, &span)?;
             let function = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_));
             if is_runtime && function && types::comptime_only(context.env(), ty) {
@@ -169,11 +169,11 @@ fn declare(
     let local = body.local(local_id);
     if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_)) {
         let requirement = ("local variable".into(), "an object type".into(), Some(types::name(context.env(), ty)));
-        return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
+        return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).into());
     }
     if !context.complete_object(ty) {
         let subject = format!("variable of type '{}'", types::name(context.env(), ty));
-        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject));
+        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject).into());
     }
 
     let reference_type = types::reference(context.env_mut(), ty, None, local.span());
@@ -190,7 +190,7 @@ pub(crate) fn eval_block(
     statements: &[HMIRExprID],
     scoped: bool,
     yields: bool,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if !scoped {
         return eval_statements(context, body, span, statements, true);
     }
@@ -211,13 +211,13 @@ fn yielded(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     scope: usize,
-    result: EvalResult<HMIRValue>,
+    result: EvalResult<Evaluation<HMIRValue>>,
     span: &TokenRange,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if !context.is_runtime() {
-        return result?.catch(|stop| match stop {
+        return flow::catch(result, |stop| match stop {
             StopReason::Comptime(ComptimeStop::Yield(value)) => Ok(Evaluation::Ready(value)),
-            stop => Ok(Evaluation::Stop(stop)),
+            stop => Err(EvalExit::Stop(stop)),
         });
     }
     let span = span.clone();
@@ -233,7 +233,7 @@ fn yielded(
         let voids = exits.iter().filter(|(_, value)| env.is_void(value.ty())).count();
         if voids != 0 && voids != exits.len() {
             let subject = "every path of an expression block".into();
-            return Err(hmir_error(&span, &typecheck::MISSING_YIELD, subject));
+            return Err(hmir_error(&span, &typecheck::MISSING_YIELD, subject).into());
         }
         control::merge(context, exits, &span)
     })
@@ -245,11 +245,11 @@ fn eval_statements(
     span: &TokenRange,
     statements: &[HMIRExprID],
     yields: bool,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let mut dead = false;
     for (index, statement) in statements.iter().enumerate() {
         let result = eval(context, body, *statement);
-        if result.as_ref().is_ok_and(Evaluation::is_diverged) {
+        if matches!(&result, Err(EvalExit::Stop(StopReason::Runtime(RuntimeStop::Diverged)))) {
             dead = true;
             unreachable(context);
             continue;
@@ -257,7 +257,7 @@ fn eval_statements(
         let yielded = yields && index + 1 == statements.len();
         if yielded && dead && !reachable(context) {
             result?;
-            return Ok(Evaluation::diverged());
+            return flow::diverged();
         }
         if yielded {
             let result = result?;
@@ -277,17 +277,17 @@ fn eval_statements(
                 });
             }
             result => {
-                let value = ready!(result);
+                let value = (result)?.ready()?;
                 if !context.env().is_reference(value.ty()) && context.env().is_nodrop(value.ty()) {
                     let ty = types::name(context.env(), value.ty());
                     let span = body.expr(*statement).span();
-                    return Err(hmir_error(span, &typecheck::NODROP_DISCARDED, ty));
+                    return Err(hmir_error(span, &typecheck::NODROP_DISCARDED, ty).into());
                 }
             }
         };
     }
     if dead && !reachable(context) {
-        return Ok(Evaluation::diverged());
+        return flow::diverged();
     }
     Ok(Evaluation::Ready(expr::unit(context, span)))
 }
@@ -308,7 +308,7 @@ pub(crate) fn eval_scoped(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     expr: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let node = body.expr(expr);
     if matches!(node.kind(), HMIRExprKind::Block { scoped: true, .. }) {
         return eval(context, body, expr);

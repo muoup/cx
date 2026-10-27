@@ -24,7 +24,7 @@ pub(crate) fn eval_type_op(
     body: &HMIRBody,
     span: &TokenRange,
     op: &HMIRTypeOp,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let (HMIRTypeOp::SizeOf(subject) | HMIRTypeOp::AlignOf(subject) | HMIRTypeOp::OffsetOf { ty: subject, .. }) =
         op
     else {
@@ -72,7 +72,7 @@ fn offset(
             HMIRMemberStep::Field(name) => {
                 let Some(path) = aggregate::member_path(context.env(), current, name) else {
                     let member = (types::name(context.env(), current), name.to_string());
-                    return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member));
+                    return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
                 };
                 for index in path {
                     let (field_ty, field_offset) = field(context, current, index, span)?;
@@ -88,7 +88,7 @@ fn offset(
                         "an array member".into(),
                         types::name(context.env(), current),
                     );
-                    return Err(hmir_error(index_span, &typecheck::TYPE_MISMATCH, mismatch));
+                    return Err(hmir_error(index_span, &typecheck::TYPE_MISMATCH, mismatch).into());
                 };
                 let element_size = layout(context, element, span)?.size() as i128;
                 let value = eval_comptime(context, body, *index, Some(size_type))?;
@@ -96,7 +96,7 @@ fn offset(
                     (context.env().resolve_kind(value.ty()), value.as_int())
                 else {
                     let subject = ("offsetof subscript".into(), "integer".into());
-                    return Err(hmir_error(index_span, &mir::EXPECTED_CONSTANT, subject));
+                    return Err(hmir_error(index_span, &mir::EXPECTED_CONSTANT, subject).into());
                 };
 
                 let index = int::normalize(value, *int_type);
@@ -118,7 +118,7 @@ fn field(
     let field = aggregate::member_fields(context.env(), owner).get(index).ok_or_else(missing)?;
     if field.bit_width().is_some() {
         let form = ("offsetof".into(), "bit-field member".into());
-        return Err(hmir_error(span, &typecheck::INVALID_FORM, form));
+        return Err(hmir_error(span, &typecheck::INVALID_FORM, form).into());
     }
 
     let field_ty = *field.ty();

@@ -90,7 +90,7 @@ fn step(
             HMIRTypeKind::ReferenceTo { inner: to, bitfield: None },
         ) if compatible(env, *from, *to) => {
             let usage = "bind a reference to".into();
-            return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage));
+            return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage).into());
         }
         (HMIRTypeKind::ReferenceTo { .. }, HMIRTypeKind::ReferenceTo { .. }) => {
             return Ok(Coercion::Unapplied(value));
@@ -178,7 +178,7 @@ fn string(
     let bound = length.unwrap_or(string.len() as u64 + 1);
     if string.len() as u64 > bound {
         let limit = ("string".into(), usize::try_from(bound).ok());
-        return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit));
+        return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit).into());
     }
     let mut items = vec![HMIRConstant::Int(0); bound as usize];
     for (item, byte) in items.iter_mut().zip(string.bytes()) {
@@ -224,7 +224,7 @@ fn discard(
     }
     if env.is_nodrop(result) {
         let names = (types::name(env, value.ty()), types::name(env, target));
-        return Err(hmir_error(span, &typecheck::DISCARDED_NODROP, names));
+        return Err(hmir_error(span, &typecheck::DISCARDED_NODROP, names).into());
     }
     Ok(Coercion::Applied(value.with_ty(target)))
 }

@@ -364,7 +364,7 @@ pub(crate) fn generated(
     Evaluation::Incomplete(Incomplete::new(context, span, IncompleteReason::ExpectedType, None, move |context, body, expected| {
         let expected = context.env().referent(expected);
         let Some(instance) = instance(context, def, expected) else {
-            return Err(undeduced);
+            return Err(undeduced.into());
         };
         let applied = values
             .into_iter()

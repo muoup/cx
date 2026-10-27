@@ -18,7 +18,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult, aggregate::variant, coerce, comptime, eval, expr,
-        flow::{Evaluation, ready},
+        flow::{self, Evaluation},
         staged, types,
     },
     log::hmir_error,
@@ -35,11 +35,11 @@ pub(crate) fn eval_call(
     span: &TokenRange,
     callee: HMIRExprID,
     args: &[HMIRExprID],
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let evaluated = eval(context, body, callee)?;
     let (args, span) = (args.to_vec(), span.clone());
     evaluated.and_then(context, body, None, move |context, body, callee, expected| {
-        evaluate(context, body, &span, callee, &args)?.complete(context, body, expected)
+        evaluate(context, body, &span, callee, &args)?.try_complete(context, body, expected)
     })
 }
 
@@ -49,7 +49,7 @@ fn evaluate(
     span: &TokenRange,
     callee: HMIRValue,
     args: &[HMIRExprID],
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let callee = staged::read(context, callee, span)?;
     if matches!(callee.kind(), HMIRValueKind::Constant(HMIRConstant::Quote(_))) {
         return staged::apply(context, body, callee, args, span);
@@ -83,7 +83,7 @@ fn evaluate(
     let function = env.pointer_inner(callee.ty()).map(|inner| env.resolve_kind(inner));
     let Some(HMIRTypeKind::Function(signature)) = function else {
         let kind = (types::name(env, callee.ty()), "callable".into());
-        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
+        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
     };
     let signature = signature.clone();
     let params = signature.params();
@@ -99,7 +99,7 @@ fn evaluate(
             _ => "function".into(),
         };
         let counts = (subject, params.len(), count, signature.is_variadic());
-        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts));
+        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts).into());
     }
     let source_defined = constructs(&callee).is_none();
     require(context, span, !source_defined || signature.contract().is_safe(), source_defined)?;
@@ -108,7 +108,7 @@ fn evaluate(
     for arg in args {
         let span = body.expr(*arg).span();
         let param = params.get(values.len()).map(|param| *param.ty());
-        let value = ready!(eval(context, body, *arg)?.complete(context, body, param));
+        let value = eval(context, body, *arg)?.complete(context, body, param)?;
         values.push(match param {
             Some(param) => coerce::implicit(context, value, param, span)?,
             None => coerce::default_argument(context, value, span)?,
@@ -149,7 +149,7 @@ fn finish(
     values: &[HMIRValue],
     return_type: HMIRTypeID,
     span: &TokenRange,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if context.is_unevaluated() {
         return Ok(Evaluation::Ready(emit::scratch(context, return_type, span)?));
     }
@@ -162,7 +162,7 @@ fn finish(
     let result = emit::call(context, callee, values, return_type, span)?;
     if matches!(context.env().resolve_kind(return_type), HMIRTypeKind::Unreachable) {
         context.runtime_mut().emit(MIRInstructionKind::Unreachable, span.clone());
-        return Ok(Evaluation::diverged());
+        return flow::diverged();
     }
     Ok(Evaluation::Ready(result))
 }

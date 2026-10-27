@@ -16,7 +16,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult, coerce, eval, eval_type,
-        flow::{self, Evaluation, ready},
+        flow::{self, Evaluation},
         types,
     },
     log::hmir_error,
@@ -31,38 +31,38 @@ pub(crate) fn variant(
     span: &TokenRange,
 ) -> CXResult<Variant> {
     let HMIRPattern::Variant { sum, name, inner } = pattern else {
-        return Err(hmir_error(span, &typecheck::INVALID_PATTERN, ()));
+        return Err(hmir_error(span, &typecheck::INVALID_PATTERN, ()).into());
     };
     if let Some(sum) = sum {
-        let qualifier = flow::top(eval_type(context, body, *sum)?.description())?;
+        let qualifier = flow::top(eval_type(context, body, *sum).and_then(Evaluation::description))?;
         if context.env().underlying(qualifier) != context.env().underlying(ty) {
             let mismatch = (
                 "variant pattern".into(),
                 format!("'{}'", types::name(context.env(), ty)),
                 format!("'{}'", types::name(context.env(), qualifier)),
             );
-            return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch));
+            return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch).into());
         }
     }
     let Some(found) = variant::lookup(context.env(), ty, name) else {
         let unknown = (types::name(context.env(), ty), name.to_string());
-        return Err(hmir_error(span, &typecheck::UNKNOWN_VARIANT, unknown));
+        return Err(hmir_error(span, &typecheck::UNKNOWN_VARIANT, unknown).into());
     };
     let void = context.env().is_void(found.payload);
     match inner.as_deref() {
         None if !void => {
             let missing = (name.to_string(), types::name(context.env(), ty));
-            return Err(hmir_error(span, &typecheck::MATCH_PAYLOAD_BINDING, missing));
+            return Err(hmir_error(span, &typecheck::MATCH_PAYLOAD_BINDING, missing).into());
         }
         Some(HMIRPattern::Binding(_) | HMIRPattern::Wildcard) | None => {}
         Some(_) if void => {
             let name = variant::name(context.env(), ty, found.index);
             let invalid = (format!("the pattern of void variant '{name}'"), "payload".into());
-            return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid));
+            return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid).into());
         }
         Some(_) => {
             let feature = "nested payload patterns".into();
-            return Err(hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature));
+            return Err(hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature).into());
         }
     }
     Ok(found)
@@ -108,7 +108,7 @@ pub(crate) fn bind(
     if !owned && reference.is_none() && (context.env().is_nodrop(ty) || context.env().is_nocopy(ty))
     {
         let name = local_info.name().map_or_else(|| "this binding".into(), ToString::to_string);
-        return Err(hmir_error(span, &typecheck::BINDING_BEHIND_REFERENCE, name));
+        return Err(hmir_error(span, &typecheck::BINDING_BEHIND_REFERENCE, name).into());
     }
     let reference = reference.or((!owned).then_some(false));
     let (value, binding_ty) = match reference {
@@ -143,19 +143,19 @@ pub(crate) fn eval_is(
     span: &TokenRange,
     value: HMIRExprID,
     pattern: &HMIRPattern,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let HMIRPattern::Variant { inner, .. } = pattern else {
         let feature = "an 'is' test against a pattern other than a variant".into();
-        return Err(hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature));
+        return Err(hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature).into());
     };
-    let subject = ready!(eval(context, body, value));
+    let subject = (eval(context, body, value))?.ready()?;
     let ty = context.env().referent(subject.ty());
     if context.env().pointer_inner(ty).is_some() {
-        return Err(hmir_error(span, &typecheck::POINTER_PATTERN, ()));
+        return Err(hmir_error(span, &typecheck::POINTER_PATTERN, ()).into());
     }
     if !matches!(context.env().resolve_kind(ty), HMIRTypeKind::TaggedUnion { .. }) {
         let kind = (types::name(context.env(), ty), "a tagged union".into());
-        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
+        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
     }
     let Variant { index, payload } = self::variant(context, body, ty, pattern, span)?;
     let tag = emit::tag(context, &subject, span)?;

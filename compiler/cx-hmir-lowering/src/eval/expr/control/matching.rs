@@ -7,7 +7,9 @@ use cx_hmir::{
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, expr::instruction::MIRInvalidationKind};
+use cx_mir::{
+    MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, expr::instruction::MIRInvalidationKind,
+};
 use cx_tokens::TokenRange;
 
 use super::{closing, merge};
@@ -18,7 +20,7 @@ use crate::{
         EvalResult,
         aggregate::{pattern, variant::Variant},
         coerce, eval, eval_comptime, expr,
-        flow::{self, ready},
+        flow::{self, Evaluation},
         types,
     },
     log::hmir_error,
@@ -41,19 +43,23 @@ pub(crate) fn eval_match(
     scrutinee: HMIRExprID,
     local: HMIRLocalID,
     arms: &[(HMIRPattern, HMIRExprID)],
-) -> EvalResult<HMIRValue> {
-    let subject = ready!(eval(context, body, scrutinee));
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let subject = eval(context, body, scrutinee)?.ready()?;
     let owned = !context.env().is_reference(subject.ty());
     let ty = context.env().referent(subject.ty());
     if context.env().pointer_inner(ty).is_some() {
-        return Err(hmir_error(span, &typecheck::POINTER_PATTERN, ()));
+        return Err(hmir_error(span, &typecheck::POINTER_PATTERN, ()).into());
     }
     let variants = match context.env().resolve_kind(ty) {
         HMIRTypeKind::TaggedUnion { fields } => Some(fields.len()),
         HMIRTypeKind::Int(_) => None,
         _ => {
-            let requirement = ("match".into(), "an integer or tagged union".into(), Some(types::name(context.env(), ty)));
-            return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
+            let requirement = (
+                "match".into(),
+                "an integer or tagged union".into(),
+                Some(types::name(context.env(), ty)),
+            );
+            return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).into());
         }
     };
 
@@ -76,7 +82,10 @@ pub(crate) fn eval_match(
     let cases = cases(context, body, ty, dispatch.ty(), variants, arms, span)?;
 
     let result = if context.is_runtime() {
-        let blocks = arms.iter().map(|_| mir::block(context, "match.arm")).collect::<Vec<_>>();
+        let blocks = arms
+            .iter()
+            .map(|_| mir::block(context, "match.arm"))
+            .collect::<Vec<_>>();
         let catchall = cases.iter().position(Option::is_none);
         let default = match catchall {
             Some(index) => blocks[index],
@@ -96,9 +105,17 @@ pub(crate) fn eval_match(
         context.runtime_mut().emit(branch, span.clone());
         if catchall.is_none() {
             mir::switch_to(context, default);
-            context.runtime_mut().emit(MIRInstructionKind::Unreachable, span.clone());
+            context
+                .runtime_mut()
+                .emit(MIRInstructionKind::Unreachable, span.clone());
         }
-        let state = Match { subject, arms: arms.to_vec(), blocks, exits: Vec::new(), span: span.clone() };
+        let state = Match {
+            subject,
+            arms: arms.to_vec(),
+            blocks,
+            exits: Vec::new(),
+            span: span.clone(),
+        };
         lower_arms(context, body, state, 0, None)
     } else {
         let value = dispatch.as_int().expect("comptime dispatch is constant");
@@ -150,7 +167,9 @@ fn cases(
                     _ => return Err(hmir_error(arm_span, &typecheck::VALUE_PATTERN_CONSTANT, ())),
                 }
             }
-            HMIRPattern::Float(_) => return Err(hmir_error(arm_span, &typecheck::FLOATING_CASE, ())),
+            HMIRPattern::Float(_) => {
+                return Err(hmir_error(arm_span, &typecheck::FLOATING_CASE, ()));
+            }
             _ => return Err(hmir_error(arm_span, &typecheck::INVALID_PATTERN, ())),
         };
         let value = value.map(|value| int::normalize(value, integer));
@@ -191,7 +210,11 @@ fn bind_arm(
     let ty = context.env().referent(subject.ty());
     let consumes = match pattern {
         HMIRPattern::Binding(local) => {
-            let source = if owned { emit::reference(context, subject, span)? } else { subject.clone() };
+            let source = if owned {
+                emit::reference(context, subject, span)?
+            } else {
+                subject.clone()
+            };
             pattern::bind(context, body, *local, source, owned, span)?
         }
         HMIRPattern::Variant { inner, .. } => {
@@ -223,15 +246,22 @@ fn lower_arms(
     mut state: Match,
     index: usize,
     expected: Option<HMIRTypeID>,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let Some((pattern, arm)) = state.arms.get(index).cloned() else {
         let env = context.env();
-        let valued = state.exits.iter().find(|(_, value)| !env.is_void(value.ty()));
+        let valued = state
+            .exits
+            .iter()
+            .find(|(_, value)| !env.is_void(value.ty()));
         if let Some((_, found)) = valued
             && state.exits.iter().any(|(_, value)| env.is_void(value.ty()))
         {
-            let mismatch = ("match arms".into(), "'void'".into(), format!("'{}'", types::name(env, found.ty())));
-            return Err(hmir_error(&state.span, &typecheck::TYPE_MISMATCH, mismatch));
+            let mismatch = (
+                "match arms".into(),
+                "'void'".into(),
+                format!("'{}'", types::name(env, found.ty())),
+            );
+            return Err(hmir_error(&state.span, &typecheck::TYPE_MISMATCH, mismatch).into());
         }
         return merge(context, state.exits, &state.span);
     };
@@ -249,16 +279,26 @@ fn lower_arms(
         }
         Ok(())
     });
-    let result = flow::catch_diverged(result)?.complete(context, body, expected)?;
-    result.and_then(context, body, None, move |context, body, value, expected| {
-        if let Some(value) = value {
-            state.exits.push((mir::current_block(context), value));
-        }
-        lower_arms(context, body, state, index + 1, expected)
-    })
+    let result = flow::catch_diverged(result)?.try_complete(context, body, expected)?;
+    result.and_then(
+        context,
+        body,
+        None,
+        move |context, body, value, expected| {
+            if let Some(value) = value {
+                state.exits.push((mir::current_block(context), value));
+            }
+            lower_arms(context, body, state, index + 1, expected)
+        },
+    )
 }
 
-fn arm_value(context: &mut LocalLoweringContext, body: &HMIRBody, arm: HMIRExprID, span: &TokenRange) -> EvalResult<HMIRValue> {
+fn arm_value(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    arm: HMIRExprID,
+    span: &TokenRange,
+) -> EvalResult<Evaluation<HMIRValue>> {
     let span = span.clone();
     eval(context, body, arm)?.map(context, move |context, value| {
         let value = coerce::std_rvalue(context, value, &span)?;

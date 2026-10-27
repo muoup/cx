@@ -30,13 +30,13 @@ use crate::{
 pub(crate) fn eval_signature(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
-) -> EvalResult<HMIRFnSignature<HMIRTypeID>> {
+) -> EvalResult<Evaluation<HMIRFnSignature<HMIRTypeID>>> {
     let (body, signature) = (function.body(), function.signature());
     let slot = |context: &mut LocalLoweringContext, expr: HMIRExprID| {
         let references = staged::references(body, expr);
         match function.params().iter().any(|param| references.contains(param)) {
             true => Ok(realize(context.env_mut(), HMIRTypeKind::Dependent, body.expr(expr).span())),
-            false => flow::top(eval_type(context, body, expr)?.description()),
+            false => flow::top(eval_type(context, body, expr).and_then(|ty| ty.description())),
         }
     };
     let params = signature
@@ -97,7 +97,7 @@ pub(crate) fn parameter(
                 "an '@type' parameter".into(),
                 "a function signature unless explicitly marked 'comptime'".into(),
             );
-            return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind));
+            return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind).into());
         }
         HMIRTypeKind::Array { .. } => element(context, ty, span).unwrap(),
         HMIRTypeKind::Function(_) if !comptime_only(context.env(), ty) => ty,
@@ -317,7 +317,7 @@ pub(crate) fn validate(env: &HMIREnvironment, ty: &HMIRType) -> CXResult<()> {
             if matches!(env.resolve_kind(*inner), HMIRTypeKind::Unreachable) =>
         {
             let requirement = ("pointer target".into(), "a reachable type".into(), None);
-            return Err(hmir_error(ty.decl_span(), &typecheck::TYPE_REQUIREMENT, requirement));
+            return Err(hmir_error(ty.decl_span(), &typecheck::TYPE_REQUIREMENT, requirement).into());
         }
         _ => return Ok(()),
     };
@@ -335,7 +335,7 @@ pub(crate) fn validate(env: &HMIREnvironment, ty: &HMIRType) -> CXResult<()> {
         };
         let name = field.name().map(|name| name.as_str()).unwrap_or("<anonymous>");
         let trait_ = (name.into(), required.into(), required.into());
-        return Err(hmir_error(ty.decl_span(), &typecheck::FIELD_TRAIT, trait_));
+        return Err(hmir_error(ty.decl_span(), &typecheck::FIELD_TRAIT, trait_).into());
     }
     Ok(())
 }

@@ -1,5 +1,5 @@
 use cx_hmir::{HMIRBody, ty::HMIRTypeID};
-use cx_log::CXResult;
+use cx_log::{CXResult, error::CXError};
 
 use crate::{
     env::function::{Expectations, LocalLoweringContext},
@@ -7,12 +7,22 @@ use crate::{
     value::HMIRValue,
 };
 
-pub(crate) type EvalResult<T> = CXResult<Evaluation<T>>;
+pub(crate) type EvalResult<T> = Result<T, EvalExit>;
+
+pub(crate) enum EvalExit {
+    Diagnostic(CXError),
+    Stop(StopReason),
+}
+
+impl From<CXError> for EvalExit {
+    fn from(error: CXError) -> Self {
+        Self::Diagnostic(error)
+    }
+}
 
 pub(crate) enum Evaluation<T> {
     Ready(T),
     Incomplete(Incomplete<T>),
-    Stop(StopReason),
 }
 
 pub(crate) enum StopReason {
@@ -33,53 +43,46 @@ pub(crate) enum RuntimeStop {
     Diverged,
 }
 
-macro_rules! ready {
-    ($result:expr) => {
-        match $result? {
-            $crate::eval::flow::Evaluation::Ready(value) => value,
-            $crate::eval::flow::Evaluation::Incomplete(incomplete) => {
-                return Err(incomplete.error());
-            }
-            $crate::eval::flow::Evaluation::Stop(stop) => {
-                return Ok($crate::eval::flow::Evaluation::Stop(stop));
-            }
-        }
-    };
+pub(crate) fn diverged<T>() -> EvalResult<Evaluation<T>> {
+    Err(EvalExit::Stop(RuntimeStop::Diverged.into()))
 }
 
-pub(crate) use ready;
-
 impl<T> Evaluation<T> {
-    pub(crate) fn diverged() -> Self {
-        Self::Stop(RuntimeStop::Diverged.into())
-    }
-
-    pub(crate) fn is_diverged(&self) -> bool {
-        matches!(self, Self::Stop(StopReason::Runtime(RuntimeStop::Diverged)))
+    pub(crate) fn ready(self) -> EvalResult<T> {
+        match self {
+            Self::Ready(value) => Ok(value),
+            Self::Incomplete(incomplete) => Err(incomplete.error().into()),
+        }
     }
 
     pub(crate) fn known(&self) -> Option<&T> {
         match self {
             Self::Ready(value) => Some(value),
             Self::Incomplete(incomplete) => incomplete.partial(),
-            Self::Stop(_) => None,
         }
     }
 }
 
 impl<T: 'static> Evaluation<T> {
+    pub(crate) fn try_complete(
+        self,
+        context: &mut LocalLoweringContext,
+        body: &HMIRBody,
+        expected: Option<HMIRTypeID>,
+    ) -> EvalResult<Evaluation<T>> {
+        match (self, expected) {
+            (Self::Incomplete(incomplete), Some(expected)) => incomplete.resolve(context, body, expected),
+            (result, _) => Ok(result),
+        }
+    }
+
     pub(crate) fn complete(
         self,
         context: &mut LocalLoweringContext,
         body: &HMIRBody,
         expected: Option<HMIRTypeID>,
     ) -> EvalResult<T> {
-        match (self, expected) {
-            (Self::Incomplete(incomplete), Some(expected)) => {
-                incomplete.resolve(context, body, expected)
-            }
-            (result, _) => Ok(result),
-        }
+        self.try_complete(context, body, expected)?.ready()
     }
 
     pub(crate) fn and_then<U: 'static>(
@@ -87,9 +90,8 @@ impl<T: 'static> Evaluation<T> {
         context: &mut LocalLoweringContext,
         body: &HMIRBody,
         partial: Option<U>,
-        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, T, Option<HMIRTypeID>) -> EvalResult<U>
-        + 'static,
-    ) -> EvalResult<U> {
+        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, T, Option<HMIRTypeID>) -> EvalResult<Evaluation<U>> + 'static,
+    ) -> EvalResult<Evaluation<U>> {
         self.chain(context, body, None, partial, then)
     }
 
@@ -99,12 +101,10 @@ impl<T: 'static> Evaluation<T> {
         body: &HMIRBody,
         expected: Option<HMIRTypeID>,
         partial: Option<U>,
-        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, T, Option<HMIRTypeID>) -> EvalResult<U>
-        + 'static,
-    ) -> EvalResult<U> {
+        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, T, Option<HMIRTypeID>) -> EvalResult<Evaluation<U>> + 'static,
+    ) -> EvalResult<Evaluation<U>> {
         match self {
             Self::Ready(value) => then(context, body, value, expected),
-            Self::Stop(stop) => Ok(Evaluation::Stop(stop)),
             Self::Incomplete(incomplete) => Ok(Evaluation::Incomplete(incomplete.wrap(
                 partial,
                 move |context, body, expected, resolve| {
@@ -118,27 +118,13 @@ impl<T: 'static> Evaluation<T> {
         self,
         context: &mut LocalLoweringContext,
         map: impl FnOnce(&mut LocalLoweringContext, T) -> CXResult<U> + 'static,
-    ) -> EvalResult<U> {
+    ) -> EvalResult<Evaluation<U>> {
         match self {
             Self::Ready(value) => Ok(Evaluation::Ready(map(context, value)?)),
-            Self::Stop(stop) => Ok(Evaluation::Stop(stop)),
             Self::Incomplete(incomplete) => Ok(Evaluation::Incomplete(incomplete.wrap(
                 None,
                 move |context, body, expected, resolve| resolve(context, body, expected)?.map(context, map),
             ))),
-        }
-    }
-
-    pub(crate) fn catch(
-        self,
-        handler: impl FnOnce(StopReason) -> EvalResult<T> + 'static,
-    ) -> EvalResult<T> {
-        match self {
-            Self::Stop(stop) => handler(stop),
-            Self::Incomplete(incomplete) => Ok(Self::Incomplete(incomplete.settle(
-                move |_, _, result| result?.catch(handler),
-            ))),
-            value => Ok(value),
         }
     }
 
@@ -151,7 +137,7 @@ impl<T: 'static> Evaluation<T> {
 }
 
 impl Evaluation<HMIRTypeID> {
-    pub(crate) fn description(self) -> EvalResult<HMIRTypeID> {
+    pub(crate) fn description(self) -> EvalResult<Evaluation<HMIRTypeID>> {
         Ok(match self {
             Self::Incomplete(incomplete) => match incomplete.partial().copied() {
                 Some(value) => Self::Ready(value),
@@ -165,36 +151,46 @@ impl Evaluation<HMIRTypeID> {
 pub(crate) fn scoped<T: 'static>(
     context: &mut LocalLoweringContext,
     expectations: Expectations,
-    eval: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<T>,
-) -> EvalResult<T> {
+    eval: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<T>>,
+) -> EvalResult<Evaluation<T>> {
     let result = context.with_expectations(expectations, eval)?;
     Ok(result.scoped(expectations))
 }
 
-pub(crate) fn catch_diverged<T: 'static>(result: EvalResult<T>) -> EvalResult<Option<T>> {
-    let value = match result? {
+pub(crate) fn catch<T: 'static>(
+    result: EvalResult<Evaluation<T>>,
+    handler: impl FnOnce(StopReason) -> EvalResult<Evaluation<T>> + 'static,
+) -> EvalResult<Evaluation<T>> {
+    match result {
+        Err(EvalExit::Stop(stop)) => handler(stop),
+        Ok(Evaluation::Incomplete(incomplete)) => Ok(Evaluation::Incomplete(incomplete.settle(
+            move |_, _, result| catch(result, handler),
+        ))),
+        result => result,
+    }
+}
+
+pub(crate) fn catch_diverged<T: 'static>(result: EvalResult<Evaluation<T>>) -> EvalResult<Evaluation<Option<T>>> {
+    let result = result.map(|value| match value {
         Evaluation::Ready(value) => Evaluation::Ready(Some(value)),
         Evaluation::Incomplete(incomplete) => Evaluation::Incomplete(incomplete.project(Some)),
-        Evaluation::Stop(stop) => Evaluation::Stop(stop),
-    };
-    value.catch(|stop| match stop {
+    });
+    catch(result, |stop| match stop {
         StopReason::Runtime(RuntimeStop::Diverged) => Ok(Evaluation::Ready(None)),
-        stop => Ok(Evaluation::Stop(stop)),
+        stop => Err(EvalExit::Stop(stop)),
     })
 }
 
 pub(crate) fn finally<T: 'static>(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
-    result: EvalResult<T>,
+    result: EvalResult<Evaluation<T>>,
     finish: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, bool) -> CXResult<()> + 'static,
-) -> EvalResult<T> {
+) -> EvalResult<Evaluation<T>> {
     match result {
-        Ok(Evaluation::Incomplete(incomplete)) => {
-            Ok(Evaluation::Incomplete(incomplete.finally(finish)))
-        }
+        Ok(Evaluation::Incomplete(incomplete)) => Ok(Evaluation::Incomplete(incomplete.finally(finish))),
         Ok(result) => {
-            finish(context, body, matches!(result, Evaluation::Ready(_)))?;
+            finish(context, body, true)?;
             Ok(result)
         }
         Err(error) => {
@@ -204,27 +200,23 @@ pub(crate) fn finally<T: 'static>(
     }
 }
 
-pub(crate) fn top<T>(result: EvalResult<T>) -> CXResult<T> {
-    match result? {
-        Evaluation::Ready(value) => Ok(value),
-        Evaluation::Incomplete(incomplete) => Err(incomplete.error()),
-        Evaluation::Stop(StopReason::Comptime(stop)) => {
-            unreachable!("uncaught comptime stop: {stop:?}")
-        }
-        Evaluation::Stop(StopReason::Runtime(stop)) => {
-            unreachable!("uncaught runtime stop: {stop:?}")
-        }
+pub(crate) fn top<T>(result: EvalResult<Evaluation<T>>) -> CXResult<T> {
+    boundary(result.and_then(Evaluation::ready))
+}
+
+pub(crate) fn boundary<T>(result: EvalResult<T>) -> CXResult<T> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(EvalExit::Diagnostic(error)) => Err(error),
+        Err(EvalExit::Stop(StopReason::Comptime(stop))) => unreachable!("uncaught comptime stop: {stop:?}"),
+        Err(EvalExit::Stop(StopReason::Runtime(stop))) => unreachable!("uncaught runtime stop: {stop:?}"),
     }
 }
 
 impl From<ComptimeStop> for StopReason {
-    fn from(stop: ComptimeStop) -> Self {
-        Self::Comptime(stop)
-    }
+    fn from(stop: ComptimeStop) -> Self { Self::Comptime(stop) }
 }
 
 impl From<RuntimeStop> for StopReason {
-    fn from(stop: RuntimeStop) -> Self {
-        Self::Runtime(stop)
-    }
+    fn from(stop: RuntimeStop) -> Self { Self::Runtime(stop) }
 }

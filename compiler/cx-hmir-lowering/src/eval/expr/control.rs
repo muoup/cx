@@ -27,7 +27,7 @@ use crate::{
         EvalResult,
         binding::eval_scoped,
         coerce, eval, expr,
-        flow::{self, ComptimeStop, Evaluation, ready},
+        flow::{self, ComptimeStop, Evaluation},
         types,
     },
     lower::mir,
@@ -40,7 +40,7 @@ pub(crate) fn eval_control(
     body: &HMIRBody,
     span: &TokenRange,
     control: &HMIRControlOp,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     match control {
         HMIRControlOp::Return(value) => exit::eval_return(context, body, span, *value),
         HMIRControlOp::Yield(value) => exit::eval_yield(context, body, span, *value),
@@ -71,7 +71,7 @@ pub(crate) fn eval_if(
     condition: HMIRExprID,
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     emit::open_scope(context, span);
     let result = branch(context, body, span, condition, then_branch, else_branch);
     closing(context, body, result, span)
@@ -84,16 +84,16 @@ fn branch(
     condition: HMIRExprID,
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     match context.context() {
         FnContext::Comptime(_) => {
-            let condition = ready!(eval(context, body, condition));
+            let condition = eval(context, body, condition)?.ready()?;
 
             return match (comptime_truth(&condition), else_branch) {
                 (true, Some(_)) => eval_scoped(context, body, then_branch),
                 (false, Some(else_branch)) => eval_scoped(context, body, else_branch),
                 (true, None) => {
-                    ready!(eval_scoped(context, body, then_branch));
+                    eval_scoped(context, body, then_branch)?.ready()?;
                     Ok(Evaluation::Ready(expr::unit(context, span)))
                 }
                 (false, None) => Ok(Evaluation::Ready(expr::unit(context, span))),
@@ -108,31 +108,28 @@ fn branch(
                 None => merge_block,
             };
 
-            let condition = ready!(eval_condition(context, body, condition));
+            let condition = eval_condition(context, body, condition)?.ready()?;
             mir::branch(context, condition, then_block, else_block, span);
 
             mir::switch_to(context, then_block);
-            let then_expr = flow::catch_diverged(eval_scoped(
-                context,
-                body,
-                then_branch
-            ))?;
-            
+            let then_expr = flow::catch_diverged(eval_scoped(context, body, then_branch))?;
+
             if let Some(else_branch) = else_branch {
                 let span = span.clone();
-                
+
                 then_expr.and_then(context, body, None, move |context, body, then, expected| {
-                    let mut arms = Vec::from_iter(then.map(|value| (mir::current_block(context), value)));
+                    let mut arms =
+                        Vec::from_iter(then.map(|value| (mir::current_block(context), value)));
 
                     mir::switch_to(context, else_block);
-                    flow::catch_diverged(eval_scoped(
-                        context,
-                        body,
-                        else_branch
-                    ))?.complete(context, body, expected)?.and_then(context, body, None, move |context, _, otherwise, _| {
-                        arms.extend(otherwise.map(|value| (mir::current_block(context), value)));
-                        merge(context, arms, &span)
-                    })
+                    flow::catch_diverged(eval_scoped(context, body, else_branch))?
+                        .try_complete(context, body, expected)?
+                        .and_then(context, body, None, move |context, _, otherwise, _| {
+                            arms.extend(
+                                otherwise.map(|value| (mir::current_block(context), value)),
+                            );
+                            merge(context, arms, &span)
+                        })
                 })
             } else {
                 mir::jump(context, merge_block, span);
@@ -147,9 +144,9 @@ pub(crate) fn merge(
     context: &mut LocalLoweringContext,
     arms: Vec<(MIRBasicBlockID, HMIRValue)>,
     span: &TokenRange,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if arms.is_empty() {
-        return Ok(Evaluation::diverged());
+        return flow::diverged();
     }
     let merge = mir::block(context, "if.merge");
     let ty = merged_type(context, &arms, span);
@@ -207,9 +204,9 @@ fn eval_condition(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     condition: HMIRExprID,
-) -> EvalResult<MIRValue> {
+) -> EvalResult<Evaluation<MIRValue>> {
     let span = body.expr(condition).span();
-    let value = ready!(eval(context, body, condition));
+    let value = eval(context, body, condition)?.ready()?;
     let value = coerce::condition(context, value, span)?;
     Ok(Evaluation::Ready(mir::operand(context, &value, span)?))
 }
@@ -219,8 +216,8 @@ fn logical_operand(
     body: &HMIRBody,
     span: &TokenRange,
     operand: HMIRExprID,
-) -> EvalResult<HMIRValue> {
-    let value = ready!(eval(context, body, operand));
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let value = eval(context, body, operand)?.ready()?;
     Ok(Evaluation::Ready(coerce::condition(context, value, span)?))
 }
 
@@ -231,8 +228,8 @@ pub(crate) fn eval_short_circuit(
     op: HMIRBinaryOp,
     lhs: HMIRExprID,
     rhs: HMIRExprID,
-) -> EvalResult<HMIRValue> {
-    let left = ready!(logical_operand(context, body, span, lhs));
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let left = logical_operand(context, body, span, lhs)?.ready()?;
     let or = op == HMIRBinaryOp::LOr;
     if !context.is_runtime() {
         return match comptime_truth(&left) == or {
@@ -251,9 +248,7 @@ pub(crate) fn eval_short_circuit(
     }
 
     mir::switch_to(context, rhs_block);
-    let right = ready!(flow::catch_diverged(logical_operand(
-        context, body, span, rhs
-    )));
+    let right = flow::catch_diverged(logical_operand(context, body, span, rhs))?.ready()?;
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = emit::scratch(context, ty, span)?;
     if let Some(right) = right {

@@ -139,13 +139,13 @@ impl LocalLoweringContext<'_, '_, '_> {
         self.env_mut().resolver_mut().intern_context(context)
     }
 
-    pub fn evaluate(&mut self, id: MemoID, span: &TokenRange) -> eval::EvalResult<HMIRValue> {
+    pub fn evaluate(&mut self, id: MemoID, span: &TokenRange) -> eval::EvalResult<flow::Evaluation<HMIRValue>> {
         let resolver = self.env().resolver();
         match &resolver.entries[id].state {
             MemoState::Ready(value) | MemoState::Evaluating(Some(value)) => {
                 return Ok(flow::Evaluation::Ready(value.clone()));
             }
-            MemoState::Evaluating(None) => return Err(resolver.cycle(id, span)),
+            MemoState::Evaluating(None) => return Err(resolver.cycle(id, span).into()),
             MemoState::Reserved => {}
         }
         let key = resolver.entries[id]
@@ -181,7 +181,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             };
             child.with_expectations(expectations, |child| match key {
                 MemoKey::Definition(def, _) => {
-                    symbol::definition(child, def, scope, span).map(flow::Evaluation::Ready)
+                    Ok(flow::Evaluation::Ready(symbol::definition(child, def, scope, span)?))
                 }
                 MemoKey::Expression(expr, _) => expression(
                     child,
@@ -215,7 +215,7 @@ fn expression(
     expected: Option<HMIRTypeID>,
     initializer: bool,
     span: &TokenRange,
-) -> eval::EvalResult<HMIRValue> {
+) -> eval::EvalResult<flow::Evaluation<HMIRValue>> {
     let owner = context.source();
     let unit = context
         .env_mut()
@@ -227,9 +227,9 @@ fn expression(
         .expect("memo expression belongs to its owner");
     if let HMIRExprKind::Type(ty) = body.expr(expr).kind() {
         let ty = eval::types::construct_type(context, body, ty, id)?;
-        return eval::name::type_value(context, ty, span).map(flow::Evaluation::Ready);
+        return Ok(flow::Evaluation::Ready(eval::name::type_value(context, ty, span)?));
     }
-    let result = eval::eval(context, body, expr)?.complete(context, body, expected)?;
+    let result = eval::eval(context, body, expr)?.try_complete(context, body, expected)?;
     let partial = result
         .known()
         .filter(|value| value.as_type().is_some())

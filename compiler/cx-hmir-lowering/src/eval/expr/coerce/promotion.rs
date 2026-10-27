@@ -26,12 +26,12 @@ pub(super) fn step(context: &mut LocalLoweringContext, value: HMIRValue, span: &
     let subject = env.referent(value.ty());
     match env.resolve_kind(subject) {
         HMIRTypeKind::Staged(_) if context.is_runtime() && subject == value.ty() => {
-            let value = match staged::materialize(context, &value, &[])? {
-                evaluated if evaluated.is_diverged() => {
+            let value = match flow::top(flow::catch_diverged(staged::materialize(context, &value, &[])))? {
+                Some(value) => value,
+                None => {
                     let ty = types::realize(context.env_mut(), HMIRTypeKind::Unreachable, span);
                     expr::unit(context, span).with_ty(ty)
                 }
-                evaluated => flow::top(Ok(evaluated))?,
             };
             Ok(Coercion::Applied(value))
         }
@@ -83,7 +83,7 @@ fn lvalue(
     let env = context.env();
     if env.is_nocopy(inner) {
         let names = (types::name(env, value.ty()), types::name(env, inner));
-        return Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names));
+        return Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names).into());
     }
     let semantics = env.semantics(inner);
     let global = match value.kind() {

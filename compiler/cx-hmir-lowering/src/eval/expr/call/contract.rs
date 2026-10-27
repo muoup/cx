@@ -19,7 +19,7 @@ use crate::{
         ComptimeContext, Expectations, FnContext, LocalLoweringContext, Permission,
         runtime::RuntimeScope,
     },
-    eval::{EvalResult, coerce, eval, flow::Evaluation, types},
+    eval::{EvalResult, coerce, eval, flow::{EvalExit, Evaluation}, types},
     log::hmir_error,
     lower::mir,
     symbol,
@@ -61,7 +61,7 @@ pub(crate) fn check(
             span,
             &catalogue::mir::COMPTIME_ASSERTION,
             Some(format!("{label} of '{name}' does not hold at compile time")),
-        ));
+        ).into());
     }
     Ok(())
 }
@@ -71,8 +71,8 @@ pub(crate) fn call(
     def: HMIRDefID,
     args: &[HMIRValue],
     span: &TokenRange,
-    emit: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<HMIRValue>,
-) -> EvalResult<HMIRValue> {
+    emit: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<HMIRValue>>,
+) -> EvalResult<Evaluation<HMIRValue>> {
     let unit = context.env_mut().symbols_mut().owner(def.brand()).expect("function owner exists");
     let source = unit.resolve_def(def).expect("function exists");
     let selected = symbol::select(source, None)?;
@@ -182,13 +182,14 @@ fn condition(
     };
     let expectations = Expectations::new(permission).expecting_pure();
     let value = child.with_expectations(expectations, |child| {
-        match eval(child, contract.body(), expression)? {
-            Evaluation::Ready(value) => coerce::condition(child, value, span),
-            Evaluation::Incomplete(incomplete) => Err(incomplete.error()),
-            Evaluation::Stop(_) => {
+        match eval(child, contract.body(), expression) {
+            Ok(Evaluation::Ready(value)) => coerce::condition(child, value, span),
+            Ok(Evaluation::Incomplete(incomplete)) => Err(incomplete.error().into()),
+            Err(EvalExit::Stop(_)) => {
                 let requirement = ("a contract condition".into(), "a value".into(), None);
-                Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement))
+                Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).into())
             }
+            Err(EvalExit::Diagnostic(error)) => Err(error),
         }
     });
     *context.context_mut() = child.into_context();
@@ -234,7 +235,7 @@ fn bind_result(
         return Ok(None);
     };
     let Some(result) = result.filter(|result| !context.env().is_void(result.ty())) else {
-        return Err(hmir_error(span, &typecheck::VOID_POSTCONDITION_BINDING, ()));
+        return Err(hmir_error(span, &typecheck::VOID_POSTCONDITION_BINDING, ()).into());
     };
     let value = observe(context, result.clone(), span)?;
     Ok(Some(bind(context, local, value)))

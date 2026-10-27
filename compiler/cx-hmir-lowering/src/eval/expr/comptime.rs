@@ -15,7 +15,7 @@ use crate::{
     env::function::{ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeSlotState},
     eval::{
         EvalResult, coerce, deduce, eval,
-        flow::{Evaluation, StopReason, ready},
+        flow::{EvalExit, Evaluation, StopReason},
         name::type_value,
     },
     log::hmir_error,
@@ -28,7 +28,7 @@ pub(crate) fn freeze(
     body: &HMIRBody,
     expr: HMIRExprID,
     expected: Option<HMIRTypeID>,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let span = body.expr(expr).span();
     frozen(context, span, |child| evaluate(child, body, expr, expected, span))
 }
@@ -36,20 +36,21 @@ pub(crate) fn freeze(
 pub(crate) fn frozen<T: 'static>(
     context: &mut LocalLoweringContext,
     span: &TokenRange,
-    evaluate: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<T>,
-) -> EvalResult<T> {
+    evaluate: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<T>>,
+) -> EvalResult<Evaluation<T>> {
     let mut child = child(context);
-    match evaluate(&mut child)? {
-        Evaluation::Incomplete(incomplete) => {
+    match evaluate(&mut child) {
+        Ok(Evaluation::Incomplete(incomplete)) => {
             Ok(Evaluation::Incomplete(incomplete.in_context(child.into_context())))
         }
-        Evaluation::Stop(StopReason::Comptime(_)) => {
-            Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()))
+        Err(EvalExit::Stop(StopReason::Comptime(_))) => {
+            Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into())
         }
-        Evaluation::Stop(StopReason::Runtime(stop)) => {
+        Err(EvalExit::Stop(StopReason::Runtime(stop))) => {
             unreachable!("runtime stop {stop:?} in a comptime evaluation")
         }
-        result => Ok(result),
+        Ok(result) => Ok(result),
+        Err(EvalExit::Diagnostic(error)) => Err(EvalExit::Diagnostic(error)),
     }
 }
 
@@ -107,11 +108,11 @@ fn evaluate(
     expr: HMIRExprID,
     expected: Option<HMIRTypeID>,
     span: &TokenRange,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let value = eval(context, body, expr)?;
     let value = match value.known().and_then(HMIRValue::as_type) {
         Some(_) => {
-            let ty = ready!(deduce::described_type(context, body, value, span)?.description());
+            let ty = (deduce::described_type(context, body, value, span)?.description())?.ready()?;
             Evaluation::Ready(type_value(context, ty, span)?)
         }
         None => deduce::complete(context, body, value, expected)?,
@@ -130,7 +131,7 @@ pub(crate) fn export(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let value = settle(context, value, span)?;
     match value.kind() {
         HMIRValueKind::Constant(constant) if !constant.holds_local_address() => {
@@ -141,7 +142,7 @@ pub(crate) fn export(
                 "the address of compile-time storage".into(),
                 "the result of a compile-time expression".into(),
             );
-            Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject))
+            Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject).into())
         }
     }
 }
@@ -160,7 +161,7 @@ fn settle(
                 "a reference to compile-time storage".into(),
                 "an exported value".into(),
             ),
-        )),
+        ).into()),
         HMIRValueKind::PlaceRef(_) | HMIRValueKind::Indirect(_) => {
             let reference = emit::reference(context, &value, span)?;
             emit::lift(context, &reference, None, span)

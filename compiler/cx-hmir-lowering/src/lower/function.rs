@@ -75,7 +75,7 @@ fn definition(
     signature: &HMIRFnSignature<HMIRTypeID>,
     specialization: Option<&Specialization>,
     span: &TokenRange,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<flow::Evaluation<HMIRValue>> {
     let body = function.body();
     for (index, (param, local)) in signature.params().iter().zip(function.params()).enumerate() {
         let bound = specialization.and_then(|specialization| specialization.bindings()[index].as_ref());

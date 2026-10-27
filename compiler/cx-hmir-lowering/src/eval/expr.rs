@@ -22,7 +22,7 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::{LocalLoweringContext, Permission},
-    eval::{EvalResult, eval, eval_type, flow::{Evaluation, ready}},
+    eval::{EvalResult, eval, eval_type, flow::Evaluation},
     log::hmir_error,
     symbol::composite::alike,
     value::{HMIRValue, constant::HMIRConstant},
@@ -60,23 +60,23 @@ pub(crate) fn eval_intrinsic(
     body: &HMIRBody,
     span: &TokenRange,
     intrinsic: &HMIRIntrinsic,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let Intrinsic::VA(intrinsic) = intrinsic else {
         unreachable!("only variadic intrinsics are lowered to HMIR")
     };
     let intrinsic = match intrinsic {
         VAIntrinsic::Start { list, last } => {
-            let list = ready!(va_list(context, body, *list));
-            let last = ready!(eval(context, body, *last));
+            let list = (va_list(context, body, *list))?.ready()?;
+            let last = (eval(context, body, *last))?.ready()?;
             let last = coerce::std_rvalue(context, last, span)?;
             VAIntrinsic::Start { list, last }
         }
         VAIntrinsic::End { list } => VAIntrinsic::End {
-            list: ready!(va_list(context, body, *list)),
+            list: (va_list(context, body, *list))?.ready()?,
         },
         VAIntrinsic::Arg { list, ty } => VAIntrinsic::Arg {
-            list: ready!(va_list(context, body, *list)),
-            ty: ready!(eval_type(context, body, *ty)),
+            list: (va_list(context, body, *list))?.ready()?,
+            ty: (eval_type(context, body, *ty))?.ready()?,
         },
     };
     let value = match emit::variadic(context, &intrinsic, span)? {
@@ -90,9 +90,9 @@ fn va_list(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     list: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let span = body.expr(list).span();
-    let value = ready!(eval(context, body, list));
+    let value = (eval(context, body, list))?.ready()?;
     let expected = name::intrinsic_type(context, "__builtin_va_list", span)
         .expect("va_list is an intrinsic type");
     let actual = context.env().reference_inner(value.ty());
@@ -102,7 +102,7 @@ fn va_list(
             types::name(context.env(), expected),
             types::name(context.env(), value.ty()),
         );
-        return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch));
+        return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch).into());
     }
     let ty = types::pointer(context.env_mut(), expected, span);
     Ok(Evaluation::Ready(emit::address(context, &value, ty, span)?))
@@ -114,7 +114,7 @@ pub(crate) fn require_nonsafe(
     operation: &str,
 ) -> CXResult<()> {
     if !context.is_unevaluated() && context.permission() < Permission::Nonsafe {
-        return Err(hmir_error(span, &typecheck::UNSAFE_OPERATION, operation.into()));
+        return Err(hmir_error(span, &typecheck::UNSAFE_OPERATION, operation.into()).into());
     }
     Ok(())
 }
@@ -125,7 +125,7 @@ pub(crate) fn require_pure(
     operation: &str,
 ) -> CXResult<()> {
     if !context.is_unevaluated() && !context.expectations().allows_impure() {
-        return Err(hmir_error(span, &typecheck::IMPURE_OPERATION, operation.into()));
+        return Err(hmir_error(span, &typecheck::IMPURE_OPERATION, operation.into()).into());
     }
     Ok(())
 }

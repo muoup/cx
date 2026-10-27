@@ -85,7 +85,7 @@ pub(crate) fn construct_type(
             return Ok(id);
         }
         HMIRExprTypeKind::Nominal(inner) => {
-            let inner = flow::top(eval_type(context, body, *inner)?.description())?;
+            let inner = flow::top(eval_type(context, body, *inner).and_then(|ty| ty.description()))?;
             let current = context.env().semantics(inner);
             let semantics = current.apply(semantics);
             HMIRType::new(
@@ -127,7 +127,7 @@ fn declared_move(
     match declared {
         HMIRDeclaredMove::Explicit(semantics) => Ok(*semantics),
         HMIRDeclaredMove::CopyTraits(source) => {
-            let source = flow::top(eval_type(context, body, *source)?.description())?;
+            let source = flow::top(eval_type(context, body, *source).and_then(|ty| ty.description()))?;
             Ok(types::owned_semantics(context.env(), source).move_semantics)
         }
     }
@@ -139,7 +139,7 @@ fn member(
     expr: HMIRExprID,
     owner: &HMIRExprTypeKind,
 ) -> CXResult<HMIRTypeID> {
-    let ty = flow::top(eval_type(context, body, expr)?.description())?;
+    let ty = flow::top(eval_type(context, body, expr).and_then(|ty| ty.description()))?;
     let (subject, admits_void) = match owner {
         HMIRExprTypeKind::Array { .. } => ("array element", false),
         HMIRExprTypeKind::Struct { .. } | HMIRExprTypeKind::Union { .. } => ("member", false),
@@ -152,7 +152,7 @@ fn member(
         return Ok(ty);
     }
     let subject = format!("{subject} of type '{}'", types::name(context.env(), ty));
-    Err(hmir_error(body.expr(expr).span(), &typecheck::INCOMPLETE_TYPE, subject))
+    Err(hmir_error(body.expr(expr).span(), &typecheck::INCOMPLETE_TYPE, subject).into())
 }
 
 fn array_length(
@@ -165,7 +165,7 @@ fn array_length(
     let (HMIRTypeKind::Int(ty), Some(value)) = (context.env().resolve_kind(value.ty()), value.as_int())
     else {
         let subject = ("array length".into(), "integer".into());
-        return Err(hmir_error(span, &mir::EXPECTED_CONSTANT, subject));
+        return Err(hmir_error(span, &mir::EXPECTED_CONSTANT, subject).into());
     };
 
     let value = int::normalize(value, *ty);
@@ -182,5 +182,5 @@ fn array_length(
     };
 
     let subject = ("array length".into(), requirement, Some(found));
-    Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, subject))
+    Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, subject).into())
 }

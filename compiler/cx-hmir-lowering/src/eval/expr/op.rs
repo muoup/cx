@@ -12,7 +12,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult, coerce, control, eval, expr,
-        flow::{Evaluation, ready},
+        flow::Evaluation,
         types,
     },
     log::hmir_error,
@@ -24,8 +24,8 @@ pub(crate) fn eval_operand(
     body: &HMIRBody,
     span: &TokenRange,
     expr: HMIRExprID,
-) -> EvalResult<HMIRValue> {
-    let value = ready!(eval(context, body, expr));
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let value = (eval(context, body, expr))?.ready()?;
     Ok(Evaluation::Ready(coerce::arithmetic(context, value, span)?))
 }
 
@@ -48,12 +48,12 @@ pub(crate) fn eval_binary(
     op: HMIRBinaryOp,
     lhs: HMIRExprID,
     rhs: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if matches!(op, HMIRBinaryOp::LAnd | HMIRBinaryOp::LOr) {
         return control::eval_short_circuit(context, body, span, op, lhs, rhs);
     }
-    let lhs = ready!(eval_operand(context, body, span, lhs));
-    let rhs = ready!(eval_operand(context, body, span, rhs));
+    let lhs = (eval_operand(context, body, span, lhs))?.ready()?;
+    let rhs = (eval_operand(context, body, span, rhs))?.ready()?;
     Ok(Evaluation::Ready(binary_operands(context, span, op, lhs, rhs)?))
 }
 
@@ -122,7 +122,7 @@ fn arithmetic(
             types::name(context.env(), lhs.ty()),
             types::name(context.env(), rhs.ty()),
         );
-        return Err(hmir_error(span, &typecheck::INVALID_BINARY_OPERANDS, operands));
+        return Err(hmir_error(span, &typecheck::INVALID_BINARY_OPERANDS, operands).into());
     };
     let integral_only = matches!(
         op,
@@ -134,7 +134,7 @@ fn arithmetic(
             | HMIRBinaryOp::RShift
     );
     if integral_only && context.env().is_float(common) {
-        return Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()));
+        return Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()).into());
     }
     let lhs = coerce::implicit(context, lhs, common, span)?;
     let rhs = coerce::implicit(context, rhs, common, span)?;
@@ -165,10 +165,10 @@ pub(crate) fn eval_unary(
     span: &TokenRange,
     op: HMIRUnaryOp,
     operand: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     match op {
         HMIRUnaryOp::LNot => {
-            let value = ready!(eval(context, body, operand));
+            let value = (eval(context, body, operand))?.ready()?;
             let value = coerce::condition(context, value, span)?;
             Ok(Evaluation::Ready(emit::unary(context, op, &value, span)?))
         }
@@ -177,22 +177,22 @@ pub(crate) fn eval_unary(
         | HMIRUnaryOp::PostIncrement
         | HMIRUnaryOp::PostDecrement => {
             expr::require_pure(context, span, "increment or decrement")?;
-            let value = ready!(eval(context, body, operand));
+            let value = (eval(context, body, operand))?.ready()?;
             Ok(Evaluation::Ready(increment(context, span, op, value)?))
         }
         HMIRUnaryOp::Neg | HMIRUnaryOp::BNot => {
-            let value = ready!(eval_operand(context, body, span, operand));
+            let value = (eval_operand(context, body, span, operand))?.ready()?;
             match (op, context.env().resolve_kind(value.ty())) {
                 (HMIRUnaryOp::Neg, HMIRTypeKind::Float(_) | HMIRTypeKind::Int(_))
                 | (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => {
                     Ok(Evaluation::Ready(emit::unary(context, op, &value, span)?))
                 }
                 (_, HMIRTypeKind::Float(_)) => {
-                    Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()))
+                    Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()).into())
                 }
                 _ => {
                     let operand = (format!("apply '{}' to", op.path()), types::name(context.env(), value.ty()));
-                    Err(hmir_error(span, &typecheck::INVALID_OPERAND, operand))
+                    Err(hmir_error(span, &typecheck::INVALID_OPERAND, operand).into())
                 }
             }
         }
@@ -206,11 +206,11 @@ fn increment(
     target: HMIRValue,
 ) -> CXResult<HMIRValue> {
     let Some(ty) = context.env().reference_inner(target.ty()) else {
-        return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "increment".into()));
+        return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "increment".into()).into());
     };
     if context.env().semantics(ty).constant {
         let mutation = ("increment".into(), types::name(context.env(), ty));
-        return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutation));
+        return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutation).into());
     }
     let (prefix, op) = match op {
         HMIRUnaryOp::PreIncrement => (true, HMIRBinaryOp::Add),
@@ -237,7 +237,7 @@ fn increment(
         }
         _ => {
             let operand = ("increment".into(), "type display".into());
-            return Err(hmir_error(span, &typecheck::INVALID_OPERAND, operand));
+            return Err(hmir_error(span, &typecheck::INVALID_OPERAND, operand).into());
         }
     };
     emit::write(context, &target, &updated, span)?;

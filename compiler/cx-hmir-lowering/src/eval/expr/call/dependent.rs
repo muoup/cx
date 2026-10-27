@@ -19,7 +19,7 @@ use crate::{
         EvalResult, coerce, comptime, control,
         deduce::{self, Deduction},
         eval, eval_type,
-        flow::{self, ComptimeStop, Evaluation, StopReason, ready},
+        flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
         staged, types,
     },
     log::hmir_error,
@@ -59,11 +59,11 @@ impl Frame<'_> {
         self.enter(caller, span, |child| {
             let param = &function.signature().params()[index];
             let span = function.body().expr(*param.ty()).span();
-            let ty = flow::top(eval_type(child, function.body(), *param.ty())?.description())?;
+            let ty = flow::top(eval_type(child, function.body(), *param.ty()).and_then(|ty| ty.description()))?;
             let ty = types::parameter(child, ty, param.comptime(), span)?;
             if runtime && staged::is_code(child, ty) {
                 let operation = "a reference or staged-expression parameter".into();
-                return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation));
+                return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
             }
             Ok(ty)
         })
@@ -122,11 +122,11 @@ impl Frame<'_> {
         let function = self.function;
         let declared = function.signature();
         let return_type = self.enter(caller, span, |child| {
-            flow::top(eval_type(child, function.body(), *declared.return_type())?.description())
+            flow::top(eval_type(child, function.body(), *declared.return_type()).and_then(|ty| ty.description()))
         })?;
         if self.runtime && staged::is_code(caller, return_type) {
             let operation = "a staged-expression result".into();
-            return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation));
+            return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
         }
         self.return_type = Some(return_type);
         Ok(HMIRFnSignature::new(
@@ -166,10 +166,10 @@ pub(crate) fn dependent(
     args: &[HMIRExprID],
     applied: &[HMIRValue],
     span: &TokenRange,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) = callee.kind()
     else {
-        return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, "this function".into()));
+        return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, "this function".into()).into());
     };
     let unit = context.env_mut().symbols_mut().owner(def.brand()).expect("function owner exists");
     let source = unit.resolve_def(*def).expect("function exists");
@@ -183,7 +183,7 @@ pub(crate) fn dependent(
     let runtime = context.is_runtime() && !spliced;
     if declared.is_variadic() {
         let operation = "a variadic dependent function call".into();
-        return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation));
+        return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
     }
     let mut bound = applied.iter();
     let mut supplied = args.iter();
@@ -204,7 +204,7 @@ pub(crate) fn dependent(
             .all(|(param, arg)| param.comptime() || !matches!(arg, Some(Argument::Expression(_))));
     if bound.next().is_some() || supplied.next().is_some() || (partial && !prefix) {
         let counts = (format!("'{name}'"), declared.params().len() - applied.len(), args.len(), false);
-        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts));
+        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts).into());
     }
     if !partial {
         super::require(context, span, declared.contract().is_safe(), true)?;
@@ -216,7 +216,7 @@ pub(crate) fn dependent(
                 hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature)
             }
             false => hmir_error(span, &mir::COMPTIME_NO_BODY, name),
-        });
+        }.into());
     }
     let mut frame = Frame {
         function,
@@ -246,7 +246,7 @@ pub(crate) fn dependent(
             false => None,
         };
         for deduced in deduction.infer(context, &mut frame, index, actual, span)? {
-            let value = ready!(deduced.argument.complete(context, caller_body, Some(deduced.ty)));
+            let value = deduced.argument.complete(context, caller_body, Some(deduced.ty))?;
             let Some(Argument::Expression(expr)) = &arguments[deduced.index] else {
                 unreachable!("a deferred argument is an expression")
             };
@@ -257,7 +257,7 @@ pub(crate) fn dependent(
         let ty = frame.parameter(context, index, span)?;
         if !runtime && context.env().is_reference(ty) {
             let operation = "a reference parameter".into();
-            return Err(hmir_error(arg_span, &mir::COMPTIME_INVALID_OPERATION, operation));
+            return Err(hmir_error(arg_span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
         }
         let argument = if staged::is_code(context, ty) {
             staged::argument(context, caller_body, arg, ty)?
@@ -289,14 +289,13 @@ pub(crate) fn dependent(
             {
                 deduction.defer(index, argument);
             }
-            Evaluation::Incomplete(incomplete) => return Err(incomplete.error()),
-            Evaluation::Stop(stop) => return Ok(Evaluation::Stop(stop)),
+            Evaluation::Incomplete(incomplete) => return Err(incomplete.error().into()),
         }
     }
     if let Err(undeduced) = deduction.finish(span) {
         return match !partial && deduce::generates_type(function) {
             true => Ok(deduce::generated(context, callee, values, undeduced, span)),
-            false => Err(undeduced),
+            false => Err(undeduced.into()),
         };
     }
     let curries = declared.stage() == HMIRFunctionStage::Comptime
@@ -326,14 +325,14 @@ pub(crate) fn dependent(
             runtime,
         };
         if other.function.signature().params().len() != values.len() {
-            return Err(incompatible());
+            return Err(incompatible().into());
         }
         let mut params = Vec::with_capacity(values.len());
         for (index, (param, value)) in signature.params().iter().zip(&values).enumerate() {
             let ty = other.parameter(context, index, span)?;
             let frozen = other.function.signature().params()[index].comptime();
             if !alike(context.env(), *param.ty(), ty, false) || frozen != param.comptime() {
-                return Err(incompatible());
+                return Err(incompatible().into());
             }
             if (!runtime || frozen)
                 && let Some(value) = value
@@ -344,7 +343,7 @@ pub(crate) fn dependent(
         }
         let other = other.signature(context, params, span)?;
         if !signatures_alike(context.env(), &signature, &other) {
-            return Err(incompatible());
+            return Err(incompatible().into());
         }
     }
     if partial {
@@ -376,13 +375,15 @@ fn execute(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     contract::check(context, signature.contract(), args, None, name, span)?;
-    let value = match body(context, function)? {
-        Evaluation::Stop(StopReason::Comptime(ComptimeStop::Return(value))) => value,
-        Evaluation::Stop(StopReason::Comptime(_)) => {
-            return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()));
+    let value = match body(context, function) {
+        Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Return(value)))) => value,
+        Err(EvalExit::Stop(StopReason::Comptime(_))) => {
+            return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into());
         }
-        Evaluation::Incomplete(incomplete) => return Err(incomplete.error()),
-        _ => unreachable!("a function body returns or diagnoses fallthrough"),
+        Err(EvalExit::Stop(StopReason::Runtime(stop))) => unreachable!("runtime stop {stop:?} in a comptime function"),
+        Err(EvalExit::Diagnostic(error)) => return Err(error),
+        Ok(Evaluation::Incomplete(incomplete)) => return Err(incomplete.error().into()),
+        Ok(Evaluation::Ready(_)) => unreachable!("a function body returns or diagnoses fallthrough"),
     };
     let value = flow::top(comptime::export(context, value, span))?;
     let env = context.env();
@@ -390,7 +391,7 @@ fn execute(
         let place = slot.name().map_or_else(|| "temporary".into(), |place| place.to_string());
         let discarded = place == "_";
         let args = (name.to_string(), "variable".into(), place, "function".into(), discarded);
-        return Err(hmir_error(span, &analysis::VALUE_NOT_CONSUMED, args));
+        return Err(hmir_error(span, &analysis::VALUE_NOT_CONSUMED, args).into());
     }
     contract::check(context, signature.contract(), args, Some(&value), name, span)?;
     Ok(value)
@@ -399,7 +400,7 @@ fn execute(
 pub(crate) fn body(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let definition = function.def().expect("an executed function has a body");
     let body = function.body();
     let root = body.expr(definition.root());
@@ -407,7 +408,7 @@ pub(crate) fn body(
         let value = eval(context, body, definition.root())?;
         return control::return_value(context, body, Some(value), false, root.span());
     }
-    ready!(eval(context, body, definition.root()));
+    (eval(context, body, definition.root()))?.ready()?;
     let name = function.prototype().symbol_name();
     if !context.is_runtime() {
         let ty = context.return_type().expect("function return type is evaluated");
@@ -416,10 +417,10 @@ pub(crate) fn body(
                 return control::return_value(context, body, None, false, root.span());
             }
             HMIRTypeKind::Unreachable => {
-                return Err(hmir_error(root.span(), &mir::COMPTIME_UNREACHABLE, ()));
+                return Err(hmir_error(root.span(), &mir::COMPTIME_UNREACHABLE, ()).into());
             }
             HMIRTypeKind::Int(_) if name.as_str() == "main" => {}
-            _ => return Err(hmir_error(root.span(), &mir::FUNCTION_RETURN, name.to_string())),
+            _ => return Err(hmir_error(root.span(), &mir::FUNCTION_RETURN, name.to_string()).into()),
         }
     }
     control::fallthrough(context, body, name.as_str() == "main", root.span())

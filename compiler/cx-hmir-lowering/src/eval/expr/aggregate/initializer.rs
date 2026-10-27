@@ -13,7 +13,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult, coerce, eval,
-        flow::{Evaluation, ready},
+        flow::Evaluation,
         types,
     },
     log::hmir_error,
@@ -26,7 +26,7 @@ pub(crate) fn initialize(
     span: &TokenRange,
     ty: HMIRTypeID,
     fields: &[(Option<CXIdent>, HMIRExprID)],
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let declared = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => fields.clone(),
         HMIRTypeKind::Array { element, length } => {
@@ -43,17 +43,17 @@ pub(crate) fn initialize(
                 Some(index) => index,
                 None => {
                     let member = (types::name(context.env(), ty), name.to_string());
-                    return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member));
+                    return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
                 }
             },
             None => next,
         };
         let Some(field) = declared.get(index) else {
             let limit = ("aggregate".into(), Some(declared.len()));
-            return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit));
+            return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit).into());
         };
         next = index + 1;
-        values.push((index, ready!(field_value(context, body, *value, *field.ty()))));
+        values.push((index, (field_value(context, body, *value, *field.ty()))?.ready()?));
     }
     Ok(Evaluation::Ready(emit::aggregate(context, ty, &values, span)?))
 }
@@ -66,22 +66,22 @@ fn array(
     element: HMIRTypeID,
     length: Option<u64>,
     fields: &[(Option<CXIdent>, HMIRExprID)],
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if let Some(length) = length
         && fields.len() as u64 > length
     {
         let limit = ("array".into(), usize::try_from(length).ok());
-        return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit));
+        return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit).into());
     }
 
     let mut values = Vec::with_capacity(fields.len());
     for (index, (name, value)) in fields.iter().enumerate() {
         if let Some(name) = name {
             let member = (types::name(context.env(), ty), name.to_string());
-            return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member));
+            return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
         }
         let value_span = body.expr(*value).span();
-        let value = ready!(eval(context, body, *value)?.complete(context, body, Some(element)));
+        let value = eval(context, body, *value)?.complete(context, body, Some(element))?;
         if fields.len() == 1
             && matches!(context.env().resolve_kind(element), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8)
             && matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Str)
@@ -103,16 +103,16 @@ fn tagged(
     span: &TokenRange,
     ty: HMIRTypeID,
     fields: &[(Option<CXIdent>, HMIRExprID)],
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let [(Some(name), value)] = fields else {
         let subject = types::name(context.env(), ty);
-        return Err(hmir_error(span, &typecheck::LIST_INITIALIZATION, subject));
+        return Err(hmir_error(span, &typecheck::LIST_INITIALIZATION, subject).into());
     };
     let Some(found) = variant::lookup(context.env(), ty, name) else {
         let member = (types::name(context.env(), ty), name.to_string());
-        return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member));
+        return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
     };
-    let payload = ready!(field_value(context, body, *value, found.payload));
+    let payload = (field_value(context, body, *value, found.payload))?.ready()?;
     Ok(Evaluation::Ready(variant::construct(context, ty, found.index, Some(payload), span)?))
 }
 
@@ -122,14 +122,14 @@ fn initialize_scalar(
     span: &TokenRange,
     ty: HMIRTypeID,
     fields: &[(Option<CXIdent>, HMIRExprID)],
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     match fields {
         [(None, value)] => field_value(context, body, *value, ty),
         [(Some(name), _)] => {
             let member = (types::name(context.env(), ty), name.to_string());
-            Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member))
+            Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into())
         }
-        _ => Err(hmir_error(span, &typecheck::LIST_INITIALIZATION, types::name(context.env(), ty))),
+        _ => Err(hmir_error(span, &typecheck::LIST_INITIALIZATION, types::name(context.env(), ty)).into()),
     }
 }
 
@@ -138,8 +138,8 @@ fn field_value(
     body: &HMIRBody,
     value: HMIRExprID,
     ty: HMIRTypeID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let span = body.expr(value).span();
-    let value = ready!(eval(context, body, value)?.complete(context, body, Some(ty)));
+    let value = eval(context, body, value)?.complete(context, body, Some(ty))?;
     Ok(Evaluation::Ready(coerce::implicit(context, value, ty, span)?))
 }

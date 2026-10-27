@@ -17,7 +17,7 @@ use crate::{
     eval::{
         EvalResult, coerce, eval,
         expr::{self, require_nonsafe, require_pure},
-        flow::{Evaluation, ready},
+        flow::Evaluation,
         op::{binary_operands, eval_operand},
         types,
     },
@@ -32,25 +32,25 @@ pub(crate) fn eval_assign(
     target: HMIRExprID,
     op: Option<HMIRBinaryOp>,
     value: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     require_pure(context, span, "assignment")?;
-    let target = ready!(eval(context, body, target));
+    let target = (eval(context, body, target))?.ready()?;
 
     let Some(inner) = context.env().reference_inner(target.ty()) else {
-        return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "assign to".into()));
+        return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "assign to".into()).into());
     };
     if context.env().semantics(inner).constant {
         let mutated = ("assign to".into(), types::name(context.env(), inner));
-        return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutated));
+        return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutated).into());
     }
 
     let value = match op {
         Some(op) => {
             let current = coerce::arithmetic(context, target.clone(), span)?;
-            let operand = ready!(eval_operand(context, body, span, value));
+            let operand = (eval_operand(context, body, span, value))?.ready()?;
             binary_operands(context, span, op, current, operand)?
         }
-        None => ready!(eval(context, body, value)?.complete(context, body, Some(inner))),
+        None => eval(context, body, value)?.complete(context, body, Some(inner))?,
     };
     let value = coerce::implicit(context, value, inner, span)?;
     emit::invalidate(context, &target, MIRInvalidationKind::Drop, span);
@@ -63,7 +63,7 @@ pub(crate) fn eval_ownership(
     body: &HMIRBody,
     span: &TokenRange,
     op: &HMIROwnershipOp,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     match op {
         HMIROwnershipOp::Move(operand) => eval_move(context, body, span, *operand),
         HMIROwnershipOp::Leak(operand) => eval_leak(context, body, span, *operand),
@@ -76,9 +76,9 @@ fn eval_move(
     body: &HMIRBody,
     span: &TokenRange,
     operand: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     require_pure(context, span, "move")?;
-    let value = ready!(eval(context, body, operand));
+    let value = (eval(context, body, operand))?.ready()?;
     let Some(inner) = context.env().reference_inner(value.ty()) else {
         return Ok(Evaluation::Ready(value));
     };
@@ -88,10 +88,10 @@ fn eval_move(
     if context.env().reference_inner(binding.ty()) != Some(inner) {
         if context.env().semantics(inner).constant {
             let mutated = ("move out of".into(), types::name(context.env(), inner));
-            return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutated));
+            return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutated).into());
         }
         let invalid = ("move out of a borrowed binding".into(), "a reference binding".into());
-        return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, invalid));
+        return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, invalid).into());
     }
     if context.env().semantics(inner).unsafe_move {
         require_nonsafe(context, span, "move of a type declared as @unsafe_move")?;
@@ -106,10 +106,10 @@ fn eval_leak(
     body: &HMIRBody,
     span: &TokenRange,
     operand: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     require_nonsafe(context, span, "@leak")?;
     require_pure(context, span, "@leak")?;
-    let value = ready!(eval(context, body, operand));
+    let value = (eval(context, body, operand))?.ready()?;
     require_local(body, operand, span, "@leak")?;
     let inner = referenced(context, &value, "@leak", span)?;
     if !context.env().is_nodrop(inner) {
@@ -124,20 +124,20 @@ fn eval_adopt(
     body: &HMIRBody,
     span: &TokenRange,
     operand: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     require_nonsafe(context, span, "@adopt")?;
     require_pure(context, span, "@adopt")?;
     if !context.is_runtime() {
-        return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, "'@adopt'".into()));
+        return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, "'@adopt'".into()).into());
     }
-    let value = ready!(eval(context, body, operand));
+    let value = (eval(context, body, operand))?.ready()?;
     let inner = referenced(context, &value, "@adopt", span)?;
     if context.env().semantics(inner).constant {
         let mismatch = ("@adopt".into(), "non-const type".into(), types::name(context.env(), inner));
-        return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch));
+        return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch).into());
     }
     if emit::place_held(context, &value) {
-        return Err(hmir_error(span, &typecheck::ADOPT_LOCAL, ()));
+        return Err(hmir_error(span, &typecheck::ADOPT_LOCAL, ()).into());
     }
     let storage = emit::scratch(context, inner, span)?;
     emit::adopt(context, &storage, &value, span)?;
@@ -154,7 +154,7 @@ fn referenced(context: &LocalLoweringContext, value: &HMIRValue, operation: &str
 fn require_local(body: &HMIRBody, operand: HMIRExprID, span: &TokenRange, operation: &str) -> CXResult<HMIRLocalID> {
     match body.expr(operand).kind() {
         HMIRExprKind::Local(local) => Ok(*local),
-        _ => Err(hmir_error(span, &typecheck::LOCAL_VARIABLE_REQUIRED, operation.into())),
+        _ => Err(hmir_error(span, &typecheck::LOCAL_VARIABLE_REQUIRED, operation.into()).into()),
     }
 }
 
@@ -163,14 +163,14 @@ pub(crate) fn eval_address_of(
     body: &HMIRBody,
     span: &TokenRange,
     operand: HMIRExprID,
-) -> EvalResult<HMIRValue> {
-    let value = ready!(eval(context, body, operand));
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let value = (eval(context, body, operand))?.ready()?;
     let Some(inner) = context.env().reference_inner(value.ty()) else {
         return match context.env().resolve_kind(value.ty()) {
             HMIRTypeKind::Function(_) if !types::comptime_only(context.env(), value.ty()) => {
                 Ok(Evaluation::Ready(coerce::std_rvalue(context, value, span)?))
             }
-            _ => Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "take the address of".into())),
+            _ => Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "take the address of".into()).into()),
         };
     };
     if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Str) {
@@ -178,7 +178,7 @@ pub(crate) fn eval_address_of(
     }
     if types::bitfield(context.env(), &value).is_some() {
         let usage = "take the address of".into();
-        return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage));
+        return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage).into());
     }
     let ty = types::pointer(context.env_mut(), inner, span);
     Ok(Evaluation::Ready(emit::address(context, &value, ty, span)?))
@@ -189,8 +189,8 @@ pub(crate) fn eval_dereference(
     body: &HMIRBody,
     span: &TokenRange,
     pointer: HMIRExprID,
-) -> EvalResult<HMIRValue> {
-    let value = ready!(eval(context, body, pointer));
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let value = (eval(context, body, pointer))?.ready()?;
     Ok(Evaluation::Ready(dereference(context, value, None, span)?))
 }
 
@@ -203,7 +203,7 @@ pub(crate) fn dereference(
     let pointer = coerce::std_rvalue(context, pointer, span)?;
     let Some(inner) = context.env().pointer_inner(pointer.ty()) else {
         let kind = (types::name(context.env(), pointer.ty()), "a pointer".into());
-        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
+        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
     };
     if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Function(_)) {
         return Ok(HMIRValue::indirect(inner, pointer));

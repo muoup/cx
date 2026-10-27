@@ -28,7 +28,7 @@ pub(crate) fn eval(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     id: HMIRExprID,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let expr = body.expr(id);
     let span = expr.span();
     let selected = match context.context() {
@@ -105,12 +105,12 @@ pub(crate) fn eval(
 
     let partial = result.known().cloned();
     result.and_then(context, body, partial, |context, _, value, _| {
-        Ok(match context.context() {
+        match context.context() {
             FnContext::Runtime(runtime) if runtime.emission() == Emission::Suppressed => {
-                Evaluation::diverged()
+                flow::diverged()
             }
-            _ => Evaluation::Ready(value),
-        })
+            _ => Ok(Evaluation::Ready(value)),
+        }
     })
 }
 
@@ -118,15 +118,15 @@ pub(crate) fn eval_type(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     id: HMIRExprID,
-) -> EvalResult<HMIRTypeID> {
+) -> EvalResult<Evaluation<HMIRTypeID>> {
     let span = body.expr(id).span();
     if context.is_runtime() {
         return comptime::frozen(context, span, |child| eval_type(child, body, id));
     }
     let ty = context.deferred_type(id);
-    match context.evaluate(HMIRResolver::type_memo(ty), span)? {
-        Evaluation::Stop(_) => Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ())),
-        value => deduce::described_type(context, body, value, span),
+    match context.evaluate(HMIRResolver::type_memo(ty), span) {
+        Err(flow::EvalExit::Stop(_)) => Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into()),
+        value => deduce::described_type(context, body, value?, span),
     }
 }
 
@@ -136,9 +136,5 @@ pub(crate) fn eval_comptime(
     expr: HMIRExprID,
     expected: Option<HMIRTypeID>,
 ) -> CXResult<HMIRValue> {
-    match comptime::freeze(context, body, expr, expected)? {
-        Evaluation::Ready(value) => Ok(value),
-        Evaluation::Incomplete(incomplete) => Err(incomplete.error()),
-        Evaluation::Stop(_) => unreachable!("a frozen evaluation diagnoses its stops"),
-    }
+    flow::top(comptime::freeze(context, body, expr, expected))
 }

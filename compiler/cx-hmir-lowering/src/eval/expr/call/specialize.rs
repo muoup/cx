@@ -23,7 +23,7 @@ pub(super) fn apply(
     signature: &HMIRFnSignature<HMIRTypeID>,
     values: Vec<HMIRValue>,
     span: &TokenRange,
-) -> EvalResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     if context.is_unevaluated() {
         return Ok(Evaluation::Ready(emit::scratch(context, *signature.return_type(), span)?));
     }

@@ -102,7 +102,7 @@ pub(crate) fn definition(
                 let Some(HMIRDefKind::Global(global)) = declaration.kind() else {
                     continue;
                 };
-                let declared = eval_type(context, global.body(), global.ty())?;
+                let declared = flow::boundary(eval_type(context, global.body(), global.ty()))?;
                 let known = declared.known().copied();
                 let initializing = global
                     .initializer()
@@ -124,7 +124,7 @@ pub(crate) fn definition(
                             });
                         };
                         let value = initializer_value(context, global.body(), initializer, known)?;
-                        flow::top(declared.complete(context, global.body(), Some(value.ty())))?
+                        flow::boundary(declared.complete(context, global.body(), Some(value.ty())))?
                     }
                 };
                 ty = Some(match ty {
@@ -165,7 +165,7 @@ pub(crate) fn definition(
         }
         HMIRDefKind::ComptimeGlobal(global) => {
             let declared =
-                flow::top(eval_type(context, global.body(), global.ty())?.description())?;
+                flow::top(flow::boundary(eval_type(context, global.body(), global.ty()))?.description())?;
             let type_definition =
                 matches!(context.env().resolve_kind(declared), HMIRTypeKind::Type);
             let value = if type_definition {
@@ -182,7 +182,7 @@ pub(crate) fn definition(
                 let identity = eval::name::type_value(context, alias, span)?;
                 context.env_mut().resolver_mut().publish(memo, identity);
                 let ty = flow::top(
-                    eval_type(context, global.body(), global.initializer())?.description(),
+                    flow::boundary(eval_type(context, global.body(), global.initializer()))?.description(),
                 )?;
                 eval::name::type_value(context, ty, span)?
             } else {
@@ -196,7 +196,7 @@ pub(crate) fn definition(
                     unreachable!();
                 };
                 let other_ty = flow::top(
-                    eval_type(context, other_global.body(), other_global.initializer())?
+                    flow::boundary(eval_type(context, other_global.body(), other_global.initializer()))?
                         .description(),
                 )?;
                 let Some(ty) = value.as_type() else {
@@ -255,7 +255,7 @@ pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> C
         .child(None, FnContext::Comptime(ComptimeContext::new()), None)
         .sourced(source)
         .at(global.body().visible_through());
-    let declared = eval_type(&mut child, global.body(), global.ty())?;
+    let declared = flow::boundary(eval_type(&mut child, global.body(), global.ty()))?;
     let value = match global.initializer() {
         Some(expr) => {
             initializer_value(&mut child, global.body(), expr, declared.known().copied())?
@@ -278,7 +278,7 @@ pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> C
                 .map(|value| HMIRValue::constant(ty, value));
         }
     };
-    let ty = flow::top(declared.complete(&mut child, global.body(), Some(value.ty())))?;
+    let ty = flow::boundary(declared.complete(&mut child, global.body(), Some(value.ty())))?;
     if !types::is_complete(child.env(), ty) {
         return Err(hmir_error(
             declaration.span(),
