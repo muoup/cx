@@ -79,9 +79,8 @@ pub(crate) fn implicit(
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    require_unsafe_conversion(context, &value, target, span, false)?;
     let source = value.ty();
-    let coercion = implicit::convert(context, value, target, span)?;
+    let coercion = implicit::convert(context, value, target, span, false)?;
     applied(context, coercion, source, target, span)
 }
 
@@ -91,11 +90,10 @@ pub(crate) fn explicit(
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    require_unsafe_conversion(context, &value, target, span, true)?;
     let source = value.ty();
     let coercion = match context.env().is_void(target) {
         true => Coercion::Applied(expr::unit(context, span).with_ty(target)),
-        false => implicit::convert(context, value, target, span)?.or_else(|value| extension(context, value, target, span))?,
+        false => implicit::convert(context, value, target, span, true)?.or_else(|value| extension(context, value, target, span))?,
     };
     applied(context, coercion, source, target, span)
 }
@@ -107,6 +105,7 @@ fn extension(
     span: &TokenRange,
 ) -> CXResult<Coercion> {
     let subject = context.env().referent(value.ty());
+    let array = matches!(context.env().resolve_kind(subject), HMIRTypeKind::Array { .. });
     let value = match context.env().resolve_kind(subject) {
         HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Array { .. } => std_rvalue(context, value, span)?,
         _ => value,
@@ -117,13 +116,21 @@ fn extension(
         return Ok(Coercion::Unapplied(value));
     }
     Ok(match (env.resolve_kind(source), env.resolve_kind(target)) {
-        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => Coercion::Applied(value.with_ty(target)),
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => {
+            expr::require_nonsafe(context, span, "Unsafe type conversion")?;
+            Coercion::Applied(value.with_ty(target))
+        }
         (HMIRTypeKind::PointerTo(char), HMIRTypeKind::ReferenceTo { inner: string, .. })
             if env.is_str(*string) && is_char(env, *char) =>
         {
+            let operation = if array { "Unsafe type conversion" } else { "Dereferencing a pointer" };
+            expr::require_nonsafe(context, span, operation)?;
             Coercion::Applied(value.with_ty(target))
         }
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_)) => {
+            if !matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Int(0))) {
+                expr::require_nonsafe(context, span, "Unsafe type conversion")?;
+            }
             Coercion::Applied(emit::cast(context, &value, target, span)?)
         }
         _ => Coercion::Unapplied(value),
@@ -272,47 +279,6 @@ fn is_designator(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
 
 fn is_char(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     matches!(env.resolve_kind(ty), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8)
-}
-
-fn require_unsafe_conversion(
-    context: &LocalLoweringContext,
-    value: &HMIRValue,
-    target: HMIRTypeID,
-    span: &TokenRange,
-    explicit: bool,
-) -> CXResult<()> {
-    let env = context.env();
-    let source = env.referent(value.ty());
-    let operation = match (env.resolve_kind(source), env.resolve_kind(target)) {
-        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(int)) if int.width() != HMIRIntWidth::I1 => {
-            Some("Unsafe type conversion")
-        }
-        (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_))
-            if explicit && !matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Int(0))) =>
-        {
-            Some("Unsafe type conversion")
-        }
-        (HMIRTypeKind::PointerTo(pointee), HMIRTypeKind::ReferenceTo { inner, .. })
-            if env.same_type(*pointee, *inner) || (explicit && env.is_str(*inner) && is_char(env, *pointee)) =>
-        {
-            Some("Dereferencing a pointer")
-        }
-        (HMIRTypeKind::Array { element, .. }, HMIRTypeKind::ReferenceTo { inner, .. })
-            if explicit && env.is_str(*inner) && is_char(env, *element) =>
-        {
-            Some("Unsafe type conversion")
-        }
-        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_))
-            if explicit && !(compatible(env, source, target) && qualified(env, source, target)) =>
-        {
-            Some("Unsafe type conversion")
-        }
-        _ => None,
-    };
-    match operation {
-        Some(operation) => expr::require_nonsafe(context, span, operation),
-        None => Ok(()),
-    }
 }
 
 fn applied(

@@ -1,0 +1,3 @@
+unsigned long bad(int* pointer) safe {
+    return pointer;
+}

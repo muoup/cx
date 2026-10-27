@@ -9,7 +9,7 @@ use super::{Coercion, compatible, is_char, is_designator, promotion, qualified, 
 use crate::{
     emit,
     env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::types,
+        eval::{expr, types},
     log::hmir_error,
     symbol::composite::signatures_alike,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
@@ -20,6 +20,7 @@ pub(super) fn convert(
     value: HMIRValue,
     target: HMIRTypeID,
     span: &TokenRange,
+    explicit: bool,
 ) -> CXResult<Coercion> {
     let env = context.env();
     let source = value.ty();
@@ -42,8 +43,8 @@ pub(super) fn convert(
     if unreachable(source) || staged_unreachable || (compatible(env, source, target) && qualified(env, source, target)) {
         return Ok(Coercion::Applied(value.with_ty(target)));
     }
-    match step(context, value, target, span)? {
-        Coercion::Applied(value) => convert(context, value, target, span),
+    match step(context, value, target, span, explicit)? {
+        Coercion::Applied(value) => convert(context, value, target, span, explicit),
         unapplied => Ok(unapplied),
     }
 }
@@ -53,6 +54,7 @@ fn step(
     value: HMIRValue,
     target: HMIRTypeID,
     span: &TokenRange,
+    explicit: bool,
 ) -> CXResult<Coercion> {
     let env = context.env();
     let source = value.ty();
@@ -125,8 +127,11 @@ fn step(
             Coercion::Applied(value.with_ty(target))
         }
         (HMIRTypeKind::Int(_), HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_))
-        | (HMIRTypeKind::Float(_), HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_))
-        | (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)) => {
+        | (HMIRTypeKind::Float(_), HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_)) => {
+            Coercion::Applied(emit::cast(context, &value, target, span)?)
+        }
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)) => {
+            expr::require_nonsafe(context, span, "Unsafe type conversion")?;
             Coercion::Applied(emit::cast(context, &value, target, span)?)
         }
         (HMIRTypeKind::PointerTo(from), HMIRTypeKind::PointerTo(to))
@@ -134,7 +139,7 @@ fn step(
         {
             Coercion::Applied(value.with_ty(target))
         }
-        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => discard(context, value, target, span)?,
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => discard(context, value, target, span, explicit)?,
         _ => Coercion::Unapplied(value),
     })
 }
@@ -196,6 +201,7 @@ fn discard(
     value: HMIRValue,
     target: HMIRTypeID,
     span: &TokenRange,
+    explicit: bool,
 ) -> CXResult<Coercion> {
     fn signature<'a>(env: &'a HMIREnvironment, ty: HMIRTypeID) -> Option<&'a HMIRFnSignature<HMIRTypeID>> {
         match env.resolve_kind(env.pointer_inner(ty)?) {
@@ -225,6 +231,9 @@ fn discard(
     if env.is_nodrop(result) {
         let names = (types::name(env, value.ty()), types::name(env, target));
         return Err(hmir_error(span, &typecheck::DISCARDED_NODROP, names).into());
+    }
+    if explicit && !(compatible(env, value.ty(), target) && qualified(env, value.ty(), target)) {
+        expr::require_nonsafe(context, span, "Unsafe type conversion")?;
     }
     Ok(Coercion::Applied(value.with_ty(target)))
 }
