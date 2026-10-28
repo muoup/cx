@@ -8,7 +8,7 @@ use cx_namespace::module::{NamespacePath, QualifiedName};
 use cx_pipeline_data::CompilerConfig;
 use cx_preparse_data::{Import, PreparseContents};
 use cx_tokens::{
-    identifier, keyword, operator, punctuator, specifier,
+    identifier, intrinsic, keyword, operator, punctuator, specifier,
     token::{KeywordType, PunctuatorType, SpecifierType, TokenKind},
     TokenIter,
 };
@@ -82,6 +82,61 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         keyword!(Comptime) => {
             let start = data.tokens.index;
+            if let (Some(intrinsic!(Auto)), Some(identifier!(ident))) = (
+                data.tokens.slice.get(start).map(|token| &token.kind),
+                data.tokens.slice.get(start + 1).map(|token| &token.kind),
+            ) {
+                let mut index = start + 2;
+                let generator = matches!(
+                    data.tokens.slice.get(index).map(|token| &token.kind),
+                    Some(punctuator!(OpenParen))
+                );
+                if generator {
+                    let mut depth = 0usize;
+                    while let Some(token) = data.tokens.slice.get(index) {
+                        match token.kind {
+                            punctuator!(OpenParen) => depth += 1,
+                            punctuator!(CloseParen) => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    index += 1;
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        index += 1;
+                    }
+                    let mut depth = 0usize;
+                    while let Some(token) = data.tokens.slice.get(index) {
+                        match token.kind {
+                            punctuator!(OpenParen) => depth += 1,
+                            punctuator!(CloseParen) if depth > 0 => depth -= 1,
+                            operator!(Arrow) if depth == 0 => break,
+                            punctuator!(Semicolon) | punctuator!(OpenBrace) | punctuator!(ThickArrow)
+                                if depth == 0 => break,
+                            _ => {}
+                        }
+                        index += 1;
+                    }
+                }
+                let separator = data.tokens.slice.get(index).map(|token| &token.kind);
+                let universe = data.tokens.slice.get(index + 1).map(|token| &token.kind);
+                if matches!(universe, Some(TokenKind::CompilerIdentifier(name)) if name == "type")
+                    && (generator && matches!(separator, Some(operator!(Arrow)))
+                        || !generator && matches!(separator, Some(punctuator!(Colon))))
+                {
+                    let ident = CXIdent::new(ident.as_str());
+                    if generator {
+                        data.contents.module_symbols.add_generator(ident, data.visibility_mode);
+                    } else if matches!(
+                        data.tokens.slice.get(index + 2).map(|token| &token.kind),
+                        Some(TokenKind::Assignment(_))
+                    ) {
+                        data.contents.module_symbols.add_type(ident, data.visibility_mode);
+                    }
+                }
+            }
             if let (
                 Some(TokenKind::CompilerIdentifier(universe)),
                 Some(identifier!(ident)),

@@ -1,0 +1,23 @@
+/* CX-STDOUT: 17 */
+extern int printf(const char*, ...);
+
+auto global : int = 4;
+auto identity(comptime @type T, T value) -> T;
+auto identity(comptime @type T, T value) -> T { return value; }
+auto increment(int value) -> int { return value + 1; }
+auto callback() -> @fn(int) -> int { return increment; }
+comptime auto Number : @type = int;
+comptime auto Box(comptime @type T) -> @type => struct { T value; };
+
+int main() {
+    auto value : int = identity(int, global);
+    auto function : @fn(int) -> int = callback();
+    for (auto index : int = 0; index < 3; index++) {
+        value = function(value);
+    }
+    auto inferred = 10;
+    auto array : int[2] = { 1, 2 };
+    auto boxed : Box(Number) = { value };
+    printf("%d\n", boxed.value + inferred + array[0] - 1);
+    return 0;
+}

@@ -1019,7 +1019,8 @@ pub(crate) fn parse_abstract_type(data: &mut ParserData) -> CXResult<HIRType> {
         return parse_fn_signature(data);
     }
 
-    Ok(parse_declarator_mods(data, base, false)?.1)
+    let ty = parse_declarator_mods(data, base, false)?.1;
+    parse_type_suffix_mod(data, ty)
 }
 
 pub(crate) fn parse_base_mods(
@@ -1044,7 +1045,12 @@ pub(crate) fn parse_initializer(
     let type_base = parse_type_base(data)?;
     parse_attributes(&mut data.tokens, &mut prefix_specs.attributes);
 
-    let (name, ty) = parse_base_mods(data, type_base.add_specifier(prefix_specs.qualifiers))?;
+    let (name, mut ty) = parse_base_mods(data, type_base.add_specifier(prefix_specs.qualifiers))?;
+    if !data.c_mode && name.is_some() && matches!(ty.kind, HIRTypeKind::Auto)
+        && try_next!(data.tokens, punctuator!(Colon))
+    {
+        ty = parse_abstract_type(data)?.add_specifier(ty.specifiers);
+    }
     Ok((name, ty, prefix_specs))
 }
 

@@ -1,6 +1,6 @@
 use cx_hir::ast::expression::{HIRBlockKind, HIRExprKind, HIRExpression};
 use cx_hir::ast::modifiers::LinkageMode;
-use cx_hir::ast::HIRStmt;
+use cx_hir::ast::{types::HIRTypeKind, HIRStmt};
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_tokens::{
@@ -18,7 +18,7 @@ use crate::{
         parse_block,
         parser::ParserData,
         try_parse_qualified_name, try_parse_simple_identifier,
-        types::{is_type_decl, parse_base_mods, parse_type_base},
+        types::{is_type_decl, parse_abstract_type, parse_base_mods, parse_type_base},
     },
     peek_kind, try_next,
 };
@@ -304,7 +304,13 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
     data.change_comma_mode(false);
 
     loop {
-        let (name, ty) = parse_base_mods(data, base_type.clone())?;
+        let (name, mut ty) = parse_base_mods(data, base_type.clone())?;
+
+        if !data.c_mode && name.is_some() && matches!(ty.kind, HIRTypeKind::Auto)
+            && try_next!(data.tokens, punctuator!(Colon))
+        {
+            ty = parse_abstract_type(data)?.add_specifier(ty.specifiers);
+        }
 
         if let Some(name) = name {
             if data.c_mode || specifiers.linkage == LinkageMode::Extern {

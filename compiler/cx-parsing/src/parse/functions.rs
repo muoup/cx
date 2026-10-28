@@ -5,7 +5,7 @@ use crate::{
 use cx_hir::ast::{
     function::{HIRFunctionContract, HIRFunctionKind, HIRFunctionPrototype, HIRParameter},
     modifiers::{HIRSymbolNameScheme, LinkageMode},
-    types::HIRType,
+    types::{HIRType, HIRTypeKind},
 };
 use cx_log::{CXResult, catalogue::parse::*};
 use cx_namespace::module::QualifiedName;
@@ -18,7 +18,7 @@ use cx_util::identifier::CXIdent;
 use crate::parse::{
     expressions::parse_expr,
     parser::ParserData,
-    types::{parse_attributes, parse_initializer, DeclarationAttributes},
+    types::{parse_abstract_type, parse_attributes, parse_initializer, DeclarationAttributes},
 };
 
 pub(crate) mod linkage;
@@ -62,6 +62,14 @@ pub fn try_function_parse(
     };
 
     let args = parse_params(data)?;
+    let return_type = if !data.c_mode
+        && matches!(return_type.kind, HIRTypeKind::Auto)
+        && try_next!(data.tokens, operator!(Arrow))
+    {
+        parse_abstract_type(data)?.add_specifier(return_type.specifiers)
+    } else {
+        return_type
+    };
 
     Ok(Some(HIRFunctionPrototype {
         return_type: attributes
