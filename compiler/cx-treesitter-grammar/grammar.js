@@ -177,6 +177,17 @@ module.exports = grammar({
         [$.compiler_attribute, $.primary_expression],
         [$._top_level_item, $._statement],
         [$.type, $.primary_expression],
+        [$.type],
+        [$.type, $.type_application, $.primary_expression],
+        [$.type, $.type_application],
+        [$.type_application, $.primary_expression],
+        [$.variable_declaration, $.function_declaration, $.comptime_value_type],
+        [$.builtin_type, $.variable_declaration],
+        [$.builtin_type, $.function_declaration],
+        [$.struct_type, $.type_literal],
+        [$.union_type, $.type_literal],
+        [$.anonymous_struct_body, $.struct_definition],
+        [$.anonymous_union_body, $.union_definition],
         [$.template_argument, $.literal],
         [$.template_argument, $.type, $.primary_expression],
         [$.staged_lambda, $.then_expression],
@@ -253,6 +264,9 @@ module.exports = grammar({
                 repeat($.type_qualifier),
                 choice(
                     $.builtin_type_sequence,
+                    alias("@type", $.compiler_identifier),
+                    $.function_type,
+                    $.type_application,
                     $.templated_name,
                     $.qualified_name,
                     $.struct_type,
@@ -267,6 +281,17 @@ module.exports = grammar({
                     ),
                 ),
             ),
+
+        function_type: ($) =>
+            seq(
+                alias("@fn", $.compiler_identifier),
+                $.parameter_list,
+                op($, "->"),
+                $.type,
+            ),
+
+        type_application: ($) =>
+            seq($.qualified_name, "(", commaSep1(choice($.type, $.expression)), ")"),
 
         type_qualifier: ($) =>
             choice(
@@ -461,15 +486,23 @@ module.exports = grammar({
 
         declaration: ($) =>
             seq(
+                optional(keyword($, "comptime")),
                 repeat($.declaration_specifier),
                 $.variable_declaration,
                 ";",
             ),
 
         variable_declaration: ($) =>
-            seq(
-                $.type,
-                commaSep1($.declarator_with_initializer),
+            choice(
+                seq($.type, commaSep1($.declarator_with_initializer)),
+                seq(
+                    repeat($.type_qualifier),
+                    alias("auto", $.builtin_type),
+                    $.identifier,
+                    ":",
+                    $.type,
+                    optional(seq(op($, "="), $.expression)),
+                ),
             ),
 
         declarator_with_initializer: ($) =>
@@ -509,9 +542,21 @@ module.exports = grammar({
                 2,
                 seq(
                     repeat($.declaration_specifier),
-                    field("return_type", $.type),
-                    field("declarator", $.function_declarator),
-                    optional($.function_contract),
+                    choice(
+                        seq(
+                            field("return_type", $.type),
+                            field("declarator", $.function_declarator),
+                            optional($.function_contract),
+                        ),
+                        seq(
+                            repeat($.type_qualifier),
+                            alias("auto", $.builtin_type),
+                            field("declarator", $.function_declarator),
+                            optional($.function_contract),
+                            op($, "->"),
+                            field("return_type", $.type),
+                        ),
+                    ),
                     $.function_body,
                 ),
             ),
@@ -519,9 +564,18 @@ module.exports = grammar({
         function_declaration: ($) =>
             seq(
                 repeat($.declaration_specifier),
-                $.type,
-                $.function_declarator,
-                optional($.function_contract),
+                optional(keyword($, "comptime")),
+                choice(
+                    seq($.type, $.function_declarator, optional($.function_contract)),
+                    seq(
+                        repeat($.type_qualifier),
+                        alias("auto", $.builtin_type),
+                        $.function_declarator,
+                        optional($.function_contract),
+                        op($, "->"),
+                        $.type,
+                    ),
+                ),
                 ";",
             ),
 
@@ -530,10 +584,23 @@ module.exports = grammar({
                 3,
                 seq(
                     keyword($, "comptime"),
-                    field("return_type", $.comptime_value_type),
-                    field("name", $.callable_name),
-                    field("parameters", $.comptime_parameter_list),
-                    optional($.function_contract),
+                    choice(
+                        seq(
+                            field("return_type", $.comptime_value_type),
+                            field("name", $.callable_name),
+                            field("parameters", $.comptime_parameter_list),
+                            optional($.function_contract),
+                        ),
+                        seq(
+                            repeat($.type_qualifier),
+                            alias("auto", $.builtin_type),
+                            field("name", $.callable_name),
+                            field("parameters", $.parameter_list),
+                            optional($.function_contract),
+                            op($, "->"),
+                            field("return_type", $.type),
+                        ),
+                    ),
                     $.function_body,
                 ),
             ),
@@ -569,6 +636,7 @@ module.exports = grammar({
 
         parameter: ($) =>
             seq(
+                optional(keyword($, "comptime")),
                 $.type,
                 optional($.declarator),
             ),
@@ -1016,6 +1084,7 @@ module.exports = grammar({
                 $.templated_name,
                 $.qualified_name,
                 $.compiler_identifier,
+                $.type_literal,
                 $.cast_expression,
                 $.parenthesized_expression,
                 $.compound_initializer,
@@ -1028,6 +1097,11 @@ module.exports = grammar({
                 $.then_expression,
                 $.label_address_expression,
             ),
+
+        type_literal: ($) => choice(
+            seq(keyword($, "struct"), $.anonymous_struct_body),
+            seq(keyword($, "union"), $.anonymous_union_body),
+        ),
 
         label_address_expression: ($) => seq(op($, "&&"), $.identifier),
 

@@ -11,6 +11,7 @@
 
 (type (qualified_name) @type)
 (type (templated_name) @type)
+(type (type_application (qualified_name) @type))
 (struct_definition name: (identifier) @type)
 (union_definition name: (identifier) @type)
 (enum_definition name: (identifier) @type)
