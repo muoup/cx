@@ -512,6 +512,7 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> HIRTypeQualifiers {
     parse_decl_specifiers(tokens).qualifiers
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct ParsedSpecifiers {
     pub(crate) qualifiers: HIRTypeQualifiers,
     pub(crate) linkage: LinkageMode,
@@ -1045,13 +1046,21 @@ pub(crate) fn parse_initializer(
     let type_base = parse_type_base(data)?;
     parse_attributes(&mut data.tokens, &mut prefix_specs.attributes);
 
-    let (name, mut ty) = parse_base_mods(data, type_base.add_specifier(prefix_specs.qualifiers))?;
+    let (name, ty) = parse_named_declarator(data, type_base.add_specifier(prefix_specs.qualifiers))?;
+    Ok((name, ty, prefix_specs))
+}
+
+pub(crate) fn parse_named_declarator(
+    data: &mut ParserData,
+    base: HIRType,
+) -> CXResult<(Option<CXIdent>, HIRType)> {
+    let (name, mut ty) = parse_base_mods(data, base)?;
     if !data.c_mode && name.is_some() && matches!(ty.kind, HIRTypeKind::Auto)
         && try_next!(data.tokens, punctuator!(Colon))
     {
         ty = parse_abstract_type(data)?.add_specifier(ty.specifiers);
     }
-    Ok((name, ty, prefix_specs))
+    Ok((name, ty))
 }
 
 pub(crate) fn parse_typedef_initializer(

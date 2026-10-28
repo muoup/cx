@@ -7,7 +7,7 @@ auto identity(comptime @type T, T value) -> T { return value; }
 auto increment(int value) -> int { return value + 1; }
 auto callback() -> @fn(int) -> int { return increment; }
 comptime auto Number : @type = int;
-comptime auto Box(comptime @type T) -> @type => struct { T value; };
+comptime auto Box(comptime @type T) where pre: (1 == 1) -> @type => struct { T value; };
 
 int main() {
     auto value : int = identity(int, global);

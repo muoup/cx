@@ -81,79 +81,11 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
         }
 
         keyword!(Comptime) => {
-            let start = data.tokens.index;
-            if let (Some(intrinsic!(Auto)), Some(identifier!(ident))) = (
-                data.tokens.slice.get(start).map(|token| &token.kind),
-                data.tokens.slice.get(start + 1).map(|token| &token.kind),
-            ) {
-                let mut index = start + 2;
-                let generator = matches!(
-                    data.tokens.slice.get(index).map(|token| &token.kind),
-                    Some(punctuator!(OpenParen))
-                );
-                if generator {
-                    let mut depth = 0usize;
-                    while let Some(token) = data.tokens.slice.get(index) {
-                        match token.kind {
-                            punctuator!(OpenParen) => depth += 1,
-                            punctuator!(CloseParen) => {
-                                depth -= 1;
-                                if depth == 0 {
-                                    index += 1;
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                        index += 1;
-                    }
-                    let mut depth = 0usize;
-                    while let Some(token) = data.tokens.slice.get(index) {
-                        match token.kind {
-                            punctuator!(OpenParen) => depth += 1,
-                            punctuator!(CloseParen) if depth > 0 => depth -= 1,
-                            operator!(Arrow) if depth == 0 => break,
-                            punctuator!(Semicolon) | punctuator!(OpenBrace) | punctuator!(ThickArrow)
-                                if depth == 0 => break,
-                            _ => {}
-                        }
-                        index += 1;
-                    }
-                }
-                let separator = data.tokens.slice.get(index).map(|token| &token.kind);
-                let universe = data.tokens.slice.get(index + 1).map(|token| &token.kind);
-                if matches!(universe, Some(TokenKind::CompilerIdentifier(name)) if name == "type")
-                    && (generator && matches!(separator, Some(operator!(Arrow)))
-                        || !generator && matches!(separator, Some(punctuator!(Colon))))
-                {
-                    let ident = CXIdent::new(ident.as_str());
-                    if generator {
-                        data.contents.module_symbols.add_generator(ident, data.visibility_mode);
-                    } else if matches!(
-                        data.tokens.slice.get(index + 2).map(|token| &token.kind),
-                        Some(TokenKind::Assignment(_))
-                    ) {
-                        data.contents.module_symbols.add_type(ident, data.visibility_mode);
-                    }
-                }
-            }
-            if let (
-                Some(TokenKind::CompilerIdentifier(universe)),
-                Some(identifier!(ident)),
-                Some(next),
-            ) = (
-                data.tokens.slice.get(start).map(|token| &token.kind),
-                data.tokens.slice.get(start + 1).map(|token| &token.kind),
-                data.tokens.slice.get(start + 2).map(|token| &token.kind),
-            ) {
-                if universe == "type" {
-                    let ident = CXIdent::new(ident.as_str());
-                    let visibility = data.visibility_mode;
-                    if matches!(next, punctuator!(OpenParen)) {
-                        data.contents.module_symbols.add_generator(ident, visibility);
-                    } else if matches!(next, TokenKind::Assignment(_)) {
-                        data.contents.module_symbols.add_type(ident, visibility);
-                    }
+            if let Some((name, kind)) = scan_comptime_type(&data.tokens) {
+                match kind {
+                    ComptimeType::Alias => data.contents.module_symbols.add_type(name, data.visibility_mode),
+                    ComptimeType::Generator => data.contents.module_symbols
+                        .add_generator(name, data.visibility_mode),
                 }
             }
         }
@@ -249,6 +181,63 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum ComptimeType {
+    Alias,
+    Generator,
+}
+
+fn scan_comptime_type(tokens: &TokenIter) -> Option<(CXIdent, ComptimeType)> {
+    let mut tokens = tokens.clone();
+    let trailing = match &tokens.next()?.kind {
+        intrinsic!(Auto) => true,
+        TokenKind::CompilerIdentifier(name) if name == "type" => false,
+        _ => return None,
+    };
+    let identifier!(name) = &tokens.next()?.kind else {
+        return None;
+    };
+    let name = CXIdent::new(name.as_str());
+    let kind = match &tokens.next()?.kind {
+        punctuator!(OpenParen) => ComptimeType::Generator,
+        punctuator!(Colon) if trailing => ComptimeType::Alias,
+        TokenKind::Assignment(_) if !trailing => return Some((name, ComptimeType::Alias)),
+        _ => return None,
+    };
+    if !trailing {
+        return Some((name, kind));
+    }
+    if matches!(kind, ComptimeType::Generator) {
+        let mut depth = 1usize;
+        while depth > 0 {
+            match &tokens.next()?.kind {
+                punctuator!(OpenParen) => depth += 1,
+                punctuator!(CloseParen) => depth -= 1,
+                _ => {}
+            }
+        }
+        loop {
+            match &tokens.next()?.kind {
+                punctuator!(OpenParen) => depth += 1,
+                punctuator!(CloseParen) if depth > 0 => depth -= 1,
+                operator!(Arrow) if depth == 0 => break,
+                punctuator!(Semicolon) | punctuator!(OpenBrace) | punctuator!(ThickArrow)
+                    if depth == 0 => return None,
+                _ => {}
+            }
+        }
+    }
+    if !matches!(&tokens.next()?.kind, TokenKind::CompilerIdentifier(universe) if universe == "type") {
+        return None;
+    }
+    if matches!(kind, ComptimeType::Alias)
+        && !matches!(&tokens.next()?.kind, TokenKind::Assignment(_))
+    {
+        return None;
+    }
+    Some((name, kind))
 }
 
 fn is_extern_c_section_after_access(data: &PreparseData) -> bool {

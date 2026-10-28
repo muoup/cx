@@ -4,7 +4,7 @@ use crate::{
 };
 use cx_hir::ast::{
     function::{HIRFunctionContract, HIRFunctionKind, HIRFunctionPrototype, HIRParameter},
-    modifiers::{HIRSymbolNameScheme, LinkageMode},
+    modifiers::HIRSymbolNameScheme,
     types::{HIRType, HIRTypeKind},
 };
 use cx_log::{CXResult, catalogue::parse::*};
@@ -18,7 +18,10 @@ use cx_util::identifier::CXIdent;
 use crate::parse::{
     expressions::parse_expr,
     parser::ParserData,
-    types::{parse_abstract_type, parse_attributes, parse_initializer, DeclarationAttributes},
+    types::{
+        parse_abstract_type, parse_attributes, parse_initializer, DeclarationAttributes,
+        ParsedSpecifiers,
+    },
 };
 
 pub(crate) mod linkage;
@@ -29,9 +32,8 @@ pub fn try_function_parse(
     return_type: HIRType,
     name: CXIdent,
     comptime: bool,
-    linkage: LinkageMode,
+    specifiers: ParsedSpecifiers,
     symbol_naming: HIRSymbolNameScheme,
-    attributes: DeclarationAttributes,
 ) -> CXResult<Option<HIRFunctionPrototype>> {
     let range_start = data.tokens.index;
 
@@ -72,13 +74,13 @@ pub fn try_function_parse(
     };
 
     Ok(Some(HIRFunctionPrototype {
-        return_type: attributes
+        return_type: specifiers.attributes
             .merge(args.attributes)
             .apply_to_return_type(return_type),
         kind,
         comptime,
         contract: args.contract,
-        linkage,
+        linkage: specifiers.linkage,
         symbol_naming,
 
         params: args.params,

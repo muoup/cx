@@ -330,9 +330,8 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
         return_type.clone(),
         name.clone(),
         comptime,
-        linkage,
+        specifiers,
         symbol_naming,
-        specifiers.attributes,
     )? {
         return parse_fn_merge(data, prototype, inherited_external);
     }
