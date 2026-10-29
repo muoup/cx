@@ -138,15 +138,19 @@ f64 interpreter::eval(interpreter& this, lisp_node& node, std::span(binding) loc
         Symbol(auto& name) => return find_local(locals, name |> std::string::as_str_mut()),
         FnDef(_) => return 0.0,
         FnCall(auto& fn_call) => {
-            std::span(lisp_node) args = {
+            auto args : std::span(lisp_node) = {
                 .data = fn_call.args.data,
                 .length = fn_call.args.length
             };
 
             return this |> interpreter::call_function(fn_call.name |> std::string::as_str_mut(), args, locals);
         }
-        Plus(auto& plus) => return (this |> interpreter::eval(*(plus.left.ptr), locals)) + (this |> interpreter::eval(*(plus.right.ptr), locals)),
-        Minus(auto& minus) => return (this |> interpreter::eval(*(minus.left.ptr), locals)) - (this |> interpreter::eval(*(minus.right.ptr), locals)),
+        Plus(auto& plus) => return 
+            (this |> interpreter::eval(*(plus.left.ptr), locals)) + 
+            (this |> interpreter::eval(*(plus.right.ptr), locals)),
+        Minus(auto& minus) => return 
+            (this |> interpreter::eval(*(minus.left.ptr), locals)) - 
+            (this |> interpreter::eval(*(minus.right.ptr), locals)),
         PrintNum(auto& value) => {
             std::printf("%f\n", this |> interpreter::eval(*(value.ptr), locals));
             return 0.0;
