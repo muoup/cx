@@ -2,7 +2,7 @@ pub(crate) mod contract;
 mod dependent;
 mod specialize;
 
-pub(crate) use dependent::{Frame, body, dependent};
+pub(crate) use dependent::{Frame, body, dependent, parameter_name};
 
 use cx_hmir::{
     HMIRBody, HMIRDefKind, HMIRFunctionStage,
@@ -12,6 +12,7 @@ use cx_hmir::{
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_mir::MIRInstructionKind;
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::{
     emit,
@@ -35,11 +36,12 @@ pub(crate) fn eval_call(
     span: &TokenRange,
     callee: HMIRExprID,
     args: &[HMIRExprID],
+    named: &[(CXIdent, HMIRExprID)],
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let evaluated = eval(context, body, callee)?;
-    let (args, span) = (args.to_vec(), span.clone());
+    let (args, named, span) = (args.to_vec(), named.to_vec(), span.clone());
     evaluated.and_then(context, body, None, move |context, body, callee, expected| {
-        evaluate(context, body, &span, callee, &args)?.try_complete(context, body, expected)
+        evaluate(context, body, &span, callee, &args, &named)?.try_complete(context, body, expected)
     })
 }
 
@@ -49,9 +51,14 @@ fn evaluate(
     span: &TokenRange,
     callee: HMIRValue,
     args: &[HMIRExprID],
+    named: &[(CXIdent, HMIRExprID)],
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let callee = staged::read(context, callee, span)?;
     if matches!(callee.kind(), HMIRValueKind::Constant(HMIRConstant::Quote(_))) {
+        if let Some((_, value)) = named.first() {
+            let context = ("a named argument".into(), "a staged expression call".into());
+            return Err(hmir_error(body.expr(*value).span(), &typecheck::INVALID_CONTEXT, context).into());
+        }
         return staged::apply(context, body, callee, args, span);
     }
     let callee = coerce::std_rvalue(context, callee, span)?;
@@ -70,16 +77,29 @@ fn evaluate(
             && function.signature().stage() == HMIRFunctionStage::Comptime
         {
             let mut child = comptime::child(context);
-            return dependent(&mut child, &callee, body, args, &applied, span);
+            return dependent(&mut child, &callee, body, args, named, &applied, span);
         }
     }
     if (!context.is_runtime() && constructs(&callee).is_none())
         || types::comptime_only(context.env(), callee.ty())
     {
-        return dependent(context, &callee, body, args, &applied, span);
+        return dependent(context, &callee, body, args, named, &applied, span);
     }
 
     let env = context.env();
+    let subject = || match callee.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) => {
+            format!("'{}'", env.symbols().resolve_definition(*def).name())
+        }
+        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Constructor { ty, variant })) => {
+            format!("'{}'", variant::name(env, *ty, *variant))
+        }
+        _ => "function".into(),
+    };
+    if let Some((name, value)) = named.first() {
+        let unknown = (subject(), name.to_string());
+        return Err(hmir_error(body.expr(*value).span(), &typecheck::UNKNOWN_PARAMETER, unknown).into());
+    }
     let function = env.pointer_inner(callee.ty()).map(|inner| env.resolve_kind(inner));
     let Some(HMIRTypeKind::Function(signature)) = function else {
         let kind = (types::name(env, callee.ty()), "callable".into());
@@ -87,18 +107,10 @@ fn evaluate(
     };
     let signature = signature.clone();
     let params = signature.params();
+    let applied = applied.into_iter().flatten().collect::<Vec<_>>();
     let count = applied.len() + args.len();
     if count < params.len() || (!signature.is_variadic() && count > params.len()) {
-        let subject = match callee.kind() {
-            HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) => {
-                format!("'{}'", env.symbols().resolve_definition(*def).name())
-            }
-            HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Constructor { ty, variant })) => {
-                format!("'{}'", variant::name(env, *ty, *variant))
-            }
-            _ => "function".into(),
-        };
-        let counts = (subject, params.len(), count, signature.is_variadic());
+        let counts = (subject(), params.len(), count, signature.is_variadic());
         return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts).into());
     }
     let source_defined = constructs(&callee).is_none();

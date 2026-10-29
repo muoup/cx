@@ -222,6 +222,13 @@ pub(crate) fn lower_expr(
             context.ownership(HMIROwnershipOp::Leak(inner), span)
         }
         HIRExprKind::Reify { signature, value } => lower_reify(context, signature, value, span)?,
+        HIRExprKind::NamedArgument { .. } => {
+            return log_hir_error(
+                span,
+                &typecheck::INVALID_CONTEXT,
+                ("a named argument".into(), "anything but a call".into()),
+            );
+        }
         HIRExprKind::Adopt { expr: inner } => {
             let inner = lower_expr(context, inner)?;
             context.ownership(HMIROwnershipOp::Adopt(inner), span)

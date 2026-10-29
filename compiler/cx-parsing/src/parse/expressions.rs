@@ -22,7 +22,7 @@ use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
 use crate::parse::statement::parse_arm;
-use crate::parse::types::{is_type_decl, parse_comptime_args, parse_initializer};
+use crate::parse::types::{is_type_decl, parse_args, parse_initializer};
 use crate::parse::{
     parse_block, parse_expression_block, parse_intrinsic, try_parse_qualified_name,
 };
@@ -86,7 +86,7 @@ fn parse_at_intrinsic_expr(
         }
 
         "reify" => {
-            let mut args = parse_comptime_args(data)?.into_iter();
+            let mut args = parse_args(data)?.into_iter();
             let (Some(signature), Some(value), None) = (args.next(), args.next(), args.next())
             else {
                 return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a signature and a staged value".into(), Some("in @reify".into())));
@@ -257,20 +257,22 @@ pub(crate) fn parse_expr_op_concat(
 
 fn parse_call(data: &mut ParserData, callee: HIRExpression) -> CXResult<HIRExpression> {
     let start_index = data.tokens.index;
-    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-    let args = if try_next!(data.tokens, punctuator!(CloseParen)) {
-        HIRExprKind::Void.into_expr(
+    let mut args = parse_args(data)?.into_iter();
+    let args = match args.next() {
+        None => HIRExprKind::Void.into_expr(
             start_index,
             data.tokens.index,
             data.token_range(start_index, data.tokens.index),
-        )
-    } else {
-        data.change_comma_mode(true);
-        let args = parse_expr(data);
-        data.pop_comma_mode();
-        let args = args?;
-        assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-        args
+        ),
+        Some(first) => args.fold(first, |lhs, rhs| {
+            let range = lhs.range.cover(&rhs.range);
+            HIRExprKind::BinOp {
+                op: HIRBinOp::Comma,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            }
+            .into_expr(start_index, data.tokens.index, range)
+        }),
     };
     let range = callee
         .range
@@ -281,6 +283,28 @@ fn parse_call(data: &mut ParserData, callee: HIRExpression) -> CXResult<HIRExpre
         rhs: Box::new(args),
     }
     .into_expr(start_index, data.tokens.index, range))
+}
+
+// An argument of a call, '.name = value' when it names the parameter it binds
+pub(crate) fn parse_argument(data: &mut ParserData) -> CXResult<HIRExpression> {
+    let start_index = data.tokens.index;
+    if try_next!(data.tokens, operator!(Access)) {
+        if let Some(name) = try_parse_simple_identifier(&mut data.tokens) {
+            assert_token_matches!(data.tokens, TokenKind::Assignment(None), "'='");
+            let value = parse_expr(data)?;
+            return Ok(HIRExprKind::NamedArgument {
+                name,
+                value: Box::new(value),
+            }
+            .into_expr(
+                start_index,
+                data.tokens.index,
+                data.token_range(start_index, data.tokens.index),
+            ));
+        }
+        data.tokens.back();
+    }
+    parse_expr(data)
 }
 
 // REVIEW: Why is va_arg special cased in parsing here?
@@ -375,7 +399,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
             }
 
             let (qualifier, name) = if applied && data.is_generator(&path)? {
-                let args = parse_comptime_args(data)?;
+                let args = parse_args(data)?;
                 let sum = HIRTypeKind::Identifier {
                     name: path,
                     lookup: HIRTypeLookup::Standard,

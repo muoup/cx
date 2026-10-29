@@ -241,8 +241,17 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
 
         let comptime = try_next!(data.tokens, keyword!(Comptime));
         let (name, ty, _) = parse_initializer(data)?;
+        let default = match try_next!(data.tokens, TokenKind::Assignment(None)) {
+            true => {
+                data.change_comma_mode(false);
+                let default = parse_expr(data);
+                data.pop_comma_mode();
+                Some(default?)
+            }
+            false => None,
+        };
 
-        params.push(HIRParameter { name, ty, comptime });
+        params.push(HIRParameter { name, ty, comptime, default });
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");

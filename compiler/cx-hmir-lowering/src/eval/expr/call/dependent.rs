@@ -11,6 +11,7 @@ use cx_log::{
     catalogue::{analysis, mir, typecheck},
 };
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::{
     emit,
@@ -38,6 +39,81 @@ use super::{contract, specialize};
 enum Argument<'a> {
     Bound(&'a HMIRValue),
     Expression(HMIRExprID),
+    Default,
+}
+
+pub(crate) fn parameter_name(function: &HMIRFunction, index: usize) -> Option<&CXIdent> {
+    function.body().local(function.params()[index]).name()
+}
+
+// Binds the parameters of 'function' from its curried values, its named arguments and then, in order, the
+// positional arguments to the parameters left that have no default. Unless the call is partial, a parameter
+// left with a default is a hole.
+fn bind<'a>(
+    function: &HMIRFunction,
+    name: &str,
+    caller_body: &HMIRBody,
+    applied: &'a [Option<HMIRValue>],
+    args: &[HMIRExprID],
+    named: &[(CXIdent, HMIRExprID)],
+    span: &TokenRange,
+) -> CXResult<Vec<Option<Argument<'a>>>> {
+    // REVIEW: This method is a little dense
+    let declared = function.signature();
+    let comptime = |param: &HMIRFnParam<HMIRExprID>| {
+        param.comptime() || declared.stage() == HMIRFunctionStage::Comptime
+    };
+    let mut arguments = (0..declared.params().len())
+        .map(|index| applied.get(index).and_then(Option::as_ref).map(Argument::Bound))
+        .collect::<Vec<_>>();
+    for (argument, expr) in named {
+        let arg_span = caller_body.expr(*expr).span();
+        let Some(index) = (0..arguments.len()).find(|index| {
+            comptime(&declared.params()[*index]) && parameter_name(function, *index) == Some(argument)
+        }) else {
+            let subject = (format!("'{name}'"), argument.to_string());
+            return Err(hmir_error(arg_span, &typecheck::UNKNOWN_PARAMETER, subject));
+        };
+        if arguments[index].is_some() {
+            let subject = (format!("argument '{argument}'"), format!("call to '{name}'"));
+            return Err(hmir_error(arg_span, &typecheck::DUPLICATE_ITEM, subject));
+        }
+        arguments[index] = Some(Argument::Expression(*expr));
+    }
+    let positional = declared
+        .params()
+        .iter()
+        .enumerate()
+        .filter(|(index, param)| arguments[*index].is_none() && !param.defaulted())
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if args.len() > positional.len() {
+        let counts = (format!("'{name}'"), positional.len(), args.len(), false);
+        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts));
+    }
+    for (index, expr) in positional.iter().zip(args) {
+        arguments[*index] = Some(Argument::Expression(*expr));
+    }
+
+    let partial = positional.len() > args.len();
+    let supplied = !args.is_empty() || !named.is_empty();
+    let runtime_supplied = declared
+        .params()
+        .iter()
+        .zip(&arguments)
+        .any(|(param, arg)| !param.comptime() && matches!(arg, Some(Argument::Expression(_))));
+    if partial && (!supplied || runtime_supplied) {
+        let counts = (format!("'{name}'"), positional.len(), args.len(), false);
+        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts));
+    }
+    if !partial {
+        for (param, argument) in declared.params().iter().zip(&mut arguments) {
+            if param.defaulted() && argument.is_none() {
+                *argument = Some(Argument::Default);
+            }
+        }
+    }
+    Ok(arguments)
 }
 
 pub(crate) struct Frame<'a> {
@@ -164,7 +240,8 @@ pub(crate) fn dependent(
     callee: &HMIRValue,
     caller_body: &HMIRBody,
     args: &[HMIRExprID],
-    applied: &[HMIRValue],
+    named: &[(CXIdent, HMIRExprID)],
+    applied: &[Option<HMIRValue>],
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) = callee.kind()
@@ -185,27 +262,8 @@ pub(crate) fn dependent(
         let operation = "a variadic dependent function call".into();
         return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
     }
-    let mut bound = applied.iter();
-    let mut supplied = args.iter();
-    let arguments = declared
-        .params()
-        .iter()
-        .map(|param| match param.comptime().then(|| bound.next()).flatten() {
-            Some(value) => Some(Argument::Bound(value)),
-            None => supplied.next().map(|expr| Argument::Expression(*expr)),
-        })
-        .collect::<Vec<_>>();
+    let arguments = bind(function, &name, caller_body, applied, args, named, span)?;
     let partial = arguments.iter().any(Option::is_none);
-    let prefix = !args.is_empty()
-        && declared
-            .params()
-            .iter()
-            .zip(&arguments)
-            .all(|(param, arg)| param.comptime() || !matches!(arg, Some(Argument::Expression(_))));
-    if bound.next().is_some() || supplied.next().is_some() || (partial && !prefix) {
-        let counts = (format!("'{name}'"), declared.params().len() - applied.len(), args.len(), false);
-        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts).into());
-    }
     if !partial {
         super::require(context, span, declared.contract().is_safe(), true)?;
     }
@@ -226,32 +284,33 @@ pub(crate) fn dependent(
         runtime,
     };
     let mut deduction = Deduction::new(function, name.clone());
-    let mut params: Vec<HMIRFnParam<HMIRTypeID>> = Vec::with_capacity(arguments.len());
+    let mut params: Vec<Option<HMIRFnParam<HMIRTypeID>>> = vec![None; arguments.len()];
     let mut values = vec![None; arguments.len()];
     for (index, (param, argument)) in declared.params().iter().zip(&arguments).enumerate() {
         let arg = match argument {
-            None => break,
+            None => continue,
             Some(Argument::Bound(value)) => {
                 let ty = frame.parameter(context, index, span)?;
-                params.push(HMIRFnParam::new(true, ty));
+                params[index] = Some(HMIRFnParam::new(true, ty, param.defaulted()));
                 values[index] = Some(frame.argument(context, index, ty, (*value).clone(), span, span)?);
                 continue;
             }
-            Some(Argument::Expression(arg)) => *arg,
+            Some(Argument::Expression(arg)) => Some(*arg),
+            Some(Argument::Default) => None,
         };
         let frozen = param.comptime();
-        let arg_span = caller_body.expr(arg).span();
-        let actual = match deduction.needs_actual() {
-            true => deduce::actual_type(context, caller_body, arg)?,
-            false => None,
+        let arg_span = arg.map_or(span, |arg| caller_body.expr(arg).span());
+        let actual = match (arg, deduction.needs_actual()) {
+            (Some(arg), true) => deduce::actual_type(context, caller_body, arg)?,
+            _ => None,
         };
         for deduced in deduction.infer(context, &mut frame, index, actual, span)? {
             let value = deduced.argument.complete(context, caller_body, Some(deduced.ty))?;
-            let Some(Argument::Expression(expr)) = &arguments[deduced.index] else {
-                unreachable!("a deferred argument is an expression")
+            let ty = *params[deduced.index].as_ref().expect("a deferred argument has its parameter").ty();
+            let arg_span = match &arguments[deduced.index] {
+                Some(Argument::Expression(expr)) => caller_body.expr(*expr).span(),
+                _ => span,
             };
-            let ty = *params[deduced.index].ty();
-            let arg_span = caller_body.expr(*expr).span();
             values[deduced.index] = Some(frame.argument(context, deduced.index, ty, value, span, arg_span)?);
         }
         let ty = frame.parameter(context, index, span)?;
@@ -259,11 +318,11 @@ pub(crate) fn dependent(
             let operation = "a reference parameter".into();
             return Err(hmir_error(arg_span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
         }
-        let argument = if staged::is_code(context, ty) {
+        let argument = if let Some(arg) = arg.filter(|_| staged::is_code(context, ty)) {
             staged::argument(context, caller_body, arg, ty)?
-        } else if (runtime && frozen) || spliced {
+        } else if let Some(arg) = arg.filter(|_| (runtime && frozen) || spliced) {
             comptime::freeze(context, caller_body, arg, Some(ty))?
-        } else {
+        } else if let Some(arg) = arg {
             let evaluated = eval(context, caller_body, arg)?;
             let arg_span = arg_span.clone();
             deduce::complete(context, caller_body, evaluated, Some(ty))?.and_then(
@@ -278,8 +337,10 @@ pub(crate) fn dependent(
                     }
                 },
             )?
+        } else {
+            deduce::hole(context, span)?
         };
-        params.push(HMIRFnParam::new(frozen, ty));
+        params[index] = Some(HMIRFnParam::new(frozen, ty, param.defaulted()));
         match argument {
             Evaluation::Ready(value) => {
                 values[index] = Some(frame.argument(context, index, ty, value, span, arg_span)?);
@@ -299,16 +360,18 @@ pub(crate) fn dependent(
         };
     }
     let curries = declared.stage() == HMIRFunctionStage::Comptime
-        || declared.params()[params.len()..].iter().any(|param| param.comptime());
+        || declared.params().iter().zip(&params).any(|(param, bound)| bound.is_none() && param.comptime());
     if partial && curries {
-        let args = values.into_iter().flatten().collect();
-        return Ok(Evaluation::Ready(HMIRValue::curried(callee.ty(), callee.clone(), args)));
+        return Ok(Evaluation::Ready(HMIRValue::curried(callee.ty(), callee.clone(), values)));
     }
-    for index in params.len()..declared.params().len() {
-        let ty = frame.parameter(context, index, span)?;
-        params.push(HMIRFnParam::new(false, ty));
+    let mut evaluated = Vec::with_capacity(params.len());
+    for (index, param) in params.into_iter().enumerate() {
+        evaluated.push(match param {
+            Some(param) => param,
+            None => HMIRFnParam::new(false, frame.parameter(context, index, span)?, false),
+        });
     }
-    let signature = frame.signature(context, params, span)?;
+    let signature = frame.signature(context, evaluated, span)?;
     for (index, declaration) in symbol::visible(source, context.visible_through()) {
         let Some(HMIRDefKind::Function(other)) = declaration.kind() else {
             continue;
@@ -330,8 +393,12 @@ pub(crate) fn dependent(
         let mut params = Vec::with_capacity(values.len());
         for (index, (param, value)) in signature.params().iter().zip(&values).enumerate() {
             let ty = other.parameter(context, index, span)?;
-            let frozen = other.function.signature().params()[index].comptime();
-            if !alike(context.env(), *param.ty(), ty, false) || frozen != param.comptime() {
+            let declared = &other.function.signature().params()[index];
+            let frozen = declared.comptime();
+            if !alike(context.env(), *param.ty(), ty, false)
+                || frozen != param.comptime()
+                || declared.defaulted() != param.defaulted()
+            {
                 return Err(incompatible().into());
             }
             if (!runtime || frozen)
@@ -339,7 +406,7 @@ pub(crate) fn dependent(
             {
                 other.bind(context, index, ty, value, span)?;
             }
-            params.push(HMIRFnParam::new(frozen, ty));
+            params.push(HMIRFnParam::new(frozen, ty, declared.defaulted()));
         }
         let other = other.signature(context, params, span)?;
         if !signatures_alike(context.env(), &signature, &other) {

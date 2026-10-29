@@ -66,6 +66,7 @@ pub enum HMIRExprKind {
     Call {
         callee: HMIRExprID,
         args: Vec<HMIRExprID>,
+        named: Vec<(CXIdent, HMIRExprID)>,
     },
     Piped(HMIRExprID),
 

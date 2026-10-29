@@ -151,12 +151,18 @@ impl<'a> BodyLowering<'a> {
     }
 
     // The signature parameters that the locals of a definition were declared from
-    pub(crate) fn fn_params(&self, locals: &[HMIRLocalID]) -> Vec<HMIRFnParam<HMIRExprID>> {
+    pub(crate) fn fn_params(
+        &self,
+        locals: &[HMIRLocalID],
+        defaults: Option<&[bool]>,
+    ) -> Vec<HMIRFnParam<HMIRExprID>> {
         locals
             .iter()
-            .map(|local| {
+            .enumerate()
+            .map(|(index, local)| {
                 let local = self.body.local(*local);
-                HMIRFnParam::new(local.comptime(), local.ty())
+                let defaulted = defaults.is_some_and(|defaults| defaults[index]);
+                HMIRFnParam::new(local.comptime(), local.ty(), defaulted)
             })
             .collect()
     }
@@ -445,7 +451,7 @@ pub(crate) fn lower_reify(
     let name = CXIdent::from(format!("reify.{}", id.index()).as_str());
     let signature = HMIRFnSignature::new(
         HMIRFunctionStage::Runtime,
-        anon.fn_params(&params),
+        anon.fn_params(&params, None),
         return_type,
         prototype.var_args,
         HMIRContract::default(),

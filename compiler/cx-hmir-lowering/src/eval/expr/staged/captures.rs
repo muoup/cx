@@ -141,9 +141,10 @@ impl Locals<'_> {
                 self.bind(*local);
                 children.extend(initializer);
             }
-            HMIRExprKind::Call { callee, args } => {
+            HMIRExprKind::Call { callee, args, named } => {
                 children.push(*callee);
                 children.extend(args);
+                children.extend(named.iter().map(|(_, value)| *value));
             }
             HMIRExprKind::Block { statements, .. } => children.extend(statements),
             HMIRExprKind::If {

@@ -21,9 +21,10 @@ pub enum HMIRConstant {
     Null,
     Type(HMIRTypeID),
     Function(HMIRFunctionRef),
+    // Indexed by parameter, a slot left empty where that parameter is still to be applied
     Curried {
         callee: Box<HMIRValue>,
-        args: Vec<HMIRValue>,
+        args: Vec<Option<HMIRValue>>,
     },
     Quote(QuoteRef),
     Aggregate(Vec<HMIRConstant>),
@@ -93,7 +94,7 @@ impl HMIRConstant {
             Self::Aggregate(items) => items.iter().any(Self::holds_local_address),
             Self::Union { value, .. } => value.holds_local_address(),
             Self::TaggedUnion { payload, .. } => payload.holds_local_address(),
-            Self::Curried { callee, args } => iter::once(callee.as_ref()).chain(args).any(|value| {
+            Self::Curried { callee, args } => iter::once(callee.as_ref()).chain(args.iter().flatten()).any(|value| {
                 matches!(value.kind(), HMIRValueKind::Constant(constant) if constant.holds_local_address())
             }),
             _ => false,

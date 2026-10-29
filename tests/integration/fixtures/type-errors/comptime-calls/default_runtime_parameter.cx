@@ -1,0 +1,7 @@
+int twice(int value = _) {
+    return value * 2;
+}
+
+int main() {
+    return twice(2);
+}

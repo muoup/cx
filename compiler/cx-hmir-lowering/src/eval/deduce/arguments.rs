@@ -11,6 +11,7 @@ use cx_hmir::{
 };
 use cx_log::{CXResult, catalogue::typecheck, error::CXError};
 use cx_tokens::TokenRange;
+use cx_util::identifier::CXIdent;
 
 use crate::{
     env::function::LocalLoweringContext,
@@ -22,7 +23,7 @@ use crate::{
         types::{self, unspecify},
     },
     log::hmir_error,
-    symbol::composite::alike,
+    symbol::{self, composite::alike},
     value::{
         HMIRValue, HMIRValueKind,
         constant::{HMIRConstant, HMIRFunctionRef},
@@ -134,13 +135,16 @@ impl<'a> Deduction<'a> {
                     None => Ok(()),
                 }
             }
-            HMIRExprKind::Call { callee, args } => {
+            HMIRExprKind::Call { callee, args, named } => {
                 self.unify(context, frame, *callee, None, unresolved, span)?;
-                let applied = actual.and_then(|actual| self.applied(context, frame, *callee, actual, span));
-                for (index, form) in args.iter().enumerate() {
+                let applied =
+                    actual.and_then(|actual| self.applied(context, frame, *callee, args.len(), named, actual, span));
+                let forms = args.iter().chain(named.iter().map(|(_, form)| form));
+                for (index, form) in forms.enumerate() {
                     let actual = applied
                         .as_ref()
                         .and_then(|values| values.get(index))
+                        .and_then(Option::as_ref)
                         .and_then(HMIRValue::as_type);
                     self.unify(context, frame, *form, actual, unresolved, span)?;
                 }
@@ -232,29 +236,50 @@ impl<'a> Deduction<'a> {
         }
     }
 
-    // The arguments a type generator named by 'callee' applied to produce 'actual', past those it was curried with
+    // The arguments a type generator named by 'callee' applied to produce 'actual', for each of the positional
+    // and then the named arguments of a call to it, bound as the call binds them
     fn applied(
         &self,
         context: &mut LocalLoweringContext,
         frame: &mut Frame,
         callee: HMIRExprID,
+        args: usize,
+        named: &[(CXIdent, HMIRExprID)],
         actual: HMIRTypeID,
         span: &TokenRange,
-    ) -> Option<Vec<HMIRValue>> {
+    ) -> Option<Vec<Option<HMIRValue>>> {
         let body = self.function.body();
         let value = frame
             .enter(context, span, |child| flow::top(eval(child, body, callee)))
             .ok()?;
         let (callee, curried) = match value.kind() {
             HMIRValueKind::Constant(HMIRConstant::Curried { callee, args }) => {
-                (callee.as_ref(), args.len())
+                (callee.as_ref(), args.as_slice())
             }
-            _ => (&value, 0),
+            _ => (&value, [].as_slice()),
         };
         let HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) = callee.kind() else {
             return None;
         };
-        Some(instance(context, *def, actual)?.into_iter().skip(curried).collect())
+        let instance = instance(context, *def, actual)?;
+        let source = context.env().symbols().resolve_definition(*def);
+        let Some(HMIRDefKind::Function(generator)) = source.declarations()[symbol::select(source, None).ok()?].kind()
+        else {
+            return None;
+        };
+        let params = generator.signature().params();
+        let mut values = (0..params.len())
+            .filter(|index| curried.get(*index).is_none_or(Option::is_none) && !params[*index].defaulted())
+            .map(|index| instance.get(index).cloned())
+            .take(args)
+            .collect::<Vec<_>>();
+        values.resize(args, None);
+        values.extend(named.iter().map(|(name, _)| {
+            (0..params.len())
+                .find(|index| call::parameter_name(generator, *index) == Some(name))
+                .and_then(|index| instance.get(index).cloned())
+        }));
+        Some(values)
     }
 
     fn bind(
@@ -369,9 +394,9 @@ pub(crate) fn generated(
         let applied = values
             .into_iter()
             .zip(instance)
-            .map(|(value, bound)| value.unwrap_or(bound))
+            .map(|(value, bound)| Some(value.unwrap_or(bound)))
             .collect::<Vec<_>>();
-        call::dependent(context, &callee, body, &[], &applied, &call_span)
+        call::dependent(context, &callee, body, &[], &[], &applied, &call_span)
     }))
 }
 

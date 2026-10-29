@@ -73,7 +73,7 @@ fn signature(
     }
     let params = params
         .into_iter()
-        .map(|param| HMIRFnParam::new(false, types::realize(context.env_mut(), HMIRTypeKind::Staged(param), span)))
+        .map(|param| HMIRFnParam::new(false, types::realize(context.env_mut(), HMIRTypeKind::Staged(param), span), false))
         .collect();
     let signature = HMIRFnSignature::new(HMIRFunctionStage::Comptime, params, result, false, HMIRContract::default());
     types::realize(context.env_mut(), HMIRTypeKind::Function(signature), span)

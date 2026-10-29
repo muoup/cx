@@ -45,7 +45,7 @@ pub(crate) fn eval_signature(
         .map(|param| {
             let ty = slot(context, *param.ty())?;
             let ty = parameter(context, ty, param.comptime(), body.expr(*param.ty()).span())?;
-            Ok(HMIRFnParam::new(param.comptime(), ty))
+            Ok(HMIRFnParam::new(param.comptime(), ty, param.defaulted()))
         })
         .collect::<CXResult<_>>()?;
     let return_type = slot(context, *signature.return_type())?;
@@ -71,7 +71,7 @@ pub(crate) fn adjust_signature(
         .map(|(source, param)| {
             let span = body.expr(*source.ty()).span();
             let ty = parameter(context, *param.ty(), param.comptime(), span)?;
-            Ok(HMIRFnParam::new(param.comptime(), ty))
+            Ok(HMIRFnParam::new(param.comptime(), ty, param.defaulted()))
         })
         .collect::<CXResult<_>>()?;
 

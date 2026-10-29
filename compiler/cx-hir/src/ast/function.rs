@@ -55,6 +55,7 @@ pub struct HIRParameter {
     pub name: Option<CXIdent>,
     pub ty: HIRType,
     pub comptime: bool,
+    pub default: Option<HIRExpression>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

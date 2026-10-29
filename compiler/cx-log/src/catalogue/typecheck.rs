@@ -110,6 +110,7 @@ define_errors! {
     BINDING_COPIES_IN_USE: String = "T0069" => |ty| format!("binding would copy '{ty}' out of a value that is still in use");
     IMPURE_OPERATION: String = "T0070" => |feature| format!("{feature} is impure and so cannot be used in a contract condition, wrap this expression in an `@unsafe` block to bypass this restriction");
     NODROP_DISCARDED: String = "T0071" => |ty| format!("the @nodrop value of type '{ty}' is discarded; move or leak it");
+    UNKNOWN_PARAMETER: (String, String) = "T0072" => |(function, name)| format!("{function} has no comptime parameter named '{name}'");
 
     POP_EMPTY_SCOPE: () = "TX001" => |()| "attempted to pop a scope from an empty scope stack".into();
 }

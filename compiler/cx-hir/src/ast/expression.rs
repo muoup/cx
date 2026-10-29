@@ -207,6 +207,11 @@ pub enum HIRExprKind {
         signature: Box<HIRExpression>,
         value: Box<HIRExpression>,
     },
+    // '.name = value' among the arguments of a call
+    NamedArgument {
+        name: CXIdent,
+        value: Box<HIRExpression>,
+    },
 
     InitializerList {
         indices: Vec<HIRInitIndex>,

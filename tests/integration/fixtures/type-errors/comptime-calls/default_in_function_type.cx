@@ -1,0 +1,5 @@
+void apply(@fn callback(comptime @type T = _, T value) -> void) {}
+
+int main() {
+    return 0;
+}

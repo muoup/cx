@@ -639,7 +639,10 @@ module.exports = grammar({
                 optional(keyword($, "comptime")),
                 $.type,
                 optional($.declarator),
+                optional($.parameter_default),
             ),
+
+        parameter_default: ($) => seq(op($, "="), $.expression),
 
         comptime_parameter_list: ($) =>
             seq(
@@ -652,6 +655,7 @@ module.exports = grammar({
             seq(
                 $.comptime_value_type,
                 optional($.identifier),
+                optional($.parameter_default),
             ),
 
         function_contract: ($) =>
@@ -1076,7 +1080,10 @@ module.exports = grammar({
                 ),
             ),
 
-        argument_list: ($) => seq("(", optional(commaSep1($.expression)), ")"),
+        argument_list: ($) =>
+            seq("(", optional(commaSep1(choice($.named_argument, $.expression))), ")"),
+
+        named_argument: ($) => seq(".", field("name", $.identifier), op($, "="), field("value", $.expression)),
 
         primary_expression: ($) =>
             choice(

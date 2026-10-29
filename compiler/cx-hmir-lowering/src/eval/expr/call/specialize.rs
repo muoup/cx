@@ -69,12 +69,12 @@ pub(super) fn declare(
         let prototype = MIRFnPrototype::new(lower_signature(env, &concrete, span)?, LinkageMode::Static, name, Some(original));
         let function = env.module_mut().declare_function(prototype);
         env.generation_mut().specialize(
-            args.clone(),
-            Specialization::new(def, function, signature.clone(), bindings),
+            args,
+            Specialization::new(def, function, signature.clone(), bindings.clone()),
         );
     }
     let ty = types::realize(context.env_mut(), HMIRTypeKind::Function(concrete), span);
     let ty = types::pointer(context.env_mut(), ty, span);
     let callee = symbol::binding(context.env_mut(), def, None)?;
-    Ok(HMIRValue::curried(ty, callee, args))
+    Ok(HMIRValue::curried(ty, callee, bindings))
 }

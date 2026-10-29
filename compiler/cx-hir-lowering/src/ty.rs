@@ -15,7 +15,7 @@ use cx_hmir::{
     },
     unit::function::HMIRFnParam,
 };
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -23,7 +23,8 @@ use cx_util::identifier::CXIdent;
 use crate::{
     body::{BodyLowering, Symbol},
     def::declared_params,
-    expr::lower_expr,
+    expr::{call::lower_arguments, lower_expr},
+    log::log_hir_error,
 };
 
 pub(crate) fn lower_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXResult<HMIRExprID> {
@@ -57,11 +58,8 @@ fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXRes
                 return Ok(callee);
             };
 
-            let args = args
-                .iter()
-                .map(|arg| lower_expr(context, arg))
-                .collect::<CXResult<_>>()?;
-            return Ok(context.push(HMIRExprKind::Call { callee, args }, span));
+            let (args, named) = lower_arguments(context, args)?;
+            return Ok(context.push(HMIRExprKind::Call { callee, args, named }, span));
         }
         HIRTypeKind::Universe => return Ok(context.type_of_types(span)),
         HIRTypeKind::Auto => return Ok(context.hole(span)),
@@ -179,7 +177,7 @@ fn lower_staged_type(
     }
     let params = params
         .into_iter()
-        .map(|param| Ok(HMIRFnParam::new(false, staged(context, param)?)))
+        .map(|param| Ok(HMIRFnParam::new(false, staged(context, param)?, false)))
         .collect::<CXResult<_>>()?;
     let stage = HMIRFunctionStage::Comptime;
     let signature = HMIRFnSignature::new(stage, params, result, false, HMIRContract::default());
@@ -195,8 +193,15 @@ fn lower_function_type(
     let params = declared_params(prototype)
         .iter()
         .map(|param| {
+            if let Some(default) = &param.default {
+                return log_hir_error(
+                    &default.range,
+                    &typecheck::INVALID_CONTEXT,
+                    ("a default".into(), "a function type".into()),
+                );
+            }
             let ty = lower_type(context, &param.ty)?;
-            Ok(HMIRFnParam::new(param.comptime, ty))
+            Ok(HMIRFnParam::new(param.comptime, ty, false))
         })
         .collect::<CXResult<_>>()?;
     let return_type = lower_type(context, &prototype.return_type)?;

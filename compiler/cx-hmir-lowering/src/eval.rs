@@ -93,7 +93,7 @@ pub(crate) fn eval(
             name::eval_scope_access(context, body, span, *base, member)
         }
         HMIRExprKind::Piped(value) => eval(context, body, *value),
-        HMIRExprKind::Call { callee, args } => call::eval_call(context, body, span, *callee, args),
+        HMIRExprKind::Call { callee, args, named } => call::eval_call(context, body, span, *callee, args, named),
 
         HMIRExprKind::Hole(_) => deduce::hole(context, span),
         HMIRExprKind::Comptime(inner) => Ok(Evaluation::Ready(eval_comptime(context, body, *inner, None)?)),

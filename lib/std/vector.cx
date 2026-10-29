@@ -21,7 +21,7 @@ vector(T) vector::new(comptime @type T) {
     };
 }
 
-void vector::drop(comptime @type T, vector(T) this) {
+void vector::drop(comptime @type T = _, vector(T) this) {
     @unsafe {
         free(this.data);
         @leak(this);

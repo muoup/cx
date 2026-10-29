@@ -1,0 +1,39 @@
+/* CX-STDOUT: get 4 4 4 */
+/* CX-STDOUT-NEXT: convert 5 6 */
+/* CX-STDOUT-NEXT: dropped */
+
+import std::box as std;
+
+#include <stdio.h>
+
+comptime @type cell(comptime @type T) => struct { T value; };
+
+T cell::get(comptime @type T = _, const cell(T)& this) {
+    return this.value;
+}
+
+U convert(comptime @type T = _, comptime @type U, T value) {
+    return (U) value;
+}
+
+void consume(@fn drop(std::box(int)) -> void, std::box(int) value) {
+    drop(move value);
+    printf("dropped\n");
+}
+
+int main() {
+    cell(int) four = { .value = 4 };
+    int piped = four |> cell::get();
+    int direct = cell::get(four);
+    int named = cell::get(.T = int, four);
+    printf("get %d %d %d\n", piped, direct, named);
+
+    long positional = convert(long, 5);
+    long curried = (convert(.U = long))(6);
+    printf("convert %ld %ld\n", positional, curried);
+
+    std::box(int) boxed = std::box::new(int, 7);
+    move boxed |> std::box::drop();
+    consume(std::box::drop(.T = int), std::box::new(int, 9));
+    return 0;
+}

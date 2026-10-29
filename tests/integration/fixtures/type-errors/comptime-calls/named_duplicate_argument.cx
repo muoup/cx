@@ -1,0 +1,7 @@
+U convert(comptime @type T = _, comptime @type U, T value) {
+    return (U) value;
+}
+
+int main() {
+    return convert(.U = int, .U = long, 5);
+}

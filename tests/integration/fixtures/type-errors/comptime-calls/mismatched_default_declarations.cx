@@ -1,0 +1,9 @@
+T identity(comptime @type T = _, T value);
+
+T identity(comptime @type T, T value) {
+    return value;
+}
+
+int main() {
+    return identity(int, 3);
+}

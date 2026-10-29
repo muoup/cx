@@ -352,6 +352,10 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 HIRExprFormatter::new(signature, self.depth + 1).fmt(f)?;
                 HIRExprFormatter::new(value, self.depth + 1).fmt(f)
             }
+            HIRExprKind::NamedArgument { name, value } => {
+                writeln!(f, "NamedArgument {name}")?;
+                HIRExprFormatter::new(value, self.depth + 1).fmt(f)
+            }
             HIRExprKind::SizeOfExpr { expr } => {
                 writeln!(f, "SizeOf")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
@@ -656,8 +660,13 @@ impl Display for HIRFunctionPrototype {
         let mut params = Vec::new();
 
         params.extend(self.params.iter().map(|param| {
+            let default = match &param.default {
+                Some(HIRExpression { kind: HIRExprKind::Hole, .. }) => " = _",
+                Some(_) => " = ...",
+                None => "",
+            };
             format!(
-                "{}: {}",
+                "{}: {}{default}",
                 param.name.as_ref().unwrap_or(&CXIdent::new("_")),
                 param.ty
             )

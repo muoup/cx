@@ -83,7 +83,7 @@ impl HMIREnvironment<'_, '_> {
                 callee: Box::new(self.canonical_value(*callee)),
                 args: args
                     .into_iter()
-                    .map(|arg| self.canonical_value(arg))
+                    .map(|arg| arg.map(|arg| self.canonical_value(arg)))
                     .collect(),
             },
             (value, _) => value,

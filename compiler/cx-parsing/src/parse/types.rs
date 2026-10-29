@@ -1,4 +1,4 @@
-use crate::parse::expressions::parse_expr;
+use crate::parse::expressions::{parse_argument, parse_expr};
 use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{assert_token_matches, log::parse_point_error, next_kind, peek_kind, try_next};
 use cx_hir::ast::expression::HIRExpression;
@@ -818,7 +818,7 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
             let args = if peek_kind!(data.tokens, punctuator!(OpenParen))
                 && data.is_generator(&name)?
             {
-                Some(parse_comptime_args(data)?)
+                Some(parse_args(data)?)
             } else {
                 None
             };
@@ -887,13 +887,13 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
         .with_range(token_range(data, start_index, data.tokens.index)))
 }
 
-// Comptime arguments applied to a generator, 'opt(int)'
-pub(crate) fn parse_comptime_args(data: &mut ParserData) -> CXResult<Vec<HIRExpression>> {
+// The parenthesized arguments of a call or of a generator, 'opt(int)'
+pub(crate) fn parse_args(data: &mut ParserData) -> CXResult<Vec<HIRExpression>> {
     fn arguments(data: &mut ParserData) -> CXResult<Vec<HIRExpression>> {
         let mut args = Vec::new();
 
         while !try_next!(data.tokens, punctuator!(CloseParen)) {
-            args.push(parse_expr(data)?);
+            args.push(parse_argument(data)?);
 
             if !try_next!(data.tokens, operator!(Comma)) {
                 assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");

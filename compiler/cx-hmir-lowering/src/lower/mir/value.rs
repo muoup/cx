@@ -99,8 +99,9 @@ pub fn constant(
             MIRConstant::Function(env.module_mut().declare_function(prototype))
         }
         (HMIRConstant::Curried { callee, args }, _) => {
+            let args = args.iter().flatten().cloned().collect::<Vec<_>>();
             if let HMIRValueKind::Constant(HMIRConstant::Function(function)) = callee.kind()
-                && let Some(function) = env.generation().generated(*function, args)
+                && let Some(function) = env.generation().generated(*function, &args)
             {
                 return Ok(MIRConstant::Function(function));
             }

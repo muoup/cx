@@ -38,6 +38,7 @@ pub struct HMIRFnSignature<T> {
 #[derive(Debug, Clone)]
 pub struct HMIRFnParam<T> {
     comptime: bool,
+    defaulted: bool,
     ty: T,
 }
 
@@ -164,7 +165,7 @@ impl<T> HMIRFnSignature<T> {
         let params = self
             .params
             .iter()
-            .map(|param| Ok(HMIRFnParam::new(param.comptime, ty(&param.ty)?)))
+            .map(|param| Ok(HMIRFnParam::new(param.comptime, ty(&param.ty)?, param.defaulted)))
             .collect::<Result<_, E>>()?;
 
         Ok(HMIRFnSignature {
@@ -243,12 +244,17 @@ impl HMIRFnDefinition {
 }
 
 impl<T> HMIRFnParam<T> {
-    pub fn new(comptime: bool, ty: T) -> Self {
-        Self { comptime, ty }
+    pub fn new(comptime: bool, ty: T, defaulted: bool) -> Self {
+        Self { comptime, defaulted, ty }
     }
 
     pub fn comptime(&self) -> bool {
         self.comptime
+    }
+
+    // Only a named argument binds a defaulted parameter; left unbound, it is a hole
+    pub fn defaulted(&self) -> bool {
+        self.defaulted
     }
 
     pub fn ty(&self) -> &T {

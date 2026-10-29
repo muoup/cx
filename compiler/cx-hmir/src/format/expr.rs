@@ -84,10 +84,17 @@ impl BodyPrinter<'_> {
                 }
                 Ok(())
             }
-            HMIRExprKind::Call { callee, args } => {
+            HMIRExprKind::Call { callee, args, named } => {
                 self.expr(f, *callee, depth)?;
                 f.write_str("(")?;
                 self.list(f, args, depth, Self::expr)?;
+                for (index, (name, value)) in named.iter().enumerate() {
+                    if index > 0 || !args.is_empty() {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, ".{name} = ")?;
+                    self.expr(f, *value, depth)?;
+                }
                 f.write_str(")")
             }
             HMIRExprKind::Piped(value) => {

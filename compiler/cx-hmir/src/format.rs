@@ -87,6 +87,9 @@ fn write_function(
                 printer.expr(f, *param.ty(), 0)?;
             }
         }
+        if param.defaulted() {
+            f.write_str(" = _")?;
+        }
     }
     if signature.is_variadic() {
         f.write_str(if signature.params().is_empty() {

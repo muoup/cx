@@ -44,10 +44,10 @@ void box::drop_with(comptime @type T, box(T) this, @fn drop_value(T) -> void) {
         drop_value(@adopt(*this.ptr));
     };
 
-    move this |>(1) box::drop(T);
+    move this |> box::drop();
 }
 
-void box::drop(comptime @type T, box(T) this) safe {
+void box::drop(comptime @type T = _, box(T) this) safe {
     @unsafe {
         free(this.ptr);
         @leak(this);

@@ -49,7 +49,7 @@ pub(crate) fn payload(env: &HMIREnvironment, ty: HMIRTypeID, variant: usize) -> 
 
 pub(crate) fn signature(env: &HMIREnvironment, ty: HMIRTypeID, variant: usize) -> HMIRFnSignature<HMIRTypeID> {
     let params = payload(env, ty, variant)
-        .map(|payload| HMIRFnParam::new(false, payload))
+        .map(|payload| HMIRFnParam::new(false, payload, false))
         .into_iter()
         .collect();
     HMIRFnSignature::new(HMIRFunctionStage::Runtime, params, ty, false, HMIRContract::default())

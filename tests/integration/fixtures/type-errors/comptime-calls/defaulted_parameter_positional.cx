@@ -1,0 +1,10 @@
+comptime @type cell(comptime @type T) => struct { T value; };
+
+T cell::get(comptime @type T = _, const cell(T)& this) {
+    return this.value;
+}
+
+int main() {
+    cell(int) four = { .value = 4 };
+    return cell::get(int, four);
+}

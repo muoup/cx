@@ -1,4 +1,5 @@
 use cx_hir::ast::{
+    expression::{HIRExprKind, HIRExpression},
     function::{HIRFunctionBody, HIRFunctionPrototype, HIRParameter},
     global_var::HIREnumVariant,
     types::{HIRType, HIRTypeKind, HIRTypeLookup},
@@ -14,13 +15,14 @@ use cx_hmir::{
     },
     unit::function::HMIRFnPrototype,
 };
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 
 use crate::{
     body::BodyLowering,
     expr::{lower_expr, lower_initial_value, lower_scope_statements},
+    log::log_hir_error,
     plan::{DefSource, PlannedSymbol},
     ty::{lower_type, staged_signature},
     unit::{UnitContext, def_name},
@@ -147,9 +149,10 @@ fn lower_function(
     } else {
         HMIRFunctionStage::Runtime
     };
+    let defaults = declared_defaults(prototype)?;
     let signature = HMIRFnSignature::new(
         stage,
-        context.fn_params(&params),
+        context.fn_params(&params, Some(&defaults)),
         return_type,
         prototype.var_args,
         contract,
@@ -172,6 +175,27 @@ pub(crate) fn declared_params<'h>(prototype: &'h HIRFunctionPrototype) -> &'h [H
         [param] if param.name.is_none() && is_void(&param.ty) => &[],
         params => params,
     }
+}
+
+// Whether each declared parameter defaults to a hole, the only default supported
+fn declared_defaults(prototype: &HIRFunctionPrototype) -> CXResult<Vec<bool>> {
+    declared_params(prototype)
+        .iter()
+        .map(|param| match &param.default {
+            None => Ok(false),
+            Some(default) if !param.comptime && !prototype.comptime => log_hir_error(
+                &default.range,
+                &typecheck::INVALID_CONTEXT,
+                ("a default".into(), "a runtime parameter".into()),
+            ),
+            Some(HIRExpression { kind: HIRExprKind::Hole, .. }) => Ok(true),
+            Some(default) => log_hir_error(
+                &default.range,
+                &typecheck::UNSUPPORTED_FEATURE,
+                "a parameter default other than '_'".into(),
+            ),
+        })
+        .collect()
 }
 
 fn is_void(ty: &HIRType) -> bool {

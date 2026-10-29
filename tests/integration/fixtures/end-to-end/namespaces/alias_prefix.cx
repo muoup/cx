@@ -8,6 +8,6 @@ int main() {
     v::vector(int) vec = v::vector::new(int);
     vec |>(1) v::vector::push(int, 42);
     printf("%zu\n", vec.length);
-    move vec |>(1) v::vector::drop(int);
+    move vec |> v::vector::drop(.T = int);
     return 0;
 }
