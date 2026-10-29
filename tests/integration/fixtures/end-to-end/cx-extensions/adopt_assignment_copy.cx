@@ -24,7 +24,7 @@ int main() {
     printf("%d\n", (*ptr).right);
 
     Pair& reference = *ptr;
-    Pair through = @unsafe(@adopt(reference));
+    Pair through = @unsafe(@adopt(@copy(reference)));
     through.right = 30;
     printf("%d\n", (*ptr).right);
 

@@ -1,0 +1,11 @@
+/* CX-STDOUT: 9 2 */
+#include <stdio.h>
+int main() {
+    int x = 1;
+    int y = 2;
+    int condition = 1;
+    auto adopted = condition ? @unsafe(@adopt(x)) : @unsafe(@adopt(y));
+    adopted = 9;
+    printf("%d %d\n", x, y);
+    return 0;
+}

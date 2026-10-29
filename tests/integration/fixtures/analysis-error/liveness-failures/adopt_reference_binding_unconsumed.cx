@@ -1,0 +1,8 @@
+#include <stdlib.h>
+struct Resource : @nodrop { int data; };
+int main() {
+    Resource* ptr = malloc(sizeof(Resource));
+    *ptr = (Resource){ .data = 1 };
+    Resource& borrowed = @unsafe(@adopt(*ptr));
+    return borrowed.data;
+}

@@ -53,10 +53,7 @@ pub(crate) fn lower_rvalue(
             context.types().definition(expected).unwrap().kind(),
             MIRTypeKind::MemoryReference { .. }
         ) {
-            return if matches!(
-                context.types().definition(source_ty).unwrap().kind(),
-                MIRTypeKind::MemoryReference { .. }
-            ) {
+            return if context.types().same_type(source_ty, expected) {
                 memory::load(context, address, source_ty)
             } else {
                 address
@@ -362,13 +359,7 @@ pub(super) fn read_bitfield(
     };
     let value = if bitfield.bit_width < word_bits {
         let mask = bit_mask(context, word, bitfield.bit_width);
-        integer_binop(
-            context,
-            LMIRIntBinOp::BAND,
-            value,
-            mask,
-            word_type.clone(),
-        )
+        integer_binop(context, LMIRIntBinOp::BAND, value, mask, word_type.clone())
     } else {
         value
     };
@@ -381,13 +372,7 @@ pub(super) fn read_bitfield(
             shift_amount.clone(),
             word_type.clone(),
         );
-        integer_binop(
-            context,
-            LMIRIntBinOp::ASHR,
-            value,
-            shift_amount,
-            word_type,
-        )
+        integer_binop(context, LMIRIntBinOp::ASHR, value, shift_amount, word_type)
     } else {
         value
     };
@@ -516,7 +501,11 @@ fn bitfield_word(
     )
 }
 
-fn bit_mask(context: &mut FunctionContext<'_, '_>, word: LMIRIntegerType, width: usize) -> LMIRValue {
+fn bit_mask(
+    context: &mut FunctionContext<'_, '_>,
+    word: LMIRIntegerType,
+    width: usize,
+) -> LMIRValue {
     let bits = word.bytes() as usize * 8;
     let all_ones = context.integer(-1, word);
     if width >= bits {
@@ -525,7 +514,13 @@ fn bit_mask(context: &mut FunctionContext<'_, '_>, word: LMIRIntegerType, width:
     let shift_amount = context.integer((bits - width) as i128, word);
     let word_type =
         LMIRType::with_implicit_abi(context.types().architecture(), LMIRTypeKind::Integer(word));
-    integer_binop(context, LMIRIntBinOp::LSHR, all_ones, shift_amount, word_type)
+    integer_binop(
+        context,
+        LMIRIntBinOp::LSHR,
+        all_ones,
+        shift_amount,
+        word_type,
+    )
 }
 
 fn integer_binop(

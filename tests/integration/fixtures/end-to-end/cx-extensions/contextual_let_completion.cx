@@ -14,7 +14,7 @@ comptime int folded = inferred_local();
 
 int main() {
     const int source = 4;
-    auto value = source;
+    auto value = @copy(source);
     value += 2;
     auto once = next();
     auto pair = (Pair){ once, value };

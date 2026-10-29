@@ -1,0 +1,17 @@
+/* CX-STDOUT: 9 2 3 */
+import std::optional;
+#include <stdio.h>
+int main() {
+    int x = 1;
+    int y = 2;
+    const int z = 3;
+    std::optional::opt(int) flag = std::optional::opt(int)::some(1);
+    auto selected = match (flag) {
+        some(auto value) => @unsafe(@adopt(x)),
+        none() => @unsafe(@adopt(y)),
+    };
+    auto constant = @unsafe(@adopt(z));
+    selected = 9;
+    printf("%d %d %d\n", x, y, constant);
+    return 0;
+}

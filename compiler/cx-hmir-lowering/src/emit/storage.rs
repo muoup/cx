@@ -38,6 +38,21 @@ pub fn scratch(
     }
 }
 
+pub fn escape(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    if !value.transparent() || !context.is_runtime() {
+        return Ok(value);
+    }
+    let storage = mir::allocate_parent(context, value.ty(), span)?;
+    let reference = crate::eval::types::reference(context.env_mut(), value.ty(), None, span);
+    adopt(context, &storage, &value.clone().with_ty(reference), span)?;
+    consume(context, &value, span);
+    Ok(storage.with_transparent(true))
+}
+
 pub fn adopt(
     context: &mut LocalLoweringContext,
     target: &HMIRValue,
@@ -47,20 +62,6 @@ pub fn adopt(
     match context.context() {
         FnContext::Runtime(_) => mir::adopt(context, target, source, span),
         FnContext::Comptime(_) => unsupported(span, "'@adopt'"),
-    }
-}
-
-pub fn scratch_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
-    match context.context() {
-        FnContext::Runtime(_) => mir::scratch_held(context, value),
-        FnContext::Comptime(_) => false,
-    }
-}
-
-pub fn place_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
-    match context.context() {
-        FnContext::Runtime(_) => mir::place_held(context, value),
-        FnContext::Comptime(_) => false,
     }
 }
 
@@ -108,8 +109,16 @@ pub fn write(
     span: &TokenRange,
 ) -> CXResult<()> {
     match context.context() {
-        FnContext::Runtime(_) => mir::write(context, target, value, span),
-        FnContext::Comptime(_) => comptime::write(context, target, value, span),
+        FnContext::Runtime(_) => mir::write(context, target, value, span)?,
+        FnContext::Comptime(_) => comptime::write(context, target, value, span)?,
+    }
+    consume(context, value, span);
+    Ok(())
+}
+
+pub fn consume(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) {
+    if value.transparent() {
+        invalidate(context, value, MIRInvalidationKind::Move, span);
     }
 }
 

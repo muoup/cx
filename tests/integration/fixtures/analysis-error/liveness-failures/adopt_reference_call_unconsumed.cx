@@ -1,0 +1,9 @@
+#include <stdlib.h>
+struct Resource : @nodrop { int data; };
+void observe(Resource& value) { value.data = 2; }
+int main() {
+    Resource* ptr = malloc(sizeof(Resource));
+    *ptr = (Resource){ .data = 1 };
+    observe(@unsafe(@adopt(*ptr)));
+    return 0;
+}

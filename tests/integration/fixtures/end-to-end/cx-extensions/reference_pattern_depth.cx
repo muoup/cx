@@ -1,0 +1,22 @@
+/* CX-STDOUT: 1 7 7 */
+import std::optional;
+#include <stdio.h>
+int main() {
+    int a = 1;
+    int b = 2;
+    std::optional::opt(int&) item = std::optional::opt(int&)::some(a);
+    match (item) {
+        some(auto value) => { value = b; },
+        none() => {},
+    }
+    match (item) {
+        some(auto& value) => { value = b; },
+        none() => {},
+    }
+    b = 7;
+    match (item) {
+        some(auto value) => { printf("%d %d %d\n", a, b, value); },
+        none() => {},
+    }
+    return 0;
+}

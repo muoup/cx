@@ -34,7 +34,7 @@ int main() {
     char buffer[8] = "abc";
     const char* view = buffer;
     int z = first(_, x, y);
-    auto w = x;
+    auto w = @copy(x);
     w = 9;
     printf("%d %d %d %d %d %s %s %s %d %d %d\n", y, sum(values, limit), read(pair), read(copy), takes(x), text, view, name, z, w, *p);
     return 0;

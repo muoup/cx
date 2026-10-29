@@ -156,6 +156,10 @@ fn bind(
         return Ok(Coercion::Unapplied(value));
     }
     let storage = match value.kind() {
+        _ if value.transparent() && env.semantics(value.ty()).constant && !env.semantics(inner).constant => {
+            return Ok(Coercion::Unapplied(value));
+        }
+        _ if value.transparent() => value,
         HMIRValueKind::Indirect(_) if env.semantics(value.ty()).constant && !env.semantics(inner).constant => {
             return Ok(Coercion::Unapplied(value));
         }

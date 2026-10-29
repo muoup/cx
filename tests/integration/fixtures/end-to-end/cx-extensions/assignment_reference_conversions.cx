@@ -1,0 +1,24 @@
+/* CX-STDOUT: 4 5 1 */
+#include <stdio.h>
+typedef int (*Function)(void);
+int value() { return 5; }
+int main() {
+    int x = 4;
+    int* p = &x;
+    void* raw = 0;
+    void*& ref = raw;
+    ref = @copy(p);
+    int* restored = 0;
+    int*& restored_ref = restored;
+    restored_ref = @copy(raw);
+    int values[] = { 4, 8 };
+    restored_ref = values;
+    int* empty = p;
+    int*& null_ref = empty;
+    null_ref = 0;
+    Function fn = value;
+    Function& fn_ref = fn;
+    fn_ref = value;
+    printf("%d %d %d\n", *restored, fn(), empty == 0);
+    return 0;
+}

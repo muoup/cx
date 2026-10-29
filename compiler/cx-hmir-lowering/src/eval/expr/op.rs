@@ -10,11 +10,7 @@ use cx_util::unsafe_float::FloatWrapper;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{
-        EvalResult, coerce, control, eval, expr,
-        flow::Evaluation,
-        types,
-    },
+    eval::{EvalResult, coerce, control, eval, expr, flow::Evaluation, types},
     log::hmir_error,
     value::{HMIRValue, constant::HMIRConstant},
 };
@@ -54,7 +50,9 @@ pub(crate) fn eval_binary(
     }
     let lhs = (eval_operand(context, body, span, lhs))?.ready()?;
     let rhs = (eval_operand(context, body, span, rhs))?.ready()?;
-    Ok(Evaluation::Ready(binary_operands(context, span, op, lhs, rhs)?))
+    Ok(Evaluation::Ready(binary_operands(
+        context, span, op, lhs, rhs,
+    )?))
 }
 
 pub(crate) fn binary_operands(
@@ -191,7 +189,10 @@ pub(crate) fn eval_unary(
                     Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()).into())
                 }
                 _ => {
-                    let operand = (format!("apply '{}' to", op.path()), types::name(context.env(), value.ty()));
+                    let operand = (
+                        format!("apply '{}' to", op.path()),
+                        types::name(context.env(), value.ty()),
+                    );
                     Err(hmir_error(span, &typecheck::INVALID_OPERAND, operand).into())
                 }
             }
@@ -203,11 +204,16 @@ fn increment(
     context: &mut LocalLoweringContext,
     span: &TokenRange,
     op: HMIRUnaryOp,
-    target: HMIRValue,
+    mut target: HMIRValue,
 ) -> CXResult<HMIRValue> {
-    let Some(ty) = context.env().reference_inner(target.ty()) else {
+    target = coerce::reference_value(context, target, span)?;
+    let Some(mut ty) = context.env().reference_inner(target.ty()) else {
         return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "increment".into()).into());
     };
+    while context.env().is_reference(ty) {
+        target = coerce::read(context, target, span)?;
+        ty = context.env().reference_inner(target.ty()).unwrap();
+    }
     if context.env().semantics(ty).constant {
         let mutation = ("increment".into(), types::name(context.env(), ty));
         return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutation).into());
@@ -233,7 +239,14 @@ fn increment(
             let element = *element;
             let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
             let one = HMIRValue::constant(offset_ty, HMIRConstant::Int(1));
-            emit::offset(context, &current, &one, element, op == HMIRBinaryOp::Sub, span)?
+            emit::offset(
+                context,
+                &current,
+                &one,
+                element,
+                op == HMIRBinaryOp::Sub,
+                span,
+            )?
         }
         _ => {
             let operand = ("increment".into(), "type display".into());

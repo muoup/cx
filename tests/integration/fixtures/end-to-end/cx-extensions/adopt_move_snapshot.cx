@@ -1,0 +1,10 @@
+/* CX-STDOUT: 7 3 */
+#include <stdio.h>
+int main() {
+    int original = 3;
+    int adopted = @unsafe(@adopt(original));
+    int moved = move adopted;
+    original = 7;
+    printf("%d %d\n", original, moved);
+    return 0;
+}

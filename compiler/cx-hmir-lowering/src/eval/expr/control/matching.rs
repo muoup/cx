@@ -45,6 +45,14 @@ pub(crate) fn eval_match(
     arms: &[(HMIRPattern, HMIRExprID)],
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let subject = eval(context, body, scrutinee)?.ready()?;
+    let mut subject = coerce::reference_value(context, subject, span)?;
+    while context
+        .env()
+        .reference_inner(subject.ty())
+        .is_some_and(|inner| context.env().is_reference(inner))
+    {
+        subject = coerce::read(context, subject, span)?;
+    }
     let owned = !context.env().is_reference(subject.ty());
     let ty = context.env().referent(subject.ty());
     if context.env().pointer_inner(ty).is_some() {
@@ -128,6 +136,12 @@ pub(crate) fn eval_match(
         bind_arm(context, body, &subject, pattern, span)?;
         arm_value(context, body, *arm, span)
     };
+    let escape_span = span.clone();
+    let result = result.and_then(|value| {
+        value.map(context, move |context, value| {
+            emit::escape(context, value, &escape_span)
+        })
+    });
     closing(context, body, result, span)
 }
 
@@ -270,6 +284,12 @@ fn lower_arms(
     emit::open_scope(context, body.expr(arm).span());
     bind_arm(context, body, &state.subject, &pattern, &state.span)?;
     let result = arm_value(context, body, arm, &state.span);
+    let escape_span = state.span.clone();
+    let result = result.and_then(|value| {
+        value.map(context, move |context, value| {
+            emit::escape(context, value, &escape_span)
+        })
+    });
     let result = closing(context, body, result, &state.span);
     let source = (!context.env().is_reference(state.subject.ty())).then(|| state.subject.clone());
     let span = state.span.clone();
@@ -302,7 +322,7 @@ fn arm_value(
     let span = span.clone();
     eval(context, body, arm)?.map(context, move |context, value| {
         let value = coerce::std_rvalue(context, value, &span)?;
-        match context.is_runtime() && !context.env().is_void(value.ty()) {
+        match context.is_runtime() && !context.env().is_void(value.ty()) && !value.transparent() {
             true => emit::temporary(context, value, &span),
             false => Ok(value),
         }

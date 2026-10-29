@@ -1,0 +1,14 @@
+/* CX-STDOUT: 7 8 7 9 */
+#include <stdio.h>
+int main() {
+    int x = 7;
+    int& r = x;
+    int copied = @copy(@unsafe(@adopt(r)));
+    int sum = @unsafe(@adopt(r)) + 1;
+    int* address = &@unsafe(@adopt(r));
+    int observed = *address;
+    int alias = @unsafe(@adopt(@adopt(r)));
+    alias = 9;
+    printf("%d %d %d %d\n", copied, sum, observed, x);
+    return 0;
+}

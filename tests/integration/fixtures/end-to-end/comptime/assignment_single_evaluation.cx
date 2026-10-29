@@ -1,0 +1,11 @@
+/* CX-STDOUT: 1 9 */
+#include <stdio.h>
+comptime int calculate() {
+    int count = 0;
+    int target = 0;
+    int& reference = target;
+    reference = (count += 1, 9);
+    return count * 10 + target;
+}
+comptime int result = calculate();
+int main() { printf("%d %d\n", result / 10, result % 10); return 0; }

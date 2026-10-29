@@ -74,6 +74,12 @@ pub(crate) fn eval_if(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     emit::open_scope(context, span);
     let result = branch(context, body, span, condition, then_branch, else_branch);
+    let escape_span = span.clone();
+    let result = result.and_then(|value| {
+        value.map(context, move |context, value| {
+            emit::escape(context, value, &escape_span)
+        })
+    });
     closing(context, body, result, span)
 }
 
@@ -149,19 +155,55 @@ pub(crate) fn merge(
     }
     let merge = mir::block(context, "if.merge");
     let ty = merged_type(context, &arms, span);
-    let result = ty.map(|ty| emit::scratch(context, ty, span)).transpose()?;
+    let transparent = arms.iter().any(|(_, value)| value.transparent());
+    let result = ty
+        .map(|ty| {
+            let stored = if transparent {
+                types::reference(context.env_mut(), ty, None, span)
+            } else {
+                ty
+            };
+            emit::scratch(context, stored, span)
+        })
+        .transpose()?;
     for (block, value) in arms {
         mir::switch_to(context, block);
         if let Some((ty, result)) = ty.zip(result.as_ref()) {
             let value = coerce::implicit(context, value, ty, span)?;
-            emit::initialize(context, result, Some(&value), span)?;
+            if transparent {
+                let value = if value.transparent() {
+                    value
+                } else {
+                    emit::temporary(context, value, span)?
+                };
+                let reference = types::reference(context.env_mut(), ty, None, span);
+                let target = types::reference(context.env_mut(), reference, None, span);
+                emit::initialize(
+                    context,
+                    &result.clone().with_ty(target),
+                    Some(&value.clone().with_ty(reference).with_transparent(false)),
+                    span,
+                )?;
+                emit::consume(context, &value, span);
+            } else {
+                emit::initialize(context, result, Some(&value), span)?;
+            }
         }
         mir::jump(context, merge, span);
     }
     mir::switch_to(context, merge);
-    Ok(Evaluation::Ready(
-        result.unwrap_or_else(|| expr::unit(context, span)),
-    ))
+    let result = if transparent {
+        let ty = ty.expect("transparent arms have a type");
+        let reference = types::reference(context.env_mut(), ty, None, span);
+        let target = types::reference(context.env_mut(), reference, None, span);
+        let pointer = coerce::read(context, result.unwrap().with_ty(target), span)?;
+        let owner = emit::allocate(context, ty, None, span)?;
+        emit::adopt(context, &owner, &pointer, span)?;
+        owner.with_transparent(true)
+    } else {
+        result.unwrap_or_else(|| expr::unit(context, span))
+    };
+    Ok(Evaluation::Ready(result))
 }
 
 fn merged_type(

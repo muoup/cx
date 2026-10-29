@@ -1,4 +1,4 @@
-/* CX-STDOUT: 11 5 */
+/* CX-STDOUT: 11 5 5 */
 
 #include <stdio.h>
 
@@ -12,6 +12,9 @@ int main() {
     int x = 10;
     with(emit x, |expr(int&) v| emit .{ v += 1; });
     int d = apply(|a, b| emit a - b, emit 8, emit 3);
-    printf("%d %d\n", x, d);
+    int output = 0;
+    int& reference = output;
+    reference = apply(|a, b| emit a - b, emit 8, emit 3);
+    printf("%d %d %d\n", x, d, output);
     return 0;
 }

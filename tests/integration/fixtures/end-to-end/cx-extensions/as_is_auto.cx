@@ -1,4 +1,4 @@
-/* CX-STDOUT: a 3 copied 100 explicit 200 */
+/* CX-STDOUT: a 3 copied 3 explicit 200 */
 /* CX-STDOUT-NEXT: b 5 */
 /* CX-STDOUT-NEXT: c 8 */
 /* CX-STDOUT-NEXT: owned 11 */

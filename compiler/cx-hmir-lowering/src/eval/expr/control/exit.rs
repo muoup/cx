@@ -19,6 +19,7 @@ use crate::{
         call::contract,
         coerce, eval, eval_type, expr,
         flow::{self, ComptimeStop, EvalExit, Evaluation},
+        types,
     },
     log::hmir_error,
     lower::mir,
@@ -178,6 +179,15 @@ pub(crate) fn return_value(
         return Err(EvalExit::Stop(ComptimeStop::Return(value).into()));
     }
     contract::exit(context, value.as_ref(), span)?;
+    let value = match value {
+        Some(value) if value.transparent() => {
+            let reference = types::reference(context.env_mut(), value.ty(), None, span);
+            let snapshot = emit::lift(context, &value.clone().with_ty(reference), None, span)?;
+            emit::consume(context, &value, span);
+            Some(snapshot)
+        }
+        value => value,
+    };
     let value = match value {
         Some(value)
             if context.runtime().defers_past(0)

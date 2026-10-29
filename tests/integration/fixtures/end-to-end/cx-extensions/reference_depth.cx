@@ -1,0 +1,18 @@
+/* CX-STDOUT: 9 9 7 11 4 */
+#include <stdio.h>
+int main() {
+    int x = 1;
+    int& r = x;
+    auto y = r;
+    y = 9;
+    int z = 7;
+    auto& direct = z;
+    int first = 3;
+    int second = 4;
+    int& reference = first;
+    auto old = move reference;
+    reference = second;
+    old = 11;
+    printf("%d %d %d %d %d\n", x, y, direct, first, second);
+    return 0;
+}
