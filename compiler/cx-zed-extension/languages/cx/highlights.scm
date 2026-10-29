@@ -2,12 +2,12 @@
 (preprocessor_directive) @keyword
 (string_literal) @string
 (char_literal) @string
-(lifetime_modifier) @type.parameter
 (number_literal) @number
 (builtin_type) @type.builtin
 (keyword) @keyword
 (compiler_identifier) @keyword
 (operator) @operator
+(lifetime_modifier) @type.parameter
 
 (type (qualified_name) @type)
 (type (templated_name) @type)
@@ -22,5 +22,8 @@
 (function_declaration (function_declarator (callable_name) @function))
 (comptime_function_definition name: (callable_name) @function)
 (parameter (declarator (identifier) @variable.parameter))
-(comptime_parameter (identifier) @variable.parameter)
+(parameter (function_type_declarator name: (identifier) @variable.parameter))
+(field_declaration (function_type_declarator name: (identifier) @property))
+(indexed_pipe) @operator
+["comptime" "move"] @keyword
 (field_declarator (declarator (identifier) @property))
