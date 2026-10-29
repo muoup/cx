@@ -1,0 +1,7 @@
+struct Pair { int left; int right; };
+int main() {
+    Pair source = { 1, 2 };
+    Pair copy = { 0, 0 };
+    copy = @unsafe(@adopt(source));
+    return copy.left;
+}

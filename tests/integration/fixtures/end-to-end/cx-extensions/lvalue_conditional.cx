@@ -1,0 +1,19 @@
+/* CX-STDOUT: 50 11 3 70 */
+#include <stdio.h>
+int& pass(int& value) { return value; }
+int main() {
+    int x = 1;
+    int y = 2;
+    int condition = 1;
+    (condition ? x : y) = 5;
+    auto selected = condition ? pass(x) : pass(y);
+    selected = 50;
+    long wide = 3;
+    auto mixed = condition ? y : wide;
+    mixed = 70;
+    (x, y) = 9;
+    auto last = (x, y);
+    last = 11;
+    printf("%d %d %ld %ld\n", x, y, wide, mixed);
+    return 0;
+}

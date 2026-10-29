@@ -1,0 +1,12 @@
+/* CX-STDOUT: 6 */
+#include <stdio.h>
+struct Holder { int& reference; };
+int main() {
+    int value = 1;
+    Holder holder = { .reference = value };
+    Holder* pointer = &holder;
+    int& adopted = @unsafe(@adopt(pointer->reference));
+    adopted = 6;
+    printf("%d\n", value);
+    return 0;
+}

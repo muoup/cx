@@ -1,0 +1,11 @@
+/* CX-STDOUT: 1 30 */
+import std::optional;
+#include <stdio.h>
+int main() {
+    int x = 1;
+    std::optional::opt(int) item = std::optional::opt(int)::some(4);
+    auto value = (item is some(auto inner)) ? inner : x;
+    value = 30;
+    printf("%d %d\n", x, value);
+    return 0;
+}

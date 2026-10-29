@@ -125,22 +125,14 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         child
     }
 
-    pub(crate) fn memory_snapshot(&self) -> Memory {
-        self.memory.borrow().clone()
-    }
-
-    pub(crate) fn replace_memory(&mut self, memory: Memory) -> Rc<RefCell<Memory>> {
-        std::mem::replace(&mut self.memory, Rc::new(RefCell::new(memory)))
-    }
-
-    pub(crate) fn restore_memory(&mut self, memory: Rc<RefCell<Memory>>) {
-        self.memory = memory;
-    }
-
     pub(crate) fn enter_call(&mut self, span: &TokenRange) -> CXResult<()> {
         const LIMIT: usize = 64;
         if self.call_depth >= LIMIT {
-            return Err(hmir_error(span, &mir::COMPTIME_CALL_DEPTH, LIMIT));
+            return Err(hmir_error(
+                span,
+                &mir::COMPTIME_CALL_DEPTH,
+                LIMIT,
+            ));
         }
         self.call_depth += 1;
         Ok(())
@@ -289,17 +281,13 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
     pub fn into_runtime(self) -> RuntimeContext {
         match self.context {
             FnContext::Runtime(context) => context,
-            FnContext::Comptime(_) => {
-                unreachable!("runtime context requested in a comptime context")
-            }
+            FnContext::Comptime(_) => unreachable!("runtime context requested in a comptime context"),
         }
     }
 
     pub fn into_comptime(self) -> ComptimeContext {
         match self.context {
-            FnContext::Runtime(_) => {
-                unreachable!("comptime context requested in a runtime context")
-            }
+            FnContext::Runtime(_) => unreachable!("comptime context requested in a runtime context"),
             FnContext::Comptime(context) => context,
         }
     }

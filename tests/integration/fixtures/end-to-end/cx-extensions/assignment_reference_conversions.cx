@@ -7,10 +7,10 @@ int main() {
     int* p = &x;
     void* raw = 0;
     void*& ref = raw;
-    ref = @copy(p);
+    ref = p;
     int* restored = 0;
     int*& restored_ref = restored;
-    restored_ref = @copy(raw);
+    restored_ref = raw;
     int values[] = { 4, 8 };
     restored_ref = values;
     int* empty = p;

@@ -6,16 +6,11 @@ use crate::value::HMIRValue;
 pub(crate) struct Slot {
     binding: MIRBindable,
     known: Option<HMIRValue>,
-    observed: bool,
 }
 
 impl Slot {
     pub(crate) fn new(binding: MIRBindable, known: Option<HMIRValue>) -> Self {
-        Self {
-            binding,
-            known,
-            observed: false,
-        }
+        Self { binding, known }
     }
 
     pub(crate) fn binding(&self) -> &MIRBindable {
@@ -28,13 +23,5 @@ impl Slot {
 
     pub(crate) fn set_known(&mut self, known: Option<HMIRValue>) {
         self.known = known;
-    }
-
-    pub(crate) fn observed(&self) -> bool {
-        self.observed
-    }
-
-    pub(crate) fn observe(&mut self) {
-        self.observed = true;
     }
 }

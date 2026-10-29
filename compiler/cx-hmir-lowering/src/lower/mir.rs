@@ -4,8 +4,8 @@ mod value;
 
 pub use op::{aggregate, binary, cast, difference, offset, tag, unary};
 pub use storage::{
-    address, adopt, allocate, allocate_parent, copy, dereference, field, initialize, invalidate,
-    lift, parameter, scratch, write,
+    address, adopt, allocate, copy, dereference, field, initialize, invalidate, lift, parameter, scoped_places,
+    scratch, write,
 };
 pub use value::{constant, operand};
 
@@ -77,10 +77,9 @@ fn intrinsic(
     intrinsic: impl Into<MIRIntrinsic>,
     span: &TokenRange,
 ) {
-    context.runtime_mut().emit(
-        MIRInstructionKind::IntrinsicOp(intrinsic.into()),
-        span.clone(),
-    )
+    context
+        .runtime_mut()
+        .emit(MIRInstructionKind::IntrinsicOp(intrinsic.into()), span.clone())
 }
 
 pub fn assert(
@@ -91,10 +90,7 @@ pub fn assert(
 ) -> CXResult<()> {
     let condition = operand(context, condition, span)?;
     let kind = match message {
-        Some(message) => MIRInternalIntrinsic::Assert {
-            condition,
-            message: Some(message.into()),
-        },
+        Some(message) => MIRInternalIntrinsic::Assert { condition, message: Some(message.into()) },
         None => MIRInternalIntrinsic::Assume { condition },
     };
     intrinsic(context, kind, span);
@@ -145,9 +141,9 @@ pub fn call(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let callee = match callee.kind() {
-        HMIRValueKind::Constant(
-            function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. }),
-        ) => MIRValue::Constant(constant(context.env_mut(), function, callee.ty(), span)?),
+        HMIRValueKind::Constant(function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. })) => {
+            MIRValue::Constant(constant(context.env_mut(), function, callee.ty(), span)?)
+        }
         _ => operand(context, callee, span)?,
     };
     let args = args
@@ -160,10 +156,7 @@ pub fn call(
         true => (None, HMIRValue::constant(result, HMIRConstant::Unit)),
         false => {
             let register = register(context, result, span)?;
-            (
-                Some(register),
-                slot(context, result, MIRBindable::Register(register)),
-            )
+            (Some(register), slot(context, result, MIRBindable::Register(register)))
         }
     };
     context
@@ -192,14 +185,7 @@ pub fn variadic(
             let list = operand(context, list, span)?;
             let mir_ty = lower_type(context.env_mut(), *ty, span)?;
             let (out, result) = output(context, *ty, span)?;
-            (
-                MIRVAIntrinsic::VaArg {
-                    out,
-                    list,
-                    ty: mir_ty,
-                },
-                Some(result),
-            )
+            (MIRVAIntrinsic::VaArg { out, list, ty: mir_ty }, Some(result))
         }
     };
     intrinsic(context, instruction, span);
@@ -212,11 +198,7 @@ pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usiz
     let scopes = runtime.scopes_mut();
     let parent = scopes.top();
 
-    scopes.push(
-        RuntimeScope::new(Some(scope), false),
-        Some(parent),
-        Bindings::new(),
-    )
+    scopes.push(RuntimeScope::new(Some(scope), false), Some(parent), Bindings::new())
 }
 
 pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {

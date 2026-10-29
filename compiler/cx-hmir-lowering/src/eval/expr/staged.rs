@@ -48,10 +48,7 @@ fn shape(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<Shape> {
         _ => None,
     };
     let HMIRTypeKind::Function(signature) = env.resolve_kind(ty) else {
-        return Some(Shape {
-            params: Vec::new(),
-            result: carried(ty)?,
-        });
+        return Some(Shape { params: Vec::new(), result: carried(ty)? });
     };
     if signature.stage() != HMIRFunctionStage::Comptime || signature.is_variadic() {
         return None;
@@ -61,10 +58,7 @@ fn shape(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<Shape> {
         .iter()
         .map(|param| carried(*param.ty()).filter(|_| !param.comptime()))
         .collect::<Option<_>>()?;
-    Some(Shape {
-        params,
-        result: carried(*signature.return_type())?,
-    })
+    Some(Shape { params, result: carried(*signature.return_type())? })
 }
 
 fn signature(
@@ -79,21 +73,9 @@ fn signature(
     }
     let params = params
         .into_iter()
-        .map(|param| {
-            HMIRFnParam::new(
-                false,
-                types::realize(context.env_mut(), HMIRTypeKind::Staged(param), span),
-                false,
-            )
-        })
+        .map(|param| HMIRFnParam::new(false, types::realize(context.env_mut(), HMIRTypeKind::Staged(param), span), false))
         .collect();
-    let signature = HMIRFnSignature::new(
-        HMIRFunctionStage::Comptime,
-        params,
-        result,
-        false,
-        HMIRContract::default(),
-    );
+    let signature = HMIRFnSignature::new(HMIRFunctionStage::Comptime, params, result, false, HMIRContract::default());
     types::realize(context.env_mut(), HMIRTypeKind::Function(signature), span)
 }
 
@@ -117,36 +99,24 @@ pub(crate) fn eval_splice(
         return apply(context, body, code, args, span);
     }
     let (args, span) = (args.to_vec(), span.clone());
-    let pending = Incomplete::new(
-        context,
-        &span.clone(),
-        IncompleteReason::ExpectedType,
-        None,
-        move |context, body, expected| {
-            let mut params = Vec::new();
-            for arg in &args {
-                let value = (eval(context, body, *arg))?.ready()?;
-                params.push(coerce::value_type(context, value.ty(), &span));
-            }
-            let ty = signature(context, params, expected, &span);
-            let code = eval(context, body, literal)?.complete(context, body, Some(ty))?;
-            apply(context, body, code, &args, &span)
-        },
-    );
+    let pending = Incomplete::new(context, &span.clone(), IncompleteReason::ExpectedType, None, move |context, body, expected| {
+        let mut params = Vec::new();
+        for arg in &args {
+            let value = (eval(context, body, *arg))?.ready()?;
+            params.push(coerce::value_type(context, value.ty(), &span));
+        }
+        let ty = signature(context, params, expected, &span);
+        let code = eval(context, body, literal)?.complete(context, body, Some(ty))?;
+        apply(context, body, code, &args, &span)
+    });
     Ok(Evaluation::Incomplete(pending))
 }
 
-pub(crate) fn splice(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> EvalResult<Evaluation<HMIRValue>> {
+pub(crate) fn splice(context: &mut LocalLoweringContext, value: HMIRValue, span: &TokenRange) -> EvalResult<Evaluation<HMIRValue>> {
     let value = (comptime::export(context, value, span))?.ready()?;
     let staged = matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Staged(_));
     match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Quote(_)) if staged => {
-            materialize(context, &value, &[])
-        }
+        HMIRValueKind::Constant(HMIRConstant::Quote(_)) if staged => materialize(context, &value, &[]),
         _ => Ok(Evaluation::Ready(value)),
     }
 }
@@ -158,22 +128,12 @@ pub(crate) fn capture(
     root: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let captures = captures::collect(context, body, params, root)?;
-    let quote = Quote::new(
-        context.source(),
-        root,
-        params.to_vec(),
-        captures,
-        context.visible_through(),
-    );
+    let quote = Quote::new(context.source(), root, params.to_vec(), captures, context.visible_through());
     let code = QuoteRef::new(quote);
     let span = body.expr(root).span().clone();
-    let pending = Incomplete::new(
-        context,
-        &span.clone(),
-        IncompleteReason::ExpectedType,
-        None,
-        move |context, _, expected| resolve(context, code, expected, &span),
-    );
+    let pending = Incomplete::new(context, &span.clone(), IncompleteReason::ExpectedType, None, move |context, _, expected| {
+        resolve(context, code, expected, &span)
+    });
     Ok(Evaluation::Incomplete(pending))
 }
 
@@ -185,13 +145,7 @@ fn resolve(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let (Shape { params, result }, insert) = match shape(context.env(), expected) {
         Some(shape) => (shape, false),
-        None => (
-            Shape {
-                params: Vec::new(),
-                result: expected,
-            },
-            true,
-        ),
+        None => (Shape { params: Vec::new(), result: expected }, true),
     };
     let quoted = code.get().params().len();
     if params.len() != quoted {
@@ -271,16 +225,10 @@ pub(crate) fn argument(
     let span = body.expr(operand).span().clone();
     value
         .try_complete(context, body, Some(target))?
-        .map(context, move |context, value| {
-            coerce::implicit(context, value, target, &span)
-        })
+        .map(context, move |context, value| coerce::implicit(context, value, target, &span))
 }
 
-pub(crate) fn read(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
+pub(crate) fn read(context: &mut LocalLoweringContext, value: HMIRValue, span: &TokenRange) -> CXResult<HMIRValue> {
     match context.env().is_reference(value.ty()) && is_code(context, value.ty()) {
         true => emit::copy(context, value, span),
         false => Ok(value),
@@ -326,18 +274,9 @@ pub(crate) fn apply(
     let source = node.get();
     let mut captures = source.captures().clone();
     captures.extend(source.params().iter().copied().zip(values));
-    let applied = Quote::new(
-        source.source(),
-        source.root(),
-        Vec::new(),
-        captures,
-        source.visible_through(),
-    );
+    let applied = Quote::new(source.source(), source.root(), Vec::new(), captures, source.visible_through());
     let ty = signature(context, Vec::new(), result, span);
-    Ok(Evaluation::Ready(HMIRValue::constant(
-        ty,
-        HMIRConstant::Quote(QuoteRef::new(applied)),
-    )))
+    Ok(Evaluation::Ready(HMIRValue::constant(ty, HMIRConstant::Quote(QuoteRef::new(applied)))))
 }
 
 pub(crate) fn materialize(
@@ -347,9 +286,7 @@ pub(crate) fn materialize(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let HMIRValueKind::Constant(HMIRConstant::Quote(node)) = code.kind() else {
         let subject = "this staged value".into();
-        return Err(
-            hmir_error(&TokenRange::internal(), &mir::COMPTIME_UNAVAILABLE, subject).into(),
-        );
+        return Err(hmir_error(&TokenRange::internal(), &mir::COMPTIME_UNAVAILABLE, subject).into());
     };
     let Shape { params, result } = shape(context.env(), code.ty()).expect("a quote has a staged type");
     let quote = node.get();
@@ -387,23 +324,15 @@ pub(crate) fn materialize(
             emit::bind_local(context, *local, value);
         }
         let span = span.clone();
-        eval(context, body, quote.root())?
-            .try_complete(context, body, result)?
-            .map(context, move |context, value| match result {
+        eval(context, body, quote.root())?.try_complete(context, body, result)?.map(context, move |context, value| {
+            match result {
                 Some(result) => coerce::implicit(context, value, result, &span),
                 None => Ok(expr::unit(context, &span)),
-            })
-    });
-    let escape_span = span.clone();
-    let completion = completion.and_then(|value| {
-        value.map(context, move |context, value| {
-            emit::escape(context, value, &escape_span)
+            }
         })
     });
     Ok(match control::closing(context, body, completion, span)? {
-        Evaluation::Incomplete(pending) => {
-            Evaluation::Incomplete(pending.in_source(source, point, quote.root().body()))
-        }
+        Evaluation::Incomplete(pending) => Evaluation::Incomplete(pending.in_source(source, point, quote.root().body())),
         finished => finished,
     })
 }

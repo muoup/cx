@@ -1,4 +1,4 @@
-/* CX-STDOUT: 1 7 7 */
+/* CX-STDOUT: 2 7 2 */
 import std::optional;
 #include <stdio.h>
 int main() {

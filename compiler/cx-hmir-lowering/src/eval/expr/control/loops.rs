@@ -100,7 +100,7 @@ pub(crate) fn eval_while(
         .set_exit(exits);
 
     mir::switch_to(context, body_block);
-    let completion = flow::catch_diverged(eval_scoped(context, body, loop_body));
+    let completion = flow::catch_diverged(eval_scoped(context, body, loop_body, false));
     emit::close_scope(context, span);
     completion?.ready()?;
     mir::jump(context, continue_block, span);
@@ -131,7 +131,7 @@ fn comptime_while(
         }
         checks = true;
 
-        match eval_scoped(context, body, loop_body) {
+        match eval_scoped(context, body, loop_body, false) {
             Ok(Evaluation::Ready(_)) => {}
             Ok(Evaluation::Incomplete(incomplete)) => return Err(incomplete.error().into()),
             Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Break))) => break,

@@ -28,7 +28,7 @@ T& box::deref_mut(comptime @type T = _, box(T)& this) {
 
 // TODO: Bound this type as not @pinned when that feature is added
 T box::unwrap(comptime @type T = _, box(T) this) safe {
-    T inner = move @adopt(*this.ptr);
+    T inner = @adopt(*this.ptr);
     @leak(this);
     return move inner;
 }
@@ -41,7 +41,8 @@ T* box::leak(comptime @type T = _, box(T) this) {
 
 void box::drop_with(comptime @type T = _, box(T) this, @fn drop_value(T) -> void) {
     @unsafe {
-        drop_value(@adopt(*this.ptr));
+        T value = @adopt(*this.ptr);
+        drop_value(move value);
     };
 
     move this |> box::drop();

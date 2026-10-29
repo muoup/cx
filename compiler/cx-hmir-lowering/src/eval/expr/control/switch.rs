@@ -230,7 +230,7 @@ fn runtime_switch(
         .scopes_mut()
         .control_mut(scope)
         .set_exit(Exit::new(exit, None, blocks));
-    let completion = eval_scoped(context, body, switch_body);
+    let completion = eval_scoped(context, body, switch_body, false);
     let finish = span.clone();
     let completion = flow::finally(context, body, completion, move |context, _, _| {
         emit::close_scope(context, &finish);
@@ -312,10 +312,10 @@ pub(crate) fn seek(
             else_branch,
             ..
         } => {
-            let value = eval_scoped(context, body, *then_branch)?.ready()?;
+            let value = eval_scoped(context, body, *then_branch, false)?.ready()?;
             match else_branch {
                 _ if context.comptime().selected_case().is_none() => Ok(Evaluation::Ready(value)),
-                Some(otherwise) => eval_scoped(context, body, *otherwise),
+                Some(otherwise) => eval_scoped(context, body, *otherwise, false),
                 None => Ok(Evaluation::Ready(expr::unit(context, span))),
             }
         }
@@ -349,7 +349,7 @@ fn seek_loop(
     increment: Option<HMIRExprID>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    match eval_scoped(context, body, loop_body) {
+    match eval_scoped(context, body, loop_body, false) {
         Ok(Evaluation::Ready(_)) if context.comptime().selected_case().is_some() => {
             return Ok(Evaluation::Ready(expr::unit(context, span)));
         }

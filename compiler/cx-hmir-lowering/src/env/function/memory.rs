@@ -30,7 +30,7 @@ thread_local! {
     static NEXT_REGION: Counter<usize> = const { Counter::new(0) };
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub(crate) struct Memory {
     regions: HashMap<HMIRRegionID, Image>,
     globals: HashMap<HMIRDefID, HMIRRegionID>,

@@ -130,6 +130,6 @@ fn deferred(
             scoped: true,
             ..
         } => eval_block(context, body, node.span(), statements, true, false),
-        _ => eval_scoped(context, body, expr),
+        _ => eval_scoped(context, body, expr, false),
     }
 }

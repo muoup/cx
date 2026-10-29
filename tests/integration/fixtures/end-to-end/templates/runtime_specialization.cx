@@ -21,7 +21,7 @@ T even(comptime @type T, T value) {
     return odd(T, value - 1);
 }
 int offset(comptime int amount, int value) => value + amount;
-void update(comptime @type T, T& target, T value) { target = @copy(value); }
+void update(comptime @type T, T& target, T value) { target = value; }
 
 static int increment(int value) => value + 1;
 int apply(comptime int (*function)(int), int value) => function(value);

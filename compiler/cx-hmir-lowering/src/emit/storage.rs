@@ -38,29 +38,17 @@ pub fn scratch(
     }
 }
 
-pub fn escape(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    if !value.transparent() || !context.is_runtime() {
-        return Ok(value);
-    }
-    let storage = mir::allocate_parent(context, value.ty(), span)?;
-    let reference = crate::eval::types::reference(context.env_mut(), value.ty(), None, span);
-    adopt(context, &storage, &value.clone().with_ty(reference), span)?;
-    consume(context, &value, span);
-    Ok(storage.with_transparent(true))
-}
-
+// Storage of type 'ty' over the memory the reference 'source' designates, declared in the current scope; it takes over
+// the obligations of that memory
 pub fn adopt(
     context: &mut LocalLoweringContext,
-    target: &HMIRValue,
+    ty: HMIRTypeID,
+    name: Option<CXIdent>,
     source: &HMIRValue,
     span: &TokenRange,
-) -> CXResult<()> {
+) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => mir::adopt(context, target, source, span),
+        FnContext::Runtime(_) => mir::adopt(context, ty, name, source, span),
         FnContext::Comptime(_) => unsupported(span, "'@adopt'"),
     }
 }
@@ -109,16 +97,8 @@ pub fn write(
     span: &TokenRange,
 ) -> CXResult<()> {
     match context.context() {
-        FnContext::Runtime(_) => mir::write(context, target, value, span)?,
-        FnContext::Comptime(_) => comptime::write(context, target, value, span)?,
-    }
-    consume(context, value, span);
-    Ok(())
-}
-
-pub fn consume(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) {
-    if value.transparent() {
-        invalidate(context, value, MIRInvalidationKind::Move, span);
+        FnContext::Runtime(_) => mir::write(context, target, value, span),
+        FnContext::Comptime(_) => comptime::write(context, target, value, span),
     }
 }
 

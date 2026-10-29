@@ -53,14 +53,6 @@ impl MIRBasicBlock {
         self.instructions.last()
     }
 
-    pub fn take_instructions_from(&mut self, index: usize) -> Vec<MIRInstruction> {
-        self.instructions.split_off(index)
-    }
-
-    pub fn insert_instructions(&mut self, index: usize, instructions: Vec<MIRInstruction>) {
-        self.instructions.splice(index..index, instructions);
-    }
-
     pub fn push_instruction(&mut self, instr: MIRInstruction) {
         self.instructions.push(instr);
     }

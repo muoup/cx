@@ -1,0 +1,5 @@
+struct Resource : @nodrop { int value; };
+Resource forward(Resource& value) { return @unsafe(@adopt(value)); }
+int main() {
+    return 0;
+}

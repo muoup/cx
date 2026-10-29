@@ -57,10 +57,7 @@ pub(crate) fn variant(
         Some(HMIRPattern::Binding(_) | HMIRPattern::Wildcard) | None => {}
         Some(_) if void => {
             let name = variant::name(context.env(), ty, found.index);
-            let invalid = (
-                format!("the pattern of void variant '{name}'"),
-                "payload".into(),
-            );
+            let invalid = (format!("the pattern of void variant '{name}'"), "payload".into());
             return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid).into());
         }
         Some(_) => {
@@ -114,17 +111,10 @@ pub(crate) fn bind(
         return Err(hmir_error(span, &typecheck::BINDING_BEHIND_REFERENCE, name).into());
     }
     let (value, binding_ty) = match reference {
+        Some(_) if context.env().is_reference(ty) => (coerce::implicit(context, source, ty, span)?, ty),
         Some(constant) => {
             let target = match constant {
-                true => types::specify(
-                    context,
-                    ty,
-                    HMIRTypeSemantics {
-                        constant: true,
-                        ..Default::default()
-                    },
-                    span,
-                ),
+                true => types::specify(context, ty, HMIRTypeSemantics { constant: true, ..Default::default() }, span),
                 false => ty,
             };
             let target = types::reference(context.env_mut(), target, None, span);
@@ -159,14 +149,7 @@ pub(crate) fn eval_is(
         return Err(hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature).into());
     };
     let subject = (eval(context, body, value))?.ready()?;
-    let mut subject = coerce::reference_value(context, subject, span)?;
-    while context
-        .env()
-        .reference_inner(subject.ty())
-        .is_some_and(|inner| context.env().is_reference(inner))
-    {
-        subject = coerce::read(context, subject, span)?;
-    }
+    let subject = coerce::collapse(context, subject, span)?;
     let ty = context.env().referent(subject.ty());
     if context.env().pointer_inner(ty).is_some() {
         return Err(hmir_error(span, &typecheck::POINTER_PATTERN, ()).into());

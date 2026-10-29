@@ -1,0 +1,23 @@
+/* CX-STDOUT: 2 8 4 */
+import std::optional;
+#include <stdio.h>
+struct Holder { int& reference; };
+int main() {
+    int a = 1;
+    int b = 2;
+    int c = 3;
+    Holder holder = { .reference = a };
+    holder.reference = b;
+    b = 3;
+    std::optional::opt(int&) item = std::optional::opt(int&)::some(a);
+    item = std::optional::opt(int&)::some(b);
+    match (item) {
+        some(auto& value) => { value = 8; },
+        none() => {},
+    }
+    int& r = c;
+    int* p = &r;
+    r = 4;
+    printf("%d %d %d\n", a, b, *p);
+    return 0;
+}

@@ -13,26 +13,20 @@ use super::Coercion;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{expr, flow, staged, types},
+    eval::{
+        expr,
+        flow, staged, types,
+    },
     log::hmir_error,
     value::{HMIRPlace, HMIRValue, HMIRValueKind, address::Addressable, constant::HMIRConstant},
 };
 
-pub(super) fn step(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<Coercion> {
-    let value = super::reference_value(context, value, span)?;
+pub(super) fn step(context: &mut LocalLoweringContext, value: HMIRValue, span: &TokenRange) -> CXResult<Coercion> {
     let env = context.env();
     let subject = env.referent(value.ty());
     match env.resolve_kind(subject) {
         HMIRTypeKind::Staged(_) if context.is_runtime() && subject == value.ty() => {
-            let value = match flow::top(flow::catch_diverged(staged::materialize(
-                context,
-                &value,
-                &[],
-            )))? {
+            let value = match flow::top(flow::catch_diverged(staged::materialize(context, &value, &[])))? {
                 Some(value) => value,
                 None => {
                     let ty = types::realize(context.env_mut(), HMIRTypeKind::Unreachable, span);
@@ -60,9 +54,7 @@ pub(super) fn step(
             let char = types::specify(context, char, qualifiers, span);
             address(context, value, char, span)
         }
-        HMIRTypeKind::Function(_) if !types::comptime_only(env, subject) => {
-            address(context, value, subject, span)
-        }
+        HMIRTypeKind::Function(_) if !types::comptime_only(env, subject) => address(context, value, subject, span),
         _ if subject != value.ty() => lvalue(context, value, subject, span),
         _ => Ok(Coercion::Unapplied(value)),
     }
@@ -79,9 +71,7 @@ fn address(
         None => value,
     };
     let pointer = types::pointer(context.env_mut(), pointee, span);
-    Ok(Coercion::Applied(emit::address(
-        context, &storage, pointer, span,
-    )?))
+    Ok(Coercion::Applied(emit::address(context, &storage, pointer, span)?))
 }
 
 pub(super) fn lvalue(
@@ -90,7 +80,6 @@ pub(super) fn lvalue(
     inner: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<Coercion> {
-    let value = super::reference_value(context, value, span)?;
     let env = context.env();
     if env.is_nocopy(inner) {
         let names = (types::name(env, value.ty()), types::name(env, inner));
@@ -111,16 +100,10 @@ pub(super) fn lvalue(
     }
     let qualifiers = HMIRTypeSemantics { constant: true, volatile: true, ..Default::default() };
     let ty = types::unspecify(context, inner, qualifiers, span);
-    Ok(Coercion::Applied(
-        emit::copy(context, value, span)?.with_ty(ty),
-    ))
+    Ok(Coercion::Applied(emit::copy(context, value, span)?.with_ty(ty)))
 }
 
-pub(super) fn integer(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-) -> HMIRTypeID {
+pub(super) fn integer(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
     match context.env().resolve_kind(ty) {
         HMIRTypeKind::Int(int) if int.width() < HMIRIntWidth::I32 => {
             types::int(context.env_mut(), HMIRIntWidth::I32, true, span)
@@ -130,11 +113,7 @@ pub(super) fn integer(
 }
 
 // What an argument that no parameter gives a type to is passed as
-pub(super) fn argument(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-) -> HMIRTypeID {
+pub(super) fn argument(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
     match context.env().resolve_kind(ty) {
         HMIRTypeKind::Float(float) if float.width() < HMIRFloatWidth::F64 => {
             let kind = HMIRTypeKind::Float(HMIRFloatType::new(HMIRFloatWidth::F64));
@@ -152,10 +131,7 @@ pub(super) fn common(
 ) -> Option<HMIRTypeID> {
     let lhs = integer(context, lhs, span);
     let rhs = integer(context, rhs, span);
-    let kinds = (
-        context.env().resolve_kind(lhs).clone(),
-        context.env().resolve_kind(rhs).clone(),
-    );
+    let kinds = (context.env().resolve_kind(lhs).clone(), context.env().resolve_kind(rhs).clone());
     match kinds {
         (HMIRTypeKind::Float(left), HMIRTypeKind::Float(right)) => {
             let kind = HMIRTypeKind::Float(HMIRFloatType::new(left.width().max(right.width())));

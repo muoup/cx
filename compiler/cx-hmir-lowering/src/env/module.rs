@@ -302,14 +302,6 @@ impl MIRFunctionBuilder {
         self.places.as_raw_slice()
     }
 
-    pub fn place(&self, id: MIRPlaceID) -> Option<&MIRPlaceDecl> {
-        self.places.get(id)
-    }
-
-    pub fn place_mut(&mut self, id: MIRPlaceID) -> Option<&mut MIRPlaceDecl> {
-        self.places.get_mut(id)
-    }
-
     pub fn allocate_place(&mut self, place: MIRPlaceDecl) -> MIRPlaceID {
         self.places.push(place)
     }

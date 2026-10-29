@@ -29,13 +29,14 @@ fn allocate_place(
     name: Option<CXIdent>,
     scope: MIRScopeID,
     nodrop: bool,
+    adopted: bool,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let mir_ty = lower_type(context.env_mut(), ty, span)?;
     let place = context
         .runtime_mut()
         .builder_mut()
-        .allocate_place(MIRPlaceDecl::new(mir_ty, name, scope, nodrop, false));
+        .allocate_place(MIRPlaceDecl::new(mir_ty, name, scope, nodrop, adopted));
 
     Ok(slot(context, ty, MIRBindable::Place(place)))
 }
@@ -75,11 +76,7 @@ fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBind
 
 // Where the storage of a value can be written: for a reference, the storage it designates, otherwise the value's
 // own place or the storage behind its pointer; a register has no address
-fn target(
-    context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    span: &TokenRange,
-) -> CXResult<Option<MIRTarget>> {
+fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<Option<MIRTarget>> {
     let is_reference = context.env().is_reference(value.ty());
     Ok(match value.kind() {
         HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => Some(MIRTarget::Global(
@@ -92,7 +89,10 @@ fn target(
             let global = global::address(context.env_mut(), *def, address.offset(), inner, span)?;
             Some(MIRTarget::Global(global))
         }
-        HMIRValueKind::Indirect(pointer) => Some(MIRTarget::Indirect(reference(context, pointer))),
+        HMIRValueKind::Indirect(pointer) if !is_reference => {
+            Some(MIRTarget::Indirect(reference(context, pointer)))
+        }
+        HMIRValueKind::Indirect(_) => todo!("write to a stored reference"),
         HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) if is_reference => {
             match context.runtime().slot(*slot).binding() {
                 MIRBindable::Register(register) => Some(MIRTarget::Indirect(*register)),
@@ -115,24 +115,13 @@ pub fn allocate(
     let nodrop = context.env().is_nodrop(ty);
     let scope = context.runtime().current_scope();
 
-    allocate_place(context, ty, name, scope, nodrop, span)
+    allocate_place(context, ty, name, scope, nodrop, false, span)
 }
 
-pub fn allocate_parent(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let scope = context
-        .runtime()
-        .scopes()
-        .controls()
-        .rev()
-        .filter_map(|(_, scope)| scope.mir())
-        .nth(1)
-        .unwrap_or_else(|| context.runtime().current_scope());
-    let nodrop = context.env().is_nodrop(ty);
-    allocate_place(context, ty, None, scope, nodrop, span)
+// The number of places declared so far that a scope drops, as opposed to scratch storage
+pub fn scoped_places(context: &LocalLoweringContext) -> usize {
+    let runtime = context.runtime();
+    runtime.builder().places().iter().filter(|place| place.scope() != runtime.scratch_scope()).count()
 }
 
 pub fn scratch(
@@ -142,38 +131,29 @@ pub fn scratch(
 ) -> CXResult<HMIRValue> {
     let scope = context.runtime().scratch_scope();
 
-    allocate_place(context, ty, None, scope, false, span)
+    allocate_place(context, ty, None, scope, false, false, span)
 }
 
+// Storage of type 'ty' declared in the current scope over the memory 'source' references, which it takes the
+// obligations of
 pub fn adopt(
     context: &mut LocalLoweringContext,
-    target: &HMIRValue,
+    ty: HMIRTypeID,
+    name: Option<CXIdent>,
     source: &HMIRValue,
     span: &TokenRange,
-) -> CXResult<()> {
-    let Some(MIRBindable::Place(place)) = bindable(context, target) else {
-        unreachable!("only a place adopts storage")
-    };
+) -> CXResult<HMIRValue> {
     let address = operand(context, source, span)?;
-    let builder = context.runtime_mut().builder_mut();
-    let decl = builder
-        .place_mut(place)
-        .expect("an adopting place is declared");
-    *decl = MIRPlaceDecl::new(
-        decl.ty(),
-        decl.debug_name().cloned(),
-        decl.scope(),
-        decl.nodrop(),
-        true,
-    );
-    intrinsic(
-        context,
-        MIRInternalIntrinsic::AdoptPlace { place, address },
-        span,
-    );
-    initialize(context, target, span);
+    let nodrop = context.env().is_nodrop(ty);
+    let scope = context.runtime().current_scope();
+    let target = allocate_place(context, ty, name, scope, nodrop, true, span)?;
+    let Some(MIRBindable::Place(place)) = bindable(context, &target) else {
+        unreachable!("an adopting place is declared")
+    };
+    intrinsic(context, MIRInternalIntrinsic::AdoptPlace { place, address }, span);
+    initialize(context, &target, span);
 
-    Ok(())
+    Ok(target)
 }
 
 pub fn parameter(
@@ -288,20 +268,11 @@ fn store(
     bitfield: Option<MIRStoreBitfield>,
     span: &TokenRange,
 ) {
-    let store = MIRInstructionKind::Store {
-        target,
-        value,
-        ty,
-        bitfield,
-    };
+    let store = MIRInstructionKind::Store { target, value, ty, bitfield };
     context.runtime_mut().emit(store, span.clone())
 }
 
-fn access(
-    context: &LocalLoweringContext,
-    ty: HMIRTypeID,
-    bitfield: HMIRBitfield,
-) -> MIRBitfieldAccess {
+fn access(context: &LocalLoweringContext, ty: HMIRTypeID, bitfield: HMIRBitfield) -> MIRBitfieldAccess {
     let HMIRTypeKind::Int(int) = context.env().resolve_kind(ty) else {
         unreachable!("a bitfield holds an integer")
     };
@@ -318,18 +289,10 @@ pub fn address(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let place = |place| {
-        Ok(HMIRValue::constant(
-            ty,
-            HMIRConstant::Address(HMIRAddress::place(place)),
-        ))
-    };
+    let place = |place| Ok(HMIRValue::constant(ty, HMIRConstant::Address(HMIRAddress::place(place))));
     let reference = match value.kind() {
         HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
-            return Ok(HMIRValue::constant(
-                ty,
-                HMIRConstant::Address(address.clone()),
-            ));
+            return Ok(HMIRValue::constant(ty, HMIRConstant::Address(address.clone())));
         }
         HMIRValueKind::PlaceRef(local @ HMIRPlace::Local(slot)) => {
             match context.runtime().slot(*slot).binding() {
@@ -345,11 +308,7 @@ pub fn address(
 
     let reference = operand(context, reference, span)?;
     let (out, result) = output(context, ty, span)?;
-    intrinsic(
-        context,
-        MIRInternalIntrinsic::ReferenceAddress { out, reference },
-        span,
-    );
+    intrinsic(context, MIRInternalIntrinsic::ReferenceAddress { out, reference }, span);
 
     Ok(initialized(context, result, span))
 }
@@ -377,32 +336,14 @@ pub fn dereference(
     };
     intrinsic(context, check, span);
     let message = Some("dereferenced a null pointer".into());
-    intrinsic(
-        context,
-        MIRInternalIntrinsic::Assert {
-            condition: MIRValue::Register(condition),
-            message,
-        },
-        span,
-    );
+    intrinsic(context, MIRInternalIntrinsic::Assert { condition: MIRValue::Register(condition), message }, span);
 
     let reference_ty = types::reference(context.env_mut(), inner, None, span);
     let target_ty = lower_type(context.env_mut(), reference_ty, span)?;
     let (out, reference) = output(context, reference_ty, span)?;
-    intrinsic(
-        context,
-        MIRInternalIntrinsic::Bitcast {
-            out,
-            value,
-            target_ty,
-        },
-        span,
-    );
+    intrinsic(context, MIRInternalIntrinsic::Bitcast { out, value, target_ty }, span);
 
-    Ok(HMIRValue::indirect(
-        inner,
-        initialized(context, reference, span),
-    ))
+    Ok(HMIRValue::indirect(inner, initialized(context, reference, span)))
 }
 
 pub fn field(
@@ -421,23 +362,10 @@ pub fn field(
     let reference_ty = types::reference(context.env_mut(), ty, bitfield, span);
     let (out, reference) = output(context, reference_ty, span)?;
     let projection = match tagged {
-        true => MIRAggregateIntrinsic::SumVariant {
-            out,
-            base,
-            variant: index,
-            sum_ty: aggregate_ty,
-        },
-        false => MIRAggregateIntrinsic::StructField {
-            out,
-            base,
-            field: index,
-            struct_ty: aggregate_ty,
-        },
+        true => MIRAggregateIntrinsic::SumVariant { out, base, variant: index, sum_ty: aggregate_ty },
+        false => MIRAggregateIntrinsic::StructField { out, base, field: index, struct_ty: aggregate_ty },
     };
     intrinsic(context, projection, span);
 
-    Ok(HMIRValue::indirect(
-        ty,
-        initialized(context, reference, span),
-    ))
+    Ok(HMIRValue::indirect(ty, initialized(context, reference, span)))
 }

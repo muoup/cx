@@ -1,0 +1,6 @@
+int main() {
+    int x = 7;
+    int& r = x;
+    int sum = @unsafe(@adopt(r)) + 1;
+    return sum;
+}

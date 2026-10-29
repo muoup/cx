@@ -48,7 +48,7 @@ define_errors! {
     LOCAL_VARIABLE_REQUIRED: String = "T0027" => |feature| format!("{feature} only accepts locally defined variables");
     UNSAFE_OPERATION: String = "T0028" => |feature| format!("{feature} is unsafe and so cannot be used in safe contexts, wrap this expression in an `@unsafe` block to bypass this restriction");
     FIELD_TRAIT: (String, String, String) = "T0029" => |(field, field_trait, required)| format!("aggregate containing {field_trait} field '{field}' must also be marked as {required}");
-    ADOPT_LOCAL: () = "T0030" => |()| "@adopt of a local binding is not allowed; use move for local bindings".into();
+    ADOPT_DECLARATION: () = "T0030" => |()| "@adopt can only initialize a variable declaration".into();
     UNPACK_REQUIRED_FIELD: (String, String) = "T0031" => |(owner, field)| format!("@unpack of '{owner}' must bind @nodrop field '{field}'");
     UNREACHABLE_MATCH_ARM: () = "T0032" => |_| "unreachable match arm: this pattern is already covered by a previous arm".into();
     NONEXHAUSTIVE_MATCH: Option<String> = "T0033" => |missing| {

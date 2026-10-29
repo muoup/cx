@@ -1,4 +1,3 @@
-/* CX-STDOUT: 9 */
 #include <stdio.h>
 comptime expr(int) identity(expr(int) value) => value;
 int main() {

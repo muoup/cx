@@ -1,5 +1,4 @@
-/* CX-STDOUT: 1 10 */
-/* CX-STDOUT-NEXT: 20 */
+/* CX-STDOUT: 20 */
 /* CX-STDOUT-NEXT: 30 */
 
 #include <stdio.h>
@@ -14,17 +13,12 @@ int main() {
     Pair* ptr = malloc(sizeof(Pair));
     *ptr = (Pair) { .left = 1, .right = 2 };
 
-    Pair copy = (Pair) { .left = 0, .right = 0 };
-    copy = @unsafe(@adopt(*ptr));
-    copy.left = 10;
-    printf("%d %d\n", (*ptr).left, copy.left);
-
     Pair alias = @unsafe(@adopt(*ptr));
     alias.right = 20;
     printf("%d\n", (*ptr).right);
 
     Pair& reference = *ptr;
-    Pair through = @unsafe(@adopt(@copy(reference)));
+    Pair through = @unsafe(@adopt(reference));
     through.right = 30;
     printf("%d\n", (*ptr).right);
 

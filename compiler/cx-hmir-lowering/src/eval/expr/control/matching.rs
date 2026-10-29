@@ -45,14 +45,7 @@ pub(crate) fn eval_match(
     arms: &[(HMIRPattern, HMIRExprID)],
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let subject = eval(context, body, scrutinee)?.ready()?;
-    let mut subject = coerce::reference_value(context, subject, span)?;
-    while context
-        .env()
-        .reference_inner(subject.ty())
-        .is_some_and(|inner| context.env().is_reference(inner))
-    {
-        subject = coerce::read(context, subject, span)?;
-    }
+    let subject = coerce::collapse(context, subject, span)?;
     let owned = !context.env().is_reference(subject.ty());
     let ty = context.env().referent(subject.ty());
     if context.env().pointer_inner(ty).is_some() {
@@ -134,14 +127,8 @@ pub(crate) fn eval_match(
             .expect("match coverage was checked");
         let (pattern, arm) = &arms[selected];
         bind_arm(context, body, &subject, pattern, span)?;
-        arm_value(context, body, *arm, span)
+        arm_value(context, body, *arm, span, None)
     };
-    let escape_span = span.clone();
-    let result = result.and_then(|value| {
-        value.map(context, move |context, value| {
-            emit::escape(context, value, &escape_span)
-        })
-    });
     closing(context, body, result, span)
 }
 
@@ -277,19 +264,14 @@ fn lower_arms(
             );
             return Err(hmir_error(&state.span, &typecheck::TYPE_MISMATCH, mismatch).into());
         }
-        return merge(context, state.exits, &state.span);
+        return merge(context, state.exits, true, &state.span);
     };
 
     mir::switch_to(context, state.blocks[index]);
+    let declared = context.env().is_reference(state.subject.ty()).then(|| mir::scoped_places(context));
     emit::open_scope(context, body.expr(arm).span());
     bind_arm(context, body, &state.subject, &pattern, &state.span)?;
-    let result = arm_value(context, body, arm, &state.span);
-    let escape_span = state.span.clone();
-    let result = result.and_then(|value| {
-        value.map(context, move |context, value| {
-            emit::escape(context, value, &escape_span)
-        })
-    });
+    let result = arm_value(context, body, arm, &state.span, declared);
     let result = closing(context, body, result, &state.span);
     let source = (!context.env().is_reference(state.subject.ty())).then(|| state.subject.clone());
     let span = state.span.clone();
@@ -313,16 +295,23 @@ fn lower_arms(
     )
 }
 
+// An arm stays a place when it designates one that outlives the match: the subject is borrowed, and the arm
+// declared nothing since 'declared' places
 fn arm_value(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     arm: HMIRExprID,
     span: &TokenRange,
+    declared: Option<usize>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = span.clone();
     eval(context, body, arm)?.map(context, move |context, value| {
+        let outlives = declared.is_some_and(|declared| mir::scoped_places(context) == declared);
+        if outlives && context.env().is_reference(value.ty()) {
+            return Ok(value);
+        }
         let value = coerce::std_rvalue(context, value, &span)?;
-        match context.is_runtime() && !context.env().is_void(value.ty()) && !value.transparent() {
+        match context.is_runtime() && !context.env().is_void(value.ty()) {
             true => emit::temporary(context, value, &span),
             false => Ok(value),
         }

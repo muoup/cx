@@ -28,7 +28,6 @@ pub enum HMIRPlace {
 pub struct HMIRValue {
     ty: HMIRTypeID,
     kind: HMIRValueKind,
-    transparent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -41,11 +40,7 @@ pub enum HMIRValueKind {
 
 impl HMIRValue {
     pub fn new(ty: HMIRTypeID, kind: HMIRValueKind) -> Self {
-        Self {
-            ty,
-            kind,
-            transparent: false,
-        }
+        Self { ty, kind }
     }
 
     pub fn constant(ty: HMIRTypeID, constant: HMIRConstant) -> Self {
@@ -71,15 +66,6 @@ impl HMIRValue {
             }
             _ => Self::new(ty, HMIRValueKind::Indirect(Box::new(pointer))),
         }
-    }
-
-    pub fn transparent(&self) -> bool {
-        self.transparent
-    }
-
-    pub fn with_transparent(mut self, transparent: bool) -> Self {
-        self.transparent = transparent;
-        self
     }
 
     pub fn ty(&self) -> HMIRTypeID {
