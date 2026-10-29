@@ -28,7 +28,7 @@ void vector::drop(comptime @type T = _, vector(T) this) {
     };
 }
 
-void vector::drop_with(comptime @type T, vector(T) this, @fn destructor(T) -> void) {
+void vector::drop_with(comptime @type T = _, vector(T) this, @fn destructor(T) -> void) {
     @unsafe {
         for (u64 i = 0; i < this.length; i++) {
             T value = @adopt(this.data[i]);
@@ -48,7 +48,7 @@ vector(T) vector::with_capacity(comptime @type T, usize capacity) {
     };
 }
 
-void vector::push(comptime @type T, vector(T)& this, T object) {
+void vector::push(comptime @type T = _, vector(T)& this, T object) {
     if (this.length == this.capacity) {
         this.capacity = this.capacity * 2 + 1;
         this.data = realloc(this.data, this.capacity * sizeof(T));
@@ -58,7 +58,7 @@ void vector::push(comptime @type T, vector(T)& this, T object) {
     this.length++;
 }
 
-std::optional::opt(T) vector::pop(comptime @type T, vector(T)& this) {
+std::optional::opt(T) vector::pop(comptime @type T = _, vector(T)& this) {
     if (this.length == 0) return std::optional::opt(T)::none();
 
     T buffer;
@@ -69,7 +69,7 @@ std::optional::opt(T) vector::pop(comptime @type T, vector(T)& this) {
     return move buffer;
 }
 
-std::optional::opt(T&) vector::at(comptime @type T, vector(T)& this, usize index) {
+std::optional::opt(T&) vector::at(comptime @type T = _, vector(T)& this, usize index) {
     if (index >= this.length) {
         return std::optional::opt(T&)::none();
     }

@@ -343,6 +343,10 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 writeln!(f, "Leak")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
+            HIRExprKind::Copy { expr } => {
+                writeln!(f, "Copy")?;
+                HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
+            }
             HIRExprKind::Adopt { expr } => {
                 writeln!(f, "Adopt")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)

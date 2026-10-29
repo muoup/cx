@@ -69,6 +69,10 @@ pub(crate) fn eval_coerce(
 
 pub(crate) fn value_type(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
     let ty = context.env().referent(ty);
+    unqualified(context, ty, span)
+}
+
+pub(crate) fn unqualified(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
     let qualifiers = HMIRTypeSemantics { constant: true, volatile: true, ..Default::default() };
     types::unspecify(context, ty, qualifiers, span)
 }

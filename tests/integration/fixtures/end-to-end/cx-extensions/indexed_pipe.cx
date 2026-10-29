@@ -13,5 +13,5 @@ int main() {
     int c = 3 |>(2) second(_, 1);
     printf("%d %d %d\n", a, b, c);
     std::opt(int) o = std::opt(_)::some(4);
-    return o |>(1) std::opt::unwrap_or(_, 0) - 4;
+    return o |> std::opt::unwrap_or(0) - 4;
 }

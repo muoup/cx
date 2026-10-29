@@ -19,7 +19,7 @@ void close(resource this) {
 
 std::opt(resource) maybe_resource(std::opt(int) probe) {
     resource res = (resource) { .value = 7 };
-    int value = move probe |>(1) std::opt::try_or(_, emit .{
+    int value = move probe |> std::opt::try_or(emit .{
         move res |> close();
     });
 
@@ -35,7 +35,7 @@ std::opt(void) maybe_void(bool ok) {
 }
 
 std::opt(int) void_then_value(bool ok) {
-    maybe_void(ok) |>(1) std::opt::try_or(_, emit .{});
+    maybe_void(ok) |> std::opt::try_or(emit .{});
     return std::opt(int)::some(3);
 }
 

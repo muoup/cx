@@ -6,7 +6,7 @@
 import std::optional as std;
 
 std::opt(int) maybe_add_one(std::opt(int) value) {
-    int inner = value |>(1) std::opt::try(_);
+    int inner = value |> std::opt::try();
 
     return std::opt(int)::some(inner + 1);
 }

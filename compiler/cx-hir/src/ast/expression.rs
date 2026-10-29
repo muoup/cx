@@ -195,6 +195,9 @@ pub enum HIRExprKind {
     Leak {
         expr: Box<HIRExpression>,
     },
+    Copy {
+        expr: Box<HIRExpression>,
+    },
     Adopt {
         expr: Box<HIRExpression>,
     },

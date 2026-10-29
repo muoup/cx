@@ -81,7 +81,8 @@ impl BodyPrinter<'_> {
         match op {
             HMIROwnershipOp::Adopt(operand)
             | HMIROwnershipOp::Leak(operand)
-            | HMIROwnershipOp::Move(operand) => self.call(f, op.path(), &[*operand], depth),
+            | HMIROwnershipOp::Move(operand)
+            | HMIROwnershipOp::Copy(operand) => self.call(f, op.path(), &[*operand], depth),
         }
     }
 

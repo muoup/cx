@@ -220,18 +220,17 @@ int main() {
       (compiler_identifier))
     (function_body
       (operator)
-      (expression
-        (primary_expression
-          (type_literal
-            (keyword)
-            (anonymous_struct_body
-              (field_declaration
-                (type
-                  (qualified_name
-                    (identifier)))
-                (field_declarator
-                  (declarator
-                    (identifier))))))))))
+      (type
+        (struct_type
+          (keyword)
+          (anonymous_struct_body
+            (field_declaration
+              (type
+                (qualified_name
+                  (identifier)))
+              (field_declarator
+                (declarator
+                  (identifier)))))))))
   (function_definition
     (type
       (builtin_type_sequence
@@ -257,10 +256,9 @@ int main() {
                   (qualified_name
                     (identifier)))
                 (argument_list
-                  (expression
-                    (primary_expression
-                      (qualified_name
-                        (identifier))))
+                  (type
+                    (builtin_type_sequence
+                      (builtin_type)))
                   (expression
                     (primary_expression
                       (qualified_name
@@ -332,10 +330,9 @@ int main() {
                         (qualified_name
                           (identifier)))
                       (argument_list
-                        (expression
-                          (primary_expression
-                            (qualified_name
-                              (identifier))))))))))))
+                        (type
+                          (qualified_name
+                            (identifier)))))))))))
         (declaration
           (variable_declaration
             (type

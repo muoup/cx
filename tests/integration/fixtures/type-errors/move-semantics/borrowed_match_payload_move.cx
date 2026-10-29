@@ -1,16 +1,19 @@
-enum union Choice {
-    none :: void,
-    some :: int
+struct Resource : @nocopy {
+    int data;
 };
 
-int read(Choice& value) {
-    return match (value) {
-        some(auto inner) => move inner,
-        none() => 0,
-    };
+enum union Choice : @nocopy {
+    none :: void,
+    some :: Resource
+};
+
+Resource read(Choice& value) {
+    match (value) {
+        some(auto& inner) => return move inner,
+        none() => return (Resource) { .data = 0 },
+    }
 }
 
 int main() {
-    Choice value = Choice::some(1);
-    return read(value);
+    return 0;
 }

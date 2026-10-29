@@ -132,7 +132,7 @@ lisp_node parser::parse_program(parser& this) {
         usize previous_pos = this.pos;
         lisp_node node = this |> parser::parse_expr();
         this |> parser::expect_progress(previous_pos);
-        body |>(1) std::vector::push(lisp_node, move node);
+        body |> std::vector::push(move node);
         this |> parser::skip_ws();
     }
 
@@ -169,7 +169,7 @@ std::vector(lisp_node) parser::parse_expr_list_until_close(parser& this) {
         usize previous_pos = this.pos;
         lisp_node node = this |> parser::parse_expr();
         this |> parser::expect_progress(previous_pos);
-        exprs |>(1) std::vector::push(lisp_node, move node);
+        exprs |> std::vector::push(move node);
         this |> parser::skip_ws();
     }
 
@@ -186,7 +186,7 @@ std::vector(std::string) parser::parse_params(parser& this) {
         usize previous_pos = this.pos;
         std::string param = this |> parser::parse_name();
         this |> parser::expect_progress(previous_pos);
-        params |>(1) std::vector::push(std::string, move param);
+        params |> std::vector::push(move param);
         this |> parser::skip_ws();
     }
     this |> parser::expect(')');
@@ -217,8 +217,8 @@ lisp_node parser::parse_list(parser& this) {
         this |> parser::expect(')');
 
         move op |> std::string::drop();
-        std::box(lisp_node) left = std::box::new(_, move left_node);
-        std::box(lisp_node) right = std::box::new(_, move right_node);
+        std::box(lisp_node) left = std::box::new(move left_node);
+        std::box(lisp_node) right = std::box::new(move right_node);
 
         return lisp_node::Plus({
             .left = move left,
@@ -232,8 +232,8 @@ lisp_node parser::parse_list(parser& this) {
         this |> parser::expect(')');
 
         move op |> std::string::drop();
-        std::box(lisp_node) left = std::box::new(_, move left_node);
-        std::box(lisp_node) right = std::box::new(_, move right_node);
+        std::box(lisp_node) left = std::box::new(move left_node);
+        std::box(lisp_node) right = std::box::new(move right_node);
 
         return lisp_node::Minus({
             .left = move left,
@@ -246,7 +246,7 @@ lisp_node parser::parse_list(parser& this) {
         this |> parser::expect(')');
  
         move op |> std::string::drop();
-        std::box(lisp_node) value = std::box::new(_, move value_node);
+        std::box(lisp_node) value = std::box::new(move value_node);
         return lisp_node::PrintNum(move value);
     }
 

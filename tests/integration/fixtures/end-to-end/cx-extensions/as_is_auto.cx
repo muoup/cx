@@ -1,0 +1,71 @@
+/* CX-STDOUT: a 3 copied 100 explicit 200 */
+/* CX-STDOUT-NEXT: b 5 */
+/* CX-STDOUT-NEXT: c 8 */
+/* CX-STDOUT-NEXT: owned 11 */
+/* CX-STDOUT-NEXT: d 13 a 14 */
+
+import std::optional;
+
+#include <stdio.h>
+
+int& pass(int& value) {
+    return value;
+}
+
+int*& pass_pointer(int*& value) {
+    return value;
+}
+
+int main() {
+    int a = 1;
+    int& r = a;
+    auto copied = a;
+    auto aliased = r;
+    auto called = pass(a);
+    auto explicit_copy = @copy(pass(a));
+    copied = 100;
+    aliased = 2;
+    called = 3;
+    explicit_copy = 200;
+    printf("a %d copied %d explicit %d\n", a, copied, explicit_copy);
+
+    int b = 4;
+    int* p = &b;
+    auto pointer = @copy(pass_pointer(p));
+    *pointer = 5;
+    printf("b %d\n", b);
+
+    int c = 6;
+    std::optional::opt(int&) wrapped = std::optional::opt(int&)::some(c);
+    match (wrapped) {
+        some(auto v) => { v = 7; },
+        none() => {},
+    }
+    match (wrapped) {
+        some(auto& v) => { v += 1; },
+        none() => {},
+    }
+    printf("c %d\n", c);
+
+    std::optional::opt(int) owned = std::optional::opt(int)::some(9);
+    match (owned) {
+        some(auto v) => { v = 10; },
+        none() => {},
+    }
+    match (owned) {
+        some(auto& v) => { v += 2; },
+        none() => {},
+    }
+    match (owned) {
+        some(auto v) => { printf("owned %d\n", v); },
+        none() => {},
+    }
+
+    int d = 12;
+    int& through = std::optional::opt(int&)::some(d) |> std::optional::opt::unwrap();
+    through = 13;
+    auto moved = move r;
+    moved = 14;
+    printf("d %d a %d\n", d, a);
+    return 0;
+}

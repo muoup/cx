@@ -68,7 +68,26 @@ pub(crate) fn eval_ownership(
         HMIROwnershipOp::Move(operand) => eval_move(context, body, span, *operand),
         HMIROwnershipOp::Leak(operand) => eval_leak(context, body, span, *operand),
         HMIROwnershipOp::Adopt(operand) => eval_adopt(context, body, span, *operand),
+        HMIROwnershipOp::Copy(operand) => eval_copy(context, body, span, *operand),
     }
+}
+
+fn eval_copy(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    span: &TokenRange,
+    operand: HMIRExprID,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let value = (eval(context, body, operand))?.ready()?;
+    let ty = coerce::value_type(context, value.ty(), span);
+    if context.env().is_nocopy(ty) || context.env().is_nodrop(ty) {
+        return Err(hmir_error(span, &typecheck::UNCOPYABLE, types::name(context.env(), ty)).into());
+    }
+    let value = match context.env().is_reference(value.ty()) {
+        true => emit::copy(context, value, span)?,
+        false => value,
+    };
+    Ok(Evaluation::Ready(coerce::implicit(context, value, ty, span)?))
 }
 
 fn eval_move(
@@ -85,7 +104,11 @@ fn eval_move(
 
     let local = require_local(body, operand, span, "move")?;
     let binding = context.get_local(&local).expect("an evaluated local has a binding");
-    if context.env().reference_inner(binding.ty()) != Some(inner) {
+    let declared = context.env().reference_inner(binding.ty());
+    if declared.is_some_and(|declared| context.env().is_reference(declared)) {
+        return Ok(Evaluation::Ready(value));
+    }
+    if declared != Some(inner) {
         if context.env().semantics(inner).constant {
             let mutated = ("move out of".into(), types::name(context.env(), inner));
             return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutated).into());

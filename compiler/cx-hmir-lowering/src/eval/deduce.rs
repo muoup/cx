@@ -235,7 +235,6 @@ pub(crate) fn type_result(
 pub(crate) fn hole(context: &mut LocalLoweringContext, span: &TokenRange) -> EvalResult<Evaluation<HMIRValue>> {
     let hole = span.clone();
     let incomplete = Incomplete::new(context, span, IncompleteReason::ExpectedType, None, move |context, _, expected| {
-        let expected = context.env().referent(expected);
         Ok(Evaluation::Ready(type_constant(context, expected, &hole)))
     });
     Ok(Evaluation::Incomplete(incomplete))

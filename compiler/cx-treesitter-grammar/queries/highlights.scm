@@ -22,5 +22,8 @@
 (function_declaration (function_declarator (callable_name) @function))
 (comptime_function_definition name: (callable_name) @function)
 (parameter (declarator (identifier) @variable.parameter))
-(comptime_parameter (identifier) @variable.parameter)
+(parameter (function_type_declarator name: (identifier) @variable.parameter))
+(field_declaration (function_type_declarator name: (identifier) @property))
+(indexed_pipe) @operator
+["comptime" "move"] @keyword
 (field_declarator (declarator (identifier) @property))

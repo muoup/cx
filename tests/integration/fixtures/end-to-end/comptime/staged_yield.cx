@@ -6,7 +6,7 @@ import std::optional as std;
 
 int main() {
     std::opt(int) value = std::opt(int)::none();
-    int result = move value |>(1) std::opt::unwrap_or_else(_, emit .{
+    int result = move value |> std::opt::unwrap_or_else(emit .{
         yield 42;
     });
     printf("yielded %d\n", result);

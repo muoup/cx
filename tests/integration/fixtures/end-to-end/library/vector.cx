@@ -10,15 +10,15 @@ import std::optional;
 int main() {
     std::vector::vector(int) vec = std::vector::vector::new(int);
     
-    vec |>(1) std::vector::vector::push(int, 1);
-    vec |>(1) std::vector::vector::push(int, 2);
-    vec |>(1) std::vector::vector::push(int, 3);
+    vec |> std::vector::vector::push(1);
+    vec |> std::vector::vector::push(2);
+    vec |> std::vector::vector::push(3);
 
     printf("Vector length: %zu\n", vec.length);
     printf("Vector capacity: %zu\n", vec.capacity);
     
-    std::optional::opt(int&) maybe_value = vec |>(1) std::vector::vector::at(int, 0);
-    int value = move maybe_value |>(1) std::optional::opt::unwrap(int&);
+    std::optional::opt(int&) maybe_value = vec |> std::vector::vector::at(0);
+    int value = move maybe_value |> std::optional::opt::unwrap();
     
     printf("vec[0]: %d\n", value);
     move vec |> std::vector::vector::drop();

@@ -18,7 +18,7 @@ std::opt(int) choose_optional(Choice choice) {
 }
 
 std::opt(int) add_three(Choice choice) {
-    int value = choose_optional(choice) |>(1) std::opt::try(_);
+    int value = choose_optional(choice) |> std::opt::try();
 
     return std::opt(int)::some(value + 3);
 }

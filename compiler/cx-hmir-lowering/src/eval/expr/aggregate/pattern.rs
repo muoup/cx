@@ -110,8 +110,8 @@ pub(crate) fn bind(
         let name = local_info.name().map_or_else(|| "this binding".into(), ToString::to_string);
         return Err(hmir_error(span, &typecheck::BINDING_BEHIND_REFERENCE, name).into());
     }
-    let reference = reference.or((!owned).then_some(false));
     let (value, binding_ty) = match reference {
+        Some(_) if context.env().is_reference(ty) => (coerce::implicit(context, source, ty, span)?, ty),
         Some(constant) => {
             let target = match constant {
                 true => types::specify(context, ty, HMIRTypeSemantics { constant: true, ..Default::default() }, span),
@@ -121,12 +121,12 @@ pub(crate) fn bind(
             (coerce::implicit(context, source, target, span)?, target)
         }
         None => {
+            let ty = coerce::unqualified(context, ty, span);
             let value = if owned {
                 emit::copy(context, source, span)?
             } else {
                 coerce::implicit(context, source, ty, span)?
             };
-            let ty = coerce::value_type(context, value.ty(), span);
             (coerce::implicit(context, value, ty, span)?, ty)
         }
     };

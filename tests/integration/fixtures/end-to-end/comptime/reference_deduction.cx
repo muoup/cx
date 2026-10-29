@@ -1,0 +1,33 @@
+/* CX-STDOUT: boxed 5 */
+/* CX-STDOUT-NEXT: written 8 9 */
+
+import std::box as std;
+import std::optional;
+
+#include <stdio.h>
+#include <stdlib.h>
+
+T take(comptime @type T = _, std::optional::opt(T) this) {
+    match (move this) {
+        some(auto& val) => return val,
+        none() => exit(1),
+    }
+}
+
+int main() {
+    int place = 5;
+    std::box(int) boxed = std::box::new(place);
+    printf("boxed %d\n", std::box::deref(boxed));
+    move boxed |> std::box::drop();
+
+    int first = 1;
+    int second = 2;
+    std::optional::opt(int&) a = std::optional::opt(int&)::some(first);
+    std::optional::opt(int&) b = std::optional::opt(int&)::some(second);
+    int& defaulted = take(move a);
+    int& hole = take(.T = _, move b);
+    defaulted = 8;
+    hole = 9;
+    printf("written %d %d\n", first, second);
+    return 0;
+}

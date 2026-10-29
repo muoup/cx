@@ -216,7 +216,8 @@ impl Locals<'_> {
                 HMIROp::OwnershipOp(
                     HMIROwnershipOp::Adopt(value)
                     | HMIROwnershipOp::Leak(value)
-                    | HMIROwnershipOp::Move(value),
+                    | HMIROwnershipOp::Move(value)
+                    | HMIROwnershipOp::Copy(value),
                 ) => children.push(*value),
                 HMIROp::AggregateOp(op) => match op {
                     HMIRAggregateOp::Member { base, .. } => children.push(*base),

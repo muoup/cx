@@ -104,6 +104,7 @@ pub enum HMIROwnershipOp {
     Adopt(HMIRExprID),
     Leak(HMIRExprID),
     Move(HMIRExprID),
+    Copy(HMIRExprID),
 }
 
 #[derive(Debug, Clone)]
@@ -214,6 +215,7 @@ impl HMIROwnershipOp {
             Self::Adopt(_) => "adopt",
             Self::Leak(_) => "leak",
             Self::Move(_) => "move",
+            Self::Copy(_) => "copy",
         }
     }
 }

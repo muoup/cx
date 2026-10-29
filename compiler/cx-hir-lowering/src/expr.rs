@@ -221,6 +221,10 @@ pub(crate) fn lower_expr(
             let inner = lower_expr(context, inner)?;
             context.ownership(HMIROwnershipOp::Leak(inner), span)
         }
+        HIRExprKind::Copy { expr: inner } => {
+            let inner = lower_expr(context, inner)?;
+            context.ownership(HMIROwnershipOp::Copy(inner), span)
+        }
         HIRExprKind::Reify { signature, value } => lower_reify(context, signature, value, span)?,
         HIRExprKind::NamedArgument { .. } => {
             return log_hir_error(

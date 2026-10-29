@@ -70,6 +70,21 @@ fn parse_at_intrinsic_expr(
             ))
         }
 
+        "copy" => {
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+            let expr = parse_expr(data)?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+
+            Ok(HIRExprKind::Copy {
+                expr: Box::new(expr),
+            }
+            .into_expr(
+                start_index,
+                data.tokens.index,
+                data.token_range(start_index, data.tokens.index),
+            ))
+        }
+
         "adopt" => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
             let expr = parse_expr(data)?;

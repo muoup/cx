@@ -6,7 +6,7 @@ import std::vector as v;
 
 int main() {
     v::vector(int) vec = v::vector::new(int);
-    vec |>(1) v::vector::push(int, 42);
+    vec |> v::vector::push(42);
     printf("%zu\n", vec.length);
     move vec |> v::vector::drop(.T = int);
     return 0;

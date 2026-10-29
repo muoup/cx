@@ -7,11 +7,11 @@ import std::{net::{udp, address,},};
 
 int main() {
     v::vector(int) values = v::vector::new(int);
-    values |>(1) v::vector::push(int, 1);
+    values |> v::vector::push(1);
 
     std::net::address::endpoint address =
         std::net::address::endpoint::ipv4("127.0.0.1", 80)
-        |>(1) v::opt::unwrap(_);
+        |> v::opt::unwrap();
 
     printf("%zu\n", values.length);
 

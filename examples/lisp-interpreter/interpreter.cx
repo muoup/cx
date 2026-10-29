@@ -23,7 +23,7 @@ void interpret(lisp_node& node) {
 
 void run(const _str& source) {
     parser::parse(source)
-        |>(1) std::tap(ast::lisp_node, |t| emit interpret(t))
+        |> std::tap(|t| emit interpret(t))
         |> lisp_node::drop();
 }
 
@@ -95,14 +95,14 @@ f64 interpreter::call_function(interpreter& this, _str& name, std::span(lisp_nod
             for (usize i = 0; i < fn_def.params.length; i++) {
                 f64 arg_value = 0.0;
                 if (i < args.length) {
-                    arg_value = this |> interpreter::eval(args |>(1) std::span::at(_, i), locals);
+                    arg_value = this |> interpreter::eval(args |> std::span::at(i), locals);
                 }
 
                 binding local = {
                     .name = fn_def.params.data[i] |> std::string::as_str_mut(),
                     .value = arg_value
                 };
-                std::vector::push(binding, call_locals, move local);
+                std::vector::push(call_locals, move local);
             }
 
             std::span(binding) call_local_span = {

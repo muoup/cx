@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBody, HMIROp, HMIROwnershipOp,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
@@ -112,12 +112,16 @@ pub(crate) fn eval_let(
     let value = eval(context, body, initializer)?;
     let value = deduce::complete(context, body, value, declared.known().copied())?;
     let span = span.clone();
+    let auto = matches!(body.expr(local.ty()).kind(), HMIRExprKind::Hole(_));
     value.and_then(context, body, None, move |context, body, value, _| {
         let value = match declared.known() {
             Some(ty) => coerce::implicit(context, value, *ty, &span)?,
             None => value,
         };
-        let inferred = coerce::value_type(context, value.ty(), &span);
+        let inferred = match auto {
+            true => captured(context, body, initializer, &value, &span),
+            false => coerce::value_type(context, value.ty(), &span),
+        };
         let function = matches!(context.env().resolve_kind(inferred), HMIRTypeKind::Function(_));
         let inferred = if function && !types::comptime_only(context.env(), inferred) {
             types::pointer(context.env_mut(), inferred, &span)
@@ -150,6 +154,32 @@ pub(crate) fn eval_let(
             Ok(Evaluation::Ready(expr::unit(context, &span)))
         })
     })
+}
+
+// The type of the initializer as written: a place stands for its object, while a reference type that a local or
+// a function declares is kept
+fn captured(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    initializer: HMIRExprID,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    let declared = match body.expr(initializer).kind() {
+        HMIRExprKind::Local(local) => context
+            .get_local(local)
+            .and_then(|binding| context.env().reference_inner(binding.ty()))
+            .is_some_and(|inner| context.env().is_reference(inner)),
+        HMIRExprKind::Call { .. } | HMIRExprKind::Splice { .. } => true,
+        HMIRExprKind::Op(HMIROp::OwnershipOp(HMIROwnershipOp::Move(operand))) => {
+            return captured(context, body, *operand, value, span);
+        }
+        _ => false,
+    };
+    match declared && context.env().is_reference(value.ty()) {
+        true => value.ty(),
+        false => coerce::value_type(context, value.ty(), span),
+    }
 }
 
 fn observed(context: &LocalLoweringContext, storage: &HMIRValue) -> bool {

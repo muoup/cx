@@ -1,7 +1,7 @@
 ==================
 comptime function
 ==================
-comptime expr T twice<T>(expr T value) {
+comptime expr(T) twice(comptime @type T = _, expr(T) value) {
     return emit value * 2;
 }
 ---
@@ -9,27 +9,37 @@ comptime expr T twice<T>(expr T value) {
 (source_file
   (comptime_function_definition
     (keyword)
-    (comptime_value_type
-      (keyword)
-      (type
-        (qualified_name
-          (identifier))))
+    (type
+      (expr_type
+        (keyword)
+        (type
+          (qualified_name
+            (identifier)))))
     (callable_name
-      (templated_name
-        (qualified_name
-          (identifier))
-        (template_arguments
-          (template_argument
-            (qualified_name
-              (identifier))))))
-    (comptime_parameter_list
-      (comptime_parameter
-        (comptime_value_type
-          (keyword)
-          (type
-            (qualified_name
-              (identifier))))
+      (qualified_name
         (identifier)))
+    (parameter_list
+      (parameter
+        (keyword)
+        (type
+          (compiler_identifier))
+        (declarator
+          (identifier))
+        (parameter_default
+          (operator)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier))))))
+      (parameter
+        (type
+          (expr_type
+            (keyword)
+            (type
+              (qualified_name
+                (identifier)))))
+        (declarator
+          (identifier))))
     (function_body
       (compound_statement
         (return_statement
@@ -120,7 +130,7 @@ int run(int value) {
                 (binary_expression
                   (expression
                     (unary_expression
-                      (operator)
+                      (keyword)
                       (expression
                         (primary_expression
                           (qualified_name
@@ -369,7 +379,7 @@ int sum(Pair pair) safe where pre: (true), post(ret): (ret >= 0) {
           (compiler_identifier)
           (expression
             (unary_expression
-              (operator)
+              (keyword)
               (expression
                 (primary_expression
                   (qualified_name

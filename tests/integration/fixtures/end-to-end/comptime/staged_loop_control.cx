@@ -41,7 +41,7 @@ int main() {
 
     while (1) {
         std::opt(int) value = std::opt(int)::none();
-        int result = move value |>(1) std::opt::unwrap_or_else(_, emit .{
+        int result = move value |> std::opt::unwrap_or_else(emit .{
             printf("break\n");
             break;
         });
@@ -52,7 +52,7 @@ int main() {
     switch (1) {
         case 1: {
             std::opt(int) value = std::opt(int)::none();
-            move value |>(1) std::opt::unwrap_or_else(_, emit .{
+            move value |> std::opt::unwrap_or_else(emit .{
                 printf("switch break\n");
                 break;
             });

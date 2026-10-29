@@ -13,7 +13,7 @@ i32 main(i32 argc, char** argv) {
     }
 
     std::file f = std::file::open(argv[1], "r")
-        |>(1) std::opt::unwrap_or_else(_, .{ 
+        |> std::opt::unwrap_or_else(.{ 
             std::println("Could not find file specified");
             return -1;
         });

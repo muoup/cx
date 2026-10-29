@@ -10,7 +10,7 @@ enum union MaybePair {
 
 void inspect(MaybePair& value) {
     match (value) {
-        some(auto payload) => {
+        some(auto& payload) => {
             @unpack(move payload) {
                 left: left,
                 right: right

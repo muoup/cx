@@ -12,7 +12,7 @@ std::opt(int) make_value() {
 }
 
 int main() {
-    int value = make_value() |>(1) std::opt::unwrap_or_else(_, emit .{
+    int value = make_value() |> std::opt::unwrap_or_else(emit .{
         printf("unexpected none\n");
         return 1;
     });

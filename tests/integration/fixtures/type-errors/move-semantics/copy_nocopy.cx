@@ -1,0 +1,14 @@
+struct Resource : @nocopy {
+    int data;
+};
+
+Resource& pass(Resource& value) {
+    return value;
+}
+
+int main() {
+    Resource resource = (Resource) { .data = 1 };
+    auto copied = @copy(pass(resource));
+    @unsafe(@leak(resource));
+    return 0;
+}

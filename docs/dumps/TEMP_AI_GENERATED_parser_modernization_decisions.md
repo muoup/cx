@@ -303,11 +303,41 @@ Decided afterwards (suite: 377 of 377):
   Not diagnosed (as in THIR): a conversion that drops a qualifier, such as `const T*` to `T*`
   or `const T&` to `T&`; types are compared up to qualification (`same_unqualified`).
   `const auto x` drops the qualifier.
-- A subject behind a reference only gives reference bindings: `auto x` is rejected there even
-  for a copyable payload ("bind it with 'auto&'"). A by-value local subject still copies.
+- Superseded on 2026-10-29 (see below): a subject behind a reference only gave reference
+  bindings.
 - A function-typed parameter is adjusted to a pointer as in C; the fixture moved to
   `compile-only/c-semantics/function_typedef_parameter.c`.
 - Code declared to produce a value (`expr(int)`) is lowered for that value even in statement
   position, so a void closure there is rejected whether or not the result is used.
 
 Deferred: the escaping-local check (left to MIR analysis).
+
+## As-is `auto` and `@copy` (decided 2026-10-29)
+
+`auto` captures the type of its initializer as written and never decays a reference, so
+`opt(T)` and `opt(T&)` behave alike and `auto` means the same in a declaration and a pattern.
+
+```c
+int a = 1;
+int& r = a;
+auto x = a;                // int: a names an int
+auto y = r;                // int&
+auto z = pass(a);          // int&: the declared return type
+auto w = @copy(pass(a));   // int
+match (o) { some(auto v) => ... }   // v takes the payload's declared type: int& for opt(int&)
+```
+
+- Pattern binders are Rust's binding modes with `auto` as the marker: `auto v` binds by
+  value, copying out of a subject that stays in use and erroring (T0062) when the payload
+  isn't copyable; `auto&` and `const auto&` borrow, and a reference to a reference collapses.
+  An owning binding on a copyable payload of a borrowed subject copies.
+- `@copy(e)` strips the top-level reference and copies; it is the identity on non-references,
+  so generic code gets one behavior for `T` and `T&`, and a nocopy or nodrop operand is T0073.
+  `*` stays the pointer dereference: overloading it to copy references would depend on whether
+  the referent is a pointer, which splits generic code.
+- `move` on a local of reference type yields the reference; moving the referent out through
+  it is rejected where the reference is used as an owned value.
+- HMIR types a place of `T` as `T&`, so `auto` reads the declared type from the initializer's
+  form: a local declared as a reference, a call or splice result, or a `move` of either.
+  Other reference-typed forms (a ternary over references) still capture the referent, and so
+  does a reference parameter of a staged expression, which is bound without storage.

@@ -19,9 +19,9 @@ int main() {
         Resource value = {
             .value = 2
         };
-        values |>(1) std::vector::push(Resource, move value);
+        values |> std::vector::push(move value);
     }
 
-    move values |>(1) std::vector::drop_with(Resource, Resource::drop_resource);
+    move values |> std::vector::drop_with(Resource::drop_resource);
     return 0;
 }

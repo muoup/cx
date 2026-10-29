@@ -32,8 +32,8 @@ int main() {
     long curried = (convert(.U = long))(6);
     printf("convert %ld %ld\n", positional, curried);
 
-    std::box(int) boxed = std::box::new(int, 7);
+    std::box(int) boxed = std::box::new(7);
     move boxed |> std::box::drop();
-    consume(std::box::drop(.T = int), std::box::new(int, 9));
+    consume(std::box::drop(.T = int), std::box::new(9));
     return 0;
 }

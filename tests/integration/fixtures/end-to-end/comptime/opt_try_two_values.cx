@@ -7,8 +7,8 @@
 import std::optional as std;
 
 std::opt(int) add_optional_pair(std::opt(int) lhs, std::opt(int) rhs) {
-    int lhs_value = lhs |>(1) std::opt::try(_);
-    int rhs_value = rhs |>(1) std::opt::try(_);
+    int lhs_value = lhs |> std::opt::try();
+    int rhs_value = rhs |> std::opt::try();
 
     return std::opt(int)::some(lhs_value + rhs_value);
 }

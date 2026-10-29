@@ -5,7 +5,7 @@ import std::optional;
 
 int main() {
     std::file::file f = std::file::file::open("test.txt", "w")
-        |>(1) std::optional::opt::unwrap(std::file::file);
+        |> std::optional::opt::unwrap();
     
     // Some extra work
     if (f.handle != NULL) {
