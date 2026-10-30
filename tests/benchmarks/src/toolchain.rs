@@ -1,8 +1,8 @@
 use crate::case::{Case, Sources};
-use crate::report::ReferenceCompiler;
 use cx_test_support::{
     backend_name, compile_file_at, run_command, CompilationFailure, CompilationMode,
-    CompilationResult, CompilerBackend, OptimizationLevel, ProjectBinary, TestTempDir,
+    CompilationResult, CompilerBackend, OptimizationLevel, ProjectBinary, ReferenceCompiler,
+    TestTempDir,
 };
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,20 +22,6 @@ pub struct Build {
     /// The binary, which does not exist for a case that is only compiled.
     pub output: PathBuf,
     pub elapsed: Duration,
-}
-
-impl ReferenceCompiler {
-    pub fn detect(command: &str) -> Result<Self, String> {
-        let version = run_command(Command::new(command).arg("--version"))?;
-        if !version.success {
-            return Err(format!("{command} --version failed:\n{}", version.stderr));
-        }
-
-        Ok(Self {
-            command: command.to_string(),
-            version: version.stdout.lines().next().unwrap_or_default().to_string(),
-        })
-    }
 }
 
 impl Toolchain<'_> {
@@ -88,24 +74,19 @@ impl Toolchain<'_> {
             }
             Toolchain::Reference(reference) => {
                 let output = temp_dir.path().join("case.out");
-                let mut command = Command::new(&reference.command);
-                command.arg("-w");
-                match &case.sources {
+                let (binary, link) = match &case.sources {
                     Sources::File(file) => {
-                        command
-                            .arg(optimization_flag(FILE_OPTIMIZATION))
-                            .arg(file)
-                            .arg("-o")
-                            .arg(&output)
-                            .arg("-lm");
+                        let flags = [optimization_flag(FILE_OPTIMIZATION)];
+                        let elapsed = reference.compile(file, &flags, &output)?;
+                        return Ok(Build { output, elapsed });
                     }
-                    Sources::Project { binary, link } => {
-                        project_arguments(&mut command, binary, *link, &output);
-                        // The objects of a compile-only build land in the working directory.
-                        command.current_dir(temp_dir.path());
-                    }
-                }
+                    Sources::Project { binary, link } => (binary, *link),
+                };
 
+                let mut command = reference.command();
+                project_arguments(&mut command, binary, link, &output);
+                // The objects of a compile-only build land in the working directory.
+                command.current_dir(temp_dir.path());
                 let compilation = run_command(&mut command)?;
                 if !compilation.success {
                     return Err(compilation.stderr);

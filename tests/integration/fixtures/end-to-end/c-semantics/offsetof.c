@@ -1,5 +1,3 @@
-/* CX-STDOUT: 0 8 16 8 16 24 32 12 */
-
 #include <stddef.h>
 #include <stdio.h>
 

@@ -564,6 +564,7 @@ dependencies = [
  "cx-log",
  "cx-pipeline",
  "cx-pipeline-data",
+ "serde",
 ]
 
 [[package]]

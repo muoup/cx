@@ -1,7 +1,3 @@
-/* CX-STDOUT: 1 1 0 0 */
-/* CX-STDOUT-NEXT: 1 1 1 */
-/* CX-STDOUT-NEXT: 1 2 1 */
-
 int printf(const char* fmt, ...);
 
 struct holder { int* p; };

@@ -1,5 +1,3 @@
-/* CX-STDOUT: 1 d */
-
 #include <stdio.h>
 
 static int calls = 0;

@@ -1,5 +1,3 @@
-/* CX-STDOUT: 15 14 16 9 */
-
 #include <stdio.h>
 
 #define checked(condition, value) ((void)(condition), (value))

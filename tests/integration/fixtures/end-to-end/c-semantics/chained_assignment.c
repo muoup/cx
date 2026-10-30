@@ -1,5 +1,3 @@
-/* CX-STDOUT: 17 17 17 */
-
 #include <stdio.h>
 
 int main() {

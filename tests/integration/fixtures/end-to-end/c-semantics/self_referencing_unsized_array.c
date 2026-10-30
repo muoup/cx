@@ -1,7 +1,3 @@
-/* CX-STDOUT: a 1 b */
-/* CX-STDOUT-NEXT: count 3 */
-/* CX-STDOUT-NEXT: self s */
-
 int printf(const char* fmt, ...);
 
 typedef struct node {

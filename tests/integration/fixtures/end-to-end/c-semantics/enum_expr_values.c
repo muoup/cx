@@ -1,5 +1,3 @@
-/* CX-STDOUT: 256 512 513 */
-
 #include <stdio.h>
 
 #define _ISbit(bit) ((bit) < 8 ? ((1 << (bit)) << 8) : ((1 << (bit)) >> 8))

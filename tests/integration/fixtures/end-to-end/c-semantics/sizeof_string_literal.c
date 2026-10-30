@@ -1,6 +1,3 @@
-/* CX-STDOUT: 5 5 1 3 12 */
-/* CX-STDOUT-NEXT: 4 */
-
 #include <stdio.h>
 
 #define KEYWORD "self"

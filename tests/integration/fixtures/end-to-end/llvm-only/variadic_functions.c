@@ -1,7 +1,3 @@
-/* CX-STDOUT: sum 10 */
-/* CX-STDOUT-NEXT: mixed 7 2.5 x */
-/* CX-STDOUT-NEXT: format 3-four-5.0 */
-
 #include <stdarg.h>
 #include <stdio.h>
 

@@ -1,8 +1,3 @@
-/* CX-STDOUT: little */
-/* CX-STDOUT-NEXT: 44 44 */
-/* CX-STDOUT-NEXT: 44 33 22 */
-/* CX-STDOUT-NEXT: 112233ff */
-
 int printf(const char* fmt, ...);
 
 int main() {

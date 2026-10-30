@@ -1,5 +1,3 @@
-/* CX-STDOUT: 5 12 */
-
 #include <stdio.h>
 
 #define ADD(a, b) ((a) + (b))

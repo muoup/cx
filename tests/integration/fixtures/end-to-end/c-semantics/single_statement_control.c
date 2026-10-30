@@ -1,7 +1,3 @@
-/* CX-STDOUT: if */
-/* CX-STDOUT-NEXT: for */
-/* CX-STDOUT-NEXT: else */
-
 #include <stdio.h>
 
 int main() {

@@ -1,5 +1,3 @@
-/* CX-STDOUT: 15 20 */
-
 #include <stdio.h>
 
 int main(void) {

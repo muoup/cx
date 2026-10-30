@@ -1,6 +1,3 @@
-/* CX-STDOUT: 0 1 10 11 12 12 13 */
-/* CX-STDOUT-NEXT: 999 1000 */
-
 #include <stdio.h>
 
 enum {

@@ -3,10 +3,11 @@ mod report;
 mod toolchain;
 
 use case::{all_cases, project_names, selected_case, Case, Workload};
-use cx_test_support::{assert_stdout, run_command, CompilerBackend, TestTempDir};
+use cx_test_support::{
+    assert_stdout, run_command, CompilerBackend, ReferenceCompiler, TestTempDir,
+};
 use report::{
-    render_github_table, render_pretty_table, BenchmarkReport, BenchmarkResult, ReferenceCompiler,
-    TimingStats,
+    render_github_table, render_pretty_table, BenchmarkReport, BenchmarkResult, TimingStats,
 };
 use std::env;
 use std::fs;

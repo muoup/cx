@@ -1,5 +1,3 @@
-/* CX-STDOUT: 10 */
-
 #include <stdio.h>
 
 #define SUM(a, b, \

@@ -1,5 +1,3 @@
-/* CX-STDOUT: one two */
-
 #include <stdio.h>
 
 char names[2][4] = { "one", "two" };

@@ -1,5 +1,3 @@
-/* CX-STDOUT: prefix: value */
-
 #include <stdio.h>
 
 #define PREFIX "prefix: "

@@ -1,5 +1,3 @@
-/* CX-STDOUT: */
-
 char *message = "";
 
 int main(void) {

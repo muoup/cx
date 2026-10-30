@@ -1,5 +1,3 @@
-/* CX-STDOUT: */
-
 int values[] = { 1, 2, 3 };
 int *alias = values;
 

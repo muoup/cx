@@ -1,5 +1,3 @@
-/* CX-STDOUT: */
-
 int values[3];
 int initial_difference = &values[2] - &values[0];
 

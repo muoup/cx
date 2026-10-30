@@ -1,6 +1,3 @@
-/* CX-STDOUT: 34 92 65 65 7 0 */
-/* CX-STDOUT-NEXT: a\nAA "q" */
-
 #include <stdio.h>
 
 int main(void) {

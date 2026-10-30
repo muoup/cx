@@ -1,5 +1,3 @@
-/* CX-STDOUT: 4294967295 -1 3 7 */
-
 #include <stdio.h>
 
 struct Counts {

@@ -1,7 +1,3 @@
-/* CX-STDOUT: size 4 */
-/* CX-STDOUT-NEXT: local 5 -3 17 */
-/* CX-STDOUT-NEXT: global 6 -8 31 */
-
 #include <stdio.h>
 
 struct Mixed {

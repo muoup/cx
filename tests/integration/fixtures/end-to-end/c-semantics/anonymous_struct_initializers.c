@@ -1,5 +1,3 @@
-/* CX-STDOUT: 14 13 2 12 7 */
-
 #include <stdio.h>
 
 static const struct {

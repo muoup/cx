@@ -1,3 +1,4 @@
+use cx_test_support::ReferenceCompiler;
 use serde::Serialize;
 use tabled::{
     builder::Builder,
@@ -12,12 +13,6 @@ pub struct BenchmarkReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference: Option<ReferenceCompiler>,
     pub cases: Vec<BenchmarkResult>,
-}
-
-#[derive(Serialize, Clone)]
-pub struct ReferenceCompiler {
-    pub command: String,
-    pub version: String,
 }
 
 /// One row of the report. A case that is only compiled has no `execute`. The workloads of a

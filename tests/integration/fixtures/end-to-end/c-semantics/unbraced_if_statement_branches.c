@@ -1,6 +1,3 @@
-/* CX-STDOUT: 2 2 */
-/* CX-STDOUT-NEXT: 0 1 */
-
 int printf(const char* fmt, ...);
 
 int main() {

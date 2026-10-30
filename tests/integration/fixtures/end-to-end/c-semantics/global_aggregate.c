@@ -1,5 +1,3 @@
-/* CX-STDOUT: 1 4 6 0 */
-
 #include <stdio.h>
 
 struct Point {

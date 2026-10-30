@@ -81,7 +81,10 @@ fn write_module(
 
         println!("cargo:rerun-if-changed={}", path.display());
 
-        if matches!(kind, TestKind::EndToEnd) && !has_stdout_expectation(&path) {
+        if matches!(kind, TestKind::EndToEnd)
+            && extension == Some("cx")
+            && !has_stdout_expectation(&path)
+        {
             continue;
         }
 
