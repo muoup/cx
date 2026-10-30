@@ -1096,10 +1096,10 @@ module.exports = grammar({
             ),
 
         argument_list: ($) =>
-            seq("(", optional(commaSep1(choice($.named_argument, $.expression, $.type))), ")"),
+            seq("(", optional(commaSep1(choice($.named_argument, $.expression, prec.dynamic(-1, $.type)))), ")"),
 
         named_argument: ($) =>
-            seq(".", field("name", $.identifier), op($, "="), field("value", choice($.expression, $.type))),
+            seq(".", field("name", $.identifier), op($, "="), field("value", choice($.expression, prec.dynamic(-1, $.type)))),
 
         primary_expression: ($) =>
             choice(

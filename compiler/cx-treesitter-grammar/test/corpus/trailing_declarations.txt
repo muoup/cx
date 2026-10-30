@@ -330,9 +330,10 @@ int main() {
                         (qualified_name
                           (identifier)))
                       (argument_list
-                        (type
-                          (qualified_name
-                            (identifier)))))))))))
+                        (expression
+                          (primary_expression
+                            (qualified_name
+                              (identifier))))))))))))
         (declaration
           (variable_declaration
             (type
