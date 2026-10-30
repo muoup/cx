@@ -2,6 +2,7 @@ use cx_log::CXResult;
 use cx_pipeline::standard_compilation;
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
+    UnsafeFlags,
 };
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -79,7 +80,7 @@ pub fn compiler_config(
         },
         require_explicit_return: None,
         output,
-        unsafe_mode: false,
+        unsafe_flags: UnsafeFlags::default(),
         compilation_mode,
         verbose: false,
         dump: false,

@@ -3,6 +3,7 @@ use cx_pipeline::{binary_sources, multi_file_compilation, standard_compilation};
 use cx_pipeline_data::config::{load_config, CXProjectConfig, LinkEntry};
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
+    UnsafeFlags,
 };
 use std::path::{Path, PathBuf};
 
@@ -73,7 +74,7 @@ impl ProjectBinary {
                 .as_ref()
                 .and_then(|build| build.require_explicit_return),
             output: temp_dir.path().join("case.out"),
-            unsafe_mode: false,
+            unsafe_flags: UnsafeFlags::default(),
             compilation_mode,
             verbose: false,
             dump: false,

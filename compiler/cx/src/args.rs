@@ -1,7 +1,7 @@
 use crate::log::error;
 use cx_log::CXResult;
 
-use cx_pipeline_data::{CompilerBackend, OptimizationLevel};
+use cx_pipeline_data::{CompilerBackend, OptimizationLevel, UnsafeFlags};
 
 use crate::help::{self, Topic};
 
@@ -33,7 +33,7 @@ pub struct FileArgs {
     pub compile_only: bool,
     pub backend: CompilerBackend,
     pub optimization_level: OptimizationLevel,
-    pub unsafe_mode: bool,
+    pub unsafe_flags: UnsafeFlags,
     pub verbose: bool,
     pub dump: bool,
     pub require_explicit_return: Option<bool>,
@@ -44,7 +44,7 @@ pub struct BuildArgs {
     pub target: Option<String>,
     pub backend: Option<CompilerBackend>,
     pub optimization_level: Option<OptimizationLevel>,
-    pub unsafe_mode: bool,
+    pub unsafe_flags: UnsafeFlags,
     pub verbose: bool,
     pub dump: bool,
     pub require_explicit_return: Option<bool>,
@@ -60,7 +60,7 @@ pub struct RunArgs {
 struct CommonArgs {
     backend: Option<CompilerBackend>,
     optimization_level: Option<OptimizationLevel>,
-    unsafe_mode: bool,
+    unsafe_flags: UnsafeFlags,
     verbose: bool,
     dump: bool,
     require_explicit_return: Option<bool>,
@@ -123,7 +123,14 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArg
             "-O3" => common.optimization_level = Some(OptimizationLevel::O3),
             "-Osize" => common.optimization_level = Some(OptimizationLevel::Osize),
             "-Ofast" => common.optimization_level = Some(OptimizationLevel::Ofast),
-            "--unsafe" => common.unsafe_mode = true,
+            "--unsafe" => {
+                common.unsafe_flags = UnsafeFlags {
+                    no_assert: true,
+                    no_analysis: true,
+                }
+            }
+            "--unsafe-no-assert" => common.unsafe_flags.no_assert = true,
+            "--unsafe-no-analysis" => common.unsafe_flags.no_analysis = true,
             "--verbose" => common.verbose = true,
             "--dump" => common.dump = true,
             "--allow-implicit-return" => common.require_explicit_return = Some(false),
@@ -215,7 +222,7 @@ fn parse_build_args(args: impl IntoIterator<Item = String>, topic: Topic) -> CXR
         target,
         backend: common.backend,
         optimization_level: common.optimization_level,
-        unsafe_mode: common.unsafe_mode,
+        unsafe_flags: common.unsafe_flags,
         verbose: common.verbose,
         dump: common.dump,
         require_explicit_return: common.require_explicit_return,
@@ -264,7 +271,7 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> 
         compile_only,
         backend: common.backend.unwrap_or_else(default_backend),
         optimization_level: common.optimization_level.unwrap_or_default(),
-        unsafe_mode: common.unsafe_mode,
+        unsafe_flags: common.unsafe_flags,
         verbose: common.verbose,
         dump: common.dump,
         require_explicit_return: common.require_explicit_return,

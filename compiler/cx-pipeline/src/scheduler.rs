@@ -455,7 +455,8 @@ pub(crate) fn perform_job(
                 .get(job.unit.namespace())
                 .expect("HMIR unit not found for its compilation unit");
             let settings = HMIRSettings::new(context.config.architecture)
-                .with_explicit_return(require_explicit_return(context, &job.unit));
+                .with_explicit_return(require_explicit_return(context, &job.unit))
+                .with_assertions(!context.config.unsafe_flags.no_assert);
 
             let env = HMIREnvironment::new(&context.module_db, hmir.as_ref(), settings);
             let mir = generate_mir(hmir.as_ref(), env)?;
@@ -464,7 +465,7 @@ pub(crate) fn perform_job(
                 dump_data(&mir);
             }
 
-            if !context.config.unsafe_mode {
+            if !context.config.unsafe_flags.no_analysis {
                 analyze(&mir, MIRAnalysisOptions::default())?;
             }
 

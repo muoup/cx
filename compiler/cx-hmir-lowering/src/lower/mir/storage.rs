@@ -321,11 +321,22 @@ pub fn dereference(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let value = operand(context, &pointer, span)?;
-    let base = base.unwrap_or(&pointer);
-    let checked = operand(context, base, span)?;
+    if context.env().settings().assertions() {
+        null_check(context, base.unwrap_or(&pointer), span)?;
+    }
 
+    let reference_ty = types::reference(context.env_mut(), inner, None, span);
+    let target_ty = lower_type(context.env_mut(), reference_ty, span)?;
+    let (out, reference) = output(context, reference_ty, span)?;
+    intrinsic(context, MIRInternalIntrinsic::Bitcast { out, value, target_ty }, span);
+
+    Ok(HMIRValue::indirect(inner, initialized(context, reference, span)))
+}
+
+fn null_check(context: &mut LocalLoweringContext, pointer: &HMIRValue, span: &TokenRange) -> CXResult<()> {
+    let checked = operand(context, pointer, span)?;
     let null = MIRConstant::Nullptr {
-        ty: lower_type(context.env_mut(), base.ty(), span)?,
+        ty: lower_type(context.env_mut(), pointer.ty(), span)?,
     };
     let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let condition = register(context, bool_ty, span)?;
@@ -337,13 +348,7 @@ pub fn dereference(
     intrinsic(context, check, span);
     let message = Some("dereferenced a null pointer".into());
     intrinsic(context, MIRInternalIntrinsic::Assert { condition: MIRValue::Register(condition), message }, span);
-
-    let reference_ty = types::reference(context.env_mut(), inner, None, span);
-    let target_ty = lower_type(context.env_mut(), reference_ty, span)?;
-    let (out, reference) = output(context, reference_ty, span)?;
-    intrinsic(context, MIRInternalIntrinsic::Bitcast { out, value, target_ty }, span);
-
-    Ok(HMIRValue::indirect(inner, initialized(context, reference, span)))
+    Ok(())
 }
 
 pub fn field(

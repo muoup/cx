@@ -88,6 +88,10 @@ pub fn assert(
     message: Option<&str>,
     span: &TokenRange,
 ) -> CXResult<()> {
+    if message.is_some() && !context.env().settings().assertions() {
+        return Ok(());
+    }
+
     let condition = operand(context, condition, span)?;
     let kind = match message {
         Some(message) => MIRInternalIntrinsic::Assert { condition, message: Some(message.into()) },

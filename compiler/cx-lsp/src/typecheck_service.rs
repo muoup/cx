@@ -10,7 +10,7 @@ use cx_pipeline_data::config::CXProjectConfig;
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilationUnit, CompilerBackend, CompilerConfig,
-    GlobalCompilationContext, OptimizationLevel,
+    GlobalCompilationContext, OptimizationLevel, UnsafeFlags,
 };
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -83,7 +83,7 @@ pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckRepo
             working_directory: project_root.to_path_buf(),
 
             module_mode: true,
-            unsafe_mode: false,
+            unsafe_flags: UnsafeFlags::default(),
             verbose: false,
             dump: false,
 

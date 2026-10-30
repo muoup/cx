@@ -117,6 +117,8 @@ fn print_common_options() {
     println!("  -Osize               Optimize for code size.");
     println!("  -Ofast               Allow fast, but imprecise floating-point optimizations.");
     println!("  --unsafe             Skip all safety checks for faster builds (use with caution).");
+    println!("  --unsafe-no-assert   Skip runtime assertions (null checks, contract checks).");
+    println!("  --unsafe-no-analysis Skip compile-time MIR analysis (liveness, values).");
     println!("  --dump               Write intermediate compiler representations to .internal.");
     println!("  --allow-implicit-return  Permit missing returns in non-void functions.");
     println!("  --require-explicit-return  Require explicit returns in non-void functions.");

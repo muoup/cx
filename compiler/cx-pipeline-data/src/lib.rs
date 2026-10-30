@@ -67,10 +67,16 @@ pub struct CompilerConfig {
     pub include_dirs: Vec<PathBuf>,
     pub predefined_macros: Vec<(String, String)>,
 
-    pub unsafe_mode: bool,
+    pub unsafe_flags: UnsafeFlags,
     pub verbose: bool,
     pub dump: bool,
     pub module_mode: bool,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct UnsafeFlags {
+    pub no_assert: bool,
+    pub no_analysis: bool,
 }
 
 #[derive(Default, Debug, Copy, Clone, Hash)]

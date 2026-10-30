@@ -88,7 +88,7 @@ pub fn build_project(args: BuildArgs, topic: Topic) -> CXResult<Vec<PathBuf>> {
     let base_config = CompilerConfig {
         architecture: ArchitectureConfig::native(),
         output: project_root.clone(), // placeholder, overridden per-target
-        unsafe_mode: args.unsafe_mode,
+        unsafe_flags: args.unsafe_flags,
         verbose: args.verbose,
         dump: args.dump,
         working_directory: project_root.clone(),
