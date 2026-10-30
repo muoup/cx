@@ -19,11 +19,11 @@ use crate::{
     log::log_hir_error,
 };
 
-pub(crate) fn lower_if(
-    context: &mut BodyLowering<'_>,
-    condition: &HIRExpression,
-    then_branch: &HIRExpression,
-    else_branch: Option<&HIRExpression>,
+pub(crate) fn lower_if<'a>(
+    context: &mut BodyLowering<'a>,
+    condition: &'a HIRExpression,
+    then_branch: &'a HIRExpression,
+    else_branch: Option<&'a HIRExpression>,
     statement: bool,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
@@ -47,9 +47,9 @@ pub(crate) fn lower_if(
     ))
 }
 
-fn lower_branch(
-    context: &mut BodyLowering<'_>,
-    branch: &HIRExpression,
+fn lower_branch<'a>(
+    context: &mut BodyLowering<'a>,
+    branch: &'a HIRExpression,
     statement: bool,
 ) -> CXResult<HMIRExprID> {
     let lowered = lower_expr(context, branch)?;
@@ -59,10 +59,10 @@ fn lower_branch(
     Ok(context.block(vec![lowered], true, false, &branch.range))
 }
 
-pub(crate) fn lower_while(
-    context: &mut BodyLowering<'_>,
-    condition: &HIRExpression,
-    body: &HIRExpression,
+pub(crate) fn lower_while<'a>(
+    context: &mut BodyLowering<'a>,
+    condition: &'a HIRExpression,
+    body: &'a HIRExpression,
     pre_eval: bool,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
@@ -80,12 +80,12 @@ pub(crate) fn lower_while(
     })
 }
 
-pub(crate) fn lower_for(
-    context: &mut BodyLowering<'_>,
-    init: &HIRExpression,
-    condition: &HIRExpression,
-    increment: &HIRExpression,
-    body: &HIRExpression,
+pub(crate) fn lower_for<'a>(
+    context: &mut BodyLowering<'a>,
+    init: &'a HIRExpression,
+    condition: &'a HIRExpression,
+    increment: &'a HIRExpression,
+    body: &'a HIRExpression,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     context.scoped(|this| {
@@ -106,10 +106,10 @@ pub(crate) fn lower_for(
     })
 }
 
-pub(crate) fn lower_match(
-    context: &mut BodyLowering<'_>,
-    condition: &HIRExpression,
-    arms: &[(HIRPattern, HIRExpression)],
+pub(crate) fn lower_match<'a>(
+    context: &mut BodyLowering<'a>,
+    condition: &'a HIRExpression,
+    arms: &'a [(HIRPattern, HIRExpression)],
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     let scrutinee = lower_expr(context, condition)?;
@@ -135,10 +135,10 @@ pub(crate) fn lower_match(
     ))
 }
 
-pub(crate) fn lower_switch(
-    context: &mut BodyLowering<'_>,
-    condition: &HIRExpression,
-    body: &HIRExpression,
+pub(crate) fn lower_switch<'a>(
+    context: &mut BodyLowering<'a>,
+    condition: &'a HIRExpression,
+    body: &'a HIRExpression,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     let condition = lower_expr(context, condition)?;
@@ -148,10 +148,10 @@ pub(crate) fn lower_switch(
     Ok(context.push(HMIRExprKind::Switch { condition, body }, span))
 }
 
-pub(crate) fn lower_case(
-    context: &mut BodyLowering<'_>,
-    value: Option<&HIRExpression>,
-    statement: &HIRExpression,
+pub(crate) fn lower_case<'a>(
+    context: &mut BodyLowering<'a>,
+    value: Option<&'a HIRExpression>,
+    statement: &'a HIRExpression,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     if !context.in_switch() {
@@ -178,9 +178,9 @@ pub(crate) fn lower_case(
 }
 
 // An omitted condition, as in 'for (;;)', always holds
-fn lower_condition(
-    context: &mut BodyLowering<'_>,
-    condition: &HIRExpression,
+fn lower_condition<'a>(
+    context: &mut BodyLowering<'a>,
+    condition: &'a HIRExpression,
 ) -> CXResult<HMIRExprID> {
     let span = &condition.range;
     let bool_ty = HMIRIntType::new(HMIRIntWidth::I1, false);

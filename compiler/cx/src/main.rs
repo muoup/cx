@@ -7,7 +7,7 @@ mod log;
 use crate::log::error;
 use args::Command;
 use cx_log::{error::write_bug_report_notes, CXResult};
-use cx_pipeline::{link_object_files, standard_compilation};
+use cx_pipeline::{link_object_files, standard_compilation, COMPILER_STACK_SIZE};
 use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerConfig};
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -183,9 +183,6 @@ fn execute(command: Command) -> CXResult<ExitCode> {
     }
     Ok(ExitCode::SUCCESS)
 }
-
-// Compilation recurses over source structure, so it runs on a thread with a generous stack
-const COMPILER_STACK_SIZE: usize = 256 * 1024 * 1024;
 
 fn report_panic(info: &std::panic::PanicHookInfo<'_>) {
     let mut stderr = std::io::stderr().lock();

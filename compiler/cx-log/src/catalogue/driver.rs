@@ -28,4 +28,6 @@ define_errors! {
     EMPTY_MATCH_PATTERN: () = "D0012" => |()| "match pattern cannot be empty".into();
     ABSOLUTE_MATCH_PATTERN: String = "D0013" => |pattern| format!("match pattern must be relative: {pattern}");
     RELATIVE_MATCH_PATH: (String, String, String) = "D0014" => |(path, base, error)| format!("failed to make {path} relative to {base}: {error}");
+
+    SCHEDULER_STALL: String = "DX001" => |jobs| format!("compilation stalled with no runnable jobs: {jobs}");
 }

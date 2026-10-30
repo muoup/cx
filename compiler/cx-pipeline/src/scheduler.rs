@@ -1,6 +1,5 @@
 use crate::backends::{cranelift_compile, llvm_compile};
-use crate::pipeline_error;
-use crate::progress::ProgressReporter;
+use crate::{COMPILER_STACK_SIZE, pipeline_error};
 use cx_hir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_hir_lowering::generate_hmir;
 use cx_hmir_lowering::{
@@ -15,8 +14,7 @@ use cx_mir_lowering::generate_lmir;
 use cx_namespace::module::{ModulePath, NamespacePath, QualifiedName};
 use cx_parsing::preparse::PreparseConfig;
 use cx_parsing::{parse_ast, preparse};
-use cx_pipeline_data::db::ModuleMap;
-use cx_pipeline_data::internal_storage::{resource_path, retrieve_data};
+use cx_pipeline_data::internal_storage::resource_path;
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
@@ -25,103 +23,96 @@ use cx_pipeline_data::{
 };
 use cx_preparse_data::Import;
 use cx_tokens::TokenIter;
-use cx_util::format::{dump_data, dumps_enabled, with_dump_file};
+use cx_util::format::{dump_data, dumps_enabled, with_dump_directory, with_dump_file};
 use cx_util::identifier::CXIdent;
 use fs2::FileExt;
-use speedy::{LittleEndian, Readable, Writable};
-use std::collections::{HashMap, HashSet};
 use std::io::Write;
+use std::num::NonZeroUsize;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use std::sync::mpsc;
+
+pub(crate) type JobFailure = (CompilationJob, CXError);
 
 pub(crate) fn scheduling_loop(
     context: &GlobalCompilationContext,
-    initial_job: CompilationJob,
-    reporter: &mut ProgressReporter,
-) -> CXResult<()> {
-    scheduling_loop_many(context, [initial_job], reporter)
-}
-
-pub(crate) fn scheduling_loop_many(
-    context: &GlobalCompilationContext,
     initial_jobs: impl IntoIterator<Item = CompilationJob>,
-    reporter: &mut ProgressReporter,
-) -> CXResult<()> {
+    final_step: CompilationStep,
+    mut on_start: impl FnMut(&CompilationJob),
+) -> Result<(), JobFailure> {
     let mut queue = JobQueue::new();
-
-    let mut compilation_exists = HashMap::new();
-
     for initial_job in initial_jobs {
         queue.push_job(initial_job);
     }
 
-    // TODO: Parallelize this loop
-    'queue: while !queue.is_empty() {
-        let mut job = queue.pop_job().unwrap();
-        context.module_db.register_unit(&job.unit);
+    let workers = std::thread::available_parallelism().map_or(1, NonZeroUsize::get);
+    let retain_lmir = context.config.compilation_mode == CompilationMode::Library;
+    let dumps = dumps_enabled();
+    let (sender, receiver) = mpsc::channel();
 
-        compilation_exists.insert(job.unit.clone(), job.compilation_exists);
+    std::thread::scope(|scope| {
+        let mut running = 0;
+        let mut failures = Vec::new();
 
-        if job.compilation_exists {
-            if load_precompiled_data(context, &job.unit).is_none() {
-                job.compilation_exists = false;
-                queue.push_job(job);
-                continue;
+        loop {
+            while failures.is_empty() && running < workers {
+                let Some(job) = queue.pop_ready(|unit| import_units_for_unit(context, unit)) else {
+                    break;
+                };
+                context.module_db.register_unit(&job.unit);
+                on_start(&job);
+
+                let sender = sender.clone();
+                std::thread::Builder::new()
+                    .stack_size(COMPILER_STACK_SIZE)
+                    .spawn_scoped(scope, move || {
+                        let result = catch_unwind(AssertUnwindSafe(|| {
+                            with_dump_directory(
+                                context.config.internal_directory.clone(),
+                                dumps,
+                                || handle_job(context, &job, retain_lmir),
+                            )
+                        }));
+                        let _ = sender.send((job, result));
+                    })
+                    .expect("failed to spawn a compiler worker thread");
+                running += 1;
             }
 
-            for req in job.requirements.iter() {
-                match compilation_exists.get(&req.unit) {
-                    Some(false) => {
-                        job.compilation_exists = false;
-                        queue.push_job(job);
-                        continue 'queue;
-                    }
-                    Some(true) => {}
-                    _ => {
-                        queue.push_job(job);
-                        continue 'queue;
+            if running == 0 {
+                break;
+            }
+
+            let (job, result) = receiver
+                .recv()
+                .expect("compiler workers hold a sender until they report");
+            running -= 1;
+
+            match result {
+                Ok(Ok(next_jobs)) => {
+                    queue.complete_job(&job);
+                    for next_job in next_jobs.into_iter().filter(|next| next.step <= final_step) {
+                        queue.push_new_job(next_job);
                     }
                 }
+                Ok(Err(error)) => failures.push((job, error)),
+                Err(payload) => resume_unwind(payload),
             }
-
-            reporter.skip_step(&job.unit.to_string());
-            queue.complete_all_unit_jobs(&job.unit);
-            context
-                .linking_files
-                .lock()
-                .expect("Deadlock on linking files mutex")
-                .insert(resource_path(context, &job.unit, ".o"));
-            continue;
         }
 
-        if !queue.requirements_complete(&job, |unit| import_units_for_unit(context, unit)) {
-            queue.push_job(job);
-            continue;
+        if let Some(failure) = failures.into_iter().min_by_key(|(job, _)| job.step) {
+            return Err(failure);
         }
-
-        queue.complete_job(&job);
-
-        let step_name = match job.step {
-            CompilationStep::PreParse => "Lexing",
-            CompilationStep::Parse => "Parsing",
-            CompilationStep::HMIR => "Typechecking",
-            CompilationStep::MIR => "Generating MIR",
-            CompilationStep::LMIR => "Lowering",
-            CompilationStep::Codegen => "Compiling",
-        };
-        reporter.start_step(step_name, &job.unit.to_string());
-
-        let is_codegen = matches!(job.step, CompilationStep::Codegen);
-        let retain_lmir = context.config.compilation_mode == CompilationMode::Library;
-
-        for new_jobs in handle_job(context, job, retain_lmir)?.into_iter() {
-            queue.push_new_job(new_jobs);
+        let stalled = std::iter::from_fn(|| queue.pop_job()).collect::<Vec<_>>();
+        if let Some(job) = stalled.first() {
+            let jobs = stalled
+                .iter()
+                .map(|job| format!("{} ({:?})", job.unit, job.step))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err((job.clone(), pipeline_error(&catalogue::SCHEDULER_STALL, jobs)));
         }
-
-        if is_codegen {
-            reporter.increment_modules();
-        }
-    }
-
-    Ok(())
+        Ok(())
+    })
 }
 
 fn import_jobs_for_unit(
@@ -230,16 +221,16 @@ fn import_from_module_path(path: ModulePath) -> Import {
 
 pub(crate) fn handle_job(
     context: &GlobalCompilationContext,
-    mut job: CompilationJob,
+    job: &CompilationJob,
     retain_lmir: bool,
 ) -> CXResult<Box<[CompilationJob]>> {
-    let map_reqs_new_stage = |job: CompilationJob, new_step: CompilationStep, shallow: bool| {
+    let map_reqs_new_stage = |new_step: CompilationStep, shallow: bool| {
         let new_requirements = job
             .requirements
-            .into_iter()
+            .iter()
             .map(|req| {
                 CompilationJobRequirement {
-                    unit: req.unit,
+                    unit: req.unit.clone(),
 
                     // requirement for the next step of a standard job is that all imports
                     // have completed the step it has just completed
@@ -257,59 +248,33 @@ pub(crate) fn handle_job(
         .into())
     };
 
-    match perform_job_with_dump(context, &job, retain_lmir)? {
-        JobResult::StandardSuccess => {}
-        JobResult::UnchangedSinceLastCompilation => job.compilation_exists = true,
-    };
+    let result = perform_job_with_dump(context, job, retain_lmir)?;
 
     match job.step {
         CompilationStep::PreParse => {
             let pp_data = context.module_db.preparse_base.get(&job.unit.namespace());
             let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
-            job.step = CompilationStep::Parse;
-            job.requirements = import_requirements_for_unit(
+            let mut next_job = job.clone();
+            next_job.step = CompilationStep::Parse;
+            next_job.requirements = import_requirements_for_unit(
                 context,
                 &pp_data.imports,
                 CompilationStep::PreParse,
                 true,
             );
-            new_jobs.push(job);
+            next_job.compilation_exists =
+                matches!(result, JobResult::UnchangedSinceLastCompilation);
+            new_jobs.push(next_job);
 
             Ok(new_jobs.into())
         }
-        CompilationStep::Parse => map_reqs_new_stage(job, CompilationStep::HMIR, false),
-        CompilationStep::HMIR => map_reqs_new_stage(job, CompilationStep::MIR, false),
-        CompilationStep::MIR => map_reqs_new_stage(job, CompilationStep::LMIR, true),
-        CompilationStep::LMIR => map_reqs_new_stage(job, CompilationStep::Codegen, true),
+        CompilationStep::Parse => map_reqs_new_stage(CompilationStep::HMIR, false),
+        CompilationStep::HMIR => map_reqs_new_stage(CompilationStep::MIR, false),
+        CompilationStep::MIR => map_reqs_new_stage(CompilationStep::LMIR, true),
+        CompilationStep::LMIR => map_reqs_new_stage(CompilationStep::Codegen, true),
         CompilationStep::Codegen => Ok([].into()),
     }
-}
-
-fn load_precompiled_data(
-    _context: &GlobalCompilationContext,
-    _unit: &CompilationUnit,
-) -> Option<()> {
-    fn _retrieve_map_data<'a, T>(
-        context: &GlobalCompilationContext,
-        map: &ModuleMap<T>,
-        unit: &CompilationUnit,
-    ) -> Option<()>
-    where
-        T: Clone + Readable<'a, LittleEndian> + Writable<LittleEndian>,
-    {
-        if let Some(data) = retrieve_data::<T>(context, unit, &map.storage_extension) {
-            map.insert(unit.namespace().clone(), data);
-            Some(())
-        } else {
-            None
-        }
-    }
-
-    // retrieve_map_data(context, &context.module_db.preparse_incomplete, unit)?;
-    // retrieve_map_data(context, &context.module_db.preparse_full, unit)?;
-
-    Some(())
 }
 
 pub(crate) enum JobResult {
@@ -510,8 +475,8 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::LMIR => {
-            let mir = context.module_db.mir.get(job.unit.namespace());
-            let lmir = generate_lmir(mir.as_ref())?;
+            let mir = context.module_db.mir.take(job.unit.namespace());
+            let lmir = generate_lmir(&mir)?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&lmir);
@@ -598,160 +563,23 @@ pub enum LSPErrors {
     },
 }
 
-/// Scheduling loop variant for LSP that collects errors instead of panicking.
-///
-/// This is similar to `scheduling_loop` but:
-/// 1. Collects LSPErrors (both type errors and fatal errors) instead of panicking
-/// 2. Stops after MIRGen (no LMIRGen or Codegen)
-/// 3. Stops after the first failed stage so dependents cannot observe missing data
-pub(crate) fn scheduling_loop_collect_errors(
-    context: &GlobalCompilationContext,
-    initial_job: CompilationJob,
-    error_collector: &mut Vec<LSPErrors>,
-    checked_files: &mut HashSet<std::path::PathBuf>,
-) -> Option<()> {
-    let mut queue = JobQueue::new();
-
-    queue.push_job(initial_job);
-
-    // TODO: Parallelize this loop
-    while !queue.is_empty() {
-        let job = queue.pop_job().unwrap();
-
-        context.module_db.register_unit(&job.unit);
-        // Skip incremental compilation logic for LSP - always recompile
-        if !queue.requirements_complete(&job, |unit| import_units_for_unit(context, unit)) {
-            queue.push_job(job);
-            continue;
-        }
-
-        // Stop after MIRGen for LSP
-        if matches!(job.step, CompilationStep::LMIR | CompilationStep::Codegen) {
-            continue;
-        }
-
-        checked_files.insert(job.unit.module().as_path().to_path_buf());
-        match handle_job_collect_errors(context, &job, error_collector)? {
-            HandleJobResult::Success(new_jobs) => {
-                queue.complete_job(&job);
-                for new_job in new_jobs {
-                    queue.push_new_job(new_job);
-                }
-            }
-            HandleJobResult::Failed => {
-                // Continuing after a failed stage lets dependent jobs observe missing
-                // intermediate data. Stop this check and report the original error.
-                break;
-            }
-        }
-    }
-
-    Some(())
-}
-
-/// Result type for handle_job_collect_errors
-enum HandleJobResult {
-    Success(Box<[CompilationJob]>),
-    Failed,
-}
-
-/// Handle a single job, collecting errors instead of panicking.
-///
-/// Returns either new jobs to enqueue or Failed if the current stage had errors.
-fn handle_job_collect_errors(
-    context: &GlobalCompilationContext,
-    job: &CompilationJob,
-    error_collector: &mut Vec<LSPErrors>,
-) -> Option<HandleJobResult> {
-    let map_reqs_new_stage = |new_step: CompilationStep, shallow: bool| -> Box<[CompilationJob]> {
-        let new_requirements = job
-            .requirements
-            .iter()
-            .map(|req| CompilationJobRequirement {
-                unit: req.unit.clone(),
-                step: job.step,
-                shallow,
-            })
-            .collect::<Vec<_>>();
-
-        [CompilationJob::new(
-            new_requirements,
-            new_step,
-            job.unit.clone(),
-        )]
-        .into()
-    };
-
-    fn spanned_error(error: &CXError) -> Option<LSPErrors> {
-        let span = error.source_span()?;
-        Some(LSPErrors::SpannedError {
-            compilation_unit: span.file,
-            code: error.code(),
-            message: error.message(),
-            byte_start: span.byte_start,
-            byte_end: span.byte_end,
-            notes: error.notes().to_vec(),
-        })
-    }
-
-    // Perform the job and collect errors
-    match perform_job_with_dump(context, job, false) {
-        Ok(_) => {}
-        Err(e) => {
-            let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
+impl LSPErrors {
+    pub(crate) fn new((job, error): JobFailure) -> Self {
+        match error.source_span() {
+            Some(span) => LSPErrors::SpannedError {
+                compilation_unit: span.file,
+                code: error.code(),
+                message: error.message(),
+                byte_start: span.byte_start,
+                byte_end: span.byte_end,
+                notes: error.notes().to_vec(),
+            },
+            None => LSPErrors::FatalError {
                 compilation_unit: job.unit.module().as_path().to_path_buf(),
-                code: e.code(),
-                message: e.message(),
+                code: error.code(),
+                message: error.message(),
                 line: None,
-            });
-
-            error_collector.push(lsp_error);
-            return Some(HandleJobResult::Failed);
+            },
         }
-    }
-
-    // Generate next jobs based on the completed step
-    match job.step {
-        CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_base.get(job.unit.namespace());
-
-            let mut new_jobs = match import_jobs_for_unit(context, &pp_data.imports) {
-                Ok(jobs) => jobs,
-                Err(e) => {
-                    let lsp_error = spanned_error(&e).unwrap_or(LSPErrors::FatalError {
-                        compilation_unit: job.unit.module().as_path().to_path_buf(),
-                        code: e.code(),
-                        message: e.message(),
-                        line: None,
-                    });
-                    error_collector.push(lsp_error);
-                    return Some(HandleJobResult::Failed);
-                }
-            };
-
-            // Add the next step for this job
-            let mut next_job = job.clone();
-            next_job.step = CompilationStep::Parse;
-            next_job.requirements = import_requirements_for_unit(
-                context,
-                &pp_data.imports,
-                CompilationStep::PreParse,
-                true,
-            );
-            new_jobs.push(next_job);
-
-            Some(HandleJobResult::Success(new_jobs.into()))
-        }
-
-        CompilationStep::Parse => Some(HandleJobResult::Success(map_reqs_new_stage(
-            CompilationStep::MIR,
-            false,
-        ))),
-
-        // Stop here for LSP - no need for lowering or codegen
-        CompilationStep::HMIR
-        | CompilationStep::MIR
-        | CompilationStep::LMIR
-        | CompilationStep::Codegen => Some(HandleJobResult::Success([].into())),
     }
 }

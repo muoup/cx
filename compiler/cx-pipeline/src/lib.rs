@@ -9,8 +9,7 @@ mod sources;
 
 use crate::linker::{link, link_objects, link_relocatable};
 use crate::progress::ProgressReporter;
-use crate::scheduler::scheduling_loop_collect_errors;
-use crate::scheduler::{scheduling_loop, scheduling_loop_many};
+use crate::scheduler::scheduling_loop;
 use cx_log::CXResult;
 use cx_namespace::module::{ModulePath, NamespacePath};
 use cx_pipeline_data::config::{BinaryEntry, CXProjectConfig, TargetConfig};
@@ -27,6 +26,9 @@ use std::sync::Mutex;
 
 // Re-export LSP diagnostic types for use by cx-lsp
 pub use crate::scheduler::LSPErrors;
+
+// Compilation recurses over source structure, so it runs on threads with a generous stack
+pub const COMPILER_STACK_SIZE: usize = 256 * 1024 * 1024;
 
 pub struct LSPCheckResult {
     pub errors: Vec<LSPErrors>,
@@ -66,7 +68,10 @@ pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResul
 
     let dump_directory = compiler_context.config.internal_directory.clone();
     let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
-        scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
+        scheduling_loop(&compiler_context, [initial_job], CompilationStep::Codegen, |job| {
+            reporter.start_job(job)
+        })
+        .map_err(|(_, error)| error)?;
 
         match compiler_context.config.compilation_mode {
             CompilationMode::Executable => link(&compiler_context, &mut reporter),
@@ -154,7 +159,10 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
                 ))
             })
             .collect::<CXResult<Vec<_>>>()?;
-        scheduling_loop_many(&compiler_context, initial_jobs, &mut reporter)?;
+        scheduling_loop(&compiler_context, initial_jobs, CompilationStep::Codegen, |job| {
+            reporter.start_job(job)
+        })
+        .map_err(|(_, error)| error)?;
 
         match compiler_context.config.compilation_mode {
             CompilationMode::Executable => link(&compiler_context, &mut reporter),
@@ -210,7 +218,10 @@ pub fn library_compilation(
 
     let dump_directory = compiler_context.config.internal_directory.clone();
     let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
-        scheduling_loop(&compiler_context, initial_job, &mut reporter)?;
+        scheduling_loop(&compiler_context, [initial_job], CompilationStep::Codegen, |job| {
+            reporter.start_job(job)
+        })
+        .map_err(|(_, error)| error)?;
 
         // Extract exported symbol names from the entry file's LMIR to use as GC roots
         let entry_lmir = compiler_context.module_db.lmir.get(entry_unit.namespace());
@@ -424,17 +435,18 @@ pub fn typecheck_only_lsp(
     context: &GlobalCompilationContext,
     initial_file: &CompilationUnit,
 ) -> LSPCheckResult {
-    let mut errors = Vec::new();
     let mut checked_files = HashSet::new();
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, initial_file.clone());
 
-    without_dumps(|| {
-        scheduling_loop_collect_errors(context, initial_job, &mut errors, &mut checked_files);
+    let result = without_dumps(|| {
+        scheduling_loop(context, [initial_job], CompilationStep::MIR, |job| {
+            checked_files.insert(job.unit.module().as_path().to_path_buf());
+        })
     });
 
     LSPCheckResult {
-        errors,
+        errors: result.err().map(LSPErrors::new).into_iter().collect(),
         checked_files,
     }
 }

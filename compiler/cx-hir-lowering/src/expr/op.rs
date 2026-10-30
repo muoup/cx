@@ -40,11 +40,11 @@ fn binary_op(op: &HIRBinOp) -> Option<HMIRBinaryOp> {
     })
 }
 
-pub(crate) fn lower_binop(
-    context: &mut BodyLowering<'_>,
+pub(crate) fn lower_binop<'a>(
+    context: &mut BodyLowering<'a>,
     op: &HIRBinOp,
-    lhs: &HIRExpression,
-    rhs: &HIRExpression,
+    lhs: &'a HIRExpression,
+    rhs: &'a HIRExpression,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     if let Some(op) = binary_op(op) {
@@ -101,10 +101,10 @@ pub(crate) fn lower_binop(
     }
 }
 
-pub(crate) fn lower_unop(
-    context: &mut BodyLowering<'_>,
-    op: &HIRUnOp,
-    operand: &HIRExpression,
+pub(crate) fn lower_unop<'a>(
+    context: &mut BodyLowering<'a>,
+    op: &'a HIRUnOp,
+    operand: &'a HIRExpression,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     let value = lower_expr(context, operand)?;

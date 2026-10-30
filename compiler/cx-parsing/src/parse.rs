@@ -15,7 +15,6 @@ use cx_tokens::{
     TokenIter,
 };
 use cx_util::identifier::CXIdent;
-use std::rc::Rc;
 
 use crate::{
     assert_token_matches, log::parse_point_error, next_kind, parse::{
@@ -483,7 +482,7 @@ fn parse_block_kind(data: &mut ParserData, kind: HIRBlockKind) -> CXResult<HIREx
     Ok(data.expr_from(start_index, HIRExprKind::Block { exprs, kind }))
 }
 
-fn parse_block_statements(data: &mut ParserData) -> CXResult<Rc<[HIRExpression]>> {
+fn parse_block_statements(data: &mut ParserData) -> CXResult<Box<[HIRExpression]>> {
     let mut body = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {

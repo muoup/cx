@@ -68,10 +68,10 @@ pub(crate) fn lower_symbol(
     Ok(HMIRDef::new(name, declarations))
 }
 
-fn lower_def(
-    mut context: BodyLowering<'_>,
+fn lower_def<'a>(
+    mut context: BodyLowering<'a>,
     name: &QualifiedName,
-    source: &DefSource,
+    source: &DefSource<'a>,
 ) -> CXResult<HMIRDefKind> {
     match source {
         DefSource::Type { ty } => {
@@ -116,11 +116,11 @@ fn lower_def(
     }
 }
 
-fn lower_function(
-    mut context: BodyLowering<'_>,
+fn lower_function<'a>(
+    mut context: BodyLowering<'a>,
     name: &QualifiedName,
-    prototype: &HIRFunctionPrototype,
-    body: Option<&HIRFunctionBody>,
+    prototype: &'a HIRFunctionPrototype,
+    body: Option<&'a HIRFunctionBody>,
 ) -> CXResult<HMIRDefKind> {
     let (params, return_type, contract, root) =
         context.with_stage(prototype.comptime, |this| -> CXResult<_> {
@@ -212,10 +212,10 @@ fn is_void(ty: &HIRType) -> bool {
         .is_some_and(|name| name.as_str() == "void")
 }
 
-fn lower_enum_variant(
-    mut context: BodyLowering<'_>,
+fn lower_enum_variant<'a>(
+    mut context: BodyLowering<'a>,
     name: &QualifiedName,
-    variants: &[HIREnumVariant],
+    variants: &'a [HIREnumVariant],
     index: usize,
 ) -> CXResult<HMIRDefKind> {
     let span = TokenRange::internal();
@@ -295,9 +295,9 @@ fn lower_contract(
     ))
 }
 
-fn lower_function_body(
-    context: &mut BodyLowering<'_>,
-    body: &HIRFunctionBody,
+fn lower_function_body<'a>(
+    context: &mut BodyLowering<'a>,
+    body: &'a HIRFunctionBody,
 ) -> CXResult<HMIRExprID> {
     match body {
         HIRFunctionBody::Block { statements, range } => {

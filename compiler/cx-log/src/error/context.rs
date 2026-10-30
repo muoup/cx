@@ -30,7 +30,7 @@ pub struct CXSourceSpan {
     pub byte_end: usize,
 }
 
-pub trait CXErrorContextTrait {
+pub trait CXErrorContextTrait: Send {
     fn dump(&self, f: &mut dyn std::io::Write) -> std::io::Result<()>;
 
     fn source_span(&self) -> Option<CXSourceSpan> {

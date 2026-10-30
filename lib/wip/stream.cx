@@ -27,7 +27,7 @@ comptime stream(T) stream::filter(
     });
 };
 
-comptime void^ stream::for_each(@type T = _, ^stream(T) this, ^fn(^T) -> ^void callback)
+comptime void^ stream::for_each(@type T = _, ^stream(T) this, ^@fn(^T) -> ^void callback)
     => this(|^T value| {
         callback(value);
     });

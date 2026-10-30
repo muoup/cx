@@ -33,7 +33,7 @@ pub struct CompilationJobRequirement {
 
 pub type CompilationStepRepr = u16;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u16)]
 pub enum CompilationStep {
     /**
@@ -141,6 +141,20 @@ impl JobQueue {
 
     pub fn pop_job(&mut self) -> Option<CompilationJob> {
         self.data.pop_front()
+    }
+
+    pub fn pop_ready<F>(&mut self, imports_for_unit: F) -> Option<CompilationJob>
+    where
+        F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,
+    {
+        for _ in 0..self.data.len() {
+            let job = self.data.pop_front()?;
+            if self.requirements_complete(&job, &imports_for_unit) {
+                return Some(job);
+            }
+            self.data.push_back(job);
+        }
+        None
     }
 
     pub fn complete_job(&mut self, job: &CompilationJob) {

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem, rc::Rc};
+use std::{collections::HashMap, mem};
 
 use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
@@ -47,13 +47,13 @@ pub(crate) enum Symbol {
     Name,
 }
 
-pub(crate) enum ScopeKind {
+pub(crate) enum ScopeKind<'a> {
     Plain,
     // Names bound by the arguments of a call stay in it; a 'then' among them sees past it
     Arguments,
     Staged,
     Block {
-        statements: Rc<[HIRExpression]>,
+        statements: &'a [HIRExpression],
         next: usize,
     },
     Switch {
@@ -61,24 +61,24 @@ pub(crate) enum ScopeKind {
     },
 }
 
-struct Scope {
+struct Scope<'a> {
     symbols: HashMap<CXIdent, ScopeEntry>,
-    kind: ScopeKind,
+    kind: ScopeKind<'a>,
 }
 
 pub(crate) struct BodyLowering<'a> {
     unit: &'a UnitContext,
     namespace: NamespacePath,
     body: HMIRBody,
-    scopes: Vec<Scope>,
+    scopes: Vec<Scope<'a>>,
     comptime: bool,
     // The def whose labels are in scope
     owner: Option<HMIRDefID>,
     address_labels: Vec<CXIdent>,
 }
 
-impl Scope {
-    fn new(kind: ScopeKind) -> Self {
+impl<'a> Scope<'a> {
+    fn new(kind: ScopeKind<'a>) -> Self {
         Self {
             symbols: HashMap::new(),
             kind,
@@ -225,7 +225,7 @@ impl<'a> BodyLowering<'a> {
         self.scoped_as(ScopeKind::Plain, f)
     }
 
-    pub(crate) fn scoped_as<T>(&mut self, kind: ScopeKind, f: impl FnOnce(&mut Self) -> T) -> T {
+    pub(crate) fn scoped_as<T>(&mut self, kind: ScopeKind<'a>, f: impl FnOnce(&mut Self) -> T) -> T {
         self.scopes.push(Scope::new(kind));
         let result = f(self);
         self.scopes.pop();
@@ -234,7 +234,7 @@ impl<'a> BodyLowering<'a> {
 
     // The scope of the block a 'then' continues: the innermost one, looking through the staged
     // code and the call arguments the 'then' sits behind
-    fn block_scope(&mut self) -> Option<&mut Scope> {
+    fn block_scope(&mut self) -> Option<&mut Scope<'a>> {
         self.scopes
             .iter_mut()
             .rev()
@@ -261,7 +261,7 @@ impl<'a> BodyLowering<'a> {
             if *next == statements.len() {
                 break;
             }
-            let statements = statements.clone();
+            let statements = *statements;
             *next += 1;
             let index = *next - 1;
             lowered.push(lower_expr(self, &statements[index])?);

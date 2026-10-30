@@ -27,7 +27,7 @@ use crate::{
     log::log_hir_error,
 };
 
-pub(crate) fn lower_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXResult<HMIRExprID> {
+pub(crate) fn lower_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -> CXResult<HMIRExprID> {
     let lowered = lower_unqualified_type(context, ty)?;
     if matches!(ty.kind, HIRTypeKind::Auto) {
         return Ok(lowered);
@@ -45,7 +45,7 @@ pub(crate) fn lower_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXResu
     Ok(context.expr_type(kind, semantics, None, &ty.range))
 }
 
-fn lower_unqualified_type(context: &mut BodyLowering<'_>, ty: &HIRType) -> CXResult<HMIRExprID> {
+fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -> CXResult<HMIRExprID> {
     let span = &ty.range;
     if let Some((params, result)) = staged_signature(ty) {
         return lower_staged_type(context, params, result, span);
@@ -161,13 +161,13 @@ pub(crate) fn staged_signature(ty: &HIRType) -> Option<(Vec<&HIRType>, &HIRType)
     Some((params, result))
 }
 
-fn lower_staged_type(
-    context: &mut BodyLowering<'_>,
-    params: Vec<&HIRType>,
-    result: &HIRType,
+fn lower_staged_type<'a>(
+    context: &mut BodyLowering<'a>,
+    params: Vec<&'a HIRType>,
+    result: &'a HIRType,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
-    let staged = |context: &mut BodyLowering<'_>, carried: &HIRType| {
+    let staged = |context: &mut BodyLowering<'a>, carried: &'a HIRType| {
         let kind = HMIRExprTypeKind::Staged(lower_type(context, carried)?);
         Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
     };
@@ -186,9 +186,9 @@ fn lower_staged_type(
     Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
 }
 
-fn lower_function_type(
-    context: &mut BodyLowering<'_>,
-    prototype: &HIRFunctionPrototype,
+fn lower_function_type<'a>(
+    context: &mut BodyLowering<'a>,
+    prototype: &'a HIRFunctionPrototype,
 ) -> CXResult<HMIRFnSignature<HMIRExprID>> {
     let params = declared_params(prototype)
         .iter()
@@ -220,9 +220,9 @@ fn lower_function_type(
     ))
 }
 
-fn lower_fields(
-    context: &mut BodyLowering<'_>,
-    fields: &[HIRField],
+fn lower_fields<'a>(
+    context: &mut BodyLowering<'a>,
+    fields: &'a [HIRField],
 ) -> CXResult<Vec<HMIRFieldDef<HMIRExprID>>> {
     fields
         .iter()

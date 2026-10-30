@@ -3,7 +3,6 @@ use cx_tokens::token::{FloatSuffix, IntegerBase, IntegerSuffix};
 use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 use speedy::{Readable, Writable};
-use std::rc::Rc;
 
 use crate::ast::{modifiers::LinkageMode, pattern::HIRPattern, types::HIRType};
 
@@ -148,7 +147,7 @@ pub enum HIRExprKind {
     },
 
     Block {
-        exprs: Rc<[HIRExpression]>,
+        exprs: Box<[HIRExpression]>,
         kind: HIRBlockKind,
     },
 

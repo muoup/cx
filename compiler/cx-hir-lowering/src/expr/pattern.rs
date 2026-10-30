@@ -12,9 +12,9 @@ use cx_tokens::TokenRange;
 
 use crate::{body::BodyLowering, expr::lower_expr, ty::lower_type};
 
-pub(crate) fn lower_pattern(
-    context: &mut BodyLowering<'_>,
-    pattern: &HIRPattern,
+pub(crate) fn lower_pattern<'a>(
+    context: &mut BodyLowering<'a>,
+    pattern: &'a HIRPattern,
     span: &TokenRange,
 ) -> CXResult<HMIRPattern> {
     Ok(match pattern {

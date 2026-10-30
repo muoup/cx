@@ -3,7 +3,7 @@ use crate::{
     error::{CXRawError, CXRawResult},
 };
 
-pub trait CXErrorMessage {
+pub trait CXErrorMessage: Send {
     fn code(&self) -> String;
 
     fn message(&self) -> String;

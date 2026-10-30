@@ -4,7 +4,6 @@ pub(crate) mod literal;
 pub(crate) mod op;
 pub(crate) mod pattern;
 
-use std::rc::Rc;
 
 use cx_hir::ast::expression::{
     HIRBinOp, HIRBlockKind, HIRClosureParam, HIRExprKind, HIRExpression, HIRInitIndex,
@@ -38,9 +37,9 @@ use crate::{
     ty::{lower_type, staged_signature},
 };
 
-pub(crate) fn lower_expr(
-    context: &mut BodyLowering<'_>,
-    expr: &HIRExpression,
+pub(crate) fn lower_expr<'a>(
+    context: &mut BodyLowering<'a>,
+    expr: &'a HIRExpression,
 ) -> CXResult<HMIRExprID> {
     let span = &expr.range;
     Ok(match &expr.kind {
@@ -257,16 +256,16 @@ pub(crate) fn lower_expr(
     })
 }
 
-fn lower_optional(
-    context: &mut BodyLowering<'_>,
-    expr: Option<&HIRExpression>,
+fn lower_optional<'a>(
+    context: &mut BodyLowering<'a>,
+    expr: Option<&'a HIRExpression>,
 ) -> CXResult<Option<HMIRExprID>> {
     expr.map(|expr| lower_expr(context, expr)).transpose()
 }
 
-fn lower_block(
-    context: &mut BodyLowering<'_>,
-    exprs: &Rc<[HIRExpression]>,
+fn lower_block<'a>(
+    context: &mut BodyLowering<'a>,
+    exprs: &'a [HIRExpression],
     kind: HIRBlockKind,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
@@ -286,12 +285,12 @@ fn lower_block(
     Ok(context.block(statements, true, yields, span))
 }
 
-pub(crate) fn lower_scope_statements(
-    context: &mut BodyLowering<'_>,
-    statements: &Rc<[HIRExpression]>,
+pub(crate) fn lower_scope_statements<'a>(
+    context: &mut BodyLowering<'a>,
+    statements: &'a [HIRExpression],
 ) -> CXResult<Vec<HMIRExprID>> {
     let scope = ScopeKind::Block {
-        statements: statements.clone(),
+        statements,
         next: 0,
     };
     context.scoped_as(scope, BodyLowering::lower_block_statements)
@@ -325,9 +324,9 @@ pub(crate) fn lower_identifier(
 
 // The type a 'base::variant(...)' constructor builds. A base left to the compiler, '_' or a
 // generator applied to holes, is completed from the type the value is expected to have.
-fn lower_scope_base(
-    context: &mut BodyLowering<'_>,
-    base: &HIRExpression,
+fn lower_scope_base<'a>(
+    context: &mut BodyLowering<'a>,
+    base: &'a HIRExpression,
 ) -> CXResult<HMIRExprID> {
     match &base.kind {
         HIRExprKind::Hole => Ok(context.hole(&base.range)),
@@ -336,11 +335,11 @@ fn lower_scope_base(
     }
 }
 
-fn lower_declaration(
-    context: &mut BodyLowering<'_>,
-    ty: &HIRType,
+fn lower_declaration<'a>(
+    context: &mut BodyLowering<'a>,
+    ty: &'a HIRType,
     name: &CXIdent,
-    initial_value: Option<&HIRExpression>,
+    initial_value: Option<&'a HIRExpression>,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     let local_ty = lower_type(context, ty)?;
@@ -354,10 +353,10 @@ fn lower_declaration(
 
 // An initializer list shares the lowered type of its declaration: lowering an aggregate declared
 // in place a second time would make a distinct type of it
-pub(crate) fn lower_initial_value(
-    context: &mut BodyLowering<'_>,
+pub(crate) fn lower_initial_value<'a>(
+    context: &mut BodyLowering<'a>,
     ty: HMIRExprID,
-    value: &HIRExpression,
+    value: &'a HIRExpression,
 ) -> CXResult<HMIRExprID> {
     match &value.kind {
         HIRExprKind::InitializerList { indices } => {
@@ -367,10 +366,10 @@ pub(crate) fn lower_initial_value(
     }
 }
 
-fn lower_initializer(
-    context: &mut BodyLowering<'_>,
+fn lower_initializer<'a>(
+    context: &mut BodyLowering<'a>,
     ty: Option<HMIRExprID>,
-    indices: &[HIRInitIndex],
+    indices: &'a [HIRInitIndex],
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     let ty = ty.unwrap_or_else(|| context.hole(span));
@@ -390,9 +389,9 @@ fn lower_initializer(
     Ok(context.aggregate_op(HMIRAggregateOp::Initialize { ty, fields }, span))
 }
 
-fn lower_unpack(
-    context: &mut BodyLowering<'_>,
-    inner: &HIRExpression,
+fn lower_unpack<'a>(
+    context: &mut BodyLowering<'a>,
+    inner: &'a HIRExpression,
     bindings: &[HIRUnpackBinding],
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
@@ -410,10 +409,10 @@ fn lower_unpack(
 }
 
 // A closure is an anonymous comptime function; the code it produces is its 'emit'
-fn lower_closure(
-    context: &mut BodyLowering<'_>,
-    params: &[HIRClosureParam],
-    body: &HIRExpression,
+fn lower_closure<'a>(
+    context: &mut BodyLowering<'a>,
+    params: &'a [HIRClosureParam],
+    body: &'a HIRExpression,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     match &body.kind {
@@ -432,10 +431,10 @@ fn lower_closure(
     }
 }
 
-pub(crate) fn lower_quote(
-    context: &mut BodyLowering<'_>,
-    params: &[HIRClosureParam],
-    body: &HIRExpression,
+pub(crate) fn lower_quote<'a>(
+    context: &mut BodyLowering<'a>,
+    params: &'a [HIRClosureParam],
+    body: &'a HIRExpression,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     // Parameter types are written in the stage the closure appears in

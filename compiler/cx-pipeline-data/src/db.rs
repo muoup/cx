@@ -8,7 +8,7 @@ use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_tokens::token::Token;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
 // to save memory, but for now, this is not a priority.
@@ -27,7 +27,7 @@ pub struct ModuleData {
     pub base_mappings: ModuleMap<NamespacePath>,
 
     pub hmir: HMIRUnitRegistry,
-    pub mir: ModuleMap<MIRUnit>,
+    pub mir: HandoffMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
 }
 
@@ -45,7 +45,7 @@ impl ModuleData {
 
             hir: ModuleMap::new(".cx-hir"),
             hmir: HMIRUnitRegistry::new(),
-            mir: ModuleMap::new(".cx-mir"),
+            mir: HandoffMap::new(),
             lmir: ModuleMap::new(".cx-lmir"),
         }
     }
@@ -182,5 +182,35 @@ impl<Data> ModuleMap<Data> {
         self.loaded_data
             .write()
             .expect("Failed to acquire write lock on loaded data")
+    }
+}
+
+// Per-unit data that only the next step of its own unit reads, so it is moved between threads
+// rather than shared
+#[derive(Debug)]
+pub struct HandoffMap<Data> {
+    data: Mutex<HashMap<NamespacePath, Data>>,
+}
+
+impl<Data> HandoffMap<Data> {
+    pub fn new() -> Self {
+        HandoffMap {
+            data: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn insert(&self, key: impl Into<NamespacePath>, data: Data) {
+        self.data
+            .lock()
+            .expect("Failed to acquire lock on handoff data")
+            .insert(key.into(), data);
+    }
+
+    pub fn take(&self, key: &NamespacePath) -> Data {
+        self.data
+            .lock()
+            .expect("Failed to acquire lock on handoff data")
+            .remove(key)
+            .expect("Data not found in the handoff map")
     }
 }

@@ -4,9 +4,10 @@ use cx_test_support::{
     CompilationResult, CompilerBackend, OptimizationLevel, ProjectBinary, ReferenceCompiler,
     TestTempDir,
 };
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 /// The level single-file cases are built at; projects name their own in `cx.toml`.
 const FILE_OPTIMIZATION: OptimizationLevel = OptimizationLevel::O2;
@@ -83,38 +84,86 @@ impl Toolchain<'_> {
                     Sources::Project { binary, link } => (binary, *link),
                 };
 
-                let mut command = reference.command();
-                project_arguments(&mut command, binary, link, &output);
-                // The objects of a compile-only build land in the working directory.
-                command.current_dir(temp_dir.path());
-                let compilation = run_command(&mut command)?;
-                if !compilation.success {
-                    return Err(compilation.stderr);
+                let start = Instant::now();
+                let objects = compile_objects(reference, binary, temp_dir.path())?;
+                if link {
+                    link_objects(reference, binary, &objects, &output)?;
                 }
                 Ok(Build {
                     output,
-                    elapsed: compilation.elapsed,
+                    elapsed: start.elapsed(),
                 })
             }
         }
     }
 }
 
-fn project_arguments(command: &mut Command, binary: &ProjectBinary, link: bool, output: &Path) {
-    command.arg(optimization_flag(binary.optimization_level));
-    for include_dir in &binary.include_dirs {
-        command.arg("-I").arg(include_dir);
-    }
-    command.args(binary.sources.iter().map(|source| binary.root.join(source)));
+// Compiles each source in its own process, as many at once as cx runs jobs, so that the reference
+// is built the way a parallel make would build it
+fn compile_objects(
+    reference: &ReferenceCompiler,
+    binary: &ProjectBinary,
+    directory: &Path,
+) -> Result<Vec<PathBuf>, String> {
+    let objects = (0..binary.sources.len())
+        .map(|index| directory.join(format!("{index}.o")))
+        .collect::<Vec<_>>();
+    let workers = std::thread::available_parallelism().map_or(1, NonZeroUsize::get);
+    let next = AtomicUsize::new(0);
 
-    if !link {
-        command.arg("-c");
-        return;
-    }
-    command.args(&binary.native_objects).arg("-o").arg(output);
+    std::thread::scope(|scope| {
+        let compile = || loop {
+            let index = next.fetch_add(1, Ordering::Relaxed);
+            let Some(source) = binary.sources.get(index) else {
+                return Ok(());
+            };
+            let mut command = reference.command();
+            command.arg(optimization_flag(binary.optimization_level));
+            for include_dir in &binary.include_dirs {
+                command.arg("-I").arg(include_dir);
+            }
+            command
+                .arg("-c")
+                .arg(binary.root.join(source))
+                .arg("-o")
+                .arg(&objects[index]);
+            let compilation = run_command(&mut command)?;
+            if !compilation.success {
+                return Err(compilation.stderr);
+            }
+        };
+        let handles = (0..workers)
+            .map(|_| scope.spawn(compile))
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("reference compile worker panicked"))
+            .collect::<Result<(), String>>()
+    })?;
+
+    Ok(objects)
+}
+
+fn link_objects(
+    reference: &ReferenceCompiler,
+    binary: &ProjectBinary,
+    objects: &[PathBuf],
+    output: &Path,
+) -> Result<(), String> {
+    let mut command = reference.command();
+    command
+        .args(objects)
+        .args(&binary.native_objects)
+        .arg("-o")
+        .arg(output);
     for entry in &binary.link_entries {
         command.arg(format!("-l{}", entry.name));
     }
+    let linking = run_command(&mut command)?;
+    if !linking.success {
+        return Err(linking.stderr);
+    }
+    Ok(())
 }
 
 fn optimization_flag(level: OptimizationLevel) -> &'static str {

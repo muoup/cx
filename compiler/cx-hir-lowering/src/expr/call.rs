@@ -42,16 +42,16 @@ fn split_arguments<'h>(args: impl IntoIterator<Item = &'h HIRExpression>) -> (Ve
     (positional, named)
 }
 
-fn lower_named(context: &mut BodyLowering<'_>, named: Named<'_>) -> CXResult<Vec<(CXIdent, HMIRExprID)>> {
+fn lower_named<'a>(context: &mut BodyLowering<'a>, named: Named<'a>) -> CXResult<Vec<(CXIdent, HMIRExprID)>> {
     named
         .into_iter()
         .map(|(name, value)| Ok((name.clone(), lower_expr(context, value)?)))
         .collect()
 }
 
-pub(crate) fn lower_arguments<'h>(
-    context: &mut BodyLowering<'_>,
-    args: impl IntoIterator<Item = &'h HIRExpression>,
+pub(crate) fn lower_arguments<'a>(
+    context: &mut BodyLowering<'a>,
+    args: impl IntoIterator<Item = &'a HIRExpression>,
 ) -> CXResult<(Vec<HMIRExprID>, Vec<(CXIdent, HMIRExprID)>)> {
     let (positional, named) = split_arguments(args);
     let positional = lower_args(context, &positional)?;
@@ -59,11 +59,11 @@ pub(crate) fn lower_arguments<'h>(
 }
 
 // 'piped' values are placed at the argument index their pipe names, 'append' after the rest
-pub(crate) fn lower_call<'h>(
-    context: &mut BodyLowering<'_>,
-    call: &'h HIRExpression,
-    mut piped: Vec<(usize, &'h HIRExpression)>,
-    append: Vec<&'h HIRExpression>,
+pub(crate) fn lower_call<'a>(
+    context: &mut BodyLowering<'a>,
+    call: &'a HIRExpression,
+    mut piped: Vec<(usize, &'a HIRExpression)>,
+    append: Vec<&'a HIRExpression>,
 ) -> CXResult<HMIRExprID> {
     let HIRExprKind::BinOp { op, lhs, rhs } = &call.kind else {
         return log_hir_error(
@@ -111,11 +111,11 @@ pub(crate) fn lower_call<'h>(
 }
 
 // Each argument is paired with whether a pipe supplied it
-fn lower_callee_call(
-    context: &mut BodyLowering<'_>,
-    callee: &HIRExpression,
-    args: Vec<(&HIRExpression, bool)>,
-    named: Named<'_>,
+fn lower_callee_call<'a>(
+    context: &mut BodyLowering<'a>,
+    callee: &'a HIRExpression,
+    args: Vec<(&'a HIRExpression, bool)>,
+    named: Named<'a>,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     let subjects = args.iter().map(|(_, piped)| *piped).collect::<Vec<_>>();
@@ -172,17 +172,17 @@ fn lower_callee_call(
     }
 }
 
-fn lower_args(
-    context: &mut BodyLowering<'_>,
-    args: &[&HIRExpression],
+fn lower_args<'a>(
+    context: &mut BodyLowering<'a>,
+    args: &[&'a HIRExpression],
 ) -> CXResult<Vec<HMIRExprID>> {
     args.iter().map(|arg| lower_expr(context, arg)).collect()
 }
 
-fn lower_builtin_call(
-    context: &mut BodyLowering<'_>,
+fn lower_builtin_call<'a>(
+    context: &mut BodyLowering<'a>,
     name: &str,
-    args: &[&HIRExpression],
+    args: &[&'a HIRExpression],
     span: &TokenRange,
 ) -> CXResult<Option<HMIRExprID>> {
     let intrinsic = match (name, args) {

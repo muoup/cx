@@ -1,3 +1,4 @@
+use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use std::io::IsTerminal;
 use std::time::Instant;
 
@@ -39,18 +40,19 @@ impl ProgressReporter {
         }
     }
 
-    pub fn start_step(&mut self, step_name: &str, unit_name: &str) {
-        self.status(&format!("{step_name} {unit_name}"));
-    }
-
-    pub fn increment_modules(&mut self) {
-        self.modules_compiled += 1;
-    }
-
-    pub fn skip_step(&self, unit_name: &str) {
-        if self.verbose {
-            eprintln!("Skipping {unit_name} (cached)");
-        }
+    pub fn start_job(&mut self, job: &CompilationJob) {
+        let step_name = match job.step {
+            CompilationStep::PreParse => "Lexing",
+            CompilationStep::Parse => "Parsing",
+            CompilationStep::HMIR => "Typechecking",
+            CompilationStep::MIR => "Generating MIR",
+            CompilationStep::LMIR => "Lowering",
+            CompilationStep::Codegen => {
+                self.modules_compiled += 1;
+                "Compiling"
+            }
+        };
+        self.status(&format!("{step_name} {}", job.unit));
     }
 
     pub fn link_status(&mut self, message: &str) {
