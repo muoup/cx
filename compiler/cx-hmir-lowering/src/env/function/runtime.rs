@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_hmir::body::HMIRBodyID;
 use cx_mir::{
@@ -34,7 +34,7 @@ pub struct RuntimeContext {
     slots: IndexVec<HMIRSlotID, Slot>,
     scopes: Scopes<RuntimeScope>,
     scratch_scope: MIRScopeID,
-    labels: HashMap<String, MIRBasicBlockID>,
+    labels: FxHashMap<String, MIRBasicBlockID>,
 }
 
 impl RuntimeContext {
@@ -48,7 +48,7 @@ impl RuntimeContext {
             scopes: Scopes::default(),
             scratch_scope,
             emission: Emission::Enabled,
-            labels: HashMap::new(),
+            labels: FxHashMap::default(),
         }
     }
 

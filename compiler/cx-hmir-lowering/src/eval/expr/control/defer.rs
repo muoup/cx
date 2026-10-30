@@ -102,7 +102,7 @@ fn expand(context: &mut LocalLoweringContext, index: usize) -> CXResult<()> {
             .body(defer.expr().body())
             .expect("a deferred expression belongs to its source");
         let scopes = context.runtime_mut().scopes_mut();
-        scopes.push(RuntimeScope::new(None, true), Some(index), Bindings::new());
+        scopes.push(RuntimeScope::new(None, true), Some(index), Bindings::default());
         let result = context.relocated(defer.source(), defer.visible_through(), |context| {
             context.with_expectations(defer.expectations(), |context| {
                 deferred(context, body, defer.expr())

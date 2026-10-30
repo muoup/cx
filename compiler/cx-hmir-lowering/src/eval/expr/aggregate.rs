@@ -2,7 +2,7 @@ mod initializer;
 pub(crate) mod pattern;
 pub(crate) mod variant;
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBody,
@@ -137,8 +137,8 @@ fn unpack(
         }
     };
 
-    let mut seen_fields = HashSet::new();
-    let mut seen_bindings = HashSet::new();
+    let mut seen_fields = FxHashSet::default();
+    let mut seen_bindings = FxHashSet::default();
     let mut projections = Vec::with_capacity(bindings.len());
     for (name, local) in bindings {
         let Some(index) = fields.iter().position(|field| field.name() == Some(name)) else {

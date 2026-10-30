@@ -1,4 +1,5 @@
-use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::{VecDeque, hash_map::Entry};
 
 use cx_hmir::{HMIRDefID, HMIRFnSignature, ty::HMIRTypeID};
 use cx_mir::MIRFunctionID;
@@ -11,9 +12,9 @@ use crate::value::{HMIRValue, constant::HMIRFunctionRef};
 ///
 #[derive(Debug, Default)]
 pub struct GenerationQueue {
-    requested: HashSet<HMIRDefID>,
+    requested: FxHashSet<HMIRDefID>,
     pending: VecDeque<Generation>,
-    generated: HashMap<(HMIRFunctionRef, Vec<HMIRValue>), MIRFunctionID>,
+    generated: FxHashMap<(HMIRFunctionRef, Vec<HMIRValue>), MIRFunctionID>,
 }
 
 impl GenerationQueue {

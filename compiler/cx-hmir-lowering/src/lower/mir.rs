@@ -202,7 +202,7 @@ pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usiz
     let scopes = runtime.scopes_mut();
     let parent = scopes.top();
 
-    scopes.push(RuntimeScope::new(Some(scope), false), Some(parent), Bindings::new())
+    scopes.push(RuntimeScope::new(Some(scope), false), Some(parent), Bindings::default())
 }
 
 pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {

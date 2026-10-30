@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_hmir::{
     HMIRDeclaration, HMIRDef, HMIRDefID, HMIRUnit, HMIRUnitID, unit::symbols::HMIRSymbolTable,
@@ -8,7 +8,7 @@ use cx_namespace::module::NamespacePath;
 pub(crate) struct HMIRUnitBuilder {
     id: HMIRUnitID,
     namespace: NamespacePath,
-    defs: HashMap<HMIRDefID, HMIRDef>,
+    defs: FxHashMap<HMIRDefID, HMIRDef>,
 }
 
 impl HMIRUnitBuilder {
@@ -16,7 +16,7 @@ impl HMIRUnitBuilder {
         Self {
             id,
             namespace,
-            defs: HashMap::new(),
+            defs: FxHashMap::default(),
         }
     }
 

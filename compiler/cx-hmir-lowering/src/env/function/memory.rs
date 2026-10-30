@@ -1,8 +1,9 @@
 mod codec;
 
+use rustc_hash::FxHashMap;
 use std::{
     cell::Cell as Counter,
-    collections::{BTreeMap, HashMap},
+    collections::BTreeMap,
     ops::Range,
 };
 
@@ -32,9 +33,9 @@ thread_local! {
 
 #[derive(Debug, Default)]
 pub(crate) struct Memory {
-    regions: HashMap<HMIRRegionID, Image>,
-    globals: HashMap<HMIRDefID, HMIRRegionID>,
-    literals: HashMap<String, HMIRRegionID>,
+    regions: FxHashMap<HMIRRegionID, Image>,
+    globals: FxHashMap<HMIRDefID, HMIRRegionID>,
+    literals: FxHashMap<String, HMIRRegionID>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,7 +1,5 @@
-use std::{
-    collections::{HashMap, HashSet},
-    path::{Path, PathBuf},
-};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::path::{Path, PathBuf};
 
 use cx_log::CXResult;
 use cx_log::catalogue::parse::{READ_FILE, UNCLOSED_SYNTAX};
@@ -45,9 +43,9 @@ pub(crate) struct SourceInput {
 
 pub(crate) struct LexingContext {
     pub(crate) include_dirs: Vec<PathBuf>,
-    pub(crate) macros: HashMap<String, Macro>,
-    pub(crate) once_files: HashSet<PathBuf>,
-    source_texts: HashMap<PathBuf, String>,
+    pub(crate) macros: FxHashMap<String, Macro>,
+    pub(crate) once_files: FxHashSet<PathBuf>,
+    source_texts: FxHashMap<PathBuf, String>,
     sources: Vec<SourceFrame>,
     pending_tokens: Vec<Token>,
     tokens: Vec<Token>,
@@ -85,8 +83,8 @@ impl LexingContext {
         Ok(Self {
             include_dirs: include_dirs.to_vec(),
             macros,
-            once_files: HashSet::new(),
-            source_texts: HashMap::from([
+            once_files: FxHashSet::default(),
+            source_texts: FxHashMap::from_iter([
                 (source_path.to_path_buf(), source.clone()),
                 (builtin_path.clone(), builtin_source.clone()),
             ]),
@@ -264,7 +262,10 @@ impl LexingContext {
     pub(crate) fn expand_macros(&self, base_tokens: Vec<Token>) -> Vec<Token> {
         let mut current = base_tokens;
         for _ in 0..16 {
-            let next = self.expand_macros_once(current.clone());
+            if !self.names_macro(&current) {
+                return current;
+            }
+            let next = self.expand_macros_once(&current);
             if next == current {
                 return next;
             }
@@ -273,7 +274,13 @@ impl LexingContext {
         current
     }
 
-    fn expand_macros_once(&self, base_tokens: Vec<Token>) -> Vec<Token> {
+    fn names_macro(&self, tokens: &[Token]) -> bool {
+        tokens.iter().any(|token| {
+            matches!(&token.kind, TokenKind::Identifier(name) if self.macros.contains_key(name))
+        })
+    }
+
+    fn expand_macros_once(&self, base_tokens: &[Token]) -> Vec<Token> {
         let mut expanded = Vec::new();
         let mut index = 0;
 
@@ -326,7 +333,7 @@ impl LexingContext {
                     index += 1;
                 }
                 Macro::Builtin(BuiltinMacro::Attribute) => {
-                    let Some((args, next_index)) = parse_macro_args(&base_tokens, index + 1) else {
+                    let Some((args, next_index)) = parse_macro_args(base_tokens, index + 1) else {
                         expanded.push(token.clone());
                         index += 1;
                         continue;
@@ -343,7 +350,7 @@ impl LexingContext {
                     body,
                     variadic,
                 } => {
-                    let Some((mut args, next_index)) = parse_macro_args(&base_tokens, index + 1)
+                    let Some((mut args, next_index)) = parse_macro_args(base_tokens, index + 1)
                     else {
                         expanded.push(token.clone());
                         index += 1;

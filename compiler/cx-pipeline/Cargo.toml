@@ -9,6 +9,7 @@ ignore-system-headers = ["cx-lexer/ignore-system-headers"]
 backend-llvm = ["dep:cx-backend-llvm"]
 
 [dependencies]
+rustc-hash = { workspace = true }
 speedy = { version = "0.8.7" }
 fs2 = { version = "0.4.3" }
 

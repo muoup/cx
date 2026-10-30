@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
+use rustc_hash::FxHashMap;
+use std::collections::BTreeMap;
 
 use cx_mir::{MIRConstant, MIRValue, expr::visit::successors};
 use cx_mir::{
@@ -20,14 +21,14 @@ pub struct MIRModuleBuilder {
     architecture: ArchitectureConfig,
 
     types: IndexVec<MIRTypeID, MIRType>,
-    interned: HashMap<MIRType, MIRTypeID>,
-    debug_names: HashMap<MIRTypeID, String>,
+    interned: FxHashMap<MIRType, MIRTypeID>,
+    debug_names: FxHashMap<MIRTypeID, String>,
     functions: BTreeMap<MIRFunctionID, MIRFunction>,
     globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
 
-    function_names: HashMap<String, MIRFunctionID>,
-    global_names: HashMap<String, MIRGlobalID>,
+    function_names: FxHashMap<String, MIRFunctionID>,
+    global_names: FxHashMap<String, MIRGlobalID>,
 }
 
 impl MIRModuleBuilder {
@@ -36,14 +37,14 @@ impl MIRModuleBuilder {
             architecture,
 
             types: IndexVec::new(),
-            interned: HashMap::new(),
-            debug_names: HashMap::new(),
+            interned: FxHashMap::default(),
+            debug_names: FxHashMap::default(),
             functions: BTreeMap::new(),
             globals: BTreeMap::new(),
             global_order: Vec::new(),
 
-            function_names: HashMap::new(),
-            global_names: HashMap::new(),
+            function_names: FxHashMap::default(),
+            global_names: FxHashMap::default(),
         }
     }
 

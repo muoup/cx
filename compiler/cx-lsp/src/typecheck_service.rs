@@ -12,7 +12,8 @@ use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilationUnit, CompilerBackend, CompilerConfig,
     GlobalCompilationContext, OptimizationLevel, UnsafeFlags,
 };
-use std::collections::{BTreeSet, HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tower_lsp::lsp_types::{
@@ -21,8 +22,8 @@ use tower_lsp::lsp_types::{
 };
 
 pub struct CheckReport {
-    pub diagnostics: HashMap<Url, Vec<Diagnostic>>,
-    pub checked_files: HashSet<Url>,
+    pub diagnostics: FxHashMap<Url, Vec<Diagnostic>>,
+    pub checked_files: FxHashSet<Url>,
 }
 
 pub struct ProjectSettings {
@@ -185,9 +186,9 @@ fn lsp_error_to_diagnostic(error: &LSPErrors, file_contents: &str) -> Diagnostic
 ///
 /// LSP requires publishing diagnostics separately for each file.
 /// This function takes a list of LSPErrors and groups them by file.
-pub fn group_diagnostics_by_file(errors: &[LSPErrors]) -> HashMap<Url, Vec<Diagnostic>> {
-    let mut grouped = HashMap::new();
-    let mut source_cache = HashMap::<PathBuf, String>::new();
+pub fn group_diagnostics_by_file(errors: &[LSPErrors]) -> FxHashMap<Url, Vec<Diagnostic>> {
+    let mut grouped = FxHashMap::default();
+    let mut source_cache = FxHashMap::<PathBuf, String>::default();
 
     for error in errors {
         let compilation_unit = match error {

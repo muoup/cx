@@ -1,6 +1,7 @@
 use crate::CompilationUnit;
 use std::cmp::PartialEq;
-use std::collections::{HashMap, HashSet, VecDeque};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::collections::VecDeque;
 use std::hash::Hash;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -10,8 +11,8 @@ enum JobState {
 }
 
 pub struct JobQueue {
-    shallow_progress_map: HashMap<(CompilationUnit, CompilationStep), JobState>,
-    deep_progress_map: HashSet<(CompilationUnit, CompilationStep)>,
+    shallow_progress_map: FxHashMap<(CompilationUnit, CompilationStep), JobState>,
+    deep_progress_map: FxHashSet<(CompilationUnit, CompilationStep)>,
     data: VecDeque<CompilationJob>,
 }
 
@@ -117,8 +118,8 @@ impl Default for JobQueue {
 impl JobQueue {
     pub fn new() -> Self {
         JobQueue {
-            shallow_progress_map: HashMap::new(),
-            deep_progress_map: HashSet::new(),
+            shallow_progress_map: FxHashMap::default(),
+            deep_progress_map: FxHashSet::default(),
             data: VecDeque::new(),
         }
     }
@@ -183,7 +184,7 @@ impl JobQueue {
     where
         F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,
     {
-        let mut visiting = HashSet::new();
+        let mut visiting = FxHashSet::default();
 
         job.requirements
             .iter()
@@ -194,7 +195,7 @@ impl JobQueue {
         &mut self,
         req: &CompilationJobRequirement,
         imports_for_unit: &F,
-        visiting: &mut HashSet<(CompilationUnit, CompilationStep)>,
+        visiting: &mut FxHashSet<(CompilationUnit, CompilationStep)>,
     ) -> bool
     where
         F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,
@@ -215,7 +216,7 @@ impl JobQueue {
         unit: &CompilationUnit,
         step: CompilationStep,
         imports_for_unit: &F,
-        visiting: &mut HashSet<(CompilationUnit, CompilationStep)>,
+        visiting: &mut FxHashSet<(CompilationUnit, CompilationStep)>,
     ) -> bool
     where
         F: Fn(&CompilationUnit) -> Option<Vec<CompilationUnit>>,

@@ -5,6 +5,7 @@ edition = "2021"
 autotests = false
 
 [dependencies]
+rustc-hash = { workspace = true }
 cx-hir = { path = "../cx-hir" }
 cx-mir = { path = "../cx-mir" }
 cx-lmir = { path = "../cx-lmir" }

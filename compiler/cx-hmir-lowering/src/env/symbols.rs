@@ -1,6 +1,7 @@
 pub mod lookup;
 
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use rustc_hash::FxHashMap;
+use std::{ops::Deref, sync::Arc};
 
 use cx_hmir::{HMIRDef, HMIRDefID, HMIRUnit, HMIRUnitID};
 use cx_namespace::module::NamespacePath;
@@ -16,7 +17,7 @@ pub struct HMIRSymbolEnv<'global, 'hmir> {
     registry: &'global HMIRUnitRegistry,
     local_unit: &'hmir HMIRUnit,
 
-    units: HashMap<HMIRUnitID, Arc<HMIRUnit>>,
+    units: FxHashMap<HMIRUnitID, Arc<HMIRUnit>>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +32,7 @@ impl<'global, 'hmir> HMIRSymbolEnv<'global, 'hmir> {
             registry,
             local_unit,
 
-            units: HashMap::new(),
+            units: FxHashMap::default(),
         }
     }
 

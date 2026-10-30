@@ -108,7 +108,7 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
     }
     let scopes = child.runtime_mut().scopes_mut();
     let parent = scopes.top();
-    scopes.push(RuntimeScope::new(Some(scope), deferred), Some(parent), Bindings::new());
+    scopes.push(RuntimeScope::new(Some(scope), deferred), Some(parent), Bindings::default());
 
     Ok(child)
 }
@@ -120,7 +120,7 @@ fn shadow(
 ) -> CXResult<HMIRValue> {
     if let HMIRValueKind::Constant(HMIRConstant::Quote(node)) = value.kind() {
         let quote = node.get();
-        let mut captures = Bindings::new();
+        let mut captures = Bindings::default();
         for (local, captured) in quote.captures() {
             captures.insert(*local, shadow(context, captured.clone(), span)?);
         }

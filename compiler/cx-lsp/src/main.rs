@@ -2,7 +2,7 @@ use cx_lexer::lex;
 use cx_tokens::token::TokenKind;
 use dashmap::DashMap;
 use std::any::Any;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -80,7 +80,7 @@ struct Backend {
     client: Client,
     document_map: DashMap<Url, DocumentState>,
     latest_checks: DashMap<Url, u64>,
-    diagnostic_contributions: Mutex<HashMap<Url, HashMap<Url, Vec<Diagnostic>>>>,
+    diagnostic_contributions: Mutex<FxHashMap<Url, FxHashMap<Url, Vec<Diagnostic>>>>,
     next_generation: AtomicU64,
     check_semaphore: Semaphore,
 }
@@ -376,7 +376,7 @@ impl Backend {
         authoritative_files.extend(previous.keys().cloned());
         authoritative_files.extend(report.diagnostics.keys().cloned());
 
-        let mut affected_files = previous.keys().cloned().collect::<HashSet<_>>();
+        let mut affected_files = previous.keys().cloned().collect::<FxHashSet<_>>();
         affected_files.extend(report.diagnostics.keys().cloned());
         affected_files.insert(entry_uri.clone());
 
@@ -420,7 +420,7 @@ async fn main() {
         client,
         document_map: DashMap::new(),
         latest_checks: DashMap::new(),
-        diagnostic_contributions: Mutex::new(HashMap::new()),
+        diagnostic_contributions: Mutex::new(FxHashMap::default()),
         next_generation: AtomicU64::new(1),
         check_semaphore: Semaphore::new(1),
     });

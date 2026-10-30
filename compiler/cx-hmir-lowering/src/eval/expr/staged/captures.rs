@@ -1,4 +1,5 @@
-use std::{cell::RefCell, collections::HashSet};
+use rustc_hash::FxHashSet;
+use std::cell::RefCell;
 
 use cx_hmir::{
     HMIRAggregateOp, HMIRBody, HMIRControlOp, HMIROp, HMIROwnershipOp, HMIRPattern,
@@ -26,15 +27,15 @@ pub(super) fn collect(
 ) -> CXResult<Bindings> {
     let mut walk = Locals {
         body,
-        seen: HashSet::new(),
-        references: HashSet::new(),
-        bound: HashSet::new(),
+        seen: FxHashSet::default(),
+        references: FxHashSet::default(),
+        bound: FxHashSet::default(),
     };
     for local in params {
         walk.bind(*local);
     }
     walk.visit(root);
-    let mut captures = Bindings::new();
+    let mut captures = Bindings::default();
     for local in walk.references.difference(&walk.bound) {
         let value = context.get_local(local).cloned().ok_or_else(|| {
             hmir_error(
@@ -56,12 +57,12 @@ pub(super) fn collect(
     Ok(captures)
 }
 
-pub(crate) fn references(body: &HMIRBody, root: HMIRExprID) -> HashSet<HMIRLocalID> {
+pub(crate) fn references(body: &HMIRBody, root: HMIRExprID) -> FxHashSet<HMIRLocalID> {
     let mut walk = Locals {
         body,
-        seen: HashSet::new(),
-        references: HashSet::new(),
-        bound: HashSet::new(),
+        seen: FxHashSet::default(),
+        references: FxHashSet::default(),
+        bound: FxHashSet::default(),
     };
     walk.visit(root);
     walk.references
@@ -69,9 +70,9 @@ pub(crate) fn references(body: &HMIRBody, root: HMIRExprID) -> HashSet<HMIRLocal
 
 struct Locals<'a> {
     body: &'a HMIRBody,
-    seen: HashSet<HMIRExprID>,
-    references: HashSet<HMIRLocalID>,
-    bound: HashSet<HMIRLocalID>,
+    seen: FxHashSet<HMIRExprID>,
+    references: FxHashSet<HMIRLocalID>,
+    bound: FxHashSet<HMIRLocalID>,
 }
 
 impl Locals<'_> {

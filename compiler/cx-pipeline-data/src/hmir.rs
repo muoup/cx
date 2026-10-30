@@ -1,7 +1,5 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock, RwLockReadGuard},
-};
+use rustc_hash::FxHashMap;
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use cx_hmir::{
     HMIRDefID, HMIRUnit, HMIRUnitAllocator, HMIRUnitID, unit::symbols::HMIRLookupClass,
@@ -19,8 +17,8 @@ pub struct HMIRUnitRegistry {
 
 #[derive(Debug, Default)]
 struct UnitIndex {
-    namespaces: HashMap<HMIRUnitID, NamespacePath>,
-    names: HashMap<(QualifiedName, HMIRLookupClass), Vec<HMIRDefID>>,
+    namespaces: FxHashMap<HMIRUnitID, NamespacePath>,
+    names: FxHashMap<(QualifiedName, HMIRLookupClass), Vec<HMIRDefID>>,
 }
 
 impl HMIRUnitRegistry {

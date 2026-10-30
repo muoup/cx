@@ -1,4 +1,5 @@
-use std::{collections::HashMap, mem};
+use rustc_hash::FxHashMap;
+use std::mem;
 
 use crate::expr::HMIRExprID;
 
@@ -8,7 +9,7 @@ pub(super) struct Emitter<'a> {
     pub(super) printer: BodyPrinter<'a>,
     out: String,
     depth: usize,
-    temps: HashMap<HMIRExprID, String>,
+    temps: FxHashMap<HMIRExprID, String>,
     counts: [usize; 2],
     comptime: bool,
 }
@@ -19,7 +20,7 @@ impl<'a> Emitter<'a> {
             printer,
             out: String::new(),
             depth: 0,
-            temps: HashMap::new(),
+            temps: FxHashMap::default(),
             counts: [0; 2],
             comptime: false,
         }

@@ -60,7 +60,7 @@ impl HIR {
             module_path,
             imports,
             definition_stmts: Vec::new(),
-            namespace_aliases: NamespaceAliases::new(),
+            namespace_aliases: NamespaceAliases::default(),
         }
     }
 }

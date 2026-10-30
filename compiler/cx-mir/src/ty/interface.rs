@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use cx_target::ArchitectureConfig;
 
@@ -20,7 +20,7 @@ pub trait MTRegistry: Sized {
     // --- HELPERS ---
 
     fn layout(&self, ty: MIRTypeID) -> MIRTypeLayout {
-        recursive_layout(self, ty, &mut HashSet::new())
+        recursive_layout(self, ty, &mut FxHashSet::default())
     }
 
     fn unit(&self) -> MIRTypeID {
@@ -28,7 +28,7 @@ pub trait MTRegistry: Sized {
     }
 
     fn same_type(&self, left: MIRTypeID, right: MIRTypeID) -> bool {
-        same_type_inner(self, &mut HashSet::new(), left, right)
+        same_type_inner(self, &mut FxHashSet::default(), left, right)
     }
 
     fn is_reference_type(&self, ty: &MIRType) -> bool {

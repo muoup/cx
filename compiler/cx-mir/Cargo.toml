@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+rustc-hash = { workspace = true }
 cx-log = { path = "../cx-log" }
 cx-util = { path = "../cx-util" }
 cx-target = { path = "../cx-target" }

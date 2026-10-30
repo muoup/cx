@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+rustc-hash = { workspace = true }
 cx-log = { path = "../cx-log" }
 cx-mir = { path = "../cx-mir" }
 cx-tokens = { path = "../cx-tokens" }

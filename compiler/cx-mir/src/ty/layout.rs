@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use crate::ty::{MIRField, MIRTypeKind, interface::MTRegistry};
 
@@ -89,7 +89,7 @@ pub fn calculate_field_layout<Registry: MTRegistry>(
 pub(crate) fn recursive_layout<Registry: MTRegistry>(
     registry: &Registry,
     ty: MIRTypeID,
-    active: &mut HashSet<MIRTypeID>,
+    active: &mut FxHashSet<MIRTypeID>,
 ) -> MIRTypeLayout {
     assert!(active.insert(ty), "recursive value type {ty}");
     let layout = compute_layout(registry, ty, &mut |child| {

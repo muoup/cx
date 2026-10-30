@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_hmir::ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics};
 use cx_mir::MIRTypeID;
@@ -23,12 +23,12 @@ struct TypeState {
 
 #[derive(Debug)]
 pub(crate) struct HMIRResolver {
-    identities: HashMap<u64, Vec<HMIRTypeID>>,
+    identities: FxHashMap<u64, Vec<HMIRTypeID>>,
     types: IndexVec<HMIRTypeID, TypeState>,
-    memo: HashMap<MemoKey, MemoID>,
+    memo: FxHashMap<MemoKey, MemoID>,
     entries: IndexVec<MemoID, MemoEntry>,
     contexts: IndexVec<MemoContextID, MemoContext>,
-    context_ids: HashMap<MemoContext, MemoContextID>,
+    context_ids: FxHashMap<MemoContext, MemoContextID>,
     active: Vec<MemoID>,
     universe: Option<HMIRTypeID>,
 }
@@ -36,12 +36,12 @@ pub(crate) struct HMIRResolver {
 impl HMIRResolver {
     pub fn new() -> Self {
         Self {
-            identities: HashMap::new(),
+            identities: FxHashMap::default(),
             types: IndexVec::new(),
-            memo: HashMap::new(),
+            memo: FxHashMap::default(),
             entries: IndexVec::new(),
             contexts: IndexVec::new(),
-            context_ids: HashMap::new(),
+            context_ids: FxHashMap::default(),
             active: Vec::new(),
             universe: None,
         }

@@ -1,4 +1,5 @@
-use std::{cell::Cell, collections::HashMap};
+use rustc_hash::FxHashMap;
+use std::cell::Cell;
 
 use cx_target::ArchitectureConfig;
 use index_vec::IndexVec;
@@ -21,7 +22,7 @@ enum LayoutState {
 pub struct MIRTypeRegistry {
     architecture: ArchitectureConfig,
     definitions: IndexVec<MIRTypeID, MIRType>,
-    debug_names: HashMap<MIRTypeID, String>,
+    debug_names: FxHashMap<MIRTypeID, String>,
     layouts: IndexVec<MIRTypeID, Cell<LayoutState>>,
 }
 
@@ -29,7 +30,7 @@ impl MIRTypeRegistry {
     pub fn new(
         architecture: ArchitectureConfig,
         definitions: IndexVec<MIRTypeID, MIRType>,
-        debug_names: HashMap<MIRTypeID, String>,
+        debug_names: FxHashMap<MIRTypeID, String>,
     ) -> Self {
         let layouts = definitions
             .iter()

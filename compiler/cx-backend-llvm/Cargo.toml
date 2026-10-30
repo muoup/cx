@@ -5,6 +5,7 @@ edition = "2024"
 autotests = false
 
 [dependencies]
+rustc-hash = "2.1.3"
 cx-lmir = { path = "../cx-lmir" }
 cx-log = { path = "../cx-log" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }

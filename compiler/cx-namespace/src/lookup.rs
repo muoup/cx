@@ -1,11 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::module::{NamespacePath, QualifiedName};
 
 pub fn candidates(
     source_namespace: &NamespacePath,
     name: &QualifiedName,
-    aliases: &HashMap<NamespacePath, Vec<NamespacePath>>,
+    aliases: &FxHashMap<NamespacePath, Vec<NamespacePath>>,
 ) -> Vec<QualifiedName> {
     let mut names = vec![name.clone()];
     if name.namespace.is_root() {
@@ -24,7 +24,7 @@ pub fn candidates(
         }
     }
 
-    let mut seen = HashSet::new();
+    let mut seen = FxHashSet::default();
     names.retain(|name| seen.insert(name.clone()));
     names
 }

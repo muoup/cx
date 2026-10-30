@@ -1,6 +1,6 @@
 use crate::OptimizationLevel;
 use serde::Deserialize;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -41,7 +41,7 @@ impl BuildSection {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkspaceSection {
-    pub targets: HashMap<String, TargetConfig>,
+    pub targets: FxHashMap<String, TargetConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

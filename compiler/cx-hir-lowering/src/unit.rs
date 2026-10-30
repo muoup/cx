@@ -1,4 +1,5 @@
-use std::{cell::RefCell, collections::HashMap};
+use rustc_hash::FxHashMap;
+use std::cell::RefCell;
 
 use cx_hir::ast::{
     modifiers::{HIRSymbolNameScheme, VisibilityMode},
@@ -19,7 +20,7 @@ pub(crate) struct UnitContext {
     root_exports: bool,
     // Function-level statics become defs placed after the planned ones
     planned: usize,
-    externs: RefCell<HashMap<QualifiedName, (HMIRDefID, Vec<HMIRDeclaration>)>>,
+    externs: RefCell<FxHashMap<QualifiedName, (HMIRDefID, Vec<HMIRDeclaration>)>>,
     statics: RefCell<Vec<HMIRDef>>,
 }
 

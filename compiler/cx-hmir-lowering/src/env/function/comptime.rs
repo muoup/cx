@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_hmir::{expr::HMIRExprID, ty::HMIRTypeID};
 use cx_util::identifier::CXIdent;
@@ -8,7 +8,7 @@ use crate::{env::function::scope::Scopes, value::HMIRRegionID};
 #[derive(Debug, Default)]
 pub struct ComptimeContext {
     scopes: Scopes<ComptimeScope>,
-    slots: HashMap<HMIRRegionID, ComptimeSlot>,
+    slots: FxHashMap<HMIRRegionID, ComptimeSlot>,
     function: String,
 }
 

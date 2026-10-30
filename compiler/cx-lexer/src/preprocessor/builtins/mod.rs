@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_tokens::token::{IntegerLiteral, Token, TokenKind};
 
 use crate::context::{BuiltinMacro, Macro};
 
-pub(crate) fn builtin_macros() -> HashMap<String, Macro> {
-    let mut macros = HashMap::new();
+pub(crate) fn builtin_macros() -> FxHashMap<String, Macro> {
+    let mut macros = FxHashMap::default();
 
     define_language_predefines(&mut macros);
     define_compiler_predefines(&mut macros);
@@ -24,13 +24,13 @@ pub(crate) fn builtin_macros() -> HashMap<String, Macro> {
     macros
 }
 
-fn define_language_predefines(macros: &mut HashMap<String, Macro>) {
+fn define_language_predefines(macros: &mut FxHashMap<String, Macro>) {
     define_int(macros, "__STDC__", 1);
     define_int(macros, "__STDC_HOSTED__", 1);
     define_int(macros, "__STDC_VERSION__", 199901);
 }
 
-fn define_compiler_predefines(macros: &mut HashMap<String, Macro>) {
+fn define_compiler_predefines(macros: &mut FxHashMap<String, Macro>) {
     define_int(macros, "__GNUC__", 4);
     define_int(macros, "__GNUC_MINOR__", 8);
     define_int(macros, "__GNUC_PATCHLEVEL__", 0);
@@ -43,7 +43,7 @@ fn define_compiler_predefines(macros: &mut HashMap<String, Macro>) {
     );
 }
 
-fn define_target_predefines(macros: &mut HashMap<String, Macro>) {
+fn define_target_predefines(macros: &mut FxHashMap<String, Macro>) {
     if cfg!(target_pointer_width = "64") {
         define_int(macros, "__LP64__", 1);
         define_int(macros, "_LP64", 1);
@@ -93,7 +93,7 @@ fn define_target_predefines(macros: &mut HashMap<String, Macro>) {
     }
 }
 
-fn define_int(macros: &mut HashMap<String, Macro>, name: &str, value: i64) {
+fn define_int(macros: &mut FxHashMap<String, Macro>, name: &str, value: i64) {
     macros.insert(
         name.to_string(),
         Macro::Object(Box::new([Token::new_unknown(TokenKind::IntLiteral(

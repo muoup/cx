@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_hir::ast::types::HIRTagKind;
 use cx_namespace::module::{NamespacePath, QualifiedName};
@@ -14,8 +14,8 @@ pub enum HMIRLookupClass {
 #[derive(Debug, Clone, Default)]
 pub struct HMIRSymbolTable {
     imports: Vec<NamespacePath>,
-    aliases: HashMap<NamespacePath, Vec<NamespacePath>>,
-    symbols: HashMap<(QualifiedName, HMIRLookupClass), HMIRDefID>,
+    aliases: FxHashMap<NamespacePath, Vec<NamespacePath>>,
+    symbols: FxHashMap<(QualifiedName, HMIRLookupClass), HMIRDefID>,
 }
 
 impl From<Option<HIRTagKind>> for HMIRLookupClass {
@@ -30,8 +30,8 @@ impl From<Option<HIRTagKind>> for HMIRLookupClass {
 impl HMIRSymbolTable {
     pub fn new(
         imports: Vec<NamespacePath>,
-        aliases: HashMap<NamespacePath, Vec<NamespacePath>>,
-        symbols: HashMap<(QualifiedName, HMIRLookupClass), HMIRDefID>,
+        aliases: FxHashMap<NamespacePath, Vec<NamespacePath>>,
+        symbols: FxHashMap<(QualifiedName, HMIRLookupClass), HMIRDefID>,
     ) -> Self {
         Self {
             imports,
@@ -44,7 +44,7 @@ impl HMIRSymbolTable {
         &self.imports
     }
 
-    pub fn aliases(&self) -> &HashMap<NamespacePath, Vec<NamespacePath>> {
+    pub fn aliases(&self) -> &FxHashMap<NamespacePath, Vec<NamespacePath>> {
         &self.aliases
     }
 

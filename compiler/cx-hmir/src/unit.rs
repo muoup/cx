@@ -4,7 +4,7 @@ pub mod global;
 pub mod id;
 pub mod symbols;
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_namespace::module::NamespacePath;
 
@@ -20,8 +20,8 @@ pub struct HMIRUnit {
     namespace: NamespacePath,
     symbols: HMIRSymbolTable,
 
-    defs: HashMap<HMIRDefID, HMIRDef>,
-    bodies: HashMap<HMIRBodyID, (HMIRDefID, usize, bool)>,
+    defs: FxHashMap<HMIRDefID, HMIRDef>,
+    bodies: FxHashMap<HMIRBodyID, (HMIRDefID, usize, bool)>,
 }
 
 impl HMIRUnit {
@@ -29,9 +29,9 @@ impl HMIRUnit {
         id: HMIRUnitID,
         namespace: NamespacePath,
         symbols: HMIRSymbolTable,
-        defs: HashMap<HMIRDefID, HMIRDef>,
+        defs: FxHashMap<HMIRDefID, HMIRDef>,
     ) -> Self {
-        let mut bodies = HashMap::new();
+        let mut bodies = FxHashMap::default();
         for (def_id, def) in &defs {
             for (declaration_index, declaration) in def.declarations().iter().enumerate() {
                 match declaration.kind() {

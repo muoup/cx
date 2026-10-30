@@ -19,7 +19,7 @@ pub(crate) struct Scopes<C> {
 impl<C: Default> Default for Scopes<C> {
     fn default() -> Self {
         let mut scopes = Self { stack: Vec::new() };
-        scopes.push(C::default(), None, Bindings::new());
+        scopes.push(C::default(), None, Bindings::default());
         scopes
     }
 }
@@ -86,7 +86,7 @@ impl<C> Scopes<C> {
     }
 
     pub(crate) fn visible(&self) -> Bindings {
-        let mut bindings = Bindings::new();
+        let mut bindings = Bindings::default();
         for scope in self.lexical() {
             for (local, value) in &scope.bindings {
                 bindings.entry(*local).or_insert_with(|| value.clone());

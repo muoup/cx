@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use cx_hmir::{
     HMIRBody, HMIRPattern,
@@ -144,7 +144,7 @@ fn cases(
     let HMIRTypeKind::Int(integer) = *context.env().resolve_kind(dispatch_ty) else {
         unreachable!("a match dispatches on an integer")
     };
-    let mut covered = HashSet::new();
+    let mut covered = FxHashSet::default();
     let mut catchall = false;
     let mut cases = Vec::new();
     for (pattern, arm) in arms {

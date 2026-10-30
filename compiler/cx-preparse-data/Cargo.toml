@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+rustc-hash = { workspace = true }
 speedy = { version = "0.8.7" }
 
 cx-util = { path = "../cx-util" }

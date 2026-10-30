@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
@@ -27,9 +27,9 @@ pub struct ParserData<'a> {
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
     // uses u8 mapping instead of a set to prevent problems with shadowing
-    pub temporary_type_names: HashMap<CXIdent, u8>,
+    pub temporary_type_names: FxHashMap<CXIdent, u8>,
     namespace_aliases: NamespaceAliases,
-    pub(super) c_function_linkages: HashMap<QualifiedName, LinkageMode>,
+    pub(super) c_function_linkages: FxHashMap<QualifiedName, LinkageMode>,
 
     pub registry: &'a GlobalPreparseRegistry,
     pub ast: HIR,
@@ -61,9 +61,9 @@ impl<'a> ParserData<'a> {
             expr_commas: vec![true],
             pp_contents,
             registry,
-            temporary_type_names: HashMap::new(),
+            temporary_type_names: FxHashMap::default(),
             namespace_aliases: pp_contents.namespace_aliases.clone(),
-            c_function_linkages: HashMap::new(),
+            c_function_linkages: FxHashMap::default(),
             ast: HIR::new(
                 ModulePath::from_source_path(pp_contents.module.as_str()),
                 pp_contents.imports.clone(),

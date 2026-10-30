@@ -5,6 +5,7 @@ edition = "2021"
 autotests = false
 
 [dependencies]
+rustc-hash = { workspace = true }
 cx-util = { path = "../cx-util" }
 cx-namespace = { path = "../cx-namespace" }
 

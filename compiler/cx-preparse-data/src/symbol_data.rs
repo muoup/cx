@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use cx_namespace::module::NamespacePath;
 use cx_util::{identifier::CXIdent};
@@ -49,8 +49,8 @@ impl PreparseSymbol {
 
 #[derive(Debug, Default, Clone, Readable, Writable)]
 pub struct PreparseNamespaceData {
-    symbols: HashMap<CXIdent, PreparseSymbolKind>,
-    children: HashSet<CXIdent>,
+    symbols: FxHashMap<CXIdent, PreparseSymbolKind>,
+    children: FxHashSet<CXIdent>,
 }
 
 impl PreparseNamespaceData {

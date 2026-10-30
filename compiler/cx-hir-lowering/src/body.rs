@@ -1,4 +1,5 @@
-use std::{collections::HashMap, mem};
+use rustc_hash::FxHashMap;
+use std::mem;
 
 use cx_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
@@ -62,7 +63,7 @@ pub(crate) enum ScopeKind<'a> {
 }
 
 struct Scope<'a> {
-    symbols: HashMap<CXIdent, ScopeEntry>,
+    symbols: FxHashMap<CXIdent, ScopeEntry>,
     kind: ScopeKind<'a>,
 }
 
@@ -80,7 +81,7 @@ pub(crate) struct BodyLowering<'a> {
 impl<'a> Scope<'a> {
     fn new(kind: ScopeKind<'a>) -> Self {
         Self {
-            symbols: HashMap::new(),
+            symbols: FxHashMap::default(),
             kind,
         }
     }

@@ -7,7 +7,7 @@ use cx_namespace::module::NamespacePath;
 use cx_preparse_data::PreparseContents;
 use cx_preparse_data::registry::GlobalPreparseRegistry;
 use cx_tokens::token::Token;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 // TODO: For large codebases, this should eventually should support unloading infrequently used data
@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug)]
 pub struct ModuleData {
-    module_units: RwLock<HashMap<NamespacePath, CompilationUnit>>,
+    module_units: RwLock<FxHashMap<NamespacePath, CompilationUnit>>,
 
     pub preparse_registry: GlobalPreparseRegistry,
     root_exports: RwLock<Vec<NamespacePath>>,
@@ -34,7 +34,7 @@ pub struct ModuleData {
 impl ModuleData {
     pub fn new() -> Self {
         ModuleData {
-            module_units: RwLock::new(HashMap::new()),
+            module_units: RwLock::new(FxHashMap::default()),
 
             preparse_registry: GlobalPreparseRegistry::default(),
             root_exports: RwLock::new(Vec::new()),
@@ -84,14 +84,14 @@ impl ModuleData {
 #[derive(Debug)]
 pub struct ModuleMap<Data> {
     pub storage_extension: String,
-    loaded_data: RwLock<HashMap<NamespacePath, Arc<Data>>>,
+    loaded_data: RwLock<FxHashMap<NamespacePath, Arc<Data>>>,
 }
 
 impl<Data> ModuleMap<Data> {
     pub fn new(data_suffix: &str) -> Self {
         ModuleMap {
             storage_extension: data_suffix.to_string(),
-            loaded_data: RwLock::new(HashMap::new()),
+            loaded_data: RwLock::new(FxHashMap::default()),
         }
     }
 
@@ -112,7 +112,7 @@ impl<Data> ModuleMap<Data> {
         &self,
         key: &NamespacePath,
     ) -> (
-        RwLockWriteGuard<'_, HashMap<NamespacePath, Arc<Data>>>,
+        RwLockWriteGuard<'_, FxHashMap<NamespacePath, Arc<Data>>>,
         Data,
     ) {
         let mut lock = self.lock_mut();
@@ -172,13 +172,13 @@ impl<Data> ModuleMap<Data> {
             .collect()
     }
 
-    pub fn lock(&self) -> RwLockReadGuard<'_, HashMap<NamespacePath, Arc<Data>>> {
+    pub fn lock(&self) -> RwLockReadGuard<'_, FxHashMap<NamespacePath, Arc<Data>>> {
         self.loaded_data
             .read()
             .expect("Failed to acquire read lock on loaded data")
     }
 
-    pub fn lock_mut(&self) -> RwLockWriteGuard<'_, HashMap<NamespacePath, Arc<Data>>> {
+    pub fn lock_mut(&self) -> RwLockWriteGuard<'_, FxHashMap<NamespacePath, Arc<Data>>> {
         self.loaded_data
             .write()
             .expect("Failed to acquire write lock on loaded data")
@@ -189,13 +189,13 @@ impl<Data> ModuleMap<Data> {
 // rather than shared
 #[derive(Debug)]
 pub struct HandoffMap<Data> {
-    data: Mutex<HashMap<NamespacePath, Data>>,
+    data: Mutex<FxHashMap<NamespacePath, Data>>,
 }
 
 impl<Data> HandoffMap<Data> {
     pub fn new() -> Self {
         HandoffMap {
-            data: Mutex::new(HashMap::new()),
+            data: Mutex::new(FxHashMap::default()),
         }
     }
 

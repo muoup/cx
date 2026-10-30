@@ -4,6 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
+rustc-hash = { workspace = true }
 cx-hir = { path = "../cx-hir" }
 cx-hmir = { path = "../cx-hmir" }
 cx-intrinsics = { path = "../cx-intrinsics" }

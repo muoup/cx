@@ -1,3 +1,4 @@
+use rustc_hash::FxHashSet;
 use cx_hmir::{
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
@@ -52,7 +53,7 @@ impl LocalLoweringContext<'_, '_, '_> {
     }
 
     pub fn prepare_type(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CXResult<()> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = FxHashSet::default();
         let mut complete = true;
         self.prepare_type_inner(ty, span, &mut seen, &mut complete)?;
         if complete {
@@ -67,7 +68,7 @@ impl LocalLoweringContext<'_, '_, '_> {
         &mut self,
         ty: HMIRTypeID,
         span: &TokenRange,
-        seen: &mut std::collections::HashSet<HMIRTypeID>,
+        seen: &mut FxHashSet<HMIRTypeID>,
         complete: &mut bool,
     ) -> CXResult<()> {
         if self.env().resolver().prepared(ty) || !seen.insert(ty) {
@@ -117,14 +118,14 @@ impl LocalLoweringContext<'_, '_, '_> {
     }
 
     pub fn force_type(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CXResult<()> {
-        self.force_type_inner(ty, span, &mut std::collections::HashSet::new())
+        self.force_type_inner(ty, span, &mut FxHashSet::default())
     }
 
     fn force_type_inner(
         &mut self,
         ty: HMIRTypeID,
         span: &TokenRange,
-        seen: &mut std::collections::HashSet<HMIRTypeID>,
+        seen: &mut FxHashSet<HMIRTypeID>,
     ) -> CXResult<()> {
         if !seen.insert(ty) {
             return Err(self

@@ -1,12 +1,12 @@
 use crate::symbol_data::{PreparseModuleSymbols, PreparseNamespaceData, PreparseSymbolKind};
 use cx_namespace::module::NamespacePath;
 use cx_util::{identifier::CXIdent};
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::sync::RwLock;
 
 #[derive(Debug, Default)]
 pub struct GlobalPreparseRegistry {
-    namespaces: RwLock<HashMap<NamespacePath, PreparseNamespaceData>>,
+    namespaces: RwLock<FxHashMap<NamespacePath, PreparseNamespaceData>>,
 }
 
 impl GlobalPreparseRegistry {
@@ -51,7 +51,7 @@ impl GlobalPreparseRegistry {
 }
 
 fn register_namespace_path(
-    namespaces: &mut HashMap<NamespacePath, PreparseNamespaceData>,
+    namespaces: &mut FxHashMap<NamespacePath, PreparseNamespaceData>,
     path: &NamespacePath,
 ) {
     let mut parent = NamespacePath::root();

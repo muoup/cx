@@ -20,7 +20,8 @@ use cx_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
 use cx_util::format::{with_dump_directory, without_dumps};
-use std::collections::{BTreeSet, HashSet};
+use rustc_hash::FxHashSet;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -32,7 +33,7 @@ pub const COMPILER_STACK_SIZE: usize = 256 * 1024 * 1024;
 
 pub struct LSPCheckResult {
     pub errors: Vec<LSPErrors>,
-    pub checked_files: HashSet<PathBuf>,
+    pub checked_files: FxHashSet<PathBuf>,
 }
 
 pub fn link_object_files(output: &Path, object_files: &[PathBuf]) -> CXResult<()> {
@@ -435,7 +436,7 @@ pub fn typecheck_only_lsp(
     context: &GlobalCompilationContext,
     initial_file: &CompilationUnit,
 ) -> LSPCheckResult {
-    let mut checked_files = HashSet::new();
+    let mut checked_files = FxHashSet::default();
 
     let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, initial_file.clone());
 

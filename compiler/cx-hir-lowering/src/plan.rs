@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_hir::ast::{
     HIR, HIRStmt,
@@ -128,7 +128,7 @@ pub(crate) fn plan_symbols<'h>(
     unit: HMIRUnitID,
 ) -> Vec<PlannedSymbol<'h>> {
     let mut symbols = Vec::<PlannedSymbol>::new();
-    let mut indices = HashMap::new();
+    let mut indices = FxHashMap::default();
     for (ordinal, definition) in hir.definition_stmts.iter().enumerate() {
         let base = if definition.namespace.is_root() {
             &definition.namespace

@@ -16,7 +16,7 @@ use cx_log::error::CXError;
 use cx_log::{CXRawResult, CXResult};
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 mod codegen;
 mod globals;
@@ -49,15 +49,15 @@ impl CodegenValue {
     }
 }
 
-pub(crate) type VariableTable = HashMap<LMIRRegister, CodegenValue>;
+pub(crate) type VariableTable = FxHashMap<LMIRRegister, CodegenValue>;
 
 pub struct FunctionState<'a> {
     pub(crate) object_module: &'a mut ObjectModule,
 
-    pub(crate) function_ids: &'a mut HashMap<String, FuncId>,
+    pub(crate) function_ids: &'a mut FxHashMap<String, FuncId>,
     pub(crate) global_ids: &'a [DataId],
 
-    pub(crate) block_map: HashMap<CXIdent, Block>,
+    pub(crate) block_map: FxHashMap<CXIdent, Block>,
     pub(crate) assert_fail: Option<Block>,
     pub(crate) builder: FunctionBuilder<'a>,
     pub(crate) fn_params: Vec<Value>,
@@ -70,9 +70,9 @@ pub struct FunctionState<'a> {
 pub(crate) struct GlobalState<'a> {
     pub(crate) architecture: &'a ArchitectureConfig,
     pub(crate) object_module: ObjectModule,
-    pub(crate) function_ids: HashMap<String, FuncId>,
+    pub(crate) function_ids: FxHashMap<String, FuncId>,
     pub(crate) global_ids: Vec<DataId>,
-    pub(crate) function_sigs: &'a mut HashMap<FuncId, ir::Signature>,
+    pub(crate) function_sigs: &'a mut FxHashMap<FuncId, ir::Signature>,
 }
 
 impl FunctionState<'_> {
@@ -219,9 +219,9 @@ pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CXResult<Vec<u8>> {
             ObjectModule::new(builder)
         },
 
-        function_ids: HashMap::new(),
+        function_ids: FxHashMap::default(),
         global_ids: Vec::new(),
-        function_sigs: &mut HashMap::new(),
+        function_sigs: &mut FxHashMap::default(),
     };
 
     for fn_prototype in bc.fn_map.values() {

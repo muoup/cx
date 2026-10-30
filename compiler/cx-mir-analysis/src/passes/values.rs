@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_log::{CXResult, catalogue::analysis};
 use cx_mir::{
@@ -14,18 +14,18 @@ use crate::{
 };
 
 pub struct Values {
-    known: HashMap<MIRBindable, i128>,
+    known: FxHashMap<MIRBindable, i128>,
     reachable: bool,
-    blocks: HashMap<MIRBasicBlockID, Option<HashMap<MIRBindable, i128>>>,
-    edges: Vec<(MIRBasicBlockID, Option<HashMap<MIRBindable, i128>>)>,
+    blocks: FxHashMap<MIRBasicBlockID, Option<FxHashMap<MIRBindable, i128>>>,
+    edges: Vec<(MIRBasicBlockID, Option<FxHashMap<MIRBindable, i128>>)>,
 }
 
 impl Values {
     pub fn new() -> Self {
         Self {
-            known: HashMap::new(),
+            known: FxHashMap::default(),
             reachable: true,
-            blocks: HashMap::new(),
+            blocks: FxHashMap::default(),
             edges: Vec::new(),
         }
     }
@@ -102,7 +102,7 @@ impl AnalysisPass for Values {
         let body = env.body();
         for (id, block) in body.blocks() {
             let state = if id == body.entry() {
-                Some(HashMap::new())
+                Some(FxHashMap::default())
             } else {
                 self.blocks.get(&id).cloned().flatten()
             };

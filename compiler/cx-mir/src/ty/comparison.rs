@@ -1,10 +1,10 @@
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 
 use crate::ty::{MIRField, MIRTypeID, MIRTypeKind, interface::MTRegistry};
 
 pub(crate) fn same_type_inner<T: MTRegistry>(
     registry: &T,
-    compared: &mut HashSet<(MIRTypeID, MIRTypeID)>,
+    compared: &mut FxHashSet<(MIRTypeID, MIRTypeID)>,
     left: MIRTypeID,
     right: MIRTypeID,
 ) -> bool {
@@ -25,7 +25,7 @@ pub(crate) fn same_type_inner<T: MTRegistry>(
 
 fn same_kind<T: MTRegistry>(
     registry: &T,
-    compared: &mut HashSet<(MIRTypeID, MIRTypeID)>,
+    compared: &mut FxHashSet<(MIRTypeID, MIRTypeID)>,
     left: &MIRTypeKind,
     right: &MIRTypeKind,
 ) -> bool {
@@ -97,7 +97,7 @@ fn same_kind<T: MTRegistry>(
 
 fn same_field<T: MTRegistry>(
     registry: &T,
-    compared: &mut HashSet<(MIRTypeID, MIRTypeID)>,
+    compared: &mut FxHashSet<(MIRTypeID, MIRTypeID)>,
     left: &MIRField,
     right: &MIRField,
 ) -> bool {

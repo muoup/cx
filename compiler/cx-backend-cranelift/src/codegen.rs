@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use crate::inst_calling::prepare_function_sig;
 use crate::instruction::codegen_instruction;
@@ -80,8 +80,8 @@ pub(crate) fn codegen_function(
         function_ids: &mut global_state.function_ids,
         global_ids: &global_state.global_ids,
 
-        variable_table: VariableTable::new(),
-        block_map: HashMap::new(),
+        variable_table: VariableTable::default(),
+        block_map: FxHashMap::default(),
         assert_fail: None,
         fn_params: Vec::new(),
 

@@ -1,5 +1,5 @@
 use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::hash::Hash;
 
 #[derive(Debug, Clone)]
@@ -7,13 +7,13 @@ pub struct ScopedMap<K, V>
 where
     K: Eq + Hash + Clone,
 {
-    data: HashMap<K, V>,
+    data: FxHashMap<K, V>,
     overwrites: Vec<Vec<(K, Option<V>)>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ScopedSet<T: Eq + Hash + Clone> {
-    data: HashSet<T>,
+    data: FxHashSet<T>,
     writes: Vec<Vec<T>>,
 }
 
@@ -38,7 +38,7 @@ where
 {
     pub fn new() -> Self {
         Self {
-            data: HashMap::new(),
+            data: FxHashMap::default(),
             overwrites: Vec::new(),
         }
     }
@@ -142,7 +142,7 @@ where
 impl<T: Eq + Hash + Clone> ScopedSet<T> {
     pub fn new() -> Self {
         Self {
-            data: HashSet::new(),
+            data: FxHashSet::default(),
             writes: vec![],
         }
     }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_namespace::module::{NamespacePath, QualifiedName};
 use speedy::{Readable, Writable};
@@ -8,7 +8,7 @@ use crate::symbol_data::PreparseModuleSymbols;
 pub mod registry;
 pub mod symbol_data;
 
-pub type NamespaceAliases = HashMap<NamespacePath, Vec<NamespacePath>>;
+pub type NamespaceAliases = FxHashMap<NamespacePath, Vec<NamespacePath>>;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct Import {
@@ -33,7 +33,7 @@ pub enum VisibilityMode {
 
 impl PreparseContents {
     pub fn new(module: String, namespace: NamespacePath) -> Self {
-        let mut namespace_aliases = HashMap::new();
+        let mut namespace_aliases = FxHashMap::default();
         namespace_aliases.insert(NamespacePath::root(), vec![namespace.clone()]);
 
         Self {

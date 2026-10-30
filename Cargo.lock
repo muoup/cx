@@ -303,6 +303,7 @@ dependencies = [
  "cx-log",
  "cx-target",
  "cx-util",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -315,6 +316,7 @@ dependencies = [
  "cx-target",
  "cx-util",
  "inkwell",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -361,6 +363,7 @@ dependencies = [
  "cx-target",
  "cx-tokens",
  "cx-util",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -374,6 +377,7 @@ dependencies = [
  "cx-target",
  "cx-tokens",
  "cx-util",
+ "rustc-hash",
  "speedy",
 ]
 
@@ -392,6 +396,7 @@ dependencies = [
  "cx-tokens",
  "cx-util",
  "index_vec",
+ "rustc-hash",
  "speedy",
 ]
 
@@ -408,6 +413,7 @@ dependencies = [
  "cx-pipeline-data",
  "cx-tokens",
  "cx-util",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -438,6 +444,7 @@ dependencies = [
  "cx-pipeline-data",
  "cx-tokens",
  "dashmap",
+ "rustc-hash",
  "tokio",
  "tower-lsp",
 ]
@@ -452,6 +459,7 @@ dependencies = [
  "cx-tokens",
  "cx-util",
  "index_vec",
+ "rustc-hash",
  "speedy",
 ]
 
@@ -464,6 +472,7 @@ dependencies = [
  "cx-mir",
  "cx-tokens",
  "cx-util",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -476,6 +485,7 @@ dependencies = [
  "cx-mir",
  "cx-target",
  "cx-util",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -483,6 +493,7 @@ name = "cx-namespace"
 version = "0.0.0"
 dependencies = [
  "cx-util",
+ "rustc-hash",
  "speedy",
 ]
 
@@ -497,6 +508,7 @@ dependencies = [
  "cx-preparse-data",
  "cx-tokens",
  "cx-util",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -522,6 +534,7 @@ dependencies = [
  "cx-tokens",
  "cx-util",
  "fs2",
+ "rustc-hash",
  "speedy",
 ]
 
@@ -539,6 +552,7 @@ dependencies = [
  "cx-target",
  "cx-tokens",
  "cx-util",
+ "rustc-hash",
  "serde",
  "speedy",
  "toml",
@@ -550,6 +564,7 @@ version = "0.0.0"
 dependencies = [
  "cx-namespace",
  "cx-util",
+ "rustc-hash",
  "speedy",
 ]
 
@@ -580,6 +595,7 @@ name = "cx-util"
 version = "0.0.0"
 dependencies = [
  "index_vec",
+ "rustc-hash",
  "speedy",
 ]
 

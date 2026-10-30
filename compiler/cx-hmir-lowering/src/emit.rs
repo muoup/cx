@@ -40,7 +40,7 @@ pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usiz
         FnContext::Comptime(comptime) => {
             let scopes = comptime.scopes_mut();
             let parent = scopes.top();
-            scopes.push(ComptimeScope::default(), Some(parent), Bindings::new())
+            scopes.push(ComptimeScope::default(), Some(parent), Bindings::default())
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_lmir::types::{LMIRFloatType, LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
@@ -223,7 +223,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
 pub(crate) struct StructMembers {
     pub fields: Vec<(String, LMIRType)>,
     pub members: Vec<Option<StructMember>>,
-    pub bitfield_bytes: HashMap<usize, usize>,
+    pub bitfield_bytes: FxHashMap<usize, usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -249,7 +249,7 @@ pub(crate) fn struct_members(
     let layouts = calculate_field_layouts(types, ty).expect("struct has no field layout");
     let mut lowered: Vec<(String, LMIRType)> = Vec::new();
     let mut members = Vec::with_capacity(fields.len());
-    let mut bitfield_bytes = HashMap::new();
+    let mut bitfield_bytes = FxHashMap::default();
     let mut end = 0usize;
     let mut field_alignment = 1usize;
 

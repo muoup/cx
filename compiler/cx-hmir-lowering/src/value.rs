@@ -3,14 +3,14 @@ pub mod constant;
 pub mod scalar;
 pub mod staged;
 
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_hmir::{HMIRDefID, body::HMIRLocalID, ty::HMIRTypeID};
 use cx_util::dense_id;
 
 use crate::value::constant::HMIRConstant;
 
-pub(crate) type Bindings = HashMap<HMIRLocalID, HMIRValue>;
+pub(crate) type Bindings = FxHashMap<HMIRLocalID, HMIRValue>;
 
 // One instantiation of a local or temporary, allocated by whichever context evaluates the body; slots, and the
 // addresses and values built on them, belong to that evaluation and are never written back into input HMIR

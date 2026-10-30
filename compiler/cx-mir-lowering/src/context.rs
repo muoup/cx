@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{
@@ -27,8 +27,8 @@ pub(crate) struct GlobalContext<'mir> {
     pub prototypes: LMIRFunctionMap,
     pub functions: Vec<LMIRFunction>,
     pub globals: Vec<LMIRGlobalValue>,
-    pub global_indices: HashMap<MIRGlobalID, u32>,
-    strings: HashMap<String, u32>,
+    pub global_indices: FxHashMap<MIRGlobalID, u32>,
+    strings: FxHashMap<String, u32>,
 }
 
 impl<'mir> GlobalContext<'mir> {
@@ -38,8 +38,8 @@ impl<'mir> GlobalContext<'mir> {
             prototypes: LMIRFunctionMap::new(),
             functions: Vec::new(),
             globals: Vec::new(),
-            global_indices: HashMap::new(),
-            strings: HashMap::new(),
+            global_indices: FxHashMap::default(),
+            strings: FxHashMap::default(),
         }
     }
 
@@ -86,10 +86,10 @@ pub(crate) struct FunctionContext<'a, 'mir> {
     pub body: &'mir MIRBody,
     pub prototype: LMIRFunctionPrototype,
     pub blocks: Vec<LMIRBasicBlock>,
-    pub block_indices: HashMap<MIRBasicBlockID, usize>,
+    pub block_indices: FxHashMap<MIRBasicBlockID, usize>,
     pub current_block: usize,
     pub next_register: usize,
-    pub places: HashMap<MIRPlaceID, LMIRValue>,
+    pub places: FxHashMap<MIRPlaceID, LMIRValue>,
 }
 
 impl<'a, 'mir> FunctionContext<'a, 'mir> {
@@ -105,10 +105,10 @@ impl<'a, 'mir> FunctionContext<'a, 'mir> {
             body,
             prototype,
             blocks: Vec::new(),
-            block_indices: HashMap::new(),
+            block_indices: FxHashMap::default(),
             current_block: 0,
             next_register: 0,
-            places: HashMap::new(),
+            places: FxHashMap::default(),
         }
     }
 

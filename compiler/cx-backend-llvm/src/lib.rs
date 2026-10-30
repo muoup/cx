@@ -33,7 +33,7 @@ use cx_pipeline_data::OptimizationLevel;
 use cx_util::format::{dump_data, dumps_enabled};
 use inkwell::basic_block::BasicBlock;
 use std::cell::Cell;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 mod arithmetic;
 mod attributes;
@@ -51,7 +51,7 @@ pub(crate) struct GlobalState<'a> {
 
     globals: Vec<GlobalValue<'a>>,
 
-    functions: HashMap<String, FunctionType<'a>>,
+    functions: FxHashMap<String, FunctionType<'a>>,
     function_map: &'a LMIRFunctionMap,
 }
 
@@ -63,9 +63,9 @@ pub(crate) struct FunctionState<'a, 'b> {
     signature: LMIRFunctionSignature,
 
     builder: Builder<'a>,
-    block_map: HashMap<LMIRBlockID, BasicBlock<'a>>,
-    value_map: HashMap<LMIRValue, CodegenValue<'a>>,
-    block_params: HashMap<LMIRBlockID, Vec<(LMIRRegister, PhiValue<'a>)>>,
+    block_map: FxHashMap<LMIRBlockID, BasicBlock<'a>>,
+    value_map: FxHashMap<LMIRValue, CodegenValue<'a>>,
+    block_params: FxHashMap<LMIRBlockID, Vec<(LMIRRegister, PhiValue<'a>)>>,
     assert_fail: Cell<Option<(BasicBlock<'a>, PhiValue<'a>)>>,
 }
 
@@ -298,7 +298,7 @@ pub fn lmir_aot_codegen(
         pointer_int_type: context.ptr_sized_int_type(&target_data, None),
 
         globals: Vec::new(),
-        functions: HashMap::new(),
+        functions: FxHashMap::default(),
 
         function_map: &bytecode.fn_map,
     };
@@ -385,9 +385,9 @@ fn fn_aot_codegen(bytecode: &LMIRFunction, global_state: &GlobalState) -> LLVMRe
         signature: bytecode.prototype.signature.clone(),
 
         builder,
-        block_map: HashMap::new(),
-        value_map: HashMap::new(),
-        block_params: HashMap::new(),
+        block_map: FxHashMap::default(),
+        value_map: FxHashMap::default(),
+        block_params: FxHashMap::default(),
         assert_fail: Cell::new(None),
     };
 
