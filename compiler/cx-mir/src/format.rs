@@ -58,7 +58,13 @@ impl Display for MIRConstant {
                 }
                 write!(f, ": {}", inner.ty)
             }
-            Self::String(value) => write!(f, "{value:?}"),
+            Self::String { value, offset } => {
+                write!(f, "{value:?}")?;
+                if *offset != 0 {
+                    write!(f, " + {offset}")?;
+                }
+                Ok(())
+            }
             Self::Function(function) => write!(f, "fn {function}"),
             Self::BlockAddress { function, label } => write!(f, "label {function}::{label}"),
             Self::Undefined => f.write_str("undefined"),

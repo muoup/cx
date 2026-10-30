@@ -14,7 +14,6 @@ use crate::{
     log::hmir_error,
     value::{
         HMIRValue,
-        address::Addressable,
         constant::HMIRConstant,
         scalar::{ScalarFault, float, int},
     },
@@ -241,9 +240,7 @@ pub fn offset(
     let constant = match (rvalue(context, pointer, span)?, bytes) {
         (_, None) => return Err(hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ())),
         (HMIRConstant::Null, Some(0)) => HMIRConstant::Null,
-        (HMIRConstant::Address(address), Some(bytes))
-            if matches!(address.base(), Addressable::Place(_)) =>
-        {
+        (HMIRConstant::Address(address), Some(bytes)) if address.base().is_storage() => {
             let address = match subtract {
                 true => address.checked_sub(bytes),
                 false => address.checked_add(bytes),
@@ -279,15 +276,12 @@ pub fn difference(
     let bytes = match (rvalue(context, lhs, span)?, rvalue(context, rhs, span)?) {
         (HMIRConstant::Null, HMIRConstant::Null) => 0,
         (HMIRConstant::Address(lhs), HMIRConstant::Address(rhs))
-            if lhs.base() == rhs.base() && matches!(lhs.base(), Addressable::Place(_)) =>
+            if lhs.base() == rhs.base() && lhs.base().is_storage() =>
         {
             lhs.offset() as i128 - rhs.offset() as i128
         }
         (HMIRConstant::Address(lhs), HMIRConstant::Address(rhs))
-            if matches!(
-                (lhs.base(), rhs.base()),
-                (Addressable::Place(_), Addressable::Place(_))
-            ) =>
+            if lhs.base().is_storage() && rhs.base().is_storage() =>
         {
             let operation = "pointer difference across allocations".into();
             return Err(hmir_error(

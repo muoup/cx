@@ -7,6 +7,13 @@ use crate::value::HMIRPlace;
 pub enum Addressable {
     Place(HMIRPlace),
     Label { function: MIRFunctionID, label: CXIdent },
+    Literal(String),
+}
+
+impl Addressable {
+    pub fn is_storage(&self) -> bool {
+        !matches!(self, Self::Label { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

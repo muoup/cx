@@ -136,8 +136,9 @@ fn lower_initializer(
                 }
             }
         }
-        MIRConstant::String(value) => match destination_kind {
+        MIRConstant::String { value, offset } => match destination_kind {
             MIRTypeKind::Array { length, inner } if is_character_type(context, inner) => {
+                assert_eq!(*offset, 0, "an array is initialized from a whole string");
                 let bytes = value.as_bytes();
                 assert!(
                     bytes.len() <= length,
@@ -159,7 +160,11 @@ fn lower_initializer(
                 }
             }
             MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. } => {
-                LMIRGlobalInitializer::Global(context.string(value))
+                let global = context.string(value);
+                match *offset {
+                    0 => LMIRGlobalInitializer::Global(global),
+                    offset => LMIRGlobalInitializer::GlobalOffset { global, offset },
+                }
             }
             _ => panic!("string initializer has an invalid destination type"),
         },

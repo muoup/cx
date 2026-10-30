@@ -34,6 +34,7 @@ thread_local! {
 pub(crate) struct Memory {
     regions: HashMap<HMIRRegionID, Image>,
     globals: HashMap<HMIRDefID, HMIRRegionID>,
+    literals: HashMap<String, HMIRRegionID>,
 }
 
 #[derive(Debug, Clone)]
@@ -185,6 +186,17 @@ impl Memory {
         region
     }
 
+    fn literal(&mut self, text: &str) -> HMIRRegionID {
+        if let Some(region) = self.literals.get(text) {
+            return *region;
+        }
+        let mut image = Image::zeroed(text.len() + 1);
+        image.put(0, text.as_bytes());
+        let region = self.allocate(image);
+        self.literals.insert(text.to_string(), region);
+        region
+    }
+
     fn range(&self, region: HMIRRegionID, offset: i64, size: usize) -> Result<Range<usize>, Fault> {
         let capacity = self.regions.get(&region).ok_or(Fault::Dangling)?.len();
         usize::try_from(offset)
@@ -298,6 +310,12 @@ impl LocalLoweringContext<'_, '_, '_> {
                 "writing to a runtime global".into(),
             )),
             Addressable::Place(HMIRPlace::Global(def)) => self.global(*def, span),
+            Addressable::Literal(_) if write => Err(hmir_error(
+                span,
+                &mir::COMPTIME_INVALID_OPERATION,
+                "writing to a string literal".into(),
+            )),
+            Addressable::Literal(text) => Ok(self.memory.borrow_mut().literal(text)),
             _ => Err(hmir_error(
                 span,
                 &mir::COMPTIME_INVALID_OPERATION,

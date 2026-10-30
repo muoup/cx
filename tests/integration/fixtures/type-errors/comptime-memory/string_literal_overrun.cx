@@ -1,0 +1,8 @@
+comptime int overrun() {
+    const char* text = "ab";
+    return text[3];
+}
+
+comptime int result = overrun();
+
+int main() { return result; }

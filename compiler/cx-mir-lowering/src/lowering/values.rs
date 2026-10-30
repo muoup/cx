@@ -166,7 +166,10 @@ pub(super) fn lower_constant(
             )
         }
         MIRConstant::GlobalRef(reference) => global_address(context, *reference),
-        MIRConstant::String(text) => LMIRValue::Global(context.global.string(text)),
+        MIRConstant::String { value, offset } => {
+            let base = LMIRValue::Global(context.global.string(value));
+            memory::offset(context, base, *offset)
+        }
         MIRConstant::Function(id) => LMIRValue::FunctionRef(
             context
                 .global

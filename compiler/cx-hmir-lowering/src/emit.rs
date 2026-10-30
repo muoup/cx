@@ -23,7 +23,11 @@ use crate::{
     eval::types,
     lower::mir,
     log::log_hmir_error,
-    value::{Bindings, HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{
+        Bindings, HMIRValue, HMIRValueKind,
+        address::{Addressable, HMIRAddress},
+        constant::HMIRConstant,
+    },
 };
 
 fn unsupported<T>(span: &TokenRange, operation: &str) -> CXResult<T> {
@@ -75,8 +79,12 @@ pub fn address(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Function(_) | HMIRConstant::Curried { .. } | HMIRConstant::Str(_)) => {
+        HMIRValueKind::Constant(HMIRConstant::Function(_) | HMIRConstant::Curried { .. }) => {
             return Ok(value.clone().with_ty(ty));
+        }
+        HMIRValueKind::Constant(HMIRConstant::Str(text)) => {
+            let address = HMIRAddress::new(Addressable::Literal(text.clone()), 0);
+            return Ok(HMIRValue::constant(ty, HMIRConstant::Address(address)));
         }
         HMIRValueKind::Indirect(pointer) if context.env().pointer_inner(pointer.ty()).is_some() => {
             return Ok(pointer.as_ref().clone().with_ty(ty));
@@ -98,6 +106,11 @@ pub fn dereference(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match (pointer.kind(), context.context()) {
+        (HMIRValueKind::Constant(HMIRConstant::Address(address)), FnContext::Runtime(_))
+            if matches!(address.base(), Addressable::Literal(_)) =>
+        {
+            mir::dereference(context, pointer, inner, base, span)
+        }
         (HMIRValueKind::Constant(HMIRConstant::Address(_)), _) => Ok(HMIRValue::indirect(inner, pointer)),
         (_, FnContext::Runtime(_)) => mir::dereference(context, pointer, inner, base, span),
         (_, FnContext::Comptime(_)) => comptime::dereference(context, pointer, inner, span),

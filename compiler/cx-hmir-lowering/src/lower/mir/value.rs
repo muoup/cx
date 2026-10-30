@@ -38,7 +38,10 @@ pub fn constant(
         (HMIRConstant::Null, _) => MIRConstant::Nullptr {
             ty: lower_type(env, ty, span)?,
         },
-        (HMIRConstant::Str(value), _) => MIRConstant::String(value.clone()),
+        (HMIRConstant::Str(value), _) => MIRConstant::String {
+            value: value.clone(),
+            offset: 0,
+        },
         (HMIRConstant::Address(address), _) => match address.base() {
             Addressable::Place(HMIRPlace::Global(def)) => {
                 let inner = env
@@ -50,6 +53,10 @@ pub fn constant(
             Addressable::Label { function, label } => MIRConstant::BlockAddress {
                 function: *function,
                 label: label.to_string(),
+            },
+            Addressable::Literal(value) => MIRConstant::String {
+                value: value.clone(),
+                offset: address.offset(),
             },
             Addressable::Place(_) => {
                 return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
@@ -197,7 +204,7 @@ fn place_address(
                 false => produce(context, ty, span, |out| MIRInternalIntrinsic::GlobalAddress { out, global }),
             }
         }
-        (Addressable::Label { .. }, _) => {
+        (Addressable::Label { .. } | Addressable::Literal(_), _) => {
             let address = HMIRConstant::Address(address.clone());
             Ok(MIRValue::Constant(constant(context.env_mut(), &address, ty, span)?))
         }

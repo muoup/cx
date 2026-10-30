@@ -1,0 +1,19 @@
+/* CX-STDOUT: 5 2 502 */
+#include <stdio.h>
+
+comptime i32 length(const char* text) {
+    i32 count = 0;
+    while (text[count]) count++;
+    return count;
+}
+
+comptime i32 distance() {
+    const char* start = "abcdef";
+    const char* end = start + 4;
+    return (i32) (end - start) * 100 + *(end + 1);
+}
+
+int main() {
+    printf("%d %d %d\n", length("hello"), length("abc" + 1), distance());
+    return 0;
+}
