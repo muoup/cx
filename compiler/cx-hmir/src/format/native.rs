@@ -1,153 +1,119 @@
-use std::fmt::{self, Formatter};
+use cx_intrinsics::IntrinsicArg;
+use cx_util::identifier::CXIdent;
 
 use crate::expr::{
-    HMIRExprID,
+    HMIRExprID, HMIRIntrinsic,
     aggregate::HMIRAggregateOp,
-    op::HMIRTypeOp,
-    op::{HMIRControlOp, HMIROp, HMIRMemberStep, HMIROwnershipOp},
+    op::{HMIRControlOp, HMIRMemberStep, HMIROp, HMIROwnershipOp, HMIRTypeOp, HMIRUnaryOp},
 };
 
 use super::body::BodyPrinter;
 
+pub(super) enum Arg {
+    Value(HMIRExprID),
+    Place(HMIRExprID),
+    Named(CXIdent, HMIRExprID),
+    Text(String),
+}
+
+pub(super) fn render_args(
+    args: &[Arg],
+    render: &mut dyn FnMut(HMIRExprID, bool) -> String,
+) -> Vec<String> {
+    args.iter()
+        .map(|arg| match arg {
+            Arg::Value(id) => render(*id, false),
+            Arg::Place(id) => render(*id, true),
+            Arg::Named(name, id) => format!(".{name} = {}", render(*id, false)),
+            Arg::Text(text) => text.clone(),
+        })
+        .collect()
+}
+
+fn values(ids: &[HMIRExprID]) -> Vec<Arg> {
+    ids.iter().map(|id| Arg::Value(*id)).collect()
+}
+
+fn fields(ty: HMIRExprID, fields: &[(Option<CXIdent>, HMIRExprID)]) -> Vec<Arg> {
+    let fields = fields.iter().map(|(name, value)| match name {
+        Some(name) => Arg::Named(name.clone(), *value),
+        None => Arg::Value(*value),
+    });
+    std::iter::once(Arg::Value(ty)).chain(fields).collect()
+}
+
 impl BodyPrinter<'_> {
-    pub(super) fn native(&self, f: &mut Formatter<'_>, op: &HMIROp, depth: usize) -> fmt::Result {
+    pub(super) fn native_parts(&self, op: &HMIROp) -> (String, Vec<Arg>) {
         match op {
-            HMIROp::BinOp { op, lhs, rhs } => self.call(f, op.path(), &[*lhs, *rhs], depth),
-            HMIROp::UnOp { op, operand } => self.call(f, op.path(), &[*operand], depth),
+            HMIROp::BinOp { op, lhs, rhs } => (op.path().to_string(), values(&[*lhs, *rhs])),
+            HMIROp::UnOp { op, operand } => {
+                let operand = match op {
+                    HMIRUnaryOp::PreIncrement
+                    | HMIRUnaryOp::PreDecrement
+                    | HMIRUnaryOp::PostIncrement
+                    | HMIRUnaryOp::PostDecrement => Arg::Place(*operand),
+                    _ => Arg::Value(*operand),
+                };
+                (op.path().to_string(), vec![operand])
+            }
             HMIROp::Coerce {
                 mode,
                 value,
                 target,
-            } => {
-                write!(f, "{}<", mode.path())?;
-                self.expr(f, *target, depth)?;
-                f.write_str(">(")?;
-                self.expr(f, *value, depth)?;
-                f.write_str(")")
-            }
+            } => (
+                format!("{}<{}>", mode.path(), self.inline(*target)),
+                values(&[*value]),
+            ),
             HMIROp::Assign { target, op, value } => {
-                f.write_str("op.assign")?;
-                if let Some(op) = op {
-                    write!(f, "<{}>", op.path())?;
-                }
-                f.write_str("(")?;
-                self.list(f, &[*target, *value], depth, Self::expr)?;
-                f.write_str(")")
+                let head = match op {
+                    Some(op) => format!("op.assign<{}>", op.path()),
+                    None => "op.assign".to_string(),
+                };
+                (head, vec![Arg::Place(*target), Arg::Value(*value)])
             }
-            HMIROp::AddressOf(operand) => self.call(f, "op.address_of", &[*operand], depth),
-            HMIROp::Dereference(operand) => self.call(f, "op.dereference", &[*operand], depth),
-            HMIROp::Type(op) => self.type_op(f, op, depth),
-            HMIROp::Control(op) => self.control(f, op, depth),
-            HMIROp::OwnershipOp(op) => self.ownership(f, op, depth),
-            HMIROp::AggregateOp(op) => self.aggregate(f, op, depth),
+            HMIROp::AddressOf(operand) => ("op.address_of".to_string(), vec![Arg::Place(*operand)]),
+            HMIROp::Dereference(operand) => ("op.dereference".to_string(), values(&[*operand])),
+            HMIROp::Type(op) => self.type_parts(op),
+            HMIROp::Control(op) => control_parts(op),
+            HMIROp::OwnershipOp(op) => {
+                let (HMIROwnershipOp::Adopt(operand)
+                | HMIROwnershipOp::Leak(operand)
+                | HMIROwnershipOp::Move(operand)
+                | HMIROwnershipOp::Copy(operand)) = op;
+                (op.path().to_string(), values(&[*operand]))
+            }
+            HMIROp::AggregateOp(op) => self.aggregate_parts(op),
         }
     }
 
-    fn call(
-        &self,
-        f: &mut Formatter<'_>,
-        path: &str,
-        args: &[HMIRExprID],
-        depth: usize,
-    ) -> fmt::Result {
-        write!(f, "{path}(")?;
-        self.list(f, args, depth, Self::expr)?;
-        f.write_str(")")
-    }
-
-    fn control(&self, f: &mut Formatter<'_>, op: &HMIRControlOp, depth: usize) -> fmt::Result {
-        f.write_str(op.path())?;
-        match op {
-            HMIRControlOp::Return(Some(operand))
-            | HMIRControlOp::Yield(Some(operand))
-            | HMIRControlOp::Defer(operand)
-            | HMIRControlOp::Unsafe(operand) => {
-                f.write_str(" ")?;
-                self.expr(f, *operand, depth)
-            }
-            HMIRControlOp::IndirectGoto(target) => self.expr(f, *target, depth),
-            HMIRControlOp::Goto(label) | HMIRControlOp::LabelAddress { name: label, .. } => {
-                write!(f, " {label}")
-            }
-            HMIRControlOp::Return(None)
-            | HMIRControlOp::Yield(None)
-            | HMIRControlOp::Break
-            | HMIRControlOp::Continue
-            | HMIRControlOp::Unreachable => Ok(()),
-        }
-    }
-
-    fn ownership(&self, f: &mut Formatter<'_>, op: &HMIROwnershipOp, depth: usize) -> fmt::Result {
-        match op {
-            HMIROwnershipOp::Adopt(operand)
-            | HMIROwnershipOp::Leak(operand)
-            | HMIROwnershipOp::Move(operand)
-            | HMIROwnershipOp::Copy(operand) => self.call(f, op.path(), &[*operand], depth),
-        }
-    }
-
-    fn aggregate(&self, f: &mut Formatter<'_>, op: &HMIRAggregateOp, depth: usize) -> fmt::Result {
-        match op {
+    fn aggregate_parts(&self, op: &HMIRAggregateOp) -> (String, Vec<Arg>) {
+        let args = match op {
             HMIRAggregateOp::Member { base, name } => {
-                write!(f, "{}(", op.path())?;
-                self.expr(f, *base, depth)?;
-                write!(f, ", {name})")
+                vec![Arg::Value(*base), Arg::Text(name.to_string())]
             }
-            HMIRAggregateOp::Index { base, index } => {
-                self.call(f, op.path(), &[*base, *index], depth)
-            }
-            HMIRAggregateOp::Initialize { ty, fields } => {
-                write!(f, "{}(", op.path())?;
-                self.expr(f, *ty, depth)?;
-                for (name, value) in fields {
-                    f.write_str(", ")?;
-                    if let Some(name) = name {
-                        write!(f, ".{name} = ")?;
-                    }
-                    self.expr(f, *value, depth)?;
-                }
-                f.write_str(")")
-            }
+            HMIRAggregateOp::Index { base, index } => values(&[*base, *index]),
+            HMIRAggregateOp::Initialize { ty, fields: items } => fields(*ty, items),
             HMIRAggregateOp::Is { value, pattern } => {
-                write!(f, "{}(", op.path())?;
-                self.expr(f, *value, depth)?;
-                f.write_str(", ")?;
-                self.pattern(f, pattern, depth)?;
-                f.write_str(")")
+                vec![Arg::Value(*value), Arg::Text(self.pattern(pattern))]
             }
             HMIRAggregateOp::Unpack { value, bindings } => {
-                write!(f, "{}(", op.path())?;
-                self.expr(f, *value, depth)?;
-                for (field, local) in bindings {
-                    write!(f, ", .{field} = ")?;
-                    self.local_decl(f, *local)?;
-                }
-                f.write_str(")")
+                let bindings = bindings.iter().map(|(field, local)| {
+                    Arg::Text(format!(".{field} = {}", self.local_decl(*local)))
+                });
+                std::iter::once(Arg::Value(*value))
+                    .chain(bindings)
+                    .collect()
             }
-        }
+        };
+        (op.path().to_string(), args)
     }
 
-    fn type_op(&self, f: &mut Formatter<'_>, op: &HMIRTypeOp, depth: usize) -> fmt::Result {
-        match op {
+    fn type_parts(&self, op: &HMIRTypeOp) -> (String, Vec<Arg>) {
+        let args = match op {
             HMIRTypeOp::Member { ty, name } => {
-                write!(f, "{}(", op.path())?;
-                self.expr(f, *ty, depth)?;
-                write!(f, ", {name})")
+                vec![Arg::Value(*ty), Arg::Text(name.to_string())]
             }
-            HMIRTypeOp::Aggregate { ty, pairs } => {
-                f.write_str("aggregate(")?;
-                self.expr(f, *ty, depth)?;
-                for (position, (name, value)) in pairs.iter().enumerate() {
-                    if position > 0 {
-                        f.write_str(", ")?;
-                    }
-                    if let Some(name) = name {
-                        write!(f, ".{name} = ")?;
-                    }
-                    self.expr(f, *value, depth)?;
-                }
-                f.write_str(")")
-            }
+            HMIRTypeOp::Aggregate { ty, pairs } => fields(*ty, pairs),
             HMIRTypeOp::PointerInner(ty)
             | HMIRTypeOp::ReferenceInner(ty)
             | HMIRTypeOp::TypeOf(ty)
@@ -157,23 +123,51 @@ impl BodyPrinter<'_> {
             | HMIRTypeOp::IsInt(ty)
             | HMIRTypeOp::IsFloat(ty)
             | HMIRTypeOp::IsPointer(ty)
-            | HMIRTypeOp::IsSigned(ty) => self.call(f, op.path(), &[*ty], depth),
-            HMIRTypeOp::Equal(lhs, rhs) => self.call(f, op.path(), &[*lhs, *rhs], depth),
+            | HMIRTypeOp::IsSigned(ty) => values(&[*ty]),
+            HMIRTypeOp::Equal(lhs, rhs) => values(&[*lhs, *rhs]),
             HMIRTypeOp::OffsetOf { ty, member } => {
-                write!(f, "{}(", op.path())?;
-                self.expr(f, *ty, depth)?;
-                for step in member {
-                    match step {
-                        HMIRMemberStep::Field(name) => write!(f, ".{name}")?,
-                        HMIRMemberStep::Index(index) => {
-                            f.write_str("[")?;
-                            self.expr(f, *index, depth)?;
-                            f.write_str("]")?;
-                        }
-                    }
-                }
-                f.write_str(")")
+                let steps = member
+                    .iter()
+                    .map(|step| match step {
+                        HMIRMemberStep::Field(name) => format!(".{name}"),
+                        HMIRMemberStep::Index(index) => format!("[{}]", self.inline(*index)),
+                    })
+                    .collect::<String>();
+                vec![Arg::Value(*ty), Arg::Text(steps)]
             }
-        }
+        };
+        (op.path().to_string(), args)
     }
+
+    pub(super) fn intrinsic_args(&self, intrinsic: &HMIRIntrinsic) -> Vec<Arg> {
+        intrinsic
+            .args()
+            .into_iter()
+            .map(|arg| match arg {
+                IntrinsicArg::Value(value) | IntrinsicArg::Type(value) => Arg::Value(*value),
+                IntrinsicArg::Index(value) => Arg::Text(value.to_string()),
+                IntrinsicArg::Bool(value) => Arg::Text(value.to_string()),
+                IntrinsicArg::String(value) => Arg::Text(format!("{value:?}")),
+            })
+            .collect()
+    }
+}
+
+fn control_parts(op: &HMIRControlOp) -> (String, Vec<Arg>) {
+    let args = match op {
+        HMIRControlOp::Return(Some(operand))
+        | HMIRControlOp::Yield(Some(operand))
+        | HMIRControlOp::Defer(operand)
+        | HMIRControlOp::Unsafe(operand)
+        | HMIRControlOp::IndirectGoto(operand) => values(&[*operand]),
+        HMIRControlOp::Goto(label) | HMIRControlOp::LabelAddress { name: label, .. } => {
+            vec![Arg::Text(label.to_string())]
+        }
+        HMIRControlOp::Return(None)
+        | HMIRControlOp::Yield(None)
+        | HMIRControlOp::Break
+        | HMIRControlOp::Continue
+        | HMIRControlOp::Unreachable => Vec::new(),
+    };
+    (op.path().to_string(), args)
 }

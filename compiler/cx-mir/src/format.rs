@@ -18,8 +18,8 @@ use crate::{
         interface::MTRegistry,
     },
     unit::{
-        body::MIRBody,
         MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit,
+        body::MIRBody,
         function::{MIRFnSignature, MIRFunction},
     },
     value::{
@@ -391,13 +391,6 @@ fn write_body<T: MTRegistry>(
         types.write(f, place.ty())?;
         f.write_str(";\n")?;
     }
-    for (id, register) in body.registers() {
-        f.write_str("    let ")?;
-        write_register_name(f, function, id)?;
-        f.write_str(": ")?;
-        types.write(f, register.ty())?;
-        f.write_str(";\n")?;
-    }
     for (_, block) in body.blocks() {
         write_block(f, unit, function, block, types)?;
     }
@@ -449,8 +442,8 @@ fn write_instruction<T: MTRegistry>(
             source,
             origin,
         } => {
-            write_register_name(f, function, *out)?;
-            f.write_str(" = lift ")?;
+            write_definition(f, unit, function, MIRTarget::Register(*out), types)?;
+            f.write_str("lift ")?;
             write_bindable(f, unit, function, source)?;
             f.write_str(" from ")?;
             write_bindable(f, unit, function, origin)
@@ -467,11 +460,13 @@ fn write_instruction<T: MTRegistry>(
             bitfield,
             ..
         } => {
-            write_target(f, unit, function, *target)?;
             if let Some(MIRStoreBitfield::Target(access)) = bitfield {
+                write_target(f, unit, function, *target)?;
                 write_bitfield_access(f, access)?;
+                f.write_str(" = ")?;
+            } else {
+                write_definition(f, unit, function, *target, types)?;
             }
-            f.write_str(" = ")?;
             write_value(f, unit, function, value)?;
             if let Some(MIRStoreBitfield::Source(access)) = bitfield {
                 write_bitfield_access(f, access)?;
@@ -480,8 +475,7 @@ fn write_instruction<T: MTRegistry>(
         }
         MIRInstructionKind::Call { out, callee, args } => {
             if let Some(out) = out {
-                write_register_name(f, function, *out)?;
-                f.write_str(" = ")?;
+                write_definition(f, unit, function, MIRTarget::Register(*out), types)?;
             }
             write_value(f, unit, function, callee)?;
             f.write_str("(")?;
@@ -489,6 +483,14 @@ fn write_instruction<T: MTRegistry>(
             f.write_str(")")
         }
         MIRInstructionKind::IntrinsicOp(intrinsic) => {
+            if let MIRIntrinsic::Internal(MIRInternalIntrinsic::AdoptPlace { place, .. }) =
+                intrinsic
+            {
+                write_place_name(f, unit, function, *place)?;
+                f.write_str(" = ")?;
+            } else if let Some(out) = intrinsic.output_target() {
+                write_definition(f, unit, function, out, types)?;
+            }
             write_intrinsic(f, unit, function, intrinsic, types)
         }
         MIRInstructionKind::Return { value } => {
@@ -556,24 +558,11 @@ fn write_instruction<T: MTRegistry>(
     }
 }
 
-#[derive(Clone, Copy)]
-enum IntrinsicOutput {
-    Target(MIRTarget),
-    Place(MIRPlaceID),
-}
-
-impl From<MIRTarget> for IntrinsicOutput {
-    fn from(target: MIRTarget) -> Self {
-        Self::Target(target)
-    }
-}
-
 fn write_intrinsic_call<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
     types: &mut TypePrinter<'_, T>,
-    output: Option<IntrinsicOutput>,
     path: &str,
     args: impl FnOnce(
         &mut Formatter<'_>,
@@ -582,13 +571,6 @@ fn write_intrinsic_call<T: MTRegistry>(
         &mut TypePrinter<'_, T>,
     ) -> fmt::Result,
 ) -> fmt::Result {
-    if let Some(output) = output {
-        match output {
-            IntrinsicOutput::Target(target) => write_target(f, unit, function, target)?,
-            IntrinsicOutput::Place(place) => write_place_name(f, unit, function, place)?,
-        }
-        f.write_str(" = ")?;
-    }
     write!(f, "@intrinsic.{path}(")?;
     args(f, unit, function, types)?;
     f.write_str(")")
@@ -610,18 +592,11 @@ fn write_intrinsic_unary<T: MTRegistry>(
     function: &MIRFunction,
     types: &mut TypePrinter<'_, T>,
     path: &str,
-    out: MIRTarget,
     value: &MIRValue,
 ) -> fmt::Result {
-    write_intrinsic_call(
-        f,
-        unit,
-        function,
-        types,
-        Some(IntrinsicOutput::Target(out)),
-        path,
-        |f, unit, function, _| write_value(f, unit, function, value),
-    )
+    write_intrinsic_call(f, unit, function, types, path, |f, unit, function, _| {
+        write_value(f, unit, function, value)
+    })
 }
 
 fn write_intrinsic_binary<T: MTRegistry>(
@@ -630,23 +605,14 @@ fn write_intrinsic_binary<T: MTRegistry>(
     function: &MIRFunction,
     types: &mut TypePrinter<'_, T>,
     path: &str,
-    out: MIRTarget,
     lhs: &MIRValue,
     rhs: &MIRValue,
 ) -> fmt::Result {
-    write_intrinsic_call(
-        f,
-        unit,
-        function,
-        types,
-        Some(IntrinsicOutput::Target(out)),
-        path,
-        |f, unit, function, _| {
-            write_value(f, unit, function, lhs)?;
-            f.write_str(", ")?;
-            write_value(f, unit, function, rhs)
-        },
-    )
+    write_intrinsic_call(f, unit, function, types, path, |f, unit, function, _| {
+        write_value(f, unit, function, lhs)?;
+        f.write_str(", ")?;
+        write_value(f, unit, function, rhs)
+    })
 }
 
 fn write_intrinsic_value_type<T: MTRegistry>(
@@ -655,7 +621,6 @@ fn write_intrinsic_value_type<T: MTRegistry>(
     function: &MIRFunction,
     types: &mut TypePrinter<'_, T>,
     path: &str,
-    out: MIRTarget,
     value: &MIRValue,
     target_ty: MIRTypeID,
 ) -> fmt::Result {
@@ -664,7 +629,6 @@ fn write_intrinsic_value_type<T: MTRegistry>(
         unit,
         function,
         types,
-        Some(IntrinsicOutput::Target(out)),
         path,
         |f, unit, function, types| {
             write_value(f, unit, function, value)?;
@@ -707,26 +671,25 @@ fn write_int_intrinsic<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match intrinsic {
-        MIRIntIntrinsic::Neg { out, value } => {
-            write_intrinsic_unary(f, unit, function, types, "int.neg", *out, value)
+        MIRIntIntrinsic::Neg { value, .. } => {
+            write_intrinsic_unary(f, unit, function, types, "int.neg", value)
         }
-        MIRIntIntrinsic::LNot { out, value } => {
-            write_intrinsic_unary(f, unit, function, types, "int.l_not", *out, value)
+        MIRIntIntrinsic::LNot { value, .. } => {
+            write_intrinsic_unary(f, unit, function, types, "int.l_not", value)
         }
-        MIRIntIntrinsic::BNot { out, value } => {
-            write_intrinsic_unary(f, unit, function, types, "int.b_not", *out, value)
+        MIRIntIntrinsic::BNot { value, .. } => {
+            write_intrinsic_unary(f, unit, function, types, "int.b_not", value)
         }
         MIRIntIntrinsic::ToFloat {
-            out,
             value,
             target,
             signed,
+            ..
         } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             if *signed {
                 "int.to_float.signed"
             } else {
@@ -738,9 +701,7 @@ fn write_int_intrinsic<T: MTRegistry>(
             },
         ),
         MIRIntIntrinsic::ToPtr {
-            out,
-            value,
-            sign_extend,
+            value, sign_extend, ..
         } => write_intrinsic_unary(
             f,
             unit,
@@ -751,20 +712,18 @@ fn write_int_intrinsic<T: MTRegistry>(
             } else {
                 "int.to_ptr.unsigned"
             },
-            *out,
             value,
         ),
         MIRIntIntrinsic::IntCast {
-            out,
             value,
             target,
             sign_extend,
+            ..
         } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "int.int_cast",
             |f, unit, function, _| {
                 write_value(f, unit, function, value)?;
@@ -773,83 +732,83 @@ fn write_int_intrinsic<T: MTRegistry>(
                 write!(f, ", {sign_extend}")
             },
         ),
-        MIRIntIntrinsic::Add { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.add", *out, lhs, rhs)
+        MIRIntIntrinsic::Add { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.add", lhs, rhs)
         }
-        MIRIntIntrinsic::Sub { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.sub", *out, lhs, rhs)
+        MIRIntIntrinsic::Sub { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.sub", lhs, rhs)
         }
-        MIRIntIntrinsic::UMul { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.u_mul", *out, lhs, rhs)
+        MIRIntIntrinsic::UMul { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.u_mul", lhs, rhs)
         }
-        MIRIntIntrinsic::SMul { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.s_mul", *out, lhs, rhs)
+        MIRIntIntrinsic::SMul { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.s_mul", lhs, rhs)
         }
-        MIRIntIntrinsic::UDiv { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.u_div", *out, lhs, rhs)
+        MIRIntIntrinsic::UDiv { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.u_div", lhs, rhs)
         }
-        MIRIntIntrinsic::SDiv { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.s_div", *out, lhs, rhs)
+        MIRIntIntrinsic::SDiv { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.s_div", lhs, rhs)
         }
-        MIRIntIntrinsic::UMod { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.u_mod", *out, lhs, rhs)
+        MIRIntIntrinsic::UMod { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.u_mod", lhs, rhs)
         }
-        MIRIntIntrinsic::SMod { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.s_mod", *out, lhs, rhs)
+        MIRIntIntrinsic::SMod { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.s_mod", lhs, rhs)
         }
-        MIRIntIntrinsic::Eq { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.eq", *out, lhs, rhs)
+        MIRIntIntrinsic::Eq { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.eq", lhs, rhs)
         }
-        MIRIntIntrinsic::Neq { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.neq", *out, lhs, rhs)
+        MIRIntIntrinsic::Neq { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.neq", lhs, rhs)
         }
-        MIRIntIntrinsic::ULt { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.u_lt", *out, lhs, rhs)
+        MIRIntIntrinsic::ULt { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.u_lt", lhs, rhs)
         }
-        MIRIntIntrinsic::SLt { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.s_lt", *out, lhs, rhs)
+        MIRIntIntrinsic::SLt { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.s_lt", lhs, rhs)
         }
-        MIRIntIntrinsic::ULe { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.u_le", *out, lhs, rhs)
+        MIRIntIntrinsic::ULe { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.u_le", lhs, rhs)
         }
-        MIRIntIntrinsic::SLe { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.s_le", *out, lhs, rhs)
+        MIRIntIntrinsic::SLe { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.s_le", lhs, rhs)
         }
-        MIRIntIntrinsic::UGt { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.u_gt", *out, lhs, rhs)
+        MIRIntIntrinsic::UGt { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.u_gt", lhs, rhs)
         }
-        MIRIntIntrinsic::SGt { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.s_gt", *out, lhs, rhs)
+        MIRIntIntrinsic::SGt { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.s_gt", lhs, rhs)
         }
-        MIRIntIntrinsic::UGe { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.u_ge", *out, lhs, rhs)
+        MIRIntIntrinsic::UGe { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.u_ge", lhs, rhs)
         }
-        MIRIntIntrinsic::SGe { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.s_ge", *out, lhs, rhs)
+        MIRIntIntrinsic::SGe { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.s_ge", lhs, rhs)
         }
-        MIRIntIntrinsic::LAnd { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.l_and", *out, lhs, rhs)
+        MIRIntIntrinsic::LAnd { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.l_and", lhs, rhs)
         }
-        MIRIntIntrinsic::LOr { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.l_or", *out, lhs, rhs)
+        MIRIntIntrinsic::LOr { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.l_or", lhs, rhs)
         }
-        MIRIntIntrinsic::BAnd { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.b_and", *out, lhs, rhs)
+        MIRIntIntrinsic::BAnd { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.b_and", lhs, rhs)
         }
-        MIRIntIntrinsic::BOr { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.b_or", *out, lhs, rhs)
+        MIRIntIntrinsic::BOr { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.b_or", lhs, rhs)
         }
-        MIRIntIntrinsic::BXor { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.b_xor", *out, lhs, rhs)
+        MIRIntIntrinsic::BXor { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.b_xor", lhs, rhs)
         }
-        MIRIntIntrinsic::LShift { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.l_shift", *out, lhs, rhs)
+        MIRIntIntrinsic::LShift { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.l_shift", lhs, rhs)
         }
-        MIRIntIntrinsic::ARShift { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.ar_shift", *out, lhs, rhs)
+        MIRIntIntrinsic::ARShift { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.ar_shift", lhs, rhs)
         }
-        MIRIntIntrinsic::LRShift { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "int.lr_shift", *out, lhs, rhs)
+        MIRIntIntrinsic::LRShift { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "int.lr_shift", lhs, rhs)
         }
     }
 }
@@ -862,14 +821,14 @@ fn write_float_intrinsic<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match intrinsic {
-        MIRFloatIntrinsic::Neg { out, value } => {
-            write_intrinsic_unary(f, unit, function, types, "float.neg", *out, value)
+        MIRFloatIntrinsic::Neg { value, .. } => {
+            write_intrinsic_unary(f, unit, function, types, "float.neg", value)
         }
         MIRFloatIntrinsic::ToInt {
-            out,
             value,
             target_ty,
             signed,
+            ..
         } => write_intrinsic_value_type(
             f,
             unit,
@@ -880,55 +839,51 @@ fn write_float_intrinsic<T: MTRegistry>(
             } else {
                 "float.to_int.unsigned"
             },
-            *out,
             value,
             *target_ty,
         ),
         MIRFloatIntrinsic::FloatCast {
-            out,
-            value,
-            float_ty,
+            value, float_ty, ..
         } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "float.cast",
             |f, unit, function, _| {
                 write_value(f, unit, function, value)?;
                 write!(f, ", f{}", float_width(*float_ty))
             },
         ),
-        MIRFloatIntrinsic::Add { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.add", *out, lhs, rhs)
+        MIRFloatIntrinsic::Add { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.add", lhs, rhs)
         }
-        MIRFloatIntrinsic::Sub { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.sub", *out, lhs, rhs)
+        MIRFloatIntrinsic::Sub { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.sub", lhs, rhs)
         }
-        MIRFloatIntrinsic::Mul { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.mul", *out, lhs, rhs)
+        MIRFloatIntrinsic::Mul { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.mul", lhs, rhs)
         }
-        MIRFloatIntrinsic::Div { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.div", *out, lhs, rhs)
+        MIRFloatIntrinsic::Div { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.div", lhs, rhs)
         }
-        MIRFloatIntrinsic::Eq { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.eq", *out, lhs, rhs)
+        MIRFloatIntrinsic::Eq { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.eq", lhs, rhs)
         }
-        MIRFloatIntrinsic::Neq { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.neq", *out, lhs, rhs)
+        MIRFloatIntrinsic::Neq { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.neq", lhs, rhs)
         }
-        MIRFloatIntrinsic::Lt { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.lt", *out, lhs, rhs)
+        MIRFloatIntrinsic::Lt { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.lt", lhs, rhs)
         }
-        MIRFloatIntrinsic::Le { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.le", *out, lhs, rhs)
+        MIRFloatIntrinsic::Le { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.le", lhs, rhs)
         }
-        MIRFloatIntrinsic::Gt { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.gt", *out, lhs, rhs)
+        MIRFloatIntrinsic::Gt { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.gt", lhs, rhs)
         }
-        MIRFloatIntrinsic::Geq { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "float.geq", *out, lhs, rhs)
+        MIRFloatIntrinsic::Geq { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "float.geq", lhs, rhs)
         }
     }
 }
@@ -941,37 +896,25 @@ fn write_pointer_intrinsic<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match intrinsic {
-        MIRPtrIntrinsic::ToInt {
-            out,
-            ptr,
-            target_ty,
-        } => write_intrinsic_value_type(
-            f,
-            unit,
-            function,
-            types,
-            "pointer.to_int",
-            *out,
-            ptr,
-            *target_ty,
-        ),
-        MIRPtrIntrinsic::Add { out, ptr, offset } => {
-            write_intrinsic_binary(f, unit, function, types, "pointer.add", *out, ptr, offset)
+        MIRPtrIntrinsic::ToInt { ptr, target_ty, .. } => {
+            write_intrinsic_value_type(f, unit, function, types, "pointer.to_int", ptr, *target_ty)
         }
-        MIRPtrIntrinsic::Sub { out, ptr, offset } => {
-            write_intrinsic_binary(f, unit, function, types, "pointer.sub", *out, ptr, offset)
+        MIRPtrIntrinsic::Add { ptr, offset, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "pointer.add", ptr, offset)
+        }
+        MIRPtrIntrinsic::Sub { ptr, offset, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "pointer.sub", ptr, offset)
         }
         MIRPtrIntrinsic::Diff {
-            out,
             lhs,
             rhs,
             element_ty,
+            ..
         } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "pointer.diff",
             |f, unit, function, types| {
                 write_value(f, unit, function, lhs)?;
@@ -981,23 +924,23 @@ fn write_pointer_intrinsic<T: MTRegistry>(
                 types.write(f, *element_ty)
             },
         ),
-        MIRPtrIntrinsic::Eq { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "pointer.eq", *out, lhs, rhs)
+        MIRPtrIntrinsic::Eq { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "pointer.eq", lhs, rhs)
         }
-        MIRPtrIntrinsic::Neq { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "pointer.neq", *out, lhs, rhs)
+        MIRPtrIntrinsic::Neq { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "pointer.neq", lhs, rhs)
         }
-        MIRPtrIntrinsic::Lt { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "pointer.lt", *out, lhs, rhs)
+        MIRPtrIntrinsic::Lt { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "pointer.lt", lhs, rhs)
         }
-        MIRPtrIntrinsic::Leq { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "pointer.leq", *out, lhs, rhs)
+        MIRPtrIntrinsic::Leq { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "pointer.leq", lhs, rhs)
         }
-        MIRPtrIntrinsic::Gt { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "pointer.gt", *out, lhs, rhs)
+        MIRPtrIntrinsic::Gt { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "pointer.gt", lhs, rhs)
         }
-        MIRPtrIntrinsic::Geq { out, lhs, rhs } => {
-            write_intrinsic_binary(f, unit, function, types, "pointer.geq", *out, lhs, rhs)
+        MIRPtrIntrinsic::Geq { lhs, rhs, .. } => {
+            write_intrinsic_binary(f, unit, function, types, "pointer.geq", lhs, rhs)
         }
     }
 }
@@ -1010,80 +953,70 @@ fn write_internal_intrinsic<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match intrinsic {
-        MIRInternalIntrinsic::AdoptPlace { place, address } => write_intrinsic_call(
+        MIRInternalIntrinsic::AdoptPlace { address, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Place(*place)),
             "internal.adopt_place",
             |f, unit, function, _| write_value(f, unit, function, address),
         ),
-        MIRInternalIntrinsic::PlaceAddress { out, place } => write_intrinsic_call(
+        MIRInternalIntrinsic::PlaceAddress { place, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "internal.place_address",
             |f, unit, function, _| write_place_name(f, unit, function, *place),
         ),
-        MIRInternalIntrinsic::GlobalAddress { out, global } => write_intrinsic_call(
+        MIRInternalIntrinsic::GlobalAddress { global, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "internal.global_address",
             |f, unit, _, _| write_global_ref(f, unit, *global),
         ),
-        MIRInternalIntrinsic::ReferenceAddress { out, reference } => write_intrinsic_call(
+        MIRInternalIntrinsic::ReferenceAddress { reference, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "internal.reference_address",
             |f, unit, function, _| write_value(f, unit, function, reference),
         ),
-        MIRInternalIntrinsic::ArrayAddress { out, array } => write_intrinsic_call(
+        MIRInternalIntrinsic::ArrayAddress { array, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "internal.array_address",
             |f, unit, function, _| write_value(f, unit, function, array),
         ),
-        MIRInternalIntrinsic::StringAddress { out, string } => write_intrinsic_call(
+        MIRInternalIntrinsic::StringAddress { string, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "internal.string_address",
             |f, _, _, _| write!(f, "{string:?}"),
         ),
-        MIRInternalIntrinsic::GetFnPtr { out, fn_id } => write_intrinsic_call(
+        MIRInternalIntrinsic::GetFnPtr { fn_id, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "internal.get_fn_ptr",
             |f, _, _, _| Display::fmt(fn_id, f),
         ),
         MIRInternalIntrinsic::Bitcast {
-            out,
-            value,
-            target_ty,
+            value, target_ty, ..
         } => write_intrinsic_value_type(
             f,
             unit,
             function,
             types,
             "internal.bitcast",
-            *out,
             value,
             *target_ty,
         ),
@@ -1092,7 +1025,6 @@ fn write_internal_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            None,
             "internal.assert",
             |f, unit, function, _| {
                 write_value(f, unit, function, condition)?;
@@ -1107,7 +1039,6 @@ fn write_internal_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            None,
             "internal.assume",
             |f, unit, function, _| write_value(f, unit, function, condition),
         ),
@@ -1127,7 +1058,6 @@ fn write_va_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            None,
             "va.start",
             |f, unit, function, _| {
                 write_value(f, unit, function, list)?;
@@ -1140,16 +1070,14 @@ fn write_va_intrinsic<T: MTRegistry>(
             unit,
             function,
             types,
-            None,
             "va.end",
             |f, unit, function, _| write_value(f, unit, function, list),
         ),
-        MIRVAIntrinsic::VaArg { out, list, ty } => write_intrinsic_call(
+        MIRVAIntrinsic::VaArg { list, ty, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "va.arg",
             |f, unit, function, types| {
                 write_value(f, unit, function, list)?;
@@ -1168,12 +1096,11 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match intrinsic {
-        MIRAggregateIntrinsic::SumIndex { out, value, sum_ty } => write_intrinsic_call(
+        MIRAggregateIntrinsic::SumIndex { value, sum_ty, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "aggregate.sum_index",
             |f, unit, function, types| {
                 write_value(f, unit, function, value)?;
@@ -1182,16 +1109,15 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             },
         ),
         MIRAggregateIntrinsic::SumVariant {
-            out,
             base,
             variant,
             sum_ty,
+            ..
         } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "aggregate.sum_variant",
             |f, unit, function, types| {
                 write_value(f, unit, function, base)?;
@@ -1199,12 +1125,11 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
                 types.write(f, *sum_ty)
             },
         ),
-        MIRAggregateIntrinsic::AggregateInit { out, ty, fields } => write_intrinsic_call(
+        MIRAggregateIntrinsic::AggregateInit { ty, fields, .. } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "aggregate.init",
             |f, unit, function, types| {
                 types.write(f, *ty)?;
@@ -1216,16 +1141,15 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             },
         ),
         MIRAggregateIntrinsic::StructField {
-            out,
             base,
             field,
             struct_ty,
+            ..
         } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "aggregate.struct_field",
             |f, unit, function, types| {
                 write_value(f, unit, function, base)?;
@@ -1234,16 +1158,15 @@ fn write_aggregate_intrinsic<T: MTRegistry>(
             },
         ),
         MIRAggregateIntrinsic::ArrayIndex {
-            out,
             base,
             index,
             element_ty,
+            ..
         } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
-            Some(IntrinsicOutput::Target(*out)),
             "aggregate.array_index",
             |f, unit, function, types| {
                 write_value(f, unit, function, base)?;
@@ -1382,6 +1305,23 @@ fn write_target(
             write_register_name(f, function, register)
         }
     }
+}
+
+fn write_definition<T: MTRegistry>(
+    f: &mut Formatter<'_>,
+    unit: &MIRUnit,
+    function: &MIRFunction,
+    target: MIRTarget,
+    types: &mut TypePrinter<'_, T>,
+) -> fmt::Result {
+    write_target(f, unit, function, target)?;
+    if let MIRTarget::Register(register) = target
+        && let Some(body) = function.body()
+    {
+        f.write_str(" : ")?;
+        types.write(f, body.register(register).ty())?;
+    }
+    f.write_str(" = ")
 }
 
 fn integer_width(ty: MIRIntType) -> u16 {

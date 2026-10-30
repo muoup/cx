@@ -1,5 +1,8 @@
 mod body;
+mod emit;
 mod expr;
+mod flow;
+mod inline;
 mod native;
 mod ty;
 
@@ -15,6 +18,7 @@ use crate::unit::{
 };
 
 use body::BodyPrinter;
+use emit::Emitter;
 
 impl Display for HMIRUnit {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -79,12 +83,12 @@ fn write_function(
             f.write_str(", ")?;
         }
         match function.params().get(index) {
-            Some(local) => printer.param_decl(f, *local)?,
+            Some(local) => f.write_str(&printer.param_decl(*local))?,
             None => {
                 if param.comptime() {
                     f.write_str("comptime ")?;
                 }
-                printer.expr(f, *param.ty(), 0)?;
+                f.write_str(&printer.inline(*param.ty()))?;
             }
         }
         if param.defaulted() {
@@ -99,39 +103,32 @@ fn write_function(
         })?;
     }
     f.write_str(") -> ")?;
-    printer.expr(f, *signature.return_type(), 0)?;
+    f.write_str(&printer.inline(*signature.return_type()))?;
     write_link_name(f, def, function.prototype().symbol_name())?;
 
     let contract = signature.contract();
     if !contract.is_empty() {
-        let conditions = BodyPrinter::new(unit, contract.body());
+        let mut conditions = Emitter::new(BodyPrinter::new(unit, contract.body()));
 
         f.write_str(" where")?;
         if contract.is_safe() {
             f.write_str(" safe")?;
         }
         if let Some(precondition) = contract.precondition() {
-            f.write_str(" pre(")?;
-            conditions.expr(f, precondition, 0)?;
-            f.write_str(")")?;
+            write!(f, " pre({})", conditions.value(precondition))?;
         }
         if let Some((binding, postcondition)) = contract.postcondition() {
             f.write_str(" post(")?;
             if let Some(binding) = binding {
-                conditions.local(f, binding)?;
-                f.write_str(" => ")?;
+                write!(f, "{} => ", conditions.printer.local(binding))?;
             }
-            conditions.expr(f, postcondition, 0)?;
-            f.write_str(")")?;
+            write!(f, "{})", conditions.value(postcondition))?;
         }
     }
 
     match function.def() {
         None => f.write_str(";"),
-        Some(def) => {
-            f.write_str(" ")?;
-            printer.expr(f, def.root(), 0)
-        }
+        Some(def) => write!(f, " {}", Emitter::new(printer).body(def.root())),
     }
 }
 
@@ -145,11 +142,10 @@ fn write_global(
 
     write_linkage(f, global.linkage())?;
     write!(f, "global @{}: ", def.name())?;
-    printer.expr(f, global.ty(), 0)?;
+    f.write_str(&printer.inline(global.ty()))?;
     write_link_name(f, def, global.symbol_name())?;
     if let Some(initializer) = global.initializer() {
-        f.write_str(" = ")?;
-        printer.expr(f, initializer, 0)?;
+        write!(f, " = {}", Emitter::new(printer).value(initializer))?;
     }
     f.write_str(";")
 }
@@ -162,8 +158,10 @@ fn write_comptime_global(
 ) -> fmt::Result {
     let printer = BodyPrinter::new(unit, global.body());
     write!(f, "comptime global @{}: ", def.name())?;
-    printer.expr(f, global.ty(), 0)?;
-    f.write_str(" = ")?;
-    printer.expr(f, global.initializer(), 0)?;
-    f.write_str(";")
+    f.write_str(&printer.inline(global.ty()))?;
+    write!(
+        f,
+        " = {};",
+        Emitter::new(printer).value(global.initializer())
+    )
 }

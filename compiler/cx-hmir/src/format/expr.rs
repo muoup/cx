@@ -1,279 +1,219 @@
-use std::fmt::{self, Formatter};
-
-use cx_intrinsics::IntrinsicArg;
-
 use crate::expr::{
-    HMIRExprID, HMIRExprKind, HMIRIntrinsic,
-    aggregate::HMIRPattern,
-    op::{HMIRControlOp, HMIROp},
+    HMIRExprID, HMIRExprKind,
+    op::{HMIRBinaryOp, HMIRControlOp, HMIROp},
 };
 
 use super::{
-    body::{BodyPrinter, indent},
-    ty::{write_def, write_generic_type, write_literal},
+    emit::Emitter,
+    native::{Arg, render_args},
 };
 
-impl std::fmt::Display for HMIRExprID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "e{}", self.index())
-    }
-}
-
-impl BodyPrinter<'_> {
-    pub(super) fn expr(&self, f: &mut Formatter<'_>, id: HMIRExprID, depth: usize) -> fmt::Result {
-        match self.body().expr(id).kind() {
-            HMIRExprKind::Literal(literal) => write_literal(f, literal),
-            HMIRExprKind::Local(local) => self.local(f, *local),
-            HMIRExprKind::Def(def) => write_def(f, self.unit(), *def),
-            HMIRExprKind::Name { name, tag: None } => write!(f, "{name}"),
-            HMIRExprKind::Name {
-                name,
-                tag: Some(tag),
-            } => write!(f, "{} {name}", tag.prefix()),
-            HMIRExprKind::Hole(hole) => write!(f, "{hole}"),
-            HMIRExprKind::Type(ty) => write_generic_type(
-                f,
-                ty,
-                &|f, inner| self.expr(f, *inner, depth),
-                &|f, length| self.expr(f, *length, depth),
-            ),
-            HMIRExprKind::ScopeAccess { base, member } => {
-                self.expr(f, *base, depth)?;
-                write!(f, "::{member}")
-            }
-            HMIRExprKind::Error(_) => f.write_str("<error>"),
+impl Emitter<'_> {
+    pub(super) fn atom(&mut self, id: HMIRExprID) -> String {
+        if let Some(temp) = self.memo(id) {
+            return temp;
+        }
+        let printer = self.printer;
+        match printer.body().expr(id).kind() {
+            HMIRExprKind::Literal(_)
+            | HMIRExprKind::Local(_)
+            | HMIRExprKind::Def(_)
+            | HMIRExprKind::Name { .. }
+            | HMIRExprKind::Hole(_)
+            | HMIRExprKind::Type(_)
+            | HMIRExprKind::ScopeAccess { .. }
+            | HMIRExprKind::Error(_) => printer.inline(id),
 
             HMIRExprKind::Comptime(inner) => {
-                f.write_str("comptime(")?;
-                self.expr(f, *inner, depth)?;
-                f.write_str(")")
+                let inner = self.comptime_scope(true, |emitter| emitter.atom(*inner));
+                format!("comptime({inner})")
             }
             HMIRExprKind::Quote { params, body } => {
-                f.write_str("quote")?;
-                if !params.is_empty() {
-                    f.write_str("(")?;
-                    self.list(f, params, depth, |printer, f, param, _| {
-                        printer.local_decl(f, param)
-                    })?;
-                    f.write_str(")")?;
-                }
-                f.write_str(" ")?;
-                self.expr(f, *body, depth)
+                let decls = params
+                    .iter()
+                    .map(|param| printer.local_decl(*param))
+                    .collect::<Vec<_>>();
+                let params = match decls.is_empty() {
+                    true => String::new(),
+                    false => format!("({})", decls.join(", ")),
+                };
+                let lines = self.comptime_scope(true, |emitter| {
+                    emitter.nested(|emitter| emitter.region(*body, !emitter.is_block(*body)))
+                });
+                format!("quote{params} {{\n{lines}{}}}", self.closing_indent())
             }
             HMIRExprKind::Splice { quote, args } => {
-                f.write_str("splice(")?;
-                self.expr(f, *quote, depth)?;
-                f.write_str(")")?;
-                if !args.is_empty() {
-                    f.write_str("(")?;
-                    self.list(f, args, depth, Self::expr)?;
-                    f.write_str(")")?;
-                }
-                Ok(())
+                let quote = self.atom(*quote);
+                let args = args.iter().map(|arg| self.atom(*arg)).collect::<Vec<_>>();
+                format!("splice({quote})({})", args.join(", "))
             }
+            HMIRExprKind::Piped(value) => format!("piped({})", self.atom(*value)),
 
-            HMIRExprKind::Intrinsic(intrinsic) => self.intrinsic(f, intrinsic, depth),
-            HMIRExprKind::Op(op) => self.native(f, op, depth),
-
+            HMIRExprKind::Intrinsic(intrinsic) => {
+                let args = printer.intrinsic_args(intrinsic);
+                let args = self.render(&args);
+                self.assign_temp(id, format!("{}({})", intrinsic.path(), args.join(", ")))
+            }
+            HMIRExprKind::Op(op) => self.op(id, op),
+            HMIRExprKind::Call {
+                callee,
+                args,
+                named,
+            } => {
+                let callee = self.atom(*callee);
+                let args = args.iter().map(|arg| Arg::Value(*arg));
+                let named = named
+                    .iter()
+                    .map(|(name, value)| Arg::Named(name.clone(), *value));
+                let args = self.render(&args.chain(named).collect::<Vec<_>>());
+                self.assign_temp(id, format!("{callee}({})", args.join(", ")))
+            }
             HMIRExprKind::Let { local, initializer } => {
-                f.write_str("local ")?;
-                self.local_decl(f, *local)?;
-                if let Some(initializer) = initializer {
-                    f.write_str(" = ")?;
-                    self.expr(f, *initializer, depth)?;
-                }
-                Ok(())
-            }
-            HMIRExprKind::Call { callee, args, named } => {
-                self.expr(f, *callee, depth)?;
-                f.write_str("(")?;
-                self.list(f, args, depth, Self::expr)?;
-                for (index, (name, value)) in named.iter().enumerate() {
-                    if index > 0 || !args.is_empty() {
-                        f.write_str(", ")?;
-                    }
-                    write!(f, ".{name} = ")?;
-                    self.expr(f, *value, depth)?;
-                }
-                f.write_str(")")
-            }
-            HMIRExprKind::Piped(value) => {
-                f.write_str("piped(")?;
-                self.expr(f, *value, depth)?;
-                f.write_str(")")
+                let initializer = initializer.map(|initializer| {
+                    let comptime = printer.body().local(*local).comptime();
+                    self.comptime_scope(comptime, |emitter| emitter.atom(initializer))
+                });
+                let initializer = initializer.map(|value| format!(" = {value}"));
+                self.line(format!(
+                    "local {}{}",
+                    printer.local_decl(*local),
+                    initializer.unwrap_or_default()
+                ));
+                printer.local(*local)
             }
 
+            HMIRExprKind::Block { .. }
+            | HMIRExprKind::If { .. }
+            | HMIRExprKind::While { .. }
+            | HMIRExprKind::For { .. }
+            | HMIRExprKind::Switch { .. }
+            | HMIRExprKind::Case { .. }
+            | HMIRExprKind::Match { .. }
+            | HMIRExprKind::Label { .. } => self.flow(id, true),
+        }
+    }
+
+    pub(super) fn stmt(&mut self, id: HMIRExprID) {
+        match self.printer.body().expr(id).kind() {
+            HMIRExprKind::Literal(_)
+            | HMIRExprKind::Local(_)
+            | HMIRExprKind::Def(_)
+            | HMIRExprKind::Name { .. }
+            | HMIRExprKind::Hole(_) => {}
+            HMIRExprKind::Comptime(inner) => {
+                self.open("comptime {");
+                self.comptime_scope(true, |emitter| emitter.region(*inner, false));
+                self.close();
+            }
+            HMIRExprKind::Block { .. }
+            | HMIRExprKind::If { .. }
+            | HMIRExprKind::While { .. }
+            | HMIRExprKind::For { .. }
+            | HMIRExprKind::Switch { .. }
+            | HMIRExprKind::Case { .. }
+            | HMIRExprKind::Match { .. }
+            | HMIRExprKind::Label { .. } => {
+                self.flow(id, false);
+            }
+            HMIRExprKind::Op(HMIROp::Control(
+                HMIRControlOp::Defer(_) | HMIRControlOp::Unsafe(_),
+            )) => {
+                self.flow(id, false);
+            }
+            _ => {
+                self.atom(id);
+            }
+        }
+    }
+
+    pub(super) fn region(&mut self, id: HMIRExprID, valued: bool) {
+        let body = self.printer.body();
+        match body.expr(id).kind() {
             HMIRExprKind::Block {
-                statements,
-                scoped,
-                yields,
-            } => {
-                f.write_str(match (scoped, yields) {
-                    (_, true) => "yield {\n",
-                    (true, false) => "{\n",
-                    (false, false) => "seq {\n",
-                })?;
-                self.block(f, statements, depth)
-            }
-
-            HMIRExprKind::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                self.condition(f, "if", *condition, depth)?;
-                self.expr(f, *then_branch, depth)?;
-                if let Some(else_branch) = else_branch {
-                    f.write_str(" else ")?;
-                    self.expr(f, *else_branch, depth)?;
+                statements, yields, ..
+            } => match (valued && !yields, statements.split_last()) {
+                (true, Some((last, rest))) => {
+                    rest.iter().for_each(|statement| self.stmt(*statement));
+                    self.yield_atom(*last);
                 }
-                Ok(())
+                _ => statements
+                    .iter()
+                    .for_each(|statement| self.stmt(*statement)),
+            },
+            _ if valued => self.yield_atom(id),
+            _ => self.stmt(id),
+        }
+    }
+
+    pub(super) fn is_block(&self, id: HMIRExprID) -> bool {
+        matches!(
+            self.printer.body().expr(id).kind(),
+            HMIRExprKind::Block { .. }
+        )
+    }
+
+    pub(super) fn yield_atom(&mut self, id: HMIRExprID) {
+        match self.printer.body().expr(id).kind() {
+            HMIRExprKind::Op(HMIROp::Control(_)) => self.stmt(id),
+            _ => {
+                let atom = self.atom(id);
+                self.line(format!("yield {atom}"));
             }
-            HMIRExprKind::While {
-                condition,
-                body,
-                pre_eval: true,
+        }
+    }
+
+    fn render(&mut self, args: &[Arg]) -> Vec<String> {
+        let printer = self.printer;
+        render_args(args, &mut |id, place| match place {
+            true => printer.place_with(id, &mut |id| self.atom(id)),
+            false => self.atom(id),
+        })
+    }
+
+    fn op(&mut self, id: HMIRExprID, op: &HMIROp) -> String {
+        let printer = self.printer;
+        match op {
+            op if printer.is_place(op) => printer.place_with(id, &mut |id| self.atom(id)),
+            HMIROp::BinOp {
+                op: op @ (HMIRBinaryOp::LAnd | HMIRBinaryOp::LOr),
+                lhs,
+                rhs,
             } => {
-                self.condition(f, "while", *condition, depth)?;
-                self.expr(f, *body, depth)
+                let lhs = self.atom(*lhs);
+                let temp = self.fresh(id);
+                self.open(format!("{temp} = {} {lhs} {{", op.path()));
+                self.yield_atom(*rhs);
+                self.close();
+                temp
             }
-            HMIRExprKind::While {
-                condition,
-                body,
-                pre_eval: false,
-            } => {
-                f.write_str("do ")?;
-                self.expr(f, *body, depth)?;
-                f.write_str(" ")?;
-                self.condition(f, "while", *condition, depth)
+            HMIROp::Control(HMIRControlOp::Defer(_) | HMIRControlOp::Unsafe(_)) => {
+                self.flow(id, true)
             }
-            HMIRExprKind::For {
-                init,
-                condition,
-                increment,
-                body,
-            } => {
-                f.write_str("for (")?;
-                self.statement(f, *init, depth)?;
-                f.write_str("; ")?;
-                self.statement(f, *condition, depth)?;
-                f.write_str("; ")?;
-                self.statement(f, *increment, depth)?;
-                f.write_str(") ")?;
-                self.expr(f, *body, depth)
+            HMIROp::Control(HMIRControlOp::LabelAddress { .. }) => {
+                let (head, args) = printer.native_parts(op);
+                let args = self.render(&args);
+                self.assign_temp(id, format!("{head} {}", args.join(", ")))
             }
-            HMIRExprKind::Switch { condition, body } => {
-                self.condition(f, "switch", *condition, depth)?;
-                self.expr(f, *body, depth)
-            }
-            HMIRExprKind::Case { value, body } => {
-                match value {
-                    Some(value) => {
-                        f.write_str("case ")?;
-                        self.expr(f, *value, depth)?;
-                        f.write_str(": ")?;
+            _ => {
+                let (head, args) = printer.native_parts(op);
+                let mut args = self.render(&args);
+                let effect = matches!(op, HMIROp::Assign { .. } | HMIROp::Control(_));
+                let text = match args.is_empty() {
+                    true => head,
+                    false => format!("{head} {}", args.join(", ")),
+                };
+                match (effect, op) {
+                    (false, _) => self.assign_temp(id, text),
+                    (true, HMIROp::Assign { .. }) => {
+                        self.line(text);
+                        args.swap_remove(0)
                     }
-                    None => f.write_str("default: ")?,
+                    (true, _) => {
+                        self.line(text);
+                        "()".to_string()
+                    }
                 }
-                self.expr(f, *body, depth)
-            }
-            HMIRExprKind::Match {
-                scrutinee,
-                subject,
-                arms,
-            } => {
-                self.condition(f, "match", *scrutinee, depth)?;
-                f.write_str("as ")?;
-                self.local(f, *subject)?;
-                f.write_str(" {\n")?;
-                for (pattern, body) in arms {
-                    indent(f, depth + 1)?;
-                    self.pattern(f, pattern, depth + 1)?;
-                    f.write_str(" => ")?;
-                    self.expr(f, *body, depth + 1)?;
-                    f.write_str("\n")?;
-                }
-                indent(f, depth)?;
-                f.write_str("}")
-            }
-            HMIRExprKind::Label { name, body } => {
-                write!(f, "{name}: ")?;
-                self.expr(f, *body, depth)
             }
         }
-    }
-
-    pub(super) fn is_structured(&self, id: HMIRExprID) -> bool {
-        match self.body().expr(id).kind() {
-            HMIRExprKind::Block { .. } | HMIRExprKind::Match { .. } => true,
-            HMIRExprKind::If {
-                then_branch,
-                else_branch,
-                ..
-            } => self.is_structured(else_branch.unwrap_or(*then_branch)),
-            HMIRExprKind::While {
-                body,
-                pre_eval: true,
-                ..
-            }
-            | HMIRExprKind::For { body, .. }
-            | HMIRExprKind::Switch { body, .. }
-            | HMIRExprKind::Case { body, .. }
-            | HMIRExprKind::Label { body, .. }
-            | HMIRExprKind::Comptime(body)
-            | HMIRExprKind::Op(HMIROp::Control(
-                HMIRControlOp::Defer(body) | HMIRControlOp::Unsafe(body),
-            )) => self.is_structured(*body),
-            _ => false,
-        }
-    }
-
-    pub(super) fn pattern(
-        &self,
-        f: &mut Formatter<'_>,
-        pattern: &HMIRPattern,
-        depth: usize,
-    ) -> fmt::Result {
-        match pattern {
-            HMIRPattern::Wildcard => f.write_str("_"),
-            HMIRPattern::Binding(local) => self.local_decl(f, *local),
-            HMIRPattern::Integer(value) => write!(f, "{value}"),
-            HMIRPattern::Float(value) => write!(f, "{value}"),
-            HMIRPattern::Value(value) => self.expr(f, *value, depth),
-            HMIRPattern::Variant { sum, name, inner } => {
-                if let Some(sum) = sum {
-                    self.expr(f, *sum, depth)?;
-                    f.write_str("::")?;
-                }
-                write!(f, "{name}(")?;
-                if let Some(inner) = inner {
-                    self.pattern(f, inner, depth)?;
-                }
-                f.write_str(")")
-            }
-        }
-    }
-
-    fn intrinsic(
-        &self,
-        f: &mut Formatter<'_>,
-        intrinsic: &HMIRIntrinsic,
-        depth: usize,
-    ) -> fmt::Result {
-        write!(f, "{}(", intrinsic.path())?;
-        for (index, arg) in intrinsic.args().into_iter().enumerate() {
-            if index != 0 {
-                f.write_str(", ")?;
-            }
-            match arg {
-                IntrinsicArg::Value(value) | IntrinsicArg::Type(value) => {
-                    self.expr(f, *value, depth)?
-                }
-                IntrinsicArg::Index(value) => write!(f, "{value}")?,
-                IntrinsicArg::Bool(value) => write!(f, "{value}")?,
-                IntrinsicArg::String(value) => write!(f, "{value:?}")?,
-            }
-        }
-        f.write_str(")")
     }
 }
