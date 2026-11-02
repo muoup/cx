@@ -6,7 +6,7 @@ use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRConstant, MIRInstructionKind,
     MIRInternalIntrinsic, MIRPlaceDecl, MIRPtrIntrinsic, MIRScopeID, MIRStoreBitfield, MIRTarget,
-    MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind, ty::interface::MTRegistry,
+    MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -89,10 +89,10 @@ fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRan
             let global = global::address(context.env_mut(), *def, address.offset(), inner, span)?;
             Some(MIRTarget::Global(global))
         }
-        HMIRValueKind::Indirect(pointer) if !is_reference => {
-            Some(MIRTarget::Indirect(reference(context, pointer)))
+        HMIRValueKind::Indirect(pointer) => {
+            let reference = if is_reference { value } else { pointer };
+            Some(MIRTarget::Indirect(self::reference(context, reference, span)?))
         }
-        HMIRValueKind::Indirect(_) => todo!("write to a stored reference"),
         HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) if is_reference => {
             match context.runtime().slot(*slot).binding() {
                 MIRBindable::Register(register) => Some(MIRTarget::Indirect(*register)),
@@ -222,6 +222,20 @@ pub fn lift(
     Ok(slot(context, inner, MIRBindable::Register(out)))
 }
 
+pub fn load(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let Some(MIRBindable::Place(place)) = bindable(context, &value) else {
+        unreachable!("a storage result is held in a place")
+    };
+    let ty = lower_type(context.env_mut(), value.ty(), span)?;
+    let (target, result) = output(context, value.ty(), span)?;
+    store(context, target, MIRValue::PlaceRef { place, ty }, ty, None, span);
+    Ok(result)
+}
+
 pub fn copy(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
@@ -250,18 +264,7 @@ pub fn write(
     let Some(destination) = self::target(context, target, span)? else {
         unreachable!("write to a value without an address");
     };
-    let held = match destination {
-        MIRTarget::Place(place) => {
-            let own = lower_type(context.env_mut(), target.ty(), span)?;
-            let held = context.runtime().builder().place(place).ty();
-            context.env().module().same_type(own, held)
-        }
-        _ => false,
-    };
-    let stored = match held {
-        true => target.ty(),
-        false => context.env().referent(target.ty()),
-    };
+    let stored = value.ty();
     let bitfield = types::bitfield(context.env(), target)
         .map(|bitfield| MIRStoreBitfield::Target(access(context, stored, bitfield)));
     let ty = lower_type(context.env_mut(), stored, span)?;

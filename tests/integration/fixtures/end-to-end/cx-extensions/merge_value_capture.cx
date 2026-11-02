@@ -1,0 +1,37 @@
+#include <stdio.h>
+
+struct Data : @nocopy { int value; };
+struct Pair { int left; int right; };
+
+Data choose(int condition) {
+    Data left = { 11 };
+    Data right = { 22 };
+    return condition ? move left : move right;
+}
+
+Pair snapshot() {
+    Pair value = { 31, 32 };
+    defer .{ value.left = 99; };
+    return value;
+}
+
+int main() {
+    int value = 3;
+    int yielded = .{
+        defer .{ value = 90; };
+        yield value ? value + 4 : 0;
+    };
+    Data chosen = choose(0);
+    int matched = match (chosen.value) {
+        22 => yielded + 1,
+        _ => 0,
+    };
+    int logical = (matched && chosen.value) || 0;
+    int other = 5;
+    auto alias = value ? other : value;
+    alias = 17;
+    Pair pair = snapshot();
+    printf("%d %d %d %d %d %d %d %d\n",
+        value, yielded, chosen.value, matched, logical, other, pair.left, pair.right);
+    return 0;
+}

@@ -9,7 +9,6 @@ use cx_tokens::TokenRange;
 
 use super::defer;
 use crate::{
-    emit,
     env::function::{
         FnContext, LocalLoweringContext,
         runtime::{Emission, Exit},
@@ -22,7 +21,7 @@ use crate::{
     },
     log::hmir_error,
     lower::mir,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRValue, constant::HMIRConstant},
 };
 
 pub(super) fn eval_return(
@@ -67,11 +66,6 @@ pub(super) fn eval_yield(
         if !context.is_runtime() {
             return Err(EvalExit::Stop(ComptimeStop::Yield(value).into()));
         }
-        let value = if context.env().is_void(value.ty()) {
-            value
-        } else {
-            emit::temporary(context, value, &span)?
-        };
         let depth = context
             .runtime()
             .yield_target(origin)
@@ -178,16 +172,6 @@ pub(crate) fn return_value(
         return Err(EvalExit::Stop(ComptimeStop::Return(value).into()));
     }
     contract::exit(context, value.as_ref(), span)?;
-    let value = match value {
-        Some(value)
-            if context.runtime().defers_past(0)
-                && !context.env().is_reference(value.ty())
-                && !matches!(value.kind(), HMIRValueKind::Constant(_)) =>
-        {
-            Some(emit::temporary(context, value, span)?)
-        }
-        value => value,
-    };
     defer::leave(context, 0, span)?;
     let value = value
         .map(|value| mir::operand(context, &value, span))

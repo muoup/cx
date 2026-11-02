@@ -4,7 +4,7 @@ mod value;
 
 pub use op::{aggregate, binary, cast, difference, offset, tag, unary};
 pub use storage::{
-    address, adopt, allocate, copy, dereference, field, initialize, invalidate, lift, parameter, scoped_places,
+    address, adopt, allocate, copy, dereference, field, initialize, invalidate, lift, load, parameter, scoped_places,
     scratch, write,
 };
 pub use value::{constant, contents, operand};
@@ -126,6 +126,14 @@ fn output(
         MIRTarget::Register(register),
         slot(context, ty, MIRBindable::Register(register)),
     ))
+}
+
+pub fn placeholder(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    Ok(output(context, ty, span)?.1)
 }
 
 fn initialized(

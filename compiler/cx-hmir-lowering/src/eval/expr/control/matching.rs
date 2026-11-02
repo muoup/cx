@@ -310,10 +310,6 @@ fn arm_value(
         if outlives && context.env().is_reference(value.ty()) {
             return Ok(value);
         }
-        let value = coerce::std_rvalue(context, value, &span)?;
-        match context.is_runtime() && !context.env().is_void(value.ty()) {
-            true => emit::temporary(context, value, &span),
-            false => Ok(value),
-        }
+        coerce::std_rvalue(context, value, &span)
     })
 }

@@ -9,10 +9,9 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use super::contract;
 use crate::{
-    emit,
     env::{function::LocalLoweringContext, generation::Specialization},
     eval::{EvalResult, flow::Evaluation, types},
-    lower::types::lower_signature,
+    lower::{mir, types::lower_signature},
     symbol,
     value::{HMIRValue, constant::HMIRFunctionRef},
 };
@@ -25,7 +24,7 @@ pub(super) fn apply(
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     if context.is_unevaluated() {
-        return Ok(Evaluation::Ready(emit::scratch(context, *signature.return_type(), span)?));
+        return Ok(Evaluation::Ready(mir::placeholder(context, *signature.return_type(), span)?));
     }
     let bindings = signature
         .params()

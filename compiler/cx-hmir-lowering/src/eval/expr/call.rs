@@ -23,6 +23,7 @@ use crate::{
         staged, types,
     },
     log::hmir_error,
+    lower::mir,
     symbol,
     value::{
         HMIRValue, HMIRValueKind,
@@ -163,7 +164,7 @@ fn finish(
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     if context.is_unevaluated() {
-        return Ok(Evaluation::Ready(emit::scratch(context, return_type, span)?));
+        return Ok(Evaluation::Ready(mir::placeholder(context, return_type, span)?));
     }
     if !context.is_runtime()
         && let Some((ty, variant)) = constructs(callee)

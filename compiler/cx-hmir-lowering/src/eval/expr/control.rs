@@ -172,10 +172,6 @@ pub(crate) fn merge(
         false => merged_type(context, &arms, span),
     };
     let result = match ty {
-        Some(ty) if place => {
-            let stored = types::reference(context.env_mut(), ty, None, span);
-            Some(emit::scratch(context, ty, span)?.with_ty(stored))
-        }
         Some(ty) => Some(emit::scratch(context, ty, span)?),
         None => None,
     };
@@ -188,9 +184,9 @@ pub(crate) fn merge(
         mir::jump(context, merge, span);
     }
     mir::switch_to(context, merge);
-    let result = match (place, result) {
-        (true, Some(result)) => coerce::read(context, result, span)?,
-        (_, result) => result.unwrap_or_else(|| expr::unit(context, span)),
+    let result = match result {
+        Some(result) => mir::load(context, result, span)?,
+        None => expr::unit(context, span),
     };
     Ok(Evaluation::Ready(result))
 }
@@ -290,5 +286,5 @@ pub(crate) fn eval_short_circuit(
     emit::initialize(context, &result, Some(&left), span)?;
     mir::jump(context, merge, span);
     mir::switch_to(context, merge);
-    Ok(Evaluation::Ready(result))
+    Ok(Evaluation::Ready(mir::load(context, result, span)?))
 }

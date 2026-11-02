@@ -15,6 +15,7 @@ use crate::{
         runtime::{Emission, RuntimeScope},
     },
     log::hmir_error,
+    lower::mir,
     value::{
         Bindings, HMIRPlace, HMIRValue, HMIRValueKind,
         constant::HMIRConstant,
@@ -97,7 +98,10 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
             }
             _ => {
                 let ty = child.env().referent(value.ty());
-                let storage = emit::scratch(&mut child, ty, span)?;
+                let storage = match child.env().is_reference(value.ty()) {
+                    true => emit::scratch(&mut child, ty, span)?.with_ty(value.ty()),
+                    false => mir::placeholder(&mut child, value.ty(), span)?,
+                };
                 if let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = storage.kind() {
                     child.runtime_mut().slot_mut(*slot).set_known(known.cloned());
                 }
@@ -140,6 +144,8 @@ fn shadow(
     if frozen {
         return Ok(value);
     }
-    let ty = context.env().referent(value.ty());
-    Ok(emit::scratch(context, ty, span)?.with_ty(value.ty()))
+    match context.env().reference_inner(value.ty()) {
+        Some(ty) => Ok(emit::scratch(context, ty, span)?.with_ty(value.ty())),
+        None => mir::placeholder(context, value.ty(), span),
+    }
 }
