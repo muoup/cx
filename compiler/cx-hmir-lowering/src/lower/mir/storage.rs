@@ -81,12 +81,12 @@ fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRan
     let ty = context.env().referent(value.ty());
     Ok(match value.kind() {
         HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => MIRTarget::Global(
-            global::address(context.env_mut(), *def, 0, ty, span)?,
+            global::reference(context.env_mut(), *def, 0, ty, span)?,
         ),
         HMIRValueKind::Constant(HMIRConstant::Address(address))
             if is_reference && let Addressable::Place(HMIRPlace::Global(def)) = address.base() =>
         {
-            let global = global::address(context.env_mut(), *def, address.offset(), ty, span)?;
+            let global = global::reference(context.env_mut(), *def, address.offset(), ty, span)?;
             MIRTarget::Global(global)
         }
         _ if is_reference => MIRTarget::Indirect(reference(context, value, span)?),

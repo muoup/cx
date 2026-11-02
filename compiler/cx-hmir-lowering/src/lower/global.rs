@@ -95,7 +95,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
     Ok(())
 }
 
-pub fn address(
+pub fn reference(
     env: &mut HMIREnvironment,
     def: HMIRDefID,
     offset: i64,
