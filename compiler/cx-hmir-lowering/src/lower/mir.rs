@@ -145,7 +145,7 @@ pub fn call(
 ) -> CXResult<HMIRValue> {
     let callee = match callee.kind() {
         HMIRValueKind::Constant(function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. })) => {
-            MIRValue::Constant(constant(context.env_mut(), function, callee.ty(), span)?)
+            MIRValue::Constant(constant(context, function, callee.ty(), span)?)
         }
         _ => value(context, callee, span)?,
     };

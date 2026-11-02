@@ -1,10 +1,19 @@
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
-    MIRGlobalRef,
-    ty::{MIRFloatType, MIRIntType, MIRTypeID},
-    unit::function::MIRFunctionID,
+    MIRGlobalID, MIRPlaceID, ty::{MIRFloatType, MIRIntType, MIRTypeID}, unit::function::MIRFunctionID,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MIRAddressable {
+    Global(MIRGlobalID),
+    Function(MIRFunctionID),
+    Local(MIRPlaceID),
+    Block {
+        function: MIRFunctionID,
+        label: String,
+    },
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRConstant {
@@ -21,7 +30,10 @@ pub enum MIRConstant {
         ty: MIRTypeID,
         fields: Vec<(usize, MIRConstant)>,
     },
-    GlobalAddress(MIRGlobalRef),
+    Address {
+        base: MIRAddressable,
+        offset: i64,
+    },
     String {
         value: String,
         offset: i64,

@@ -23,14 +23,15 @@ struct TypeState {
 
 #[derive(Debug)]
 pub(crate) struct HMIRResolver {
+    universe: Option<HMIRTypeID>,
+    active: Vec<MemoID>,
+
     identities: FxHashMap<u64, Vec<HMIRTypeID>>,
     types: IndexVec<HMIRTypeID, TypeState>,
     memo: FxHashMap<MemoKey, MemoID>,
     entries: IndexVec<MemoID, MemoEntry>,
     contexts: IndexVec<MemoContextID, MemoContext>,
     context_ids: FxHashMap<MemoContext, MemoContextID>,
-    active: Vec<MemoID>,
-    universe: Option<HMIRTypeID>,
 }
 
 impl HMIRResolver {

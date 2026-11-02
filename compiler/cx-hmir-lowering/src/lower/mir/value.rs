@@ -2,7 +2,7 @@ use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
     MIRBindable, MIRConstant, MIRInstructionKind, MIRInternalIntrinsic, MIRRegister, MIRTarget,
-    MIRValue,
+    MIRValue, constant::MIRAddressable,
 };
 use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
@@ -28,12 +28,9 @@ pub fn value(
     span: &TokenRange,
 ) -> CXResult<MIRValue> {
     Ok(match value.kind() {
-        HMIRValueKind::Constant(constant) => MIRValue::Constant(self::constant(
-            context.env_mut(),
-            constant,
-            value.ty(),
-            span,
-        )?),
+        HMIRValueKind::Constant(constant) => {
+            MIRValue::Constant(self::constant(context, constant, value.ty(), span)?)
+        }
         HMIRValueKind::PlaceRef(place) => match place {
             HMIRPlace::Local(slot) => match *context.runtime().slot(*slot).binding() {
                 MIRBindable::Register(register) => MIRValue::Register(register),
@@ -69,112 +66,134 @@ pub fn value(
 }
 
 pub fn constant(
-    env: &mut HMIREnvironment,
+    context: &mut LocalLoweringContext,
     constant: &HMIRConstant,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRConstant> {
-    Ok(match (constant, env.resolve_kind(ty).clone()) {
-        (HMIRConstant::Unit, _) => MIRConstant::Unit,
-        (HMIRConstant::Int(value), HMIRTypeKind::Int(int)) => MIRConstant::Integer {
-            ty: mir_int(int.width()),
-            value: *value,
-        },
-        (HMIRConstant::Float(value), HMIRTypeKind::Float(float)) => MIRConstant::Float {
-            value: *value,
-            ty: mir_float(float.width()),
-        },
-        (HMIRConstant::Null, _) => MIRConstant::Nullptr {
-            ty: lower_type(env, ty, span)?,
-        },
-        (HMIRConstant::Str(value), _) => MIRConstant::String {
-            value: value.clone(),
-            offset: 0,
-        },
-        (HMIRConstant::Address(address), _) => match address.base() {
-            Addressable::Place(HMIRPlace::Global(def)) => {
-                let inner = env
-                    .reference_inner(ty)
-                    .or_else(|| env.pointer_inner(ty))
-                    .expect("a global address has pointer or reference type");
-                MIRConstant::GlobalAddress(global::reference(
-                    env,
-                    *def,
-                    address.offset(),
-                    inner,
-                    span,
-                )?)
-            }
-            Addressable::Label { function, label } => MIRConstant::BlockAddress {
-                function: *function,
-                label: label.to_string(),
+    Ok(
+        match (constant, context.env_mut().resolve_kind(ty).clone()) {
+            (HMIRConstant::Unit, _) => MIRConstant::Unit,
+            (HMIRConstant::Int(value), HMIRTypeKind::Int(int)) => MIRConstant::Integer {
+                ty: mir_int(int.width()),
+                value: *value,
             },
-            Addressable::Literal(value) => MIRConstant::String {
+            (HMIRConstant::Float(value), HMIRTypeKind::Float(float)) => MIRConstant::Float {
+                value: *value,
+                ty: mir_float(float.width()),
+            },
+            (HMIRConstant::Null, _) => MIRConstant::Nullptr {
+                ty: lower_type(env, ty, span)?,
+            },
+            (HMIRConstant::Str(value), _) => MIRConstant::String {
                 value: value.clone(),
-                offset: address.offset(),
+                offset: 0,
             },
-            Addressable::Place(_) => {
-                return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
-            }
-        },
-        (HMIRConstant::Aggregate(items), kind) => {
-            let mut fields = Vec::new();
-            for (index, item) in items.iter().enumerate() {
-                let field = match &kind {
-                    HMIRTypeKind::Array { element, .. } => *element,
-                    HMIRTypeKind::Struct { fields } => *fields[index].ty(),
-                    _ => unreachable!("an aggregate constant is an array or structure"),
-                };
-                if !item.is_zero() {
-                    fields.push((index, self::constant(env, item, field, span)?));
+            (HMIRConstant::Address(address), _) => match address.base() {
+                Addressable::Place(place) => match place {
+                    HMIRPlace::Global(def) => {
+                        let inner = env
+                            .reference_inner(ty)
+                            .or_else(|| env.pointer_inner(ty))
+                            .expect("a global address has pointer or reference type");
+                        let global_id = global::declare(env, *def, inner, span)?;
+
+                        MIRConstant::Address {
+                            base: MIRAddressable::Global(global_id),
+                            offset: address.offset(),
+                        }
+                    }
+
+                    HMIRPlace::Local(slot) => match context.runtime().slot(*slot).binding() {
+                        MIRBindable::Place(place) => MIRConstant::PlaceAddress {
+                            place,
+                            offset: address.offset(),
+                        },
+                        MIRBindable::Register(register) => {
+                            return Err(hmir_error(
+                                span,
+                                &mir::COMPTIME_VALUE_AT_RUNTIME,
+                                "cannot lower a register address to runtime".into(),
+                            ));
+                        }
+                    },
+
+                    HMIRPlace::Region(_) => {
+                        return Err(hmir_error(
+                            span,
+                            &mir::COMPTIME_VALUE_AT_RUNTIME,
+                            "cannot lower a region address to runtime".into(),
+                        ));
+                    }
+                },
+                Addressable::Label { function, label } => MIRConstant::BlockAddress {
+                    function: *function,
+                    label: label.to_string(),
+                },
+                Addressable::Literal(value) => MIRConstant::String {
+                    value: value.clone(),
+                    offset: address.offset(),
+                },
+            },
+            (HMIRConstant::Aggregate(items), kind) => {
+                let mut fields = Vec::new();
+                for (index, item) in items.iter().enumerate() {
+                    let field = match &kind {
+                        HMIRTypeKind::Array { element, .. } => *element,
+                        HMIRTypeKind::Struct { fields } => *fields[index].ty(),
+                        _ => unreachable!("an aggregate constant is an array or structure"),
+                    };
+                    if !item.is_zero() {
+                        fields.push((index, self::constant(env, item, field, span)?));
+                    }
+                }
+                MIRConstant::Aggregate {
+                    ty: lower_type(env, ty, span)?,
+                    fields,
                 }
             }
-            MIRConstant::Aggregate {
+            (
+                HMIRConstant::Union { member, value }
+                | HMIRConstant::TaggedUnion {
+                    variant: member,
+                    payload: value,
+                },
+                HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields },
+            ) => MIRConstant::Aggregate {
                 ty: lower_type(env, ty, span)?,
-                fields,
-            }
-        }
-        (
-            HMIRConstant::Union { member, value }
-            | HMIRConstant::TaggedUnion {
-                variant: member,
-                payload: value,
+                fields: vec![(
+                    *member,
+                    self::constant(env, value, *fields[*member].ty(), span)?,
+                )],
             },
-            HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields },
-        ) => MIRConstant::Aggregate {
-            ty: lower_type(env, ty, span)?,
-            fields: vec![(
-                *member,
-                self::constant(env, value, *fields[*member].ty(), span)?,
-            )],
+            (HMIRConstant::Function(HMIRFunctionRef::Constructor { ty, variant }), _) => {
+                MIRConstant::Function(constructor::declare(env, *ty, *variant, span)?)
+            }
+            (HMIRConstant::Function(HMIRFunctionRef::Def(def)), _) => {
+                let prototype = lower_prototype(env, *def, None, span)?;
+                if def.brand() == env.symbols().local_unit().id()
+                    || prototype.linkage == LinkageMode::Static
+                {
+                    env.generation_mut().request(*def);
+                }
+                MIRConstant::Function(env.module_mut().declare_function(prototype))
+            }
+            (HMIRConstant::Curried { callee, args }, _) => {
+                let args = args.iter().flatten().cloned().collect::<Vec<_>>();
+                if let HMIRValueKind::Constant(HMIRConstant::Function(function)) = callee.kind()
+                    && let Some(function) = env.generation().generated(*function, &args)
+                {
+                    return Ok(MIRConstant::Function(function));
+                }
+                return Err(hmir_error(
+                    span,
+                    &mir::COMPTIME_INVALID_OPERATION,
+                    "lowering an unresolved curried callable to runtime".into(),
+                ));
+            }
+            (other, _) => todo!("constant {other:?}"),
         },
-        (HMIRConstant::Function(HMIRFunctionRef::Constructor { ty, variant }), _) => {
-            MIRConstant::Function(constructor::declare(env, *ty, *variant, span)?)
-        }
-        (HMIRConstant::Function(HMIRFunctionRef::Def(def)), _) => {
-            let prototype = lower_prototype(env, *def, None, span)?;
-            if def.brand() == env.symbols().local_unit().id()
-                || prototype.linkage == LinkageMode::Static
-            {
-                env.generation_mut().request(*def);
-            }
-            MIRConstant::Function(env.module_mut().declare_function(prototype))
-        }
-        (HMIRConstant::Curried { callee, args }, _) => {
-            let args = args.iter().flatten().cloned().collect::<Vec<_>>();
-            if let HMIRValueKind::Constant(HMIRConstant::Function(function)) = callee.kind()
-                && let Some(function) = env.generation().generated(*function, &args)
-            {
-                return Ok(MIRConstant::Function(function));
-            }
-            return Err(hmir_error(
-                span,
-                &mir::COMPTIME_INVALID_OPERATION,
-                "lowering an unresolved curried callable to runtime".into(),
-            ));
-        }
-        (other, _) => todo!("constant {other:?}"),
-    })
+    )
 }
 
 pub fn reference(

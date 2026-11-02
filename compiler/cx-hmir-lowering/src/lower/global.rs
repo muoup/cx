@@ -12,8 +12,8 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
-    lower::{mir, types::lower_type},
     log::hmir_error,
+    lower::{mir, types::lower_type},
     symbol,
     value::HMIRValueKind,
 };
@@ -72,7 +72,11 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
             format!("global '{}'", source.symbol_name()),
             "this unit".into(),
         );
-        return Err(hmir_error(&span, &catalogue::mir::DUPLICATE_ENTITY, subject));
+        return Err(hmir_error(
+            &span,
+            &catalogue::mir::DUPLICATE_ENTITY,
+            subject,
+        ));
     }
 
     let state = match source.initializer() {
@@ -85,7 +89,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
                 unreachable!("an exported comptime value is a constant")
             };
             let span = source.body().expr(initializer).span();
-            let constant = mir::constant(context.env_mut(), constant, value.ty(), span)?;
+            let constant = mir::constant(&mut context, constant, value.ty(), span)?;
             MIRGlobalState::Initialized(constant)
         }
         None => MIRGlobalState::ZeroInitialized,
@@ -93,20 +97,4 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
     env.module_mut().define_global(id, state);
 
     Ok(())
-}
-
-pub fn reference(
-    env: &mut HMIREnvironment,
-    def: HMIRDefID,
-    offset: i64,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-) -> CXResult<MIRGlobalRef> {
-    let object = symbol::value_type(env, def, None)?;
-    let global = declare(env, def, object, span)?;
-    Ok(MIRGlobalRef {
-        global,
-        offset,
-        ty: lower_type(env, ty, span)?,
-    })
 }
