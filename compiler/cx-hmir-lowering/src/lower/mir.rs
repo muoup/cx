@@ -4,10 +4,10 @@ mod value;
 
 pub use op::{aggregate, binary, cast, difference, offset, tag, unary};
 pub use storage::{
-    address, adopt, allocate, copy, dereference, field, initialize, invalidate, lift, load, parameter, scoped_places,
+    address, adopt, allocate, capture, dereference, field, initialize, invalidate, lift, load, parameter, scoped_places,
     scratch, write,
 };
-pub use value::{constant, contents, operand};
+pub use value::{constant, lower_value};
 
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_intrinsics::VAIntrinsic;
@@ -92,7 +92,7 @@ pub fn assert(
         return Ok(());
     }
 
-    let condition = operand(context, condition, span)?;
+    let condition = lower_value(context, condition, span)?;
     let kind = match message {
         Some(message) => MIRInternalIntrinsic::Assert { condition, message: Some(message.into()) },
         None => MIRInternalIntrinsic::Assume { condition },
@@ -136,15 +136,6 @@ pub fn placeholder(
     Ok(output(context, ty, span)?.1)
 }
 
-fn initialized(
-    context: &mut LocalLoweringContext,
-    result: HMIRValue,
-    span: &TokenRange,
-) -> HMIRValue {
-    initialize(context, &result, span);
-    result
-}
-
 pub fn call(
     context: &mut LocalLoweringContext,
     callee: &HMIRValue,
@@ -156,11 +147,11 @@ pub fn call(
         HMIRValueKind::Constant(function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. })) => {
             MIRValue::Constant(constant(context.env_mut(), function, callee.ty(), span)?)
         }
-        _ => operand(context, callee, span)?,
+        _ => lower_value(context, callee, span)?,
     };
     let args = args
         .iter()
-        .map(|arg| operand(context, arg, span))
+        .map(|arg| lower_value(context, arg, span))
         .collect::<CXResult<_>>()?;
 
     let returns = context.env().resolve_kind(result);
@@ -185,23 +176,23 @@ pub fn variadic(
 ) -> CXResult<Option<HMIRValue>> {
     let (instruction, result) = match op {
         VAIntrinsic::Start { list, last } => {
-            let list = operand(context, list, span)?;
-            let last = operand(context, last, span)?;
+            let list = lower_value(context, list, span)?;
+            let last = lower_value(context, last, span)?;
             (MIRVAIntrinsic::VaStart { list, last }, None)
         }
         VAIntrinsic::End { list } => {
-            let list = operand(context, list, span)?;
+            let list = lower_value(context, list, span)?;
             (MIRVAIntrinsic::VaEnd { list }, None)
         }
         VAIntrinsic::Arg { list, ty } => {
-            let list = operand(context, list, span)?;
+            let list = lower_value(context, list, span)?;
             let mir_ty = lower_type(context.env_mut(), *ty, span)?;
             let (out, result) = output(context, *ty, span)?;
             (MIRVAIntrinsic::VaArg { out, list, ty: mir_ty }, Some(result))
         }
     };
     intrinsic(context, instruction, span);
-    Ok(result.map(|result| initialized(context, result, span)))
+    Ok(result)
 }
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {

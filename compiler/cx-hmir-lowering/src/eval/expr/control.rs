@@ -185,7 +185,7 @@ pub(crate) fn merge(
     }
     mir::switch_to(context, merge);
     let result = match result {
-        Some(result) => mir::load(context, result, span)?,
+        Some(result) => mir::capture(context, result, span)?,
         None => expr::unit(context, span),
     };
     Ok(Evaluation::Ready(result))
@@ -234,7 +234,7 @@ fn eval_condition(
     let span = body.expr(condition).span();
     let value = eval(context, body, condition)?.ready()?;
     let value = coerce::condition(context, value, span)?;
-    Ok(Evaluation::Ready(mir::operand(context, &value, span)?))
+    Ok(Evaluation::Ready(mir::lower_value(context, &value, span)?))
 }
 
 fn logical_operand(
@@ -264,7 +264,7 @@ pub(crate) fn eval_short_circuit(
         };
     }
 
-    let condition = mir::operand(context, &left, span)?;
+    let condition = mir::lower_value(context, &left, span)?;
     let rhs_block = mir::block(context, "logical.rhs");
     let short_block = mir::block(context, "logical.short");
     let merge = mir::block(context, "logical.merge");
@@ -286,5 +286,5 @@ pub(crate) fn eval_short_circuit(
     emit::initialize(context, &result, Some(&left), span)?;
     mir::jump(context, merge, span);
     mir::switch_to(context, merge);
-    Ok(Evaluation::Ready(mir::load(context, result, span)?))
+    Ok(Evaluation::Ready(mir::capture(context, result, span)?))
 }

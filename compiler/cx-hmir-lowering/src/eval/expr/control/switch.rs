@@ -194,7 +194,7 @@ fn runtime_switch(
     integer: HMIRIntType,
     labels: Vec<CaseLabel>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let condition = mir::operand(context, &condition, span)?;
+    let condition = mir::lower_value(context, &condition, span)?;
     let exit = mir::block(context, "switch.exit");
     let mut blocks = Vec::new();
     let mut cases = Vec::new();

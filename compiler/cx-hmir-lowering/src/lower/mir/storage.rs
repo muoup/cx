@@ -11,7 +11,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{contents, initialized, intrinsic, operand, output, register, value::reference};
+use super::{intrinsic, lower_value, output, register, value::reference};
 use crate::{
     env::function::{LocalLoweringContext, runtime::Slot},
     eval::types,
@@ -76,33 +76,36 @@ fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBind
 
 // Where the storage of a value can be written: for a reference, the storage it designates, otherwise the value's
 // own place or the storage behind its pointer; a register has no address
-fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<Option<MIRTarget>> {
+fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<MIRTarget> {
+    if let Some(MIRBindable::Place(place)) = bindable(context, value) {
+        return Ok(MIRTarget::Place(place));
+    }
     let is_reference = context.env().is_reference(value.ty());
+    let ty = context.env().referent(value.ty());
     Ok(match value.kind() {
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => Some(MIRTarget::Global(
-            global::address(context.env_mut(), *def, 0, value.ty(), span)?,
-        )),
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => MIRTarget::Global(
+            global::address(context.env_mut(), *def, 0, ty, span)?,
+        ),
         HMIRValueKind::Constant(HMIRConstant::Address(address))
             if is_reference && let Addressable::Place(HMIRPlace::Global(def)) = address.base() =>
         {
-            let inner = context.env().reference_inner(value.ty()).unwrap();
-            let global = global::address(context.env_mut(), *def, address.offset(), inner, span)?;
-            Some(MIRTarget::Global(global))
+            let global = global::address(context.env_mut(), *def, address.offset(), ty, span)?;
+            MIRTarget::Global(global)
         }
-        HMIRValueKind::Indirect(pointer) => {
-            let reference = if is_reference { value } else { pointer };
-            Some(MIRTarget::Indirect(self::reference(context, reference, span)?))
-        }
-        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) if is_reference => {
-            match context.runtime().slot(*slot).binding() {
-                MIRBindable::Register(register) => Some(MIRTarget::Indirect(*register)),
-                MIRBindable::Place(place) => Some(MIRTarget::Place(*place)),
-            }
-        }
-        _ => match bindable(context, value) {
-            Some(MIRBindable::Place(place)) => Some(MIRTarget::Place(place)),
-            _ => None,
-        },
+        _ if is_reference => MIRTarget::Indirect(reference(context, value, span)?),
+        HMIRValueKind::Indirect(pointer) => MIRTarget::Indirect(reference(context, pointer, span)?),
+        _ => unreachable!("a storage target has an address"),
+    })
+}
+
+pub(super) fn read(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<MIRValue> {
+    let inner = context.env().reference_inner(value.ty()).expect("a load reads through a reference");
+    let ty = lower_type(context.env_mut(), inner, span)?;
+    Ok(match target(context, value, span)? {
+        MIRTarget::Place(place) => MIRValue::PlaceRef { place, ty },
+        MIRTarget::Global(global) => MIRValue::GlobalRef(global),
+        MIRTarget::Indirect(register) => MIRValue::Indirect { register, ty },
+        MIRTarget::Register(_) => unreachable!("a register has no address"),
     })
 }
 
@@ -143,7 +146,7 @@ pub fn adopt(
     source: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let address = operand(context, source, span)?;
+    let address = lower_value(context, source, span)?;
     let nodrop = context.env().is_nodrop(ty);
     let scope = context.runtime().current_scope();
     let target = allocate_place(context, ty, name, scope, nodrop, true, span)?;
@@ -200,10 +203,7 @@ pub fn lift(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let source = match origin {
-        Some(_) => match operand(context, value, span)? {
-            MIRValue::Register(register) => MIRBindable::Register(register),
-            _ => unreachable!("a projected reference is held in a register"),
-        },
+        Some(_) => MIRBindable::Register(reference(context, value, span)?),
         None => bindable(context, value).expect("a lift reads a tracked place"),
     };
     let origin = bindable(context, origin.unwrap_or(value)).expect("a lift has a tracked origin");
@@ -222,7 +222,7 @@ pub fn lift(
     Ok(slot(context, inner, MIRBindable::Register(out)))
 }
 
-pub fn load(
+pub fn capture(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
@@ -236,15 +236,13 @@ pub fn load(
     Ok(result)
 }
 
-pub fn copy(
+pub fn load(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let runtime_value = contents(context, &value, span)?;
-    let Some(result_type) = context.env().reference_inner(value.ty()) else {
-        unreachable!("read from type: {}", types::name(context.env(), value.ty()))
-    };
+    let result_type = context.env().reference_inner(value.ty()).expect("a load reads through a reference");
+    let runtime_value = read(context, &value, span)?;
     let bitfield = types::bitfield(context.env(), &value)
         .map(|bitfield| MIRStoreBitfield::Source(access(context, result_type, bitfield)));
 
@@ -252,7 +250,7 @@ pub fn copy(
     let (target, result) = output(context, result_type, span)?;
     store(context, target, runtime_value, ty, bitfield, span);
 
-    Ok(initialized(context, result, span))
+    Ok(result)
 }
 
 pub fn write(
@@ -261,14 +259,12 @@ pub fn write(
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<()> {
-    let Some(destination) = self::target(context, target, span)? else {
-        unreachable!("write to a value without an address");
-    };
+    let destination = self::target(context, target, span)?;
     let stored = value.ty();
     let bitfield = types::bitfield(context.env(), target)
         .map(|bitfield| MIRStoreBitfield::Target(access(context, stored, bitfield)));
     let ty = lower_type(context.env_mut(), stored, span)?;
-    let source = operand(context, value, span)?;
+    let source = lower_value(context, value, span)?;
     store(context, destination, source, ty, bitfield, span);
 
     Ok(())
@@ -320,11 +316,11 @@ pub fn address(
         HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),
     };
 
-    let reference = operand(context, reference, span)?;
+    let reference = lower_value(context, reference, span)?;
     let (out, result) = output(context, ty, span)?;
     intrinsic(context, MIRInternalIntrinsic::ReferenceAddress { out, reference }, span);
 
-    Ok(initialized(context, result, span))
+    Ok(result)
 }
 
 pub fn dereference(
@@ -334,7 +330,7 @@ pub fn dereference(
     base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let value = operand(context, &pointer, span)?;
+    let value = lower_value(context, &pointer, span)?;
     if context.env().settings().assertions() {
         null_check(context, base.unwrap_or(&pointer), span)?;
     }
@@ -344,11 +340,11 @@ pub fn dereference(
     let (out, reference) = output(context, reference_ty, span)?;
     intrinsic(context, MIRInternalIntrinsic::Bitcast { out, value, target_ty }, span);
 
-    Ok(HMIRValue::indirect(inner, initialized(context, reference, span)))
+    Ok(HMIRValue::indirect(inner, reference))
 }
 
 fn null_check(context: &mut LocalLoweringContext, pointer: &HMIRValue, span: &TokenRange) -> CXResult<()> {
-    let checked = operand(context, pointer, span)?;
+    let checked = lower_value(context, pointer, span)?;
     let null = MIRConstant::Nullptr {
         ty: lower_type(context.env_mut(), pointer.ty(), span)?,
     };
@@ -376,7 +372,11 @@ pub fn field(
     let stored = context.env().referent(base.ty());
     let tagged = matches!(context.env().resolve_kind(stored), HMIRTypeKind::TaggedUnion { .. });
     let aggregate_ty = lower_type(context.env_mut(), stored, span)?;
-    let base = contents(context, base, span)?;
+    let base = if context.env().is_reference(base.ty()) {
+        read(context, base, span)?
+    } else {
+        lower_value(context, base, span)?
+    };
 
     let reference_ty = types::reference(context.env_mut(), ty, bitfield, span);
     let (out, reference) = output(context, reference_ty, span)?;
@@ -386,5 +386,5 @@ pub fn field(
     };
     intrinsic(context, projection, span);
 
-    Ok(HMIRValue::indirect(ty, initialized(context, reference, span)))
+    Ok(HMIRValue::indirect(ty, reference))
 }

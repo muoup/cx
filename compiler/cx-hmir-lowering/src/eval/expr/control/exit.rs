@@ -174,7 +174,7 @@ pub(crate) fn return_value(
     contract::exit(context, value.as_ref(), span)?;
     defer::leave(context, 0, span)?;
     let value = value
-        .map(|value| mir::operand(context, &value, span))
+        .map(|value| mir::lower_value(context, &value, span))
         .transpose()?;
     context
         .runtime_mut()

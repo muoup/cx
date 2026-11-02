@@ -76,7 +76,7 @@ pub(crate) fn eval_match(
         (subject.clone(), subject)
     };
     let dispatch = match variants {
-        Some(_) => emit::tag(context, &subject, span)?,
+        Some(_) => emit::tag(context, &dispatch, span)?,
         None => dispatch,
     };
     let dispatch = coerce::arithmetic(context, dispatch, span)?;
@@ -94,7 +94,7 @@ pub(crate) fn eval_match(
         };
         let signed = matches!(context.env().resolve_kind(dispatch.ty()), HMIRTypeKind::Int(ty) if ty.signed());
         let branch = MIRInstructionKind::CaseBranch {
-            value: mir::operand(context, &dispatch, span)?,
+            value: mir::lower_value(context, &dispatch, span)?,
             signed,
             cases: cases
                 .iter()
@@ -209,13 +209,9 @@ fn bind_arm(
 ) -> CXResult<()> {
     let owned = !context.env().is_reference(subject.ty());
     let ty = context.env().referent(subject.ty());
+    let source = if owned { emit::reference(context, subject, span)? } else { subject.clone() };
     let consumes = match pattern {
         HMIRPattern::Binding(local) => {
-            let source = if owned {
-                emit::reference(context, subject, span)?
-            } else {
-                subject.clone()
-            };
             pattern::bind(context, body, *local, source, owned, span)?
         }
         HMIRPattern::Variant { inner, .. } => {
@@ -227,7 +223,7 @@ fn bind_arm(
                     true
                 }
                 Some(HMIRPattern::Binding(local)) => {
-                    let reference = pattern::payload(context, subject, index, payload, span)?;
+                    let reference = pattern::payload(context, &source, index, payload, span)?;
                     pattern::bind(context, body, *local, reference, owned, span)?
                 }
                 _ => !context.env().is_nodrop(payload),

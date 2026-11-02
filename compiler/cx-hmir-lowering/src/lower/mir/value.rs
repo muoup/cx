@@ -122,7 +122,7 @@ pub fn constant(
     })
 }
 
-pub fn operand(
+pub fn lower_value(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
@@ -174,49 +174,12 @@ pub fn operand(
             return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
         }
         HMIRValueKind::Indirect(pointer) if context.env().is_reference(value.ty()) => {
-            operand(context, pointer, span)?
+            lower_value(context, pointer, span)?
         }
         HMIRValueKind::Indirect(pointer) => MIRValue::Indirect {
             register: reference(context, pointer, span)?,
             ty: lower_type(context.env_mut(), value.ty(), span)?,
         },
-    })
-}
-
-pub fn contents(
-    context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    span: &TokenRange,
-) -> CXResult<MIRValue> {
-    let inner = context.env().reference_inner(value.ty());
-    let ty = lower_type(context.env_mut(), inner.unwrap_or(value.ty()), span)?;
-    Ok(match value.kind() {
-        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => match *context.runtime().slot(*slot).binding() {
-            MIRBindable::Place(place) => MIRValue::PlaceRef { place, ty },
-            MIRBindable::Register(register) if inner.is_some() => MIRValue::Indirect { register, ty },
-            MIRBindable::Register(register) => MIRValue::Register(register),
-        },
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => {
-            MIRValue::GlobalRef(global::address(context.env_mut(), *def, 0, inner.unwrap_or(value.ty()), span)?)
-        }
-        HMIRValueKind::Constant(HMIRConstant::Address(address)) if inner.is_some() => match address.base() {
-            Addressable::Place(HMIRPlace::Local(slot)) if address.offset() == 0 => {
-                let MIRBindable::Place(place) = *context.runtime().slot(*slot).binding() else {
-                    unreachable!("only a place has an address");
-                };
-                MIRValue::PlaceRef { place, ty }
-            }
-            Addressable::Place(HMIRPlace::Global(def)) => {
-                MIRValue::GlobalRef(global::address(context.env_mut(), *def, address.offset(), inner.unwrap(), span)?)
-            }
-            _ => MIRValue::Indirect { register: reference(context, value, span)?, ty },
-        },
-        HMIRValueKind::Indirect(pointer) => MIRValue::Indirect {
-            register: reference(context, pointer, span)?,
-            ty,
-        },
-        _ if inner.is_some() => MIRValue::Indirect { register: reference(context, value, span)?, ty },
-        _ => operand(context, value, span)?,
     })
 }
 
@@ -226,7 +189,7 @@ pub(super) fn reference(
     span: &TokenRange,
 ) -> CXResult<MIRRegister> {
     let ty = value.ty();
-    let value = operand(context, value, span)?;
+    let value = lower_value(context, value, span)?;
     if let MIRValue::Register(register) = value {
         return Ok(register);
     }

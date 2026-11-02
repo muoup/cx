@@ -9,7 +9,7 @@ use cx_mir::{
 };
 use cx_tokens::TokenRange;
 
-use super::{contents, initialized, intrinsic, operand, output, register};
+use super::{intrinsic, lower_value, output, register, storage::read};
 use crate::{
     env::function::LocalLoweringContext,
     eval::types,
@@ -30,8 +30,8 @@ pub fn binary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let operands = kind(context, lhs.ty());
-    let ml = operand(context, lhs, span)?;
-    let mr = operand(context, rhs, span)?;
+    let ml = lower_value(context, lhs, span)?;
+    let mr = lower_value(context, rhs, span)?;
     let (out, result) = output(context, result, span)?;
 
     let instruction: MIRIntrinsic = match operands {
@@ -100,7 +100,7 @@ pub fn binary(
     };
     intrinsic(context, instruction, span);
 
-    Ok(initialized(context, result, span))
+    Ok(result)
 }
 
 pub fn unary(
@@ -110,7 +110,7 @@ pub fn unary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let ty = value.ty();
-    let value = operand(context, value, span)?;
+    let value = lower_value(context, value, span)?;
     let (out, result) = output(context, ty, span)?;
 
     let instruction: MIRIntrinsic = match (op, kind(context, ty)) {
@@ -122,7 +122,7 @@ pub fn unary(
     };
     intrinsic(context, instruction, span);
 
-    Ok(initialized(context, result, span))
+    Ok(result)
 }
 
 pub fn cast(
@@ -133,7 +133,7 @@ pub fn cast(
 ) -> CXResult<HMIRValue> {
     let kinds = (kind(context, value.ty()), kind(context, target));
     let target_ty = lower_type(context.env_mut(), target, span)?;
-    let value = operand(context, value, span)?;
+    let value = lower_value(context, value, span)?;
     let (out, result) = output(context, target, span)?;
 
     let instruction: MIRIntrinsic = match kinds {
@@ -189,7 +189,7 @@ pub fn cast(
     };
     intrinsic(context, instruction, span);
 
-    Ok(initialized(context, result, span))
+    Ok(result)
 }
 
 fn element_size(
@@ -218,14 +218,14 @@ pub fn offset(
             let value = value * size;
             let offset = HMIRValue::constant(ty, HMIRConstant::Int(value));
 
-            let ptr = operand(context, pointer, span)?;
-            (ptr, operand(context, &offset, span)?)
+            let ptr = lower_value(context, pointer, span)?;
+            (ptr, lower_value(context, &offset, span)?)
         }
         _ => {
             let size = HMIRValue::constant(ty, HMIRConstant::Int(size));
-            let lhs = operand(context, index, span)?;
-            let rhs = operand(context, &size, span)?;
-            let ptr = operand(context, pointer, span)?;
+            let lhs = lower_value(context, index, span)?;
+            let rhs = lower_value(context, &size, span)?;
+            let ptr = lower_value(context, pointer, span)?;
 
             let scaled = register(context, ty, span)?;
             let out = MIRTarget::Register(scaled);
@@ -246,7 +246,7 @@ pub fn offset(
     };
     intrinsic(context, instruction, span);
 
-    Ok(initialized(context, result, span))
+    Ok(result)
 }
 
 pub fn difference(
@@ -258,12 +258,12 @@ pub fn difference(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let element_ty = lower_type(context.env_mut(), element, span)?;
-    let lhs = operand(context, lhs, span)?;
-    let rhs = operand(context, rhs, span)?;
+    let lhs = lower_value(context, lhs, span)?;
+    let rhs = lower_value(context, rhs, span)?;
     let (out, result) = output(context, result, span)?;
     intrinsic(context, MIRPtrIntrinsic::Diff { out, lhs, rhs, element_ty }, span);
 
-    Ok(initialized(context, result, span))
+    Ok(result)
 }
 
 pub fn tag(
@@ -278,11 +278,15 @@ pub fn tag(
 
     let stored = context.env().referent(value.ty());
     let sum_ty = lower_type(context.env_mut(), stored, span)?;
-    let value = contents(context, value, span)?;
+    let value = if context.env().is_reference(value.ty()) {
+        read(context, value, span)?
+    } else {
+        lower_value(context, value, span)?
+    };
     let (out, result) = output(context, ty, span)?;
     intrinsic(context, MIRAggregateIntrinsic::SumIndex { out, value, sum_ty }, span);
 
-    Ok(initialized(context, result, span))
+    Ok(result)
 }
 
 pub fn aggregate(
@@ -293,12 +297,12 @@ pub fn aggregate(
 ) -> CXResult<HMIRValue> {
     let fields = fields
         .iter()
-        .map(|(index, value)| Ok((*index, operand(context, value, span)?)))
+        .map(|(index, value)| Ok((*index, lower_value(context, value, span)?)))
         .collect::<CXResult<_>>()?;
 
     let mir_ty = lower_type(context.env_mut(), ty, span)?;
     let (out, result) = output(context, ty, span)?;
     intrinsic(context, MIRAggregateIntrinsic::AggregateInit { out, ty: mir_ty, fields }, span);
 
-    Ok(initialized(context, result, span))
+    Ok(result)
 }

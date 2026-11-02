@@ -82,13 +82,10 @@ fn eval_member(
     } else if context.env().is_reference(value.ty()) {
         value
     } else {
-        let storage = emit::temporary(context, value, span)?;
-        emit::reference(context, &storage, span)?
+        emit::temporary(context, value, span)?
     };
 
-    let Some(mut owner) = context.env().reference_inner(value.ty()) else {
-        unreachable!("a member base is a reference")
-    };
+    let mut owner = context.env().referent(value.ty());
     let Some(path) = member_path(context.env(), owner, name) else {
         let member = (types::name(context.env(), owner), name.to_string());
         return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());

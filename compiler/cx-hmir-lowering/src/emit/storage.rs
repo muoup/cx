@@ -69,7 +69,7 @@ pub fn copy(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => mir::copy(context, value, span),
+        FnContext::Runtime(_) => mir::load(context, value, span),
         FnContext::Comptime(_) => comptime::copy(context, value, span),
     }
 }
@@ -130,7 +130,7 @@ pub fn temporary(
     let storage = scratch(context, value.ty(), span)?;
     initialize(context, &storage, Some(&value), span)?;
 
-    Ok(storage)
+    super::reference(context, &storage, span)
 }
 
 // Ends the liveness of the place a value names as a move, drop or leak; registers and storage behind a pointer

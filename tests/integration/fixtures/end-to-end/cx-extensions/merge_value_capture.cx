@@ -3,6 +3,9 @@
 struct Data : @nocopy { int value; };
 struct Pair { int left; int right; };
 
+int& identity(int& value) { return value; }
+Data& borrow(Data& value) { return value; }
+
 Data choose(int condition) {
     Data left = { 11 };
     Data right = { 22 };
@@ -33,5 +36,9 @@ int main() {
     Pair pair = snapshot();
     printf("%d %d %d %d %d %d %d %d\n",
         value, yielded, chosen.value, matched, logical, other, pair.left, pair.right);
+    int captured = identity(other);
+    identity(other) = 23;
+    borrow(chosen).value = 24;
+    printf("%d %d %d %d\n", captured, other, chosen.value, snapshot().right);
     return 0;
 }
