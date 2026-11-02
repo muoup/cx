@@ -26,7 +26,7 @@ use crate::{
         EvalResult, coerce, eval, eval_type, expr,
         flow::Evaluation,
         op::{binary_operands, eval_operand},
-        place::dereference,
+        place::dereference_inner,
         types,
     },
     log::hmir_error,
@@ -58,7 +58,7 @@ pub(crate) fn eval_aggregate(
             };
             let element = binary_operands(context, span, HMIRBinaryOp::Add, base, index)?;
 
-            Ok(Evaluation::Ready(dereference(context, element, Some(&pointer), span)?))
+            Ok(Evaluation::Ready(dereference_inner(context, element, Some(&pointer), span)?))
         }
         HMIRAggregateOp::Is { value, pattern } => pattern::eval_is(context, body, span, *value, pattern),
         HMIRAggregateOp::Unpack { value, bindings } => unpack(context, body, span, *value, bindings),
@@ -78,7 +78,7 @@ fn eval_member(
     let indirect = context.env().pointer_inner(subject).is_some()
         || matches!(context.env().resolve_kind(subject), HMIRTypeKind::Array { .. });
     let mut value = if indirect {
-        dereference(context, value, None, span)?
+        dereference_inner(context, value, None, span)?
     } else if context.env().is_reference(value.ty()) {
         value
     } else {
@@ -123,7 +123,7 @@ fn unpack(
         ty: HMIRTypeID,
     }
 
-    expr::require_pure(context, span, "@unpack")?;
+    expr::require_impure(context, span, "@unpack")?;
     let source = (eval(context, body, value))?.ready()?;
     let source_ty = source.ty();
     let fields = match context.env().resolve_kind(source_ty) {

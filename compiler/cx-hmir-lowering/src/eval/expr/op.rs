@@ -176,7 +176,7 @@ pub(crate) fn eval_unary(
         | HMIRUnaryOp::PreDecrement
         | HMIRUnaryOp::PostIncrement
         | HMIRUnaryOp::PostDecrement => {
-            expr::require_pure(context, span, "increment or decrement")?;
+            expr::require_impure(context, span, "increment or decrement")?;
             let value = (eval(context, body, operand))?.ready()?;
             let value = coerce::collapse(context, value, span)?;
             Ok(Evaluation::Ready(increment(context, span, op, value)?))

@@ -94,9 +94,9 @@ pub(super) fn lvalue(
         _ => false,
     };
     if semantics.volatile {
-        expr::require_pure(context, span, "reading a volatile value")?;
+        expr::require_impure(context, span, "reading a volatile value")?;
     } else if global && !semantics.constant && context.is_runtime() {
-        expr::require_pure(context, span, "reading a mutable global")?;
+        expr::require_impure(context, span, "reading a mutable global")?;
     }
     let qualifiers = HMIRTypeSemantics { constant: true, volatile: true, ..Default::default() };
     let ty = types::unspecify(context, inner, qualifiers, span);

@@ -151,7 +151,7 @@ fn require(
         expr::require_nonsafe(context, span, "call to non-safe function")?;
     }
     if source_defined {
-        expr::require_pure(context, span, "call to a user-defined function")?;
+        expr::require_impure(context, span, "call to a user-defined function")?;
     }
     Ok(())
 }

@@ -119,7 +119,7 @@ pub(crate) fn require_nonsafe(
     Ok(())
 }
 
-pub(crate) fn require_pure(
+pub(crate) fn require_impure(
     context: &LocalLoweringContext,
     span: &TokenRange,
     operation: &str,

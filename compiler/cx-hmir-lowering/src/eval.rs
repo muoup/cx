@@ -37,7 +37,9 @@ pub(crate) fn eval(
     };
     let result = match expr.kind() {
         _ if let Some(selected) = selected => control::seek(context, body, id, selected),
-        HMIRExprKind::Literal(literal) => Ok(Evaluation::Ready(expr::eval_literal(context, span, literal))),
+        HMIRExprKind::Literal(literal) => Ok(Evaluation::Ready(expr::eval_literal(
+            context, span, literal,
+        ))),
         HMIRExprKind::Type(_) => {
             let ty = types::eval_declared_type(context, body, id)?;
             deduce::type_result(context, ty, span)
@@ -46,45 +48,66 @@ pub(crate) fn eval(
         HMIRExprKind::Let { local, initializer } => {
             binding::eval_let(context, body, span, *local, *initializer)
         }
-        HMIRExprKind::Block { statements, scoped, yields } => {
-            binding::eval_block(context, body, span, statements, *scoped, *yields)
-        }
+        HMIRExprKind::Block {
+            statements,
+            scoped,
+            yields,
+        } => binding::eval_block(context, body, span, statements, *scoped, *yields),
 
-        HMIRExprKind::If { condition, then_branch, else_branch } => {
-            control::eval_if(context, body, span, *condition, *then_branch, *else_branch)
-        }
-        HMIRExprKind::While { condition, body: loop_body, pre_eval } => {
-            control::eval_while(context, body, span, *condition, *loop_body, None, *pre_eval)
-        }
-        HMIRExprKind::For { init, condition, increment, body: loop_body } => {
-            control::eval_for(context, body, span, *init, *condition, *increment, *loop_body)
-        }
-        HMIRExprKind::Switch { condition, body: switch_body } => {
-            control::eval_switch(context, body, span, *condition, *switch_body)
-        }
-        HMIRExprKind::Case { body: statement, .. } => control::eval_case(context, body, id, *statement),
-        HMIRExprKind::Match { scrutinee, subject, arms } => {
-            control::eval_match(context, body, span, *scrutinee, *subject, arms)
-        }
-        HMIRExprKind::Label { name, body: statement } => {
-            control::eval_label(context, body, span, name, *statement)
-        }
+        HMIRExprKind::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => control::eval_if(context, body, span, *condition, *then_branch, *else_branch),
+        HMIRExprKind::While {
+            condition,
+            body: loop_body,
+            pre_eval,
+        } => control::eval_while(context, body, span, *condition, *loop_body, None, *pre_eval),
+        HMIRExprKind::For {
+            init,
+            condition,
+            increment,
+            body: loop_body,
+        } => control::eval_for(
+            context, body, span, *init, *condition, *increment, *loop_body,
+        ),
+        HMIRExprKind::Switch {
+            condition,
+            body: switch_body,
+        } => control::eval_switch(context, body, span, *condition, *switch_body),
+        HMIRExprKind::Case {
+            body: statement, ..
+        } => control::eval_case(context, body, id, *statement),
+        HMIRExprKind::Match {
+            scrutinee,
+            subject,
+            arms,
+        } => control::eval_match(context, body, span, *scrutinee, *subject, arms),
+        HMIRExprKind::Label {
+            name,
+            body: statement,
+        } => control::eval_label(context, body, span, name, *statement),
 
         HMIRExprKind::Op(op) => match op {
             HMIROp::BinOp { op, lhs, rhs } => op::eval_binary(context, body, span, *op, *lhs, *rhs),
             HMIROp::UnOp { op, operand } => op::eval_unary(context, body, span, *op, *operand),
-            HMIROp::Coerce { mode, value, target } => {
-                coerce::eval_coerce(context, body, span, *mode, *value, *target)
-            }
+            HMIROp::Coerce {
+                mode,
+                value,
+                target,
+            } => coerce::eval_coerce(context, body, span, *mode, *value, *target),
             HMIROp::Control(control) => control::eval_control(context, body, span, control),
             HMIROp::Assign { target, op, value } => {
                 place::eval_assign(context, body, span, *target, *op, *value)
             }
-            HMIROp::AddressOf(operand) => place::eval_address_of(context, body, span, *operand),
-            HMIROp::Dereference(pointer) => place::eval_dereference(context, body, span, *pointer),
+            HMIROp::AddressOf(operand) => place::address_of(context, body, span, *operand),
+            HMIROp::Dereference(pointer) => place::dereference(context, body, span, *pointer),
             HMIROp::OwnershipOp(op) => place::eval_ownership(context, body, span, op),
             HMIROp::Type(op) => types::eval_type_op(context, body, span, op),
-            HMIROp::AggregateOp(aggregate) => aggregate::eval_aggregate(context, body, span, aggregate),
+            HMIROp::AggregateOp(aggregate) => {
+                aggregate::eval_aggregate(context, body, span, aggregate)
+            }
         },
 
         HMIRExprKind::Def(def) => name::eval_def(context, span, *def),
@@ -93,25 +116,36 @@ pub(crate) fn eval(
             name::eval_scope_access(context, body, span, *base, member)
         }
         HMIRExprKind::Piped(value) => eval(context, body, *value),
-        HMIRExprKind::Call { callee, args, named } => call::eval_call(context, body, span, *callee, args, named),
+        HMIRExprKind::Call {
+            callee,
+            args,
+            named,
+        } => call::eval_call(context, body, span, *callee, args, named),
 
         HMIRExprKind::Hole(_) => deduce::hole(context, span),
-        HMIRExprKind::Comptime(inner) => Ok(Evaluation::Ready(eval_comptime(context, body, *inner, None)?)),
+        HMIRExprKind::Comptime(inner) => Ok(Evaluation::Ready(eval_comptime(
+            context, body, *inner, None,
+        )?)),
         HMIRExprKind::Quote { params, body: root } => staged::capture(context, body, params, *root),
-        HMIRExprKind::Splice { quote, args } => staged::eval_splice(context, body, span, *quote, args),
+        HMIRExprKind::Splice { quote, args } => {
+            staged::eval_splice(context, body, span, *quote, args)
+        }
         HMIRExprKind::Intrinsic(op) => expr::eval_intrinsic(context, body, span, op),
         HMIRExprKind::Error(_) => todo!("HMIRExprKind::Error"),
     }?;
 
     let partial = result.known().cloned();
-    result.and_then(context, body, partial, |context, _, value, _| {
-        match context.context() {
+    result.and_then(
+        context,
+        body,
+        partial,
+        |context, _, value, _| match context.context() {
             FnContext::Runtime(runtime) if runtime.emission() == Emission::Suppressed => {
                 flow::diverged()
             }
             _ => Ok(Evaluation::Ready(value)),
-        }
-    })
+        },
+    )
 }
 
 pub(crate) fn eval_type(
@@ -125,7 +159,9 @@ pub(crate) fn eval_type(
     }
     let ty = context.deferred_type(id);
     match context.evaluate(HMIRResolver::type_memo(ty), span) {
-        Err(flow::EvalExit::Stop(_)) => Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into()),
+        Err(flow::EvalExit::Stop(_)) => {
+            Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into())
+        }
         value => deduce::described_type(context, body, value?, span),
     }
 }
