@@ -42,6 +42,7 @@ pub struct FileArgs {
 #[derive(Debug)]
 pub struct BuildArgs {
     pub target: Option<String>,
+    pub release: bool,
     pub backend: Option<CompilerBackend>,
     pub optimization_level: Option<OptimizationLevel>,
     pub unsafe_flags: UnsafeFlags,
@@ -89,13 +90,6 @@ pub(crate) fn default_backend() -> CompilerBackend {
     #[cfg(not(feature = "backend-llvm"))]
     {
         CompilerBackend::Cranelift
-    }
-}
-
-pub(crate) fn default_backend_name() -> &'static str {
-    match default_backend() {
-        CompilerBackend::LLVM => "llvm",
-        CompilerBackend::Cranelift => "cranelift",
     }
 }
 
@@ -196,9 +190,14 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> {
 fn parse_build_args(args: impl IntoIterator<Item = String>, topic: Topic) -> CXResult<BuildArgs> {
     let ParsedCommonArgs { common, rest } = parse_common_flags(args);
     let mut target = None;
+    let mut release = false;
 
     for arg in rest {
         match arg.as_str() {
+            "--release" => {
+                release = true;
+                continue;
+            }
             "-c" | "-o" => {
                 return Err(error(
                     format!("option '{arg}' is not supported by '{}'", help::name(topic)),
@@ -220,6 +219,7 @@ fn parse_build_args(args: impl IntoIterator<Item = String>, topic: Topic) -> CXR
 
     Ok(BuildArgs {
         target,
+        release,
         backend: common.backend,
         optimization_level: common.optimization_level,
         unsafe_flags: common.unsafe_flags,
@@ -248,10 +248,10 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> 
 
     if input_files
         .iter()
-        .any(|file| !file.ends_with(".cx") && !file.ends_with(".c"))
+        .any(|file| ![".cx", ".cxc", ".c"].iter().any(|extension| file.ends_with(extension)))
     {
         return Err(error(
-            "input files must have a .cx or .c extension",
+            "input files must have a .cx, .cxc or .c extension",
             Some(Topic::File),
         ));
     }

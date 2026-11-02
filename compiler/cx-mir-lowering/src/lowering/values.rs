@@ -12,121 +12,42 @@ use crate::context::FunctionContext;
 
 use super::typing::{convert_float_type, convert_integer_type};
 
-pub(crate) fn lower_value(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> LMIRValue {
+pub(crate) fn read(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> LMIRValue {
     match value {
         MIRValue::Register(id) => context.reg(*id),
-        MIRValue::PlaceRef(id) => context.places[id].clone(),
-        MIRValue::Constant(MIRConstant::GlobalRef(reference)) => {
-            global_address(context, *reference)
+        MIRValue::PlaceRef { place, ty } => contents(context, context.places[place].clone(), *ty),
+        MIRValue::GlobalRef(reference) => {
+            let address = global_address(context, *reference);
+            contents(context, address, reference.ty)
         }
+        MIRValue::Indirect { register, ty } => contents(context, context.reg(*register), *ty),
         MIRValue::Constant(value) => lower_constant(context, value),
     }
 }
 
-pub(crate) fn lower_rvalue(
-    context: &mut FunctionContext<'_, '_>,
-    value: &MIRValue,
-    expected: MIRTypeID,
-) -> LMIRValue {
-    if context.ty(expected).is_void() {
-        return LMIRValue::NULL;
-    }
-    if let MIRValue::Register(register) = value {
-        if loads_through(context, *register, expected) {
-            if let Some(value) = read_through_reference(context, *register) {
-                return value;
-            }
-        }
-    }
-    let address = match value {
-        MIRValue::PlaceRef(place) => Some((
-            context.places[place].clone(),
-            context.body.place(*place).ty(),
-        )),
-        MIRValue::Constant(MIRConstant::GlobalRef(reference)) => {
-            Some((global_address(context, *reference), reference.ty))
-        }
-        _ => None,
-    };
-    if let Some((address, source_ty)) = address {
-        if matches!(
-            context.types().definition(expected).unwrap().kind(),
-            MIRTypeKind::MemoryReference { .. }
-        ) {
-            return if matches!(
-                context.types().definition(source_ty).unwrap().kind(),
-                MIRTypeKind::MemoryReference { .. }
-            ) {
-                memory::load(context, address, source_ty)
-            } else {
-                address
-            };
-        }
-        if context.ty(expected).is_memory_resident() {
-            return address;
-        }
-        return memory::load(context, address, expected);
-    }
-    lower_value(context, value)
-}
-
-/// Whether reading `register` as a value of type `expected` loads through it: always when
-/// `expected` is not a reference, and for a reference only when `register` refers to one.
-fn loads_through(
-    context: &FunctionContext<'_, '_>,
-    register: MIRRegister,
-    expected: MIRTypeID,
-) -> bool {
-    let types = context.types();
-    if !matches!(
-        types.definition(expected).unwrap().kind(),
-        MIRTypeKind::MemoryReference { .. }
-    ) {
-        return true;
-    }
-    let register_type = context.body.register(register).ty();
-    match types.definition(register_type).unwrap().kind() {
-        MIRTypeKind::MemoryReference { inner } => {
-            !types.same_type(register_type, expected) && types.same_type(*inner, expected)
-        }
-        _ => false,
+fn contents(context: &mut FunctionContext<'_, '_>, address: LMIRValue, ty: MIRTypeID) -> LMIRValue {
+    match context.types().definition(ty).unwrap().kind() {
+        MIRTypeKind::Function { .. } => address,
+        _ => memory::load(context, address, ty),
     }
 }
 
-pub(super) fn lower_read(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> LMIRValue {
-    if let MIRValue::Constant(MIRConstant::GlobalRef(reference)) = value {
-        let address = global_address(context, *reference);
-        return memory::load(context, address, reference.ty);
+pub(super) fn value_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> Option<MIRTypeID> {
+    match value {
+        MIRValue::Register(id) => Some(context.body.register(*id).ty()),
+        MIRValue::PlaceRef { ty, .. } => Some(*ty),
+        MIRValue::GlobalRef(reference) => Some(reference.ty),
+        MIRValue::Indirect { ty, .. } => Some(*ty),
+        MIRValue::Constant(_) => None,
     }
-    if let MIRValue::PlaceRef(place) = value {
-        let ty = context.body.place(*place).ty();
-        return memory::load(context, context.places[place].clone(), ty);
-    }
-    if let MIRValue::Register(register) = value {
-        if let Some(value) = read_through_reference(context, *register) {
-            return value;
-        }
-    }
-    lower_value(context, value)
 }
 
-fn read_through_reference(
-    context: &mut FunctionContext<'_, '_>,
-    register: MIRRegister,
-) -> Option<LMIRValue> {
-    let ty = context.body.register(register).ty();
-    let MIRTypeKind::MemoryReference { inner } = context.types().definition(ty).unwrap().kind()
-    else {
-        return None;
-    };
-    let inner = *inner;
-    if matches!(
-        context.types().definition(inner).unwrap().kind(),
-        MIRTypeKind::Function { .. }
-    ) {
-        return Some(context.reg(register));
+fn pointee(context: &FunctionContext<'_, '_>, register: MIRRegister) -> MIRTypeID {
+    let pointer = context.body.register(register).ty();
+    match context.types().definition(pointer).unwrap().kind() {
+        MIRTypeKind::MemoryReference { inner, .. } | MIRTypeKind::PointerTo { inner } => *inner,
+        _ => panic!("indirect operand is not a pointer"),
     }
-    Some(memory::load(context, context.reg(register), inner))
 }
 
 pub(super) fn global_address(
@@ -165,7 +86,7 @@ pub(super) fn lower_constant(
                 context.ty(*ty),
             )
         }
-        MIRConstant::GlobalRef(reference) => global_address(context, *reference),
+        MIRConstant::GlobalAddress(reference) => global_address(context, *reference),
         MIRConstant::String { value, offset } => {
             let base = LMIRValue::Global(context.global.string(value));
             memory::offset(context, base, *offset)
@@ -286,15 +207,7 @@ pub(super) fn target_type(context: &FunctionContext<'_, '_>, target: MIRTarget) 
         MIRTarget::Register(id) => context.body.register(id).ty(),
         MIRTarget::Place(id) => context.body.place(id).ty(),
         MIRTarget::Global(reference) => reference.ty,
-        MIRTarget::Indirect(id) => {
-            let pointer = context.body.register(id).ty();
-            match context.types().definition(pointer).unwrap().kind() {
-                MIRTypeKind::MemoryReference { inner, .. } | MIRTypeKind::PointerTo { inner } => {
-                    *inner
-                }
-                _ => panic!("indirect target is not a pointer"),
-            }
-        }
+        MIRTarget::Indirect(id) => pointee(context, id),
     }
 }
 
@@ -302,8 +215,9 @@ pub(super) fn write_target(
     context: &mut FunctionContext<'_, '_>,
     target: MIRTarget,
     value: LMIRValue,
+    ty: Option<MIRTypeID>,
 ) {
-    let ty = target_type(context, target);
+    let ty = ty.unwrap_or_else(|| target_type(context, target));
     match target {
         MIRTarget::Register(id) => {
             memory::assign(context, id, LMIRInstructionKind::Alias { value })

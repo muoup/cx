@@ -33,7 +33,7 @@ pub(super) fn lower_call(
             let param_ty = parameter_type(context, callee, index);
             match &parameter.abi {
                 LMIRParameterABI::Direct { slots } if parameter.ty.is_memory_resident() => {
-                    let address = values::lower_rvalue(context, argument, param_ty);
+                    let address = values::read(context, argument);
                     for slot in slots {
                         let source = memory::offset(context, address.clone(), slot.offset as i64);
                         lowered.push(memory::temp(
@@ -48,17 +48,17 @@ pub(super) fn lower_call(
                 }
                 LMIRParameterABI::Direct { slots } if slots.is_empty() => {}
                 LMIRParameterABI::Direct { .. } => {
-                    lowered.push(values::lower_rvalue(context, argument, param_ty));
+                    lowered.push(values::read(context, argument));
                 }
                 LMIRParameterABI::Indirect { .. } | LMIRParameterABI::ByValue { .. } => {
-                    let source = values::lower_rvalue(context, argument, param_ty);
+                    let source = values::read(context, argument);
                     let copy = memory::allocate(context, param_ty);
                     memory::store(context, copy.clone(), source, param_ty);
                     lowered.push(copy);
                 }
             }
         } else {
-            lowered.push(values::lower_read(context, argument));
+            lowered.push(values::read(context, argument));
         }
     }
     let kind = if let MIRValue::Constant(MIRConstant::Function(id)) = callee {
@@ -75,13 +75,8 @@ pub(super) fn lower_call(
             method_sig: signature.clone(),
         }
     } else {
-        let ty = callee_type(context, callee);
-        let value_ty = match context.types().definition(ty).unwrap().kind() {
-            MIRTypeKind::MemoryReference { inner, .. } => *inner,
-            _ => ty,
-        };
         LMIRInstructionKind::IndirectCall {
-            func_ptr: values::lower_rvalue(context, callee, value_ty),
+            func_ptr: values::read(context, callee),
             args: lowered,
             method_sig: signature.clone(),
         }
@@ -124,7 +119,7 @@ pub(super) fn lower_call(
 
 pub(super) fn lower_return(context: &mut FunctionContext<'_, '_>, value: Option<&MIRValue>) {
     let return_ty = context.function.prototype().signature.return_type();
-    let lowered = value.map(|value| values::lower_rvalue(context, value, return_ty));
+    let lowered = value.map(|value| values::read(context, value));
     if let (LMIRReturnABI::IndirectSret { alignment }, Some(source)) =
         (&context.prototype.signature.return_abi, lowered.as_ref())
     {
@@ -177,12 +172,7 @@ fn parameter_type(context: &FunctionContext<'_, '_>, callee: &MIRValue, index: u
 }
 
 fn callee_type(context: &FunctionContext<'_, '_>, callee: &MIRValue) -> MIRTypeID {
-    match callee {
-        MIRValue::Register(id) => context.body.register(*id).ty(),
-        MIRValue::PlaceRef(id) => context.body.place(*id).ty(),
-        MIRValue::Constant(MIRConstant::GlobalRef(reference)) => reference.ty,
-        _ => panic!("indirect call has no function type"),
-    }
+    values::value_type(context, callee).expect("indirect call has no function type")
 }
 
 fn callable<'a>(context: &'a FunctionContext<'_, '_>, ty: MIRTypeID) -> &'a MIRFnSignature {

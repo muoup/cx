@@ -586,6 +586,7 @@ dependencies = [
  "cx-log",
  "cx-pipeline",
  "cx-pipeline-data",
+ "rustc-hash",
  "serde",
 ]
 

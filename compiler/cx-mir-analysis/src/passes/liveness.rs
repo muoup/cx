@@ -2,7 +2,9 @@ use cx_log::{CXMaybeRawResult, CXResult, catalogue::analysis};
 use cx_mir::{
     MIRBasicBlockID, MIRBindable, MIRBody, MIRInstruction, MIRInstructionKind,
     MIRInternalIntrinsic, MIRIntrinsic, MIRLivenessState, MIRPlaceID, MIRRegisterID, MIRTarget,
+    MIRTypeKind,
     expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
+    ty::interface::MTRegistry,
 };
 use cx_tokens::TokenRange;
 
@@ -121,6 +123,20 @@ impl Liveness {
     }
 }
 
+// A pointer may be taken to storage in any state, but a reference to a place uses it
+fn raw_address(env: &AnalysisEnvironment, kind: &MIRInstructionKind) -> bool {
+    let MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Internal(MIRInternalIntrinsic::PlaceAddress {
+        out: MIRTarget::Register(out),
+        ..
+    })) = kind
+    else {
+        return false;
+    };
+    let ty = env.body().register(*out).ty();
+    let kind = env.unit().types().definition(ty).map(|ty| ty.kind());
+    !matches!(kind, Some(MIRTypeKind::MemoryReference { .. }))
+}
+
 impl AnalysisPass for Liveness {
     fn function_entry(&mut self, env: &AnalysisEnvironment) -> CXResult<()> {
         let body = env.body();
@@ -139,13 +155,7 @@ impl AnalysisPass for Liveness {
         instruction: &MIRInstruction,
     ) -> CXResult<()> {
         let mut unavailable = None;
-        let addresses = matches!(
-            instruction.kind,
-            MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Internal(
-                MIRInternalIntrinsic::PlaceAddress { .. }
-            ))
-        );
-        if !addresses {
+        if !raw_address(env, &instruction.kind) {
             visit_bindable_uses(&instruction.kind, |bindable| {
                 if unavailable.is_none() && !self.available(env, &bindable) {
                     unavailable = Some(bindable);

@@ -17,13 +17,14 @@ pub struct MIRGlobalRef {
     pub ty: MIRTypeID,
 }
 
-// Places and global references are read as their stored value unless a reference or memory-resident
-// value is expected, in which case they denote the address; reference-typed registers are read through
-// wherever a non-reference value is expected
+// A register is its own value; places, globals and the storage behind a reference register are read for their
+// contents at the operand's type, which for a memory-resident type is the storage itself
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
     Register(MIRRegisterID),
-    PlaceRef(MIRPlaceID),
+    PlaceRef { place: MIRPlaceID, ty: MIRTypeID },
+    GlobalRef(MIRGlobalRef),
+    Indirect { register: MIRRegisterID, ty: MIRTypeID },
     Constant(MIRConstant),
 }
 

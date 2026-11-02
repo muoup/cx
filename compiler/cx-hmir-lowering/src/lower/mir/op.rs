@@ -9,7 +9,7 @@ use cx_mir::{
 };
 use cx_tokens::TokenRange;
 
-use super::{initialized, intrinsic, operand, output, register};
+use super::{contents, initialized, intrinsic, operand, output, register};
 use crate::{
     env::function::LocalLoweringContext,
     eval::types,
@@ -278,7 +278,7 @@ pub fn tag(
 
     let stored = context.env().referent(value.ty());
     let sum_ty = lower_type(context.env_mut(), stored, span)?;
-    let value = operand(context, value, span)?;
+    let value = contents(context, value, span)?;
     let (out, result) = output(context, ty, span)?;
     intrinsic(context, MIRAggregateIntrinsic::SumIndex { out, value, sum_ty }, span);
 

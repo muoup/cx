@@ -21,6 +21,8 @@ dense_id!(HMIRRegionID, "mem");
 pub enum HMIRPlace {
     Local(HMIRSlotID),
     Global(HMIRDefID),
+    // REVIEW: HMIRRegionID and HMIRSlotID is a faulty distinction, the former is MIR-bound (bad), and the latter
+    // is interpreter memory bound, which is overly restricting. Investigate unifying this into clearer categories. 
     Region(HMIRRegionID),
 }
 

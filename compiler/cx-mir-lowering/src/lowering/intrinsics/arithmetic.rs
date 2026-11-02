@@ -14,7 +14,7 @@ use crate::context::FunctionContext;
 
 use super::output;
 use crate::lowering::typing::{convert_float_type, convert_integer_type};
-use crate::lowering::values::lower_read;
+use crate::lowering::values::{read, value_type};
 
 pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsic) {
     use MIRIntIntrinsic as I;
@@ -48,8 +48,8 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
         _ => None,
     };
     if let Some((out, lhs, rhs, op)) = binary {
-        let left = lower_read(context, lhs);
-        let right = lower_read(context, rhs);
+        let left = read(context, lhs);
+        let right = read(context, rhs);
         output(
             context,
             out,
@@ -64,7 +64,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
                 I::LNot { .. } => LMIRIntUnOp::LNOT,
                 _ => LMIRIntUnOp::BNOT,
             };
-            let value = lower_read(context, value);
+            let value = read(context, value);
             output(
                 context,
                 *out,
@@ -90,7 +90,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             } else {
                 LMIRCoercionType::BitCast
             };
-            let value = lower_read(context, value);
+            let value = read(context, value);
             output(
                 context,
                 *out,
@@ -104,7 +104,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             out, value, signed, ..
         } => {
             let from = integer_type(context, value);
-            let value = lower_read(context, value);
+            let value = read(context, value);
             output(
                 context,
                 *out,
@@ -123,7 +123,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             sign_extend,
         } => {
             let from = integer_type(context, value);
-            let value = lower_read(context, value);
+            let value = read(context, value);
             output(
                 context,
                 *out,
@@ -156,8 +156,8 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
         _ => None,
     };
     if let Some((out, lhs, rhs, op)) = binary {
-        let left = lower_read(context, lhs);
-        let right = lower_read(context, rhs);
+        let left = read(context, lhs);
+        let right = read(context, rhs);
         output(
             context,
             out,
@@ -167,7 +167,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
     }
     match op {
         F::Neg { out, value } => {
-            let value = lower_read(context, value);
+            let value = read(context, value);
             output(
                 context,
                 *out,
@@ -181,7 +181,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
             out, value, signed, ..
         } => {
             let from = float_type(context, value);
-            let value = lower_read(context, value);
+            let value = read(context, value);
             output(
                 context,
                 *out,
@@ -196,7 +196,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
         }
         F::FloatCast { out, value, .. } => {
             let from = float_type(context, value);
-            let value = lower_read(context, value);
+            let value = read(context, value);
             output(
                 context,
                 *out,
@@ -216,7 +216,7 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
     use MIRPtrIntrinsic as P;
     let (out, lhs, rhs, op, type_size) = match op {
         P::ToInt { out, ptr, .. } => {
-            let value = lower_read(context, ptr);
+            let value = read(context, ptr);
             output(
                 context,
                 *out,
@@ -247,8 +247,8 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
         P::Gt { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::GT, 1),
         P::Geq { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::GE, 1),
     };
-    let left = lower_read(context, lhs);
-    let right = lower_read(context, rhs);
+    let left = read(context, lhs);
+    let right = read(context, rhs);
     output(
         context,
         out,
@@ -262,20 +262,11 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
     );
 }
 
-fn operand_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> Option<cx_mir::MIRTypeID> {
-    match value {
-        MIRValue::Register(id) => Some(context.body.register(*id).ty()),
-        MIRValue::PlaceRef(id) => Some(context.body.place(*id).ty()),
-        MIRValue::Constant(MIRConstant::GlobalRef(reference)) => Some(reference.ty),
-        _ => None,
-    }
-}
-
 fn integer_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> MIRIntType {
     if let MIRValue::Constant(MIRConstant::Integer { ty, .. }) = value {
         return *ty;
     }
-    let ty = operand_type(context, value).expect("integer operand lacks a MIR type");
+    let ty = value_type(context, value).expect("integer operand lacks a MIR type");
     integer_kind(context, ty)
 }
 
@@ -290,7 +281,7 @@ fn float_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> cx_mir::MI
     if let MIRValue::Constant(MIRConstant::Float { ty, .. }) = value {
         return *ty;
     }
-    let ty = operand_type(context, value).expect("float operand lacks a MIR type");
+    let ty = value_type(context, value).expect("float operand lacks a MIR type");
     match context.types().definition(ty).unwrap().kind() {
         MIRTypeKind::Float { ty } => *ty,
         _ => panic!("float operation on non-float"),

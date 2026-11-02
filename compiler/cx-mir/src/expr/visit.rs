@@ -28,7 +28,9 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
     fn value(value: &MIRValue, visit: &mut impl FnMut(MIRBindable)) {
         match value {
             MIRValue::Register(register) => visit(MIRBindable::Register(*register)),
-            MIRValue::PlaceRef(place) => visit(MIRBindable::Place(*place)),
+            MIRValue::PlaceRef { place, .. } => visit(MIRBindable::Place(*place)),
+            MIRValue::Indirect { register, .. } => visit(MIRBindable::Register(*register)),
+            MIRValue::GlobalRef(_) => {}
             MIRValue::Constant(constant) => constant_value(constant, visit),
         }
     }

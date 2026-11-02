@@ -17,7 +17,7 @@ pub fn generate_header(
     if !link_entries.is_empty() {
         writeln!(output, "/* Link dependencies:").unwrap();
         for entry in link_entries {
-            writeln!(output, " *   -l{} ({})", entry.name, entry.kind)?;
+            writeln!(output, " *   -l{} ({:?})", entry.name, entry.kind)?;
         }
         writeln!(output, " */")?;
         writeln!(output)?;

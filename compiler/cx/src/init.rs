@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::{args, log::error};
 use cx_log::CXResult;
+use cx_pipeline_data::config::CONFIG_FILE;
 
 pub(crate) fn init_project(args: args::InitArgs) -> CXResult<()> {
     let project_dir = Path::new(&args.project_name);
@@ -19,21 +20,9 @@ pub(crate) fn init_project(args: args::InitArgs) -> CXResult<()> {
         )
     })?;
 
-    let cx_toml = format!(
-        r#"[project]
-name = "{name}"
-
-[build]
-backend = "{backend}"
-optimization = "O0"
-
-[workspace.targets.default]
-binaries = [
-  {{ name = "{name}", entry = "main.cx" }},
-]
-"#,
+    let cx_lua = format!(
+        "executable \"{name}\" {{ \"main.cx\" }}\n",
         name = args.project_name,
-        backend = args::default_backend_name(),
     );
 
     let main_cx = r#"import std::io as std;
@@ -44,13 +33,13 @@ i32 main() {
 }
 "#;
 
-    std::fs::write(project_dir.join("cx.toml"), cx_toml)
-        .map_err(|err| error(format!("failed to write cx.toml: {err}"), None))?;
+    std::fs::write(project_dir.join(CONFIG_FILE), cx_lua)
+        .map_err(|err| error(format!("failed to write {CONFIG_FILE}: {err}"), None))?;
     std::fs::write(project_dir.join("main.cx"), main_cx)
         .map_err(|err| error(format!("failed to write main.cx: {err}"), None))?;
 
     println!("Created project '{}'", args.project_name);
-    println!("  {}/cx.toml", args.project_name);
+    println!("  {}/{CONFIG_FILE}", args.project_name);
     println!("  {}/main.cx", args.project_name);
     Ok(())
 }

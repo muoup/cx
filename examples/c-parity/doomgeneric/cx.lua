@@ -1,29 +1,8 @@
-[project]
-name = "doomgeneric"
+local raylib = import "../../raylib.lua"
 
-[build]
-backend = "llvm"
-optimization = "O2"
+project { backend = "llvm" }
 
-[workspace.targets.default]
-native_objects = [
-  "../../artifacts/raylib/lib/raylib.o",
-]
-include_dirs = [
-  "../../artifacts/raylib/include",
-  "upstream/doomgeneric",
-]
-link = [
-  { name = "m", kind = "system" },
-  { name = "pthread", kind = "system" },
-  { name = "dl", kind = "system" },
-  { name = "rt", kind = "system" },
-  { name = "X11", kind = "system" },
-]
-
-[[workspace.targets.default.binaries]]
-name = "doomgeneric"
-match = [
+executable "doomgeneric" {
   "upstream/doomgeneric/*.c",
   "doomgeneric_raylib.c",
   "!upstream/doomgeneric/doomgeneric_allegro.c",
@@ -41,4 +20,6 @@ match = [
   "!upstream/doomgeneric/i_sdlmusic.c",
   "!upstream/doomgeneric/i_sdlsound.c",
   "!upstream/doomgeneric/mus2mid.c",
-]
+  include = { "upstream/doomgeneric" },
+  deps = { raylib },
+}

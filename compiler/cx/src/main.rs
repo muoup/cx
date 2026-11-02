@@ -7,7 +7,7 @@ mod log;
 use crate::log::error;
 use args::Command;
 use cx_log::{error::write_bug_report_notes, CXResult};
-use cx_pipeline::{link_object_files, standard_compilation, COMPILER_STACK_SIZE};
+use cx_pipeline::{compile, link_object_files, COMPILER_STACK_SIZE};
 use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerConfig};
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -90,7 +90,7 @@ fn compiler_config_with_dirs(
         unsafe_flags: args.unsafe_flags,
         verbose: args.verbose,
         dump: args.dump,
-        working_directory,
+        source_root: working_directory,
         internal_directory,
         compilation_mode: mode,
         include_dirs,
@@ -98,9 +98,10 @@ fn compiler_config_with_dirs(
         require_explicit_return: args.require_explicit_return,
 
         module_mode: false,
-        project_config: None,
         link_entries: vec![],
         native_objects: vec![],
+        external_modules: Default::default(),
+        header_modules: Default::default(),
     }
 }
 
@@ -123,7 +124,7 @@ fn run_file_mode(args: args::FileArgs) -> CXResult<()> {
                 invocation_directory.clone(),
                 internal_directory.clone(),
             );
-            standard_compilation(config, Path::new(input_file))?;
+            compile(config, &[resolve_invocation_path(&invocation_directory, input_file)])?;
         }
         return Ok(());
     }
@@ -143,7 +144,7 @@ fn run_file_mode(args: args::FileArgs) -> CXResult<()> {
             invocation_directory.clone(),
             internal_directory,
         );
-        standard_compilation(config, Path::new(&args.input_files[0]))?;
+        compile(config, &[resolve_invocation_path(&invocation_directory, &args.input_files[0])])?;
         return Ok(());
     }
 
@@ -161,7 +162,7 @@ fn run_file_mode(args: args::FileArgs) -> CXResult<()> {
             internal_directory.clone(),
         );
 
-        standard_compilation(config, Path::new(input_file))?;
+        compile(config, &[resolve_invocation_path(&working_directory, input_file)])?;
         object_files.push(object_output);
     }
 

@@ -12,4 +12,5 @@ backend-llvm = ["cx-pipeline/backend-llvm"]
 cx-pipeline-data = { path = "../../compiler/cx-pipeline-data", default-features = false }
 cx-pipeline = { path = "../../compiler/cx-pipeline", default-features = false }
 cx-log = { path = "../../compiler/cx-log" }
+rustc-hash = { workspace = true }
 serde = { version = "1", features = ["derive"] }

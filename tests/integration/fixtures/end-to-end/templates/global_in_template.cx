@@ -1,7 +1,11 @@
 /* CX-STDOUT: Incremented value: 1 */
 /* CX-STDOUT-NEXT: Incremented value: 2 */
 
+extern "C":
+
 int printf(char* fmt, ...);
+
+private:
 
 int x;
 

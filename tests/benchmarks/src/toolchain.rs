@@ -122,6 +122,9 @@ fn compile_objects(
             for include_dir in &binary.include_dirs {
                 command.arg("-I").arg(include_dir);
             }
+            for (name, value) in &binary.predefined_macros {
+                command.arg(format!("-D{name}={value}"));
+            }
             command
                 .arg("-c")
                 .arg(binary.root.join(source))

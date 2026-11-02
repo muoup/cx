@@ -1,6 +1,6 @@
 public:
 
-#include "_include_state.h"
+#include "_include_state_header.cx"
 
 int restored_public() {
     return 12;

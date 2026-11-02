@@ -51,8 +51,8 @@ impl Display for MIRConstant {
                 }
                 f.write_str("}")
             }
-            Self::GlobalRef(inner) => {
-                write!(f, "global {}", inner.global)?;
+            Self::GlobalAddress(inner) => {
+                write!(f, "&global {}", inner.global)?;
                 if inner.offset != 0 {
                     write!(f, " + {}", inner.offset)?;
                 }
@@ -86,7 +86,9 @@ impl Display for MIRValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Register(value) => Display::fmt(value, f),
-            Self::PlaceRef(value) => Display::fmt(value, f),
+            Self::PlaceRef { place, .. } => Display::fmt(place, f),
+            Self::GlobalRef(value) => Display::fmt(value, f),
+            Self::Indirect { register, .. } => write!(f, "*{register}"),
             Self::Constant(value) => Display::fmt(value, f),
         }
     }
@@ -1206,7 +1208,12 @@ fn write_value(
 ) -> fmt::Result {
     match value {
         MIRValue::Register(register) => write_register_name(f, function, *register),
-        MIRValue::PlaceRef(place) => write_place_name(f, unit, function, *place),
+        MIRValue::PlaceRef { place, .. } => write_place_name(f, unit, function, *place),
+        MIRValue::GlobalRef(global) => write_global_ref(f, unit, *global),
+        MIRValue::Indirect { register, .. } => {
+            f.write_str("*")?;
+            write_register_name(f, function, *register)
+        }
         MIRValue::Constant(constant) => write_constant(f, unit, constant),
     }
 }
@@ -1230,6 +1237,10 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
                 Display::fmt(value, f)?;
             }
             f.write_str("}")
+        }
+        MIRConstant::GlobalAddress(global) => {
+            f.write_str("&")?;
+            write_global_ref(f, unit, *global)
         }
         _ => Display::fmt(constant, f),
     }

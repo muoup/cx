@@ -1,5 +1,9 @@
 /* CX-STDOUT: 17 */
+extern "C":
+
 extern int printf(const char*, ...);
+
+private:
 
 auto global : int = 4;
 auto identity(comptime @type T, T value) -> T;

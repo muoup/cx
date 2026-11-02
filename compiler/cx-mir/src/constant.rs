@@ -21,7 +21,7 @@ pub enum MIRConstant {
         ty: MIRTypeID,
         fields: Vec<(usize, MIRConstant)>,
     },
-    GlobalRef(MIRGlobalRef),
+    GlobalAddress(MIRGlobalRef),
     String {
         value: String,
         offset: i64,

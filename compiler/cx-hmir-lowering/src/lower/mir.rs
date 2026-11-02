@@ -7,7 +7,7 @@ pub use storage::{
     address, adopt, allocate, copy, dereference, field, initialize, invalidate, lift, parameter, scoped_places,
     scratch, write,
 };
-pub use value::{constant, operand};
+pub use value::{constant, contents, operand};
 
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_intrinsics::VAIntrinsic;

@@ -28,5 +28,5 @@ pub(super) fn output(
 ) {
     let ty = context.ty(target_type(context, target));
     let value = memory::temp(context, kind, ty);
-    write_target(context, target, value);
+    write_target(context, target, value, None);
 }

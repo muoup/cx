@@ -6,16 +6,14 @@
 use crate::position::{byte_range, line_range};
 use cx_namespace::module::ModulePath;
 use cx_pipeline::LSPErrors;
-use cx_pipeline_data::config::CXProjectConfig;
-use cx_pipeline_data::db::ModuleData;
+use cx_pipeline::project;
+use cx_pipeline_data::config::{load_project, Profile, CONFIG_FILE};
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilationUnit, CompilerBackend, CompilerConfig,
     GlobalCompilationContext, OptimizationLevel, UnsafeFlags,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, NumberOrString, Range,
     Url,
@@ -27,79 +25,73 @@ pub struct CheckReport {
 }
 
 pub struct ProjectSettings {
-    config: Option<CXProjectConfig>,
+    source_root: PathBuf,
     include_dirs: Vec<PathBuf>,
+    predefined_macros: Vec<(String, String)>,
 }
 
 fn load_project_settings(project_root: &Path) -> Result<ProjectSettings, String> {
-    let config_path = project_root.join("cx.toml");
-    if !config_path.is_file() {
-        return Ok(ProjectSettings {
-            config: None,
-            include_dirs: vec![],
-        });
+    let mut settings = ProjectSettings {
+        source_root: project_root.to_path_buf(),
+        include_dirs: vec![],
+        predefined_macros: vec![],
+    };
+    if !project_root.join(CONFIG_FILE).is_file() {
+        return Ok(settings);
     }
 
-    let project_config = cx_pipeline_data::config::load_config(&config_path)?;
-    let mut include_dirs = Vec::new();
-
-    if let Some(workspace) = &project_config.workspace {
-        for target in workspace.targets.values() {
-            for include_dir in target.include_dirs.iter().flatten() {
-                let include_dir = PathBuf::from(include_dir);
-                let include_dir = if include_dir.is_absolute() {
-                    include_dir
-                } else {
-                    project_root.join(include_dir)
-                };
-
-                if !include_dirs.contains(&include_dir) {
-                    include_dirs.push(include_dir);
-                }
+    let project = load_project(project_root).map_err(|error| error.message())?;
+    let internal_directory = project_root.join(".internal");
+    settings.source_root = project.source_root.clone();
+    for target in &project.targets {
+        let usage = project::target_usage(&project, &internal_directory, Profile::Debug, target)
+            .map_err(|error| error.message())?;
+        for include_dir in usage.include {
+            if !settings.include_dirs.contains(&include_dir) {
+                settings.include_dirs.push(include_dir);
+            }
+        }
+        for define in usage.defines {
+            if !settings.predefined_macros.iter().any(|(name, _)| *name == define.0) {
+                settings.predefined_macros.push(define);
             }
         }
     }
-
-    Ok(ProjectSettings {
-        config: Some(project_config),
-        include_dirs,
-    })
+    Ok(settings)
 }
 
 pub fn typecheck_file(file_path: &Path, project_root: &Path) -> Result<CheckReport, String> {
-    let unit = CompilationUnit::new(project_root, ModulePath::new(file_path.to_path_buf()), None);
     let internal_directory = project_root.join(".internal").join("cx-lsp");
     let ProjectSettings {
-        config,
+        source_root,
         include_dirs,
+        predefined_macros,
     } = load_project_settings(project_root)?;
+    let unit = CompilationUnit::new(&source_root, ModulePath::new(file_path.to_path_buf()), None);
 
-    let context = GlobalCompilationContext {
-        config: CompilerConfig {
-            architecture: ArchitectureConfig::native(),
-            backend: CompilerBackend::Cranelift,
-            optimization_level: OptimizationLevel::O0,
-            require_explicit_return: None,
-            output: project_root.join("cx-lsp-output"),
-            working_directory: project_root.to_path_buf(),
+    let context = GlobalCompilationContext::new(CompilerConfig {
+        architecture: ArchitectureConfig::native(),
+        backend: CompilerBackend::Cranelift,
+        optimization_level: OptimizationLevel::O0,
+        require_explicit_return: None,
+        output: project_root.join("cx-lsp-output"),
+        source_root,
 
-            module_mode: true,
-            unsafe_flags: UnsafeFlags::default(),
-            verbose: false,
-            dump: false,
+        module_mode: true,
+        unsafe_flags: UnsafeFlags::default(),
+        verbose: false,
+        dump: false,
 
-            project_config: config,
-            include_dirs,
-            internal_directory,
-            compilation_mode: CompilationMode::Executable,
+        include_dirs,
+        internal_directory,
+        compilation_mode: CompilationMode::Executable,
 
-            link_entries: vec![],
-            native_objects: vec![],
-            predefined_macros: vec![],
-        },
-        module_db: ModuleData::new(),
-        linking_files: Mutex::new(BTreeSet::new()),
-    };
+        link_entries: vec![],
+        native_objects: vec![],
+        predefined_macros,
+        external_modules: Default::default(),
+        header_modules: Default::default(),
+    });
 
     let check_result = cx_pipeline::typecheck_only_lsp(&context, &unit);
     let checked_files = check_result

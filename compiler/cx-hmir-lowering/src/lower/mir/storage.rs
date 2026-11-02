@@ -6,12 +6,12 @@ use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRConstant, MIRInstructionKind,
     MIRInternalIntrinsic, MIRPlaceDecl, MIRPtrIntrinsic, MIRScopeID, MIRStoreBitfield, MIRTarget,
-    MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
+    MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind, ty::interface::MTRegistry,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{initialized, intrinsic, operand, output, register, value::reference};
+use super::{contents, initialized, intrinsic, operand, output, register, value::reference};
 use crate::{
     env::function::{LocalLoweringContext, runtime::Slot},
     eval::types,
@@ -227,7 +227,7 @@ pub fn copy(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let runtime_value = operand(context, &value, span)?;
+    let runtime_value = contents(context, &value, span)?;
     let Some(result_type) = context.env().reference_inner(value.ty()) else {
         unreachable!("read from type: {}", types::name(context.env(), value.ty()))
     };
@@ -250,7 +250,18 @@ pub fn write(
     let Some(destination) = self::target(context, target, span)? else {
         unreachable!("write to a value without an address");
     };
-    let stored = context.env().referent(target.ty());
+    let held = match destination {
+        MIRTarget::Place(place) => {
+            let own = lower_type(context.env_mut(), target.ty(), span)?;
+            let held = context.runtime().builder().place(place).ty();
+            context.env().module().same_type(own, held)
+        }
+        _ => false,
+    };
+    let stored = match held {
+        true => target.ty(),
+        false => context.env().referent(target.ty()),
+    };
     let bitfield = types::bitfield(context.env(), target)
         .map(|bitfield| MIRStoreBitfield::Target(access(context, stored, bitfield)));
     let ty = lower_type(context.env_mut(), stored, span)?;
@@ -362,7 +373,7 @@ pub fn field(
     let stored = context.env().referent(base.ty());
     let tagged = matches!(context.env().resolve_kind(stored), HMIRTypeKind::TaggedUnion { .. });
     let aggregate_ty = lower_type(context.env_mut(), stored, span)?;
-    let base = operand(context, base, span)?;
+    let base = contents(context, base, span)?;
 
     let reference_ty = types::reference(context.env_mut(), ty, bitfield, span);
     let (out, reference) = output(context, reference_ty, span)?;

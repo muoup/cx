@@ -1,14 +1,13 @@
 use crate::lowering::memory;
 use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind, TypeSize};
-use cx_lmir::{LMIRInstructionKind, LMIRPtrBinOp, LMIRValue};
+use cx_lmir::{LMIRInstructionKind, LMIRPtrBinOp};
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::calculate_type_layout;
-use cx_mir::{MIRAggregateIntrinsic, MIRTarget, MIRTypeID, MIRTypeKind};
+use cx_mir::{MIRAggregateIntrinsic, MIRTarget, MIRTypeKind};
 
 use crate::context::FunctionContext;
 use crate::lowering::values::{
-    lower_read, lower_rvalue, member_location, store_member, tagged_union_tag_offset, target_type,
-    write_target,
+    member_location, read, store_member, tagged_union_tag_offset, write_target,
 };
 
 pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntrinsic) {
@@ -47,11 +46,11 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                     );
                 }
                 let location = member_location(context, *ty, *index);
-                let value = lower_rvalue(context, field, location.1);
+                let value = read(context, field);
                 store_member(context, address.clone(), location, value);
             }
             if !matches!(out, MIRTarget::Place(_)) {
-                write_target(context, *out, address);
+                write_target(context, *out, address, None);
             }
         }
         A::StructField {
@@ -61,10 +60,10 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
             struct_ty,
         } => {
             // A bitfield projects to its storage unit; bitfield-aware stores extract from it
-            let (offset, field_ty, _) = member_location(context, *struct_ty, *field);
-            let base = lower_read(context, base);
+            let (offset, _, _) = member_location(context, *struct_ty, *field);
+            let base = read(context, base);
             let address = memory::offset(context, base, offset as i64);
-            write_projection(context, *out, address, field_ty, false);
+            write_target(context, *out, address, None);
         }
         A::ArrayIndex {
             out,
@@ -72,8 +71,8 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
             index,
             element_ty,
         } => {
-            let base = lower_read(context, base);
-            let index = lower_read(context, index);
+            let base = read(context, base);
+            let index = read(context, index);
             let stride = calculate_type_layout(context.types(), *element_ty).size();
             let address = memory::temp(
                 context,
@@ -86,10 +85,10 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                 },
                 context.pointer(),
             );
-            write_projection(context, *out, address, *element_ty, false);
+            write_target(context, *out, address, None);
         }
         A::SumIndex { out, value, sum_ty } => {
-            let base = lower_read(context, value);
+            let base = read(context, value);
             let address = memory::offset(
                 context,
                 base,
@@ -107,45 +106,11 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                 },
                 tag_type,
             );
-            write_target(context, *out, value);
+            write_target(context, *out, value, None);
         }
-        A::SumVariant {
-            out,
-            base,
-            variant,
-            sum_ty,
-        } => {
-            let address = lower_read(context, base);
-            let payload = variant_type(context, *sum_ty, *variant);
-            let as_value = target_type(context, *out) == payload;
-            write_projection(context, *out, address, payload, as_value);
+        A::SumVariant { out, base, .. } => {
+            let address = read(context, base);
+            write_target(context, *out, address, None);
         }
-    }
-}
-
-fn write_projection(
-    context: &mut FunctionContext<'_, '_>,
-    target: MIRTarget,
-    address: LMIRValue,
-    value_ty: MIRTypeID,
-    as_value: bool,
-) {
-    let result_ty = target_type(context, target);
-    let value = if !as_value
-        && matches!(
-            context.types().definition(result_ty).unwrap().kind(),
-            MIRTypeKind::MemoryReference { .. }
-        ) {
-        address
-    } else {
-        memory::load(context, address, value_ty)
-    };
-    write_target(context, target, value);
-}
-
-fn variant_type(context: &FunctionContext<'_, '_>, ty: MIRTypeID, variant: usize) -> MIRTypeID {
-    match context.types().definition(ty).unwrap().kind() {
-        MIRTypeKind::TaggedUnion { variants } => variants[variant].ty(),
-        _ => panic!("variant access on non-tagged union"),
     }
 }

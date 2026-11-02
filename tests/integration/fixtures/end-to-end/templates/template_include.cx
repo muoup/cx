@@ -3,7 +3,11 @@
 import includes::template_include;
 import includes::template_include_internal;
 
+extern "C":
+
 int printf(char* fmt, ...);
+
+private:
 
 int main() {
    printf("Template return value: %d\n", includes::template_include::template_return());

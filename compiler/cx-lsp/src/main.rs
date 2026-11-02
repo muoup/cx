@@ -17,16 +17,12 @@ mod typecheck_service;
 
 use position::byte_index_to_position;
 
-/// Find the project root by searching for cx.toml, .internal, or .git directories
-/// in parent directories of the given file path.
-/// Prefers cx.toml over other markers.
 fn find_project_root(file_path: &Path) -> PathBuf {
     let mut current = file_path.parent().unwrap_or(file_path);
 
-    // First pass: look for cx.toml (highest priority)
     let mut search = current;
     loop {
-        if search.join("cx.toml").is_file() {
+        if search.join(cx_pipeline_data::config::CONFIG_FILE).is_file() {
             return search.to_path_buf();
         }
         match search.parent() {
@@ -35,7 +31,6 @@ fn find_project_root(file_path: &Path) -> PathBuf {
         }
     }
 
-    // Second pass: fall back to .internal or .git
     loop {
         if current.join(".internal").is_dir() || current.join(".git").is_dir() {
             return current.to_path_buf();

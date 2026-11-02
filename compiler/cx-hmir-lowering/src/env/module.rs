@@ -312,9 +312,12 @@ impl MIRFunctionBuilder {
         self.scopes.as_raw_slice()
     }
 
-    #[allow(dead_code)]
-    pub fn register(&self, id: MIRRegister) -> Option<&MIRRegisterDecl> {
-        self.registers.get(id)
+    pub fn place(&self, id: MIRPlaceID) -> &MIRPlaceDecl {
+        &self.places[id]
+    }
+
+    pub fn register(&self, id: MIRRegister) -> &MIRRegisterDecl {
+        &self.registers[id]
     }
 
     pub fn allocate_register(&mut self, register: MIRRegisterDecl) -> MIRRegister {

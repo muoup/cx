@@ -1,5 +1,5 @@
 use cx_log::CXResult;
-use cx_pipeline::standard_compilation;
+use cx_pipeline::compile;
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
     UnsafeFlags,
@@ -67,7 +67,7 @@ impl Display for CompilationFailure {
 pub fn compiler_config(
     backend: CompilerBackend,
     output: PathBuf,
-    working_directory: &Path,
+    source_root: &Path,
     internal_directory: &Path,
     compilation_mode: CompilationMode,
 ) -> CompilerConfig {
@@ -84,14 +84,15 @@ pub fn compiler_config(
         compilation_mode,
         verbose: false,
         dump: false,
-        working_directory: working_directory.to_path_buf(),
+        source_root: source_root.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
         module_mode: true,
-        project_config: None,
         link_entries: vec![],
         native_objects: vec![],
         include_dirs: vec![],
         predefined_macros: vec![],
+        external_modules: Default::default(),
+        header_modules: Default::default(),
     }
 }
 
@@ -102,9 +103,7 @@ pub fn compile_file(
     temp_dir: &TestTempDir,
 ) -> Result<CompilationResult, CompilationFailure> {
     let config = file_config(input, backend, compilation_mode, temp_dir);
-    timed_compilation(config, |config| {
-        standard_compilation(config, base_file_name(input))
-    })
+    timed_compilation(config, |config| compile(config, &[input.to_path_buf()]).map(drop))
 }
 
 /// [`compile_file`] at `optimization_level` instead of the backend's test default.
@@ -117,9 +116,7 @@ pub fn compile_file_at(
 ) -> Result<CompilationResult, CompilationFailure> {
     let mut config = file_config(input, backend, compilation_mode, temp_dir);
     config.optimization_level = optimization_level;
-    timed_compilation(config, |config| {
-        standard_compilation(config, base_file_name(input))
-    })
+    timed_compilation(config, |config| compile(config, &[input.to_path_buf()]).map(drop))
 }
 
 fn file_config(
@@ -128,13 +125,13 @@ fn file_config(
     compilation_mode: CompilationMode,
     temp_dir: &TestTempDir,
 ) -> CompilerConfig {
-    let working_directory = input
+    let source_root = input
         .parent()
         .expect("test source should have a parent directory");
     compiler_config(
         backend,
         temp_dir.path().join("case.out"),
-        working_directory,
+        source_root,
         &temp_dir.internal_directory(),
         compilation_mode,
     )
@@ -166,16 +163,6 @@ pub(crate) fn timed_compilation(
             })
         }
     }
-}
-
-pub fn base_file_name(input: &Path) -> &Path {
-    Path::new(
-        input
-            .file_name()
-            .expect("missing file name for test case")
-            .to_str()
-            .expect("test file name was not valid UTF-8"),
-    )
 }
 
 fn sanitize_name(name: &str) -> String {

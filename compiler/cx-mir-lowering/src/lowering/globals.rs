@@ -125,7 +125,7 @@ fn lower_initializer(
                     .collect(),
             }
         }
-        MIRConstant::GlobalRef(reference) => {
+        MIRConstant::GlobalAddress(reference) => {
             let global = context.global_indices[&reference.global];
             if reference.offset == 0 {
                 LMIRGlobalInitializer::Global(global)

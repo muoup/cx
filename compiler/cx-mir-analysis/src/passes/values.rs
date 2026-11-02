@@ -30,14 +30,16 @@ impl Values {
         }
     }
 
-    fn value(&self, value: &MIRValue) -> Option<i128> {
+    fn value(&self, env: &AnalysisEnvironment, value: &MIRValue) -> Option<i128> {
         match value {
             MIRValue::Constant(MIRConstant::Integer { value, .. }) => Some(*value),
             MIRValue::Constant(MIRConstant::Nullptr { .. }) => Some(0),
             MIRValue::Register(register) => {
                 self.known.get(&MIRBindable::Register(*register)).copied()
             }
-            MIRValue::PlaceRef(place) => self.known.get(&MIRBindable::Place(*place)).copied(),
+            MIRValue::PlaceRef { place, ty } if env.body().place(*place).ty() == *ty => {
+                self.known.get(&MIRBindable::Place(*place)).copied()
+            }
             _ => None,
         }
     }
@@ -60,7 +62,7 @@ impl Values {
         }
     }
 
-    fn integer(&self, op: &MIRIntIntrinsic) -> Option<i128> {
+    fn integer(&self, env: &AnalysisEnvironment, op: &MIRIntIntrinsic) -> Option<i128> {
         use MIRIntIntrinsic as I;
         if let I::IntCast {
             value,
@@ -69,7 +71,7 @@ impl Values {
         } = op
         {
             return self
-                .value(value)
+                .value(env, value)
                 .filter(|value| *value == 0 || (*value == 1 && !sign_extend));
         }
         let (lhs, rhs, evaluate): (&MIRValue, &MIRValue, fn(i128, i128) -> i128) = match op {
@@ -81,7 +83,7 @@ impl Values {
             I::SGe { lhs, rhs, .. } => (lhs, rhs, |a, b| i128::from(a >= b)),
             _ => return None,
         };
-        Some(evaluate(self.value(lhs)?, self.value(rhs)?))
+        Some(evaluate(self.value(env, lhs)?, self.value(env, rhs)?))
     }
 }
 
@@ -115,7 +117,7 @@ impl AnalysisPass for Values {
                 if let MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Internal(
                     MIRInternalIntrinsic::Assert { condition, message },
                 )) = &instruction.kind
-                    && self.value(condition) == Some(0)
+                    && self.value(env, condition) == Some(0)
                 {
                     return log_analysis_error(
                         &instruction.token_range,
@@ -136,7 +138,7 @@ impl AnalysisPass for Values {
 
     fn analyze_instruction(
         &mut self,
-        _: &AnalysisEnvironment,
+        env: &AnalysisEnvironment,
         instruction: &MIRInstruction,
     ) -> CXResult<()> {
         if !self.reachable {
@@ -157,8 +159,13 @@ impl AnalysisPass for Values {
                 };
                 self.set(MIRTarget::Register(*out), value);
             }
-            MIRInstructionKind::Store { target, value, .. } => {
-                let value = self.value(value);
+            MIRInstructionKind::Store {
+                target, value, ty, ..
+            } => {
+                let value = match target {
+                    MIRTarget::Place(place) if env.body().place(*place).ty() != *ty => None,
+                    _ => self.value(env, value),
+                };
                 self.set(*target, value);
             }
             MIRInstructionKind::Call { out, .. } => {
@@ -171,7 +178,7 @@ impl AnalysisPass for Values {
             MIRInstructionKind::IntrinsicOp(op) => {
                 if let Some(target) = op.output_target() {
                     let value = match op {
-                        MIRIntrinsic::Int(op) => self.integer(op),
+                        MIRIntrinsic::Int(op) => self.integer(env, op),
                         _ => None,
                     };
                     self.set(target, value);
@@ -185,7 +192,7 @@ impl AnalysisPass for Values {
             .map(|target| (target.block, Some(self.known.clone())))
             .collect();
         if let MIRInstructionKind::Branch { cond, .. } = &instruction.kind
-            && let Some(value) = self.value(cond)
+            && let Some(value) = self.value(env, cond)
         {
             self.edges[usize::from(value != 0)].1 = None;
         }

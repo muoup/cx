@@ -3,7 +3,7 @@ use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRValue};
 use cx_mir::{MIRInternalIntrinsic, MIRVAIntrinsic};
 
 use crate::context::FunctionContext;
-use crate::lowering::values::{global_address, lower_read, lower_value, write_target};
+use crate::lowering::values::{global_address, read, write_target};
 
 use super::output;
 
@@ -12,7 +12,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
     match op {
         I::AdoptPlace { place, address } => {
             let result = context.places[place].clone();
-            let address = lower_value(context, address);
+            let address = read(context, address);
             let LMIRValue::Register { register, ty } = result else {
                 unreachable!("adopted place must have a reserved pointer register")
             };
@@ -23,23 +23,23 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             );
         }
         I::PlaceAddress { out, place } => {
-            write_target(context, *out, context.places[place].clone());
+            write_target(context, *out, context.places[place].clone(), None);
         }
         I::GlobalAddress { out, global } => {
             let address = global_address(context, *global);
-            write_target(context, *out, address);
+            write_target(context, *out, address, None);
         }
         I::ReferenceAddress { out, reference } => {
-            let address = lower_value(context, reference);
-            write_target(context, *out, address);
+            let address = read(context, reference);
+            write_target(context, *out, address, None);
         }
         I::ArrayAddress { out, array } => {
-            let address = lower_value(context, array);
-            write_target(context, *out, address);
+            let address = read(context, array);
+            write_target(context, *out, address, None);
         }
         I::StringAddress { out, string } => {
             let address = LMIRValue::Global(context.global.string(string));
-            write_target(context, *out, address);
+            write_target(context, *out, address, None);
         }
         I::GetFnPtr { out, fn_id } => {
             let name = context
@@ -57,7 +57,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             );
         }
         I::Bitcast { out, value, .. } => {
-            let value = lower_read(context, value);
+            let value = read(context, value);
             output(
                 context,
                 *out,
@@ -68,14 +68,14 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             );
         }
         I::Assume { condition } => {
-            let condition = lower_read(context, condition);
+            let condition = read(context, condition);
             memory::void(
                 context,
                 LMIRInstructionKind::CompilerAssumption { condition },
             );
         }
         I::Assert { condition, message } => {
-            let condition = lower_read(context, condition);
+            let condition = read(context, condition);
             let message = LMIRValue::Global(
                 context
                     .global
@@ -89,16 +89,16 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
 pub(super) fn variadic(context: &mut FunctionContext<'_, '_>, op: &MIRVAIntrinsic) {
     match op {
         MIRVAIntrinsic::VaStart { list, last } => {
-            let list = lower_value(context, list);
-            let last = lower_value(context, last);
+            let list = read(context, list);
+            let last = read(context, last);
             memory::void(context, LMIRInstructionKind::VaStart { list, last });
         }
         MIRVAIntrinsic::VaEnd { list } => {
-            let list = lower_value(context, list);
+            let list = read(context, list);
             memory::void(context, LMIRInstructionKind::VaEnd { list });
         }
         MIRVAIntrinsic::VaArg { out, list, ty } => {
-            let list = lower_value(context, list);
+            let list = read(context, list);
             output(
                 context,
                 *out,

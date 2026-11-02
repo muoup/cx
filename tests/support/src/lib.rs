@@ -5,7 +5,7 @@ mod project;
 mod reference;
 
 pub use compilation::{
-    base_file_name, compile_file, compile_file_at, compiler_config, CompilationFailure,
+    compile_file, compile_file_at, compiler_config, CompilationFailure,
     CompilationResult, TestTempDir,
 };
 pub use cx_pipeline_data::config::LinkEntry;
