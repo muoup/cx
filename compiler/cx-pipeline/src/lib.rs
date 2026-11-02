@@ -4,6 +4,7 @@ mod linker;
 mod log;
 use log::pipeline_error;
 pub mod progress;
+pub mod project;
 mod scheduler;
 mod sources;
 
@@ -12,8 +13,6 @@ use crate::progress::ProgressReporter;
 use crate::scheduler::scheduling_loop;
 use cx_log::CXResult;
 use cx_namespace::module::{ModulePath, NamespacePath};
-use cx_pipeline_data::config::{BinaryEntry, CXProjectConfig, TargetConfig};
-use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::internal_storage::resource_path;
 use cx_pipeline_data::jobs::{CompilationJob, CompilationStep};
 use cx_pipeline_data::{
@@ -21,9 +20,8 @@ use cx_pipeline_data::{
 };
 use cx_util::format::{with_dump_directory, without_dumps};
 use rustc_hash::FxHashSet;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 
 // Re-export LSP diagnostic types for use by cx-lsp
 pub use crate::scheduler::LSPErrors;
@@ -40,142 +38,45 @@ pub fn link_object_files(output: &Path, object_files: &[PathBuf]) -> CXResult<()
     link_objects(output, object_files)
 }
 
-pub fn standard_compilation(config: CompilerConfig, base_file: &Path) -> CXResult<()> {
-    let verbose = config.verbose;
-    let compiler_context = GlobalCompilationContext {
-        config,
-        module_db: ModuleData::new(),
-        linking_files: Mutex::new(BTreeSet::new()),
-    };
-
-    let _base_file_str = base_file.to_str().ok_or(pipeline_error(
-        &catalogue::PATH_ENCODING,
-        "base file".into(),
-    ))?;
-    let entry_unit = CompilationUnit::new(
-        &compiler_context.config.working_directory,
-        ModulePath::new(base_file.to_path_buf()),
-        (!compiler_context.config.module_mode).then(NamespacePath::root),
-    );
-    if compiler_context.config.module_mode {
-        compiler_context
-            .module_db
-            .export_at_root(entry_unit.namespace().clone());
-    }
-
-    let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
-
-    let mut reporter = ProgressReporter::new(verbose);
-
-    let dump_directory = compiler_context.config.internal_directory.clone();
-    let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
-        scheduling_loop(&compiler_context, [initial_job], CompilationStep::Codegen, |job| {
-            reporter.start_job(job)
-        })
-        .map_err(|(_, error)| error)?;
-
-        match compiler_context.config.compilation_mode {
-            CompilationMode::Executable => link(&compiler_context, &mut reporter),
-            CompilationMode::Object => {
-                let object_path = resource_path(&compiler_context, &entry_unit, ".o");
-                if let Some(parent) = compiler_context.config.output.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        pipeline_error(
-                            &catalogue::FILE_OPERATION,
-                            (
-                                "create".into(),
-                                "object output directory".into(),
-                                Some(format!("{}", parent.display())),
-                                format!("{}", e),
-                            ),
-                        )
-                    })?;
-                }
-                std::fs::copy(&object_path, &compiler_context.config.output).map_err(|e| {
-                    pipeline_error(
-                        &catalogue::FILE_OPERATION,
-                        (
-                            "write".into(),
-                            "object file".into(),
-                            Some(format!(
-                                "{}",
-                                compiler_context.config.output.display()
-                            )),
-                            format!("{}", e),
-                        ),
-                    )
-                })?;
-                Ok(())
-            }
-            CompilationMode::Library => {
-                unreachable!("standard_compilation does not support library mode")
-            }
-        }
-    });
-
-    if result.is_err() {
-        reporter.clear_line();
-        return result;
-    }
-
-    reporter.finish();
-
-    Ok(())
-}
-
-pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) -> CXResult<()> {
-    if base_files.is_empty() {
+pub fn compile(config: CompilerConfig, sources: &[PathBuf]) -> CXResult<BTreeMap<PathBuf, String>> {
+    if sources.is_empty() {
         return Err(pipeline_error(&catalogue::NO_SOURCES, None));
     }
+    let context = GlobalCompilationContext::new(config);
+    let namespace = (!context.config.module_mode).then(NamespacePath::root);
+    let units = sources
+        .iter()
+        .map(|source| root_unit(&context.config, source, namespace.clone()))
+        .collect::<CXResult<Vec<_>>>()?;
 
-    let verbose = config.verbose;
-    let compiler_context = GlobalCompilationContext {
-        config,
-        module_db: ModuleData::new(),
-        linking_files: Mutex::new(BTreeSet::new()),
-    };
-
-    let mut reporter = ProgressReporter::new(verbose);
-    let dump_directory = compiler_context.config.internal_directory.clone();
-    let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
-        let initial_jobs = base_files
+    let mut reporter = ProgressReporter::new(context.config.verbose);
+    let dump_directory = context.config.internal_directory.clone();
+    let result = with_dump_directory(dump_directory, context.config.dump, || {
+        let jobs = units
             .iter()
-            .map(|base_file| {
-    let _base_file_str = base_file.to_str().ok_or(pipeline_error(
-        &catalogue::PATH_ENCODING,
-        "source file".into(),
-    ))?;
-                let entry_unit = CompilationUnit::new(
-                    &compiler_context.config.working_directory,
-                    ModulePath::new(base_file.to_path_buf()),
-                    None,
-                );
-                compiler_context
-                    .module_db
-                    .export_at_root(entry_unit.namespace().clone());
-                Ok(CompilationJob::new(
-                    vec![],
-                    CompilationStep::PreParse,
-                    entry_unit,
-                ))
-            })
-            .collect::<CXResult<Vec<_>>>()?;
-        scheduling_loop(&compiler_context, initial_jobs, CompilationStep::Codegen, |job| {
-            reporter.start_job(job)
-        })
-        .map_err(|(_, error)| error)?;
+            .map(|unit| CompilationJob::new(vec![], CompilationStep::PreParse, unit.clone()));
+        scheduling_loop(&context, jobs, CompilationStep::Codegen, |job| reporter.start_job(job))
+            .map_err(|(_, error)| error)?;
 
-        match compiler_context.config.compilation_mode {
-            CompilationMode::Executable => link(&compiler_context, &mut reporter),
-            // The objects stay in the internal directory; nothing is written to the output.
-            CompilationMode::Object => Ok(()),
-            CompilationMode::Library => Err(pipeline_error(
-                &catalogue::UNSUPPORTED_FEATURE,
-                (
-                    "library output".into(),
-                    "multi-file compilation".into(),
-                ),
-            )),
+        match context.config.compilation_mode {
+            CompilationMode::Executable => link(&context, &mut reporter),
+            CompilationMode::Object => match units.as_slice() {
+                [unit] => copy_object(&context, unit),
+                _ => Ok(()),
+            },
+            CompilationMode::Library => {
+                let symbols = context.library_symbols.lock().unwrap();
+                let roots = units
+                    .iter()
+                    .filter_map(|unit| symbols.get(unit.module().as_path()))
+                    .flatten()
+                    .cloned()
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                drop(symbols);
+                link_relocatable(&context, &roots, &mut reporter)
+            }
         }
     });
 
@@ -183,252 +84,56 @@ pub fn multi_file_compilation(config: CompilerConfig, base_files: &[PathBuf]) ->
         reporter.clear_line();
         return Err(error);
     }
-
     reporter.finish();
-    Ok(())
+    Ok(context.headers.into_inner().unwrap())
 }
 
-pub fn library_compilation(
-    config: CompilerConfig,
-    base_file: &Path,
-) -> CXResult<cx_lmir::LMIRUnit> {
-    let verbose = config.verbose;
-    let compiler_context = GlobalCompilationContext {
-        config,
-        module_db: ModuleData::new(),
-        linking_files: Mutex::new(BTreeSet::new()),
-    };
-
-    let _base_file_str = base_file.to_str().ok_or(pipeline_error(
-        &catalogue::PATH_ENCODING,
-        "base file".into(),
-    ))?;
-
-    let entry_unit = CompilationUnit::new(
-        &compiler_context.config.working_directory,
-        ModulePath::new(base_file.to_path_buf()),
-        None,
+fn root_unit(
+    config: &CompilerConfig,
+    source: &Path,
+    namespace: Option<NamespacePath>,
+) -> CXResult<CompilationUnit> {
+    source
+        .to_str()
+        .ok_or_else(|| pipeline_error(&catalogue::PATH_ENCODING, "source file".into()))?;
+    let unit = CompilationUnit::new(
+        &config.source_root,
+        ModulePath::new(source.to_path_buf()),
+        namespace.clone(),
     );
-    compiler_context
-        .module_db
-        .export_at_root(entry_unit.namespace().clone());
-
-    let initial_job = CompilationJob::new(vec![], CompilationStep::PreParse, entry_unit.clone());
-
-    let mut reporter = ProgressReporter::new(verbose);
-
-    let dump_directory = compiler_context.config.internal_directory.clone();
-    let result = with_dump_directory(dump_directory, compiler_context.config.dump, || {
-        scheduling_loop(&compiler_context, [initial_job], CompilationStep::Codegen, |job| {
-            reporter.start_job(job)
-        })
-        .map_err(|(_, error)| error)?;
-
-        // Extract exported symbol names from the entry file's LMIR to use as GC roots
-        let entry_lmir = compiler_context.module_db.lmir.get(entry_unit.namespace());
-        let exported_symbols: Vec<String> = entry_lmir
-            .fn_defs
-            .iter()
-            .filter(|f| {
-                f.prototype.linkage != cx_lmir::LinkageType::Static
-                    && f.prototype.linkage != cx_lmir::LinkageType::External
-            })
-            .map(|f| f.prototype.name.to_string())
-            .collect();
-
-        link_relocatable(&compiler_context, &exported_symbols, &mut reporter)
-    });
-
-    if let Err(e) = result {
-        reporter.clear_line();
-        return Err(e);
-    }
-
-    reporter.finish();
-
-    // Take only the entry file's LMIR unit (not imports/dependencies)
-    let entry_lmir = compiler_context.module_db.lmir.take(entry_unit.namespace());
-
-    Ok(entry_lmir)
-}
-
-/// The source files `binary` is built from, relative to the project root, with its entry first.
-pub fn binary_sources(project_root: &Path, binary: &BinaryEntry) -> CXResult<Vec<PathBuf>> {
-    let mut sources = match &binary.match_patterns {
-        Some(patterns) => sources::expand_patterns(project_root, patterns)?,
-        None => Vec::new(),
-    };
-    sources::prepend_entry(&mut sources, binary.entry.as_deref());
-    if sources.is_empty() {
+    if namespace.is_none() && !unit.module().as_path().starts_with(&config.source_root) {
         return Err(pipeline_error(
-            &catalogue::BINARY_SOURCES,
-            format!("{}", binary.name),
+            &catalogue::OUTSIDE_SOURCE_ROOT,
+            (
+                format!("{}", source.display()),
+                format!("{}", config.source_root.display()),
+            ),
         ));
     }
-    Ok(sources)
+    Ok(unit)
 }
 
-pub fn project_compilation(
-    base_config: CompilerConfig,
-    project_config: &CXProjectConfig,
-    target_filter: Option<&str>,
-) -> CXResult<Vec<PathBuf>> {
-    let workspace = project_config.workspace.as_ref().ok_or(pipeline_error(
-        &catalogue::MISSING_CONFIG,
-        ("[workspace] section".into(), "cx.toml".into()),
-    ))?;
-
-    let filter_name;
-    let targets: Vec<(&String, &TargetConfig)> = if let Some(filter) = target_filter {
-        let target = workspace.targets.get(filter).ok_or(pipeline_error(
-            &catalogue::MISSING_CONFIG,
-            (format!("target '{filter}'"), "cx.toml".into()),
-        ))?;
-        filter_name = filter.to_string();
-        vec![(&filter_name, target)]
-    } else {
-        workspace.targets.iter().collect()
+fn copy_object(context: &GlobalCompilationContext, unit: &CompilationUnit) -> CXResult<()> {
+    let object_path = resource_path(context, unit, ".o");
+    let output = &context.config.output;
+    let failure = |operation: &str, resource: &str, path: &Path, error: std::io::Error| {
+        pipeline_error(
+            &catalogue::FILE_OPERATION,
+            (
+                operation.into(),
+                resource.into(),
+                Some(format!("{}", path.display())),
+                format!("{}", error),
+            ),
+        )
     };
-
-    let mut binaries_built = Vec::new();
-
-    for (target_name, target_config) in targets {
-        let link_entries = target_config.link.clone().unwrap_or_default();
-        let native_objects = target_config
-            .native_objects
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|path| {
-                let path = std::path::PathBuf::from(path);
-                if path.is_absolute() {
-                    path
-                } else {
-                    base_config.working_directory.join(path)
-                }
-            })
-            .collect::<Vec<_>>();
-        let include_dirs = target_config
-            .include_dirs
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|path| {
-                let path = std::path::PathBuf::from(path);
-                if path.is_absolute() {
-                    path
-                } else {
-                    base_config.working_directory.join(path)
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let output_dir = base_config
-            .internal_directory
-            .join("output")
-            .join(target_name);
-        std::fs::create_dir_all(&output_dir).map_err(|e| {
-            pipeline_error(
-                &catalogue::FILE_OPERATION,
-                (
-                    "create".into(),
-                    "output directory".into(),
-                    Some(format!("{}", output_dir.display())),
-                    format!("{}", e),
-                ),
-            )
-        })?;
-
-        // Build binaries
-        if let Some(binaries) = &target_config.binaries {
-            for binary in binaries {
-                let output = output_dir.join(&binary.name);
-                let mut config = base_config.clone();
-                config.output = output.clone();
-                config.compilation_mode = CompilationMode::Executable;
-                config.link_entries = link_entries.clone();
-                config.native_objects = native_objects.clone();
-                config.include_dirs = include_dirs.clone();
-
-                match (&binary.entry, &binary.match_patterns) {
-                    (Some(entry), None) => {
-                        eprintln!(
-                            "Building binary '{}' (target: {})",
-                            binary.name, target_name
-                        );
-                        standard_compilation(config, Path::new(entry))?;
-                    }
-                    (_, Some(_)) => {
-                        let sources = binary_sources(&base_config.working_directory, binary)?;
-                        eprintln!(
-                            "Building binary '{}' (target: {}, {} sources)",
-                            binary.name,
-                            target_name,
-                            sources.len()
-                        );
-                        multi_file_compilation(config, &sources)?;
-                    }
-                    (None, None) => {
-                        return Err(pipeline_error(
-                            &catalogue::BINARY_SOURCES,
-                            format!("{}", binary.name),
-                        ));
-                    }
-                }
-                binaries_built.push(output);
-            }
-        }
-
-        // Build libraries
-        if let Some(libraries) = &target_config.libraries {
-            for library in libraries {
-                let mut config = base_config.clone();
-                config.compilation_mode = CompilationMode::Library;
-                config.link_entries = link_entries.clone();
-                config.native_objects = native_objects.clone();
-                config.include_dirs = include_dirs.clone();
-                config.output = output_dir.join(format!("{}.o", library.name));
-
-                eprintln!(
-                    "Building library '{}' (target: {})",
-                    library.name, target_name
-                );
-
-                let entry_lmir = library_compilation(config.clone(), Path::new(&library.entry))?;
-
-                eprintln!("  Linked {}", config.output.display());
-
-                // Generate .h header from LMIR
-                let header = match cx_c_header::generate_header(&entry_lmir, &link_entries) {
-                    Ok(header) => header,
-                    Err(error) => {
-                        eprintln!(
-                            "Warning: Failed to generate header for library '{}': {error}. Header generation is best-effort and will not fail the build",
-                            library.name
-                        );
-                        continue;
-                    }
-                };
-
-                let header_path = output_dir.join(format!("{}.h", library.name));
-                std::fs::write(&header_path, header).map_err(|e| {
-                    pipeline_error(
-                        &catalogue::FILE_OPERATION,
-                        (
-                            "write".into(),
-                            "header".into(),
-                            Some(format!("{}", header_path.display())),
-                            format!("{}", e),
-                        ),
-                    )
-                })?;
-
-                eprintln!("  Generated {}", header_path.display());
-            }
-        }
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| failure("create", "object output directory", parent, error))?;
     }
-
-    Ok(binaries_built)
+    std::fs::copy(&object_path, output)
+        .map_err(|error| failure("write", "object file", output, error))?;
+    Ok(())
 }
 
 /// Typecheck-only compilation for LSP integration.

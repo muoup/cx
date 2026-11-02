@@ -22,10 +22,9 @@ pub fn generate_hmir(
     hir: &HIR,
     id: HMIRUnitID,
     namespace: NamespacePath,
-    root_exports: bool,
 ) -> CXResult<HMIRUnit> {
     let planned = plan_symbols(hir, &namespace, id);
-    let context = UnitContext::new(id, root_exports, &planned);
+    let context = UnitContext::new(id, &planned);
 
     let symbols = symbol_table(hir, id, &planned);
     let mut unit = HMIRUnitBuilder::new(id, namespace);

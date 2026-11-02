@@ -18,11 +18,10 @@ impl LanguageMode {
         }
     }
 
-    pub(crate) fn for_include_path(path: &Path, parent: Self, angled: bool) -> Self {
+    pub(crate) fn for_include_path(path: &Path, parent: Self) -> Self {
         match path.extension().and_then(|extension| extension.to_str()) {
-            Some("c") => Self::C,
-            Some("cx" | "cxh") => Self::Cx,
-            Some("h") if angled => Self::C,
+            Some("c" | "h") => Self::C,
+            Some("cx" | "cxc") => Self::Cx,
             _ => parent,
         }
     }

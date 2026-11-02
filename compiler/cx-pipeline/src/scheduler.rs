@@ -26,7 +26,9 @@ use cx_tokens::TokenIter;
 use cx_util::format::{dump_data, dumps_enabled, with_dump_directory, with_dump_file};
 use cx_util::identifier::CXIdent;
 use fs2::FileExt;
+use cx_lmir::{LMIRGlobalType, LMIRUnit, LinkageType};
 use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::num::NonZeroUsize;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::mpsc;
@@ -45,7 +47,6 @@ pub(crate) fn scheduling_loop(
     }
 
     let workers = std::thread::available_parallelism().map_or(1, NonZeroUsize::get);
-    let retain_lmir = context.config.compilation_mode == CompilationMode::Library;
     let dumps = dumps_enabled();
     let (sender, receiver) = mpsc::channel();
 
@@ -69,7 +70,7 @@ pub(crate) fn scheduling_loop(
                             with_dump_directory(
                                 context.config.internal_directory.clone(),
                                 dumps,
-                                || handle_job(context, &job, retain_lmir),
+                                || handle_job(context, &job),
                             )
                         }));
                         let _ = sender.send((job, result));
@@ -121,11 +122,23 @@ fn import_jobs_for_unit(
 ) -> CXResult<Vec<CompilationJob>> {
     let mut jobs = Vec::new();
 
-    for import in import_units(imports, &context.config.working_directory) {
+    for import in import_units(imports, &context.config.source_root) {
         if !context.config.module_mode && !import.is_std_lib() {
             return Err(pipeline_error(
                 &catalogue::SINGLE_FILE_IMPORT,
                 format!("{}", import),
+            ));
+        }
+        let path = import.module().as_path();
+        let alternate = path.with_extension("cxc");
+        if path.extension().is_some_and(|extension| extension == "cx") && alternate.is_file() {
+            return Err(pipeline_error(
+                &catalogue::AMBIGUOUS_MODULE,
+                (
+                    format!("{}", import.namespace()),
+                    format!("{}", path.display()),
+                    format!("{}", alternate.display()),
+                ),
             ));
         }
 
@@ -145,7 +158,7 @@ fn import_requirements_for_unit(
     step: CompilationStep,
     shallow: bool,
 ) -> Vec<CompilationJobRequirement> {
-    import_units(imports, &context.config.working_directory)
+    import_units(imports, &context.config.source_root)
         .map(|import| CompilationJobRequirement {
             unit: import,
             step,
@@ -163,20 +176,18 @@ fn import_units_for_unit(
         .preparse_base
         .lock()
         .get(&unit.namespace())
-        .map(|preparse| {
-            import_units(&preparse.imports, &context.config.working_directory).collect()
-        })
+        .map(|preparse| import_units(&preparse.imports, &context.config.source_root).collect())
 }
 
 fn import_units<'a>(
     imports: &'a [Import],
-    working_directory: &'a std::path::Path,
+    source_root: &'a Path,
 ) -> impl Iterator<Item = CompilationUnit> + 'a {
     imports
         .iter()
         .flat_map(move |import| {
             import.names.iter().map(move |name| {
-                let mut path = std::path::PathBuf::new();
+                let mut path = PathBuf::new();
                 for segment in name.namespace.segments() {
                     path.push(segment.as_str());
                 }
@@ -187,20 +198,27 @@ fn import_units<'a>(
                     .first()
                     .is_some_and(|s| s.as_str() == "std")
                 {
-                    ModulePath::new(std::path::PathBuf::from(
-                        cx_namespace::cx_library_directory(&format!(
-                            "{}.cx",
-                            path.to_string_lossy()
-                        )),
-                    ))
+                    ModulePath::new(PathBuf::from(cx_namespace::cx_library_directory(&format!(
+                        "{}.cx",
+                        path.to_string_lossy()
+                    ))))
                 } else {
-                    ModulePath::new(working_directory.join(path).with_extension("cx"))
+                    ModulePath::new(module_source(&source_root.join(path)))
                 };
-                CompilationUnit::new(working_directory, module_path, Some(namespace))
+                CompilationUnit::new(source_root, module_path, Some(namespace))
             })
         })
         .collect::<Vec<_>>()
         .into_iter()
+}
+
+fn module_source(stem: &Path) -> PathBuf {
+    let source = stem.with_extension("cx");
+    let alternate = stem.with_extension("cxc");
+    match !source.is_file() && alternate.is_file() {
+        true => alternate,
+        false => source,
+    }
 }
 
 fn import_from_module_path(path: ModulePath) -> Import {
@@ -222,7 +240,6 @@ fn import_from_module_path(path: ModulePath) -> Import {
 pub(crate) fn handle_job(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
-    retain_lmir: bool,
 ) -> CXResult<Box<[CompilationJob]>> {
     let map_reqs_new_stage = |new_step: CompilationStep, shallow: bool| {
         let new_requirements = job
@@ -248,7 +265,7 @@ pub(crate) fn handle_job(
         .into())
     };
 
-    let result = perform_job_with_dump(context, job, retain_lmir)?;
+    let result = perform_job_with_dump(context, job)?;
 
     match job.step {
         CompilationStep::PreParse => {
@@ -297,10 +314,9 @@ fn require_explicit_return(context: &GlobalCompilationContext, unit: &Compilatio
 fn perform_job_with_dump(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
-    retain_lmir: bool,
 ) -> CXResult<JobResult> {
     if !dumps_enabled() {
-        return perform_job(context, job, retain_lmir);
+        return perform_job(context, job);
     }
     let dump_path = resource_path(context, &job.unit, ".dump");
     if matches!(job.step, CompilationStep::PreParse) {
@@ -328,13 +344,12 @@ fn perform_job_with_dump(
         })?;
     }
 
-    with_dump_file(dump_path, || perform_job(context, job, retain_lmir))
+    with_dump_file(dump_path, || perform_job(context, job))
 }
 
 pub(crate) fn perform_job(
     context: &GlobalCompilationContext,
     job: &CompilationJob,
-    retain_lmir: bool,
 ) -> CXResult<JobResult> {
     match job.step {
         CompilationStep::PreParse => {
@@ -432,13 +447,11 @@ pub(crate) fn perform_job(
 
         CompilationStep::HMIR => {
             let hir = context.module_db.hir.get(job.unit.namespace());
-            let root_exports = context.module_db.exports_at_root(job.unit.namespace());
 
             let hmir = generate_hmir(
                 hir.as_ref(),
                 context.module_db.hmir.allocate(),
                 job.unit.namespace().clone(),
-                root_exports,
             )?;
 
             if !job.unit.is_std_lib() || context.config.verbose {
@@ -475,6 +488,9 @@ pub(crate) fn perform_job(
                 .insert(job.unit.namespace().clone(), mir);
         }
 
+        CompilationStep::LMIR | CompilationStep::Codegen
+            if context.config.external_modules.contains(job.unit.module().as_path()) => {}
+
         CompilationStep::LMIR => {
             let mir = context.module_db.mir.take(job.unit.namespace());
             let lmir = generate_lmir(&mir)?;
@@ -490,15 +506,14 @@ pub(crate) fn perform_job(
         }
 
         CompilationStep::Codegen => {
-            let lmir_arc;
-            let lmir_owned;
-            let lmir: &cx_lmir::LMIRUnit = if retain_lmir {
-                lmir_arc = context.module_db.lmir.get(job.unit.namespace());
-                &lmir_arc
-            } else {
-                lmir_owned = context.module_db.lmir.take(job.unit.namespace());
-                &lmir_owned
-            };
+            let lmir = context.module_db.lmir.take(job.unit.namespace());
+            if context.config.compilation_mode == CompilationMode::Library {
+                context
+                    .library_symbols
+                    .lock()
+                    .expect("Deadlock on library symbols mutex")
+                    .insert(job.unit.module().as_path().to_path_buf(), library_symbols(&lmir).collect());
+            }
             let internal_directory = resource_path(context, &job.unit, ".o");
             if let Some(parent) = internal_directory.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| {
@@ -520,11 +535,11 @@ pub(crate) fn perform_job(
 
             let buffer = match context.config.backend {
                 CompilerBackend::LLVM => llvm_compile(
-                    lmir,
+                    &lmir,
                     internal_directory_str,
                     context.config.optimization_level,
                 ),
-                CompilerBackend::Cranelift => cranelift_compile(lmir, internal_directory_str),
+                CompilerBackend::Cranelift => cranelift_compile(&lmir, internal_directory_str),
             }?;
 
             let mut file =
@@ -546,10 +561,27 @@ pub(crate) fn perform_job(
     Ok(JobResult::StandardSuccess)
 }
 
+fn library_symbols(lmir: &LMIRUnit) -> impl Iterator<Item = String> + '_ {
+    let functions = lmir
+        .fn_defs
+        .iter()
+        .filter(|function| function.prototype.linkage == LinkageType::Standard)
+        .map(|function| function.prototype.name.to_string());
+    let globals = lmir
+        .global_vars
+        .iter()
+        .filter(|global| {
+            global.linkage == LinkageType::Standard
+                && matches!(global.ty, LMIRGlobalType::Variable { .. })
+        })
+        .map(|global| global.name.to_string());
+    functions.chain(globals)
+}
+
 #[derive(Debug, Clone)]
 pub enum LSPErrors {
     SpannedError {
-        compilation_unit: std::path::PathBuf,
+        compilation_unit: PathBuf,
         code: String,
         message: String,
         byte_start: usize,
@@ -557,7 +589,7 @@ pub enum LSPErrors {
         notes: Vec<String>,
     },
     FatalError {
-        compilation_unit: std::path::PathBuf,
+        compilation_unit: PathBuf,
         code: String,
         message: String,
         line: Option<usize>,

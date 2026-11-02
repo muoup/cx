@@ -44,15 +44,6 @@ pub(crate) fn expand_patterns(base: &Path, patterns: &[String]) -> CXResult<Vec<
     Ok(selected.into_iter().collect())
 }
 
-pub(crate) fn prepend_entry(sources: &mut Vec<PathBuf>, entry: Option<&str>) {
-    let Some(entry) = entry else {
-        return;
-    };
-    let entry = PathBuf::from(normalize_pattern(entry));
-    sources.retain(|source| source != &entry);
-    sources.insert(0, entry);
-}
-
 fn normalize_pattern(pattern: &str) -> String {
     pattern
         .replace('\\', "/")
@@ -116,8 +107,11 @@ fn collect_matches(
                 )
             })?;
         let path = entry.path();
+        let hidden = entry.file_name().to_string_lossy().starts_with('.');
         if path.is_dir() {
-            collect_matches(base, &path, pattern, matches)?;
+            if !hidden {
+                collect_matches(base, &path, pattern, matches)?;
+            }
         } else {
             add_match(base, &path, pattern, matches)?;
         }
@@ -153,6 +147,14 @@ fn wildcard_match(pattern: &str, value: &str) -> bool {
     fn matches(pattern: &[u8], value: &[u8]) -> bool {
         match pattern.first() {
             None => value.is_empty(),
+            Some(b'*') if pattern.get(1) == Some(&b'*') => {
+                let Some(rest) = pattern[2..].strip_prefix(b"/") else {
+                    return pattern.len() == 2;
+                };
+                (0..=value.len()).any(|index| {
+                    (index == 0 || value[index - 1] == b'/') && matches(rest, &value[index..])
+                })
+            }
             Some(b'*') => {
                 matches(&pattern[1..], value)
                     || value.first().is_some_and(|character| *character != b'/')

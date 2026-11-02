@@ -93,7 +93,7 @@ fn handle_include_impl(
 
     let parent_mode = context.current_frame().language_mode;
     let language_mode =
-        LanguageMode::for_include_path(&path, parent_mode, file_name.starts_with('<'));
+        LanguageMode::for_include_path(&path, parent_mode);
 
     Ok(LexTransition::PushSource(SourceInput {
         source,

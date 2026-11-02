@@ -138,13 +138,13 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
             if !data.in_include() {
-                data.symbol_naming = HIRSymbolNameScheme::Namespaced;
+                data.symbol_naming = data.default_naming;
             }
         }
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
             if !data.in_include() {
-                data.symbol_naming = HIRSymbolNameScheme::Namespaced;
+                data.symbol_naming = data.default_naming;
             }
         }
 
@@ -306,6 +306,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
     };
 
     let inherited_external = !data.c_mode
+        && data.default_naming == HIRSymbolNameScheme::Namespaced
         && symbol_naming == HIRSymbolNameScheme::Unmangled
         && linkage == LinkageMode::Standard;
 

@@ -10,8 +10,7 @@ test = []
 [dependencies]
 rustc-hash = { workspace = true }
 speedy = { version = "0.8.7" }
-toml = { version = "0.8" }
-serde = { version = "1", features = ["derive"] }
+mlua = { version = "0.12", features = ["lua54", "vendored"] }
 
 cx-tokens = { path = "../cx-tokens" }
 cx-log = { path = "../cx-log" }

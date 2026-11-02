@@ -75,7 +75,7 @@ fn classify_failure_stage(failure: &CompilationFailure) -> Option<FailureStage> 
         b'P' => Some(FailureStage::Parse),
         b'T' | b'M' => Some(FailureStage::Typecheck),
         b'A' => Some(FailureStage::Analysis),
-        b'D' if matches!(code, "D0001" | "D0002" | "D0003" | "D0004") => {
+        b'D' if matches!(code, "D0001" | "D0002" | "D0004") => {
             Some(FailureStage::Linking)
         }
         _ => None,

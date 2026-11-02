@@ -4,13 +4,14 @@ pub mod hmir;
 pub mod internal_storage;
 pub mod jobs;
 
-use crate::config::{CXProjectConfig, LinkEntry};
+use crate::config::LinkEntry;
 use crate::db::ModuleData;
 use cx_namespace::module::{ModulePath, NamespacePath};
 pub use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
 use speedy::{Context, Readable, Writable};
-use std::collections::BTreeSet;
+use rustc_hash::FxHashSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
@@ -40,6 +41,20 @@ pub struct GlobalCompilationContext {
     pub module_db: ModuleData,
 
     pub linking_files: Mutex<BTreeSet<PathBuf>>,
+    pub library_symbols: Mutex<BTreeMap<PathBuf, Vec<String>>>,
+    pub headers: Mutex<BTreeMap<PathBuf, String>>,
+}
+
+impl GlobalCompilationContext {
+    pub fn new(config: CompilerConfig) -> Self {
+        Self {
+            config,
+            module_db: ModuleData::new(),
+            linking_files: Mutex::new(BTreeSet::new()),
+            library_symbols: Mutex::new(BTreeMap::new()),
+            headers: Mutex::new(BTreeMap::new()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,16 +71,17 @@ pub struct CompilerConfig {
     pub compilation_mode: CompilationMode,
     pub optimization_level: OptimizationLevel,
     pub require_explicit_return: Option<bool>,
-    pub project_config: Option<CXProjectConfig>,
 
     pub output: PathBuf,
-    pub working_directory: PathBuf,
+    pub source_root: PathBuf,
     pub internal_directory: PathBuf,
 
     pub link_entries: Vec<LinkEntry>,
     pub native_objects: Vec<PathBuf>,
     pub include_dirs: Vec<PathBuf>,
     pub predefined_macros: Vec<(String, String)>,
+    pub external_modules: FxHashSet<PathBuf>,
+    pub header_modules: FxHashSet<PathBuf>,
 
     pub unsafe_flags: UnsafeFlags,
     pub verbose: bool,

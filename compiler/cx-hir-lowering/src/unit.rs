@@ -17,7 +17,6 @@ use crate::plan::PlannedSymbol;
 
 pub(crate) struct UnitContext {
     unit: HMIRUnitID,
-    root_exports: bool,
     // Function-level statics become defs placed after the planned ones
     planned: usize,
     externs: RefCell<FxHashMap<QualifiedName, (HMIRDefID, Vec<HMIRDeclaration>)>>,
@@ -35,10 +34,9 @@ pub(crate) fn def_name(name: QualifiedName, tag: Option<HIRTagKind>) -> Qualifie
 }
 
 impl UnitContext {
-    pub(crate) fn new(unit: HMIRUnitID, root_exports: bool, planned: &[PlannedSymbol<'_>]) -> Self {
+    pub(crate) fn new(unit: HMIRUnitID, planned: &[PlannedSymbol<'_>]) -> Self {
         Self {
             unit,
-            root_exports,
             planned: planned.len(),
             externs: RefCell::new(
                 planned
@@ -130,7 +128,9 @@ impl UnitContext {
     }
 
     pub(crate) fn link_name(&self, name: &QualifiedName, scheme: HIRSymbolNameScheme) -> CXIdent {
-        if scheme == HIRSymbolNameScheme::Unmangled || name.namespace.is_root() || self.root_exports
+        if scheme == HIRSymbolNameScheme::Unmangled
+            || name.namespace.is_root()
+            || name.name.as_str() == "main"
         {
             return name.name.clone();
         }
