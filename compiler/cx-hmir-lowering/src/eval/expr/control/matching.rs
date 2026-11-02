@@ -25,7 +25,8 @@ use crate::{
     },
     log::hmir_error,
     lower::mir,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant, scalar::int},
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    emit::comptime::int
 };
 
 struct Match {
@@ -94,7 +95,7 @@ pub(crate) fn eval_match(
         };
         let signed = matches!(context.env().resolve_kind(dispatch.ty()), HMIRTypeKind::Int(ty) if ty.signed());
         let branch = MIRInstructionKind::CaseBranch {
-            value: mir::lower_value(context, &dispatch, span)?,
+            value: mir::value(context, &dispatch, span)?,
             signed,
             cases: cases
                 .iter()

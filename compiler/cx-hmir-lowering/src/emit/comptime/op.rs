@@ -12,10 +12,10 @@ use super::rvalue;
 use crate::{
     env::function::{LocalLoweringContext, memory::layout},
     log::hmir_error,
+    emit::comptime::{ScalarFault, float, int},
     value::{
         HMIRValue,
         constant::HMIRConstant,
-        scalar::{ScalarFault, float, int},
     },
 };
 

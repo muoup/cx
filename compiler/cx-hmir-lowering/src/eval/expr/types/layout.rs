@@ -16,7 +16,8 @@ use crate::{
     eval::{EvalResult, aggregate, deduce, eval_comptime, flow::Evaluation, types},
     log::hmir_error,
     lower::types::lower_type,
-    value::{HMIRValue, constant::HMIRConstant, scalar::int},
+    emit::comptime::int,
+    value::{HMIRValue, constant::HMIRConstant}
 };
 
 pub(crate) fn eval_type_op(

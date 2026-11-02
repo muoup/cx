@@ -13,10 +13,7 @@ use cx_log::{
 };
 
 use crate::{
-    env::{function::LocalLoweringContext, memo::MemoID, resolver::HMIRResolver},
-    eval::{eval_comptime, eval_type, flow, name::type_value, types},
-    log::hmir_error,
-    value::scalar::int,
+    emit::comptime::int, env::{function::LocalLoweringContext, memo::MemoID, resolver::HMIRResolver}, eval::{eval_comptime, eval_type, flow, name::type_value, types}, log::hmir_error,
 };
 
 pub(crate) fn eval_declared_type(

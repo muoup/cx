@@ -9,18 +9,75 @@ use cx_util::linkage::LinkageMode;
 
 use super::{intrinsic, register};
 use crate::{
-    env::{HMIREnvironment, function::LocalLoweringContext},
-    log::hmir_error,
-    lower::{
-        constructor, global,
-        types::{lower_prototype, lower_type, mir_float, mir_int},
-    },
-    value::{
+    env::{HMIREnvironment, function::LocalLoweringContext}, log::hmir_error, lower::{
+        self, constructor, global, types::{lower_prototype, lower_type, mir_float, mir_int},
+    }, value::{
         HMIRPlace, HMIRValue, HMIRValueKind,
         address::Addressable,
         constant::{HMIRConstant, HMIRFunctionRef},
     },
 };
+
+pub fn value(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<MIRValue> {
+    Ok(match value.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Address(address))
+            if let Addressable::Place(HMIRPlace::Local(slot)) = address.base() =>
+        {
+            if address.offset() != 0 {
+                return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
+            }
+            let MIRBindable::Place(place) = *context.runtime().slot(*slot).binding() else {
+                unreachable!("only a place has an address");
+            };
+            MIRValue::Register(produce(context, value.ty(), span, |out| {
+                MIRInternalIntrinsic::PlaceAddress { out, place }
+            })?)
+        }
+        HMIRValueKind::Constant(function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. }))
+            if context.env().pointer_inner(value.ty()).is_some() =>
+        {
+            let MIRConstant::Function(fn_id) = constant(context.env_mut(), function, value.ty(), span)? else {
+                unreachable!("function constant lowered to a non-function")
+            };
+            MIRValue::Register(produce(context, value.ty(), span, |out| {
+                MIRInternalIntrinsic::GetFnPtr { out, fn_id }
+            })?)
+        }
+        HMIRValueKind::Constant(constant) => {
+            MIRValue::Constant(self::constant(context.env_mut(), constant, value.ty(), span)?)
+        }
+        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => match *context.runtime().slot(*slot).binding() {
+            MIRBindable::Register(register) => MIRValue::Register(register),
+            MIRBindable::Place(place) => {
+                assert!(context.env().is_reference(value.ty()), "storage must be captured before it is an operand");
+                MIRValue::Register(produce(context, value.ty(), span, |out| {
+                    MIRInternalIntrinsic::PlaceAddress { out, place }
+                })?)
+            }
+        },
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => {
+            let inner = context.env().reference_inner(value.ty()).expect("global storage is a reference");
+            let global = global::address(context.env_mut(), *def, 0, inner, span)?;
+            MIRValue::Register(produce(context, value.ty(), span, |out| {
+                MIRInternalIntrinsic::GlobalAddress { out, global }
+            })?)
+        }
+        HMIRValueKind::PlaceRef(HMIRPlace::Region(_)) => {
+            return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
+        }
+        HMIRValueKind::Indirect(pointer) if context.env().is_reference(value.ty()) => {
+            lower::mir::value(context, pointer, span)?
+        }
+        HMIRValueKind::Indirect(pointer) => MIRValue::Indirect {
+            register: reference(context, pointer, span)?,
+            ty: lower_type(context.env_mut(), value.ty(), span)?,
+        },
+    })
+}
 
 pub fn constant(
     env: &mut HMIREnvironment,
@@ -122,74 +179,13 @@ pub fn constant(
     })
 }
 
-pub fn lower_value(
-    context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    span: &TokenRange,
-) -> CXResult<MIRValue> {
-    Ok(match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Address(address))
-            if let Addressable::Place(HMIRPlace::Local(slot)) = address.base() =>
-        {
-            if address.offset() != 0 {
-                return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
-            }
-            let MIRBindable::Place(place) = *context.runtime().slot(*slot).binding() else {
-                unreachable!("only a place has an address");
-            };
-            MIRValue::Register(produce(context, value.ty(), span, |out| {
-                MIRInternalIntrinsic::PlaceAddress { out, place }
-            })?)
-        }
-        HMIRValueKind::Constant(function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. }))
-            if context.env().pointer_inner(value.ty()).is_some() =>
-        {
-            let MIRConstant::Function(fn_id) = constant(context.env_mut(), function, value.ty(), span)? else {
-                unreachable!("function constant lowered to a non-function")
-            };
-            MIRValue::Register(produce(context, value.ty(), span, |out| {
-                MIRInternalIntrinsic::GetFnPtr { out, fn_id }
-            })?)
-        }
-        HMIRValueKind::Constant(constant) => {
-            MIRValue::Constant(self::constant(context.env_mut(), constant, value.ty(), span)?)
-        }
-        HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) => match *context.runtime().slot(*slot).binding() {
-            MIRBindable::Register(register) => MIRValue::Register(register),
-            MIRBindable::Place(place) => {
-                assert!(context.env().is_reference(value.ty()), "storage must be captured before it is an operand");
-                MIRValue::Register(produce(context, value.ty(), span, |out| {
-                    MIRInternalIntrinsic::PlaceAddress { out, place }
-                })?)
-            }
-        },
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => {
-            let inner = context.env().reference_inner(value.ty()).expect("global storage is a reference");
-            let global = global::address(context.env_mut(), *def, 0, inner, span)?;
-            MIRValue::Register(produce(context, value.ty(), span, |out| {
-                MIRInternalIntrinsic::GlobalAddress { out, global }
-            })?)
-        }
-        HMIRValueKind::PlaceRef(HMIRPlace::Region(_)) => {
-            return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
-        }
-        HMIRValueKind::Indirect(pointer) if context.env().is_reference(value.ty()) => {
-            lower_value(context, pointer, span)?
-        }
-        HMIRValueKind::Indirect(pointer) => MIRValue::Indirect {
-            register: reference(context, pointer, span)?,
-            ty: lower_type(context.env_mut(), value.ty(), span)?,
-        },
-    })
-}
-
-pub(super) fn reference(
+pub fn reference(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<MIRRegister> {
     let ty = value.ty();
-    let value = lower_value(context, value, span)?;
+    let value = lower::mir::value(context, value, span)?;
     if let MIRValue::Register(register) = value {
         return Ok(register);
     }

@@ -3,7 +3,7 @@ use cx_hmir::{
     ty::intrinsic::{HMIRFloatWidth, HMIRIntType},
 };
 
-use crate::value::scalar::{ScalarFault, int};
+use crate::emit::comptime::{ScalarFault, int};
 
 pub fn round(value: f64, width: HMIRFloatWidth) -> f64 {
     match width {

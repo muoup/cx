@@ -11,7 +11,7 @@ use cx_hmir::ty::{
 use crate::{
     env::HMIREnvironment,
     symbol::composite::alike,
-    value::scalar::int,
+    emit::comptime::int,
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 

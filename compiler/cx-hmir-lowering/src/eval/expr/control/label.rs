@@ -65,7 +65,7 @@ pub(super) fn eval_indirect_goto(
     let value = eval(context, body, target)?.ready()?;
     let ty = address_type(context, true, span);
     let value = coerce::implicit(context, value, ty, span)?;
-    let address = mir::lower_value(context, &value, span)?;
+    let address = mir::value(context, &value, span)?;
     let builder = context.runtime().builder();
     let targets = builder
         .address_labels()

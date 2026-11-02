@@ -22,8 +22,8 @@ use crate::{
     value::{
         HMIRValue, HMIRValueKind,
         constant::HMIRConstant,
-        scalar::{float, int},
     },
+    emit::comptime::{float, int},
 };
 
 pub(crate) enum Coercion {

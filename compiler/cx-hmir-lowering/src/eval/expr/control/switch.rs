@@ -12,7 +12,7 @@ use cx_tokens::TokenRange;
 
 use super::{closing, loops::eval_while};
 use crate::{
-    emit,
+    emit::{self, comptime::int},
     env::function::{
         FnContext, LocalLoweringContext,
         runtime::{Emission, Exit},
@@ -26,7 +26,7 @@ use crate::{
     },
     log::hmir_error,
     lower::mir,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant, scalar::int},
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 struct CaseLabel {
@@ -194,7 +194,7 @@ fn runtime_switch(
     integer: HMIRIntType,
     labels: Vec<CaseLabel>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let condition = mir::lower_value(context, &condition, span)?;
+    let condition = mir::value(context, &condition, span)?;
     let exit = mir::block(context, "switch.exit");
     let mut blocks = Vec::new();
     let mut cases = Vec::new();

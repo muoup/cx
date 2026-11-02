@@ -5,7 +5,7 @@ use cx_hmir::{
     ty::intrinsic::{HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
 };
 
-use crate::value::scalar::ScalarFault;
+use crate::emit::comptime::ScalarFault;
 
 pub fn normalize(value: i128, ty: HMIRIntType) -> i128 {
     let bits = bits(ty);

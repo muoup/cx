@@ -7,7 +7,7 @@ pub use storage::{
     address, adopt, allocate, capture, dereference, field, initialize, invalidate, lift, load, parameter, scoped_places,
     scratch, write,
 };
-pub use value::{constant, lower_value};
+pub use value::{constant, value};
 
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_intrinsics::VAIntrinsic;
@@ -92,7 +92,7 @@ pub fn assert(
         return Ok(());
     }
 
-    let condition = lower_value(context, condition, span)?;
+    let condition = value(context, condition, span)?;
     let kind = match message {
         Some(message) => MIRInternalIntrinsic::Assert { condition, message: Some(message.into()) },
         None => MIRInternalIntrinsic::Assume { condition },
@@ -147,11 +147,11 @@ pub fn call(
         HMIRValueKind::Constant(function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. })) => {
             MIRValue::Constant(constant(context.env_mut(), function, callee.ty(), span)?)
         }
-        _ => lower_value(context, callee, span)?,
+        _ => value(context, callee, span)?,
     };
     let args = args
         .iter()
-        .map(|arg| lower_value(context, arg, span))
+        .map(|arg| value(context, arg, span))
         .collect::<CXResult<_>>()?;
 
     let returns = context.env().resolve_kind(result);
@@ -176,16 +176,16 @@ pub fn variadic(
 ) -> CXResult<Option<HMIRValue>> {
     let (instruction, result) = match op {
         VAIntrinsic::Start { list, last } => {
-            let list = lower_value(context, list, span)?;
-            let last = lower_value(context, last, span)?;
+            let list = value(context, list, span)?;
+            let last = value(context, last, span)?;
             (MIRVAIntrinsic::VaStart { list, last }, None)
         }
         VAIntrinsic::End { list } => {
-            let list = lower_value(context, list, span)?;
+            let list = value(context, list, span)?;
             (MIRVAIntrinsic::VaEnd { list }, None)
         }
         VAIntrinsic::Arg { list, ty } => {
-            let list = lower_value(context, list, span)?;
+            let list = value(context, list, span)?;
             let mir_ty = lower_type(context.env_mut(), *ty, span)?;
             let (out, result) = output(context, *ty, span)?;
             (MIRVAIntrinsic::VaArg { out, list, ty: mir_ty }, Some(result))

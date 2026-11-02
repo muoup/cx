@@ -3,7 +3,7 @@
 //
 // Avoid any routines in here that are hyper-specific and would only feasibly be used in one place
 
-mod comptime;
+pub mod comptime;
 mod storage;
 
 pub use storage::{

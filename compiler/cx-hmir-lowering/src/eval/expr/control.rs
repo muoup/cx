@@ -234,7 +234,7 @@ fn eval_condition(
     let span = body.expr(condition).span();
     let value = eval(context, body, condition)?.ready()?;
     let value = coerce::condition(context, value, span)?;
-    Ok(Evaluation::Ready(mir::lower_value(context, &value, span)?))
+    Ok(Evaluation::Ready(mir::value(context, &value, span)?))
 }
 
 fn logical_operand(
@@ -264,7 +264,7 @@ pub(crate) fn eval_short_circuit(
         };
     }
 
-    let condition = mir::lower_value(context, &left, span)?;
+    let condition = mir::value(context, &left, span)?;
     let rhs_block = mir::block(context, "logical.rhs");
     let short_block = mir::block(context, "logical.short");
     let merge = mir::block(context, "logical.merge");

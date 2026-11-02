@@ -1,4 +1,6 @@
-mod op;
+pub mod op;
+pub mod float;
+pub mod int;
 
 pub use op::{binary, cast, difference, offset, unary};
 
@@ -25,6 +27,12 @@ use crate::{
         constant::HMIRConstant,
     },
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScalarFault {
+    ZeroDivisor,
+    Undefined,
+}
 
 pub fn allocate(
     context: &mut LocalLoweringContext,

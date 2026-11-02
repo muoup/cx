@@ -1,6 +1,5 @@
 pub mod address;
 pub mod constant;
-pub mod scalar;
 pub mod staged;
 
 use rustc_hash::FxHashMap;

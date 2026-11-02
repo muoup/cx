@@ -11,12 +11,9 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{intrinsic, lower_value, output, register, value::reference};
+use super::{intrinsic, value, output, register, value::reference};
 use crate::{
-    env::function::{LocalLoweringContext, runtime::Slot},
-    eval::types,
-    lower::{global, types::lower_type},
-    value::{
+    env::function::{LocalLoweringContext, runtime::Slot}, eval::types, lower::{global, mir, types::lower_type}, value::{
         HMIRPlace, HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
         constant::HMIRConstant,
@@ -146,7 +143,7 @@ pub fn adopt(
     source: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let address = lower_value(context, source, span)?;
+    let address = value(context, source, span)?;
     let nodrop = context.env().is_nodrop(ty);
     let scope = context.runtime().current_scope();
     let target = allocate_place(context, ty, name, scope, nodrop, true, span)?;
@@ -264,7 +261,7 @@ pub fn write(
     let bitfield = types::bitfield(context.env(), target)
         .map(|bitfield| MIRStoreBitfield::Target(access(context, stored, bitfield)));
     let ty = lower_type(context.env_mut(), stored, span)?;
-    let source = lower_value(context, value, span)?;
+    let source = mir::value(context, value, span)?;
     store(context, destination, source, ty, bitfield, span);
 
     Ok(())
@@ -316,7 +313,7 @@ pub fn address(
         HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),
     };
 
-    let reference = lower_value(context, reference, span)?;
+    let reference = mir::value(context, reference, span)?;
     let (out, result) = output(context, ty, span)?;
     intrinsic(context, MIRInternalIntrinsic::ReferenceAddress { out, reference }, span);
 
@@ -330,7 +327,7 @@ pub fn dereference(
     base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let value = lower_value(context, &pointer, span)?;
+    let value = value(context, &pointer, span)?;
     if context.env().settings().assertions() {
         null_check(context, base.unwrap_or(&pointer), span)?;
     }
@@ -344,7 +341,7 @@ pub fn dereference(
 }
 
 fn null_check(context: &mut LocalLoweringContext, pointer: &HMIRValue, span: &TokenRange) -> CXResult<()> {
-    let checked = lower_value(context, pointer, span)?;
+    let checked = value(context, pointer, span)?;
     let null = MIRConstant::Nullptr {
         ty: lower_type(context.env_mut(), pointer.ty(), span)?,
     };
@@ -375,7 +372,7 @@ pub fn field(
     let base = if context.env().is_reference(base.ty()) {
         read(context, base, span)?
     } else {
-        lower_value(context, base, span)?
+        value(context, base, span)?
     };
 
     let reference_ty = types::reference(context.env_mut(), ty, bitfield, span);

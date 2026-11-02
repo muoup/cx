@@ -67,7 +67,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
         None => None,
     };
     let value = variant::construct(&mut context, ty, index, payload, &span)?;
-    let value = Some(mir::lower_value(&mut context, &value, &span)?);
+    let value = Some(mir::value(&mut context, &value, &span)?);
     mir::drop_scope(&mut context, scope, &span);
     context
         .runtime_mut()

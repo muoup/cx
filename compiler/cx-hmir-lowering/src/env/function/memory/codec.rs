@@ -13,11 +13,8 @@ use cx_util::unsafe_float::FloatWrapper;
 
 use super::{Fault, Image};
 use crate::{
-    env::HMIREnvironment,
-    eval::types,
-    lower::types::lower_type,
-    log::hmir_error,
-    value::{constant::HMIRConstant, scalar::int},
+    emit::comptime::int, env::HMIREnvironment, eval::types, log::hmir_error,
+    lower::types::lower_type, value::constant::HMIRConstant,
 };
 
 pub(crate) fn layout(
@@ -120,7 +117,9 @@ pub(super) fn extract(
     let HMIRTypeKind::Int(int) = *env.resolve_kind(ty) else {
         unreachable!("a bitfield holds an integer")
     };
-    let word = unit.bytes(0..unit.len()).map_err(|fault| fault.error(span))?;
+    let word = unit
+        .bytes(0..unit.len())
+        .map_err(|fault| fault.error(span))?;
     Ok(HMIRConstant::Int(bits(word, int::signed(int), bitfield)))
 }
 
