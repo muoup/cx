@@ -19,7 +19,7 @@ use crate::{
     eval::{
         EvalResult,
         aggregate::{pattern, variant::Variant},
-        coerce, eval, eval_comptime, expr,
+        coerce, eval, eval_comptime,
         flow::{self, Evaluation},
         types,
     },
@@ -218,11 +218,6 @@ fn bind_arm(
         HMIRPattern::Variant { inner, .. } => {
             let Variant { index, payload } = pattern::variant(context, body, ty, pattern, span)?;
             match inner.as_deref() {
-                Some(HMIRPattern::Binding(local)) if context.env().is_void(payload) => {
-                    let unit = expr::unit(context, span);
-                    emit::bind_local(context, *local, unit);
-                    true
-                }
                 Some(HMIRPattern::Binding(local)) => {
                     let reference = pattern::payload(context, &source, index, payload, span)?;
                     pattern::bind(context, body, *local, reference, owned, span)?

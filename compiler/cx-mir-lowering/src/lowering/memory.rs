@@ -53,6 +53,9 @@ pub(crate) fn offset(
 }
 
 pub(crate) fn allocate(context: &mut FunctionContext<'_, '_>, ty: MIRTypeID) -> LMIRValue {
+    if context.ty(ty).is_void() {
+        return LMIRValue::NULL;
+    }
     let layout = calculate_type_layout(context.types(), ty);
     temp(
         context,

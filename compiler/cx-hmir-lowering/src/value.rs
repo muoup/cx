@@ -7,7 +7,7 @@ use rustc_hash::FxHashMap;
 use cx_hmir::{HMIRDefID, body::HMIRLocalID, ty::HMIRTypeID};
 use cx_util::dense_id;
 
-use crate::value::constant::HMIRConstant;
+use crate::value::{address::Addressable, constant::HMIRConstant};
 
 pub(crate) type Bindings = FxHashMap<HMIRLocalID, HMIRValue>;
 
@@ -84,6 +84,18 @@ impl HMIRValue {
     pub fn as_place(&self) -> Option<HMIRPlace> {
         match self.kind {
             HMIRValueKind::PlaceRef(place) => Some(place),
+            _ => None,
+        }
+    }
+
+    pub fn as_function(&self) -> Option<&HMIRValue> {
+        match &self.kind {
+            HMIRValueKind::Constant(HMIRConstant::Address(address)) if address.offset() == 0 => {
+                match address.base() {
+                    Addressable::Function(function) => Some(function),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }

@@ -10,8 +10,8 @@ int main() {
     int first = 3;
     int second = 4;
     int& reference = first;
-    auto old = move reference;
     reference = second;
+    auto old = move reference;
     old = 11;
     printf("%d %d %d %d %d\n", x, y, direct, first, second);
     return 0;

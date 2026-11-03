@@ -1,0 +1,31 @@
+/* CX-STDOUT: 0 8 0 3 2 */
+#include <stdio.h>
+
+typedef void nothing;
+
+struct holder {
+    int value;
+    nothing empty;
+    int tail;
+};
+
+void global_unit;
+void global_units[3];
+
+void produce() {}
+
+int consume(void unit, int value) {
+    return value;
+}
+
+int main() {
+    void local;
+    void produced = produce();
+    void moved = move produced;
+    void copied = global_unit;
+    void units[4];
+    holder h = { .value = 1, .tail = 3 };
+    int passed = consume(moved, 2);
+    printf("%d %d %d %d %d\n", (int) sizeof(void), (int) sizeof(holder), (int) sizeof(units), h.tail, passed);
+    return 0;
+}

@@ -152,13 +152,9 @@ fn bind(
     if !compatible(env, value.ty(), inner) {
         return Ok(Coercion::Unapplied(value));
     }
-    let storage = match value.kind() {
-        HMIRValueKind::Indirect(_) if env.semantics(value.ty()).constant && !env.semantics(inner).constant => {
-            return Ok(Coercion::Unapplied(value));
-        }
-        HMIRValueKind::Indirect(_) => value,
-        _ if is_designator(env, value.ty()) => value,
-        _ => emit::temporary(context, value, span)?,
+    let storage = match is_designator(env, value.ty()) {
+        true => value,
+        false => emit::temporary(context, value, span)?,
     };
     Ok(Coercion::Applied(emit::address(context, &storage, target, span)?))
 }

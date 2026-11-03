@@ -1,0 +1,8 @@
+void consume(void unit) {}
+
+int main() {
+    void unit;
+    consume(move unit);
+    consume(move unit);
+    return 0;
+}

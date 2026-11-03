@@ -137,15 +137,14 @@ fn member(
     owner: &HMIRExprTypeKind,
 ) -> CXResult<HMIRTypeID> {
     let ty = flow::top(eval_type(context, body, expr).and_then(|ty| ty.description()))?;
-    let (subject, admits_void) = match owner {
-        HMIRExprTypeKind::Array { .. } => ("array element", false),
-        HMIRExprTypeKind::Struct { .. } | HMIRExprTypeKind::Union { .. } => ("member", false),
-        HMIRExprTypeKind::TaggedUnion { .. } => ("member", true),
+    let subject = match owner {
+        HMIRExprTypeKind::Array { .. } => "array element",
+        HMIRExprTypeKind::Struct { .. } | HMIRExprTypeKind::Union { .. } | HMIRExprTypeKind::TaggedUnion { .. } => {
+            "member"
+        }
         _ => return Ok(ty),
     };
-    let env = context.env();
-    let admitted = (admits_void && env.is_void(ty)) || types::is_complete(env, ty);
-    if admitted && context.type_visible(ty) {
+    if types::is_complete(context.env(), ty) && context.type_visible(ty) {
         return Ok(ty);
     }
     let subject = format!("{subject} of type '{}'", types::name(context.env(), ty));

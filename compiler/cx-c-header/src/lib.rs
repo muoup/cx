@@ -97,7 +97,7 @@ fn collect_types(
             }
             let mut def = Vec::new();
             writeln!(def, "struct {name} {{").unwrap();
-            for (field_name, field_ty) in fields {
+            for (field_name, field_ty) in fields.iter().filter(|(_, field_ty)| usize::from(field_ty.size()) != 0) {
                 let c_type = lmir_type_to_c(field_ty, Some(field_name));
                 writeln!(def, "    {c_type};").unwrap();
             }
@@ -193,6 +193,7 @@ fn format_function_declaration(proto: &LMIRFunctionPrototype) -> String {
         .params
         .iter()
         .enumerate()
+        .filter(|(_, param)| !param.ty.is_void())
         .map(|(i, param)| {
             let name = param
                 .name

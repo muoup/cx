@@ -196,7 +196,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
             ],
         },
         MIRTypeKind::Array { inner, length } => LMIRTypeKind::Array {
-            element: Box::new(convert_type(*inner, types)),
+            element: Box::new(storage_type(*inner, types)),
             size: *length,
         },
         MIRTypeKind::IncompleteArray { .. } => unreachable!(),
@@ -215,6 +215,14 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
     LMIRType {
         kind,
         alignment: calculate_type_layout(types, ty).alignment() as u8,
+    }
+}
+
+pub(crate) fn storage_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
+    let lowered = convert_type(ty, types);
+    match lowered.is_void() {
+        true => LMIRType::new(LMIRTypeKind::Opaque { bytes: 0 }, 1),
+        false => lowered,
     }
 }
 
@@ -282,7 +290,7 @@ pub(crate) fn struct_members(
                 }));
             }
             MIRFieldLayout::Standard { offset, ty } => {
-                let lowered_type = convert_type(ty, types);
+                let lowered_type = storage_type(ty, types);
                 let alignment = usize::from(lowered_type.alignment()).max(1);
                 if end.next_multiple_of(alignment) != offset {
                     pad(&mut lowered, format!("padding_{index}"), offset - end);

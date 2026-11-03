@@ -236,7 +236,7 @@ pub(crate) fn is_complete(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     !env.resolver().is_incomplete(ty)
         && match env.resolve_kind(ty) {
             HMIRTypeKind::Array { element, length } => length.is_some() && is_complete(env, *element),
-            HMIRTypeKind::Void | HMIRTypeKind::Unreachable => false,
+            HMIRTypeKind::Unreachable => false,
             _ => true,
         }
 }

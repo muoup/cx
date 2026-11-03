@@ -11,7 +11,7 @@ use crate::context::GlobalContext;
 
 use super::typing::{
     StructMember, convert_float_type, convert_integer_type, convert_linkage, convert_type,
-    struct_members,
+    storage_type, struct_members,
 };
 
 pub(super) fn lower_globals(context: &mut GlobalContext<'_>) {
@@ -21,7 +21,7 @@ pub(super) fn lower_globals(context: &mut GlobalContext<'_>) {
         context.globals.push(LMIRGlobalValue {
             name: global.name().clone(),
             ty: LMIRGlobalType::Variable {
-                ty: convert_type(global.ty(), context.unit.types()),
+                ty: storage_type(global.ty(), context.unit.types()),
                 state: LMIRGlobalState::External,
             },
             linkage: convert_linkage(global.linkage()),
@@ -51,7 +51,7 @@ fn lower_global(context: &mut GlobalContext<'_>, global: &MIRGlobalVariable) -> 
     LMIRGlobalValue {
         name: global.name().clone(),
         ty: LMIRGlobalType::Variable {
-            ty: convert_type(global.ty(), context.unit.types()),
+            ty: storage_type(global.ty(), context.unit.types()),
             state,
         },
         linkage,
