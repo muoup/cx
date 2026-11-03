@@ -21,10 +21,11 @@ pub struct MIRGlobalRef {
 // contents at the operand's type, which for a memory-resident type is the storage itself
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRValue {
-    Register(MIRRegisterID),
-    PlaceRef { place: MIRPlaceID, ty: MIRTypeID },
     GlobalRef(MIRGlobalRef),
+    PlaceRef { place: MIRPlaceID, ty: MIRTypeID },
     Indirect { register: MIRRegisterID, ty: MIRTypeID },
+
+    Register(MIRRegisterID),
     Constant(MIRConstant),
 }
 
@@ -32,13 +33,6 @@ pub enum MIRValue {
 pub enum MIRBindable {
     Register(MIRRegisterID),
     Place(MIRPlaceID),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MIRLivenessState {
-    Available,
-    Moved,
-    Uninitialized,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

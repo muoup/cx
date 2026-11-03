@@ -91,7 +91,7 @@ fn target(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRan
         }
         _ if is_reference => MIRTarget::Indirect(reference(context, value, span)?),
         HMIRValueKind::Indirect(pointer) => MIRTarget::Indirect(reference(context, pointer, span)?),
-        _ => unreachable!("a storage target has an address"),
+        _ => unreachable!("a storage target has an address, found: {:?}", value),
     })
 }
 

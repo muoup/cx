@@ -26,6 +26,6 @@ pub use unit::body::{MIRBody, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl};
 pub use unit::{MIRBasicBlockID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit};
 pub use value::MIRRegisterID as MIRRegister;
 pub use value::{
-    MIRBindable, MIRBlockTarget, MIRGlobalRef, MIRLivenessState, MIRPlaceID, MIRRegisterID,
+    MIRBindable, MIRBlockTarget, MIRGlobalRef, MIRPlaceID, MIRRegisterID,
     MIRTarget, MIRValue,
 };

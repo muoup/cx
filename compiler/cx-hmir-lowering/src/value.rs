@@ -11,8 +11,6 @@ use crate::value::constant::HMIRConstant;
 
 pub(crate) type Bindings = FxHashMap<HMIRLocalID, HMIRValue>;
 
-// One instantiation of a local or temporary, allocated by whichever context evaluates the body; slots, and the
-// addresses and values built on them, belong to that evaluation and are never written back into input HMIR
 dense_id!(HMIRSlotID, "$");
 dense_id!(HMIRRegionID, "mem");
 
@@ -35,7 +33,6 @@ pub struct HMIRValue {
 pub enum HMIRValueKind {
     Constant(HMIRConstant),
     PlaceRef(HMIRPlace),
-    // The storage that a pointer or reference value addresses
     Indirect(Box<HMIRValue>),
 }
 

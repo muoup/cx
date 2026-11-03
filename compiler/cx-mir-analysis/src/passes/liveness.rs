@@ -1,8 +1,7 @@
 use cx_log::{CXMaybeRawResult, CXResult, catalogue::analysis};
 use cx_mir::{
     MIRBasicBlockID, MIRBindable, MIRBody, MIRInstruction, MIRInstructionKind,
-    MIRInternalIntrinsic, MIRIntrinsic, MIRLivenessState, MIRPlaceID, MIRRegisterID, MIRTarget,
-    MIRTypeKind,
+    MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceID, MIRRegisterID, MIRTarget, MIRTypeKind,
     expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
     ty::interface::MTRegistry,
 };
@@ -12,6 +11,13 @@ use crate::{
     framework::{environment::AnalysisEnvironment, pipeline::AnalysisPass, state::StateTable},
     log::{complete_analysis_error, log_analysis_error},
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MIRLivenessState {
+    Available,
+    Moved,
+    Uninitialized,
+}
 
 pub struct Liveness {
     table: StateTable<MIRLivenessState>,
@@ -87,7 +93,9 @@ impl Liveness {
             discarded,
         );
         match state {
-            Some(MIRLivenessState::Moved) => log_analysis_error(range, (&analysis::AFTER_MOVE, args)),
+            Some(MIRLivenessState::Moved) => {
+                log_analysis_error(range, (&analysis::AFTER_MOVE, args))
+            }
             _ => log_analysis_error(range, (&analysis::BEFORE_INITIALIZATION, args)),
         }
     }
@@ -112,9 +120,7 @@ impl Liveness {
         }
 
         Ok(match (existing, incoming) {
-            (MIRLivenessState::Moved, _) | (_, MIRLivenessState::Moved) => {
-                MIRLivenessState::Moved
-            }
+            (MIRLivenessState::Moved, _) | (_, MIRLivenessState::Moved) => MIRLivenessState::Moved,
             (MIRLivenessState::Uninitialized, _) | (_, MIRLivenessState::Uninitialized) => {
                 MIRLivenessState::Uninitialized
             }
@@ -125,10 +131,12 @@ impl Liveness {
 
 // A pointer may be taken to storage in any state, but a reference to a place uses it
 fn raw_address(env: &AnalysisEnvironment, kind: &MIRInstructionKind) -> bool {
-    let MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Internal(MIRInternalIntrinsic::PlaceAddress {
-        out: MIRTarget::Register(out),
-        ..
-    })) = kind
+    let MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Internal(
+        MIRInternalIntrinsic::PlaceAddress {
+            out: MIRTarget::Register(out),
+            ..
+        },
+    )) = kind
     else {
         return false;
     };
