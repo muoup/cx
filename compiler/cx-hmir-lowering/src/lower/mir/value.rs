@@ -46,24 +46,13 @@ pub fn value(
                 }
             },
 
-            HMIRPlace::Global(def) => {
-                if context.env().is_reference(value.ty()) {
-                    let object = symbol::value_type(context.env_mut(), *def, None)?;
-                    let global = global::declare(context.env_mut(), *def, object, span)?;
-                    MIRValue::Constant(MIRConstant::Address {
-                        base: MIRAddressable::Global(global),
-                        offset: 0,
-                    })
-                } else {
-                    MIRValue::GlobalRef(global::reference(
-                        context.env_mut(),
-                        *def,
-                        0,
-                        value.ty(),
-                        span,
-                    )?)
-                }
-            }
+            HMIRPlace::Global(def) => MIRValue::GlobalRef(global::reference(
+                context.env_mut(),
+                *def,
+                0,
+                value.ty(),
+                span,
+            )?),
 
             HMIRPlace::Region(_) => {
                 // REVIEW: Perhaps this should incur a static memory allocation?

@@ -1,0 +1,15 @@
+#include <stdio.h>
+
+int target = 7;
+int& reference = target;
+
+int& forward(int& value) {
+    return value;
+}
+
+int main() {
+    int& alias = forward(reference);
+    alias = 12;
+    printf("%d %d\n", target, reference);
+    return 0;
+}
