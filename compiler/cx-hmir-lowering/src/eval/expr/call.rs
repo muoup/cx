@@ -62,7 +62,20 @@ fn evaluate(
         }
         return staged::apply(context, body, callee, args, span);
     }
-    let callee = coerce::std_rvalue(context, callee, span)?;
+    let callee = if matches!(context.env().resolve_kind(callee.ty()), HMIRTypeKind::Function(_)) {
+        callee
+    } else {
+        coerce::std_rvalue(context, callee, span)?
+    };
+    let callee = match callee.kind() {
+        HMIRValueKind::Constant(HMIRConstant::Address(address)) if address.offset() == 0 => {
+            match address.base() {
+                crate::value::address::Addressable::Function(function) => function.as_ref().clone(),
+                _ => callee,
+            }
+        }
+        _ => callee,
+    };
     let (callee, applied) = match callee.kind() {
         HMIRValueKind::Constant(HMIRConstant::Curried { callee, args }) => {
             (callee.as_ref().clone(), args.clone())
@@ -101,8 +114,8 @@ fn evaluate(
         let unknown = (subject(), name.to_string());
         return Err(hmir_error(body.expr(*value).span(), &typecheck::UNKNOWN_PARAMETER, unknown).into());
     }
-    let function = env.pointer_inner(callee.ty()).map(|inner| env.resolve_kind(inner));
-    let Some(HMIRTypeKind::Function(signature)) = function else {
+    let function = env.resolve_kind(env.pointer_inner(callee.ty()).unwrap_or(callee.ty()));
+    let HMIRTypeKind::Function(signature) = function else {
         let kind = (types::name(env, callee.ty()), "callable".into());
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
     };

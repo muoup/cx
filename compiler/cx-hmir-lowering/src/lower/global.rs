@@ -98,3 +98,19 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
 
     Ok(())
 }
+
+pub fn reference(
+    env: &mut HMIREnvironment,
+    def: HMIRDefID,
+    offset: i64,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<MIRGlobalRef> {
+    let object = symbol::value_type(env, def, None)?;
+    let global = declare(env, def, object, span)?;
+    Ok(MIRGlobalRef {
+        global,
+        offset,
+        ty: lower_type(env, ty, span)?,
+    })
+}

@@ -37,6 +37,9 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
 
     fn constant_value(constant: &MIRConstant, visit: &mut impl FnMut(MIRBindable)) {
         match constant {
+            MIRConstant::Address { base: crate::constant::MIRAddressable::Local(place), .. } => {
+                visit(MIRBindable::Place(*place));
+            }
             MIRConstant::Aggregate { fields, .. } => {
                 for (_, field) in fields {
                     constant_value(field, visit);

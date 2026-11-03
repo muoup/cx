@@ -10,7 +10,8 @@ use cx_mir::{
 use crate::context::GlobalContext;
 
 use super::typing::{
-    convert_float_type, convert_integer_type, convert_linkage, convert_type, struct_members, StructMember,
+    StructMember, convert_float_type, convert_integer_type, convert_linkage, convert_type,
+    struct_members,
 };
 
 pub(super) fn lower_globals(context: &mut GlobalContext<'_>) {
@@ -125,15 +126,30 @@ fn lower_initializer(
                     .collect(),
             }
         }
-        MIRConstant::GlobalAddress(reference) => {
-            let global = context.global_indices[&reference.global];
-            if reference.offset == 0 {
-                LMIRGlobalInitializer::Global(global)
-            } else {
-                LMIRGlobalInitializer::GlobalOffset {
-                    global,
-                    offset: reference.offset,
+        MIRConstant::Address { base, offset } => {
+            use cx_mir::constant::MIRAddressable;
+            match base {
+                MIRAddressable::Global(id) => LMIRGlobalInitializer::Global {
+                    global: context.global_indices[id],
+                    offset: *offset,
+                },
+                MIRAddressable::Function(id) if *offset == 0 => LMIRGlobalInitializer::Function(
+                    context
+                        .unit
+                        .function(*id)
+                        .expect("missing function in global initializer")
+                        .prototype()
+                        .symbol_name
+                        .to_string(),
+                ),
+                MIRAddressable::Block { function, label } if *offset == 0 => {
+                    let (function, block) = context.block_address(*function, label);
+                    LMIRGlobalInitializer::BlockAddress {
+                        function: function.to_string(),
+                        block,
+                    }
                 }
+                _ => panic!("invalid global address initializer"),
             }
         }
         MIRConstant::String { value, offset } => match destination_kind {
@@ -160,10 +176,9 @@ fn lower_initializer(
                 }
             }
             MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. } => {
-                let global = context.string(value);
-                match *offset {
-                    0 => LMIRGlobalInitializer::Global(global),
-                    offset => LMIRGlobalInitializer::GlobalOffset { global, offset },
+                LMIRGlobalInitializer::Global {
+                    global: context.string(value),
+                    offset: *offset,
                 }
             }
             _ => panic!("string initializer has an invalid destination type"),
@@ -203,7 +218,10 @@ fn lower_struct_initializer(
         match members.members[*index] {
             None => {}
             Some(StructMember::Field(field)) => {
-                lowered.push((field, lower_initializer(context, value, fields[*index].ty())));
+                lowered.push((
+                    field,
+                    lower_initializer(context, value, fields[*index].ty()),
+                ));
             }
             Some(StructMember::Bitfield { bit, width }) => {
                 let MIRConstant::Integer { value, .. } = value else {

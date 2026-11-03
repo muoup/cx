@@ -4,8 +4,8 @@ use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, 
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::{calculate_field_layout, calculate_type_layout};
 use cx_mir::{
-    MIRBitfieldAccess, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRRegister,
-    MIRTarget, MIRTypeID, MIRTypeKind, MIRValue,
+    MIRBitfieldAccess, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRRegister, MIRTarget,
+    MIRTypeID, MIRTypeKind, MIRValue,
 };
 
 use crate::context::FunctionContext;
@@ -86,7 +86,34 @@ pub(super) fn lower_constant(
                 context.ty(*ty),
             )
         }
-        MIRConstant::GlobalAddress(reference) => global_address(context, *reference),
+        MIRConstant::Address { base, offset } => {
+            use cx_mir::constant::MIRAddressable;
+            let base = match base {
+                MIRAddressable::Global(id) => LMIRValue::Global(context.global.global_indices[id]),
+                MIRAddressable::Local(place) => context.places[place].clone(),
+                MIRAddressable::Function(id) => {
+                    assert_eq!(*offset, 0, "function addresses cannot have an offset");
+                    let name = context
+                        .global
+                        .unit
+                        .function(*id)
+                        .unwrap()
+                        .prototype()
+                        .symbol_name
+                        .to_string();
+                    return memory::temp(
+                        context,
+                        LMIRInstructionKind::GetFunctionAddr { func: name },
+                        context.pointer(),
+                    );
+                }
+                MIRAddressable::Block { function, label } => {
+                    let (function, block) = context.global.block_address(*function, label);
+                    LMIRValue::BlockAddress { function, block }
+                }
+            };
+            memory::offset(context, base, *offset)
+        }
         MIRConstant::String { value, offset } => {
             let base = LMIRValue::Global(context.global.string(value));
             memory::offset(context, base, *offset)
@@ -279,13 +306,7 @@ pub(super) fn read_bitfield(
     };
     let value = if bitfield.bit_width < word_bits {
         let mask = bit_mask(context, word, bitfield.bit_width);
-        integer_binop(
-            context,
-            LMIRIntBinOp::BAND,
-            value,
-            mask,
-            word_type.clone(),
-        )
+        integer_binop(context, LMIRIntBinOp::BAND, value, mask, word_type.clone())
     } else {
         value
     };
@@ -298,13 +319,7 @@ pub(super) fn read_bitfield(
             shift_amount.clone(),
             word_type.clone(),
         );
-        integer_binop(
-            context,
-            LMIRIntBinOp::ASHR,
-            value,
-            shift_amount,
-            word_type,
-        )
+        integer_binop(context, LMIRIntBinOp::ASHR, value, shift_amount, word_type)
     } else {
         value
     };
@@ -433,7 +448,11 @@ fn bitfield_word(
     )
 }
 
-fn bit_mask(context: &mut FunctionContext<'_, '_>, word: LMIRIntegerType, width: usize) -> LMIRValue {
+fn bit_mask(
+    context: &mut FunctionContext<'_, '_>,
+    word: LMIRIntegerType,
+    width: usize,
+) -> LMIRValue {
     let bits = word.bytes() as usize * 8;
     let all_ones = context.integer(-1, word);
     if width >= bits {
@@ -442,7 +461,13 @@ fn bit_mask(context: &mut FunctionContext<'_, '_>, word: LMIRIntegerType, width:
     let shift_amount = context.integer((bits - width) as i128, word);
     let word_type =
         LMIRType::with_implicit_abi(context.types().architecture(), LMIRTypeKind::Integer(word));
-    integer_binop(context, LMIRIntBinOp::LSHR, all_ones, shift_amount, word_type)
+    integer_binop(
+        context,
+        LMIRIntBinOp::LSHR,
+        all_ones,
+        shift_amount,
+        word_type,
+    )
 }
 
 fn integer_binop(

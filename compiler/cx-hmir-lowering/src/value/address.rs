@@ -1,18 +1,19 @@
 use cx_mir::MIRFunctionID;
 use cx_util::identifier::CXIdent;
 
-use crate::value::HMIRPlace;
+use crate::value::{HMIRPlace, HMIRValue};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Addressable {
     Place(HMIRPlace),
+    Function(Box<HMIRValue>),
     Label { function: MIRFunctionID, label: CXIdent },
     Literal(String),
 }
 
 impl Addressable {
     pub fn is_storage(&self) -> bool {
-        !matches!(self, Self::Label { .. })
+        !matches!(self, Self::Label { .. } | Self::Function(_))
     }
 }
 

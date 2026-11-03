@@ -87,10 +87,11 @@ impl HMIRConstant {
 
     pub fn holds_local_address(&self) -> bool {
         match self {
-            Self::Address(address) => matches!(
-                address.base(),
-                Addressable::Place(HMIRPlace::Local(_) | HMIRPlace::Region(_))
-            ),
+            Self::Address(address) => match address.base() {
+                Addressable::Place(HMIRPlace::Local(_) | HMIRPlace::Region(_)) => true,
+                Addressable::Function(function) => matches!(function.kind(), HMIRValueKind::Constant(constant) if constant.holds_local_address()),
+                _ => false,
+            },
             Self::Aggregate(items) => items.iter().any(Self::holds_local_address),
             Self::Union { value, .. } => value.holds_local_address(),
             Self::TaggedUnion { payload, .. } => payload.holds_local_address(),

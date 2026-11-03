@@ -79,6 +79,16 @@ impl HMIREnvironment<'_, '_> {
                 variant,
                 payload: Box::new(self.canonical_constant(*payload, *fields[variant].ty())),
             },
+            (HMIRConstant::Address(address), _) => match address.base() {
+                crate::value::address::Addressable::Function(function) => {
+                    let function = self.canonical_value(function.as_ref().clone());
+                    HMIRConstant::Address(crate::value::address::HMIRAddress::new(
+                        crate::value::address::Addressable::Function(Box::new(function)),
+                        address.offset(),
+                    ))
+                }
+                _ => HMIRConstant::Address(address),
+            },
             (HMIRConstant::Curried { callee, args }, _) => HMIRConstant::Curried {
                 callee: Box::new(self.canonical_value(*callee)),
                 args: args

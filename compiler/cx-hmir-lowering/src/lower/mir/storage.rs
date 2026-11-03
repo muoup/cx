@@ -303,6 +303,12 @@ pub fn address(
         }
         HMIRValueKind::PlaceRef(local @ HMIRPlace::Local(slot)) => {
             match context.runtime().slot(*slot).binding() {
+                MIRBindable::Place(place_id) if context.env().pointer_inner(ty).is_some() => {
+                    let place_id = *place_id;
+                    let (out, result) = output(context, ty, span)?;
+                    intrinsic(context, MIRInternalIntrinsic::PlaceAddress { out, place: place_id }, span);
+                    return Ok(result);
+                }
                 MIRBindable::Place(_) => return place(*local),
                 MIRBindable::Register(_) if context.env().is_reference(value.ty()) => value,
                 MIRBindable::Register(_) => unreachable!("a register has no address"),

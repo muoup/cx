@@ -22,7 +22,7 @@ use crate::{
         types,
     },
     log::{hmir_error, log_hmir_error},
-    value::HMIRValue,
+    value::{HMIRValue, HMIRValueKind, address::Addressable, constant::HMIRConstant},
 };
 
 pub(crate) fn eval_assign(
@@ -331,6 +331,12 @@ pub(crate) fn dereference_inner(
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
     };
     if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Function(_)) {
+        if let HMIRValueKind::Constant(HMIRConstant::Address(address)) = pointer.kind()
+            && address.offset() == 0
+            && let Addressable::Function(function) = address.base()
+        {
+            return Ok(function.as_ref().clone());
+        }
         return Ok(HMIRValue::indirect(inner, pointer));
     }
 

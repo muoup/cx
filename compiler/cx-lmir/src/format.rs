@@ -131,9 +131,12 @@ impl Display for LMIRGlobalInitializer {
                 f.write_str("}")
             }
             Self::Overlay { ty, value } => write!(f, "{ty} {value}"),
-            Self::Global(global) => write!(f, "global({global})"),
-            Self::GlobalOffset { global, offset } => {
-                write!(f, "global({global}) + {offset}")
+            Self::Global { global, offset } => {
+                write!(f, "global({global})")?;
+                if *offset != 0 {
+                    write!(f, " + {offset}")?;
+                }
+                Ok(())
             }
             Self::Function(function) => write!(f, "function({function})"),
             Self::BlockAddress { function, block } => write!(f, "block({function}::{block})"),

@@ -330,7 +330,7 @@ fn global_initializer<'ctx>(
                 ),
             )),
         },
-        LMIRGlobalInitializer::Global(global) => {
+        LMIRGlobalInitializer::Global { global, offset } => {
             let pointer_type = basic_type.into_pointer_type();
             let value = state
                 .globals
@@ -342,22 +342,12 @@ fn global_initializer<'ctx>(
                     )
                 })?
                 .as_pointer_value();
-            Ok(value.const_cast(pointer_type).into())
-        }
-        LMIRGlobalInitializer::GlobalOffset { global, offset } => {
-            let pointer_type = basic_type.into_pointer_type();
-            let value = state
-                .globals
-                .get(*global as usize)
-                .ok_or_else(|| {
-                    LLVMError::new(
-                        &catalogue::MISSING_ENTITY,
-                        (format!("global g{global}"), "LLVM global table".into()),
-                    )
-                })?
-                .as_pointer_value();
-            let index = state.context.i64_type().const_int(*offset as u64, true);
-            let value = unsafe { value.const_gep(state.context.i8_type(), &[index]) };
+            let value = if *offset == 0 {
+                value
+            } else {
+                let index = state.context.i64_type().const_int(*offset as u64, true);
+                unsafe { value.const_gep(state.context.i8_type(), &[index]) }
+            };
             Ok(value.const_cast(pointer_type).into())
         }
         LMIRGlobalInitializer::Function(function) => {

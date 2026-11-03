@@ -51,13 +51,7 @@ impl Display for MIRConstant {
                 }
                 f.write_str("}")
             }
-            Self::GlobalAddress(inner) => {
-                write!(f, "&global {}", inner.global)?;
-                if inner.offset != 0 {
-                    write!(f, " + {}", inner.offset)?;
-                }
-                write!(f, ": {}", inner.ty)
-            }
+            Self::Address { base, offset } => write!(f, "&{base:?} + {offset}"),
             Self::String { value, offset } => {
                 write!(f, "{value:?}")?;
                 if *offset != 0 {
@@ -1237,10 +1231,6 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
                 Display::fmt(value, f)?;
             }
             f.write_str("}")
-        }
-        MIRConstant::GlobalAddress(global) => {
-            f.write_str("&")?;
-            write_global_ref(f, unit, *global)
         }
         _ => Display::fmt(constant, f),
     }

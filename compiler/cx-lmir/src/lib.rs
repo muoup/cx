@@ -70,8 +70,7 @@ pub enum LMIRGlobalInitializer {
         ty: LMIRType,
         value: Box<LMIRGlobalInitializer>,
     },
-    Global(u32),
-    GlobalOffset {
+    Global {
         global: u32,
         offset: i64,
     },

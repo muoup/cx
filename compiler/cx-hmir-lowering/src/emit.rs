@@ -80,7 +80,19 @@ pub fn address(
 ) -> CXResult<HMIRValue> {
     match value.kind() {
         HMIRValueKind::Constant(HMIRConstant::Function(_) | HMIRConstant::Curried { .. }) => {
-            return Ok(value.clone().with_ty(ty));
+            return match context.context() {
+                FnContext::Runtime(_) => mir::function_address(context, value, ty, span),
+                FnContext::Comptime(_) => {
+                    let function = context.env_mut().canonical_value(value.clone());
+                    Ok(HMIRValue::constant(
+                        ty,
+                        HMIRConstant::Address(HMIRAddress::new(
+                            Addressable::Function(Box::new(function)),
+                            0,
+                        )),
+                    ))
+                }
+            };
         }
         HMIRValueKind::Constant(HMIRConstant::Str(text)) => {
             let address = HMIRAddress::new(Addressable::Literal(text.clone()), 0);

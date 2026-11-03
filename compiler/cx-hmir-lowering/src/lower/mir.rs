@@ -30,6 +30,23 @@ use crate::{
     value::{Bindings, HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
+pub fn function_address(
+    context: &mut LocalLoweringContext,
+    function: &HMIRValue,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let HMIRValueKind::Constant(function_constant) = function.kind() else {
+        unreachable!("a function designator is constant")
+    };
+    let cx_mir::MIRConstant::Function(fn_id) = constant(context, function_constant, function.ty(), span)? else {
+        unreachable!("a function designator lowers to a function")
+    };
+    let (out, result) = output(context, ty, span)?;
+    intrinsic(context, MIRInternalIntrinsic::GetFnPtr { out, fn_id }, span);
+    Ok(result)
+}
+
 pub fn block(context: &mut LocalLoweringContext, name: &str) -> MIRBasicBlockID {
     context
         .runtime_mut()
@@ -145,7 +162,8 @@ pub fn call(
 ) -> CXResult<HMIRValue> {
     let callee = match callee.kind() {
         HMIRValueKind::Constant(function @ (HMIRConstant::Function(_) | HMIRConstant::Curried { .. })) => {
-            MIRValue::Constant(constant(context, function, callee.ty(), span)?)
+            let ty = context.env().pointer_inner(callee.ty()).unwrap_or(callee.ty());
+            MIRValue::Constant(constant(context, function, ty, span)?)
         }
         _ => value(context, callee, span)?,
     };
