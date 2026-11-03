@@ -7,7 +7,7 @@ pub mod comptime;
 mod storage;
 
 pub use storage::{
-    adopt, allocate, bind_local, copy, initialize, invalidate, lift, scratch, temporary, write,
+    adopt, allocate, bind_local, copy, initialize, invalidate, lift, materialize, scratch, temporary, write,
 };
 
 use cx_hmir::{

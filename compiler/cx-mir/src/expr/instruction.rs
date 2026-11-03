@@ -78,11 +78,11 @@ impl MIRInstruction {
 pub enum MIRInstructionKind {
     // Marks a place as live for ownership analysis
     Initialize {
-        place: MIRBindable,
+        place: MIRPlaceID,
     },
     // Marks a place as no longer live for ownership analysis
     Invalidate {
-        place: MIRBindable,
+        place: MIRPlaceID,
         kind: MIRInvalidationKind,
     },
 
@@ -91,7 +91,7 @@ pub enum MIRInstructionKind {
     // stays live: a move out of it is a separate Invalidate that follows
     Lift {
         out: MIRRegisterID,
-        source: MIRBindable,
+        source: MIRTarget,
         origin: MIRBindable,
     },
     // Declares that 'bind' is a view whose validity depends on 'bind_to' remaining live

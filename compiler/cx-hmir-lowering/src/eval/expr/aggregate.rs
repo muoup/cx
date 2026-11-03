@@ -15,7 +15,6 @@ use cx_hmir::{
     },
 };
 use cx_log::catalogue::typecheck;
-use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -165,8 +164,8 @@ fn unpack(
 
     let constant = matches!(source.kind(), HMIRValueKind::Constant(HMIRConstant::Aggregate { .. }));
     let comptime = !context.is_runtime();
-    let source = match constant && !comptime {
-        true => emit::temporary(context, source, span)?,
+    let source = match constant {
+        true => emit::materialize(context, source, span)?,
         false => source,
     };
     for Projection { index, name, local, ty } in projections {
@@ -177,7 +176,10 @@ fn unpack(
             let reference = emit::reference(context, &projected, span)?;
             match types::bitfield(context.env(), &reference) {
                 Some(_) => emit::copy(context, reference, span)?,
-                None => emit::lift(context, &reference, Some(&source), span)?,
+                None => {
+                    let origin = source.as_place().expect("an unpacked value is held in storage");
+                    emit::lift(context, &reference, origin, span)?
+                }
             }
         };
         let reference = types::reference(context.env_mut(), ty, None, body.local(local).span());
@@ -185,7 +187,6 @@ fn unpack(
         emit::initialize(context, &target, Some(&value), span)?;
         emit::bind_local(context, local, target);
     }
-    emit::invalidate(context, &source, MIRInvalidationKind::Move, span);
     Ok(Evaluation::Ready(expr::unit(context, span)))
 }
 

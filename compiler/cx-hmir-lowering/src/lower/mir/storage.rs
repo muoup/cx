@@ -5,21 +5,16 @@ use cx_hmir::ty::{
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRConstant, MIRInstructionKind,
-    MIRInternalIntrinsic, MIRPlaceDecl, MIRPtrIntrinsic, MIRScopeID, MIRStoreBitfield, MIRTarget,
-    MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
+    MIRInternalIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRPtrIntrinsic, MIRScopeID, MIRStoreBitfield,
+    MIRTarget, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{intrinsic, output, register, value, value::reference};
+use super::{intrinsic, output, register, value};
 use crate::{
-    env::function::{LocalLoweringContext, runtime::Slot},
-    eval::types,
-    lower::{global, mir, types::lower_type},
-    value::{
-        HMIRPlace, HMIRValue, HMIRValueKind,
-        address::{Addressable, HMIRAddress},
-        constant::HMIRConstant,
+    env::function::{LocalLoweringContext, runtime::Slot}, eval::types, lower::{global, mir, types::lower_type}, value::{
+        HMIRPlace, HMIRSlotID, HMIRValue, HMIRValueKind, address::{Addressable, HMIRAddress}, constant::HMIRConstant,
     },
 };
 
@@ -54,11 +49,12 @@ pub fn slot(
     HMIRValue::place(ty, HMIRPlace::Local(slot))
 }
 
-fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBindable> {
-    let is_reference = context.env().is_reference(value.ty());
+fn place(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRPlaceID> {
     let place = match value.kind() {
         HMIRValueKind::PlaceRef(place) => *place,
-        HMIRValueKind::Constant(HMIRConstant::Address(address)) if is_reference => {
+        HMIRValueKind::Constant(HMIRConstant::Address(address))
+            if context.env().is_reference(value.ty()) =>
+        {
             address.whole_place()?
         }
         _ => return None,
@@ -68,8 +64,8 @@ fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBind
     };
 
     match context.runtime().slot(slot).binding() {
-        MIRBindable::Register(_) if is_reference => None,
-        bindable => Some(bindable.clone()),
+        MIRBindable::Place(place) => Some(*place),
+        MIRBindable::Register(_) => None,
     }
 }
 
@@ -80,7 +76,7 @@ fn target(
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<MIRTarget> {
-    if let Some(MIRBindable::Place(place)) = bindable(context, value) {
+    if let Some(place) = place(context, value) {
         return Ok(MIRTarget::Place(place));
     }
     let is_reference = context.env().is_reference(value.ty());
@@ -175,9 +171,10 @@ pub fn adopt(
     let nodrop = context.env().is_nodrop(ty);
     let scope = context.runtime().current_scope();
     let target = allocate_place(context, ty, name, scope, nodrop, true, span)?;
-    let Some(MIRBindable::Place(place)) = bindable(context, &target) else {
+    let Some(place) = place(context, &target) else {
         unreachable!("an adopting place is declared")
     };
+
     intrinsic(
         context,
         MIRInternalIntrinsic::AdoptPlace { place, address },
@@ -195,7 +192,7 @@ pub fn parameter(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let value = allocate(context, ty, name, span)?;
-    let Some(MIRBindable::Place(place)) = bindable(context, &value) else {
+    let Some(place) = place(context, &value) else {
         unreachable!("a parameter is allocated as a place")
     };
     context.runtime_mut().builder_mut().add_parameter(place);
@@ -205,7 +202,7 @@ pub fn parameter(
 }
 
 pub fn initialize(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) {
-    if let Some(place @ MIRBindable::Place(_)) = bindable(context, value) {
+    if let Some(place) = place(context, value) {
         context
             .runtime_mut()
             .emit(MIRInstructionKind::Initialize { place }, span.clone());
@@ -218,7 +215,7 @@ pub fn invalidate(
     kind: MIRInvalidationKind,
     span: &TokenRange,
 ) {
-    if let Some(place @ MIRBindable::Place(_)) = bindable(context, value) {
+    if let Some(place) = place(context, value) {
         context
             .runtime_mut()
             .emit(MIRInstructionKind::Invalidate { place, kind }, span.clone());
@@ -227,19 +224,18 @@ pub fn invalidate(
 
 pub fn lift(
     context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    origin: Option<&HMIRValue>,
+    source: &HMIRValue,
+    origin: HMIRSlotID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let source = match origin {
-        Some(_) => MIRBindable::Register(reference(context, value, span)?),
-        None => bindable(context, value).expect("a lift reads a tracked place"),
-    };
-    let origin = bindable(context, origin.unwrap_or(value)).expect("a lift has a tracked origin");
-    let Some(inner) = context.env().reference_inner(value.ty()) else {
+    let Some(inner) = context.env().reference_inner(source.ty()) else {
         unreachable!("a lift reads through a reference")
     };
+    
+    let origin = context.runtime().slot(origin).binding().clone();
+    let source = target(context, source, span)?;
     let out = register(context, inner, span)?;
+
     context.runtime_mut().emit(
         MIRInstructionKind::Lift {
             out,
@@ -248,7 +244,21 @@ pub fn lift(
         },
         span.clone(),
     );
+
     Ok(slot(context, inner, MIRBindable::Register(out)))
+}
+
+pub fn materialize(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let ty = lower_type(context.env_mut(), value.ty(), span)?;
+    let source = mir::value(context, value, span)?;
+    let (target, result) = output(context, value.ty(), span)?;
+    store(context, target, source, ty, None, span);
+
+    Ok(result)
 }
 
 pub fn capture(
@@ -256,7 +266,7 @@ pub fn capture(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let Some(MIRBindable::Place(place)) = bindable(context, &value) else {
+    let Some(place) = place(context, &value) else {
         unreachable!("a storage result is held in a place")
     };
     let ty = lower_type(context.env_mut(), value.ty(), span)?;

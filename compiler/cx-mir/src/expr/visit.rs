@@ -180,11 +180,7 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
 
     match kind {
         MIRInstructionKind::Initialize { .. } | MIRInstructionKind::Unreachable => {}
-        MIRInstructionKind::Lift {
-            source: MIRBindable::Register(register),
-            ..
-        } => visit(MIRBindable::Register(*register)),
-        MIRInstructionKind::Lift { .. } => {}
+        MIRInstructionKind::Lift { source, .. } => visit_target(source, &mut visit),
         MIRInstructionKind::BindLifetime {
             bind: MIRBindable::Register(register),
             ..

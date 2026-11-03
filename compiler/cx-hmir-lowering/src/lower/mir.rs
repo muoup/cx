@@ -4,8 +4,8 @@ mod value;
 
 pub use op::{aggregate, binary, cast, difference, offset, tag, unary};
 pub use storage::{
-    address, adopt, allocate, capture, dereference, field, initialize, invalidate, lift, load, parameter, scoped_places,
-    scratch, write,
+    address, adopt, allocate, capture, dereference, field, initialize, invalidate, lift, load, materialize, parameter,
+    scoped_places, scratch, write,
 };
 pub use value::{constant, value};
 
@@ -244,7 +244,7 @@ pub fn drop_scope(context: &mut LocalLoweringContext, index: usize, span: &Token
 
     for place in places.into_iter().rev() {
         let invalidate = MIRInstructionKind::Invalidate {
-            place: MIRBindable::Place(place),
+            place,
             kind: MIRInvalidationKind::Drop,
         };
         context.runtime_mut().emit(invalidate, span.clone());

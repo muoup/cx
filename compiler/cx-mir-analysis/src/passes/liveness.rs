@@ -176,9 +176,10 @@ impl AnalysisPass for Liveness {
 
         match &instruction.kind {
             MIRInstructionKind::Initialize { place } => {
-                self.set(place, MIRLivenessState::Available);
+                self.set(&MIRBindable::Place(*place), MIRLivenessState::Available);
             }
             MIRInstructionKind::Invalidate { place, kind } => {
+                let place = &MIRBindable::Place(*place);
                 if *kind == MIRInvalidationKind::Drop {
                     if self.get(place) == Some(MIRLivenessState::Available) && nodrop(env, place) {
                         let (name, discarded) = debug_name(env.body(), place);

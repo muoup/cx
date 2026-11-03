@@ -81,6 +81,13 @@ impl HMIRValue {
         }
     }
 
+    pub fn as_place(&self) -> Option<HMIRPlace> {
+        match self.kind {
+            HMIRValueKind::PlaceRef(place) => Some(place),
+            _ => None,
+        }
+    }
+
     pub fn as_int(&self) -> Option<i128> {
         match self.kind {
             HMIRValueKind::Constant(HMIRConstant::Int(value)) => Some(value),

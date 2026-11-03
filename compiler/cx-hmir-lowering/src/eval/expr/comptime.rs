@@ -164,7 +164,7 @@ fn settle(
         )),
         HMIRValueKind::PlaceRef(_) | HMIRValueKind::Indirect(_) => {
             let reference = emit::reference(context, &value, span)?;
-            emit::lift(context, &reference, None, span)
+            emit::copy(context, reference, span)
         }
     }
 }

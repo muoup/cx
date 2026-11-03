@@ -1,28 +1,17 @@
 use cx_lmir::{LMIRInstructionKind, LMIRValue};
-use cx_mir::{MIRBindable, MIRRegister, MIRTypeKind, ty::interface::MTRegistry};
+use cx_mir::{MIRRegister, MIRTarget};
 
 use crate::context::FunctionContext;
 
-use super::memory;
+use super::{
+    memory,
+    values::{target_address, target_type},
+};
 
 // TODO: Elide aggregate lift copies whose source is not written before the lifted value's last use
-pub(super) fn lower(context: &mut FunctionContext<'_, '_>, out: MIRRegister, source: &MIRBindable) {
-    let ty = match source {
-        MIRBindable::Place(place) => context.body.place(*place).ty(),
-        MIRBindable::Register(register) => {
-            let pointer = context.body.register(*register).ty();
-            match context.types().definition(pointer).unwrap().kind() {
-                MIRTypeKind::MemoryReference { inner, .. } | MIRTypeKind::PointerTo { inner } => {
-                    *inner
-                }
-                _ => panic!("lift source is not a reference"),
-            }
-        }
-    };
-    let address = match source {
-        MIRBindable::Place(place) => context.places[place].clone(),
-        MIRBindable::Register(register) => context.reg(*register),
-    };
+pub(super) fn lower(context: &mut FunctionContext<'_, '_>, out: MIRRegister, source: &MIRTarget) {
+    let ty = target_type(context, source);
+    let address = target_address(context, source);
     if context.ty(ty).is_void() {
         memory::assign(
             context,

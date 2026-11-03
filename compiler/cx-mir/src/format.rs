@@ -423,7 +423,7 @@ fn write_instruction<T: MTRegistry>(
     match &instruction.kind {
         MIRInstructionKind::Initialize { place } => {
             f.write_str("initialize ")?;
-            write_bindable(f, unit, function, place)
+            write_place_name(f, unit, function, *place)
         }
         MIRInstructionKind::Invalidate { place, kind } => {
             match kind {
@@ -431,7 +431,7 @@ fn write_instruction<T: MTRegistry>(
                 MIRInvalidationKind::Move => f.write_str("move ")?,
                 MIRInvalidationKind::Drop => f.write_str("drop ")?,
             }
-            write_bindable(f, unit, function, place)
+            write_place_name(f, unit, function, *place)
         }
         MIRInstructionKind::Lift {
             out,
@@ -440,7 +440,7 @@ fn write_instruction<T: MTRegistry>(
         } => {
             write_definition(f, unit, function, &MIRTarget::Register(*out), types)?;
             f.write_str("lift ")?;
-            write_bindable(f, unit, function, source)?;
+            write_target(f, unit, function, source)?;
             f.write_str(" from ")?;
             write_bindable(f, unit, function, origin)
         }

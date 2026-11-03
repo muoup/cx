@@ -101,6 +101,7 @@ fn eval_move(
     operand: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     require_impure(context, span, "move")?;
+    
     let value = (eval(context, body, operand))?.ready()?;
     let Some(inner) = context.env().reference_inner(value.ty()) else {
         return Ok(Evaluation::Ready(value));
@@ -110,6 +111,7 @@ fn eval_move(
     let binding = context
         .get_local(&local)
         .expect("an evaluated local has a binding");
+    let origin = binding.as_place();
     let declared = context.env().reference_inner(binding.ty());
     if declared.is_some_and(|declared| context.env().is_reference(declared)) {
         return Ok(Evaluation::Ready(value));
@@ -128,7 +130,8 @@ fn eval_move(
     if context.env().semantics(inner).unsafe_move {
         require_nonsafe(context, span, "move of a type declared as @unsafe_move")?;
     }
-    let moved = emit::lift(context, &value, None, span)?;
+    let origin = origin.expect("a moved local names its own storage");
+    let moved = emit::lift(context, &value, origin, span)?;
     emit::invalidate(context, &value, MIRInvalidationKind::Move, span);
     Ok(Evaluation::Ready(moved))
 }
@@ -141,12 +144,14 @@ fn eval_leak(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     require_nonsafe(context, span, "@leak")?;
     require_impure(context, span, "@leak")?;
-    let value = (eval(context, body, operand))?.ready()?;
     require_local(body, operand, span, "@leak")?;
+
+    let value = (eval(context, body, operand))?.ready()?;
     let inner = referenced(context, &value, "@leak", span)?;
     if !context.env().is_nodrop(inner) {
         return Ok(Evaluation::Ready(value));
     }
+
     emit::invalidate(context, &value, MIRInvalidationKind::Leak, span);
     Ok(Evaluation::Ready(expr::unit(context, span)))
 }

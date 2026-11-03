@@ -60,7 +60,8 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
         Some(payload) => {
             let reference = types::reference(context.env_mut(), payload, None, &span);
             let param = mir::parameter(&mut context, payload, None, &span)?.with_ty(reference);
-            let moved = emit::lift(&mut context, &param, None, &span)?;
+            let origin = param.as_place().expect("a parameter names its own storage");
+            let moved = emit::lift(&mut context, &param, origin, &span)?;
             emit::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span);
             Some(moved)
         }

@@ -75,8 +75,8 @@ impl RuntimeContext {
                     MIRInstructionKind::Store {
                         target: MIRTarget::Place(place),
                         ..
-                    } => Some(MIRBindable::Place(*place)),
-                    MIRInstructionKind::Invalidate { place, .. } => Some(place.clone()),
+                    }
+                    | MIRInstructionKind::Invalidate { place, .. } => Some(MIRBindable::Place(*place)),
                     MIRInstructionKind::Store {
                         target: MIRTarget::Indirect { .. } | MIRTarget::Global(_),
                         ..

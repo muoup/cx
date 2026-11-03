@@ -150,12 +150,12 @@ impl AnalysisPass for Values {
         }
         match &instruction.kind {
             MIRInstructionKind::Invalidate { place, .. } => {
-                self.known.remove(place);
+                self.known.remove(&MIRBindable::Place(*place));
             }
             MIRInstructionKind::Lift { out, source, .. } => {
                 let value = match source {
-                    MIRBindable::Place(_) => self.known.get(source).copied(),
-                    MIRBindable::Register(_) => None,
+                    MIRTarget::Place(place) => self.known.get(&MIRBindable::Place(*place)).copied(),
+                    _ => None,
                 };
                 self.set(&MIRTarget::Register(*out), value);
             }

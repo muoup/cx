@@ -1,7 +1,7 @@
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_log::{CXResult, catalogue::mir};
 use cx_mir::{
-    MIRBindable, MIRConstant, MIRInstructionKind, MIRInternalIntrinsic, MIRRegister, MIRTarget,
+    MIRBindable, MIRConstant, MIRInternalIntrinsic, MIRRegister, MIRTarget,
     MIRValue, constant::MIRAddressable,
 };
 use cx_tokens::TokenRange;
@@ -12,7 +12,7 @@ use crate::{
     env::function::LocalLoweringContext,
     log::hmir_error,
     lower::{
-        self, constructor, global,
+        constructor, global,
         types::{lower_prototype, lower_type, mir_float, mir_int},
     },
     symbol,
@@ -208,30 +208,6 @@ pub fn constant(
         }
         (other, _) => todo!("constant {other:?}"),
     })
-}
-
-pub fn reference(
-    context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    span: &TokenRange,
-) -> CXResult<MIRRegister> {
-    let ty = value.ty();
-    let value = lower::mir::value(context, value, span)?;
-    if let MIRValue::Register(register) = value {
-        return Ok(register);
-    }
-    let out = register(context, ty, span)?;
-    let ty = lower_type(context.env_mut(), ty, span)?;
-    context.runtime_mut().emit(
-        MIRInstructionKind::Store {
-            target: MIRTarget::Register(out),
-            value,
-            ty,
-            bitfield: None,
-        },
-        span.clone(),
-    );
-    Ok(out)
 }
 
 fn produce(
