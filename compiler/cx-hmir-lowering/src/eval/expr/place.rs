@@ -8,21 +8,13 @@ use cx_log::{
     CXResult,
     catalogue::{mir, typecheck},
 };
-use cx_mir::expr::instruction::MIRInvalidationKind;
+use cx_mir::{MIRValue, expr::instruction::MIRInvalidationKind};
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
-    env::function::{LocalLoweringContext, Permission},
-    eval::{
-        EvalResult, coerce, eval,
-        expr::{self, require_nonsafe, require_impure},
-        flow::{self, EvalExit, Evaluation},
-        op::{binary_operands, eval_operand},
-        types,
-    },
-    log::{hmir_error, log_hmir_error},
-    value::{HMIRValue, HMIRValueKind, address::Addressable, constant::HMIRConstant},
+    emit, env::function::{LocalLoweringContext, Permission}, eval::{
+        EvalResult, coerce, eval, expr::{self, require_impure, require_nonsafe}, flow::{self, EvalExit, Evaluation}, op::{binary_operands, eval_operand}, types,
+    }, log::{hmir_error, log_hmir_error}, value::{HMIRPlace, HMIRValue, HMIRValueKind, address::Addressable, constant::HMIRConstant},
 };
 
 pub(crate) fn eval_assign(
@@ -102,37 +94,42 @@ fn eval_move(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     require_impure(context, span, "move")?;
     
-    let value = (eval(context, body, operand))?.ready()?;
-    let Some(inner) = context.env().reference_inner(value.ty()) else {
-        return Ok(Evaluation::Ready(value));
-    };
-
     let local = require_local(body, operand, span, "move")?;
     let binding = context
         .get_local(&local)
         .expect("an evaluated local has a binding");
-    let origin = binding.as_place();
-    let declared = context.env().reference_inner(binding.ty());
-    if declared.is_some_and(|declared| context.env().is_reference(declared)) {
-        return Ok(Evaluation::Ready(value));
+    let var_type = binding.ty();
+    
+    if context.env().semantics(var_type).constant {
+        let mutated = ("move out of".into(), types::name(context.env(), var_type));
+        return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutated).into());
     }
-    if declared != Some(inner) {
-        if context.env().semantics(inner).constant {
-            let mutated = ("move out of".into(), types::name(context.env(), inner));
-            return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutated).into());
-        }
-        let invalid = (
-            "move out of a borrowed binding".into(),
-            "a reference binding".into(),
-        );
-        return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, invalid).into());
-    }
-    if context.env().semantics(inner).unsafe_move {
+ 
+    if context.env().semantics(var_type).unsafe_move {
         require_nonsafe(context, span, "move of a type declared as @unsafe_move")?;
     }
-    let origin = origin.expect("a moved local names its own storage");
-    let moved = emit::lift(context, &value, origin, span)?;
+    
+    let Some(place) = binding.as_place() else {
+        let invalid = (
+            "non-local variable".into(),
+            "move expression".into()
+        );
+        return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid).into());
+    };
+    
+    if !matches!(place, HMIRPlace::Local(_)) {
+        let invalid = (
+            "non-local variable".into(),
+            "move expression".into()
+        );
+        return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid).into());
+    };
+    
+    let value = HMIRValue::place(var_type, place);
+    
+    let moved = emit::lift(context, &value, place, span)?;
     emit::invalidate(context, &value, MIRInvalidationKind::Move, span);
+
     Ok(Evaluation::Ready(moved))
 }
 
