@@ -178,11 +178,11 @@ fn declare(
     let local = body.local(local_id);
     if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_)) {
         let requirement = ("local variable".into(), "an object type".into(), Some(types::name(context.env(), ty)));
-        return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).into());
+        return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
     }
     if !context.complete_object(ty) {
         let subject = format!("variable of type '{}'", types::name(context.env(), ty));
-        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject).into());
+        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject));
     }
 
     let reference_type = types::reference(context.env_mut(), ty, None, local.span());

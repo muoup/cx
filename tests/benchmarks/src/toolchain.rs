@@ -139,9 +139,7 @@ fn compile_objects(
             .map(|_| scope.spawn(compile))
             .collect::<Vec<_>>();
         handles
-            .into_iter()
-            .map(|handle| handle.join().expect("reference compile worker panicked"))
-            .collect::<Result<(), String>>()
+            .into_iter().try_for_each(|handle| handle.join().expect("reference compile worker panicked"))
     })?;
 
     Ok(objects)

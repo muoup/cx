@@ -99,7 +99,7 @@ fn request(context: &mut LocalLoweringContext, def: HMIRDefID, point: Option<HMI
 pub(crate) fn type_value(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> CXResult<HMIRValue> {
     if context.is_runtime() && !context.is_unevaluated() {
         let subject = (format!("type '{}'", types::name(context.env(), ty)), "a runtime expression".into());
-        return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject).into());
+        return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject));
     }
     let universe = types::universe(context.env_mut(), span);
     Ok(HMIRValue::constant(universe, HMIRConstant::Type(ty)))
@@ -150,7 +150,7 @@ pub(crate) fn resolve(
         if let Some(tag) = tag {
             let def = context.env().symbols().resolve_definition(first);
             if def.declarations().iter().any(|decl| decl.tag() != Some(tag)) {
-                return Err(hmir_error(span, &typecheck::INCOMPATIBLE_TAG, name.to_string()).into());
+                return Err(hmir_error(span, &typecheck::INCOMPATIBLE_TAG, name.to_string()));
             }
         }
         let symbols = context.env().symbols();
@@ -169,7 +169,7 @@ pub(crate) fn resolve(
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                return Err(hmir_error(span, &typecheck::AMBIGUOUS_SYMBOL, names).into());
+                return Err(hmir_error(span, &typecheck::AMBIGUOUS_SYMBOL, names));
             }
         }
         return Ok(Some(first));

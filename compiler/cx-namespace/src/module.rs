@@ -112,7 +112,7 @@ impl NamespacePath {
     }
 
     pub fn from_str(s: &str) -> Self {
-        let segments = s.split("::").map(|s| CXIdent::new(s)).collect();
+        let segments = s.split("::").map(CXIdent::new).collect();
         Self { segments }
     }
 }
@@ -163,9 +163,9 @@ impl QualifiedName {
     }
 }
 
-impl Into<String> for &QualifiedName {
-    fn into(self) -> String {
-        format!("{}", self)
+impl From<&QualifiedName> for String {
+    fn from(val: &QualifiedName) -> Self {
+        format!("{}", val)
     }    
 }
 

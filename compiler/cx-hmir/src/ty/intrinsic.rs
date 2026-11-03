@@ -18,7 +18,7 @@ pub enum HMIRIntWidth {
 
 impl HMIRIntWidth {
     pub fn pointer_width(arch: &ArchitectureConfig) -> Self {
-        Self::from_bytes(arch.pointer_size() as usize)
+        Self::from_bytes(arch.pointer_size())
             .expect("ArchitectureConfig guarantees a supported pointer size")
     }
     

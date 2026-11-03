@@ -59,11 +59,8 @@ fn step(
     let env = context.env();
     let source = value.ty();
     let (from, to) = (env.resolve_kind(source).clone(), env.resolve_kind(target).clone());
-    match (env.resolve_kind(env.referent(source)), &to) {
-        (HMIRTypeKind::Str | HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) => {
-            return promotion::step(context, value, span);
-        }
-        _ => {}
+    if let (HMIRTypeKind::Str | HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) = (env.resolve_kind(env.referent(source)), &to) {
+        return promotion::step(context, value, span);
     }
 
     match (&from, &to) {
@@ -92,7 +89,7 @@ fn step(
             HMIRTypeKind::ReferenceTo { inner: to, bitfield: None },
         ) if compatible(env, *from, *to) => {
             let usage = "bind a reference to".into();
-            return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage).into());
+            return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage));
         }
         (HMIRTypeKind::ReferenceTo { .. }, HMIRTypeKind::ReferenceTo { .. }) => {
             return Ok(Coercion::Unapplied(value));
@@ -183,7 +180,7 @@ fn string(
     let bound = length.unwrap_or(string.len() as u64 + 1);
     if string.len() as u64 > bound {
         let limit = ("string".into(), usize::try_from(bound).ok());
-        return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit).into());
+        return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit));
     }
     let mut items = vec![HMIRConstant::Int(0); bound as usize];
     for (item, byte) in items.iter_mut().zip(string.bytes()) {
@@ -230,7 +227,7 @@ fn discard(
     }
     if env.is_nodrop(result) {
         let names = (types::name(env, value.ty()), types::name(env, target));
-        return Err(hmir_error(span, &typecheck::DISCARDED_NODROP, names).into());
+        return Err(hmir_error(span, &typecheck::DISCARDED_NODROP, names));
     }
     if explicit && !(compatible(env, value.ty(), target) && qualified(env, value.ty(), target)) {
         expr::require_nonsafe(context, span, "Unsafe type conversion")?;

@@ -21,6 +21,12 @@ struct UnitIndex {
     names: FxHashMap<(QualifiedName, HMIRLookupClass), Vec<HMIRDefID>>,
 }
 
+impl Default for HMIRUnitRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HMIRUnitRegistry {
     pub fn new() -> Self {
         Self {

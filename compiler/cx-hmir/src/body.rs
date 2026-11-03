@@ -101,6 +101,12 @@ impl HMIRHole {
     }
 }
 
+impl Default for HMIRBody {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HMIRBody {
     pub fn new() -> Self {
         Self {

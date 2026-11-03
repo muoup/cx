@@ -47,7 +47,7 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<HIRIntrins
         })
     }),
     ("i64", |arch| {
-        (arch.pointer_size() >= 8).then(|| HIRIntrinsicType::Integer {
+        (arch.pointer_size() >= 8).then_some(HIRIntrinsicType::Integer {
             signed: true,
             bytes: 8,
         })
@@ -71,7 +71,7 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<HIRIntrins
         })
     }),
     ("u64", |arch| {
-        (arch.pointer_size() >= 8).then(|| HIRIntrinsicType::Integer {
+        (arch.pointer_size() >= 8).then_some(HIRIntrinsicType::Integer {
             signed: false,
             bytes: 8,
         })
@@ -90,7 +90,7 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<HIRIntrins
     }),
     ("f32", |_| Some(HIRIntrinsicType::Float { bytes: 4 })),
     ("f64", |arch| {
-        (arch.pointer_size() >= 8).then(|| HIRIntrinsicType::Float { bytes: 8 })
+        (arch.pointer_size() >= 8).then_some(HIRIntrinsicType::Float { bytes: 8 })
     }),
     ("int", |_| {
         Some(HIRIntrinsicType::Integer {
@@ -256,7 +256,7 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<HIRIntrins
     }),
     ("float", |_| Some(HIRIntrinsicType::Float { bytes: 4 })),
     ("double", |arch| {
-        (arch.pointer_size() >= 8).then(|| HIRIntrinsicType::Float { bytes: 8 })
+        (arch.pointer_size() >= 8).then_some(HIRIntrinsicType::Float { bytes: 8 })
     }),
     // TODO: C header compatibility shims until MIR has long-double, complex, and
     // target ABI va_list types.

@@ -89,7 +89,7 @@ fn branch(
         FnContext::Comptime(_) => {
             let condition = eval(context, body, condition)?.ready()?;
 
-            return match (comptime_truth(&condition), else_branch) {
+            match (comptime_truth(&condition), else_branch) {
                 (true, Some(_)) => eval_scoped(context, body, then_branch, false),
                 (false, Some(else_branch)) => eval_scoped(context, body, else_branch, false),
                 (true, None) => {
@@ -97,7 +97,7 @@ fn branch(
                     Ok(Evaluation::Ready(expr::unit(context, span)))
                 }
                 (false, None) => Ok(Evaluation::Ready(expr::unit(context, span))),
-            };
+            }
         }
         FnContext::Runtime(_) => {
             let then_block = mir::block(context, "if.then");

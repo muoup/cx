@@ -122,7 +122,7 @@ fn arithmetic(
             types::name(context.env(), lhs.ty()),
             types::name(context.env(), rhs.ty()),
         );
-        return Err(hmir_error(span, &typecheck::INVALID_BINARY_OPERANDS, operands).into());
+        return Err(hmir_error(span, &typecheck::INVALID_BINARY_OPERANDS, operands));
     };
     let integral_only = matches!(
         op,
@@ -134,7 +134,7 @@ fn arithmetic(
             | HMIRBinaryOp::RShift
     );
     if integral_only && context.env().is_float(common) {
-        return Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()).into());
+        return Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()));
     }
     let lhs = coerce::implicit(context, lhs, common, span)?;
     let rhs = coerce::implicit(context, rhs, common, span)?;
@@ -207,11 +207,11 @@ fn increment(
     target: HMIRValue,
 ) -> CXResult<HMIRValue> {
     let Some(ty) = context.env().reference_inner(target.ty()) else {
-        return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "increment".into()).into());
+        return Err(hmir_error(span, &typecheck::NOT_ADDRESSABLE, "increment".into()));
     };
     if context.env().semantics(ty).constant {
         let mutation = ("increment".into(), types::name(context.env(), ty));
-        return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutation).into());
+        return Err(hmir_error(span, &typecheck::MUTATE_CONST, mutation));
     }
     let (prefix, op) = match op {
         HMIRUnaryOp::PreIncrement => (true, HMIRBinaryOp::Add),
@@ -238,7 +238,7 @@ fn increment(
         }
         _ => {
             let operand = ("increment".into(), "type display".into());
-            return Err(hmir_error(span, &typecheck::INVALID_OPERAND, operand).into());
+            return Err(hmir_error(span, &typecheck::INVALID_OPERAND, operand));
         }
     };
     emit::write(context, &target, &updated, span)?;

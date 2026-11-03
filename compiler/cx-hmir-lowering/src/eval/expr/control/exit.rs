@@ -178,7 +178,7 @@ pub(crate) fn return_value(
         .transpose()?;
     context
         .runtime_mut()
-        .emit(MIRInstructionKind::Return { value: value }, span.clone());
+        .emit(MIRInstructionKind::Return { value }, span.clone());
     flow::diverged()
 }
 

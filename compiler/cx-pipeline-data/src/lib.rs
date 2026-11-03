@@ -159,8 +159,7 @@ impl CompilationUnit {
 
     pub fn is_std_lib(&self) -> bool {
         self.namespace
-            .segments()
-            .get(0)
+            .segments().first()
             .map(|s| s.as_str() == "std")
             .unwrap_or(false)
     }

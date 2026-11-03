@@ -109,7 +109,7 @@ where
             .into_iter()
             .chain(self.overwrites.iter().rev().flat_map(move |scope| {
                 scope.iter().rev().filter_map(move |(key, previous)| {
-                    (key.borrow() == name).then(|| previous.as_ref()).flatten()
+                    (key.borrow() == name).then_some(previous.as_ref()).flatten()
                 })
             }))
     }

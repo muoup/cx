@@ -161,7 +161,7 @@ fn settle(
                 "a reference to compile-time storage".into(),
                 "an exported value".into(),
             ),
-        ).into()),
+        )),
         HMIRValueKind::PlaceRef(_) | HMIRValueKind::Indirect(_) => {
             let reference = emit::reference(context, &value, span)?;
             emit::lift(context, &reference, None, span)

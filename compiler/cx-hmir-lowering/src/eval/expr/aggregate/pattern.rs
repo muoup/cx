@@ -31,7 +31,7 @@ pub(crate) fn variant(
     span: &TokenRange,
 ) -> CXResult<Variant> {
     let HMIRPattern::Variant { sum, name, inner } = pattern else {
-        return Err(hmir_error(span, &typecheck::INVALID_PATTERN, ()).into());
+        return Err(hmir_error(span, &typecheck::INVALID_PATTERN, ()));
     };
     if let Some(sum) = sum {
         let qualifier = flow::top(eval_type(context, body, *sum).and_then(Evaluation::description))?;
@@ -41,28 +41,28 @@ pub(crate) fn variant(
                 format!("'{}'", types::name(context.env(), ty)),
                 format!("'{}'", types::name(context.env(), qualifier)),
             );
-            return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch).into());
+            return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch));
         }
     }
     let Some(found) = variant::lookup(context.env(), ty, name) else {
         let unknown = (types::name(context.env(), ty), name.to_string());
-        return Err(hmir_error(span, &typecheck::UNKNOWN_VARIANT, unknown).into());
+        return Err(hmir_error(span, &typecheck::UNKNOWN_VARIANT, unknown));
     };
     let void = context.env().is_void(found.payload);
     match inner.as_deref() {
         None if !void => {
             let missing = (name.to_string(), types::name(context.env(), ty));
-            return Err(hmir_error(span, &typecheck::MATCH_PAYLOAD_BINDING, missing).into());
+            return Err(hmir_error(span, &typecheck::MATCH_PAYLOAD_BINDING, missing));
         }
         Some(HMIRPattern::Binding(_) | HMIRPattern::Wildcard) | None => {}
         Some(_) if void => {
             let name = variant::name(context.env(), ty, found.index);
             let invalid = (format!("the pattern of void variant '{name}'"), "payload".into());
-            return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid).into());
+            return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid));
         }
         Some(_) => {
             let feature = "nested payload patterns".into();
-            return Err(hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature).into());
+            return Err(hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature));
         }
     }
     Ok(found)
@@ -108,7 +108,7 @@ pub(crate) fn bind(
     if !owned && reference.is_none() && (context.env().is_nodrop(ty) || context.env().is_nocopy(ty))
     {
         let name = local_info.name().map_or_else(|| "this binding".into(), ToString::to_string);
-        return Err(hmir_error(span, &typecheck::BINDING_BEHIND_REFERENCE, name).into());
+        return Err(hmir_error(span, &typecheck::BINDING_BEHIND_REFERENCE, name));
     }
     let (value, binding_ty) = match reference {
         Some(_) if context.env().is_reference(ty) => (coerce::implicit(context, source, ty, span)?, ty),

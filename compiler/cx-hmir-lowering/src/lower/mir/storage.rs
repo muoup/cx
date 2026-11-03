@@ -59,10 +59,7 @@ fn bindable(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRBind
     let place = match value.kind() {
         HMIRValueKind::PlaceRef(place) => *place,
         HMIRValueKind::Constant(HMIRConstant::Address(address)) if is_reference => {
-            match address.whole_place() {
-                Some(place) => place,
-                None => return None,
-            }
+            address.whole_place()?
         }
         _ => return None,
     };

@@ -199,7 +199,7 @@ fn check_params(
                 types::name(child.env(), *expected),
                 types::name(child.env(), actual),
             );
-            return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, names).into());
+            return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, names));
         }
     }
     Ok(())

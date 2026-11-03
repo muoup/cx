@@ -75,11 +75,10 @@ pub(crate) fn definition(
                     continue;
                 };
                 let signature = flow::top(types::eval_signature(context, function))?;
-                if let Some(previous) = &canonical {
-                    if !signatures_alike(context.env(), previous, &signature) {
+                if let Some(previous) = &canonical
+                    && !signatures_alike(context.env(), previous, &signature) {
                         return Err(incompatible(def, declaration));
                     }
-                }
                 if canonical.is_none() || ptr::eq(declaration, &def.declarations()[selected]) {
                     canonical = Some(signature);
                 }
@@ -137,13 +136,10 @@ pub(crate) fn definition(
             if context.visible_through().is_none()
                 && matches!(context.env().resolve_kind(ty), HMIRTypeKind::Array { length: None, .. })
                 && structure::reconcile_linkage(def, None)? != LinkageMode::Extern
-            {
-                if let Some(HMIRDefKind::Global(global)) = declaration.kind() {
-                    if global.initializer().is_none() {
+                && let Some(HMIRDefKind::Global(global)) = declaration.kind()
+                    && global.initializer().is_none() {
                         ty = types::array(context.env_mut(), ty, 1, span);
                     }
-                }
-            }
             if !context.complete_object(ty)
                 && !provisional
                 && !(declaration.role() == HMIRDeclarationRole::Tentative

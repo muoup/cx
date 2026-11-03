@@ -170,7 +170,7 @@ fn lower_function<'a>(
 }
 
 // A parameter list of a lone unnamed 'void' declares no parameters
-pub(crate) fn declared_params<'h>(prototype: &'h HIRFunctionPrototype) -> &'h [HIRParameter] {
+pub(crate) fn declared_params(prototype: &HIRFunctionPrototype) -> &[HIRParameter] {
     match prototype.params.as_slice() {
         [param] if param.name.is_none() && is_void(&param.ty) => &[],
         params => params,

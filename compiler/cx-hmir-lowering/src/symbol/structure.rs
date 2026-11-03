@@ -38,7 +38,7 @@ pub(crate) fn select(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> CXRe
     let declarations = visible(def, point).collect::<Vec<_>>();
     let Some((_, first)) = declarations.first() else {
         return Err(hmir_error(
-            &def.declarations()[0].span(),
+            def.declarations()[0].span(),
             &typecheck::UNKNOWN_SYMBOL,
             def.name().to_string(),
         ));
@@ -54,18 +54,17 @@ pub(crate) fn select(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> CXRe
                 def.name().to_string(),
             ));
         }
-        if let (Some(kind), Some(other)) = (kind, declaration.kind()) {
-            if discriminant(kind) != discriminant(other) {
+        if let (Some(kind), Some(other)) = (kind, declaration.kind())
+            && discriminant(kind) != discriminant(other) {
                 return Err(incompatible(def, declaration));
             }
-        }
     }
     let mut definitions = declarations
         .iter()
         .filter(|(_, declaration)| declaration.role() == HMIRDeclarationRole::Definition);
-    if let Some((_, _)) = definitions.next() {
-        if let Some((_, duplicate)) = definitions.next() {
-            if first.tag().is_some() || !is_type(first) {
+    if let Some((_, _)) = definitions.next()
+        && let Some((_, duplicate)) = definitions.next()
+            && (first.tag().is_some() || !is_type(first)) {
                 return Err(hmir_error(
                     duplicate.span(),
                     &typecheck::DUPLICATE_ITEM,
@@ -75,8 +74,6 @@ pub(crate) fn select(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> CXRe
                     ),
                 ));
             }
-        }
-    }
     let selected = declarations
         .iter()
         .filter(|(_, declaration)| declaration.kind().is_some())

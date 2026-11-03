@@ -61,7 +61,7 @@ fn generate(
                 return function::lower(env, id, function, specialization.signature(), Some(specialization));
             }
             if function.signature().stage() != HMIRFunctionStage::Runtime
-                || symbol::needs_specialization(&function)
+                || symbol::needs_specialization(function)
                 || function.def().is_none()
             {
                 return Ok(());

@@ -175,7 +175,7 @@ fn import_units_for_unit(
         .module_db
         .preparse_base
         .lock()
-        .get(&unit.namespace())
+        .get(unit.namespace())
         .map(|preparse| import_units(&preparse.imports, &context.config.source_root).collect())
 }
 
@@ -269,7 +269,7 @@ pub(crate) fn handle_job(
 
     match job.step {
         CompilationStep::PreParse => {
-            let pp_data = context.module_db.preparse_base.get(&job.unit.namespace());
+            let pp_data = context.module_db.preparse_base.get(job.unit.namespace());
             let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
 
             let mut next_job = job.clone();

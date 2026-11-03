@@ -29,6 +29,12 @@ pub struct ModuleData {
     pub lmir: ModuleMap<LMIRUnit>,
 }
 
+impl Default for ModuleData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModuleData {
     pub fn new() -> Self {
         ModuleData {
@@ -82,7 +88,7 @@ impl<Data> ModuleMap<Data> {
             .write()
             .expect("Failed to acquire write lock on loaded data");
 
-        let removed = lock.remove(&key).expect("Data not found in the module map");
+        let removed = lock.remove(key).expect("Data not found in the module map");
 
         Arc::try_unwrap(removed)
             .ok()
@@ -98,7 +104,7 @@ impl<Data> ModuleMap<Data> {
     ) {
         let mut lock = self.lock_mut();
 
-        let data = lock.remove(&key).expect("Data not found in the module map");
+        let data = lock.remove(key).expect("Data not found in the module map");
 
         // wait until data has only one reference
         while Arc::strong_count(&data) > 1 {
@@ -114,7 +120,7 @@ impl<Data> ModuleMap<Data> {
             .read()
             .expect("Failed to acquire read lock on loaded data");
 
-        lock.get(&key)
+        lock.get(key)
             .unwrap_or_else(|| {
                 println!(
                     "Data with suffix {} does not contain information for unit: {}",
@@ -171,6 +177,12 @@ impl<Data> ModuleMap<Data> {
 #[derive(Debug)]
 pub struct HandoffMap<Data> {
     data: Mutex<FxHashMap<NamespacePath, Data>>,
+}
+
+impl<Data> Default for HandoffMap<Data> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<Data> HandoffMap<Data> {

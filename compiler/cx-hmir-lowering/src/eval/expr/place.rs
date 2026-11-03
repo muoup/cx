@@ -248,7 +248,7 @@ fn require_local(
 ) -> CXResult<HMIRLocalID> {
     match body.expr(operand).kind() {
         HMIRExprKind::Local(local) => Ok(*local),
-        _ => Err(hmir_error(span, &typecheck::LOCAL_VARIABLE_REQUIRED, operation.into()).into()),
+        _ => Err(hmir_error(span, &typecheck::LOCAL_VARIABLE_REQUIRED, operation.into())),
     }
 }
 
@@ -328,7 +328,7 @@ pub(crate) fn dereference_inner(
     let pointer = coerce::std_rvalue(context, pointer, span)?;
     let Some(inner) = context.env().pointer_inner(pointer.ty()) else {
         let kind = (types::name(context.env(), pointer.ty()), "a pointer".into());
-        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
+        return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
     };
     if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Function(_)) {
         if let HMIRValueKind::Constant(HMIRConstant::Address(address)) = pointer.kind()

@@ -406,7 +406,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CXResult<Vec<QualifiedName>> {
                     .last_mut()
                     .expect("import parser should have an active frame");
                 let mut prefix = frame.prefix.clone();
-                prefix.extend(frame.item.drain(..));
+                prefix.append(&mut frame.item);
                 frame.state = ImportFrameState::AfterGroup;
 
                 frames.push(ImportFrame {

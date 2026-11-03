@@ -114,7 +114,7 @@ pub(crate) fn require_nonsafe(
     operation: &str,
 ) -> CXResult<()> {
     if !context.is_unevaluated() && context.permission() < Permission::Nonsafe {
-        return Err(hmir_error(span, &typecheck::UNSAFE_OPERATION, operation.into()).into());
+        return Err(hmir_error(span, &typecheck::UNSAFE_OPERATION, operation.into()));
     }
     Ok(())
 }
@@ -125,7 +125,7 @@ pub(crate) fn require_impure(
     operation: &str,
 ) -> CXResult<()> {
     if !context.is_unevaluated() && !context.expectations().allows_impure() {
-        return Err(hmir_error(span, &typecheck::IMPURE_OPERATION, operation.into()).into());
+        return Err(hmir_error(span, &typecheck::IMPURE_OPERATION, operation.into()));
     }
     Ok(())
 }

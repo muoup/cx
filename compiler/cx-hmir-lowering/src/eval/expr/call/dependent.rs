@@ -139,7 +139,7 @@ impl Frame<'_> {
             let ty = types::parameter(child, ty, param.comptime(), span)?;
             if runtime && staged::is_code(child, ty) {
                 let operation = "a reference or staged-expression parameter".into();
-                return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
+                return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation));
             }
             Ok(ty)
         })
@@ -202,7 +202,7 @@ impl Frame<'_> {
         })?;
         if self.runtime && staged::is_code(caller, return_type) {
             let operation = "a staged-expression result".into();
-            return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
+            return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation));
         }
         self.return_type = Some(return_type);
         Ok(HMIRFnSignature::new(
@@ -445,11 +445,11 @@ fn execute(
     let value = match body(context, function) {
         Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Return(value)))) => value,
         Err(EvalExit::Stop(StopReason::Comptime(_))) => {
-            return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into());
+            return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()));
         }
         Err(EvalExit::Stop(StopReason::Runtime(stop))) => unreachable!("runtime stop {stop:?} in a comptime function"),
         Err(EvalExit::Diagnostic(error)) => return Err(error),
-        Ok(Evaluation::Incomplete(incomplete)) => return Err(incomplete.error().into()),
+        Ok(Evaluation::Incomplete(incomplete)) => return Err(incomplete.error()),
         Ok(Evaluation::Ready(_)) => unreachable!("a function body returns or diagnoses fallthrough"),
     };
     let value = flow::top(comptime::export(context, value, span))?;
@@ -458,7 +458,7 @@ fn execute(
         let place = slot.name().map_or_else(|| "temporary".into(), |place| place.to_string());
         let discarded = place == "_";
         let args = (name.to_string(), "variable".into(), place, "function".into(), discarded);
-        return Err(hmir_error(span, &analysis::VALUE_NOT_CONSUMED, args).into());
+        return Err(hmir_error(span, &analysis::VALUE_NOT_CONSUMED, args));
     }
     contract::check(context, signature.contract(), args, Some(&value), name, span)?;
     Ok(value)

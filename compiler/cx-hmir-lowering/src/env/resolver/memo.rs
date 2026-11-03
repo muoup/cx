@@ -162,7 +162,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             resolver.entries[id].state = MemoState::Evaluating(None);
             resolver.active.push(id);
         }
-        let result = (|| {
+        let result = {
             let evaluation = self.evaluation();
             let mut child = self
                 .child(
@@ -192,7 +192,7 @@ impl LocalLoweringContext<'_, '_, '_> {
                     span,
                 ),
             })
-        })();
+        };
         let resolver = self.env_mut().resolver_mut();
         assert_eq!(resolver.active.pop(), Some(id));
         match result {

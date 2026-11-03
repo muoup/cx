@@ -195,7 +195,7 @@ pub(crate) fn condition(context: &mut LocalLoweringContext, value: HMIRValue, sp
     let source = value.ty();
     match truth(context, value, span)? {
         Coercion::Applied(value) => Ok(value),
-        Coercion::Unapplied(_) => Err(hmir_error(span, &typecheck::NO_TRUTH_VALUE, types::name(context.env(), source)).into()),
+        Coercion::Unapplied(_) => Err(hmir_error(span, &typecheck::NO_TRUTH_VALUE, types::name(context.env(), source))),
     }
 }
 
@@ -316,7 +316,7 @@ fn applied(
         Coercion::Applied(value) => Ok(value),
         Coercion::Unapplied(_) => {
             let names = (types::name(context.env(), source), types::name(context.env(), target));
-            Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names).into())
+            Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names))
         }
     }
 }

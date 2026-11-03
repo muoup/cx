@@ -83,7 +83,7 @@ pub(super) fn lvalue(
     let env = context.env();
     if env.is_nocopy(inner) {
         let names = (types::name(env, value.ty()), types::name(env, inner));
-        return Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names).into());
+        return Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names));
     }
     let semantics = env.semantics(inner);
     let global = match value.kind() {

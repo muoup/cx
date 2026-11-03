@@ -61,7 +61,7 @@ pub(crate) fn check(
             span,
             &catalogue::mir::COMPTIME_ASSERTION,
             Some(format!("{label} of '{name}' does not hold at compile time")),
-        ).into());
+        ));
     }
     Ok(())
 }
@@ -184,10 +184,10 @@ fn condition(
     let value = child.with_expectations(expectations, |child| {
         match eval(child, contract.body(), expression) {
             Ok(Evaluation::Ready(value)) => coerce::condition(child, value, span),
-            Ok(Evaluation::Incomplete(incomplete)) => Err(incomplete.error().into()),
+            Ok(Evaluation::Incomplete(incomplete)) => Err(incomplete.error()),
             Err(EvalExit::Stop(_)) => {
                 let requirement = ("a contract condition".into(), "a value".into(), None);
-                Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).into())
+                Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement))
             }
             Err(EvalExit::Diagnostic(error)) => Err(error),
         }
@@ -236,7 +236,7 @@ fn bind_result(
         return Ok(None);
     };
     let Some(result) = result.filter(|result| !context.env().is_void(result.ty())) else {
-        return Err(hmir_error(span, &typecheck::VOID_POSTCONDITION_BINDING, ()).into());
+        return Err(hmir_error(span, &typecheck::VOID_POSTCONDITION_BINDING, ()));
     };
     let value = observe(context, result.clone(), span)?;
     Ok(Some(bind(context, local, value)))

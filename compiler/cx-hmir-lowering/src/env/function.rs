@@ -32,7 +32,7 @@ pub use self::{
 };
 
 thread_local! {
-    static NEXT_EVALUATION: Cell<usize> = Cell::new(0);
+    static NEXT_EVALUATION: Cell<usize> = const { Cell::new(0) };
 }
 dense_id!(EvaluationID, "ev.");
 

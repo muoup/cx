@@ -149,7 +149,7 @@ fn member(
         return Ok(ty);
     }
     let subject = format!("{subject} of type '{}'", types::name(context.env(), ty));
-    Err(hmir_error(body.expr(expr).span(), &typecheck::INCOMPLETE_TYPE, subject).into())
+    Err(hmir_error(body.expr(expr).span(), &typecheck::INCOMPLETE_TYPE, subject))
 }
 
 fn array_length(
@@ -162,7 +162,7 @@ fn array_length(
     let (HMIRTypeKind::Int(ty), Some(value)) = (context.env().resolve_kind(value.ty()), value.as_int())
     else {
         let subject = ("array length".into(), "integer".into());
-        return Err(hmir_error(span, &mir::EXPECTED_CONSTANT, subject).into());
+        return Err(hmir_error(span, &mir::EXPECTED_CONSTANT, subject));
     };
 
     let value = int::normalize(value, *ty);
@@ -179,5 +179,5 @@ fn array_length(
     };
 
     let subject = ("array length".into(), requirement, Some(found));
-    Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, subject).into())
+    Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, subject))
 }
