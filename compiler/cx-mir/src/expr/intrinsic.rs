@@ -445,7 +445,7 @@ impl From<MIRVAIntrinsic> for MIRIntrinsic {
 }
 
 impl MIRIntrinsic {
-    pub fn output_target(&self) -> Option<MIRTarget> {
+    pub fn output_target(&self) -> Option<&MIRTarget> {
         match self {
             Self::Int(op) => Some(match op {
                 MIRIntIntrinsic::Neg { out, .. }
@@ -479,7 +479,7 @@ impl MIRIntrinsic {
                 | MIRIntIntrinsic::BXor { out, .. }
                 | MIRIntIntrinsic::LShift { out, .. }
                 | MIRIntIntrinsic::ARShift { out, .. }
-                | MIRIntIntrinsic::LRShift { out, .. } => *out,
+                | MIRIntIntrinsic::LRShift { out, .. } => out,
             }),
             Self::Float(op) => Some(match op {
                 MIRFloatIntrinsic::Neg { out, .. }
@@ -494,7 +494,7 @@ impl MIRIntrinsic {
                 | MIRFloatIntrinsic::Lt { out, .. }
                 | MIRFloatIntrinsic::Le { out, .. }
                 | MIRFloatIntrinsic::Gt { out, .. }
-                | MIRFloatIntrinsic::Geq { out, .. } => *out,
+                | MIRFloatIntrinsic::Geq { out, .. } => out,
             }),
             Self::Pointer(op) => Some(match op {
                 MIRPtrIntrinsic::ToInt { out, .. }
@@ -506,14 +506,14 @@ impl MIRIntrinsic {
                 | MIRPtrIntrinsic::Lt { out, .. }
                 | MIRPtrIntrinsic::Leq { out, .. }
                 | MIRPtrIntrinsic::Gt { out, .. }
-                | MIRPtrIntrinsic::Geq { out, .. } => *out,
+                | MIRPtrIntrinsic::Geq { out, .. } => out,
             }),
             Self::Aggregate(op) => match op {
                 MIRAggregateIntrinsic::SumIndex { out, .. }
                 | MIRAggregateIntrinsic::SumVariant { out, .. }
                 | MIRAggregateIntrinsic::AggregateInit { out, .. }
                 | MIRAggregateIntrinsic::StructField { out, .. }
-                | MIRAggregateIntrinsic::ArrayIndex { out, .. } => Some(*out),
+                | MIRAggregateIntrinsic::ArrayIndex { out, .. } => Some(out),
             },
             Self::Internal(op) => match op {
                 MIRInternalIntrinsic::AdoptPlace { .. } => None,
@@ -523,11 +523,11 @@ impl MIRIntrinsic {
                 | MIRInternalIntrinsic::ArrayAddress { out, .. }
                 | MIRInternalIntrinsic::StringAddress { out, .. }
                 | MIRInternalIntrinsic::GetFnPtr { out, .. }
-                | MIRInternalIntrinsic::Bitcast { out, .. } => Some(*out),
+                | MIRInternalIntrinsic::Bitcast { out, .. } => Some(out),
                 MIRInternalIntrinsic::Assert { .. } | MIRInternalIntrinsic::Assume { .. } => None,
             },
             Self::VA(op) => match op {
-                MIRVAIntrinsic::VaArg { out, .. } => Some(*out),
+                MIRVAIntrinsic::VaArg { out, .. } => Some(out),
                 MIRVAIntrinsic::VaStart { .. } | MIRVAIntrinsic::VaEnd { .. } => None,
             },
         }

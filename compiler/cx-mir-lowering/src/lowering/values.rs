@@ -4,7 +4,7 @@ use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, 
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::{calculate_field_layout, calculate_type_layout};
 use cx_mir::{
-    MIRBitfieldAccess, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRRegister, MIRTarget,
+    MIRBitfieldAccess, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRTarget,
     MIRTypeID, MIRTypeKind, MIRValue,
 };
 
@@ -20,7 +20,10 @@ pub(crate) fn read(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> L
             let address = global_address(context, *reference);
             contents(context, address, reference.ty)
         }
-        MIRValue::Indirect { register, ty } => contents(context, context.reg(*register), *ty),
+        MIRValue::Indirect { value, ty } => {
+            let address = read(context, value);
+            contents(context, address, *ty)
+        }
         MIRValue::Constant(value) => lower_constant(context, value),
     }
 }
@@ -39,14 +42,6 @@ pub(super) fn value_type(context: &FunctionContext<'_, '_>, value: &MIRValue) ->
         MIRValue::GlobalRef(reference) => Some(reference.ty),
         MIRValue::Indirect { ty, .. } => Some(*ty),
         MIRValue::Constant(_) => None,
-    }
-}
-
-fn pointee(context: &FunctionContext<'_, '_>, register: MIRRegister) -> MIRTypeID {
-    let pointer = context.body.register(register).ty();
-    match context.types().definition(pointer).unwrap().kind() {
-        MIRTypeKind::MemoryReference { inner, .. } | MIRTypeKind::PointerTo { inner } => *inner,
-        _ => panic!("indirect operand is not a pointer"),
     }
 }
 
@@ -229,44 +224,47 @@ pub(super) fn tagged_union_tag_offset(context: &FunctionContext<'_, '_>, ty: MIR
     size.div_ceil(alignment) * alignment
 }
 
-pub(super) fn target_type(context: &FunctionContext<'_, '_>, target: MIRTarget) -> MIRTypeID {
+pub(super) fn target_type(context: &FunctionContext<'_, '_>, target: &MIRTarget) -> MIRTypeID {
     match target {
-        MIRTarget::Register(id) => context.body.register(id).ty(),
-        MIRTarget::Place(id) => context.body.place(id).ty(),
+        MIRTarget::Register(id) => context.body.register(*id).ty(),
+        MIRTarget::Place(id) => context.body.place(*id).ty(),
         MIRTarget::Global(reference) => reference.ty,
-        MIRTarget::Indirect(id) => pointee(context, id),
+        MIRTarget::Indirect { ty, .. } => *ty,
     }
 }
 
 pub(super) fn write_target(
     context: &mut FunctionContext<'_, '_>,
-    target: MIRTarget,
+    target: &MIRTarget,
     value: LMIRValue,
     ty: Option<MIRTypeID>,
 ) {
     let ty = ty.unwrap_or_else(|| target_type(context, target));
     match target {
         MIRTarget::Register(id) => {
-            memory::assign(context, id, LMIRInstructionKind::Alias { value })
+            memory::assign(context, *id, LMIRInstructionKind::Alias { value })
         }
-        MIRTarget::Place(id) => memory::store(context, context.places[&id].clone(), value, ty),
+        MIRTarget::Place(id) => memory::store(context, context.places[id].clone(), value, ty),
         MIRTarget::Global(reference) => {
-            let address = global_address(context, reference);
+            let address = global_address(context, *reference);
             memory::store(context, address, value, ty);
         }
-        MIRTarget::Indirect(id) => memory::store(context, context.reg(id), value, ty),
+        MIRTarget::Indirect { value: address, .. } => {
+            let address = read(context, address);
+            memory::store(context, address, value, ty)
+        }
     }
 }
 
 /// The address of an addressable store target.
 pub(super) fn target_address(
     context: &mut FunctionContext<'_, '_>,
-    target: MIRTarget,
+    target: &MIRTarget,
 ) -> LMIRValue {
     match target {
-        MIRTarget::Place(id) => context.places[&id].clone(),
-        MIRTarget::Global(reference) => global_address(context, reference),
-        MIRTarget::Indirect(id) => context.reg(id),
+        MIRTarget::Place(id) => context.places[id].clone(),
+        MIRTarget::Global(reference) => global_address(context, *reference),
+        MIRTarget::Indirect { value, .. } => read(context, value),
         MIRTarget::Register(_) => unreachable!("a register store target has no address"),
     }
 }

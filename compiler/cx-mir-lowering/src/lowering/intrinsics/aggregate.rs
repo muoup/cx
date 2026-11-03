@@ -50,7 +50,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                 store_member(context, address.clone(), location, value);
             }
             if !matches!(out, MIRTarget::Place(_)) {
-                write_target(context, *out, address, None);
+                write_target(context, out, address, None);
             }
         }
         A::StructField {
@@ -63,7 +63,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
             let (offset, _, _) = member_location(context, *struct_ty, *field);
             let base = read(context, base);
             let address = memory::offset(context, base, offset as i64);
-            write_target(context, *out, address, None);
+            write_target(context, out, address, None);
         }
         A::ArrayIndex {
             out,
@@ -85,7 +85,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                 },
                 context.pointer(),
             );
-            write_target(context, *out, address, None);
+            write_target(context, out, address, None);
         }
         A::SumIndex { out, value, sum_ty } => {
             let base = read(context, value);
@@ -106,11 +106,11 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRAggregateIntr
                 },
                 tag_type,
             );
-            write_target(context, *out, value, None);
+            write_target(context, out, value, None);
         }
         A::SumVariant { out, base, .. } => {
             let address = read(context, base);
-            write_target(context, *out, address, None);
+            write_target(context, out, address, None);
         }
     }
 }

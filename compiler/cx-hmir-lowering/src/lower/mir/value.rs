@@ -60,7 +60,7 @@ pub fn value(
             }
         },
         HMIRValueKind::Indirect(pointer) => MIRValue::Indirect {
-            register: reference(context, pointer, span)?,
+            value: Box::new(self::value(context, pointer, span)?),
             ty: lower_type(context.env_mut(), value.ty(), span)?,
         },
     })

@@ -1,0 +1,20 @@
+#include <stdio.h>
+
+int values[3] = { 1, 2, 3 };
+comptime int* middle = &values[1];
+
+struct Bits { unsigned int low : 3; unsigned int high : 5; };
+
+int main() {
+    *middle = 9;
+    int old = *middle;
+    int a = 4;
+    int b = 5;
+    int* pointer = &a;
+    *pointer = (pointer = &b, 7);
+    struct Bits bits = { 1, 2 };
+    struct Bits* bit_pointer = &bits;
+    bit_pointer->high = 17;
+    printf("%d %d %d %d %d %u\n", values[1], old, a, b, *pointer, bit_pointer->high);
+    return 0;
+}

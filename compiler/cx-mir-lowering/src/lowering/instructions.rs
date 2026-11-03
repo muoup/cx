@@ -27,15 +27,15 @@ pub(super) fn lower_instruction(
             bitfield: Some(MIRStoreBitfield::Source(access)),
         } => {
             let MIRValue::Indirect {
-                register: reference,
+                value: reference,
                 ..
             } = value
             else {
-                unreachable!("a bitfield load reads through a reference register")
+                unreachable!("a bitfield load reads through a reference")
             };
-            let unit = context.reg(*reference);
+            let unit = values::read(context, reference);
             let value = values::read_bitfield(context, unit, *ty, access);
-            values::write_target(context, *target, value, Some(*ty));
+            values::write_target(context, target, value, Some(*ty));
         }
         MIRInstructionKind::Store {
             target,
@@ -44,7 +44,7 @@ pub(super) fn lower_instruction(
             bitfield: Some(MIRStoreBitfield::Target(access)),
         } => {
             let source = values::read(context, value);
-            let address = values::target_address(context, *target);
+            let address = values::target_address(context, target);
             values::write_bitfield(
                 context,
                 address,
@@ -66,9 +66,9 @@ pub(super) fn lower_instruction(
             {
                 let copy = memory::allocate(context, *ty);
                 memory::store(context, copy.clone(), source, *ty);
-                values::write_target(context, *target, copy, Some(*ty));
+                values::write_target(context, target, copy, Some(*ty));
             } else {
-                values::write_target(context, *target, source, Some(*ty));
+                values::write_target(context, target, source, Some(*ty));
             }
         }
         MIRInstructionKind::Call { out, callee, args } => {

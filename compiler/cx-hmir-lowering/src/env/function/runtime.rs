@@ -78,7 +78,7 @@ impl RuntimeContext {
                     } => Some(MIRBindable::Place(*place)),
                     MIRInstructionKind::Invalidate { place, .. } => Some(place.clone()),
                     MIRInstructionKind::Store {
-                        target: MIRTarget::Indirect(_) | MIRTarget::Global(_),
+                        target: MIRTarget::Indirect { .. } | MIRTarget::Global(_),
                         ..
                     } => {
                         for slot in &mut self.slots {

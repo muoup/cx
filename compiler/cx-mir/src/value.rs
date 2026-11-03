@@ -23,7 +23,7 @@ pub struct MIRGlobalRef {
 pub enum MIRValue {
     GlobalRef(MIRGlobalRef),
     PlaceRef { place: MIRPlaceID, ty: MIRTypeID },
-    Indirect { register: MIRRegisterID, ty: MIRTypeID },
+    Indirect { value: Box<MIRValue>, ty: MIRTypeID },
 
     Register(MIRRegisterID),
     Constant(MIRConstant),
@@ -35,12 +35,12 @@ pub enum MIRBindable {
     Place(MIRPlaceID),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRTarget {
     Place(MIRPlaceID),
     Global(MIRGlobalRef),
     Register(MIRRegisterID),
-    Indirect(MIRRegisterID),
+    Indirect { value: MIRValue, ty: MIRTypeID },
 }
 
 #[derive(Debug, Clone)]

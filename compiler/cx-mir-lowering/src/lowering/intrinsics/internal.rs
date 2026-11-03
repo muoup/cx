@@ -23,23 +23,23 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             );
         }
         I::PlaceAddress { out, place } => {
-            write_target(context, *out, context.places[place].clone(), None);
+            write_target(context, out, context.places[place].clone(), None);
         }
         I::GlobalAddress { out, global } => {
             let address = global_address(context, *global);
-            write_target(context, *out, address, None);
+            write_target(context, out, address, None);
         }
         I::ReferenceAddress { out, reference } => {
             let address = read(context, reference);
-            write_target(context, *out, address, None);
+            write_target(context, out, address, None);
         }
         I::ArrayAddress { out, array } => {
             let address = read(context, array);
-            write_target(context, *out, address, None);
+            write_target(context, out, address, None);
         }
         I::StringAddress { out, string } => {
             let address = LMIRValue::Global(context.global.string(string));
-            write_target(context, *out, address, None);
+            write_target(context, out, address, None);
         }
         I::GetFnPtr { out, fn_id } => {
             let name = context
@@ -52,7 +52,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
                 .to_string();
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::GetFunctionAddr { func: name },
             );
         }
@@ -60,7 +60,7 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             let value = read(context, value);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::Coercion {
                     value,
                     coercion_type: LMIRCoercionType::BitCast,
@@ -101,7 +101,7 @@ pub(super) fn variadic(context: &mut FunctionContext<'_, '_>, op: &MIRVAIntrinsi
             let list = read(context, list);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::VaArg {
                     list,
                     ty: context.ty(*ty),

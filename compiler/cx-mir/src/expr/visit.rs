@@ -25,39 +25,42 @@ pub fn successors(kind: &MIRInstruction) -> Vec<&MIRBlockTarget> {
 }
 
 pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRBindable)) {
-    fn value(value: &MIRValue, visit: &mut impl FnMut(MIRBindable)) {
+    fn visit_value(value: &MIRValue, visit: &mut impl FnMut(MIRBindable)) {
         match value {
             MIRValue::Register(register) => visit(MIRBindable::Register(*register)),
             MIRValue::PlaceRef { place, .. } => visit(MIRBindable::Place(*place)),
-            MIRValue::Indirect { register, .. } => visit(MIRBindable::Register(*register)),
+            MIRValue::Indirect { value, .. } => visit_value(value.as_ref(), visit),
             MIRValue::GlobalRef(_) => {}
-            MIRValue::Constant(constant) => constant_value(constant, visit),
+            MIRValue::Constant(constant) => visit_constant(constant, visit),
         }
     }
 
-    fn constant_value(constant: &MIRConstant, visit: &mut impl FnMut(MIRBindable)) {
+    fn visit_constant(constant: &MIRConstant, visit: &mut impl FnMut(MIRBindable)) {
         match constant {
-            MIRConstant::Address { base: crate::constant::MIRAddressable::Local(place), .. } => {
+            MIRConstant::Address {
+                base: crate::constant::MIRAddressable::Local(place),
+                ..
+            } => {
                 visit(MIRBindable::Place(*place));
             }
             MIRConstant::Aggregate { fields, .. } => {
                 for (_, field) in fields {
-                    constant_value(field, visit);
+                    visit_constant(field, visit);
                 }
             }
             _ => {}
         }
     }
 
-    fn target(target: MIRTarget, visit: &mut impl FnMut(MIRBindable)) {
-        if let MIRTarget::Indirect(register) = target {
-            visit(MIRBindable::Register(register));
+    fn visit_target(target: &MIRTarget, visit: &mut impl FnMut(MIRBindable)) {
+        if let MIRTarget::Indirect { value, .. } = target {
+            visit_value(value, visit)
         }
     }
 
     fn intrinsic(op: &MIRIntrinsic, visit: &mut impl FnMut(MIRBindable)) {
         if let Some(output) = op.output_target() {
-            target(output, visit);
+            visit_target(output, visit);
         }
         match op {
             MIRIntrinsic::Int(op) => match op {
@@ -66,7 +69,7 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 | MIRIntIntrinsic::BNot { value: input, .. }
                 | MIRIntIntrinsic::ToFloat { value: input, .. }
                 | MIRIntIntrinsic::IntCast { value: input, .. }
-                | MIRIntIntrinsic::ToPtr { value: input, .. } => value(input, visit),
+                | MIRIntIntrinsic::ToPtr { value: input, .. } => visit_value(input, visit),
                 MIRIntIntrinsic::Add { lhs, rhs, .. }
                 | MIRIntIntrinsic::Sub { lhs, rhs, .. }
                 | MIRIntIntrinsic::UMul { lhs, rhs, .. }
@@ -93,14 +96,14 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 | MIRIntIntrinsic::LShift { lhs, rhs, .. }
                 | MIRIntIntrinsic::ARShift { lhs, rhs, .. }
                 | MIRIntIntrinsic::LRShift { lhs, rhs, .. } => {
-                    value(lhs, visit);
-                    value(rhs, visit);
+                    visit_value(lhs, visit);
+                    visit_value(rhs, visit);
                 }
             },
             MIRIntrinsic::Float(op) => match op {
                 MIRFloatIntrinsic::Neg { value: input, .. }
                 | MIRFloatIntrinsic::ToInt { value: input, .. }
-                | MIRFloatIntrinsic::FloatCast { value: input, .. } => value(input, visit),
+                | MIRFloatIntrinsic::FloatCast { value: input, .. } => visit_value(input, visit),
                 MIRFloatIntrinsic::Add { lhs, rhs, .. }
                 | MIRFloatIntrinsic::Sub { lhs, rhs, .. }
                 | MIRFloatIntrinsic::Mul { lhs, rhs, .. }
@@ -111,16 +114,16 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 | MIRFloatIntrinsic::Le { lhs, rhs, .. }
                 | MIRFloatIntrinsic::Gt { lhs, rhs, .. }
                 | MIRFloatIntrinsic::Geq { lhs, rhs, .. } => {
-                    value(lhs, visit);
-                    value(rhs, visit);
+                    visit_value(lhs, visit);
+                    visit_value(rhs, visit);
                 }
             },
             MIRIntrinsic::Pointer(op) => match op {
-                MIRPtrIntrinsic::ToInt { ptr, .. } => value(ptr, visit),
+                MIRPtrIntrinsic::ToInt { ptr, .. } => visit_value(ptr, visit),
                 MIRPtrIntrinsic::Add { ptr, offset, .. }
                 | MIRPtrIntrinsic::Sub { ptr, offset, .. } => {
-                    value(ptr, visit);
-                    value(offset, visit);
+                    visit_value(ptr, visit);
+                    visit_value(offset, visit);
                 }
                 MIRPtrIntrinsic::Diff { lhs, rhs, .. }
                 | MIRPtrIntrinsic::Eq { lhs, rhs, .. }
@@ -129,45 +132,47 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 | MIRPtrIntrinsic::Leq { lhs, rhs, .. }
                 | MIRPtrIntrinsic::Gt { lhs, rhs, .. }
                 | MIRPtrIntrinsic::Geq { lhs, rhs, .. } => {
-                    value(lhs, visit);
-                    value(rhs, visit);
+                    visit_value(lhs, visit);
+                    visit_value(rhs, visit);
                 }
             },
             MIRIntrinsic::Aggregate(op) => match op {
-                MIRAggregateIntrinsic::SumIndex { value: input, .. } => value(input, visit),
+                MIRAggregateIntrinsic::SumIndex { value: input, .. } => visit_value(input, visit),
                 MIRAggregateIntrinsic::SumVariant { base, .. }
-                | MIRAggregateIntrinsic::StructField { base, .. } => value(base, visit),
+                | MIRAggregateIntrinsic::StructField { base, .. } => visit_value(base, visit),
                 MIRAggregateIntrinsic::AggregateInit { fields, .. } => {
                     for (_, field) in fields {
-                        value(field, visit);
+                        visit_value(field, visit);
                     }
                 }
                 MIRAggregateIntrinsic::ArrayIndex { base, index, .. } => {
-                    value(base, visit);
-                    value(index, visit);
+                    visit_value(base, visit);
+                    visit_value(index, visit);
                 }
             },
             MIRIntrinsic::Internal(op) => match op {
-                MIRInternalIntrinsic::AdoptPlace { address, .. } => value(address, visit),
+                MIRInternalIntrinsic::AdoptPlace { address, .. } => visit_value(address, visit),
                 MIRInternalIntrinsic::PlaceAddress { place, .. } => {
                     visit(MIRBindable::Place(*place))
                 }
-                MIRInternalIntrinsic::ReferenceAddress { reference, .. } => value(reference, visit),
-                MIRInternalIntrinsic::ArrayAddress { array, .. } => value(array, visit),
+                MIRInternalIntrinsic::ReferenceAddress { reference, .. } => {
+                    visit_value(reference, visit)
+                }
+                MIRInternalIntrinsic::ArrayAddress { array, .. } => visit_value(array, visit),
                 MIRInternalIntrinsic::StringAddress { .. }
                 | MIRInternalIntrinsic::GlobalAddress { .. }
                 | MIRInternalIntrinsic::GetFnPtr { .. } => {}
-                MIRInternalIntrinsic::Bitcast { value: input, .. } => value(input, visit),
+                MIRInternalIntrinsic::Bitcast { value: input, .. } => visit_value(input, visit),
                 MIRInternalIntrinsic::Assert { condition, .. }
-                | MIRInternalIntrinsic::Assume { condition } => value(condition, visit),
+                | MIRInternalIntrinsic::Assume { condition } => visit_value(condition, visit),
             },
             MIRIntrinsic::VA(op) => match op {
                 MIRVAIntrinsic::VaStart { list, last } => {
-                    value(list, visit);
-                    value(last, visit);
+                    visit_value(list, visit);
+                    visit_value(last, visit);
                 }
                 MIRVAIntrinsic::VaEnd { list } | MIRVAIntrinsic::VaArg { list, .. } => {
-                    value(list, visit)
+                    visit_value(list, visit)
                 }
             },
         }
@@ -190,30 +195,24 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
             value: input,
             ..
         } => {
-            target(*destination, &mut visit);
-            value(input, &mut visit);
+            visit_target(destination, &mut visit);
+            visit_value(input, &mut visit);
         }
         MIRInstructionKind::Call { callee, args, .. } => {
-            value(callee, &mut visit);
+            visit_value(callee, &mut visit);
             for arg in args {
-                value(arg, &mut visit);
+                visit_value(arg, &mut visit);
             }
         }
         MIRInstructionKind::IntrinsicOp(op) => intrinsic(op, &mut visit),
         MIRInstructionKind::Return { value: returned } => {
             if let Some(returned) = returned {
-                value(returned, &mut visit);
+                visit_value(returned, &mut visit);
             }
         }
         MIRInstructionKind::Jump { .. } => {}
-        MIRInstructionKind::Branch {
-            cond,
-            ..
-        } => value(cond, &mut visit),
-        MIRInstructionKind::CaseBranch {
-            value: subject,
-            ..
-        } => value(subject, &mut visit),
-        MIRInstructionKind::IndirectJump { address, .. } => value(address, &mut visit),
+        MIRInstructionKind::Branch { cond, .. } => visit_value(cond, &mut visit),
+        MIRInstructionKind::CaseBranch { value, .. } => visit_value(value, &mut visit),
+        MIRInstructionKind::IndirectJump { address, .. } => visit_value(address, &mut visit),
     }
 }

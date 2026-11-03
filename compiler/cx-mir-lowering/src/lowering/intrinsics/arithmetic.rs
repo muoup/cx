@@ -19,32 +19,32 @@ use crate::lowering::values::{read, value_type};
 pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsic) {
     use MIRIntIntrinsic as I;
     let binary = match op {
-        I::Add { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::ADD)),
-        I::Sub { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::SUB)),
-        I::UMul { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::MUL)),
-        I::SMul { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::IMUL)),
-        I::UDiv { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::UDIV)),
-        I::SDiv { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::IDIV)),
-        I::UMod { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::UREM)),
-        I::SMod { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::IREM)),
-        I::Eq { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::EQ)),
-        I::Neq { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::NE)),
-        I::ULt { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::ULT)),
-        I::SLt { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::ILT)),
-        I::ULe { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::ULE)),
-        I::SLe { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::ILE)),
-        I::UGt { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::UGT)),
-        I::SGt { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::IGT)),
-        I::UGe { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::UGE)),
-        I::SGe { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::IGE)),
-        I::LAnd { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::LAND)),
-        I::LOr { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::LOR)),
-        I::BAnd { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::BAND)),
-        I::BOr { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::BOR)),
-        I::BXor { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::BXOR)),
-        I::LShift { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::SHL)),
-        I::ARShift { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::ASHR)),
-        I::LRShift { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRIntBinOp::LSHR)),
+        I::Add { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::ADD)),
+        I::Sub { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::SUB)),
+        I::UMul { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::MUL)),
+        I::SMul { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::IMUL)),
+        I::UDiv { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::UDIV)),
+        I::SDiv { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::IDIV)),
+        I::UMod { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::UREM)),
+        I::SMod { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::IREM)),
+        I::Eq { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::EQ)),
+        I::Neq { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::NE)),
+        I::ULt { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::ULT)),
+        I::SLt { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::ILT)),
+        I::ULe { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::ULE)),
+        I::SLe { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::ILE)),
+        I::UGt { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::UGT)),
+        I::SGt { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::IGT)),
+        I::UGe { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::UGE)),
+        I::SGe { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::IGE)),
+        I::LAnd { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::LAND)),
+        I::LOr { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::LOR)),
+        I::BAnd { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::BAND)),
+        I::BOr { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::BOR)),
+        I::BXor { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::BXOR)),
+        I::LShift { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::SHL)),
+        I::ARShift { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::ASHR)),
+        I::LRShift { out, lhs, rhs } => Some((out, lhs, rhs, LMIRIntBinOp::LSHR)),
         _ => None,
     };
     if let Some((out, lhs, rhs, op)) = binary {
@@ -67,7 +67,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             let value = read(context, value);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::IntegerUnOp { op: kind, value },
             );
         }
@@ -93,7 +93,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             let value = read(context, value);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::Coercion {
                     value,
                     coercion_type,
@@ -107,7 +107,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             let value = read(context, value);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::Coercion {
                     value,
                     coercion_type: LMIRCoercionType::IntToFloat {
@@ -126,7 +126,7 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
             let value = read(context, value);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::Coercion {
                     value,
                     coercion_type: LMIRCoercionType::IntToPtr {
@@ -143,16 +143,16 @@ pub(super) fn integer(context: &mut FunctionContext<'_, '_>, op: &MIRIntIntrinsi
 pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsic) {
     use MIRFloatIntrinsic as F;
     let binary = match op {
-        F::Add { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::ADD)),
-        F::Sub { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::SUB)),
-        F::Mul { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::FMUL)),
-        F::Div { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::FDIV)),
-        F::Eq { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::EQ)),
-        F::Neq { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::NEQ)),
-        F::Lt { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::FLT)),
-        F::Le { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::FLE)),
-        F::Gt { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::FGT)),
-        F::Geq { out, lhs, rhs } => Some((*out, lhs, rhs, LMIRFloatBinOp::FGE)),
+        F::Add { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::ADD)),
+        F::Sub { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::SUB)),
+        F::Mul { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::FMUL)),
+        F::Div { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::FDIV)),
+        F::Eq { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::EQ)),
+        F::Neq { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::NEQ)),
+        F::Lt { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::FLT)),
+        F::Le { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::FLE)),
+        F::Gt { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::FGT)),
+        F::Geq { out, lhs, rhs } => Some((out, lhs, rhs, LMIRFloatBinOp::FGE)),
         _ => None,
     };
     if let Some((out, lhs, rhs, op)) = binary {
@@ -170,7 +170,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
             let value = read(context, value);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::FloatUnOp {
                     op: LMIRFloatUnOp::NEG,
                     value,
@@ -184,7 +184,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
             let value = read(context, value);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::Coercion {
                     value,
                     coercion_type: LMIRCoercionType::FloatToInt {
@@ -199,7 +199,7 @@ pub(super) fn float(context: &mut FunctionContext<'_, '_>, op: &MIRFloatIntrinsi
             let value = read(context, value);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::Coercion {
                     value,
                     coercion_type: LMIRCoercionType::FloatCast {
@@ -219,7 +219,7 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
             let value = read(context, ptr);
             output(
                 context,
-                *out,
+                out,
                 LMIRInstructionKind::Coercion {
                     value,
                     coercion_type: LMIRCoercionType::PtrToInt,
@@ -236,16 +236,16 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
             let stride = calculate_type_layout(context.types(), *element_ty)
                 .size()
                 .max(1);
-            (*out, lhs, rhs, LMIRPtrBinOp::DIFF, stride)
+            (out, lhs, rhs, LMIRPtrBinOp::DIFF, stride)
         }
-        P::Add { out, ptr, offset } => (*out, ptr, offset, LMIRPtrBinOp::ADD, 1),
-        P::Sub { out, ptr, offset } => (*out, ptr, offset, LMIRPtrBinOp::SUB, 1),
-        P::Eq { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::EQ, 1),
-        P::Neq { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::NE, 1),
-        P::Lt { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::LT, 1),
-        P::Leq { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::LE, 1),
-        P::Gt { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::GT, 1),
-        P::Geq { out, lhs, rhs } => (*out, lhs, rhs, LMIRPtrBinOp::GE, 1),
+        P::Add { out, ptr, offset } => (out, ptr, offset, LMIRPtrBinOp::ADD, 1),
+        P::Sub { out, ptr, offset } => (out, ptr, offset, LMIRPtrBinOp::SUB, 1),
+        P::Eq { out, lhs, rhs } => (out, lhs, rhs, LMIRPtrBinOp::EQ, 1),
+        P::Neq { out, lhs, rhs } => (out, lhs, rhs, LMIRPtrBinOp::NE, 1),
+        P::Lt { out, lhs, rhs } => (out, lhs, rhs, LMIRPtrBinOp::LT, 1),
+        P::Leq { out, lhs, rhs } => (out, lhs, rhs, LMIRPtrBinOp::LE, 1),
+        P::Gt { out, lhs, rhs } => (out, lhs, rhs, LMIRPtrBinOp::GT, 1),
+        P::Geq { out, lhs, rhs } => (out, lhs, rhs, LMIRPtrBinOp::GE, 1),
     };
     let left = read(context, lhs);
     let right = read(context, rhs);

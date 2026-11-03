@@ -44,11 +44,11 @@ impl Values {
         }
     }
 
-    fn set(&mut self, target: MIRTarget, value: Option<i128>) {
+    fn set(&mut self, target: &MIRTarget, value: Option<i128>) {
         let key = match target {
-            MIRTarget::Register(register) => Some(MIRBindable::Register(register)),
-            MIRTarget::Place(place) => Some(MIRBindable::Place(place)),
-            MIRTarget::Indirect(_) | MIRTarget::Global(_) => None,
+            MIRTarget::Register(register) => Some(MIRBindable::Register(*register)),
+            MIRTarget::Place(place) => Some(MIRBindable::Place(*place)),
+            MIRTarget::Indirect { .. } | MIRTarget::Global(_) => None,
         };
         if let Some(key) = key {
             if let Some(value) = value {
@@ -157,7 +157,7 @@ impl AnalysisPass for Values {
                     MIRBindable::Place(_) => self.known.get(source).copied(),
                     MIRBindable::Register(_) => None,
                 };
-                self.set(MIRTarget::Register(*out), value);
+                self.set(&MIRTarget::Register(*out), value);
             }
             MIRInstructionKind::Store {
                 target, value, ty, ..
@@ -166,7 +166,7 @@ impl AnalysisPass for Values {
                     MIRTarget::Place(place) if env.body().place(*place).ty() != *ty => None,
                     _ => self.value(env, value),
                 };
-                self.set(*target, value);
+                self.set(target, value);
             }
             MIRInstructionKind::Call { out, .. } => {
                 self.known

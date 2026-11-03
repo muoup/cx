@@ -226,7 +226,7 @@ impl AnalysisPass for Liveness {
             }
             MIRInstructionKind::IntrinsicOp(op) => {
                 if let Some(MIRTarget::Register(out)) = op.output_target() {
-                    self.set(&MIRBindable::Register(out), MIRLivenessState::Available);
+                    self.set(&MIRBindable::Register(*out), MIRLivenessState::Available);
                 }
             }
             _ => {}

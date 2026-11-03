@@ -23,7 +23,7 @@ pub(super) fn lower_intrinsic(context: &mut FunctionContext<'_, '_>, op: &MIRInt
 
 pub(super) fn output(
     context: &mut FunctionContext<'_, '_>,
-    target: MIRTarget,
+    target: &MIRTarget,
     kind: LMIRInstructionKind,
 ) {
     let ty = context.ty(target_type(context, target));

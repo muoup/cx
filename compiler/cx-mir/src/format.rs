@@ -82,7 +82,7 @@ impl Display for MIRValue {
             Self::Register(value) => Display::fmt(value, f),
             Self::PlaceRef { place, .. } => Display::fmt(place, f),
             Self::GlobalRef(value) => Display::fmt(value, f),
-            Self::Indirect { register, .. } => write!(f, "*{register}"),
+            Self::Indirect { value, .. } => write!(f, "*{value}"),
             Self::Constant(value) => Display::fmt(value, f),
         }
     }
@@ -438,7 +438,7 @@ fn write_instruction<T: MTRegistry>(
             source,
             origin,
         } => {
-            write_definition(f, unit, function, MIRTarget::Register(*out), types)?;
+            write_definition(f, unit, function, &MIRTarget::Register(*out), types)?;
             f.write_str("lift ")?;
             write_bindable(f, unit, function, source)?;
             f.write_str(" from ")?;
@@ -457,11 +457,11 @@ fn write_instruction<T: MTRegistry>(
             ..
         } => {
             if let Some(MIRStoreBitfield::Target(access)) = bitfield {
-                write_target(f, unit, function, *target)?;
+                write_target(f, unit, function, target)?;
                 write_bitfield_access(f, access)?;
                 f.write_str(" = ")?;
             } else {
-                write_definition(f, unit, function, *target, types)?;
+                write_definition(f, unit, function, target, types)?;
             }
             write_value(f, unit, function, value)?;
             if let Some(MIRStoreBitfield::Source(access)) = bitfield {
@@ -471,7 +471,7 @@ fn write_instruction<T: MTRegistry>(
         }
         MIRInstructionKind::Call { out, callee, args } => {
             if let Some(out) = out {
-                write_definition(f, unit, function, MIRTarget::Register(*out), types)?;
+                write_definition(f, unit, function, &MIRTarget::Register(*out), types)?;
             }
             write_value(f, unit, function, callee)?;
             f.write_str("(")?;
@@ -1204,9 +1204,9 @@ fn write_value(
         MIRValue::Register(register) => write_register_name(f, function, *register),
         MIRValue::PlaceRef { place, .. } => write_place_name(f, unit, function, *place),
         MIRValue::GlobalRef(global) => write_global_ref(f, unit, *global),
-        MIRValue::Indirect { register, .. } => {
+        MIRValue::Indirect { value, .. } => {
             f.write_str("*")?;
-            write_register_name(f, function, *register)
+            write_value(f, unit, function, value.as_ref())
         }
         MIRValue::Constant(constant) => write_constant(f, unit, constant),
     }
@@ -1295,15 +1295,15 @@ fn write_target(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    target: MIRTarget,
+    target: &MIRTarget,
 ) -> fmt::Result {
     match target {
-        MIRTarget::Place(place) => write_place_name(f, unit, function, place),
-        MIRTarget::Global(global) => write_global_ref(f, unit, global),
-        MIRTarget::Register(register) => write_register_name(f, function, register),
-        MIRTarget::Indirect(register) => {
+        MIRTarget::Place(place) => write_place_name(f, unit, function, *place),
+        MIRTarget::Global(global) => write_global_ref(f, unit, *global),
+        MIRTarget::Register(register) => write_register_name(f, function, *register),
+        MIRTarget::Indirect { value, .. } => {
             f.write_str("*")?;
-            write_register_name(f, function, register)
+            write_value(f, unit, function, value)
         }
     }
 }
@@ -1312,7 +1312,7 @@ fn write_definition<T: MTRegistry>(
     f: &mut Formatter<'_>,
     unit: &MIRUnit,
     function: &MIRFunction,
-    target: MIRTarget,
+    target: &MIRTarget,
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     write_target(f, unit, function, target)?;
@@ -1320,7 +1320,7 @@ fn write_definition<T: MTRegistry>(
         && let Some(body) = function.body()
     {
         f.write_str(" : ")?;
-        types.write(f, body.register(register).ty())?;
+        types.write(f, body.register(*register).ty())?;
     }
     f.write_str(" = ")
 }

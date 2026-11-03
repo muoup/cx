@@ -71,7 +71,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
     mir::drop_scope(&mut context, scope, &span);
     context
         .runtime_mut()
-        .emit(MIRInstructionKind::Return { value }, span.clone());
+        .emit(MIRInstructionKind::Return { value: value }, span.clone());
     emit::close_scope(&mut context, &span);
 
     Ok(context.into_runtime().finish())
