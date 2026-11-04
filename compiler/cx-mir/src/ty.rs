@@ -14,21 +14,51 @@ dense_id!(MIRTypeID, "t");
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MIRType {
     kind: MIRTypeKind,
+    metadata: MIRTypeMetadata,
 }
 
 impl MIRType {
     pub fn new(kind: MIRTypeKind) -> Self {
-        Self { kind }
+        Self::qualified(kind, MIRTypeMetadata::NONE)
+    }
+
+    pub fn qualified(kind: MIRTypeKind, metadata: MIRTypeMetadata) -> Self {
+        Self { kind, metadata }
     }
 
     pub fn undefined() -> Self {
-        Self {
-            kind: MIRTypeKind::Undefined,
-        }
+        Self::new(MIRTypeKind::Undefined)
     }
 
     pub fn kind(&self) -> &MIRTypeKind {
         &self.kind
+    }
+
+    pub fn metadata(&self) -> MIRTypeMetadata {
+        self.metadata
+    }
+}
+
+// Descriptive only: never read for semantics, and ignored by structural type comparison
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct MIRTypeMetadata(u8);
+
+impl MIRTypeMetadata {
+    pub const NONE: Self = Self(0);
+    pub const CONST: Self = Self(1);
+    pub const VOLATILE: Self = Self(1 << 1);
+    pub const RESTRICT: Self = Self(1 << 2);
+
+    pub const fn with(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
     }
 }
 

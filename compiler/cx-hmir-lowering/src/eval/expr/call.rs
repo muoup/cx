@@ -40,11 +40,12 @@ pub(crate) fn eval_call(
     args: &[HMIRExprID],
     named: &[(CXIdent, HMIRExprID)],
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let evaluated = eval(context, body, callee)?;
     let (args, named, span) = (args.to_vec(), named.to_vec(), span.clone());
-    evaluated.and_then(context, body, None, move |context, body, callee, expected| {
-        evaluate(context, body, &span, callee, &args, &named)?.try_complete(context, body, expected)
-    })
+
+    eval(context, body, callee)?
+        .and_then(context, body, None, move |context, body, callee, expected| {
+            evaluate(context, body, &span, callee, &args, &named)?.try_complete(context, body, expected)
+        })
 }
 
 fn evaluate(

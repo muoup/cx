@@ -341,7 +341,7 @@ dependencies = [
 name = "cx-c-header"
 version = "0.0.0"
 dependencies = [
- "cx-lmir",
+ "cx-mir",
  "cx-pipeline-data",
  "cx-util",
 ]

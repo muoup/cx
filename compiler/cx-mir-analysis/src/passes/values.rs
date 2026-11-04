@@ -4,7 +4,7 @@ use cx_log::{CXResult, catalogue::analysis};
 use cx_mir::{
     MIRBasicBlockID, MIRBindable, MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntIntrinsic,
     MIRInternalIntrinsic, MIRIntrinsic, MIRTarget, MIRValue,
-    expr::visit::successors,
+    expr::visit::successors, ty::interface::MTRegistry,
 };
 use cx_tokens::TokenRange;
 
@@ -37,7 +37,7 @@ impl Values {
             MIRValue::Register(register) => {
                 self.known.get(&MIRBindable::Register(*register)).copied()
             }
-            MIRValue::PlaceRef { place, ty } if env.body().place(*place).ty() == *ty => {
+            MIRValue::PlaceRef { place, ty } if env.unit().types().same_type(env.body().place(*place).ty(), *ty) => {
                 self.known.get(&MIRBindable::Place(*place)).copied()
             }
             _ => None,
@@ -163,7 +163,7 @@ impl AnalysisPass for Values {
                 target, value, ty, ..
             } => {
                 let value = match target {
-                    MIRTarget::Place(place) if env.body().place(*place).ty() != *ty => None,
+                    MIRTarget::Place(place) if !env.unit().types().same_type(env.body().place(*place).ty(), *ty) => None,
                     _ => self.value(env, value),
                 };
                 self.set(target, value);

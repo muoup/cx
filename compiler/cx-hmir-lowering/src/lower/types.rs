@@ -14,7 +14,7 @@ use cx_log::{
 };
 use cx_mir::{
     MIRField, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRType,
-    MIRTypeID, MIRTypeKind,
+    MIRTypeID, MIRTypeKind, MIRTypeMetadata,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -86,6 +86,25 @@ pub(crate) fn lower_prototype(
 }
 
 pub(crate) fn lower_type(
+    env: &mut HMIREnvironment,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<MIRTypeID> {
+    let semantics = env.semantics(ty);
+    let mut metadata = MIRTypeMetadata::NONE;
+    
+    if semantics.constant {
+        metadata = metadata.with(MIRTypeMetadata::CONST);
+    }
+    if semantics.volatile {
+        metadata = metadata.with(MIRTypeMetadata::VOLATILE);
+    }
+
+    let base = lower_underlying(env, ty, span)?;
+    Ok(env.module_mut().qualify(base, metadata))
+}
+
+fn lower_underlying(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
     span: &TokenRange,

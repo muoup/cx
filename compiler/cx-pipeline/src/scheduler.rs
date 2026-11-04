@@ -493,6 +493,15 @@ pub(crate) fn perform_job(
 
         CompilationStep::LMIR => {
             let mir = context.module_db.mir.take(job.unit.namespace());
+            let module = job.unit.module().as_path();
+            if context.config.header_modules.contains(module) {
+                let header = cx_c_header::generate_header(&mir, &context.config.link_entries);
+                context
+                    .headers
+                    .lock()
+                    .expect("Deadlock on headers mutex")
+                    .insert(module.to_path_buf(), header);
+            }
             let lmir = generate_lmir(&mir)?;
 
             if !job.unit.is_std_lib() || context.config.verbose {

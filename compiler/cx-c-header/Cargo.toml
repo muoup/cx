@@ -1,10 +1,10 @@
 [package]
 name = "cx-c-header"
 version = "0.0.0"
-edition = "2021"
+edition = "2024"
 autotests = false
 
 [dependencies]
-cx-lmir = { path = "../cx-lmir" }
+cx-mir = { path = "../cx-mir" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-util = { path = "../cx-util" }

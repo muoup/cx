@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use cx_mir::{MIRConstant, MIRValue, expr::visit::successors};
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRInstruction, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl, MIRScopeID, MIRType, MIRTypeID, MIRTypeKind, MIRUnit, ty::{interface::MTRegistry, registry::MIRTypeRegistry},
+    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRInstruction, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl, MIRScopeID, MIRType, MIRTypeID, MIRTypeKind, MIRTypeMetadata, MIRUnit, ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
@@ -23,6 +23,8 @@ pub struct MIRModuleBuilder {
     types: IndexVec<MIRTypeID, MIRType>,
     interned: FxHashMap<MIRType, MIRTypeID>,
     debug_names: FxHashMap<MIRTypeID, String>,
+    qualified: FxHashMap<(MIRTypeID, MIRTypeMetadata), MIRTypeID>,
+    pending: FxHashMap<MIRTypeID, Vec<(MIRTypeID, MIRTypeMetadata)>>,
     functions: BTreeMap<MIRFunctionID, MIRFunction>,
     globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
@@ -39,6 +41,8 @@ impl MIRModuleBuilder {
             types: IndexVec::new(),
             interned: FxHashMap::default(),
             debug_names: FxHashMap::default(),
+            qualified: FxHashMap::default(),
+            pending: FxHashMap::default(),
             functions: BTreeMap::new(),
             globals: BTreeMap::new(),
             global_order: Vec::new(),
@@ -72,6 +76,37 @@ impl MIRModuleBuilder {
         self.interned.entry(ty).or_insert(id);
 
         if let Some(name) = debug_name {
+            self.debug_names.insert(id, name);
+        }
+        for (qualified, metadata) in self.pending.remove(&id).unwrap_or_default() {
+            self.copy_qualified(id, qualified, metadata);
+        }
+    }
+
+    // A qualified aggregate copies its base, which may still be reserved while its fields lower
+    pub fn qualify(&mut self, base: MIRTypeID, metadata: MIRTypeMetadata) -> MIRTypeID {
+        if metadata.is_empty() {
+            return base;
+        }
+        if let Some(id) = self.qualified.get(&(base, metadata)) {
+            return *id;
+        }
+
+        let id = self.types.push(MIRType::undefined());
+        self.qualified.insert((base, metadata), id);
+        match self.types[base].kind() {
+            MIRTypeKind::Undefined => self.pending.entry(base).or_default().push((id, metadata)),
+            _ => self.copy_qualified(base, id, metadata),
+        }
+        id
+    }
+
+    fn copy_qualified(&mut self, base: MIRTypeID, id: MIRTypeID, metadata: MIRTypeMetadata) {
+        let base_ty = &self.types[base];
+        let ty = MIRType::qualified(base_ty.kind().clone(), base_ty.metadata().with(metadata));
+        self.types[id] = ty.clone();
+        self.interned.entry(ty).or_insert(id);
+        if let Some(name) = self.debug_names.get(&base).cloned() {
             self.debug_names.insert(id, name);
         }
     }

@@ -19,7 +19,7 @@ pub use expr::intrinsic::{
 pub use constant::MIRConstant;
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRIntType, MIRType, MIRTypeID,
-    MIRTypeKind, MIRTypeLayout,
+    MIRTypeKind, MIRTypeLayout, MIRTypeMetadata,
 };
 pub use unit::function::{MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID};
 pub use unit::body::{MIRBody, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl};

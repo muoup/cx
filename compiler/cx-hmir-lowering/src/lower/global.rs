@@ -3,7 +3,7 @@ use cx_hmir::{
     ty::{HMIRTypeID, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue};
-use cx_mir::{MIRGlobalID, MIRGlobalRef, MIRGlobalState, MIRGlobalVariable};
+use cx_mir::{MIRGlobalID, MIRGlobalRef, MIRGlobalState, MIRGlobalVariable, ty::interface::MTRegistry};
 use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
 
@@ -31,7 +31,7 @@ pub(crate) fn declare(
     let name = symbol_name.as_str();
     if let Some(id) = env.module().declared_global(name) {
         let existing = env.module().global(id);
-        if existing.ty() != mir_ty || existing.is_mutable() != mutable {
+        if !env.module().same_type(existing.ty(), mir_ty) || existing.is_mutable() != mutable {
             return Err(hmir_error(
                 span,
                 &catalogue::mir::INCOMPATIBLE_GLOBAL,
