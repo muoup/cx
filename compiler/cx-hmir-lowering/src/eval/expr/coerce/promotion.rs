@@ -104,37 +104,25 @@ pub fn reference_load(
     span: &TokenRange,
 ) -> CXResult<Coercion> {
     let env = context.env();
-    
+
     if env.is_nocopy(inner) {
         let args = (types::name(env, value.ty()), types::name(env, inner));
         return Err(hmir_error(span, &typecheck::INVALID_CONVERSION, args));
     }
-    
+
     let semantics = env.semantics(inner);
-    let global = match value.kind() {
-        HMIRValueKind::PlaceRef(place) => matches!(place, HMIRPlace::Global(_)),
-        HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
-            matches!(address.base(), Addressable::Place(HMIRPlace::Global(_)))
-        }
-        _ => false,
-    };
-    
+    let external_write = matches!(
+        value.kind(),
+        HMIRValueKind::PlaceRef(HMIRPlace::Global(_)) | HMIRValueKind::Constant(_)
+    );
+
     if semantics.volatile {
         expr::require_impure(context, span, "reading a volatile value")?;
-    } else if global && !semantics.constant && context.is_runtime() {
-        expr::require_impure(context, span, "reading a mutable global")?;
+    } else if external_write && (!semantics.constant && context.is_runtime()) {
+        expr::require_impure(context, span, "reading a mutable pointer")?;
     }
-    
-    let qualifiers = HMIRTypeSemantics {
-        constant: true,
-        volatile: true,
-        ..Default::default()
-    };
-    
-    let ty = types::qualify::remove(context, inner, qualifiers, span);
-    Ok(Coercion::Applied(
-        emit::copy(context, value, span)?.with_ty(ty),
-    ))
+
+    emit::copy(context, value, span).map(Coercion::Applied)
 }
 
 pub(super) fn integer(
