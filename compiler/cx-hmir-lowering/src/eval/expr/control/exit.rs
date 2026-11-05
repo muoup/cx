@@ -20,7 +20,7 @@ use crate::{
         flow::{self, ComptimeStop, EvalExit, Evaluation},
     },
     log::hmir_error,
-    lower::mir,
+    lower::{self, expr::value},
     value::{HMIRValue, constant::HMIRConstant},
 };
 
@@ -98,7 +98,7 @@ pub(super) fn eval_loop_exit(
         };
     };
     defer::leave(context, depth, span)?;
-    mir::jump(context, target, span);
+    lower::expr::jump(context, target, span);
     flow::diverged()
 }
 
@@ -174,7 +174,7 @@ pub(crate) fn return_value(
     contract::exit(context, value.as_ref(), span)?;
     defer::leave(context, 0, span)?;
     let value = value
-        .map(|value| mir::value(context, &value, span))
+        .map(|value| value::standard(context, &value, span))
         .transpose()?;
     context
         .runtime_mut()

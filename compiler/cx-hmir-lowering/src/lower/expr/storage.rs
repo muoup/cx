@@ -13,8 +13,13 @@ use cx_util::identifier::CXIdent;
 
 use super::{intrinsic, output, register, value};
 use crate::{
-    env::function::{LocalLoweringContext, runtime::Slot}, eval::types, lower::{global, mir, types::lower_type}, value::{
-        HMIRPlace, HMIRSlotID, HMIRValue, HMIRValueKind, address::{Addressable, HMIRAddress}, constant::HMIRConstant,
+    env::function::{LocalLoweringContext, runtime::Slot},
+    eval::types,
+    lower::{global, types::lower_type},
+    value::{
+        HMIRPlace, HMIRSlotID, HMIRValue, HMIRValueKind,
+        address::{Addressable, HMIRAddress},
+        constant::HMIRConstant,
     },
 };
 
@@ -92,11 +97,11 @@ fn target(
             MIRTarget::Global(global)
         }
         _ if is_reference => MIRTarget::Indirect {
-            value: mir::value(context, value, span)?,
+            value: value::standard(context, value, span)?,
             ty: lower_type(context.env_mut(), ty, span)?,
         },
         HMIRValueKind::Indirect(pointer) => MIRTarget::Indirect {
-            value: mir::value(context, pointer, span)?,
+            value: value::standard(context, pointer, span)?,
             ty: lower_type(context.env_mut(), ty, span)?,
         },
 
@@ -167,7 +172,7 @@ pub fn adopt(
     source: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let address = value(context, source, span)?;
+    let address = value::standard(context, source, span)?;
     let nodrop = context.env().is_nodrop(ty);
     let scope = context.runtime().current_scope();
     let target = allocate_place(context, ty, name, scope, nodrop, true, span)?;
@@ -231,7 +236,7 @@ pub fn lift(
     let Some(inner) = context.env().reference_inner(source.ty()) else {
         unreachable!("a lift reads through a reference")
     };
-    
+
     let origin = context.runtime().slot(origin).binding().clone();
     let source = target(context, source, span)?;
     let out = register(context, inner, span)?;
@@ -254,7 +259,7 @@ pub fn materialize(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let ty = lower_type(context.env_mut(), value.ty(), span)?;
-    let source = mir::value(context, value, span)?;
+    let source = value::standard(context, value, span)?;
     let (target, result) = output(context, value.ty(), span)?;
     store(context, target, source, ty, None, span);
 
@@ -313,7 +318,7 @@ pub fn write(
     let bitfield = types::bitfield(context.env(), target)
         .map(|bitfield| MIRStoreBitfield::Target(access(context, stored, bitfield)));
     let ty = lower_type(context.env_mut(), stored, span)?;
-    let source = mir::value(context, value, span)?;
+    let source = value::standard(context, value, span)?;
     store(context, destination, source, ty, bitfield, span);
 
     Ok(())
@@ -395,7 +400,7 @@ pub fn address(
         HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),
     };
 
-    let reference = mir::value(context, reference, span)?;
+    let reference = value::standard(context, reference, span)?;
     let (out, result) = output(context, ty, span)?;
     intrinsic(
         context,
@@ -413,7 +418,7 @@ pub fn dereference(
     base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let value = value(context, &pointer, span)?;
+    let value = value::standard(context, &pointer, span)?;
     if context.env().settings().assertions() {
         null_check(context, base.unwrap_or(&pointer), span)?;
     }
@@ -434,12 +439,12 @@ pub fn dereference(
     Ok(HMIRValue::indirect(inner, reference))
 }
 
-fn null_check(
+pub fn null_check(
     context: &mut LocalLoweringContext,
     pointer: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<()> {
-    let checked = value(context, pointer, span)?;
+    let checked = value::standard(context, pointer, span)?;
     let null = MIRConstant::Nullptr {
         ty: lower_type(context.env_mut(), pointer.ty(), span)?,
     };
@@ -480,7 +485,7 @@ pub fn field(
     let base = if context.env().is_reference(base.ty()) {
         read(context, base, span)?
     } else {
-        value(context, base, span)?
+        value::standard(context, base, span)?
     };
 
     let reference_ty = types::reference(context.env_mut(), ty, bitfield, span);

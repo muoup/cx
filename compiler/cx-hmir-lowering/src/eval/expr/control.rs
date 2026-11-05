@@ -21,18 +21,9 @@ use cx_mir::{MIRBasicBlockID, MIRValue};
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
-    env::function::{FnContext, LocalLoweringContext, Permission},
-    eval::{
-        EvalResult,
-        binding::eval_scoped,
-        coerce, eval, expr,
-        flow::{self, ComptimeStop, Evaluation},
-        types,
-    },
-    lower::mir,
-    symbol::composite::alike,
-    value::HMIRValue,
+    emit, env::function::{FnContext, LocalLoweringContext, Permission}, eval::{
+        self, EvalResult, binding::eval_scoped, coerce, eval, expr, flow::{self, ComptimeStop, Evaluation}, types,
+    }, lower, symbol::composite::alike, value::HMIRValue,
 };
 
 pub(crate) fn eval_control(
@@ -100,19 +91,19 @@ fn branch(
             }
         }
         FnContext::Runtime(_) => {
-            let then_block = mir::block(context, "if.then");
-            let merge_block = mir::block(context, "if.merge");
+            let then_block = lower::expr::block(context, "if.then");
+            let merge_block = lower::expr::block(context, "if.merge");
 
             let else_block = match else_branch {
-                Some(_) => mir::block(context, "if.else"),
+                Some(_) => lower::expr::block(context, "if.else"),
                 None => merge_block,
             };
 
-            let declared = mir::scoped_places(context);
+            let declared = lower::expr::storage::scoped_places(context);
             let condition = eval_condition(context, body, condition)?.ready()?;
-            mir::branch(context, condition, then_block, else_block, span);
+            lower::expr::branch(context, condition, then_block, else_block, span);
 
-            mir::switch_to(context, then_block);
+            lower::expr::switch_to(context, then_block);
             let place = else_branch.is_some();
             let then_expr = flow::catch_diverged(eval_scoped(context, body, then_branch, place))?;
             let span = span.clone();
@@ -120,22 +111,22 @@ fn branch(
             then_expr.and_then(context, body, None, move |context, body, then, expected| {
                 if let Some(else_branch) = else_branch {
                     let mut arms =
-                        Vec::from_iter(then.map(|value| (mir::current_block(context), value)));
+                        Vec::from_iter(then.map(|value| (lower::expr::current_block(context), value)));
 
-                    mir::switch_to(context, else_block);
+                    lower::expr::switch_to(context, else_block);
                     flow::catch_diverged(eval_scoped(context, body, else_branch, true))?
                         .try_complete(context, body, expected)?
                         .and_then(context, body, None, move |context, _, otherwise, _| {
                             arms.extend(
-                                otherwise.map(|value| (mir::current_block(context), value)),
+                                otherwise.map(|value| (lower::expr::current_block(context), value)),
                             );
-                            let place = mir::scoped_places(context) == declared;
+                            let place = lower::expr::storage::scoped_places(context) == declared;
                             merge(context, arms, place, &span)
                         })
                 } else {
-                    mir::jump(context, merge_block, &span);
-                    mir::switch_to(context, merge_block);
-                    Ok(Evaluation::Ready(expr::unit(context, &span)))
+                    lower::expr::jump(context, merge_block, &span);
+                    lower::expr::switch_to(context, merge_block);
+                    Ok(Evaluation::Ready(eval::expr::unit(context, &span)))
                 }
             })
         }
@@ -153,7 +144,7 @@ pub(crate) fn merge(
     if arms.is_empty() {
         return flow::diverged();
     }
-    let merge = mir::block(context, "if.merge");
+    let merge = lower::expr::block(context, "if.merge");
     let ty = merged_type(context, &arms, span);
     let place = place
         && ty.is_some_and(|ty| {
@@ -162,9 +153,9 @@ pub(crate) fn merge(
         });
     if !place {
         for (block, value) in &mut arms {
-            mir::switch_to(context, *block);
+            lower::expr::switch_to(context, *block);
             *value = coerce::promotion::std_rvalue(context, value.clone(), span)?;
-            *block = mir::current_block(context);
+            *block = lower::expr::current_block(context);
         }
     }
     let ty = match place {
@@ -176,17 +167,17 @@ pub(crate) fn merge(
         None => None,
     };
     for (block, value) in arms {
-        mir::switch_to(context, block);
+        lower::expr::switch_to(context, block);
         if let Some((ty, result)) = ty.zip(result.as_ref()) {
             let value = coerce::implicit::standard(context, value, ty, span)?;
             emit::initialize(context, result, Some(&value), span)?;
         }
-        mir::jump(context, merge, span);
+        lower::expr::jump(context, merge, span);
     }
-    mir::switch_to(context, merge);
+    lower::expr::switch_to(context, merge);
     let result = match result {
-        Some(result) => mir::capture(context, result, span)?,
-        None => expr::unit(context, span),
+        Some(result) => lower::expr::storage::capture(context, result, span)?,
+        None => eval::expr::unit(context, span),
     };
     Ok(Evaluation::Ready(result))
 }
@@ -234,7 +225,7 @@ fn eval_condition(
     let span = body.expr(condition).span();
     let value = eval(context, body, condition)?.ready()?;
     let value = coerce::condition(context, value, span)?;
-    Ok(Evaluation::Ready(mir::value(context, &value, span)?))
+    Ok(Evaluation::Ready(lower::expr::value::standard(context, &value, span)?))
 }
 
 fn logical_operand(
@@ -264,27 +255,27 @@ pub(crate) fn eval_short_circuit(
         };
     }
 
-    let condition = mir::value(context, &left, span)?;
-    let rhs_block = mir::block(context, "logical.rhs");
-    let short_block = mir::block(context, "logical.short");
-    let merge = mir::block(context, "logical.merge");
+    let condition = lower::expr::value::standard(context, &left, span)?;
+    let rhs_block = lower::expr::block(context, "logical.rhs");
+    let short_block = lower::expr::block(context, "logical.short");
+    let merge = lower::expr::block(context, "logical.merge");
     match or {
-        true => mir::branch(context, condition, short_block, rhs_block, span),
-        false => mir::branch(context, condition, rhs_block, short_block, span),
+        true => lower::expr::branch(context, condition, short_block, rhs_block, span),
+        false => lower::expr::branch(context, condition, rhs_block, short_block, span),
     }
 
-    mir::switch_to(context, rhs_block);
+    lower::expr::switch_to(context, rhs_block);
     let right = flow::catch_diverged(logical_operand(context, body, span, rhs))?.ready()?;
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = emit::scratch(context, ty, span)?;
     if let Some(right) = right {
         emit::initialize(context, &result, Some(&right), span)?;
-        mir::jump(context, merge, span);
+        lower::expr::jump(context, merge, span);
     }
 
-    mir::switch_to(context, short_block);
+    lower::expr::switch_to(context, short_block);
     emit::initialize(context, &result, Some(&left), span)?;
-    mir::jump(context, merge, span);
-    mir::switch_to(context, merge);
-    Ok(Evaluation::Ready(mir::capture(context, result, span)?))
+    lower::expr::jump(context, merge, span);
+    lower::expr::switch_to(context, merge);
+    Ok(Evaluation::Ready(lower::expr::storage::capture(context, result, span)?))
 }

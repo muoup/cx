@@ -15,7 +15,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{expr, flow, staged, types},
     log::hmir_error,
-    value::{HMIRPlace, HMIRValue, HMIRValueKind, address::Addressable, constant::HMIRConstant},
+    value::{HMIRPlace, HMIRValue, HMIRValueKind},
 };
 
 pub(crate) fn std_rvalue(
@@ -76,7 +76,9 @@ pub(crate) fn step(
         HMIRTypeKind::Function(_) if !types::comptime_only(env, subject) => {
             address(context, value, subject, span)
         }
-        _ if subject != value.ty() => reference_load(context, value, subject, span),
+        _ if subject != value.ty() => {
+            reference_load(context, value, subject, span).map(Coercion::Applied)
+        }
         _ => Ok(Coercion::Unapplied(value)),
     }
 }
@@ -102,7 +104,7 @@ pub fn reference_load(
     value: HMIRValue,
     inner: HMIRTypeID,
     span: &TokenRange,
-) -> CXResult<Coercion> {
+) -> CXResult<HMIRValue> {
     let env = context.env();
 
     if env.is_nocopy(inner) {
@@ -122,7 +124,7 @@ pub fn reference_load(
         expr::require_impure(context, span, "reading a mutable pointer")?;
     }
 
-    emit::copy(context, value, span).map(Coercion::Applied)
+    emit::copy(context, value, span)
 }
 
 pub(super) fn integer(

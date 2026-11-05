@@ -21,7 +21,7 @@ use crate::{
         flow::{self, Evaluation},
     },
     log::hmir_error,
-    lower::mir,
+    lower,
     value::{Bindings, HMIRValue},
 };
 
@@ -89,7 +89,7 @@ pub(super) fn leave(
 ) -> CXResult<()> {
     for index in (depth..context.runtime().scopes().len()).rev() {
         expand(context, index)?;
-        mir::drop_scope(context, index, span);
+        lower::expr::drop_scope(context, index, span);
     }
     Ok(())
 }
@@ -102,7 +102,11 @@ fn expand(context: &mut LocalLoweringContext, index: usize) -> CXResult<()> {
             .body(defer.expr().body())
             .expect("a deferred expression belongs to its source");
         let scopes = context.runtime_mut().scopes_mut();
-        scopes.push(RuntimeScope::new(None, true), Some(index), Bindings::default());
+        scopes.push(
+            RuntimeScope::new(None, true),
+            Some(index),
+            Bindings::default(),
+        );
         let result = context.relocated(defer.source(), defer.visible_through(), |context| {
             context.with_expectations(defer.expectations(), |context| {
                 deferred(context, body, defer.expr())

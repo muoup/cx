@@ -12,15 +12,11 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    env::function::{FnContext, LocalLoweringContext},
-    eval::{
+    env::function::{FnContext, LocalLoweringContext}, eval::{
         EvalResult, coerce, eval,
         flow::{self, Evaluation},
         types,
-    },
-    log::hmir_error,
-    lower::{mir, types::lower_prototype},
-    value::{
+    }, log::hmir_error, lower::{expr::{self, value}, types::lower_prototype}, value::{
         HMIRValue,
         address::{Addressable, HMIRAddress},
         constant::HMIRConstant,
@@ -36,8 +32,8 @@ pub(crate) fn eval_label(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     if context.is_runtime() && !context.is_unevaluated() {
         let target = context.runtime_mut().label(name);
-        mir::jump(context, target, span);
-        mir::switch_to(context, target);
+        expr::jump(context, target, span);
+        expr::switch_to(context, target);
     }
     eval(context, body, statement)
 }
@@ -50,7 +46,7 @@ pub(super) fn eval_goto(
     jumpable(context, span)?;
     if !context.is_unevaluated() {
         let target = context.runtime_mut().label(name);
-        mir::jump(context, target, span);
+        expr::jump(context, target, span);
     }
     flow::diverged()
 }
@@ -65,7 +61,7 @@ pub(super) fn eval_indirect_goto(
     let value = eval(context, body, target)?.ready()?;
     let ty = address_type(context, true, span);
     let value = coerce::implicit::standard(context, value, ty, span)?;
-    let address = mir::value(context, &value, span)?;
+    let address = value::standard(context, &value, span)?;
     let builder = context.runtime().builder();
     let targets = builder
         .address_labels()

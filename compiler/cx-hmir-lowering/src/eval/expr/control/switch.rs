@@ -12,21 +12,16 @@ use cx_tokens::TokenRange;
 
 use super::{closing, loops::eval_while};
 use crate::{
-    emit::{self, comptime::int},
-    env::function::{
+    emit::{self, comptime::int}, env::function::{
         FnContext, LocalLoweringContext,
         runtime::{Emission, Exit},
-    },
-    eval::{
+    }, eval::{
         EvalResult,
         binding::{eval_block, eval_scoped},
         coerce, eval, eval_comptime, expr,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
         types,
-    },
-    log::hmir_error,
-    lower::mir,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    }, log::hmir_error, lower::{self, expr::value}, value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 struct CaseLabel {
@@ -111,9 +106,9 @@ pub(crate) fn eval_case(
         return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, invalid).into());
     }
     if context.runtime().emission() == Emission::Enabled {
-        mir::jump(context, target, span);
+        lower::expr::jump(context, target, span);
     }
-    mir::switch_to(context, target);
+    lower::expr::switch_to(context, target);
     let span = span.clone();
     eval(context, body, statement)?.map(context, move |context, _| Ok(expr::unit(context, &span)))
 }
@@ -194,13 +189,13 @@ fn runtime_switch(
     integer: HMIRIntType,
     labels: Vec<CaseLabel>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let condition = mir::value(context, &condition, span)?;
-    let exit = mir::block(context, "switch.exit");
+    let condition = value::standard(context, &condition, span)?;
+    let exit = lower::expr::block(context, "switch.exit");
     let mut blocks = Vec::new();
     let mut cases = Vec::new();
     let mut default = exit;
     for label in &labels {
-        let block = mir::block(
+        let block = lower::expr::block(
             context,
             if label.value.is_some() {
                 "switch.case"
@@ -214,7 +209,7 @@ fn runtime_switch(
         }
         blocks.push((label.id, block));
     }
-    let entry = mir::block(context, "switch.body");
+    let entry = lower::expr::block(context, "switch.body");
     let branch = MIRInstructionKind::CaseBranch {
         value: condition,
         signed: int::signed(integer),
@@ -223,7 +218,7 @@ fn runtime_switch(
     };
     context.runtime_mut().emit(branch, span.clone());
 
-    mir::switch_to(context, entry);
+    lower::expr::switch_to(context, entry);
     let scope = emit::open_scope(context, span);
     context
         .runtime_mut()
@@ -235,9 +230,9 @@ fn runtime_switch(
     let completion = flow::finally(context, body, completion, move |context, _, _| {
         emit::close_scope(context, &finish);
         if context.runtime().emission() == Emission::Enabled {
-            mir::jump(context, exit, &finish);
+            lower::expr::jump(context, exit, &finish);
         }
-        mir::switch_to(context, exit);
+        lower::expr::switch_to(context, exit);
         Ok(())
     });
     let span = span.clone();

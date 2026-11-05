@@ -12,17 +12,9 @@ use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
-    env::function::{LocalLoweringContext, Permission},
-    eval::{
-        EvalResult, coerce, eval,
-        expr::{self, require_impure, require_nonsafe},
-        flow::{self, EvalExit, Evaluation},
-        op::{binary_operands, eval_operand},
-        types::{self, qualify},
-    },
-    log::{hmir_error, log_hmir_error},
-    value::HMIRValue,
+    emit, env::function::{LocalLoweringContext, Permission}, eval::{
+        EvalResult, coerce::{self, promotion}, eval, expr::{self, require_impure, require_nonsafe}, flow::{self, EvalExit, Evaluation}, op::{binary_operands, eval_operand}, types::{self, qualify},
+    }, log::{hmir_error, log_hmir_error}, value::HMIRValue,
 };
 
 pub(crate) fn eval_assign(
@@ -313,24 +305,27 @@ pub(crate) fn dereference(
     span: &TokenRange,
     pointer: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let value = (eval(context, body, pointer))?.ready()?;
-    Ok(Evaluation::Ready(dereference_inner(
-        context, value, None, span,
-    )?))
+    let span = span.clone();
+
+    eval(context, body, pointer)?.and_then(context, body, None, move |context, _, value, _| {
+        dereference_hmir(context, value, None, &span)
+            .map(Evaluation::Ready)
+            .map_err(EvalExit::from)
+    })
 }
 
-pub(crate) fn dereference_inner(
+pub(crate) fn dereference_hmir(
     context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointer = coerce::promotion::std_rvalue(context, pointer, span)?;
+    let pointer = promotion::std_rvalue(context, pointer, span)?;
     let Some(inner) = context.env().pointer_inner(pointer.ty()) else {
         let kind = (types::name(context.env(), pointer.ty()), "a pointer".into());
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
     };
+    
     require_nonsafe(context, span, "dereferencing a pointer")?;
-    let storage = emit::dereference(context, pointer, inner, base, span)?;
-    emit::reference(context, &storage, span)
+    emit::dereference(context, pointer, inner, base, span)
 }

@@ -1,13 +1,6 @@
-mod op;
-mod storage;
-mod value;
-
-pub use op::{aggregate, binary, cast, difference, offset, tag, unary};
-pub use storage::{
-    address, adopt, allocate, capture, dereference, field, initialize, invalidate, lift, load, materialize, parameter,
-    scoped_places, scratch, write,
-};
-pub use value::{constant, value};
+pub(crate) mod op;
+pub(crate) mod storage;
+pub(crate) mod value;
 
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_intrinsics::VAIntrinsic;
@@ -39,7 +32,9 @@ pub fn function_address(
     let HMIRValueKind::Constant(function_constant) = function.kind() else {
         unreachable!("a function designator is constant")
     };
-    let cx_mir::MIRConstant::Function(fn_id) = constant(context, function_constant, function.ty(), span)? else {
+    let cx_mir::MIRConstant::Function(fn_id) =
+        value::constant(context, function_constant, function.ty(), span)?
+    else {
         unreachable!("a function designator lowers to a function")
     };
     let (out, result) = output(context, ty, span)?;
@@ -94,9 +89,10 @@ fn intrinsic(
     intrinsic: impl Into<MIRIntrinsic>,
     span: &TokenRange,
 ) {
-    context
-        .runtime_mut()
-        .emit(MIRInstructionKind::IntrinsicOp(intrinsic.into()), span.clone())
+    context.runtime_mut().emit(
+        MIRInstructionKind::IntrinsicOp(intrinsic.into()),
+        span.clone(),
+    )
 }
 
 pub fn assert(
@@ -109,9 +105,12 @@ pub fn assert(
         return Ok(());
     }
 
-    let condition = value(context, condition, span)?;
+    let condition = value::standard(context, condition, span)?;
     let kind = match message {
-        Some(message) => MIRInternalIntrinsic::Assert { condition, message: Some(message.into()) },
+        Some(message) => MIRInternalIntrinsic::Assert {
+            condition,
+            message: Some(message.into()),
+        },
         None => MIRInternalIntrinsic::Assume { condition },
     };
     intrinsic(context, kind, span);
@@ -165,13 +164,18 @@ pub fn call(
             let HMIRValueKind::Constant(constant_value) = function.kind() else {
                 unreachable!("a known function is constant")
             };
-            MIRValue::Constant(constant(context, constant_value, function.ty(), span)?)
+            MIRValue::Constant(value::constant(
+                context,
+                constant_value,
+                function.ty(),
+                span,
+            )?)
         }
-        None => value(context, callee, span)?,
+        None => value::standard(context, callee, span)?,
     };
     let args = args
         .iter()
-        .map(|arg| value(context, arg, span))
+        .map(|arg| value::standard(context, arg, span))
         .collect::<CXResult<_>>()?;
 
     let returns = context.env().resolve_kind(result);
@@ -179,7 +183,10 @@ pub fn call(
         true => (None, HMIRValue::constant(result, HMIRConstant::Unit)),
         false => {
             let register = register(context, result, span)?;
-            (Some(register), slot(context, result, MIRBindable::Register(register)))
+            (
+                Some(register),
+                slot(context, result, MIRBindable::Register(register)),
+            )
         }
     };
     context
@@ -196,19 +203,26 @@ pub fn variadic(
 ) -> CXResult<Option<HMIRValue>> {
     let (instruction, result) = match op {
         VAIntrinsic::Start { list, last } => {
-            let list = value(context, list, span)?;
-            let last = value(context, last, span)?;
+            let list = value::standard(context, list, span)?;
+            let last = value::standard(context, last, span)?;
             (MIRVAIntrinsic::VaStart { list, last }, None)
         }
         VAIntrinsic::End { list } => {
-            let list = value(context, list, span)?;
+            let list = value::standard(context, list, span)?;
             (MIRVAIntrinsic::VaEnd { list }, None)
         }
         VAIntrinsic::Arg { list, ty } => {
-            let list = value(context, list, span)?;
+            let list = value::standard(context, list, span)?;
             let mir_ty = lower_type(context.env_mut(), *ty, span)?;
             let (out, result) = output(context, *ty, span)?;
-            (MIRVAIntrinsic::VaArg { out, list, ty: mir_ty }, Some(result))
+            (
+                MIRVAIntrinsic::VaArg {
+                    out,
+                    list,
+                    ty: mir_ty,
+                },
+                Some(result),
+            )
         }
     };
     intrinsic(context, instruction, span);
@@ -221,7 +235,11 @@ pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usiz
     let scopes = runtime.scopes_mut();
     let parent = scopes.top();
 
-    scopes.push(RuntimeScope::new(Some(scope), false), Some(parent), Bindings::default())
+    scopes.push(
+        RuntimeScope::new(Some(scope), false),
+        Some(parent),
+        Bindings::default(),
+    )
 }
 
 pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {

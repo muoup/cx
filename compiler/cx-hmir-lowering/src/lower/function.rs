@@ -14,7 +14,7 @@ use crate::{
         call::{self, contract},
         flow, types,
     },
-    lower::{mir, types::lower_prototype},
+    lower::{expr, types::lower_prototype},
     value::HMIRValue,
 };
 
@@ -54,7 +54,9 @@ pub(crate) fn lower<'hmir>(
     }
     let root = emit::open_scope(&mut context, span);
     let scopes = context.runtime_mut().scopes_mut();
-    scopes.control_mut(root).set_return(id.brand(), body.visible_through());
+    scopes
+        .control_mut(root)
+        .set_return(id.brand(), body.visible_through());
     let completion = definition(&mut context, function, signature, specialization, span);
     emit::close_scope(&mut context, span);
     flow::top(flow::catch_diverged(completion))?;
@@ -78,13 +80,14 @@ fn definition(
 ) -> EvalResult<flow::Evaluation<HMIRValue>> {
     let body = function.body();
     for (index, (param, local)) in signature.params().iter().zip(function.params()).enumerate() {
-        let bound = specialization.and_then(|specialization| specialization.bindings()[index].as_ref());
+        let bound =
+            specialization.and_then(|specialization| specialization.bindings()[index].as_ref());
         let value = match bound {
             Some(value) => value.clone(),
             None => {
                 let decl = body.local(*local);
                 let reference = types::reference(context.env_mut(), *param.ty(), None, decl.span());
-                mir::parameter(context, *param.ty(), decl.name().cloned(), decl.span())?
+                expr::storage::parameter(context, *param.ty(), decl.name().cloned(), decl.span())?
                     .with_ty(reference)
             }
         };

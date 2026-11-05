@@ -25,7 +25,7 @@ use crate::{
         EvalResult, coerce, eval, eval_type, expr,
         flow::{EvalExit, Evaluation},
         op::{binary_operands, eval_operand},
-        place::dereference_inner,
+        place::dereference_hmir,
         types,
     },
     log::hmir_error,
@@ -57,7 +57,7 @@ pub(crate) fn eval_aggregate(
             };
             let element = binary_operands(context, span, HMIRBinaryOp::Add, base, index)?;
 
-            Ok(Evaluation::Ready(dereference_inner(
+            Ok(Evaluation::Ready(dereference_hmir(
                 context,
                 element,
                 Some(&pointer),
@@ -88,7 +88,7 @@ fn eval_member(
     let indirect = context.env().is_pointer(subject) || context.env().is_array(subject);
 
     let mut value = if indirect {
-        dereference_inner(context, value, None, &span)?
+        dereference_hmir(context, value, None, &span)?
     } else if context.env().is_reference(value.ty()) {
         value
     } else {

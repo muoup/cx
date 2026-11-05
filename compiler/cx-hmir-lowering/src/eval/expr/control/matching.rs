@@ -14,7 +14,7 @@ use cx_tokens::TokenRange;
 
 use super::{closing, merge};
 use crate::{
-    emit,
+    emit::{self, comptime::int},
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
@@ -24,9 +24,11 @@ use crate::{
         types,
     },
     log::hmir_error,
-    lower::mir,
+    lower::{
+        self,
+        expr::{self, value},
+    },
     value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
-    emit::comptime::int
 };
 
 struct Match {
@@ -86,16 +88,16 @@ pub(crate) fn eval_match(
     let result = if context.is_runtime() {
         let blocks = arms
             .iter()
-            .map(|_| mir::block(context, "match.arm"))
+            .map(|_| expr::block(context, "match.arm"))
             .collect::<Vec<_>>();
         let catchall = cases.iter().position(Option::is_none);
         let default = match catchall {
             Some(index) => blocks[index],
-            None => mir::block(context, "match.unreachable"),
+            None => expr::block(context, "match.unreachable"),
         };
         let signed = matches!(context.env().resolve_kind(dispatch.ty()), HMIRTypeKind::Int(ty) if ty.signed());
         let branch = MIRInstructionKind::CaseBranch {
-            value: mir::value(context, &dispatch, span)?,
+            value: value::standard(context, &dispatch, span)?,
             signed,
             cases: cases
                 .iter()
@@ -106,7 +108,7 @@ pub(crate) fn eval_match(
         };
         context.runtime_mut().emit(branch, span.clone());
         if catchall.is_none() {
-            mir::switch_to(context, default);
+            expr::switch_to(context, default);
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Unreachable, span.clone());
@@ -210,11 +212,13 @@ fn bind_arm(
 ) -> CXResult<()> {
     let owned = !context.env().is_reference(subject.ty());
     let ty = context.env().referent(subject.ty());
-    let source = if owned { emit::reference(context, subject, span)? } else { subject.clone() };
+    let source = if owned {
+        emit::reference(context, subject, span)?
+    } else {
+        subject.clone()
+    };
     let consumes = match pattern {
-        HMIRPattern::Binding(local) => {
-            pattern::bind(context, body, *local, source, owned, span)?
-        }
+        HMIRPattern::Binding(local) => pattern::bind(context, body, *local, source, owned, span)?,
         HMIRPattern::Variant { inner, .. } => {
             let Variant { index, payload } = pattern::variant(context, body, ty, pattern, span)?;
             match inner.as_deref() {
@@ -259,8 +263,11 @@ fn lower_arms(
         return merge(context, state.exits, true, &state.span);
     };
 
-    mir::switch_to(context, state.blocks[index]);
-    let declared = context.env().is_reference(state.subject.ty()).then(|| mir::scoped_places(context));
+    expr::switch_to(context, state.blocks[index]);
+    let declared = context
+        .env()
+        .is_reference(state.subject.ty())
+        .then(|| expr::storage::scoped_places(context));
     emit::open_scope(context, body.expr(arm).span());
     bind_arm(context, body, &state.subject, &pattern, &state.span)?;
     let result = arm_value(context, body, arm, &state.span, declared);
@@ -280,7 +287,7 @@ fn lower_arms(
         None,
         move |context, body, value, expected| {
             if let Some(value) = value {
-                state.exits.push((mir::current_block(context), value));
+                state.exits.push((expr::current_block(context), value));
             }
             lower_arms(context, body, state, index + 1, expected)
         },
@@ -298,7 +305,8 @@ fn arm_value(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = span.clone();
     eval(context, body, arm)?.map(context, move |context, value| {
-        let outlives = declared.is_some_and(|declared| mir::scoped_places(context) == declared);
+        let outlives = declared
+            .is_some_and(|declared| lower::expr::storage::scoped_places(context) == declared);
         if outlives && context.env().is_reference(value.ty()) {
             return Ok(value);
         }

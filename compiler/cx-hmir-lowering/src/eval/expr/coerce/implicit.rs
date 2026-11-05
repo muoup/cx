@@ -1,13 +1,20 @@
 use cx_hmir::{
     HMIRFnSignature,
-    ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{
+        HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext, intrinsic::HMIRIntWidth,
+    },
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
 use super::{Coercion, compatible, is_char, is_designator, promotion, qualified, truth};
 use crate::{
-    emit, env::{HMIREnvironment, function::LocalLoweringContext}, eval::{coerce::applied, expr, types}, log::hmir_error, symbol::composite::signatures_alike, value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    emit,
+    env::{HMIREnvironment, function::LocalLoweringContext},
+    eval::{coerce::applied, expr, types},
+    log::hmir_error,
+    symbol::composite::signatures_alike,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) fn standard(
@@ -21,15 +28,30 @@ pub(crate) fn standard(
     applied(context, coercion, source, target, span)
 }
 
-
 // Collapses various indirections to a goal state of a T&. If provided an owned T, it will be materialized
 // such that a reference is produced.
-pub(crate) fn aggregate(env: &HMIREnvironment, value: HMIRValue) -> HMIRValue {
-    match env.resolve_kind(value.ty()) {
-        HMIRTypeKind::ReferenceTo { inner, .. } if env.is_reference(*inner) => todo!(),
+pub(crate) fn aggregate(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let step = match context.env().resolve_kind(value.ty()) {
+        HMIRTypeKind::ReferenceTo { inner, .. } => {
+            if !context.env().is_reference(*inner) {
+                return Ok(value);
+            }
 
-        _ => value,
-    }
+            promotion::reference_load(context, value, *inner, span)?
+        }
+
+        HMIRTypeKind::PointerTo(inner) => {
+            todo!()
+        }
+
+        _ => emit::materialize(context, value, span)?
+    };
+
+    aggregate(context, step, span)
 }
 
 pub(super) fn convert(
@@ -42,7 +64,10 @@ pub(super) fn convert(
     let env = context.env();
     let source = value.ty();
     if let (
-        HMIRTypeKind::Array { element: from, length },
+        HMIRTypeKind::Array {
+            element: from,
+            length,
+        },
         HMIRTypeKind::Undefined(HMIRUndefined::Array { element: to }),
     ) = (env.resolve_kind(source), env.resolve_kind(target))
         && env.same_type(*from, *to)
@@ -57,7 +82,10 @@ pub(super) fn convert(
         (env.resolve_kind(source), env.resolve_kind(target)),
         (HMIRTypeKind::Staged(inner), HMIRTypeKind::Staged(_)) if unreachable(*inner)
     );
-    if unreachable(source) || staged_unreachable || (compatible(env, source, target) && qualified(env, source, target)) {
+    if unreachable(source)
+        || staged_unreachable
+        || (compatible(env, source, target) && qualified(env, source, target))
+    {
         return Ok(Coercion::Applied(value.with_ty(target)));
     }
     match step(context, value, target, span, explicit)? {
@@ -75,17 +103,27 @@ fn step(
 ) -> CXResult<Coercion> {
     let env = context.env();
     let source = value.ty();
-    let (from, to) = (env.resolve_kind(source).clone(), env.resolve_kind(target).clone());
-    if let (HMIRTypeKind::Str | HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) = (env.resolve_kind(env.referent(source)), &to) {
+    let (from, to) = (
+        env.resolve_kind(source).clone(),
+        env.resolve_kind(target).clone(),
+    );
+    if let (HMIRTypeKind::Str | HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) =
+        (env.resolve_kind(env.referent(source)), &to)
+    {
         return promotion::step(context, value, span);
     }
 
     match (&from, &to) {
         (
             HMIRTypeKind::ReferenceTo { inner, .. },
-            HMIRTypeKind::Array { element, .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { element }),
+            HMIRTypeKind::Array { element, .. }
+            | HMIRTypeKind::Undefined(HMIRUndefined::Array { element }),
         ) => {
-            let HMIRTypeKind::Array { element: from, length } = *env.resolve_kind(*inner) else {
+            let HMIRTypeKind::Array {
+                element: from,
+                length,
+            } = *env.resolve_kind(*inner)
+            else {
                 return Ok(Coercion::Unapplied(value));
             };
             let target_length = match &to {
@@ -103,14 +141,24 @@ fn step(
                 Some(_) => target,
                 None => types::array(context.env_mut(), target, length, span),
             };
-            return Ok(Coercion::Applied(emit::copy(context, value, span)?.with_ty(ty)));
+            return Ok(Coercion::Applied(
+                emit::copy(context, value, span)?.with_ty(ty),
+            ));
         }
-        (HMIRTypeKind::ReferenceTo { inner, .. }, HMIRTypeKind::ReferenceTo { .. }) if env.is_reference(*inner) => {
+        (HMIRTypeKind::ReferenceTo { inner, .. }, HMIRTypeKind::ReferenceTo { .. })
+            if env.is_reference(*inner) =>
+        {
             return promotion::step(context, value, span);
         }
         (
-            HMIRTypeKind::ReferenceTo { inner: from, bitfield: Some(_) },
-            HMIRTypeKind::ReferenceTo { inner: to, bitfield: None },
+            HMIRTypeKind::ReferenceTo {
+                inner: from,
+                bitfield: Some(_),
+            },
+            HMIRTypeKind::ReferenceTo {
+                inner: to,
+                bitfield: None,
+            },
         ) if compatible(env, *from, *to) => {
             let usage = "bind a reference to".into();
             return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage));
@@ -119,11 +167,15 @@ fn step(
             return Ok(Coercion::Unapplied(value));
         }
         (HMIRTypeKind::ReferenceTo { .. }, _)
-        | (HMIRTypeKind::Array { .. }, HMIRTypeKind::PointerTo(_)) => return promotion::step(context, value, span),
+        | (HMIRTypeKind::Array { .. }, HMIRTypeKind::PointerTo(_)) => {
+            return promotion::step(context, value, span);
+        }
         (HMIRTypeKind::Staged(_), target) if !matches!(target, HMIRTypeKind::Staged(_)) => {
             return promotion::step(context, value, span);
         }
-        (_, HMIRTypeKind::ReferenceTo { inner, .. }) => return bind(context, value, *inner, target, span),
+        (_, HMIRTypeKind::ReferenceTo { inner, .. }) => {
+            return bind(context, value, *inner, target, span);
+        }
         (HMIRTypeKind::Str, HMIRTypeKind::Array { element, length }) => {
             return string(context, value, target, *element, Some(*length), span);
         }
@@ -142,9 +194,10 @@ fn step(
         {
             Coercion::Applied(HMIRValue::constant(target, HMIRConstant::Null))
         }
-        (HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(to))
-            if to.width() == HMIRIntWidth::I1 =>
-        {
+        (
+            HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_),
+            HMIRTypeKind::Int(to),
+        ) if to.width() == HMIRIntWidth::I1 => {
             truth(context, value, span)?.map(|value| value.with_ty(target))
         }
         (HMIRTypeKind::Int(from), HMIRTypeKind::Int(to)) if from.width() == to.width() => {
@@ -163,7 +216,9 @@ fn step(
         {
             Coercion::Applied(value.with_ty(target))
         }
-        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => discard(context, value, target, span, explicit)?,
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => {
+            discard(context, value, target, span, explicit)?
+        }
         _ => Coercion::Unapplied(value),
     })
 }
@@ -183,7 +238,9 @@ fn bind(
         true => value,
         false => emit::temporary(context, value, span)?,
     };
-    Ok(Coercion::Applied(emit::address(context, &storage, target, span)?))
+    Ok(Coercion::Applied(emit::address(
+        context, &storage, target, span,
+    )?))
 }
 
 fn string(
@@ -213,7 +270,10 @@ fn string(
         None => types::array(context.env_mut(), target, bound, span),
         Some(_) => target,
     };
-    Ok(Coercion::Applied(HMIRValue::constant(ty, HMIRConstant::Aggregate(items))))
+    Ok(Coercion::Applied(HMIRValue::constant(
+        ty,
+        HMIRConstant::Aggregate(items),
+    )))
 }
 
 fn discard(
@@ -223,7 +283,10 @@ fn discard(
     span: &TokenRange,
     explicit: bool,
 ) -> CXResult<Coercion> {
-    fn signature<'a>(env: &'a HMIREnvironment, ty: HMIRTypeID) -> Option<&'a HMIRFnSignature<HMIRTypeID>> {
+    fn signature<'a>(
+        env: &'a HMIREnvironment,
+        ty: HMIRTypeID,
+    ) -> Option<&'a HMIRFnSignature<HMIRTypeID>> {
         match env.resolve_kind(env.pointer_inner(ty)?) {
             HMIRTypeKind::Function(signature) => Some(signature),
             _ => None,

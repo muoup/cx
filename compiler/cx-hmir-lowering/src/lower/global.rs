@@ -3,7 +3,9 @@ use cx_hmir::{
     ty::{HMIRTypeID, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue};
-use cx_mir::{MIRGlobalID, MIRGlobalRef, MIRGlobalState, MIRGlobalVariable, ty::interface::MTRegistry};
+use cx_mir::{
+    MIRGlobalID, MIRGlobalRef, MIRGlobalState, MIRGlobalVariable, ty::interface::MTRegistry,
+};
 use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
 
@@ -13,7 +15,7 @@ use crate::{
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
     log::hmir_error,
-    lower::{mir, types::lower_type},
+    lower::{expr::value, types::lower_type},
     symbol,
     value::HMIRValueKind,
 };
@@ -89,7 +91,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
                 unreachable!("an exported comptime value is a constant")
             };
             let span = source.body().expr(initializer).span();
-            let constant = mir::constant(&mut context, constant, value.ty(), span)?;
+            let constant = value::constant(&mut context, constant, value.ty(), span)?;
             MIRGlobalState::Initialized(constant)
         }
         None => MIRGlobalState::ZeroInitialized,

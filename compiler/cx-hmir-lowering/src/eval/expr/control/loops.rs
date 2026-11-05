@@ -4,16 +4,12 @@ use cx_tokens::TokenRange;
 
 use super::{closing, comptime_truth, eval_condition};
 use crate::{
-    emit,
-    env::function::{LocalLoweringContext, runtime::Exit},
-    eval::{
+    emit, env::function::{LocalLoweringContext, runtime::Exit}, eval::{
         EvalResult,
         binding::eval_scoped,
         eval, expr,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
-    },
-    lower::mir,
-    value::HMIRValue,
+    }, lower, value::HMIRValue,
 };
 
 pub(crate) fn eval_for(
@@ -58,11 +54,11 @@ pub(crate) fn eval_while(
         );
     }
 
-    let condition_block = mir::block(context, "loop.condition");
-    let body_block = mir::block(context, "loop.body");
-    let increment_block = increment.map(|_| mir::block(context, "loop.increment"));
-    let exit = mir::block(context, "loop.exit");
-    mir::jump(
+    let condition_block = lower::expr::block(context, "loop.condition");
+    let body_block = lower::expr::block(context, "loop.body");
+    let increment_block = increment.map(|_| lower::expr::block(context, "loop.increment"));
+    let exit = lower::expr::block(context, "loop.exit");
+    lower::expr::jump(
         context,
         if pre_eval {
             condition_block
@@ -72,7 +68,7 @@ pub(crate) fn eval_while(
         span,
     );
 
-    mir::switch_to(context, condition_block);
+    lower::expr::switch_to(context, condition_block);
     let scope = emit::open_scope(context, span);
     let Some(condition) =
         flow::catch_diverged(eval_condition(context, body, condition))?.ready()?
@@ -81,7 +77,7 @@ pub(crate) fn eval_while(
             .into_iter()
             .flatten()
         {
-            mir::switch_to(context, block);
+            lower::expr::switch_to(context, block);
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Unreachable, span.clone());
@@ -89,7 +85,7 @@ pub(crate) fn eval_while(
         emit::close_scope(context, span);
         return flow::diverged();
     };
-    mir::branch(context, condition, body_block, exit, span);
+    lower::expr::branch(context, condition, body_block, exit, span);
 
     let continue_block = increment_block.unwrap_or(condition_block);
     let exits = Exit::new(exit, Some(continue_block), Vec::new());
@@ -99,19 +95,19 @@ pub(crate) fn eval_while(
         .control_mut(scope)
         .set_exit(exits);
 
-    mir::switch_to(context, body_block);
+    lower::expr::switch_to(context, body_block);
     let completion = flow::catch_diverged(eval_scoped(context, body, loop_body, false));
     emit::close_scope(context, span);
     completion?.ready()?;
-    mir::jump(context, continue_block, span);
+    lower::expr::jump(context, continue_block, span);
 
     if let (Some(block), Some(increment)) = (increment_block, increment) {
-        mir::switch_to(context, block);
+        lower::expr::switch_to(context, block);
         flow::catch_diverged(eval(context, body, increment))?.ready()?;
-        mir::jump(context, condition_block, span);
+        lower::expr::jump(context, condition_block, span);
     }
 
-    mir::switch_to(context, exit);
+    lower::expr::switch_to(context, exit);
     Ok(Evaluation::Ready(expr::unit(context, span)))
 }
 

@@ -85,10 +85,8 @@ pub(crate) fn read(
         .env()
         .reference_inner(value.ty())
         .expect("a read value is a reference");
-    match promotion::reference_load(context, value, inner, span)? {
-        Coercion::Applied(value) => Ok(value),
-        Coercion::Unapplied(_) => unreachable!("an lvalue read always applies"),
-    }
+
+    promotion::reference_load(context, value, inner, span)
 }
 
 // Collapses a type T&...& to T&, any non-reference type remains unchanged

@@ -23,7 +23,7 @@ use crate::{
     },
 };
 
-pub fn value(
+pub fn standard(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
@@ -60,7 +60,7 @@ pub fn value(
             }
         },
         HMIRValueKind::Indirect(pointer) => MIRValue::Indirect {
-            value: Box::new(self::value(context, pointer, span)?),
+            value: Box::new(self::standard(context, pointer, span)?),
             ty: lower_type(context.env_mut(), value.ty(), span)?,
         },
     })

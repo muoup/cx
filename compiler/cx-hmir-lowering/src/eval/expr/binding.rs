@@ -11,19 +11,9 @@ use cx_log::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
-    env::function::{FnContext, LocalLoweringContext},
-    eval::{
-        EvalResult, coerce,
-        control::{self, closing},
-        deduce, eval, eval_type, expr,
-        expr::place,
-        flow::{self, ComptimeStop, EvalExit, Evaluation, RuntimeStop, StopReason},
-        staged, types,
-    },
-    log::hmir_error,
-    lower::mir,
-    value::HMIRValue,
+    emit, env::function::{FnContext, LocalLoweringContext}, eval::{
+        EvalResult, coerce, control::{self, closing}, deduce, eval, eval_type, expr::{self, place}, flow::{self, ComptimeStop, EvalExit, Evaluation, RuntimeStop, StopReason}, staged, types,
+    }, log::hmir_error, lower, value::HMIRValue,
 };
 
 pub(crate) fn eval_local(
@@ -231,7 +221,7 @@ fn yielded(
     }
     let span = span.clone();
     flow::catch_diverged(result)?.and_then(context, body, None, move |context, _, value, _| {
-        let block = mir::current_block(context);
+        let block = lower::expr::current_block(context);
         let mut exits = context.runtime_mut().scopes_mut().control_mut(scope).end_yield();
         match value {
             Some(value) if exits.is_empty() => return Ok(Evaluation::Ready(value)),
@@ -308,8 +298,8 @@ fn eval_statements(
 // Code after a divergence is still checked, in a block nothing jumps to unless a label or case inside it is entered
 fn unreachable(context: &mut LocalLoweringContext) {
     if !context.is_unevaluated() {
-        let block = mir::block(context, "unreachable");
-        mir::switch_to(context, block);
+        let block = lower::expr::block(context, "unreachable");
+        lower::expr::switch_to(context, block);
     }
 }
 
