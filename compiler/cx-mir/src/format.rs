@@ -14,7 +14,7 @@ use crate::{
         },
     },
     ty::{
-        MIRBitfieldAccess, MIRField, MIRFloatType, MIRIntType, MIRTypeID, MIRTypeKind,
+        MIRBitfieldAccess, MIRField, MIRFloatType, MIRIncompleteTag, MIRIntType, MIRTypeID, MIRTypeKind,
         interface::MTRegistry,
     },
     unit::{
@@ -212,11 +212,6 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
                 self.write(f, *inner)?;
                 write!(f, "; {length}]")
             }
-            MIRTypeKind::IncompleteArray { inner } => {
-                f.write_str("[")?;
-                self.write(f, *inner)?;
-                f.write_str("]")
-            }
             MIRTypeKind::Structured { fields } => {
                 f.write_str("struct {")?;
                 self.write_fields(f, fields)?;
@@ -243,8 +238,25 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
                 f.write_str(") -> ")?;
                 self.write(f, signature.return_type())
             }
-            MIRTypeKind::Opaque { size, .. } => write!(f, "opaque[{size} bytes]"),
-            MIRTypeKind::Undefined => f.write_str("undefined"),
+            MIRTypeKind::Incomplete(metadata) => {
+                f.write_str("incomplete ")?;
+                match metadata.tag {
+                    MIRIncompleteTag::Struct => f.write_str("struct")?,
+                    MIRIncompleteTag::Union => f.write_str("union")?,
+                    MIRIncompleteTag::TaggedUnion => f.write_str("tagged union")?,
+                    MIRIncompleteTag::Enum => f.write_str("enum")?,
+                    MIRIncompleteTag::Builtin => f.write_str("builtin")?,
+                    MIRIncompleteTag::Array { element } => {
+                        f.write_str("[")?;
+                        self.write(f, element)?;
+                        f.write_str("]")?;
+                    }
+                }
+                match metadata.layout {
+                    Some(layout) => write!(f, "[{} bytes]", layout.size()),
+                    None => Ok(()),
+                }
+            }
         }
     }
 

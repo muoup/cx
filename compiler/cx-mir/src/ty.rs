@@ -26,10 +26,6 @@ impl MIRType {
         Self { kind, metadata }
     }
 
-    pub fn undefined() -> Self {
-        Self::new(MIRTypeKind::Undefined)
-    }
-
     pub fn kind(&self) -> &MIRTypeKind {
         &self.kind
     }
@@ -59,6 +55,30 @@ impl MIRTypeMetadata {
 
     pub const fn is_empty(self) -> bool {
         self.0 == 0
+    }
+}
+
+// Interacting with an incomplete type requires an operation that asserts what the type cannot provide;
+// the tag only lets headers rebuild its declaration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MIRIncompleteMetadata {
+    pub tag: MIRIncompleteTag,
+    pub layout: Option<MIRTypeLayout>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MIRIncompleteTag {
+    Struct,
+    Union,
+    TaggedUnion,
+    Enum,
+    Array { element: MIRTypeID },
+    Builtin,
+}
+
+impl MIRIncompleteMetadata {
+    pub fn new(tag: MIRIncompleteTag) -> Self {
+        Self { tag, layout: None }
     }
 }
 
@@ -183,17 +203,20 @@ pub struct MIRBitfieldAccess {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRTypeKind {
     Void,
+
     Integer { ty: MIRIntType },
     Float { ty: MIRFloatType },
+
     Structured { fields: Vec<MIRField> },
     Union { variants: Vec<MIRField> },
     TaggedUnion { variants: Vec<MIRField> },
+
     PointerTo { inner: MIRTypeID },
     MemoryReference { inner: MIRTypeID },
     Array { length: usize, inner: MIRTypeID },
-    IncompleteArray { inner: MIRTypeID },
     Function { signature: MIRFnSignature },
-    Opaque { size: usize, alignment: usize },
-    Undefined,
+
+    Incomplete(MIRIncompleteMetadata),
+
     Str,
 }

@@ -1,5 +1,6 @@
 use rustc_hash::FxHashMap;
 
+use cx_hir::ast::types::HIRTagKind;
 use cx_hmir::ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics};
 use cx_mir::MIRTypeID;
 use cx_tokens::TokenRange;
@@ -16,7 +17,7 @@ use memo::{MemoContext, MemoContextID, MemoEntry, MemoID, MemoKey};
 #[derive(Debug, Default)]
 struct TypeState {
     realized: Option<HMIRType>,
-    incomplete: bool,
+    incomplete: Option<HIRTagKind>,
     prepared: bool,
     lowered: Option<MIRTypeID>,
 }
@@ -129,7 +130,7 @@ impl HMIRResolver {
     pub fn complete_type(&mut self, id: HMIRTypeID, ty: HMIRType) {
         let state = self.state_mut(id);
         state.realized = Some(ty);
-        state.incomplete = false;
+        state.incomplete = None;
     }
 
     pub fn alias_type(&mut self, id: HMIRTypeID, target: HMIRTypeID, span: &TokenRange) {
@@ -143,6 +144,7 @@ impl HMIRResolver {
     pub fn forward_type(
         &mut self,
         id: HMIRTypeID,
+        tag: HIRTagKind,
         semantics: HMIRTypeSemantics,
         span: &TokenRange,
         name: Option<String>,
@@ -152,14 +154,17 @@ impl HMIRResolver {
             alignment: 1,
         };
         self.complete_type(id, HMIRType::new(kind, semantics, span.clone(), name));
-        self.mark_incomplete(id);
+        self.mark_incomplete(id, tag);
     }
 
-    pub fn mark_incomplete(&mut self, id: HMIRTypeID) {
-        self.state_mut(id).incomplete = true;
+    pub fn mark_incomplete(&mut self, id: HMIRTypeID, tag: HIRTagKind) {
+        self.state_mut(id).incomplete = Some(tag);
+    }
+    pub fn incomplete_tag(&self, id: HMIRTypeID) -> Option<HIRTagKind> {
+        self.state(id)?.incomplete
     }
     pub fn is_incomplete(&self, id: HMIRTypeID) -> bool {
-        self.state(id).is_some_and(|state| state.incomplete)
+        self.incomplete_tag(id).is_some()
     }
     pub fn prepared(&self, ty: HMIRTypeID) -> bool {
         self.state(ty).is_some_and(|state| state.prepared)

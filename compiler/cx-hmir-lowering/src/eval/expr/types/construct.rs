@@ -1,3 +1,4 @@
+use cx_hir::ast::types::HIRTagKind;
 use cx_hmir::{
     HMIRBody,
     expr::HMIRExprID,
@@ -33,26 +34,31 @@ pub(crate) fn construct_type(
     memo: MemoID,
 ) -> CXResult<HMIRTypeID> {
     let id = HMIRResolver::type_id(memo);
-    let forward = context.env().resolver().is_incomplete(id)
-        && matches!(ty.kind(), HMIRExprTypeKind::Opaque { .. });
+    let forward = context
+        .env()
+        .resolver()
+        .incomplete_tag(id)
+        .filter(|_| matches!(ty.kind(), HMIRExprTypeKind::Opaque { .. }));
     let semantics = ty.semantics().map(|declared| {
         CXResult::Ok(match declared {
             HMIRDeclaredMove::Explicit(semantics) => *semantics,
             HMIRDeclaredMove::CopyTraits(_) => HMIRMoveSemantics::default(),
         })
     })?;
-    let aggregate = matches!(
-        ty.kind(),
-        HMIRExprTypeKind::Struct { .. }
-            | HMIRExprTypeKind::Union { .. }
-            | HMIRExprTypeKind::TaggedUnion { .. }
-    );
-    if aggregate {
+    // A tagged union shares the union tag namespace
+    let aggregate = match ty.kind() {
+        HMIRExprTypeKind::Struct { .. } => Some(HIRTagKind::Struct),
+        HMIRExprTypeKind::Union { .. } | HMIRExprTypeKind::TaggedUnion { .. } => {
+            Some(HIRTagKind::Union)
+        }
+        _ => None,
+    };
+    if let Some(tag) = aggregate {
         let name = ty.debug_name().map(str::to_owned);
         context
             .env_mut()
             .resolver_mut()
-            .forward_type(id, semantics, ty.decl_span(), name);
+            .forward_type(id, tag, semantics, ty.decl_span(), name);
         let value = type_value(context, id, ty.decl_span())?;
         context.env_mut().resolver_mut().publish(memo, value);
     }
@@ -95,8 +101,8 @@ pub(crate) fn construct_type(
         _ => evaluate(context, body, ty, move_semantics)?,
     };
     context.env_mut().resolver_mut().complete_type(id, complete);
-    if forward {
-        context.env_mut().resolver_mut().mark_incomplete(id);
+    if let Some(tag) = forward {
+        context.env_mut().resolver_mut().mark_incomplete(id, tag);
     }
     types::validate(context.env(), context.env().resolve_type_id(id))?;
     Ok(id)

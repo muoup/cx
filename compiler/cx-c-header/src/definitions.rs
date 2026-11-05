@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 
 use cx_mir::{
-    MIRField, MIRTypeID, MIRTypeKind,
+    MIRField, MIRIncompleteTag, MIRTypeID, MIRTypeKind,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 
@@ -38,7 +38,14 @@ impl<'a> Definitions<'a> {
         let kind = definition_kind(self.types, ty);
         match kind {
             MIRTypeKind::PointerTo { inner } | MIRTypeKind::MemoryReference { inner } => self.deferred.push(*inner),
-            MIRTypeKind::Array { inner, .. } | MIRTypeKind::IncompleteArray { inner } => self.visit(*inner),
+            MIRTypeKind::Array { inner, .. } => self.visit(*inner),
+            MIRTypeKind::Incomplete(metadata) => match (metadata.tag, aggregate_keyword(kind)) {
+                (MIRIncompleteTag::Array { element }, _) => self.visit(element),
+                (_, Some(keyword)) => {
+                    self.forward.insert(format!("{keyword} {}", aggregate_name(self.types, ty)));
+                }
+                (_, None) => {}
+            },
             MIRTypeKind::Function { signature } => {
                 self.visit(signature.return_type());
                 for param in signature.params() {

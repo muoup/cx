@@ -131,7 +131,6 @@ pub(crate) fn compute_layout<Registry: MTRegistry>(
                 element.alignment,
             )
         }
-        MIRTypeKind::IncompleteArray { .. } => panic!("incomplete array has no layout"),
         MIRTypeKind::Structured { fields } => layout_fields(fields, false, &mut *child).1,
         MIRTypeKind::Union { variants } => layout_fields(variants, true, &mut *child).1,
         MIRTypeKind::TaggedUnion { variants } => {
@@ -141,9 +140,10 @@ pub(crate) fn compute_layout<Registry: MTRegistry>(
                 data.alignment,
             )
         }
-        MIRTypeKind::Opaque { size, alignment } => MIRTypeLayout::new(*size, *alignment),
+        MIRTypeKind::Incomplete(metadata) => metadata
+            .layout
+            .unwrap_or_else(|| panic!("incomplete MIR type {ty} has no layout")),
         MIRTypeKind::Str => MIRTypeLayout::new(1, 1),
-        MIRTypeKind::Undefined => panic!("undefined MIR type {ty} has no layout"),
     };
 
     let alignment = layout.alignment.max(1);

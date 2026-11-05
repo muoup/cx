@@ -1,6 +1,6 @@
 use rustc_hash::FxHashSet;
 
-use crate::ty::{MIRField, MIRTypeID, MIRTypeKind, interface::MTRegistry};
+use crate::ty::{MIRField, MIRIncompleteTag, MIRTypeID, MIRTypeKind, interface::MTRegistry};
 
 pub(crate) fn same_type_inner<T: MTRegistry>(
     registry: &T,
@@ -30,9 +30,7 @@ fn same_kind<T: MTRegistry>(
     right: &MIRTypeKind,
 ) -> bool {
     match (left, right) {
-        (MIRTypeKind::Void, MIRTypeKind::Void)
-        | (MIRTypeKind::Undefined, MIRTypeKind::Undefined)
-        | (MIRTypeKind::Str, MIRTypeKind::Str) => true,
+        (MIRTypeKind::Void, MIRTypeKind::Void) | (MIRTypeKind::Str, MIRTypeKind::Str) => true,
         (MIRTypeKind::Integer { ty: left }, MIRTypeKind::Integer { ty: right }) => left == right,
         (MIRTypeKind::Float { ty: left }, MIRTypeKind::Float { ty: right }) => left == right,
         (MIRTypeKind::Structured { fields: left }, MIRTypeKind::Structured { fields: right })
@@ -67,10 +65,6 @@ fn same_kind<T: MTRegistry>(
             left_length == right_length
                 && same_type_inner(registry, compared, *left_inner, *right_inner)
         }
-        (
-            MIRTypeKind::IncompleteArray { inner: left },
-            MIRTypeKind::IncompleteArray { inner: right },
-        ) => same_type_inner(registry, compared, *left, *right),
         (MIRTypeKind::Function { signature: left }, MIRTypeKind::Function { signature: right }) => {
             left.variadic() == right.variadic()
                 && same_type_inner(registry, compared, left.return_type(), right.return_type())
@@ -81,16 +75,16 @@ fn same_kind<T: MTRegistry>(
                     .zip(right.params())
                     .all(|(left, right)| same_type_inner(registry, compared, left.ty(), right.ty()))
         }
-        (
-            MIRTypeKind::Opaque {
-                size: left_size,
-                alignment: left_alignment,
-            },
-            MIRTypeKind::Opaque {
-                size: right_size,
-                alignment: right_alignment,
-            },
-        ) => left_size == right_size && left_alignment == right_alignment,
+        (MIRTypeKind::Incomplete(left), MIRTypeKind::Incomplete(right)) => {
+            left.layout == right.layout
+                && match (left.tag, right.tag) {
+                    (
+                        MIRIncompleteTag::Array { element: left },
+                        MIRIncompleteTag::Array { element: right },
+                    ) => same_type_inner(registry, compared, left, right),
+                    (left, right) => left == right,
+                }
+        }
         _ => false,
     }
 }

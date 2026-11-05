@@ -160,19 +160,14 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
 
-    if let MIRTypeKind::IncompleteArray { inner } = definition.kind() {
-        let element = convert_type(*inner, types);
-        return LMIRType {
-            alignment: element.alignment,
-            kind: LMIRTypeKind::Array {
-                element: Box::new(element),
-                size: 0,
-            },
-        };
+    if let MIRTypeKind::Incomplete(metadata) = definition.kind() {
+        let (bytes, alignment) = metadata
+            .layout
+            .map_or((0, 1), |layout| (layout.size(), layout.alignment()));
+        return LMIRType::new(LMIRTypeKind::Opaque { bytes }, alignment as u8);
     }
 
     let kind = match &definition.kind() {
-        MIRTypeKind::Opaque { size, .. } => LMIRTypeKind::Opaque { bytes: *size },
         MIRTypeKind::Integer { ty, .. } => LMIRTypeKind::Integer(convert_integer_type(*ty)),
         MIRTypeKind::Float { ty } => LMIRTypeKind::Float(convert_float_type(*ty)),
         MIRTypeKind::Function { .. }
@@ -199,7 +194,6 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
             element: Box::new(storage_type(*inner, types)),
             size: *length,
         },
-        MIRTypeKind::IncompleteArray { .. } => unreachable!(),
         MIRTypeKind::Structured { fields } => LMIRTypeKind::Struct {
             name: format!("mir_type_{}", ty.index()),
             fields: struct_members(ty, fields, types).fields,
@@ -209,7 +203,7 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
         },
         MIRTypeKind::Void => LMIRTypeKind::Void,
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
-        MIRTypeKind::Undefined => panic!("cannot lower undefined MIR type {ty}"),
+        MIRTypeKind::Incomplete(_) => unreachable!("incomplete types are converted above"),
     };
 
     LMIRType {

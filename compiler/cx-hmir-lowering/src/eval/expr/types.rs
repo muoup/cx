@@ -256,6 +256,7 @@ pub(crate) fn bitfield(env: &HMIREnvironment, value: &HMIRValue) -> Option<HMIRB
 pub(crate) fn comptime_only(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     match env.resolve_kind(ty) {
         HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => true,
+        
         HMIRTypeKind::Function(signature) => {
             signature.stage() == HMIRFunctionStage::Comptime
                 || signature

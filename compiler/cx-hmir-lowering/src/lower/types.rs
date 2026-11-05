@@ -1,20 +1,17 @@
+use cx_hir::ast::types::HIRTagKind;
 use cx_hmir::{
-    HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage,
-    ty::{
-        HMIRTypeID, HMIRTypeKind,
-        aggregate::HMIRFieldDef,
-        context::HMIRTypeContext,
-        intrinsic::{HMIRFloatWidth, HMIRIntWidth},
-    },
-    unit::def::HMIRDeclarationPoint,
+    HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage, ty::{
+        HMIRTypeID, HMIRTypeKind, aggregate::HMIRFieldDef, context::HMIRTypeContext, intrinsic::{HMIRFloatWidth, HMIRIntWidth},
+    }, unit::def::HMIRDeclarationPoint,
 };
 use cx_log::{
     CXResult,
     catalogue::{mir, typecheck},
 };
 use cx_mir::{
-    MIRField, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRType,
-    MIRTypeID, MIRTypeKind, MIRTypeMetadata,
+    MIRField, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIncompleteMetadata,
+    MIRIncompleteTag, MIRIntType, MIRType, MIRTypeLayout,
+    MIRTypeID, MIRTypeKind, MIRTypeMetadata, ty::interface::MTRegistry,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -24,7 +21,7 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
-    eval::types::{comptime_only, name},
+    eval::types::{comptime_only, name, validate},
     log::{hmir_error, log_hmir_error},
     symbol,
 };
@@ -90,9 +87,83 @@ pub(crate) fn lower_type(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
+    let underlying = settle(env, ty, span)?;
+    let metadata = lower_metadata(env, ty);
+    let base = match env.resolver().lowered_type(underlying) {
+        Some(id) => id,
+        None => lower_underlying(env, underlying, span)?,
+    };
+
+    Ok(qualify(env, base, metadata))
+}
+
+// Evaluates a pending definition of 'ty', which may alias it to another type
+fn settle(env: &mut HMIREnvironment, ty: HMIRTypeID, span: &TokenRange) -> CXResult<HMIRTypeID> {
+    LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
+        .force_type(ty, span)?;
+
+    Ok(env.underlying(ty))
+}
+
+// C qualifies the elements of a qualified array rather than the array itself
+fn qualify(env: &mut HMIREnvironment, base: MIRTypeID, metadata: MIRTypeMetadata) -> MIRTypeID {
+    if metadata.is_empty() {
+        return base;
+    }
+
+    let resolved = env.module().resolve_type(base);
+    match *resolved.kind() {
+        MIRTypeKind::Array { length, inner } => {
+            let inner = qualify(env, inner, metadata);
+            env.module_mut()
+                .intern_type(MIRType::new(MIRTypeKind::Array { length, inner }))
+        }
+        
+        MIRTypeKind::Incomplete(MIRIncompleteMetadata {
+            tag: MIRIncompleteTag::Array { element },
+            layout,
+        }) => {
+            let element = qualify(env, element, metadata);
+            let tag = MIRIncompleteTag::Array { element };
+            env.module_mut().intern_type(MIRType::new(MIRTypeKind::Incomplete(
+                MIRIncompleteMetadata { tag, layout },
+            )))
+        }
+
+        _ => {
+            // Specifiers are monotonic, thus if the to-be-added is a subset of the already added, we can
+            // just reuse the base.
+            if resolved.metadata().contains(metadata) {
+                return base;
+            }
+            
+            if let Some(id) = env.module().qualified(base, metadata) {
+                return id;
+            }
+
+            let ty = qualified_copy(env, base, metadata);
+            let debug_name = env.module().debug_name(base).map(str::to_string);
+            let id = env.module_mut().add_type(ty, debug_name);
+            env.module_mut().cache_qualified(base, metadata, id);
+
+            id
+        }
+    }
+}
+
+// A copy of an aggregate still being lowered is incomplete, and is redefined alongside it
+fn qualified_copy(env: &HMIREnvironment, base: MIRTypeID, metadata: MIRTypeMetadata) -> MIRType {
+    let resolved = env.module().resolve_type(base);
+    MIRType::qualified(resolved.kind().clone(), resolved.metadata().with(metadata))
+}
+
+fn lower_metadata(
+    env: &mut HMIREnvironment,
+    ty: HMIRTypeID,
+) -> MIRTypeMetadata {
     let semantics = env.semantics(ty);
     let mut metadata = MIRTypeMetadata::NONE;
-    
+
     if semantics.constant {
         metadata = metadata.with(MIRTypeMetadata::CONST);
     }
@@ -100,8 +171,7 @@ pub(crate) fn lower_type(
         metadata = metadata.with(MIRTypeMetadata::VOLATILE);
     }
 
-    let base = lower_underlying(env, ty, span)?;
-    Ok(env.module_mut().qualify(base, metadata))
+    metadata
 }
 
 fn lower_underlying(
@@ -109,34 +179,42 @@ fn lower_underlying(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
-    if let Some(id) = env.resolver().lowered_type(env.underlying(ty)) {
-        return Ok(id);
-    }
-    {
-        let mut context =
-            LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()));
-        context.prepare_type(ty, span)?;
-    }
-    let ty = env.underlying(ty);
-    if let Some(id) = env.resolver().lowered_type(ty) {
-        return Ok(id);
-    }
     if comptime_only(env, ty) {
         return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, name(env, ty));
     }
+    validate(env, env.resolve_type_id(ty))?;
 
     let kind = match env.resolve_kind(ty).clone() {
         HMIRTypeKind::Struct { fields } => {
             let kind = |fields| MIRTypeKind::Structured { fields };
-            return lower_aggregate(env, ty, &fields, kind, span);
+            return lower_aggregate(env, ty, &fields, MIRIncompleteTag::Struct, kind, span);
         }
         HMIRTypeKind::Union { fields } => {
             let kind = |variants| MIRTypeKind::Union { variants };
-            return lower_aggregate(env, ty, &fields, kind, span);
+            return lower_aggregate(env, ty, &fields, MIRIncompleteTag::Union, kind, span);
         }
         HMIRTypeKind::TaggedUnion { fields } => {
             let kind = |variants| MIRTypeKind::TaggedUnion { variants };
-            return lower_aggregate(env, ty, &fields, kind, span);
+            return lower_aggregate(env, ty, &fields, MIRIncompleteTag::TaggedUnion, kind, span);
+        }
+        HMIRTypeKind::Opaque { size, alignment } => {
+            let name = env.resolve_type_id(ty).debug_name().map(str::to_string);
+            let (metadata, debug_name) = match env.resolver().incomplete_tag(ty) {
+                // A forward tag is named by its tagged symbol, which carries the tag as a prefix
+                Some(tag) => {
+                    let name = name.map(|name| match name.strip_prefix(tag.prefix()) {
+                        Some(bare) => bare.trim_start().to_string(),
+                        None => name,
+                    });
+                    (MIRIncompleteMetadata::new(mir_tag(tag)), name)
+                }
+                None => {
+                    let layout = Some(MIRTypeLayout::new(size, alignment));
+                    (MIRIncompleteMetadata { tag: MIRIncompleteTag::Builtin, layout }, name)
+                }
+            };
+            let incomplete = MIRType::new(MIRTypeKind::Incomplete(metadata));
+            return Ok(lower_named(env, ty, incomplete, debug_name));
         }
         HMIRTypeKind::Nominal(_) => unreachable!("an underlying type is not nominal"),
 
@@ -164,13 +242,14 @@ fn lower_underlying(
                     length: length as usize,
                     inner,
                 },
-                None => MIRTypeKind::IncompleteArray { inner },
+                None => MIRTypeKind::Incomplete(MIRIncompleteMetadata::new(
+                    MIRIncompleteTag::Array { element: inner },
+                )),
             }
         }
         HMIRTypeKind::Function(signature) => MIRTypeKind::Function {
             signature: lower_signature(env, &signature, span)?,
         },
-        HMIRTypeKind::Opaque { size, alignment } => MIRTypeKind::Opaque { size, alignment },
     };
 
     let id = env.module_mut().intern_type(MIRType::new(kind));
@@ -178,15 +257,30 @@ fn lower_underlying(
     Ok(id)
 }
 
+// Named types keep their identity, so two with the same shape are never interned together
+fn lower_named(
+    env: &mut HMIREnvironment,
+    ty: HMIRTypeID,
+    lowered: MIRType,
+    debug_name: Option<String>,
+) -> MIRTypeID {
+    let id = env.module_mut().add_type(lowered, debug_name);
+    env.resolver_mut().cache_lowered(ty, id);
+    id
+}
+
 fn lower_aggregate(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
     fields: &[HMIRFieldDef<HMIRTypeID>],
+    tag: MIRIncompleteTag,
     kind: impl FnOnce(Vec<MIRField>) -> MIRTypeKind,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
-    let id = env.module_mut().reserve_type();
-    env.resolver_mut().cache_lowered(ty, id);
+    // An aggregate may refer to itself, so it is incomplete while its fields lower
+    let incomplete = MIRType::new(MIRTypeKind::Incomplete(MIRIncompleteMetadata::new(tag)));
+    let debug_name = env.resolve_type_id(ty).debug_name().map(str::to_string);
+    let id = lower_named(env, ty, incomplete, debug_name);
 
     let fields = fields
         .iter()
@@ -205,10 +299,20 @@ fn lower_aggregate(
         })
         .collect::<CXResult<_>>()?;
 
-    let debug_name = env.resolve_type_id(ty).debug_name().map(str::to_string);
-    env.module_mut()
-        .define_type(id, MIRType::new(kind(fields)), debug_name);
+    env.module_mut().define_type(id, MIRType::new(kind(fields)));
+    for (metadata, qualified) in env.module().qualifications(id).to_vec() {
+        let ty = qualified_copy(env, id, metadata);
+        env.module_mut().define_type(qualified, ty);
+    }
     Ok(id)
+}
+
+fn mir_tag(tag: HIRTagKind) -> MIRIncompleteTag {
+    match tag {
+        HIRTagKind::Struct => MIRIncompleteTag::Struct,
+        HIRTagKind::Union => MIRIncompleteTag::Union,
+        HIRTagKind::Enum => MIRIncompleteTag::Enum,
+    }
 }
 
 pub(crate) fn mir_int(width: HMIRIntWidth) -> MIRIntType {

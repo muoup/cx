@@ -23,8 +23,7 @@ pub struct MIRModuleBuilder {
     types: IndexVec<MIRTypeID, MIRType>,
     interned: FxHashMap<MIRType, MIRTypeID>,
     debug_names: FxHashMap<MIRTypeID, String>,
-    qualified: FxHashMap<(MIRTypeID, MIRTypeMetadata), MIRTypeID>,
-    pending: FxHashMap<MIRTypeID, Vec<(MIRTypeID, MIRTypeMetadata)>>,
+    qualified: FxHashMap<MIRTypeID, Vec<(MIRTypeMetadata, MIRTypeID)>>,
     functions: BTreeMap<MIRFunctionID, MIRFunction>,
     globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
@@ -42,7 +41,6 @@ impl MIRModuleBuilder {
             interned: FxHashMap::default(),
             debug_names: FxHashMap::default(),
             qualified: FxHashMap::default(),
-            pending: FxHashMap::default(),
             functions: BTreeMap::new(),
             globals: BTreeMap::new(),
             global_order: Vec::new(),
@@ -66,49 +64,33 @@ impl MIRModuleBuilder {
         id
     }
 
-    // An aggregate may refer to itself, so its ID exists before its definition does
-    pub fn reserve_type(&mut self) -> MIRTypeID {
-        self.types.push(MIRType::undefined())
-    }
-
-    pub fn define_type(&mut self, id: MIRTypeID, ty: MIRType, debug_name: Option<String>) {
-        self.types[id] = ty.clone();
-        self.interned.entry(ty).or_insert(id);
-
+    // A distinct type, which may be incomplete until it is defined
+    pub fn add_type(&mut self, ty: MIRType, debug_name: Option<String>) -> MIRTypeID {
+        let id = self.types.push(ty);
         if let Some(name) = debug_name {
             self.debug_names.insert(id, name);
-        }
-        for (qualified, metadata) in self.pending.remove(&id).unwrap_or_default() {
-            self.copy_qualified(id, qualified, metadata);
-        }
-    }
-
-    // A qualified aggregate copies its base, which may still be reserved while its fields lower
-    pub fn qualify(&mut self, base: MIRTypeID, metadata: MIRTypeMetadata) -> MIRTypeID {
-        if metadata.is_empty() {
-            return base;
-        }
-        if let Some(id) = self.qualified.get(&(base, metadata)) {
-            return *id;
-        }
-
-        let id = self.types.push(MIRType::undefined());
-        self.qualified.insert((base, metadata), id);
-        match self.types[base].kind() {
-            MIRTypeKind::Undefined => self.pending.entry(base).or_default().push((id, metadata)),
-            _ => self.copy_qualified(base, id, metadata),
         }
         id
     }
 
-    fn copy_qualified(&mut self, base: MIRTypeID, id: MIRTypeID, metadata: MIRTypeMetadata) {
-        let base_ty = &self.types[base];
-        let ty = MIRType::qualified(base_ty.kind().clone(), base_ty.metadata().with(metadata));
+    pub fn define_type(&mut self, id: MIRTypeID, ty: MIRType) {
         self.types[id] = ty.clone();
         self.interned.entry(ty).or_insert(id);
-        if let Some(name) = self.debug_names.get(&base).cloned() {
-            self.debug_names.insert(id, name);
-        }
+    }
+
+    pub fn qualified(&self, base: MIRTypeID, metadata: MIRTypeMetadata) -> Option<MIRTypeID> {
+        self.qualifications(base)
+            .iter()
+            .find(|(qualifiers, _)| *qualifiers == metadata)
+            .map(|(_, id)| *id)
+    }
+
+    pub fn qualifications(&self, base: MIRTypeID) -> &[(MIRTypeMetadata, MIRTypeID)] {
+        self.qualified.get(&base).map(Vec::as_slice).unwrap_or_default()
+    }
+
+    pub fn cache_qualified(&mut self, base: MIRTypeID, metadata: MIRTypeMetadata, id: MIRTypeID) {
+        self.qualified.entry(base).or_default().push((metadata, id));
     }
 
     pub fn declare_function(&mut self, prototype: MIRFnPrototype) -> MIRFunctionID {

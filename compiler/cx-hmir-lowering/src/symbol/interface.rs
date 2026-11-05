@@ -47,7 +47,7 @@ pub(crate) fn definition(
     let def = unit.resolve_def(id).unwrap();
     let selected = structure::select(def, context.visible_through())?;
     let declaration = &def.declarations()[selected];
-    if declaration.tag().is_some() {
+    if let Some(tag) = declaration.tag() {
         let canonical = structure::select(def, None)?;
         let Some(HMIRDefKind::ComptimeGlobal(global)) = def.declarations()[canonical].kind() else {
             unreachable!("a tagged declaration has a type initializer");
@@ -57,6 +57,7 @@ pub(crate) fn definition(
             let name = Some(def.name().to_string());
             context.env_mut().resolver_mut().forward_type(
                 ty,
+                tag,
                 HMIRTypeSemantics::default(),
                 span,
                 name,
