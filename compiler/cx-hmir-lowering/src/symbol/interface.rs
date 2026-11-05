@@ -1,7 +1,7 @@
 use std::ptr;
 
 use cx_hmir::{
-    HMIRBody, HMIRDeclarationRole, HMIRDefID, HMIRDefKind,
+    HMIRBodyContext, HMIRDeclarationRole, HMIRDefID, HMIRDefKind,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
@@ -213,7 +213,7 @@ pub(crate) fn definition(
 
 pub(crate) fn initializer_value(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     expr: HMIRExprID,
     expected: Option<HMIRTypeID>,
 ) -> CXResult<HMIRValue> {
@@ -286,7 +286,7 @@ pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> C
             format!("global of type '{}'", types::name(child.env(), ty)),
         ));
     }
-    coerce::implicit(&mut child, value, ty, declaration.span())
+    coerce::implicit::standard(&mut child, value, ty, declaration.span())
 }
 
 pub(crate) fn zero(

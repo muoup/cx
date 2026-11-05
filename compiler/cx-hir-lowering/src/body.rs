@@ -6,7 +6,7 @@ use cx_hir::ast::{
     types::{HIRTagKind, HIRType, HIRTypeKind},
 };
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBody, HMIRCoerceMode, HMIRContract, HMIRControlOp, HMIRDefID, HMIRDefKind,
+    HMIRAggregateOp, HMIRBodyContext, HMIRCoerceMode, HMIRContract, HMIRControlOp, HMIRDefID, HMIRDefKind,
     HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp, HMIROwnershipOp,
     body::{HMIRHole, HMIRLocal, HMIRLocalID},
     expr::{HMIRExpr, HMIRExprID, HMIRExprKind, literal::HMIRLiteral, op::HMIRTypeOp},
@@ -70,7 +70,7 @@ struct Scope<'a> {
 pub(crate) struct BodyLowering<'a> {
     unit: &'a UnitContext,
     namespace: NamespacePath,
-    body: HMIRBody,
+    body: HMIRBodyContext,
     scopes: Vec<Scope<'a>>,
     comptime: bool,
     // The def whose labels are in scope
@@ -102,7 +102,7 @@ impl<'a> BodyLowering<'a> {
         Self {
             unit,
             namespace,
-            body: HMIRBody::new(),
+            body: HMIRBodyContext::new(),
             scopes: vec![Scope::new(ScopeKind::Plain)],
             comptime,
             owner: None,
@@ -141,7 +141,7 @@ impl<'a> BodyLowering<'a> {
             .insert(name.clone(), ScopeEntry::Static(def));
     }
 
-    pub(crate) fn finish(self) -> HMIRBody {
+    pub(crate) fn finish(self) -> HMIRBodyContext {
         self.body
     }
 

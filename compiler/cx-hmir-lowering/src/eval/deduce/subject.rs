@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
@@ -28,7 +28,7 @@ use crate::eval::{EvalResult, coerce, comptime, eval, flow::{EvalExit, Evaluatio
 // The type of an operand evaluated without emitting it; a diverging operand is typed unreachable
 pub(crate) fn subject(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     operand: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     let span = body.expr(operand).span();
@@ -43,7 +43,7 @@ pub(crate) fn subject(
     let result = result.map(&mut child, move |context, value| {
         let referent = context.env().referent(value.ty());
         let ty = match (context.env().resolve_kind(referent), value.kind()) {
-            (HMIRTypeKind::Type, _) => coerce::std_rvalue(context, value, &span)?
+            (HMIRTypeKind::Type, _) => coerce::promotion::std_rvalue(context, value, &span)?
                 .as_type()
                 .ok_or_else(|| hmir_error(&span, &typecheck::EXPECTED_TYPE, "an unknown type value".into()))?,
             (_, HMIRValueKind::Constant(HMIRConstant::Str(string))) => {

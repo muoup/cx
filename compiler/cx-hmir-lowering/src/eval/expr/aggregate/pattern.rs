@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBody, HMIRPattern,
+    HMIRBinaryOp, HMIRBodyContext, HMIRPattern,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
@@ -25,7 +25,7 @@ use crate::{
 
 pub(crate) fn variant(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     ty: HMIRTypeID,
     pattern: &HMIRPattern,
     span: &TokenRange,
@@ -81,14 +81,14 @@ pub(crate) fn payload(
         volatile: semantics.volatile,
         ..Default::default()
     };
-    let ty = types::specify(context, ty, qualifiers, span);
+    let ty = types::qualify::specify(context, ty, qualifiers, span);
     let value = emit::field(context, source, index, ty, span)?;
     emit::reference(context, &value, span)
 }
 
 pub(crate) fn bind(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     local: HMIRLocalID,
     source: HMIRValue,
     owned: bool,
@@ -111,23 +111,23 @@ pub(crate) fn bind(
         return Err(hmir_error(span, &typecheck::BINDING_BEHIND_REFERENCE, name));
     }
     let (value, binding_ty) = match reference {
-        Some(_) if context.env().is_reference(ty) => (coerce::implicit(context, source, ty, span)?, ty),
+        Some(_) if context.env().is_reference(ty) => (coerce::implicit::standard(context, source, ty, span)?, ty),
         Some(constant) => {
             let target = match constant {
-                true => types::specify(context, ty, HMIRTypeSemantics { constant: true, ..Default::default() }, span),
+                true => types::qualify::specify(context, ty, HMIRTypeSemantics { constant: true, ..Default::default() }, span),
                 false => ty,
             };
             let target = types::reference(context.env_mut(), target, None, span);
-            (coerce::implicit(context, source, target, span)?, target)
+            (coerce::implicit::standard(context, source, target, span)?, target)
         }
         None => {
-            let ty = coerce::unqualified(context, ty, span);
+            let ty = types::qualify::unqualified(context, ty, span);
             let value = if owned {
                 emit::copy(context, source, span)?
             } else {
-                coerce::implicit(context, source, ty, span)?
+                coerce::implicit::standard(context, source, ty, span)?
             };
-            (coerce::implicit(context, value, ty, span)?, ty)
+            (coerce::implicit::standard(context, value, ty, span)?, ty)
         }
     };
     let binding = types::reference(context.env_mut(), binding_ty, None, span);
@@ -139,7 +139,7 @@ pub(crate) fn bind(
 
 pub(crate) fn eval_is(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     value: HMIRExprID,
     pattern: &HMIRPattern,

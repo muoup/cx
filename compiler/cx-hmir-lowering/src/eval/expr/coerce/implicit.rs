@@ -7,13 +7,30 @@ use cx_tokens::TokenRange;
 
 use super::{Coercion, compatible, is_char, is_designator, promotion, qualified, truth};
 use crate::{
-    emit,
-    env::{HMIREnvironment, function::LocalLoweringContext},
-        eval::{expr, types},
-    log::hmir_error,
-    symbol::composite::signatures_alike,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    emit, env::{HMIREnvironment, function::LocalLoweringContext}, eval::{coerce::applied, expr, types}, log::hmir_error, symbol::composite::signatures_alike, value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
+
+pub(crate) fn standard(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    target: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let source = value.ty();
+    let coercion = convert(context, value, target, span, false)?;
+    applied(context, coercion, source, target, span)
+}
+
+
+// Collapses various indirections to a goal state of a T&. If provided an owned T, it will be materialized
+// such that a reference is produced.
+pub(crate) fn aggregate(env: &HMIREnvironment, value: HMIRValue) -> HMIRValue {
+    match env.resolve_kind(value.ty()) {
+        HMIRTypeKind::ReferenceTo { inner, .. } if env.is_reference(*inner) => todo!(),
+
+        _ => value,
+    }
+}
 
 pub(super) fn convert(
     context: &mut LocalLoweringContext,

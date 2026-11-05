@@ -5,7 +5,7 @@ use cx_hir::ast::{
     types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBody, HMIRComptimeGlobal, HMIRContract, HMIRDef, HMIRDefID, HMIRDefKind,
+    HMIRBinaryOp, HMIRBodyContext, HMIRComptimeGlobal, HMIRContract, HMIRDef, HMIRDefID, HMIRDefKind,
     HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
     expr::HMIRExprID,
     ty::{
@@ -249,7 +249,7 @@ fn lower_contract(
     let contract = &prototype.contract;
     let span = &prototype.range;
     if contract.precondition.is_none() && contract.postcondition.is_none() {
-        let (body, params) = (HMIRBody::new(), Box::default());
+        let (body, params) = (HMIRBodyContext::new(), Box::default());
         return Ok(HMIRContract::new(body, params, contract.safe, None, None));
     }
 

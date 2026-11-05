@@ -1,4 +1,4 @@
-use cx_hmir::{HMIRBody, expr::HMIRExprID};
+use cx_hmir::{HMIRBodyContext, expr::HMIRExprID};
 use cx_mir::MIRInstructionKind;
 use cx_tokens::TokenRange;
 
@@ -18,7 +18,7 @@ use crate::{
 
 pub(crate) fn eval_for(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     init: HMIRExprID,
     condition: HMIRExprID,
@@ -45,7 +45,7 @@ pub(crate) fn eval_for(
 // 'increment' runs after each iteration of the body, and is where 'continue' leads
 pub(crate) fn eval_while(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     condition: HMIRExprID,
     loop_body: HMIRExprID,
@@ -117,7 +117,7 @@ pub(crate) fn eval_while(
 
 fn comptime_while(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     condition: HMIRExprID,
     loop_body: HMIRExprID,

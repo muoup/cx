@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRExprTypeKind, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
@@ -28,7 +28,7 @@ use crate::{
 
 pub(crate) fn eval_local(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     local: HMIRLocalID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -50,7 +50,7 @@ pub(crate) fn eval_local(
 // binding left by an earlier evaluation of the same declaration, as a comptime loop makes, is forgotten first
 pub(crate) fn eval_let(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     local_id: HMIRLocalID,
     initializer: Option<HMIRExprID>,
@@ -111,7 +111,7 @@ pub(crate) fn eval_let(
     let as_is = matches!(body.expr(local.ty()).kind(), HMIRExprKind::Hole(_)) || referent.is_some();
     value.and_then(context, body, None, move |context, body, value, _| {
         let value = match declared.known() {
-            Some(ty) => coerce::implicit(context, value, *ty, &span)?,
+            Some(ty) => coerce::implicit::standard(context, value, *ty, &span)?,
             None => value,
         };
         let value = match as_is {
@@ -135,7 +135,7 @@ pub(crate) fn eval_let(
                 Some(_) => types::reference(context.env_mut(), ty, None, &span),
                 None => ty,
             };
-            let value = coerce::implicit(context, value, ty, &span)?;
+            let value = coerce::implicit::standard(context, value, ty, &span)?;
             let function = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_));
             if is_runtime && function && types::comptime_only(context.env(), ty) {
                 emit::bind_local(context, local_id, value);
@@ -156,7 +156,7 @@ pub(crate) fn eval_let(
 }
 
 // The hole an 'auto&' declaration infers its referent through
-fn auto_referent(body: &HMIRBody, declared: HMIRExprID) -> Option<HMIRExprID> {
+fn auto_referent(body: &HMIRBodyContext, declared: HMIRExprID) -> Option<HMIRExprID> {
     let HMIRExprKind::Type(ty) = body.expr(declared).kind() else {
         return None;
     };
@@ -170,7 +170,7 @@ fn auto_referent(body: &HMIRBody, declared: HMIRExprID) -> Option<HMIRExprID> {
 
 fn declare(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     local_id: HMIRLocalID,
     ty: HMIRTypeID,
     span: &TokenRange,
@@ -194,7 +194,7 @@ fn declare(
 
 pub(crate) fn eval_block(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     statements: &[HMIRExprID],
     scoped: bool,
@@ -218,7 +218,7 @@ pub(crate) fn eval_block(
 
 fn yielded(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     scope: usize,
     result: EvalResult<Evaluation<HMIRValue>>,
     span: &TokenRange,
@@ -250,7 +250,7 @@ fn yielded(
 
 fn eval_statements(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     statements: &[HMIRExprID],
     yields: bool,
@@ -277,7 +277,7 @@ fn eval_statements(
             let partial = result.known().filter(|value| value.as_type().is_some()).cloned();
             let span = span.clone();
             return result.and_then(context, body, partial, move |context, _, value, _| {
-                Ok(Evaluation::Ready(coerce::std_rvalue(context, value, &span)?))
+                Ok(Evaluation::Ready(coerce::promotion::std_rvalue(context, value, &span)?))
             });
         }
         match result {
@@ -321,7 +321,7 @@ fn reachable(context: &LocalLoweringContext) -> bool {
 // expression is a block
 pub(crate) fn eval_scoped(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     expr: HMIRExprID,
     place: bool,
 ) -> EvalResult<Evaluation<HMIRValue>> {

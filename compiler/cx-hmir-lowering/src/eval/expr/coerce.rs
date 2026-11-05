@@ -1,10 +1,14 @@
-mod implicit;
-mod promotion;
+pub(crate) mod explicit;
+pub(crate) mod implicit;
+pub(crate) mod promotion;
 
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBody, HMIRCoerceMode,
+    HMIRBinaryOp, HMIRBodyContext, HMIRCoerceMode,
     expr::HMIRExprID,
-    ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{
+        HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics,
+        context::HMIRTypeContext, intrinsic::HMIRIntWidth,
+    },
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -12,18 +16,11 @@ use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
     emit,
-    env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{
-        EvalResult, eval, eval_type, expr,
-        flow::Evaluation,
-        types,
-    },
-    log::hmir_error,
-    value::{
-        HMIRValue, HMIRValueKind,
-        constant::HMIRConstant,
-    },
     emit::comptime::{float, int},
+    env::{HMIREnvironment, function::LocalLoweringContext},
+    eval::{EvalResult, eval, eval_type, flow::Evaluation, types},
+    log::hmir_error,
+    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
 };
 
 pub(crate) enum Coercion {
@@ -49,7 +46,7 @@ impl Coercion {
 
 pub(crate) fn eval_coerce(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     mode: HMIRCoerceMode,
     value: HMIRExprID,
@@ -62,122 +59,64 @@ pub(crate) fn eval_coerce(
     let target = (eval_type(context, body, target))?.ready()?;
     let value = eval(context, body, value)?.complete(context, body, Some(target))?;
     Ok(Evaluation::Ready(match mode {
-        HMIRCoerceMode::Implicit => implicit(context, value, target, span)?,
-        _ => explicit(context, value, target, span)?,
+        HMIRCoerceMode::Implicit => implicit::standard(context, value, target, span)?,
+        HMIRCoerceMode::CCast => explicit::standard(context, value, target, span)?,
+
+        // REVIEW: This is a temporary solution to allow for the use of explicit casts in the compiler. It should be removed once the compiler is fully implemented.
+        _ => explicit::standard(context, value, target, span)?,
     }))
 }
 
-pub(crate) fn value_type(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+pub(crate) fn value_type(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> HMIRTypeID {
     let ty = context.env().referent(ty);
-    unqualified(context, ty, span)
+    types::qualify::unqualified(context, ty, span)
 }
 
-pub(crate) fn unqualified(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
-    let qualifiers = HMIRTypeSemantics { constant: true, volatile: true, ..Default::default() };
-    types::unspecify(context, ty, qualifiers, span)
-}
-
-pub(crate) fn implicit(
+pub(crate) fn read(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
-    target: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let source = value.ty();
-    let coercion = implicit::convert(context, value, target, span, false)?;
-    applied(context, coercion, source, target, span)
-}
-
-pub(crate) fn explicit(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    target: HMIRTypeID,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let source = value.ty();
-    let coercion = match context.env().is_void(target) {
-        true => Coercion::Applied(expr::unit(context, span).with_ty(target)),
-        false => implicit::convert(context, value, target, span, true)?.or_else(|value| extension(context, value, target, span))?,
-    };
-    applied(context, coercion, source, target, span)
-}
-
-fn extension(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    target: HMIRTypeID,
-    span: &TokenRange,
-) -> CXResult<Coercion> {
-    let subject = context.env().referent(value.ty());
-    let array = context.env().is_array(subject);
-    let value = match array || context.env().pointer_inner(subject).is_some() {
-        true => std_rvalue(context, value, span)?,
-        false => value,
-    };
-    let env = context.env();
-    let source = value.ty();
-    if env.semantics(source).move_semantics != env.semantics(target).move_semantics {
-        return Ok(Coercion::Unapplied(value));
-    }
-    Ok(match (env.resolve_kind(source), env.resolve_kind(target)) {
-        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => {
-            expr::require_nonsafe(context, span, "Unsafe type conversion")?;
-            Coercion::Applied(value.with_ty(target))
-        }
-        (HMIRTypeKind::PointerTo(char), HMIRTypeKind::ReferenceTo { inner: string, .. })
-            if env.is_str(*string) && is_char(env, *char) =>
-        {
-            let operation = if array { "Unsafe type conversion" } else { "Dereferencing a pointer" };
-            expr::require_nonsafe(context, span, operation)?;
-            Coercion::Applied(value.with_ty(target))
-        }
-        (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_)) => {
-            if !matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Int(0))) {
-                expr::require_nonsafe(context, span, "Unsafe type conversion")?;
-            }
-            Coercion::Applied(emit::cast(context, &value, target, span)?)
-        }
-        _ => Coercion::Unapplied(value),
-    })
-}
-
-pub(crate) fn std_rvalue(
-    context: &mut LocalLoweringContext,
-    mut value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    loop {
-        match promotion::step(context, value, span)? {
-            Coercion::Applied(promoted) => value = promoted,
-            Coercion::Unapplied(value) => return Ok(value),
-        }
-    }
-}
-
-pub(crate) fn read(context: &mut LocalLoweringContext, value: HMIRValue, span: &TokenRange) -> CXResult<HMIRValue> {
-    let inner = context.env().reference_inner(value.ty()).expect("a read value is a reference");
-    match promotion::lvalue(context, value, inner, span)? {
+    let inner = context
+        .env()
+        .reference_inner(value.ty())
+        .expect("a read value is a reference");
+    match promotion::reference_load(context, value, inner, span)? {
         Coercion::Applied(value) => Ok(value),
         Coercion::Unapplied(_) => unreachable!("an lvalue read always applies"),
     }
 }
 
-// A place holding a reference stands for the referent's place
+// Collapses a type T&...& to T&, any non-reference type remains unchanged
 pub(crate) fn collapse(
     context: &mut LocalLoweringContext,
     mut value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    while context.env().reference_inner(value.ty()).is_some_and(|inner| context.env().is_reference(inner)) {
+    loop {
+        let Some(inner) = context.env().reference_inner(value.ty()) else {
+            return Ok(value);
+        };
+        if !context.env().is_reference(inner) {
+            return Ok(value);
+        };
+
         value = read(context, value, span)?;
     }
-    Ok(value)
 }
 
-pub(crate) fn arithmetic(context: &mut LocalLoweringContext, value: HMIRValue, span: &TokenRange) -> CXResult<HMIRValue> {
-    let value = std_rvalue(context, value, span)?;
+pub(crate) fn arithmetic(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let value = promotion::std_rvalue(context, value, span)?;
     let target = promotion::integer(context, value.ty(), span);
-    implicit(context, value, target, span)
+    implicit::standard(context, value, target, span)
 }
 
 pub(crate) fn default_argument(
@@ -185,24 +124,38 @@ pub(crate) fn default_argument(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let value = std_rvalue(context, value, span)?;
+    let value = promotion::std_rvalue(context, value, span)?;
     let target = promotion::argument(context, value.ty(), span);
-    implicit(context, value, target, span)
+    implicit::standard(context, value, target, span)
 }
 
-pub(crate) fn condition(context: &mut LocalLoweringContext, value: HMIRValue, span: &TokenRange) -> CXResult<HMIRValue> {
-    let value = std_rvalue(context, value, span)?;
+pub(crate) fn condition(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let value = promotion::std_rvalue(context, value, span)?;
     let source = value.ty();
     match truth(context, value, span)? {
         Coercion::Applied(value) => Ok(value),
-        Coercion::Unapplied(_) => Err(hmir_error(span, &typecheck::NO_TRUTH_VALUE, types::name(context.env(), source))),
+        Coercion::Unapplied(_) => Err(hmir_error(
+            span,
+            &typecheck::NO_TRUTH_VALUE,
+            types::name(context.env(), source),
+        )),
     }
 }
 
-fn truth(context: &mut LocalLoweringContext, value: HMIRValue, span: &TokenRange) -> CXResult<Coercion> {
+fn truth(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<Coercion> {
     let ty = value.ty();
     let zero = match context.env().resolve_kind(ty) {
-        HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I1 => return Ok(Coercion::Applied(value)),
+        HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I1 => {
+            return Ok(Coercion::Applied(value));
+        }
         HMIRTypeKind::Int(_) => HMIRConstant::Int(0),
         HMIRTypeKind::Float(_) => HMIRConstant::Float(FloatWrapper::from(0.0)),
         HMIRTypeKind::PointerTo(_) => HMIRConstant::Null,
@@ -254,7 +207,7 @@ pub(crate) fn pointer(
         volatile: other.volatile,
         ..Default::default()
     };
-    let pointee = types::specify(context, pointee, qualifiers, span);
+    let pointee = types::qualify::specify(context, pointee, qualifiers, span);
     types::pointer(context.env_mut(), pointee, span)
 }
 
@@ -271,12 +224,24 @@ fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bool {
             env.is_void(*lhs) || env.is_void(*rhs) || compatible(env, *lhs, *rhs)
         }
         (
-            HMIRTypeKind::ReferenceTo { inner: lhs, bitfield: lhs_bitfield },
-            HMIRTypeKind::ReferenceTo { inner: rhs, bitfield: rhs_bitfield },
+            HMIRTypeKind::ReferenceTo {
+                inner: lhs,
+                bitfield: lhs_bitfield,
+            },
+            HMIRTypeKind::ReferenceTo {
+                inner: rhs,
+                bitfield: rhs_bitfield,
+            },
         ) => lhs_bitfield == rhs_bitfield && compatible(env, *lhs, *rhs),
         (
-            HMIRTypeKind::Array { element: lhs, length: lhs_length },
-            HMIRTypeKind::Array { element: rhs, length: rhs_length },
+            HMIRTypeKind::Array {
+                element: lhs,
+                length: lhs_length,
+            },
+            HMIRTypeKind::Array {
+                element: rhs,
+                length: rhs_length,
+            },
         ) => lhs_length == rhs_length && compatible(env, *lhs, *rhs),
         (
             HMIRTypeKind::Undefined(HMIRUndefined::Array { element: lhs }),
@@ -319,7 +284,10 @@ fn applied(
     match coercion {
         Coercion::Applied(value) => Ok(value),
         Coercion::Unapplied(_) => {
-            let names = (types::name(context.env(), source), types::name(context.env(), target));
+            let names = (
+                types::name(context.env(), source),
+                types::name(context.env(), target),
+            );
             Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names))
         }
     }

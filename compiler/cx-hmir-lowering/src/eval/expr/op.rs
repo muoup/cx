@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBody, HMIRUnaryOp,
+    HMIRBinaryOp, HMIRBodyContext, HMIRUnaryOp,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
@@ -21,7 +21,7 @@ use crate::{
 
 pub(crate) fn eval_operand(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     expr: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -43,7 +43,7 @@ fn is_comparison(op: HMIRBinaryOp) -> bool {
 
 pub(crate) fn eval_binary(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     op: HMIRBinaryOp,
     lhs: HMIRExprID,
@@ -86,16 +86,16 @@ pub(crate) fn binary_operands(
             let (lhs, rhs) = match (left, right) {
                 (HMIRTypeKind::PointerTo(left), HMIRTypeKind::PointerTo(right)) => {
                     let ty = coerce::pointer(context, *left, *right, span);
-                    let lhs = coerce::implicit(context, lhs, ty, span)?;
-                    (lhs, coerce::implicit(context, rhs, ty, span)?)
+                    let lhs = coerce::implicit::standard(context, lhs, ty, span)?;
+                    (lhs, coerce::implicit::standard(context, rhs, ty, span)?)
                 }
                 (HMIRTypeKind::PointerTo(_), _) => {
                     let ty = lhs.ty();
-                    (lhs, coerce::implicit(context, rhs, ty, span)?)
+                    (lhs, coerce::implicit::standard(context, rhs, ty, span)?)
                 }
                 _ => {
                     let ty = rhs.ty();
-                    (coerce::implicit(context, lhs, ty, span)?, rhs)
+                    (coerce::implicit::standard(context, lhs, ty, span)?, rhs)
                 }
             };
             let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
@@ -136,8 +136,8 @@ fn arithmetic(
     if integral_only && context.env().is_float(common) {
         return Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()));
     }
-    let lhs = coerce::implicit(context, lhs, common, span)?;
-    let rhs = coerce::implicit(context, rhs, common, span)?;
+    let lhs = coerce::implicit::standard(context, lhs, common, span)?;
+    let rhs = coerce::implicit::standard(context, rhs, common, span)?;
     let result = match is_comparison(op) {
         true => types::int(context.env_mut(), HMIRIntWidth::I1, false, span),
         false => common,
@@ -155,13 +155,13 @@ fn pointer_offset(
 ) -> CXResult<HMIRValue> {
     let signed = matches!(context.env().resolve_kind(index.ty()), HMIRTypeKind::Int(int) if int.signed());
     let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, signed, span);
-    let index = coerce::implicit(context, index, offset_ty, span)?;
+    let index = coerce::implicit::standard(context, index, offset_ty, span)?;
     emit::offset(context, &pointer, &index, element, subtract, span)
 }
 
 pub(crate) fn eval_unary(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     op: HMIRUnaryOp,
     operand: HMIRExprID,
@@ -220,7 +220,7 @@ fn increment(
         HMIRUnaryOp::PostDecrement => (false, HMIRBinaryOp::Sub),
         _ => unreachable!("increment called with non-increment operator"),
     };
-    let current = coerce::std_rvalue(context, target.clone(), span)?;
+    let current = coerce::promotion::std_rvalue(context, target.clone(), span)?;
     let updated = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Int(_) => {
             let one = HMIRValue::constant(ty, HMIRConstant::Int(1));

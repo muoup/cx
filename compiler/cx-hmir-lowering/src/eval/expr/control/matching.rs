@@ -1,7 +1,7 @@
 use rustc_hash::FxHashSet;
 
 use cx_hmir::{
-    HMIRBody, HMIRPattern,
+    HMIRBodyContext, HMIRPattern,
     body::HMIRLocalID,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
@@ -39,7 +39,7 @@ struct Match {
 
 pub(crate) fn eval_match(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     scrutinee: HMIRExprID,
     local: HMIRLocalID,
@@ -135,7 +135,7 @@ pub(crate) fn eval_match(
 
 fn cases(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     ty: HMIRTypeID,
     dispatch_ty: HMIRTypeID,
     variants: Option<usize>,
@@ -203,7 +203,7 @@ fn cases(
 
 fn bind_arm(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     subject: &HMIRValue,
     pattern: &HMIRPattern,
     span: &TokenRange,
@@ -235,7 +235,7 @@ fn bind_arm(
 
 fn lower_arms(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     mut state: Match,
     index: usize,
     expected: Option<HMIRTypeID>,
@@ -291,7 +291,7 @@ fn lower_arms(
 // declared nothing since 'declared' places
 fn arm_value(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     arm: HMIRExprID,
     span: &TokenRange,
     declared: Option<usize>,
@@ -302,6 +302,6 @@ fn arm_value(
         if outlives && context.env().is_reference(value.ty()) {
             return Ok(value);
         }
-        coerce::std_rvalue(context, value, &span)
+        coerce::promotion::std_rvalue(context, value, &span)
     })
 }

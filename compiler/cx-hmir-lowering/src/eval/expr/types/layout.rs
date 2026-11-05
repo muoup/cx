@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     expr::op::{HMIRMemberStep, HMIRTypeOp},
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
@@ -22,7 +22,7 @@ use crate::{
 
 pub(crate) fn eval_type_op(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     op: &HMIRTypeOp,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -58,7 +58,7 @@ fn layout(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange)
 
 fn offset(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     mut current: HMIRTypeID,
     member: &[HMIRMemberStep],
     size_type: HMIRTypeID,

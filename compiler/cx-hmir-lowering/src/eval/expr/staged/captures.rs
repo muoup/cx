@@ -2,7 +2,7 @@ use rustc_hash::FxHashSet;
 use std::cell::RefCell;
 
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBody, HMIRControlOp, HMIROp, HMIROwnershipOp, HMIRPattern,
+    HMIRAggregateOp, HMIRBodyContext, HMIRControlOp, HMIROp, HMIROwnershipOp, HMIRPattern,
     body::HMIRLocalID,
     expr::{
         HMIRExprID, HMIRExprKind,
@@ -21,7 +21,7 @@ use crate::{
 
 pub(super) fn collect(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     params: &[HMIRLocalID],
     root: HMIRExprID,
 ) -> CXResult<Bindings> {
@@ -48,7 +48,7 @@ pub(super) fn collect(
             FnContext::Runtime(_) => value,
             FnContext::Comptime(_) => {
                 let span = body.local(*local).span();
-                let value = coerce::std_rvalue(context, value, span)?;
+                let value = coerce::promotion::std_rvalue(context, value, span)?;
                 flow::top(comptime::export(context, value, span))?
             }
         };
@@ -57,7 +57,7 @@ pub(super) fn collect(
     Ok(captures)
 }
 
-pub(crate) fn references(body: &HMIRBody, root: HMIRExprID) -> FxHashSet<HMIRLocalID> {
+pub(crate) fn references(body: &HMIRBodyContext, root: HMIRExprID) -> FxHashSet<HMIRLocalID> {
     let mut walk = Locals {
         body,
         seen: FxHashSet::default(),
@@ -69,7 +69,7 @@ pub(crate) fn references(body: &HMIRBody, root: HMIRExprID) -> FxHashSet<HMIRLoc
 }
 
 struct Locals<'a> {
-    body: &'a HMIRBody,
+    body: &'a HMIRBodyContext,
     seen: FxHashSet<HMIRExprID>,
     references: FxHashSet<HMIRLocalID>,
     bound: FxHashSet<HMIRLocalID>,

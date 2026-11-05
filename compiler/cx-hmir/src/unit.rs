@@ -10,7 +10,7 @@ use cx_namespace::module::NamespacePath;
 
 use crate::{
     HMIRDefID,
-    body::{HMIRBody, HMIRBodyID},
+    body::{HMIRBodyContext, HMIRBodyID},
     unit::{def::HMIRDef, id::HMIRUnitID, symbols::HMIRSymbolTable},
 };
 
@@ -74,7 +74,7 @@ impl HMIRUnit {
         &self.symbols
     }
 
-    pub fn body(&self, id: HMIRBodyID) -> Option<&HMIRBody> {
+    pub fn body(&self, id: HMIRBodyID) -> Option<&HMIRBodyContext> {
         let (def_id, declaration_index, contract) = self.bodies.get(&id)?;
         let declaration = self
             .defs

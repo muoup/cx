@@ -1,11 +1,13 @@
 mod construct;
 mod layout;
 
+pub(crate) mod qualify;
+
 pub(crate) use construct::{construct_type, eval_declared_type, hole_bounded, undefined_array};
 pub(crate) use layout::eval_type_op;
 
 use cx_hmir::{
-    HMIRBody, HMIRFunction, HMIRFunctionStage,
+    HMIRBodyContext, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
@@ -14,14 +16,17 @@ use cx_hmir::{
         intrinsic::{HMIRIntType, HMIRIntWidth},
     },
     unit::function::HMIRFnParam,
-    HMIRFnSignature,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{EvalResult, eval_type, flow::{self, Evaluation}, staged},
+    eval::{
+        EvalResult, eval_type,
+        flow::{self, Evaluation},
+        staged,
+    },
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind},
 };
@@ -34,8 +39,16 @@ pub(crate) fn eval_signature(
     let (body, signature) = (function.body(), function.signature());
     let slot = |context: &mut LocalLoweringContext, expr: HMIRExprID| {
         let references = staged::references(body, expr);
-        match function.params().iter().any(|param| references.contains(param)) {
-            true => Ok(realize(context.env_mut(), HMIRTypeKind::Dependent, body.expr(expr).span())),
+        match function
+            .params()
+            .iter()
+            .any(|param| references.contains(param))
+        {
+            true => Ok(realize(
+                context.env_mut(),
+                HMIRTypeKind::Dependent,
+                body.expr(expr).span(),
+            )),
             false => flow::top(eval_type(context, body, expr).and_then(|ty| ty.description())),
         }
     };
@@ -60,7 +73,7 @@ pub(crate) fn eval_signature(
 
 pub(crate) fn adjust_signature(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     source: &HMIRFnSignature<HMIRExprID>,
     evaluated: &HMIRFnSignature<HMIRTypeID>,
 ) -> CXResult<HMIRFnSignature<HMIRTypeID>> {
@@ -116,14 +129,30 @@ pub(crate) fn element(
 ) -> Option<HMIRTypeID> {
     let element = context.env().array_inner(array)?;
     match context.env().semantics(array).constant {
-        true => Some(specify(context, element, HMIRTypeSemantics { constant: true, ..Default::default() }, span)),
+        true => Some(qualify::specify(
+            context,
+            element,
+            HMIRTypeSemantics {
+                constant: true,
+                ..Default::default()
+            },
+            span,
+        )),
         false => Some(element),
     }
 }
 
-pub(crate) fn realize(env: &mut HMIREnvironment, kind: HMIRTypeKind, span: &TokenRange) -> HMIRTypeID {
-    env.resolver_mut()
-        .realize_type(HMIRType::new(kind, HMIRTypeSemantics::default(), span.clone(), None))
+pub(crate) fn realize(
+    env: &mut HMIREnvironment,
+    kind: HMIRTypeKind,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    env.resolver_mut().realize_type(HMIRType::new(
+        kind,
+        HMIRTypeSemantics::default(),
+        span.clone(),
+        None,
+    ))
 }
 
 pub(crate) fn int(
@@ -132,14 +161,22 @@ pub(crate) fn int(
     signed: bool,
     span: &TokenRange,
 ) -> HMIRTypeID {
-    realize(env, HMIRTypeKind::Int(HMIRIntType::new(width, signed)), span)
+    realize(
+        env,
+        HMIRTypeKind::Int(HMIRIntType::new(width, signed)),
+        span,
+    )
 }
 
 pub(crate) fn universe(env: &mut HMIREnvironment, span: &TokenRange) -> HMIRTypeID {
     realize(env, HMIRTypeKind::Type, span)
 }
 
-pub(crate) fn pointer(env: &mut HMIREnvironment, inner: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+pub(crate) fn pointer(
+    env: &mut HMIREnvironment,
+    inner: HMIRTypeID,
+    span: &TokenRange,
+) -> HMIRTypeID {
     realize(env, HMIRTypeKind::PointerTo(inner), span)
 }
 
@@ -167,63 +204,14 @@ pub(crate) fn array(
         .realize_type(HMIRType::new(kind, semantics, span.clone(), None))
 }
 
-// Specifiers only accumulate, so a type that already carries them stands for itself
-pub(crate) fn specify(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    specifiers: HMIRTypeSemantics,
-    span: &TokenRange,
-) -> HMIRTypeID {
-    let env = context.env_mut();
-    let current = env.semantics(ty);
-    let semantics = current.apply(specifiers);
-    if semantics == current {
-        return ty;
-    }
-
-    let kind = HMIRTypeKind::Nominal(env.underlying(ty));
-    env.resolver_mut()
-        .realize_type(HMIRType::new(kind, semantics, span.clone(), None))
-}
-
-pub(crate) fn unspecify(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    qualifiers: HMIRTypeSemantics,
-    span: &TokenRange,
-) -> HMIRTypeID {
-    let env = context.env();
-    let current = env.semantics(ty);
-    let semantics = HMIRTypeSemantics {
-        constant: current.constant && !qualifiers.constant,
-        volatile: current.volatile && !qualifiers.volatile,
-        ..current
-    };
-    if semantics == current {
-        return ty;
-    }
-
-    let underlying = env.underlying(ty);
-    let resolved = env.resolve_type_id(underlying);
-    let base = resolved.semantics();
-    let kind = match resolved.kind() {
-        _ if (!base.constant || semantics.constant) && (!base.volatile || semantics.volatile) => {
-            HMIRTypeKind::Nominal(underlying)
-        }
-        kind @ (HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_)) => {
-            kind.clone()
-        }
-        _ => return ty,
-    };
-    context
-        .env_mut()
-        .resolver_mut()
-        .realize_type(HMIRType::new(kind, semantics, span.clone(), None))
+pub(crate) fn referent(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRTypeID {
+    env.reference_inner(ty).unwrap_or(ty)
 }
 
 pub(crate) fn owned_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRTypeSemantics {
     match env.resolve_kind(ty) {
-        HMIRTypeKind::Array { element, .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
+        HMIRTypeKind::Array { element, .. }
+        | HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
             owned_semantics(env, *element)
         }
         HMIRTypeKind::Struct { .. }
@@ -256,7 +244,7 @@ pub(crate) fn bitfield(env: &HMIREnvironment, value: &HMIRValue) -> Option<HMIRB
 pub(crate) fn comptime_only(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     match env.resolve_kind(ty) {
         HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => true,
-        
+
         HMIRTypeKind::Function(signature) => {
             signature.stage() == HMIRFunctionStage::Comptime
                 || signature
@@ -286,12 +274,25 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         ),
         HMIRTypeKind::Float(float) => format!("f{}", float.width().bytes() * 8),
         HMIRTypeKind::PointerTo(inner) => format!("{}*", name(env, *inner)),
-        HMIRTypeKind::ReferenceTo { inner, bitfield: Some(bitfield) } => {
-            format!("{}&[{}:{}]", name(env, *inner), bitfield.offset, bitfield.width)
+        HMIRTypeKind::ReferenceTo {
+            inner,
+            bitfield: Some(bitfield),
+        } => {
+            format!(
+                "{}&[{}:{}]",
+                name(env, *inner),
+                bitfield.offset,
+                bitfield.width
+            )
         }
-        HMIRTypeKind::ReferenceTo { inner, bitfield: None } => format!("{}&", name(env, *inner)),
+        HMIRTypeKind::ReferenceTo {
+            inner,
+            bitfield: None,
+        } => format!("{}&", name(env, *inner)),
         HMIRTypeKind::Array { element, length } => format!("{}[{length}]", name(env, *element)),
-        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => format!("{}[]", name(env, *element)),
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
+            format!("{}[]", name(env, *element))
+        }
         HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag)) => tag.prefix().into(),
         HMIRTypeKind::Builtin { name, .. } => name.clone(),
         HMIRTypeKind::Struct { .. } => "struct".into(),
@@ -316,14 +317,19 @@ pub(crate) fn validate(env: &HMIREnvironment, ty: &HMIRType) -> CXResult<()> {
             if matches!(env.resolve_kind(*inner), HMIRTypeKind::Unreachable) =>
         {
             let requirement = ("pointer target".into(), "a reachable type".into(), None);
-            return Err(hmir_error(ty.decl_span(), &typecheck::TYPE_REQUIREMENT, requirement));
+            return Err(hmir_error(
+                ty.decl_span(),
+                &typecheck::TYPE_REQUIREMENT,
+                requirement,
+            ));
         }
         _ => return Ok(()),
     };
     let semantics = ty.semantics();
     for field in fields {
         let owned = owned_semantics(env, *field.ty());
-        let required = if owned.move_semantics.is_nodrop() && !semantics.move_semantics.is_nodrop() {
+        let required = if owned.move_semantics.is_nodrop() && !semantics.move_semantics.is_nodrop()
+        {
             "@nodrop"
         } else if owned.move_semantics.is_nocopy() && !semantics.move_semantics.is_nocopy() {
             "@nocopy"
@@ -332,7 +338,10 @@ pub(crate) fn validate(env: &HMIREnvironment, ty: &HMIRType) -> CXResult<()> {
         } else {
             continue;
         };
-        let name = field.name().map(|name| name.as_str()).unwrap_or("<anonymous>");
+        let name = field
+            .name()
+            .map(|name| name.as_str())
+            .unwrap_or("<anonymous>");
         let trait_ = (name.into(), required.into(), required.into());
         return Err(hmir_error(ty.decl_span(), &typecheck::FIELD_TRAIT, trait_));
     }

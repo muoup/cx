@@ -207,7 +207,7 @@ fn observe(
     let storage = emit::temporary(context, value, span)?;
     let constant = HMIRTypeSemantics { constant: true, ..Default::default() };
     let inner = context.env().referent(storage.ty());
-    let ty = types::specify(context, inner, constant, span);
+    let ty = types::qualify::specify(context, inner, constant, span);
     let reference = types::reference(context.env_mut(), ty, None, span);
     Ok(storage.with_ty(reference))
 }

@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
@@ -22,7 +22,7 @@ use crate::{
 
 pub(crate) fn initialize(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     ty: HMIRTypeID,
     fields: &[(Option<CXIdent>, HMIRExprID)],
@@ -63,7 +63,7 @@ pub(crate) fn initialize(
 
 fn array(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     ty: HMIRTypeID,
     element: HMIRTypeID,
@@ -89,9 +89,9 @@ fn array(
             && matches!(context.env().resolve_kind(element), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8)
             && matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Str)
         {
-            return Ok(Evaluation::Ready(coerce::implicit(context, value, ty, span)?));
+            return Ok(Evaluation::Ready(coerce::implicit::standard(context, value, ty, span)?));
         }
-        values.push((index, coerce::implicit(context, value, element, value_span)?));
+        values.push((index, coerce::implicit::standard(context, value, element, value_span)?));
     }
     let ty = match length {
         Some(_) => ty,
@@ -102,7 +102,7 @@ fn array(
 
 fn tagged(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     ty: HMIRTypeID,
     fields: &[(Option<CXIdent>, HMIRExprID)],
@@ -121,7 +121,7 @@ fn tagged(
 
 fn initialize_scalar(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     ty: HMIRTypeID,
     fields: &[(Option<CXIdent>, HMIRExprID)],
@@ -138,11 +138,11 @@ fn initialize_scalar(
 
 fn field_value(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     value: HMIRExprID,
     ty: HMIRTypeID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = body.expr(value).span();
     let value = eval(context, body, value)?.complete(context, body, Some(ty))?;
-    Ok(Evaluation::Ready(coerce::implicit(context, value, ty, span)?))
+    Ok(Evaluation::Ready(coerce::implicit::standard(context, value, ty, span)?))
 }

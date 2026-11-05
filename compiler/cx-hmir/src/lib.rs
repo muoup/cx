@@ -5,7 +5,7 @@ pub mod unit;
 
 mod format;
 
-pub use body::HMIRBody;
+pub use body::HMIRBodyContext;
 pub use expr::aggregate::{HMIRAggregateOp, HMIRPattern};
 pub use expr::op::{
     HMIRBinaryOp, HMIRCoerceMode, HMIRControlOp, HMIROp, HMIROwnershipOp, HMIRUnaryOp,

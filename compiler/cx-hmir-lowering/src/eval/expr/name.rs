@@ -3,7 +3,7 @@ use cx_hir::{
     intrinsic_types::{HIRIntrinsicType, INTRINSIC_TYPES},
 };
 use cx_hmir::{
-    HMIRBody, HMIRDeclarationRole, HMIRDefID,
+    HMIRBodyContext, HMIRDeclarationRole, HMIRDefID,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind,
@@ -228,7 +228,7 @@ fn qualified_constructor(
 
 pub(crate) fn eval_scope_access(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     base: HMIRExprID,
     member: &CXIdent,

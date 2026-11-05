@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     body::HMIRLocalID,
     expr::HMIRExprID,
     ty::{HMIRTypeID, context::HMIRTypeContext},
@@ -25,7 +25,7 @@ use crate::{
 // Evaluates an expression in a comptime child that sees only the known values of the visible locals
 pub(crate) fn freeze(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     expr: HMIRExprID,
     expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -104,7 +104,7 @@ pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Op
 
 fn evaluate(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     expr: HMIRExprID,
     expected: Option<HMIRTypeID>,
     span: &TokenRange,
@@ -120,8 +120,8 @@ fn evaluate(
     let span = span.clone();
     value.and_then(context, body, None, move |context, _, value, _| {
         let value = match expected {
-            Some(expected) => coerce::implicit(context, value, expected, &span)?,
-            None => coerce::std_rvalue(context, value, &span)?,
+            Some(expected) => coerce::implicit::standard(context, value, expected, &span)?,
+            None => coerce::promotion::std_rvalue(context, value, &span)?,
         };
         export(context, value, &span)
     })

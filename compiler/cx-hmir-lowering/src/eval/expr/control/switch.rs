@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntType},
 };
@@ -36,7 +36,7 @@ struct CaseLabel {
 
 pub(crate) fn eval_switch(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     condition: HMIRExprID,
     switch_body: HMIRExprID,
@@ -47,7 +47,7 @@ pub(crate) fn eval_switch(
         body,
         None,
         move |context, body, condition, _| {
-            let condition = coerce::std_rvalue(context, condition, &span)?;
+            let condition = coerce::promotion::std_rvalue(context, condition, &span)?;
             if !context.env().is_int(condition.ty()) {
                 let found = types::name(context.env(), condition.ty());
                 let mismatch = ("switch condition".into(), "integer type".into(), found);
@@ -85,7 +85,7 @@ pub(crate) fn eval_switch(
 
 pub(crate) fn eval_case(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     id: HMIRExprID,
     statement: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -120,7 +120,7 @@ pub(crate) fn eval_case(
 
 fn collect(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     id: HMIRExprID,
     integer: HMIRIntType,
     labels: &mut Vec<CaseLabel>,
@@ -165,7 +165,7 @@ fn collect(
 
 fn case_value(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     expr: HMIRExprID,
     integer: HMIRIntType,
 ) -> CXResult<i128> {
@@ -187,7 +187,7 @@ fn case_value(
 
 fn runtime_switch(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     switch_body: HMIRExprID,
     condition: HMIRValue,
@@ -246,7 +246,7 @@ fn runtime_switch(
 
 fn comptime_switch(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     switch_body: HMIRExprID,
     condition: HMIRValue,
@@ -286,7 +286,7 @@ fn comptime_switch(
 
 pub(crate) fn seek(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     id: HMIRExprID,
     selected: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -343,7 +343,7 @@ pub(crate) fn seek(
 
 fn seek_loop(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     condition: HMIRExprID,
     loop_body: HMIRExprID,
     increment: Option<HMIRExprID>,

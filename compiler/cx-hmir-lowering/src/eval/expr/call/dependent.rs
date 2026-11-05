@@ -1,7 +1,7 @@
 use std::mem;
 
 use cx_hmir::{
-    HMIRBody, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
+    HMIRBodyContext, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
     unit::function::HMIRFnParam,
@@ -52,7 +52,7 @@ pub(crate) fn parameter_name(function: &HMIRFunction, index: usize) -> Option<&C
 fn bind<'a>(
     function: &HMIRFunction,
     name: &str,
-    caller_body: &HMIRBody,
+    caller_body: &HMIRBodyContext,
     applied: &'a [Option<HMIRValue>],
     args: &[HMIRExprID],
     named: &[(CXIdent, HMIRExprID)],
@@ -238,7 +238,7 @@ impl Frame<'_> {
 pub(crate) fn dependent(
     context: &mut LocalLoweringContext,
     callee: &HMIRValue,
-    caller_body: &HMIRBody,
+    caller_body: &HMIRBodyContext,
     args: &[HMIRExprID],
     named: &[(CXIdent, HMIRExprID)],
     applied: &[Option<HMIRValue>],
@@ -330,7 +330,7 @@ pub(crate) fn dependent(
                 caller_body,
                 None,
                 move |context, _, value, _| {
-                    let value = coerce::implicit(context, value, ty, &arg_span)?;
+                    let value = coerce::implicit::standard(context, value, ty, &arg_span)?;
                     match runtime {
                         true => Ok(Evaluation::Ready(value)),
                         false => comptime::export(context, value, &arg_span),

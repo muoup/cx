@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody, HMIRDefID,
+    HMIRBodyContext, HMIRDefID,
     expr::HMIRExprID,
     ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics},
 };
@@ -29,7 +29,7 @@ use crate::{
 
 pub(crate) fn eval_label(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     name: &CXIdent,
     statement: HMIRExprID,
@@ -57,14 +57,14 @@ pub(super) fn eval_goto(
 
 pub(super) fn eval_indirect_goto(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     target: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     jumpable(context, span)?;
     let value = eval(context, body, target)?.ready()?;
     let ty = address_type(context, true, span);
-    let value = coerce::implicit(context, value, ty, span)?;
+    let value = coerce::implicit::standard(context, value, ty, span)?;
     let address = mir::value(context, &value, span)?;
     let builder = context.runtime().builder();
     let targets = builder

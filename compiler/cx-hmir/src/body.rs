@@ -42,7 +42,7 @@ body_id!(HMIRLocalID);
 body_id!(HMIRHoleID);
 
 #[derive(Debug, Clone)]
-pub struct HMIRBody {
+pub struct HMIRBodyContext {
     id: HMIRBodyID,
     visible_through: Option<crate::unit::def::HMIRDeclarationPoint>,
     exprs: Vec<HMIRExpr>,
@@ -101,13 +101,13 @@ impl HMIRHole {
     }
 }
 
-impl Default for HMIRBody {
+impl Default for HMIRBodyContext {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl HMIRBody {
+impl HMIRBodyContext {
     pub fn new() -> Self {
         Self {
             id: HMIRBodyID(

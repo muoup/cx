@@ -5,7 +5,7 @@ mod specialize;
 pub(crate) use dependent::{Frame, body, dependent, parameter_name};
 
 use cx_hmir::{
-    HMIRBody, HMIRDefKind, HMIRFunctionStage,
+    HMIRBodyContext, HMIRDefKind, HMIRFunctionStage,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
@@ -34,7 +34,7 @@ use crate::{
 
 pub(crate) fn eval_call(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     callee: HMIRExprID,
     args: &[HMIRExprID],
@@ -50,7 +50,7 @@ pub(crate) fn eval_call(
 
 fn evaluate(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     callee: HMIRValue,
     args: &[HMIRExprID],
@@ -127,7 +127,7 @@ fn evaluate(
         let param = params.get(values.len()).map(|param| *param.ty());
         let value = eval(context, body, *arg)?.complete(context, body, param)?;
         values.push(match param {
-            Some(param) => coerce::implicit(context, value, param, span)?,
+            Some(param) => coerce::implicit::standard(context, value, param, span)?,
             None => coerce::default_argument(context, value, span)?,
         });
     }
@@ -196,7 +196,7 @@ fn operand(context: &mut LocalLoweringContext, callee: HMIRValue, span: &TokenRa
         let address = HMIRAddress::new(Addressable::Function(Box::new(callee)), 0);
         return Ok(HMIRValue::constant(ty, HMIRConstant::Address(address)));
     }
-    let pointer = coerce::std_rvalue(context, callee, span)?;
+    let pointer = coerce::promotion::std_rvalue(context, callee, span)?;
     match context.env().pointer_inner(pointer.ty()) {
         Some(inner) if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Function(_)) => {
             let storage = emit::dereference(context, pointer, inner, None, span)?;

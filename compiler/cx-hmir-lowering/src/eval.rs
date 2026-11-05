@@ -8,7 +8,7 @@ pub(crate) use expr::{
 pub(crate) use flow::EvalResult;
 
 use cx_hmir::{
-    HMIRBody, HMIROp,
+    HMIRBodyContext, HMIROp,
     expr::{HMIRExprID, HMIRExprKind},
     ty::HMIRTypeID,
 };
@@ -26,7 +26,7 @@ use crate::{
 
 pub(crate) fn eval(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     id: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let expr = body.expr(id);
@@ -153,7 +153,7 @@ pub(crate) fn eval(
 
 pub(crate) fn eval_type(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     id: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     let span = body.expr(id).span();
@@ -171,7 +171,7 @@ pub(crate) fn eval_type(
 
 pub(crate) fn eval_comptime(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     expr: HMIRExprID,
     expected: Option<HMIRTypeID>,
 ) -> CXResult<HMIRValue> {

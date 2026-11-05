@@ -1,7 +1,7 @@
 use std::fmt::{self, Formatter};
 
 use crate::{
-    body::{HMIRBody, HMIRHoleID, HMIRLocalID},
+    body::{HMIRBodyContext, HMIRHoleID, HMIRLocalID},
     unit::HMIRUnit,
 };
 
@@ -20,11 +20,11 @@ impl fmt::Display for HMIRHoleID {
 #[derive(Clone, Copy)]
 pub(super) struct BodyPrinter<'a> {
     unit: &'a HMIRUnit,
-    body: &'a HMIRBody,
+    body: &'a HMIRBodyContext,
 }
 
 impl<'a> BodyPrinter<'a> {
-    pub(super) fn new(unit: &'a HMIRUnit, body: &'a HMIRBody) -> Self {
+    pub(super) fn new(unit: &'a HMIRUnit, body: &'a HMIRBodyContext) -> Self {
         Self { unit, body }
     }
 
@@ -32,7 +32,7 @@ impl<'a> BodyPrinter<'a> {
         self.unit
     }
 
-    pub(super) fn body(&self) -> &'a HMIRBody {
+    pub(super) fn body(&self) -> &'a HMIRBodyContext {
         self.body
     }
 

@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     expr::{HMIRExprID, HMIRExprKind},
 };
 use cx_log::{
@@ -27,7 +27,7 @@ use crate::{
 
 pub(super) fn eval_defer(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     operand: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -68,7 +68,7 @@ pub(super) fn eval_defer(
 
 pub(crate) fn closing<T: 'static>(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     result: EvalResult<Evaluation<T>>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<T>> {
@@ -120,7 +120,7 @@ fn expand(context: &mut LocalLoweringContext, index: usize) -> CXResult<()> {
 
 fn deferred(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     expr: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let node = body.expr(expr);

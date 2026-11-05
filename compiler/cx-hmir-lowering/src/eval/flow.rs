@@ -1,4 +1,4 @@
-use cx_hmir::{HMIRBody, ty::HMIRTypeID};
+use cx_hmir::{HMIRBodyContext, ty::HMIRTypeID};
 use cx_log::{CXResult, error::CXError};
 
 use crate::{
@@ -75,7 +75,7 @@ impl<T: 'static> Evaluation<T> {
     pub(crate) fn try_complete(
         self,
         context: &mut LocalLoweringContext,
-        body: &HMIRBody,
+        body: &HMIRBodyContext,
         expected: Option<HMIRTypeID>,
     ) -> EvalResult<Evaluation<T>> {
         match (self, expected) {
@@ -87,7 +87,7 @@ impl<T: 'static> Evaluation<T> {
     pub(crate) fn complete(
         self,
         context: &mut LocalLoweringContext,
-        body: &HMIRBody,
+        body: &HMIRBodyContext,
         expected: Option<HMIRTypeID>,
     ) -> EvalResult<T> {
         self.try_complete(context, body, expected)?.ready()
@@ -96,9 +96,9 @@ impl<T: 'static> Evaluation<T> {
     pub(crate) fn and_then<U: 'static>(
         self,
         context: &mut LocalLoweringContext,
-        body: &HMIRBody,
+        body: &HMIRBodyContext,
         partial: Option<U>,
-        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, T, Option<HMIRTypeID>) -> EvalResult<Evaluation<U>> + 'static,
+        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, T, Option<HMIRTypeID>) -> EvalResult<Evaluation<U>> + 'static,
     ) -> EvalResult<Evaluation<U>> {
         self.chain(context, body, None, partial, then)
     }
@@ -106,10 +106,10 @@ impl<T: 'static> Evaluation<T> {
     fn chain<U: 'static>(
         self,
         context: &mut LocalLoweringContext,
-        body: &HMIRBody,
+        body: &HMIRBodyContext,
         expected: Option<HMIRTypeID>,
         partial: Option<U>,
-        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, T, Option<HMIRTypeID>) -> EvalResult<Evaluation<U>> + 'static,
+        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, T, Option<HMIRTypeID>) -> EvalResult<Evaluation<U>> + 'static,
     ) -> EvalResult<Evaluation<U>> {
         match self {
             Self::Ready(value) => then(context, body, value, expected),
@@ -202,9 +202,9 @@ pub(crate) fn catch_diverged<T: 'static>(result: EvalResult<Evaluation<T>>) -> E
 
 pub(crate) fn finally<T: 'static>(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     result: EvalResult<Evaluation<T>>,
-    finish: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, bool) -> CXResult<()> + 'static,
+    finish: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, bool) -> CXResult<()> + 'static,
 ) -> EvalResult<Evaluation<T>> {
     match result {
         Ok(Evaluation::Incomplete(incomplete)) => Ok(Evaluation::Incomplete(incomplete.finally(finish))),

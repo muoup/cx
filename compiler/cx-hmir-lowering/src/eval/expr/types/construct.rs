@@ -1,6 +1,6 @@
 use cx_hir::ast::types::HIRTagKind;
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
@@ -19,7 +19,7 @@ use crate::{
 
 pub(crate) fn eval_declared_type(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     expr: HMIRExprID,
 ) -> CXResult<HMIRTypeID> {
     let ty = context.deferred_type(expr);
@@ -29,7 +29,7 @@ pub(crate) fn eval_declared_type(
 
 pub(crate) fn construct_type(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     ty: &HMIRExprType,
     memo: MemoID,
 ) -> CXResult<HMIRTypeID> {
@@ -109,7 +109,7 @@ pub(crate) fn construct_type(
 }
 
 // An array bounded by '_' has no type of its own, only one an expected array type completes
-pub(crate) fn hole_bounded(body: &HMIRBody, ty: &HMIRExprType) -> Option<HMIRExprID> {
+pub(crate) fn hole_bounded(body: &HMIRBodyContext, ty: &HMIRExprType) -> Option<HMIRExprID> {
     match ty.kind() {
         HMIRExprTypeKind::Array { element, length } if matches!(body.expr(*length).kind(), HMIRExprKind::Hole(_)) => {
             Some(*element)
@@ -121,7 +121,7 @@ pub(crate) fn hole_bounded(body: &HMIRBody, ty: &HMIRExprType) -> Option<HMIRExp
 // The undefined array a hole-bounded array is completed from, apart from the type its expression names
 pub(crate) fn undefined_array(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     ty: &HMIRExprType,
     element: HMIRExprID,
 ) -> CXResult<HMIRTypeID> {
@@ -144,7 +144,7 @@ fn array_type(ty: &HMIRExprType, kind: HMIRTypeKind, move_semantics: HMIRMoveSem
 
 fn evaluate(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     ty: &HMIRExprType,
     move_semantics: HMIRMoveSemantics,
 ) -> CXResult<HMIRType> {
@@ -158,7 +158,7 @@ fn evaluate(
 
 fn declared_move(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     declared: &HMIRDeclaredMove,
 ) -> CXResult<HMIRMoveSemantics> {
     match declared {
@@ -172,7 +172,7 @@ fn declared_move(
 
 fn member(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     expr: HMIRExprID,
     owner: &HMIRExprTypeKind,
 ) -> CXResult<HMIRTypeID> {
@@ -193,7 +193,7 @@ fn member(
 
 fn array_length(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     length: HMIRExprID,
 ) -> CXResult<Option<u64>> {
     let span = body.expr(length).span();

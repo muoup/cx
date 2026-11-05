@@ -13,7 +13,7 @@ pub(crate) use matching::eval_match;
 pub(crate) use switch::{eval_case, eval_switch, seek};
 
 use cx_hmir::{
-    HMIRBinaryOp, HMIRBody, HMIRControlOp,
+    HMIRBinaryOp, HMIRBodyContext, HMIRControlOp,
     expr::HMIRExprID,
     ty::{HMIRTypeID, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
@@ -37,7 +37,7 @@ use crate::{
 
 pub(crate) fn eval_control(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     control: &HMIRControlOp,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -66,7 +66,7 @@ pub(crate) fn eval_control(
 
 pub(crate) fn eval_if(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     condition: HMIRExprID,
     then_branch: HMIRExprID,
@@ -79,7 +79,7 @@ pub(crate) fn eval_if(
 
 fn branch(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     condition: HMIRExprID,
     then_branch: HMIRExprID,
@@ -163,7 +163,7 @@ pub(crate) fn merge(
     if !place {
         for (block, value) in &mut arms {
             mir::switch_to(context, *block);
-            *value = coerce::std_rvalue(context, value.clone(), span)?;
+            *value = coerce::promotion::std_rvalue(context, value.clone(), span)?;
             *block = mir::current_block(context);
         }
     }
@@ -178,7 +178,7 @@ pub(crate) fn merge(
     for (block, value) in arms {
         mir::switch_to(context, block);
         if let Some((ty, result)) = ty.zip(result.as_ref()) {
-            let value = coerce::implicit(context, value, ty, span)?;
+            let value = coerce::implicit::standard(context, value, ty, span)?;
             emit::initialize(context, result, Some(&value), span)?;
         }
         mir::jump(context, merge, span);
@@ -228,7 +228,7 @@ pub(super) fn comptime_truth(condition: &HMIRValue) -> bool {
 
 fn eval_condition(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     condition: HMIRExprID,
 ) -> EvalResult<Evaluation<MIRValue>> {
     let span = body.expr(condition).span();
@@ -239,7 +239,7 @@ fn eval_condition(
 
 fn logical_operand(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     operand: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -249,7 +249,7 @@ fn logical_operand(
 
 pub(crate) fn eval_short_circuit(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     op: HMIRBinaryOp,
     lhs: HMIRExprID,

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use cx_hmir::{
-    HMIRBody, HMIRDefID, HMIRDefKind, HMIRFunction,
+    HMIRBodyContext, HMIRDefID, HMIRDefKind, HMIRFunction,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRTypeID, HMIRTypeKind,
@@ -20,7 +20,7 @@ use crate::{
         deduce::{Incomplete, IncompleteReason, subject},
         eval,
         flow::{self, Evaluation},
-        types::{self, unspecify},
+        types::{self},
     },
     log::hmir_error,
     symbol::{self, composite::alike},
@@ -196,7 +196,7 @@ impl<'a> Deduction<'a> {
                 let actual = actual.filter(|_| {
                     !declared.unsafe_move && declared.move_semantics == HMIRDeclaredMove::default()
                 });
-                let actual = actual.map(|actual| unspecify(context, actual, qualifiers, span));
+                let actual = actual.map(|actual| types::qualify::remove(context, actual, qualifiers, span));
                 self.unify(context, frame, *inner, actual, unresolved, span)
             }
             HMIRExprTypeKind::Staged(inner) => {
@@ -402,7 +402,7 @@ pub(crate) fn generated(
 
 pub(crate) fn actual_type(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     mut arg: HMIRExprID,
 ) -> CXResult<Option<HMIRTypeID>> {
     loop {

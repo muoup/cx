@@ -5,7 +5,7 @@ pub(crate) use arguments::{Deduction, actual_type, generated, generates_type};
 pub(crate) use subject::{detached, subject};
 
 use cx_hmir::{
-    HMIRBody, HMIRUnitID,
+    HMIRBodyContext, HMIRUnitID,
     body::HMIRBodyID,
     expr::HMIRExprID,
     ty::{HMIRExprType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext},
@@ -30,7 +30,7 @@ use crate::{
     value::{HMIRValue, constant::HMIRConstant},
 };
 
-type Resolver<T> = dyn FnOnce(&mut LocalLoweringContext, &HMIRBody, HMIRTypeID) -> EvalResult<Evaluation<T>>;
+type Resolver<T> = dyn FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, HMIRTypeID) -> EvalResult<Evaluation<T>>;
 
 pub(crate) enum IncompleteReason {
     ExpectedType,
@@ -55,7 +55,7 @@ impl<T: 'static> Incomplete<T> {
         span: &TokenRange,
         reason: IncompleteReason,
         partial: Option<T>,
-        resolve: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, HMIRTypeID) -> EvalResult<Evaluation<T>>
+        resolve: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, HMIRTypeID) -> EvalResult<Evaluation<T>>
         + 'static,
     ) -> Self {
         Self {
@@ -71,7 +71,7 @@ impl<T: 'static> Incomplete<T> {
     pub(super) fn resolve(
         self,
         context: &mut LocalLoweringContext,
-        body: &HMIRBody,
+        body: &HMIRBodyContext,
         expected: HMIRTypeID,
     ) -> EvalResult<Evaluation<T>> {
         assert_eq!(
@@ -86,7 +86,7 @@ impl<T: 'static> Incomplete<T> {
     pub(super) fn wrap<U: 'static>(
         self,
         partial: Option<U>,
-        wrap: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, HMIRTypeID, Box<Resolver<T>>) -> EvalResult<Evaluation<U>>
+        wrap: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, HMIRTypeID, Box<Resolver<T>>) -> EvalResult<Evaluation<U>>
         + 'static,
     ) -> Incomplete<U> {
         let Self { reason, evaluation, span, fallback, resolve, .. } = self;
@@ -160,14 +160,14 @@ impl<T: 'static> Incomplete<T> {
 
     pub(crate) fn finally(
         self,
-        finish: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, bool) -> CXResult<()> + 'static,
+        finish: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, bool) -> CXResult<()> + 'static,
     ) -> Self {
         self.settle(move |context, body, result| finally(context, body, result, finish))
     }
 
     pub(crate) fn settle(
         mut self,
-        settle: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, EvalResult<Evaluation<T>>) -> EvalResult<Evaluation<T>>
+        settle: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, EvalResult<Evaluation<T>>) -> EvalResult<Evaluation<T>>
         + 'static,
     ) -> Self {
         let partial = self.partial.take();
@@ -249,7 +249,7 @@ pub(crate) fn type_result(
 // Unlike 'T[]', a bound of '_' must be deduced, so its undefined array only guides what completes it
 pub(crate) fn hole_bound(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     ty: &HMIRExprType,
     element: HMIRExprID,
     span: &TokenRange,
@@ -277,7 +277,7 @@ fn type_constant(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &Toke
 // Completes an evaluation from the type expected of it, unless a type is expected and the evaluation describes one
 pub(crate) fn complete(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     evaluation: Evaluation<HMIRValue>,
     expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -292,14 +292,14 @@ pub(crate) fn complete(
 // The type a value describes, completed from the type expected of it where it is an unbounded array
 pub(crate) fn described_type(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     value: Evaluation<HMIRValue>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     let partial = value.known().and_then(HMIRValue::as_type);
     let span = span.clone();
     value.and_then(context, body, partial, move |context, _, value, _| {
-        let value = coerce::std_rvalue(context, value, &span)?;
+        let value = coerce::promotion::std_rvalue(context, value, &span)?;
         let Some(ty) = value.as_type() else {
             let found = format!("expression of type '{}'", types::name(context.env(), value.ty()));
             return Err(hmir_error(&span, &typecheck::EXPECTED_TYPE, found).into());

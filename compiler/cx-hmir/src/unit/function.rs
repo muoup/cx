@@ -1,13 +1,13 @@
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    body::{HMIRBody, HMIRLocalID},
+    body::{HMIRBodyContext, HMIRLocalID},
     expr::HMIRExprID,
 };
 
 #[derive(Debug, Clone)]
 pub struct HMIRFunction {
-    body: HMIRBody,
+    body: HMIRBodyContext,
     prototype: HMIRFnPrototype,
     params: Box<[HMIRLocalID]>,
     def: Option<HMIRFnDefinition>,
@@ -45,7 +45,7 @@ pub struct HMIRFnParam<T> {
 // The conditions are expressions of the contract's own body, which binds the parameters they name by position
 #[derive(Debug, Clone)]
 pub struct HMIRContract {
-    body: HMIRBody,
+    body: HMIRBodyContext,
     params: Box<[HMIRLocalID]>,
 
     safe: bool,
@@ -61,7 +61,7 @@ pub enum HMIRFunctionStage {
 
 impl HMIRFunction {
     pub fn new(
-        body: HMIRBody,
+        body: HMIRBodyContext,
         prototype: HMIRFnPrototype,
         params: Box<[HMIRLocalID]>,
         def: Option<HMIRFnDefinition>,
@@ -74,7 +74,7 @@ impl HMIRFunction {
         }
     }
 
-    pub fn body(&self) -> &HMIRBody {
+    pub fn body(&self) -> &HMIRBodyContext {
         &self.body
     }
 
@@ -180,7 +180,7 @@ impl<T> HMIRFnSignature<T> {
 
 impl HMIRContract {
     pub fn new(
-        body: HMIRBody,
+        body: HMIRBodyContext,
         params: Box<[HMIRLocalID]>,
         safe: bool,
         precondition: Option<HMIRExprID>,
@@ -195,7 +195,7 @@ impl HMIRContract {
         }
     }
 
-    pub fn body(&self) -> &HMIRBody {
+    pub fn body(&self) -> &HMIRBodyContext {
         &self.body
     }
 
@@ -222,7 +222,7 @@ impl HMIRContract {
 
 impl Default for HMIRContract {
     fn default() -> Self {
-        Self::new(HMIRBody::new(), Box::default(), false, None, None)
+        Self::new(HMIRBodyContext::new(), Box::default(), false, None, None)
     }
 }
 

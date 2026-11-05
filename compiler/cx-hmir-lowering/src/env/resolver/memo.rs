@@ -10,11 +10,7 @@ use cx_tokens::TokenRange;
 use cx_util::dense_id;
 
 use crate::{
-    env::function::{ComptimeContext, Expectations, FnContext, LocalLoweringContext},
-    eval::{self, coerce, flow},
-    log::hmir_error,
-    symbol,
-    value::HMIRValue,
+    env::function::{ComptimeContext, Expectations, FnContext, LocalLoweringContext}, eval::{self, coerce, deduce, flow, types}, log::hmir_error, symbol, value::HMIRValue,
 };
 
 use super::HMIRResolver;
@@ -139,7 +135,11 @@ impl LocalLoweringContext<'_, '_, '_> {
         self.env_mut().resolver_mut().intern_context(context)
     }
 
-    pub fn evaluate(&mut self, id: MemoID, span: &TokenRange) -> eval::EvalResult<flow::Evaluation<HMIRValue>> {
+    pub fn evaluate(
+        &mut self,
+        id: MemoID,
+        span: &TokenRange,
+    ) -> eval::EvalResult<flow::Evaluation<HMIRValue>> {
         let resolver = self.env().resolver();
         match &resolver.entries[id].state {
             MemoState::Ready(value) | MemoState::Evaluating(Some(value)) => {
@@ -180,9 +180,9 @@ impl LocalLoweringContext<'_, '_, '_> {
                 MemoKey::Expression(..) => captured.expectations,
             };
             child.with_expectations(expectations, |child| match key {
-                MemoKey::Definition(def, _) => {
-                    Ok(flow::Evaluation::Ready(symbol::definition(child, def, scope, span)?))
-                }
+                MemoKey::Definition(def, _) => Ok(flow::Evaluation::Ready(symbol::definition(
+                    child, def, scope, span,
+                )?)),
                 MemoKey::Expression(expr, _) => expression(
                     child,
                     id,
@@ -227,10 +227,12 @@ fn expression(
         .expect("memo expression belongs to its owner");
     if let HMIRExprKind::Type(ty) = body.expr(expr).kind() {
         if let Some(element) = eval::types::hole_bounded(body, ty) {
-            return eval::deduce::hole_bound(context, body, ty, element, span);
+            return deduce::hole_bound(context, body, ty, element, span);
         }
-        let ty = eval::types::construct_type(context, body, ty, id)?;
-        return Ok(flow::Evaluation::Ready(eval::name::type_value(context, ty, span)?));
+        let ty = types::construct_type(context, body, ty, id)?;
+        return Ok(flow::Evaluation::Ready(eval::name::type_value(
+            context, ty, span,
+        )?));
     }
     let result = eval::eval(context, body, expr)?.try_complete(context, body, expected)?;
     let partial = result
@@ -240,9 +242,9 @@ fn expression(
     let span = span.clone();
     result.and_then(context, body, partial, move |context, _, value, _| {
         let value = match expected {
-            Some(expected) => coerce::implicit(context, value, expected, &span)?,
+            Some(expected) => coerce::implicit::standard(context, value, expected, &span)?,
             None if initializer && value.as_type().is_none() => {
-                coerce::std_rvalue(context, value, &span)?
+                coerce::promotion::std_rvalue(context, value, &span)?
             }
             None => value,
         };

@@ -3,7 +3,7 @@ mod captures;
 pub(crate) use captures::references;
 
 use cx_hmir::{
-    HMIRBody, HMIRContract, HMIRFnSignature, HMIRFunctionStage,
+    HMIRBodyContext, HMIRContract, HMIRFnSignature, HMIRFunctionStage,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
@@ -85,7 +85,7 @@ pub(crate) fn is_code(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {
 
 pub(crate) fn eval_splice(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     quote: HMIRExprID,
     args: &[HMIRExprID],
@@ -123,7 +123,7 @@ pub(crate) fn splice(context: &mut LocalLoweringContext, value: HMIRValue, span:
 
 pub(crate) fn capture(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     params: &[HMIRLocalID],
     root: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -207,7 +207,7 @@ fn check_params(
 
 pub(crate) fn argument(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     arg: HMIRExprID,
     target: HMIRTypeID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -225,7 +225,7 @@ pub(crate) fn argument(
     let span = body.expr(operand).span().clone();
     value
         .try_complete(context, body, Some(target))?
-        .map(context, move |context, value| coerce::implicit(context, value, target, &span))
+        .map(context, move |context, value| coerce::implicit::standard(context, value, target, &span))
 }
 
 pub(crate) fn read(context: &mut LocalLoweringContext, value: HMIRValue, span: &TokenRange) -> CXResult<HMIRValue> {
@@ -237,7 +237,7 @@ pub(crate) fn read(context: &mut LocalLoweringContext, value: HMIRValue, span: &
 
 pub(crate) fn apply(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     code: HMIRValue,
     args: &[HMIRExprID],
     span: &TokenRange,
@@ -256,7 +256,7 @@ pub(crate) fn apply(
         let value = match runtime {
             true => {
                 let value = (eval(context, body, *arg))?.ready()?;
-                coerce::implicit(context, value, param, body.expr(*arg).span())?
+                coerce::implicit::standard(context, value, param, body.expr(*arg).span())?
             }
             false => {
                 let target = signature(context, Vec::new(), param, span);
@@ -310,7 +310,7 @@ pub(crate) fn materialize(
     let (source, point) = (quote.source(), quote.visible_through());
     let completion = context.relocated(source, point, |context| {
         for (local, (target, value)) in quote.params().iter().zip(params.into_iter().zip(args.iter().cloned())) {
-            let value = coerce::implicit(context, value, target, span)?;
+            let value = coerce::implicit::standard(context, value, target, span)?;
             let value = match context.env().is_reference(target) {
                 true => value,
                 false => {
@@ -326,7 +326,7 @@ pub(crate) fn materialize(
         let span = span.clone();
         eval(context, body, quote.root())?.try_complete(context, body, result)?.map(context, move |context, value| {
             match result {
-                Some(result) => coerce::implicit(context, value, result, &span),
+                Some(result) => coerce::implicit::standard(context, value, result, &span),
                 None => Ok(expr::unit(context, &span)),
             }
         })

@@ -5,7 +5,7 @@ pub(crate) mod variant;
 use rustc_hash::FxHashSet;
 
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBinaryOp, HMIRBody,
+    HMIRAggregateOp, HMIRBinaryOp, HMIRBodyContext,
     body::HMIRLocalID,
     expr::HMIRExprID,
     ty::{
@@ -23,7 +23,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
         EvalResult, coerce, eval, eval_type, expr,
-        flow::Evaluation,
+        flow::{EvalExit, Evaluation},
         op::{binary_operands, eval_operand},
         place::dereference_inner,
         types,
@@ -34,7 +34,7 @@ use crate::{
 
 pub(crate) fn eval_aggregate(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     op: &HMIRAggregateOp,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -57,37 +57,48 @@ pub(crate) fn eval_aggregate(
             };
             let element = binary_operands(context, span, HMIRBinaryOp::Add, base, index)?;
 
-            Ok(Evaluation::Ready(dereference_inner(context, element, Some(&pointer), span)?))
+            Ok(Evaluation::Ready(dereference_inner(
+                context,
+                element,
+                Some(&pointer),
+                span,
+            )?))
         }
-        HMIRAggregateOp::Is { value, pattern } => pattern::eval_is(context, body, span, *value, pattern),
-        HMIRAggregateOp::Unpack { value, bindings } => unpack(context, body, span, *value, bindings),
+        HMIRAggregateOp::Is { value, pattern } => {
+            pattern::eval_is(context, body, span, *value, pattern)
+        }
+        HMIRAggregateOp::Unpack { value, bindings } => {
+            unpack(context, body, span, *value, bindings)
+        }
     }
 }
 
 fn eval_member(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     base: HMIRExprID,
     name: &CXIdent,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let value = (eval(context, body, base))?.ready()?;
-    let value = coerce::collapse(context, value, span)?;
-    let subject = context.env().referent(value.ty());
-    let indirect = context.env().pointer_inner(subject).is_some()
-        || context.env().is_array(subject);
+    let value = eval(context, body, base)?
+        .ready()
+        .and_then(|value| coerce::collapse(context, value, &span).map_err(EvalExit::from))?;
+ 
+    let subject = types::referent(context.env(), value.ty());
+    let indirect = context.env().is_pointer(subject) || context.env().is_array(subject);
+
     let mut value = if indirect {
-        dereference_inner(context, value, None, span)?
+        dereference_inner(context, value, None, &span)?
     } else if context.env().is_reference(value.ty()) {
         value
     } else {
-        emit::temporary(context, value, span)?
+        emit::temporary(context, value, &span)?
     };
 
     let mut owner = context.env().referent(value.ty());
     let Some(path) = member_path(context.env(), owner, name) else {
         let member = (types::name(context.env(), owner), name.to_string());
-        return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
+        return Err(hmir_error(&span, &typecheck::UNKNOWN_MEMBER, member).into());
     };
 
     for index in path {
@@ -99,18 +110,18 @@ fn eval_member(
                 volatile: semantics.volatile,
                 ..Default::default()
             };
-            ty = types::specify(context, ty, qualifiers, span);
+            ty = types::qualify::specify(context, ty, qualifiers, &span);
         }
-        value = emit::field(context, &value, index, ty, span)?;
+        value = emit::field(context, &value, index, ty, &span)?;
         owner = ty;
     }
 
-    Ok(Evaluation::Ready(emit::reference(context, &value, span)?))
+    Ok(Evaluation::Ready(emit::reference(context, &value, &span)?))
 }
 
 fn unpack(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     value: HMIRExprID,
     bindings: &[(CXIdent, HMIRLocalID)],
@@ -128,7 +139,11 @@ fn unpack(
     let fields = match context.env().resolve_kind(source_ty) {
         HMIRTypeKind::Struct { fields } if !context.env().is_reference(source_ty) => fields.clone(),
         _ => {
-            let mismatch = ("@unpack".into(), "owned structured type".into(), types::name(context.env(), source_ty));
+            let mismatch = (
+                "@unpack".into(),
+                "owned structured type".into(),
+                types::name(context.env(), source_ty),
+            );
             return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch).into());
         }
     };
@@ -145,30 +160,56 @@ fn unpack(
             let item = (name.to_string(), "@unpack binding".into());
             return Err(hmir_error(span, &typecheck::DUPLICATE_ITEM, item).into());
         }
-        let binding = body.local(*local).name().expect("an unpack binding is named");
+        let binding = body
+            .local(*local)
+            .name()
+            .expect("an unpack binding is named");
         if !seen_bindings.insert(binding.clone()) {
-            return Err(hmir_error(span, &typecheck::INCOMPATIBLE_DECLARATION, binding.to_string()).into());
+            return Err(hmir_error(
+                span,
+                &typecheck::INCOMPATIBLE_DECLARATION,
+                binding.to_string(),
+            )
+            .into());
         }
-        projections.push(Projection { index, name: binding.clone(), local: *local, ty: *fields[index].ty() });
+        projections.push(Projection {
+            index,
+            name: binding.clone(),
+            local: *local,
+            ty: *fields[index].ty(),
+        });
     }
 
-    let dropped = fields
-        .iter()
-        .enumerate()
-        .find(|(index, field)| context.env().is_nodrop(*field.ty()) && !seen_fields.contains(index));
+    let dropped = fields.iter().enumerate().find(|(index, field)| {
+        context.env().is_nodrop(*field.ty()) && !seen_fields.contains(index)
+    });
     if let Some((index, field)) = dropped {
-        let name = field.name().map_or_else(|| format!("field {index}"), ToString::to_string);
-        let entity = (format!("drop of @nodrop field {name}"), "@unpack statement".into());
+        let name = field
+            .name()
+            .map_or_else(|| format!("field {index}"), ToString::to_string);
+        let entity = (
+            format!("drop of @nodrop field {name}"),
+            "@unpack statement".into(),
+        );
         return Err(hmir_error(span, &typecheck::MISSING_ENTITY, entity).into());
     }
 
-    let constant = matches!(source.kind(), HMIRValueKind::Constant(HMIRConstant::Aggregate { .. }));
+    let constant = matches!(
+        source.kind(),
+        HMIRValueKind::Constant(HMIRConstant::Aggregate { .. })
+    );
     let comptime = !context.is_runtime();
     let source = match constant {
         true => emit::materialize(context, source, span)?,
         false => source,
     };
-    for Projection { index, name, local, ty } in projections {
+    for Projection {
+        index,
+        name,
+        local,
+        ty,
+    } in projections
+    {
         let projected = emit::field(context, &source, index, ty, span)?;
         let value = if constant && comptime {
             projected
@@ -177,7 +218,9 @@ fn unpack(
             match types::bitfield(context.env(), &reference) {
                 Some(_) => emit::copy(context, reference, span)?,
                 None => {
-                    let origin = source.as_place().expect("an unpacked value is held in storage");
+                    let origin = source
+                        .as_place()
+                        .expect("an unpacked value is held in storage");
                     emit::lift(context, &reference, origin, span)?
                 }
             }
@@ -190,7 +233,10 @@ fn unpack(
     Ok(Evaluation::Ready(expr::unit(context, span)))
 }
 
-pub(crate) fn member_fields<'a>(env: &'a HMIREnvironment, ty: HMIRTypeID) -> &'a [HMIRFieldDef<HMIRTypeID>] {
+pub(crate) fn member_fields<'a>(
+    env: &'a HMIREnvironment,
+    ty: HMIRTypeID,
+) -> &'a [HMIRFieldDef<HMIRTypeID>] {
     match env.resolve_kind(ty) {
         HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => fields,
         _ => &[],
@@ -198,7 +244,11 @@ pub(crate) fn member_fields<'a>(env: &'a HMIREnvironment, ty: HMIRTypeID) -> &'a
 }
 
 // The field indices that lead to a member, which may sit inside of anonymous members
-pub(crate) fn member_path(env: &HMIREnvironment, ty: HMIRTypeID, name: &CXIdent) -> Option<Vec<usize>> {
+pub(crate) fn member_path(
+    env: &HMIREnvironment,
+    ty: HMIRTypeID,
+    name: &CXIdent,
+) -> Option<Vec<usize>> {
     member_fields(env, ty)
         .iter()
         .enumerate()

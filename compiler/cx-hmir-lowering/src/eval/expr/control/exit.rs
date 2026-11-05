@@ -1,5 +1,5 @@
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
@@ -26,7 +26,7 @@ use crate::{
 
 pub(super) fn eval_return(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     value: Option<HMIRExprID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -42,7 +42,7 @@ pub(super) fn eval_return(
 
 pub(super) fn eval_yield(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     value: Option<HMIRExprID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -62,7 +62,7 @@ pub(super) fn eval_yield(
     };
     let (span, origin) = (span.clone(), body.id());
     value.and_then(context, body, None, move |context, _, value, _| {
-        let value = coerce::std_rvalue(context, value, &span)?;
+        let value = coerce::promotion::std_rvalue(context, value, &span)?;
         if !context.is_runtime() {
             return Err(EvalExit::Stop(ComptimeStop::Yield(value).into()));
         }
@@ -129,7 +129,7 @@ fn untargeted(
 
 fn return_type(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     let Some(signature) = context.signature() else {
@@ -144,7 +144,7 @@ fn return_type(
 // Always stops evaluation: a runtime return diverges, and a comptime return carries its value to the caller
 pub(crate) fn return_value(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     value: Option<Evaluation<HMIRValue>>,
     explicit: bool,
     span: &TokenRange,
@@ -163,7 +163,7 @@ pub(crate) fn return_value(
         (None, false) => return Err(hmir_error(span, &typecheck::MISSING_RETURN_VALUE, ()).into()),
         (Some(value), false) => {
             let value = value.complete(context, body, Some(ty))?;
-            Some(coerce::implicit(context, value, ty, span)?)
+            Some(coerce::implicit::standard(context, value, ty, span)?)
         }
     };
 
@@ -184,7 +184,7 @@ pub(crate) fn return_value(
 
 pub(crate) fn fallthrough(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     is_main: bool,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {

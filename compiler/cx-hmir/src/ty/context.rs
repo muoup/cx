@@ -38,6 +38,7 @@ pub trait HMIRTypeContext {
         matches!(self.resolve_kind(ty), HMIRTypeKind::ReferenceTo { .. })
     }
 
+    /// Returns the inner of a reference or the base type
     fn referent(&self, ty: HMIRTypeID) -> HMIRTypeID {
         self.reference_inner(ty).unwrap_or(ty)
     }

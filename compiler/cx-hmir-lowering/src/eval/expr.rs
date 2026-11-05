@@ -11,7 +11,7 @@ pub(crate) mod staged;
 pub(crate) mod types;
 
 use cx_hmir::{
-    HMIRBody,
+    HMIRBodyContext,
     expr::{HMIRExprID, HMIRIntrinsic, literal::HMIRLiteral},
     ty::{HMIRTypeKind, context::HMIRTypeContext},
 };
@@ -57,7 +57,7 @@ pub(crate) fn unit(context: &mut LocalLoweringContext, span: &TokenRange) -> HMI
 
 pub(crate) fn eval_intrinsic(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     span: &TokenRange,
     intrinsic: &HMIRIntrinsic,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -68,7 +68,7 @@ pub(crate) fn eval_intrinsic(
         VAIntrinsic::Start { list, last } => {
             let list = (va_list(context, body, *list))?.ready()?;
             let last = (eval(context, body, *last))?.ready()?;
-            let last = coerce::std_rvalue(context, last, span)?;
+            let last = coerce::promotion::std_rvalue(context, last, span)?;
             VAIntrinsic::Start { list, last }
         }
         VAIntrinsic::End { list } => VAIntrinsic::End {
@@ -88,7 +88,7 @@ pub(crate) fn eval_intrinsic(
 
 fn va_list(
     context: &mut LocalLoweringContext,
-    body: &HMIRBody,
+    body: &HMIRBodyContext,
     list: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = body.expr(list).span();
