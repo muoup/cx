@@ -55,7 +55,7 @@ impl HMIRConstant {
             HMIRTypeKind::Void => Self::Unit,
             HMIRTypeKind::Array {
                 element,
-                length: Some(length),
+                length,
             } => Self::Aggregate(vec![Self::zero(env, *element)?; *length as usize]),
             HMIRTypeKind::Struct { fields } => Self::Aggregate(
                 fields

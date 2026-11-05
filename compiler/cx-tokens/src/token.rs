@@ -505,6 +505,7 @@ pub enum KeywordType {
     Then,
     Where,
     Safe,
+    Hole,
 
     Precondition,
     Postcondition,
@@ -608,6 +609,7 @@ impl TokenKind {
                     KeywordType::Then => "then",
                     KeywordType::Where => "where",
                     KeywordType::Safe => "safe",
+                    KeywordType::Hole => "_",
                     KeywordType::Precondition => "pre",
                     KeywordType::Postcondition => "post",
                     _ => return TokenKind::Keyword(keyword),
@@ -699,6 +701,7 @@ impl TokenKind {
             "is" => TokenKind::Operator(OperatorType::Is),
 
             "safe" => TokenKind::Keyword(KeywordType::Safe),
+            "_" => TokenKind::Keyword(KeywordType::Hole),
             "where" => TokenKind::Keyword(KeywordType::Where),
             "pre" => TokenKind::Keyword(KeywordType::Precondition),
             "post" => TokenKind::Keyword(KeywordType::Postcondition),

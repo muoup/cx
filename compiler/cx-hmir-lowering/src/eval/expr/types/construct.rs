@@ -1,9 +1,9 @@
 use cx_hir::ast::types::HIRTagKind;
 use cx_hmir::{
     HMIRBody,
-    expr::HMIRExprID,
+    expr::{HMIRExprID, HMIRExprKind},
     ty::{
-        HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind,
+        HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
         aggregate::{HMIRDeclaredMove, HMIRMoveSemantics},
         context::HMIRTypeContext,
     },
@@ -34,11 +34,6 @@ pub(crate) fn construct_type(
     memo: MemoID,
 ) -> CXResult<HMIRTypeID> {
     let id = HMIRResolver::type_id(memo);
-    let forward = context
-        .env()
-        .resolver()
-        .incomplete_tag(id)
-        .filter(|_| matches!(ty.kind(), HMIRExprTypeKind::Opaque { .. }));
     let semantics = ty.semantics().map(|declared| {
         CXResult::Ok(match declared {
             HMIRDeclaredMove::Explicit(semantics) => *semantics,
@@ -98,14 +93,53 @@ pub(crate) fn construct_type(
                 None,
             )
         }
+        HMIRExprTypeKind::Array { element, length } => {
+            let element = member(context, body, *element, ty.kind())?;
+            let kind = match array_length(context, body, *length)? {
+                Some(length) => HMIRTypeKind::Array { element, length },
+                None => HMIRTypeKind::Undefined(HMIRUndefined::Array { element }),
+            };
+            array_type(ty, kind, move_semantics)?
+        }
         _ => evaluate(context, body, ty, move_semantics)?,
     };
     context.env_mut().resolver_mut().complete_type(id, complete);
-    if let Some(tag) = forward {
-        context.env_mut().resolver_mut().mark_incomplete(id, tag);
-    }
     types::validate(context.env(), context.env().resolve_type_id(id))?;
     Ok(id)
+}
+
+// An array bounded by '_' has no type of its own, only one an expected array type completes
+pub(crate) fn hole_bounded(body: &HMIRBody, ty: &HMIRExprType) -> Option<HMIRExprID> {
+    match ty.kind() {
+        HMIRExprTypeKind::Array { element, length } if matches!(body.expr(*length).kind(), HMIRExprKind::Hole(_)) => {
+            Some(*element)
+        }
+        _ => None,
+    }
+}
+
+// The undefined array a hole-bounded array is completed from, apart from the type its expression names
+pub(crate) fn undefined_array(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    ty: &HMIRExprType,
+    element: HMIRExprID,
+) -> CXResult<HMIRTypeID> {
+    let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
+    let element = member(context, body, element, ty.kind())?;
+    let kind = HMIRTypeKind::Undefined(HMIRUndefined::Array { element });
+    let undefined = array_type(ty, kind, move_semantics)?;
+    types::validate(context.env(), &undefined)?;
+    Ok(context.env_mut().resolver_mut().realize_type(undefined))
+}
+
+fn array_type(ty: &HMIRExprType, kind: HMIRTypeKind, move_semantics: HMIRMoveSemantics) -> CXResult<HMIRType> {
+    Ok(HMIRType::new(
+        kind,
+        ty.semantics().map(|_| CXResult::Ok(move_semantics))?,
+        ty.decl_span().clone(),
+        ty.debug_name().map(str::to_owned),
+    ))
 }
 
 fn evaluate(
@@ -117,7 +151,7 @@ fn evaluate(
     ty.map(
         context,
         |context, inner| member(context, body, *inner, ty.kind()),
-        |context, length| array_length(context, body, *length),
+        |_, _| unreachable!("an array is constructed from its bound"),
         |_, _| Ok(move_semantics),
     )
 }
@@ -161,9 +195,15 @@ fn array_length(
     context: &mut LocalLoweringContext,
     body: &HMIRBody,
     length: HMIRExprID,
-) -> CXResult<u64> {
+) -> CXResult<Option<u64>> {
     let span = body.expr(length).span();
+    if matches!(body.expr(length).kind(), HMIRExprKind::Hole(_)) {
+        return Err(hmir_error(span, &typecheck::CANNOT_INFER, "the array bound".into()));
+    }
     let value = eval_comptime(context, body, length, None)?;
+    if matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void) {
+        return Ok(None);
+    }
     let (HMIRTypeKind::Int(ty), Some(value)) = (context.env().resolve_kind(value.ty()), value.as_int())
     else {
         let subject = ("array length".into(), "integer".into());
@@ -178,7 +218,7 @@ fn array_length(
     let requirement = match negative {
         true => "a non-negative value".to_string(),
         false => match u64::try_from(value as u128) {
-            Ok(length) => return Ok(length),
+            Ok(length) => return Ok(Some(length)),
             Err(_) => format!("a value of at most {}", u64::MAX),
         },
     };

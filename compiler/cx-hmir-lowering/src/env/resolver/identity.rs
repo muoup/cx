@@ -5,7 +5,7 @@ use std::{
 };
 
 use cx_hmir::ty::{
-    HMIRTypeID, HMIRTypeKind, aggregate::HMIRMoveSemantics, context::HMIRTypeContext,
+    HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRMoveSemantics, context::HMIRTypeContext,
 };
 
 use crate::{
@@ -113,7 +113,8 @@ fn fingerprint(env: &HMIREnvironment, ty: HMIRTypeID, hash: &mut impl Hasher) ->
         HMIRTypeKind::Struct { .. }
             | HMIRTypeKind::Union { .. }
             | HMIRTypeKind::TaggedUnion { .. }
-            | HMIRTypeKind::Opaque { .. }
+            | HMIRTypeKind::Undefined(HMIRUndefined::Tagged(_))
+            | HMIRTypeKind::Builtin { .. }
             | HMIRTypeKind::Staged(_)
     ) {
         let base = env.semantics(underlying);
@@ -142,6 +143,7 @@ fn fingerprint(env: &HMIREnvironment, ty: HMIRTypeID, hash: &mut impl Hasher) ->
             length.hash(hash);
             fingerprint(env, *element, hash)?;
         }
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => fingerprint(env, *element, hash)?,
         HMIRTypeKind::Function(signature) => {
             signature.stage().hash(hash);
             signature.is_variadic().hash(hash);

@@ -41,7 +41,7 @@ pub(crate) fn eval_aggregate(
     match op {
         HMIRAggregateOp::Member { base, name } => eval_member(context, body, span, *base, name),
         HMIRAggregateOp::Initialize { ty, fields } => {
-            let ty = eval_type(context, body, *ty)?.description()?;
+            let ty = eval_type(context, body, *ty)?.guide();
             let fields = fields.clone();
             let span = span.clone();
             ty.and_then(context, body, None, move |context, body, ty, _| {
@@ -75,7 +75,7 @@ fn eval_member(
     let value = coerce::collapse(context, value, span)?;
     let subject = context.env().referent(value.ty());
     let indirect = context.env().pointer_inner(subject).is_some()
-        || matches!(context.env().resolve_kind(subject), HMIRTypeKind::Array { .. });
+        || context.env().is_array(subject);
     let mut value = if indirect {
         dereference_inner(context, value, None, span)?
     } else if context.env().is_reference(value.ty()) {

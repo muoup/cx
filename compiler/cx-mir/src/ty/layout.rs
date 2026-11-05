@@ -140,9 +140,8 @@ pub(crate) fn compute_layout<Registry: MTRegistry>(
                 data.alignment,
             )
         }
-        MIRTypeKind::Incomplete(metadata) => metadata
-            .layout
-            .unwrap_or_else(|| panic!("incomplete MIR type {ty} has no layout")),
+        MIRTypeKind::Builtin { layout, .. } => *layout,
+        MIRTypeKind::Undefined(_) => panic!("undefined MIR type {ty} has no layout"),
         MIRTypeKind::Str => MIRTypeLayout::new(1, 1),
     };
 

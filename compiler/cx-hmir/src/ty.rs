@@ -12,6 +12,7 @@ use crate::{
         intrinsic::{HMIRFloatType, HMIRIntType},
     },
 };
+use cx_hir::ast::types::HIRTagKind;
 use cx_tokens::TokenRange;
 use cx_util::dense_id;
 
@@ -45,18 +46,26 @@ pub enum HMIRGenericTypeKind<T, L> {
     Float(HMIRFloatType),
     PointerTo(T),
     ReferenceTo { inner: T, bitfield: Option<HMIRBitfield> },
-    Array { element: T, length: Option<L> },
+    Array { element: T, length: L },
     Function(HMIRFnSignature<T>),
     Struct { fields: Vec<HMIRFieldDef<T>> },
     Union { fields: Vec<HMIRFieldDef<T>> },
     TaggedUnion { fields: Vec<HMIRFieldDef<T>> },
-    Opaque { size: usize, alignment: usize },
+    Undefined(HMIRUndefined<T>),
+    Builtin { name: String, size: usize, alignment: usize }, // A complete type whose structure only intrinsics interpret
     Nominal(T), // A transparent reference to another type, whose semantics only ever add specifiers to it
 
     // U_1
     Type,
     Staged(T),
     Dependent, // A signature slot whose type is fixed by an earlier comptime argument
+}
+
+// A declared type that was never defined; it is only usable through a pointer, or as an array through its element
+#[derive(Debug, Clone, Copy)]
+pub enum HMIRUndefined<T> {
+    Tagged(HIRTagKind),
+    Array { element: T },
 }
 
 impl<T, L, M> HMIRGenericType<T, L, M> {
@@ -106,7 +115,8 @@ impl<T, L, M> HMIRGenericType<T, L, M> {
 
     pub fn array_inner(&self) -> Option<&T> {
         match &self.kind {
-            HMIRGenericTypeKind::Array { element, .. } => Some(element),
+            HMIRGenericTypeKind::Array { element, .. }
+            | HMIRGenericTypeKind::Undefined(HMIRUndefined::Array { element }) => Some(element),
             _ => None,
         }
     }
@@ -154,10 +164,15 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
             Self::Str => HMIRGenericTypeKind::Str,
             Self::Int(int) => HMIRGenericTypeKind::Int(*int),
             Self::Float(float) => HMIRGenericTypeKind::Float(*float),
-            Self::Opaque { size, alignment } => HMIRGenericTypeKind::Opaque {
+            Self::Builtin { name, size, alignment } => HMIRGenericTypeKind::Builtin {
+                name: name.clone(),
                 size: *size,
                 alignment: *alignment,
             },
+            Self::Undefined(HMIRUndefined::Tagged(tag)) => HMIRGenericTypeKind::Undefined(HMIRUndefined::Tagged(*tag)),
+            Self::Undefined(HMIRUndefined::Array { element }) => {
+                HMIRGenericTypeKind::Undefined(HMIRUndefined::Array { element: ty(state, element)? })
+            }
 
             Self::PointerTo(inner) => HMIRGenericTypeKind::PointerTo(ty(state, inner)?),
             Self::ReferenceTo { inner, bitfield } => HMIRGenericTypeKind::ReferenceTo {
@@ -170,10 +185,7 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
                 length: declared,
             } => HMIRGenericTypeKind::Array {
                 element: ty(state, element)?,
-                length: declared
-                    .as_ref()
-                    .map(|declared| length(state, declared))
-                    .transpose()?,
+                length: length(state, declared)?,
             },
             Self::Function(signature) => {
                 HMIRGenericTypeKind::Function(signature.map(|param| ty(state, param))?)

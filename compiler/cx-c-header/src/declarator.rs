@@ -1,5 +1,5 @@
 use cx_mir::{
-    MIRFloatType, MIRFnSignature, MIRIncompleteMetadata, MIRIncompleteTag, MIRIntType, MIRType, MIRTypeID, MIRTypeKind, MIRTypeMetadata,
+    MIRFloatType, MIRFnSignature, MIRUndefined, MIRIntType, MIRType, MIRTypeID, MIRTypeKind, MIRTypeMetadata,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_util::identifier::CXIdent;
@@ -10,16 +10,15 @@ pub(crate) fn declare(types: &MIRTypeRegistry, ty: MIRTypeID, declarator: &str) 
         MIRTypeKind::PointerTo { inner } | MIRTypeKind::MemoryReference { inner } => {
             let pointer = join(&format!("*{}", qualifiers(definition.metadata(), true)), declarator);
             let pointer = match definition_kind(types, *inner) {
-                MIRTypeKind::Array { .. } | MIRTypeKind::Function { .. } => format!("({pointer})"),
-                kind if incomplete_element(kind).is_some() => format!("({pointer})"),
+                MIRTypeKind::Array { .. }
+                | MIRTypeKind::Undefined(MIRUndefined::Array { .. })
+                | MIRTypeKind::Function { .. } => format!("({pointer})"),
                 _ => pointer,
             };
             declare(types, *inner, &pointer)
         }
         MIRTypeKind::Array { length, inner } => declare(types, *inner, &format!("{declarator}[{length}]")),
-        kind if let Some(element) = incomplete_element(kind) => {
-            declare(types, element, &format!("{declarator}[]"))
-        }
+        MIRTypeKind::Undefined(MIRUndefined::Array { element }) => declare(types, *element, &format!("{declarator}[]")),
         MIRTypeKind::Function { signature } => {
             let declarator = format!("{declarator}({})", parameters(types, signature, false));
             declare(types, signature.return_type(), &declarator)
@@ -68,22 +67,12 @@ pub(crate) fn aggregate_keyword(kind: &MIRTypeKind) -> Option<&'static str> {
     match kind {
         MIRTypeKind::Structured { .. } | MIRTypeKind::TaggedUnion { .. } => Some("struct"),
         MIRTypeKind::Union { .. } => Some("union"),
-        MIRTypeKind::Incomplete(metadata) => match metadata.tag {
-            MIRIncompleteTag::Struct | MIRIncompleteTag::TaggedUnion => Some("struct"),
-            MIRIncompleteTag::Union => Some("union"),
-            MIRIncompleteTag::Enum => Some("enum"),
-            MIRIncompleteTag::Array { .. } | MIRIncompleteTag::Builtin => None,
+        MIRTypeKind::Undefined(undefined) => match undefined {
+            MIRUndefined::Struct | MIRUndefined::TaggedUnion => Some("struct"),
+            MIRUndefined::Union => Some("union"),
+            MIRUndefined::Enum => Some("enum"),
+            MIRUndefined::Array { .. } => None,
         },
-        _ => None,
-    }
-}
-
-pub(crate) fn incomplete_element(kind: &MIRTypeKind) -> Option<MIRTypeID> {
-    match kind {
-        MIRTypeKind::Incomplete(MIRIncompleteMetadata {
-            tag: MIRIncompleteTag::Array { element },
-            ..
-        }) => Some(*element),
         _ => None,
     }
 }
@@ -118,10 +107,7 @@ fn specifier(types: &MIRTypeRegistry, ty: MIRTypeID) -> String {
             MIRFloatType::F64 => "double",
         }
         .into(),
-        MIRTypeKind::Incomplete(MIRIncompleteMetadata { tag: MIRIncompleteTag::Builtin, .. }) => types
-            .debug_name(ty)
-            .unwrap_or_else(|| panic!("builtin type {ty} is unnamed"))
-            .to_string(),
+        MIRTypeKind::Builtin { name, .. } => name.clone(),
         _ => unreachable!("{kind:?} is not a C type specifier"),
     }
 }

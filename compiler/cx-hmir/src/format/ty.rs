@@ -3,7 +3,7 @@ use std::fmt::{self, Formatter};
 use crate::{
     expr::literal::HMIRLiteral,
     ty::{
-        HMIRGenericType, HMIRGenericTypeKind,
+        HMIRGenericType, HMIRGenericTypeKind, HMIRUndefined,
         aggregate::HMIRFieldDef,
         intrinsic::{HMIRFloatType, HMIRIntType},
     },
@@ -74,11 +74,15 @@ pub(super) fn write_generic_type<T, L, M>(
         HMIRGenericTypeKind::Array { element, length } => {
             write_inner(f, element)?;
             f.write_str("[")?;
-            if let Some(length) = length {
-                write_length(f, length)?;
-            }
+            write_length(f, length)?;
             f.write_str("]")
         }
+        HMIRGenericTypeKind::Undefined(HMIRUndefined::Array { element }) => {
+            f.write_str("undefined ")?;
+            write_inner(f, element)?;
+            f.write_str("[]")
+        }
+        HMIRGenericTypeKind::Undefined(HMIRUndefined::Tagged(tag)) => write!(f, "undefined {}", tag.prefix()),
         HMIRGenericTypeKind::Function(signature) => {
             f.write_str("fn(")?;
             for (index, param) in signature.params().iter().enumerate() {
@@ -110,9 +114,7 @@ pub(super) fn write_generic_type<T, L, M>(
             write_inner(f, inner)?;
             f.write_str(")")
         }
-        HMIRGenericTypeKind::Opaque { size, alignment } => {
-            write!(f, "opaque({size}, {alignment})")
-        }
+        HMIRGenericTypeKind::Builtin { name, .. } => f.write_str(name),
         HMIRGenericTypeKind::Nominal(inner) => {
             if ty.semantics().constant {
                 f.write_str("const ")?;

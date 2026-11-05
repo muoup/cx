@@ -1,6 +1,6 @@
 use rustc_hash::FxHashSet;
 
-use crate::ty::{MIRField, MIRIncompleteTag, MIRTypeID, MIRTypeKind, interface::MTRegistry};
+use crate::ty::{MIRField, MIRUndefined, MIRTypeID, MIRTypeKind, interface::MTRegistry};
 
 pub(crate) fn same_type_inner<T: MTRegistry>(
     registry: &T,
@@ -75,16 +75,12 @@ fn same_kind<T: MTRegistry>(
                     .zip(right.params())
                     .all(|(left, right)| same_type_inner(registry, compared, left.ty(), right.ty()))
         }
-        (MIRTypeKind::Incomplete(left), MIRTypeKind::Incomplete(right)) => {
-            left.layout == right.layout
-                && match (left.tag, right.tag) {
-                    (
-                        MIRIncompleteTag::Array { element: left },
-                        MIRIncompleteTag::Array { element: right },
-                    ) => same_type_inner(registry, compared, left, right),
-                    (left, right) => left == right,
-                }
-        }
+        (
+            MIRTypeKind::Undefined(MIRUndefined::Array { element: left }),
+            MIRTypeKind::Undefined(MIRUndefined::Array { element: right }),
+        ) => same_type_inner(registry, compared, *left, *right),
+        (MIRTypeKind::Undefined(left), MIRTypeKind::Undefined(right)) => left == right,
+        (MIRTypeKind::Builtin { .. }, MIRTypeKind::Builtin { .. }) => left == right,
         _ => false,
     }
 }

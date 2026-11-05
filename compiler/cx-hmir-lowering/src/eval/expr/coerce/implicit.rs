@@ -1,6 +1,6 @@
 use cx_hmir::{
     HMIRFnSignature,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -25,8 +25,8 @@ pub(super) fn convert(
     let env = context.env();
     let source = value.ty();
     if let (
-        HMIRTypeKind::Array { element: from, length: Some(length) },
-        HMIRTypeKind::Array { element: to, length: None },
+        HMIRTypeKind::Array { element: from, length },
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { element: to }),
     ) = (env.resolve_kind(source), env.resolve_kind(target))
         && env.same_type(*from, *to)
         && env.semantics(source).move_semantics == env.semantics(target).move_semantics
@@ -64,11 +64,18 @@ fn step(
     }
 
     match (&from, &to) {
-        (HMIRTypeKind::ReferenceTo { inner, .. }, HMIRTypeKind::Array { element: to, length: target_length }) => {
-            let HMIRTypeKind::Array { element: from, length: Some(length) } = *env.resolve_kind(*inner) else {
+        (
+            HMIRTypeKind::ReferenceTo { inner, .. },
+            HMIRTypeKind::Array { element, .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { element }),
+        ) => {
+            let HMIRTypeKind::Array { element: from, length } = *env.resolve_kind(*inner) else {
                 return Ok(Coercion::Unapplied(value));
             };
-            if !env.same_type(from, *to)
+            let target_length = match &to {
+                HMIRTypeKind::Array { length, .. } => Some(*length),
+                _ => None,
+            };
+            if !env.same_type(from, *element)
                 || target_length.is_some_and(|target| target != length)
                 || env.is_nocopy(*inner)
                 || env.semantics(*inner).move_semantics != env.semantics(target).move_semantics
@@ -101,7 +108,10 @@ fn step(
         }
         (_, HMIRTypeKind::ReferenceTo { inner, .. }) => return bind(context, value, *inner, target, span),
         (HMIRTypeKind::Str, HMIRTypeKind::Array { element, length }) => {
-            return string(context, value, target, *element, *length, span);
+            return string(context, value, target, *element, Some(*length), span);
+        }
+        (HMIRTypeKind::Str, HMIRTypeKind::Undefined(HMIRUndefined::Array { element })) => {
+            return string(context, value, target, *element, None, span);
         }
         _ => {}
     }

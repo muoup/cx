@@ -226,6 +226,9 @@ fn expression(
         .body(expr.body())
         .expect("memo expression belongs to its owner");
     if let HMIRExprKind::Type(ty) = body.expr(expr).kind() {
+        if let Some(element) = eval::types::hole_bounded(body, ty) {
+            return eval::deduce::hole_bound(context, body, ty, element, span);
+        }
         let ty = eval::types::construct_type(context, body, ty, id)?;
         return Ok(flow::Evaluation::Ready(eval::name::type_value(context, ty, span)?));
     }

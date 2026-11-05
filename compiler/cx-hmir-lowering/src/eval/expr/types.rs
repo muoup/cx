@@ -1,14 +1,14 @@
 mod construct;
 mod layout;
 
-pub(crate) use construct::{construct_type, eval_declared_type};
+pub(crate) use construct::{construct_type, eval_declared_type, hole_bounded, undefined_array};
 pub(crate) use layout::eval_type_op;
 
 use cx_hmir::{
     HMIRBody, HMIRFunction, HMIRFunctionStage,
     expr::HMIRExprID,
     ty::{
-        HMIRType, HMIRTypeID, HMIRTypeKind,
+        HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
         aggregate::{HMIRBitfield, HMIRTypeSemantics},
         context::HMIRTypeContext,
         intrinsic::{HMIRIntType, HMIRIntWidth},
@@ -99,7 +99,9 @@ pub(crate) fn parameter(
             );
             return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind));
         }
-        HMIRTypeKind::Array { .. } => element(context, ty, span).unwrap(),
+        HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) => {
+            element(context, ty, span).unwrap()
+        }
         HMIRTypeKind::Function(_) if !comptime_only(context.env(), ty) => ty,
         _ => return Ok(ty),
     };
@@ -112,9 +114,7 @@ pub(crate) fn element(
     array: HMIRTypeID,
     span: &TokenRange,
 ) -> Option<HMIRTypeID> {
-    let HMIRTypeKind::Array { element, .. } = *context.env().resolve_kind(array) else {
-        return None;
-    };
+    let element = context.env().array_inner(array)?;
     match context.env().semantics(array).constant {
         true => Some(specify(context, element, HMIRTypeSemantics { constant: true, ..Default::default() }, span)),
         false => Some(element),
@@ -158,10 +158,10 @@ pub(crate) fn array(
     length: u64,
     span: &TokenRange,
 ) -> HMIRTypeID {
-    let HMIRTypeKind::Array { element, .. } = *env.resolve_kind(ty) else {
-        unreachable!("only an array has its length completed")
+    let HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) = *env.resolve_kind(ty) else {
+        unreachable!("only an undefined array has its length completed")
     };
-    let kind = HMIRTypeKind::Array { element, length: Some(length) };
+    let kind = HMIRTypeKind::Array { element, length };
     let semantics = env.semantics(ty);
     env.resolver_mut()
         .realize_type(HMIRType::new(kind, semantics, span.clone(), None))
@@ -223,7 +223,9 @@ pub(crate) fn unspecify(
 
 pub(crate) fn owned_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRTypeSemantics {
     match env.resolve_kind(ty) {
-        HMIRTypeKind::Array { element, .. } => owned_semantics(env, *element),
+        HMIRTypeKind::Array { element, .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
+            owned_semantics(env, *element)
+        }
         HMIRTypeKind::Struct { .. }
         | HMIRTypeKind::Union { .. }
         | HMIRTypeKind::TaggedUnion { .. } => env.semantics(ty),
@@ -232,13 +234,11 @@ pub(crate) fn owned_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRType
 }
 
 pub(crate) fn is_complete(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
-    let ty = env.underlying(ty);
-    !env.resolver().is_incomplete(ty)
-        && match env.resolve_kind(ty) {
-            HMIRTypeKind::Array { element, length } => length.is_some() && is_complete(env, *element),
-            HMIRTypeKind::Unreachable => false,
-            _ => true,
-        }
+    match env.resolve_kind(ty) {
+        HMIRTypeKind::Array { element, .. } => is_complete(env, *element),
+        HMIRTypeKind::Undefined(_) | HMIRTypeKind::Unreachable => false,
+        _ => true,
+    }
 }
 
 // The bitfield behind a reference, or behind the reference an indirect place was reached through
@@ -290,18 +290,16 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
             format!("{}&[{}:{}]", name(env, *inner), bitfield.offset, bitfield.width)
         }
         HMIRTypeKind::ReferenceTo { inner, bitfield: None } => format!("{}&", name(env, *inner)),
-        HMIRTypeKind::Array { element, length } => format!(
-            "{}[{}]",
-            name(env, *element),
-            length.map(|n| n.to_string()).unwrap_or_default()
-        ),
+        HMIRTypeKind::Array { element, length } => format!("{}[{length}]", name(env, *element)),
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => format!("{}[]", name(env, *element)),
+        HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag)) => tag.prefix().into(),
+        HMIRTypeKind::Builtin { name, .. } => name.clone(),
         HMIRTypeKind::Struct { .. } => "struct".into(),
         HMIRTypeKind::Union { .. } => "union".into(),
         HMIRTypeKind::TaggedUnion { .. } => "enum union".into(),
         HMIRTypeKind::Function(_) => "function".into(),
         HMIRTypeKind::Staged(_) => "expr".into(),
         HMIRTypeKind::Dependent => "_".into(),
-        HMIRTypeKind::Opaque { .. } => "opaque".into(),
     };
     match constant {
         true => format!("const {base}"),

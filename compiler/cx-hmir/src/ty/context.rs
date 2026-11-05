@@ -49,7 +49,7 @@ pub trait HMIRTypeContext {
     }
 
     fn is_array(&self, ty: HMIRTypeID) -> bool {
-        matches!(self.resolve_kind(ty), HMIRTypeKind::Array { .. })
+        self.array_inner(ty).is_some()
     }
 
     fn is_float(&self, ty: HMIRTypeID) -> bool {

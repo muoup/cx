@@ -58,28 +58,15 @@ impl MIRTypeMetadata {
     }
 }
 
-// Interacting with an incomplete type requires an operation that asserts what the type cannot provide;
-// the tag only lets headers rebuild its declaration
+// A declared type that was never defined; interacting with it requires an operation that asserts what it cannot
+// provide, and its tag only lets headers rebuild its declaration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct MIRIncompleteMetadata {
-    pub tag: MIRIncompleteTag,
-    pub layout: Option<MIRTypeLayout>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MIRIncompleteTag {
+pub enum MIRUndefined {
     Struct,
     Union,
     TaggedUnion,
     Enum,
     Array { element: MIRTypeID },
-    Builtin,
-}
-
-impl MIRIncompleteMetadata {
-    pub fn new(tag: MIRIncompleteTag) -> Self {
-        Self { tag, layout: None }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -216,7 +203,9 @@ pub enum MIRTypeKind {
     Array { length: usize, inner: MIRTypeID },
     Function { signature: MIRFnSignature },
 
-    Incomplete(MIRIncompleteMetadata),
+    Undefined(MIRUndefined),
+    // A complete type whose structure only intrinsics interpret
+    Builtin { name: String, layout: MIRTypeLayout },
 
     Str,
 }

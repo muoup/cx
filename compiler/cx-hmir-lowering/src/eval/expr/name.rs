@@ -123,7 +123,7 @@ pub(crate) fn intrinsic_type(
         HIRIntrinsicType::Float { bytes } => HMIRTypeKind::Float(HMIRFloatType::new(
             HMIRFloatWidth::from_bytes(bytes as usize).unwrap(),
         )),
-        HIRIntrinsicType::Opaque { size, alignment } => HMIRTypeKind::Opaque { size, alignment },
+        HIRIntrinsicType::Builtin { size, alignment } => HMIRTypeKind::Builtin { name: name.to_string(), size, alignment },
     };
     Some(context.env_mut().resolver_mut().realize_type(HMIRType::new(
         kind,

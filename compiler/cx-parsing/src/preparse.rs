@@ -491,13 +491,12 @@ fn push_import_name(
 }
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CXResult<NamespacePath> {
+    if try_next!(tokens, keyword!(Hole)) {
+        return Ok(NamespacePath::root());
+    }
     let Some(ident) = try_parse_qualified_name(tokens)? else {
         return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import alias".into(), None));
     };
 
-    if ident.namespace.is_root() && ident.name.as_str() == "_" {
-        Ok(NamespacePath::root())
-    } else {
-        Ok(ident.namespace.child(ident.name))
-    }
+    Ok(ident.namespace.child(ident.name))
 }

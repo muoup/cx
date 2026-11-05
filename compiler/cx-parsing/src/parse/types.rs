@@ -643,6 +643,7 @@ fn parse_declarator_mods(
             let lifetime_kind = next_kind!(data.tokens)?.clone();
             let lifetime = match lifetime_kind {
                 TokenKind::Identifier(lifetime) => CXIdent::from(lifetime.as_str()),
+                keyword!(Hole) => CXIdent::new("_"),
                 TokenKind::Specifier(SpecifierType::Static) => CXIdent::new("static"),
                 _ => {
                     return parse_point_error(

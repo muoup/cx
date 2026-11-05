@@ -1,4 +1,4 @@
-use crate::token::{IntrinsicType, Token, TokenKind};
+use crate::token::{IntrinsicType, KeywordType, Token, TokenKind};
 use std::fmt::{Display, Formatter};
 
 impl Display for Token {
@@ -16,6 +16,7 @@ impl Display for TokenKind {
             TokenKind::Attribute(attribute) => {
                 write!(f, "__attribute__(({}))", attribute.as_str())
             }
+            TokenKind::Keyword(KeywordType::Hole) => write!(f, "_"),
             TokenKind::Keyword(keyword) => write!(f, "{}", format!("{keyword:?}").to_lowercase()),
 
             _ => write!(f, "{self:?}"),

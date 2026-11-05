@@ -1,5 +1,5 @@
 use cx_hmir::ty::{
-    HMIRTypeID, HMIRTypeKind,
+    HMIRTypeID, HMIRTypeKind, HMIRUndefined,
     aggregate::HMIRTypeSemantics,
     context::HMIRTypeContext,
     intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntWidth},
@@ -35,7 +35,7 @@ pub(super) fn step(context: &mut LocalLoweringContext, value: HMIRValue, span: &
             };
             Ok(Coercion::Applied(value))
         }
-        HMIRTypeKind::Array { .. } => {
+        HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) => {
             let element = types::element(context, subject, span).expect("an array has an element type");
             let value = match context.env().is_reference(value.ty()) {
                 true => value,

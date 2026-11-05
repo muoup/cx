@@ -1,7 +1,7 @@
 use rustc_hash::FxHashSet;
 use cx_hmir::{
     expr::HMIRExprID,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -75,10 +75,6 @@ impl LocalLoweringContext<'_, '_, '_> {
             return Ok(());
         }
         self.force_type(ty, span)?;
-        if self.env().resolver().is_incomplete(ty) {
-            *complete = false;
-            return Ok(());
-        }
         let kind = self
             .env()
             .resolver()
@@ -87,6 +83,11 @@ impl LocalLoweringContext<'_, '_, '_> {
             .kind()
             .clone();
         let children = match kind {
+            HMIRTypeKind::Undefined(HMIRUndefined::Tagged(_)) => {
+                *complete = false;
+                return Ok(());
+            }
+            HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => vec![element],
             HMIRTypeKind::PointerTo(inner)
             | HMIRTypeKind::ReferenceTo { inner, .. }
             | HMIRTypeKind::Nominal(inner)
@@ -137,7 +138,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             if let HMIRTypeKind::Nominal(inner) = defined.kind() {
                 return self.force_type_inner(*inner, span, seen);
             }
-            let pending = self.env().resolver().is_incomplete(ty)
+            let pending = matches!(defined.kind(), HMIRTypeKind::Undefined(HMIRUndefined::Tagged(_)))
                 && self.env().resolver().pending(HMIRResolver::type_memo(ty));
             if !pending || !self.type_visible(ty) {
                 return Ok(());

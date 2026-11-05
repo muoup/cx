@@ -1,7 +1,7 @@
 use cx_hmir::{
     HMIRBody,
     expr::HMIRExprID,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
@@ -30,7 +30,10 @@ pub(crate) fn initialize(
     let declared = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => fields.clone(),
         HMIRTypeKind::Array { element, length } => {
-            return array(context, body, span, ty, *element, *length, fields);
+            return array(context, body, span, ty, *element, Some(*length), fields);
+        }
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
+            return array(context, body, span, ty, *element, None, fields);
         }
         HMIRTypeKind::TaggedUnion { .. } => return tagged(context, body, span, ty, fields),
         _ => return initialize_scalar(context, body, span, ty, fields),

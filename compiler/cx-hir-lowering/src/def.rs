@@ -9,7 +9,7 @@ use cx_hmir::{
     HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
     expr::HMIRExprID,
     ty::{
-        HMIRExprTypeKind,
+        HMIRExprTypeKind, HMIRUndefined,
         aggregate::HMIRTypeSemantics,
         intrinsic::{HMIRIntType, HMIRIntWidth},
     },
@@ -48,14 +48,12 @@ pub(crate) fn lower_symbol(
         let kind = match declaration.source() {
             Some(source) => Some(lower_def(context, &name, source)?),
             None => {
+                let tag = declaration.tag().expect("a declaration without a source is a forward tag");
                 let ty = context.type_of_types(declaration.span());
                 let initializer = context.expr_type(
-                    HMIRExprTypeKind::Opaque {
-                        size: 0,
-                        alignment: 1,
-                    },
+                    HMIRExprTypeKind::Undefined(HMIRUndefined::Tagged(tag)),
                     HMIRTypeSemantics::default(),
-                    Some(&name.name),
+                    Some(&symbol.name().name),
                     declaration.span(),
                 );
                 let global = HMIRComptimeGlobal::new(context.finish(), ty, initializer);

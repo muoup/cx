@@ -160,11 +160,8 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
 
-    if let MIRTypeKind::Incomplete(metadata) = definition.kind() {
-        let (bytes, alignment) = metadata
-            .layout
-            .map_or((0, 1), |layout| (layout.size(), layout.alignment()));
-        return LMIRType::new(LMIRTypeKind::Opaque { bytes }, alignment as u8);
+    if let MIRTypeKind::Undefined(_) = definition.kind() {
+        return LMIRType::new(LMIRTypeKind::Opaque { bytes: 0 }, 1);
     }
 
     let kind = match &definition.kind() {
@@ -203,7 +200,8 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
         },
         MIRTypeKind::Void => LMIRTypeKind::Void,
         MIRTypeKind::Str => LMIRTypeKind::Integer(LMIRIntegerType::I8),
-        MIRTypeKind::Incomplete(_) => unreachable!("incomplete types are converted above"),
+        MIRTypeKind::Builtin { layout, .. } => LMIRTypeKind::Opaque { bytes: layout.size() },
+        MIRTypeKind::Undefined(_) => unreachable!("undefined types are converted above"),
     };
 
     LMIRType {

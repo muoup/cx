@@ -2,9 +2,9 @@ use std::ptr;
 
 use cx_hmir::{
     HMIRBody, HMIRDeclarationRole, HMIRDefID, HMIRDefKind,
-    expr::HMIRExprID,
+    expr::{HMIRExprID, HMIRExprKind},
     ty::{
-        HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
+        HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
     },
 };
 use cx_log::{
@@ -54,7 +54,10 @@ pub(crate) fn definition(
         };
         let ty = context.deferred_type(global.initializer());
         if context.env().resolver().realized_type(ty).is_none() {
-            let name = Some(def.name().to_string());
+            let name = match global.body().expr(global.initializer()).kind() {
+                HMIRExprKind::Type(declared) => declared.debug_name().map(str::to_owned),
+                _ => None,
+            };
             context.env_mut().resolver_mut().forward_type(
                 ty,
                 tag,
@@ -111,7 +114,7 @@ pub(crate) fn definition(
                 let resolved = match known {
                     Some(known)
                         if types::is_complete(context.env(), known)
-                            || global.initializer().is_none()
+                            || (global.initializer().is_none() && declared.standing().is_some())
                             || initializing =>
                     {
                         known
@@ -135,7 +138,7 @@ pub(crate) fn definition(
             }
             let mut ty = ty.expect("global has a type expression");
             if context.visible_through().is_none()
-                && matches!(context.env().resolve_kind(ty), HMIRTypeKind::Array { length: None, .. })
+                && matches!(context.env().resolve_kind(ty), HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }))
                 && structure::reconcile_linkage(def, None)? != LinkageMode::Extern
                 && let Some(HMIRDefKind::Global(global)) = declaration.kind()
                     && global.initializer().is_none() {
@@ -144,7 +147,7 @@ pub(crate) fn definition(
             if !context.complete_object(ty)
                 && !provisional
                 && !(declaration.role() == HMIRDeclarationRole::Tentative
-                    && matches!(context.env().resolve_kind(ty), HMIRTypeKind::Array { length: None, .. }))
+                    && matches!(context.env().resolve_kind(ty), HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })))
                 && structure::reconcile_linkage(def, context.visible_through())?
                     != LinkageMode::Extern
             {
@@ -266,7 +269,7 @@ pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> C
                     format!("initial value of '{}'", def.name()),
                 ));
             }
-            let ty = if matches!(child.env().resolve_kind(ty), HMIRTypeKind::Array { length: None, .. }) {
+            let ty = if matches!(child.env().resolve_kind(ty), HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })) {
                 types::array(child.env_mut(), ty, 1, declaration.span())
             } else {
                 ty

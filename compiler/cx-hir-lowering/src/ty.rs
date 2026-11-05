@@ -8,7 +8,7 @@ use cx_hir::ast::{
 };
 use cx_hmir::{
     HMIRContract, HMIRFnSignature, HMIRFunctionStage,
-    expr::{HMIRExprID, HMIRExprKind},
+    expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral},
     ty::{
         HMIRExprTypeKind,
         aggregate::{HMIRDeclaredMove, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
@@ -67,12 +67,12 @@ fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -
         HIRTypeKind::Expr(result) => return lower_staged_type(context, Vec::new(), result, span),
         HIRTypeKind::ExplicitSizedArray(element, length) => {
             let element = lower_type(context, element)?;
-            let length = Some(lower_expr(context, length)?);
+            let length = lower_expr(context, length)?;
             HMIRExprTypeKind::Array { element, length }
         }
         HIRTypeKind::ImplicitSizedArray(element) => {
             let element = lower_type(context, element)?;
-            let length = None;
+            let length = context.push(HMIRExprKind::Literal(HMIRLiteral::Unit), span);
             HMIRExprTypeKind::Array { element, length }
         }
         HIRTypeKind::MemoryReference { inner_type, .. } => HMIRExprTypeKind::ReferenceTo {

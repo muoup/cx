@@ -40,6 +40,9 @@ pub(crate) fn eval(
         HMIRExprKind::Literal(literal) => Ok(Evaluation::Ready(expr::eval_literal(
             context, span, literal,
         ))),
+        HMIRExprKind::Type(ty) if let Some(element) = types::hole_bounded(body, ty) => {
+            deduce::hole_bound(context, body, ty, element, span)
+        }
         HMIRExprKind::Type(_) => {
             let ty = types::eval_declared_type(context, body, id)?;
             deduce::type_result(context, ty, span)

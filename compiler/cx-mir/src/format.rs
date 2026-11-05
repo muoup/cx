@@ -14,7 +14,7 @@ use crate::{
         },
     },
     ty::{
-        MIRBitfieldAccess, MIRField, MIRFloatType, MIRIncompleteTag, MIRIntType, MIRTypeID, MIRTypeKind,
+        MIRBitfieldAccess, MIRField, MIRFloatType, MIRUndefined, MIRIntType, MIRTypeID, MIRTypeKind,
         interface::MTRegistry,
     },
     unit::{
@@ -238,25 +238,20 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
                 f.write_str(") -> ")?;
                 self.write(f, signature.return_type())
             }
-            MIRTypeKind::Incomplete(metadata) => {
-                f.write_str("incomplete ")?;
-                match metadata.tag {
-                    MIRIncompleteTag::Struct => f.write_str("struct")?,
-                    MIRIncompleteTag::Union => f.write_str("union")?,
-                    MIRIncompleteTag::TaggedUnion => f.write_str("tagged union")?,
-                    MIRIncompleteTag::Enum => f.write_str("enum")?,
-                    MIRIncompleteTag::Builtin => f.write_str("builtin")?,
-                    MIRIncompleteTag::Array { element } => {
-                        f.write_str("[")?;
-                        self.write(f, element)?;
-                        f.write_str("]")?;
+            MIRTypeKind::Undefined(undefined) => {
+                f.write_str("undefined ")?;
+                match undefined {
+                    MIRUndefined::Struct => f.write_str("struct"),
+                    MIRUndefined::Union => f.write_str("union"),
+                    MIRUndefined::TaggedUnion => f.write_str("tagged union"),
+                    MIRUndefined::Enum => f.write_str("enum"),
+                    MIRUndefined::Array { element } => {
+                        self.write(f, *element)?;
+                        f.write_str("[]")
                     }
                 }
-                match metadata.layout {
-                    Some(layout) => write!(f, "[{} bytes]", layout.size()),
-                    None => Ok(()),
-                }
             }
+            MIRTypeKind::Builtin { name, layout } => write!(f, "builtin {name}[{} bytes]", layout.size()),
         }
     }
 

@@ -4,7 +4,7 @@ mod promotion;
 use cx_hmir::{
     HMIRBinaryOp, HMIRBody, HMIRCoerceMode,
     expr::HMIRExprID,
-    ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -109,10 +109,10 @@ fn extension(
     span: &TokenRange,
 ) -> CXResult<Coercion> {
     let subject = context.env().referent(value.ty());
-    let array = matches!(context.env().resolve_kind(subject), HMIRTypeKind::Array { .. });
-    let value = match context.env().resolve_kind(subject) {
-        HMIRTypeKind::PointerTo(_) | HMIRTypeKind::Array { .. } => std_rvalue(context, value, span)?,
-        _ => value,
+    let array = context.env().is_array(subject);
+    let value = match array || context.env().pointer_inner(subject).is_some() {
+        true => std_rvalue(context, value, span)?,
+        false => value,
     };
     let env = context.env();
     let source = value.ty();
@@ -278,6 +278,10 @@ fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bool {
             HMIRTypeKind::Array { element: lhs, length: lhs_length },
             HMIRTypeKind::Array { element: rhs, length: rhs_length },
         ) => lhs_length == rhs_length && compatible(env, *lhs, *rhs),
+        (
+            HMIRTypeKind::Undefined(HMIRUndefined::Array { element: lhs }),
+            HMIRTypeKind::Undefined(HMIRUndefined::Array { element: rhs }),
+        ) => compatible(env, *lhs, *rhs),
         _ => false,
     }
 }

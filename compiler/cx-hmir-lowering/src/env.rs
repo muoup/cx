@@ -8,7 +8,7 @@ pub(crate) mod symbols;
 
 use cx_hmir::{
     HMIRUnit,
-    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext},
 };
 use cx_mir::MIRUnit;
 use cx_pipeline_data::db::ModuleData;
@@ -103,6 +103,15 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
                         .all(|(a, b)| self.same_type(*a.ty(), *b.ty()))
                     && self.same_type(*a.return_type(), *b.return_type())
             }
+
+            (
+                HMIRTypeKind::Undefined(HMIRUndefined::Array { element: a }),
+                HMIRTypeKind::Undefined(HMIRUndefined::Array { element: b }),
+            ) => self.same_type(*a, *b),
+            (
+                HMIRTypeKind::Builtin { name: a, size: a_size, alignment: a_alignment },
+                HMIRTypeKind::Builtin { name: b, size: b_size, alignment: b_alignment },
+            ) => (a, a_size, a_alignment) == (b, b_size, b_alignment),
 
             _ => false,
         }

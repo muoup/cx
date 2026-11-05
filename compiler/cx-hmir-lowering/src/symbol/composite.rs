@@ -1,6 +1,6 @@
 use cx_hmir::{
     HMIRFnSignature,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext},
 };
 
 use crate::env::HMIREnvironment;
@@ -19,7 +19,6 @@ pub(crate) fn alike(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID, qualifi
     if a == b {
         return true;
     }
-    let (a_id, b_id) = (a, b);
     let (a, b) = (env.resolve_type_id(a), env.resolve_type_id(b));
     match (a.kind(), b.kind()) {
         (HMIRTypeKind::Void, HMIRTypeKind::Void)
@@ -59,20 +58,13 @@ pub(crate) fn alike(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID, qualifi
             signatures_alike(env, left, right)
         }
         (
-            HMIRTypeKind::Opaque {
-                size: left_size,
-                alignment: left_alignment,
-            },
-            HMIRTypeKind::Opaque {
-                size: right_size,
-                alignment: right_alignment,
-            },
-        ) => {
-            !env.resolver().is_incomplete(env.underlying(a_id))
-                && !env.resolver().is_incomplete(env.underlying(b_id))
-                && (left_size, left_alignment) == (right_size, right_alignment)
-                && a.debug_name() == b.debug_name()
-        }
+            HMIRTypeKind::Undefined(HMIRUndefined::Array { element: left }),
+            HMIRTypeKind::Undefined(HMIRUndefined::Array { element: right }),
+        ) => alike(env, *left, *right, true),
+        (
+            HMIRTypeKind::Builtin { name: left, size: left_size, alignment: left_alignment },
+            HMIRTypeKind::Builtin { name: right, size: right_size, alignment: right_alignment },
+        ) => (left, left_size, left_alignment) == (right, right_size, right_alignment),
 
         _ => false,
     }
@@ -103,7 +95,8 @@ pub(crate) fn composite(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID) -> 
     }
 
     let array = |ty| match *env.resolve_kind(ty) {
-        HMIRTypeKind::Array { element, length } => Some((element, length.is_some())),
+        HMIRTypeKind::Array { element, .. } => Some((element, true)),
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => Some((element, false)),
         _ => None,
     };
     let ((left, left_bound), (right, right_bound)) = (array(a)?, array(b)?);

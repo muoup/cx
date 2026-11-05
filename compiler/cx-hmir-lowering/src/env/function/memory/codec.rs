@@ -32,7 +32,7 @@ pub(crate) fn layout(
         }
         HMIRTypeKind::Array {
             element,
-            length: Some(length),
+            length,
         } => {
             let element = layout(env, element, span)?;
             let size = usize::try_from(length)
@@ -41,7 +41,7 @@ pub(crate) fn layout(
                 .ok_or_else(|| hmir_error(span, &mir::SIZE_OVERFLOW, ()))?;
             Ok(MIRTypeLayout::new(size, element.alignment()))
         }
-        HMIRTypeKind::Array { length: None, .. } => Err(hmir_error(
+        HMIRTypeKind::Undefined(_) => Err(hmir_error(
             span,
             &mir::COMPTIME_INVALID_OPERATION,
             format!("storage of the incomplete type '{}'", types::name(env, ty)),
@@ -280,7 +280,7 @@ pub(super) fn decode(
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => HMIRConstant::Unit,
         HMIRTypeKind::Array {
             element,
-            length: Some(length),
+            length,
         } => {
             let stride = layout(env, element, span)?.size();
             HMIRConstant::Aggregate(

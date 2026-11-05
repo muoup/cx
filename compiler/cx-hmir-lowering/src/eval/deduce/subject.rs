@@ -48,7 +48,7 @@ pub(crate) fn subject(
                 .ok_or_else(|| hmir_error(&span, &typecheck::EXPECTED_TYPE, "an unknown type value".into()))?,
             (_, HMIRValueKind::Constant(HMIRConstant::Str(string))) => {
                 let element = types::int(context.env_mut(), HMIRIntWidth::I8, false, &span);
-                let length = Some((string.len() + 1) as u64);
+                let length = (string.len() + 1) as u64;
                 types::realize(context.env_mut(), HMIRTypeKind::Array { element, length }, &span)
             }
             _ => referent,

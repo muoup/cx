@@ -1,7 +1,7 @@
 use cx_hir::ast::types::HIRTagKind;
 use cx_hmir::{
     HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage, ty::{
-        HMIRTypeID, HMIRTypeKind, aggregate::HMIRFieldDef, context::HMIRTypeContext, intrinsic::{HMIRFloatWidth, HMIRIntWidth},
+        HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRFieldDef, context::HMIRTypeContext, intrinsic::{HMIRFloatWidth, HMIRIntWidth},
     }, unit::def::HMIRDeclarationPoint,
 };
 use cx_log::{
@@ -9,8 +9,8 @@ use cx_log::{
     catalogue::{mir, typecheck},
 };
 use cx_mir::{
-    MIRField, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIncompleteMetadata,
-    MIRIncompleteTag, MIRIntType, MIRType, MIRTypeLayout,
+    MIRField, MIRFloatType, MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRType,
+    MIRTypeLayout, MIRUndefined,
     MIRTypeID, MIRTypeKind, MIRTypeMetadata, ty::interface::MTRegistry,
 };
 use cx_tokens::TokenRange;
@@ -119,15 +119,10 @@ fn qualify(env: &mut HMIREnvironment, base: MIRTypeID, metadata: MIRTypeMetadata
                 .intern_type(MIRType::new(MIRTypeKind::Array { length, inner }))
         }
         
-        MIRTypeKind::Incomplete(MIRIncompleteMetadata {
-            tag: MIRIncompleteTag::Array { element },
-            layout,
-        }) => {
+        MIRTypeKind::Undefined(MIRUndefined::Array { element }) => {
             let element = qualify(env, element, metadata);
-            let tag = MIRIncompleteTag::Array { element };
-            env.module_mut().intern_type(MIRType::new(MIRTypeKind::Incomplete(
-                MIRIncompleteMetadata { tag, layout },
-            )))
+            env.module_mut()
+                .intern_type(MIRType::new(MIRTypeKind::Undefined(MIRUndefined::Array { element })))
         }
 
         _ => {
@@ -187,34 +182,20 @@ fn lower_underlying(
     let kind = match env.resolve_kind(ty).clone() {
         HMIRTypeKind::Struct { fields } => {
             let kind = |fields| MIRTypeKind::Structured { fields };
-            return lower_aggregate(env, ty, &fields, MIRIncompleteTag::Struct, kind, span);
+            return lower_aggregate(env, ty, &fields, MIRUndefined::Struct, kind, span);
         }
         HMIRTypeKind::Union { fields } => {
             let kind = |variants| MIRTypeKind::Union { variants };
-            return lower_aggregate(env, ty, &fields, MIRIncompleteTag::Union, kind, span);
+            return lower_aggregate(env, ty, &fields, MIRUndefined::Union, kind, span);
         }
         HMIRTypeKind::TaggedUnion { fields } => {
             let kind = |variants| MIRTypeKind::TaggedUnion { variants };
-            return lower_aggregate(env, ty, &fields, MIRIncompleteTag::TaggedUnion, kind, span);
+            return lower_aggregate(env, ty, &fields, MIRUndefined::TaggedUnion, kind, span);
         }
-        HMIRTypeKind::Opaque { size, alignment } => {
-            let name = env.resolve_type_id(ty).debug_name().map(str::to_string);
-            let (metadata, debug_name) = match env.resolver().incomplete_tag(ty) {
-                // A forward tag is named by its tagged symbol, which carries the tag as a prefix
-                Some(tag) => {
-                    let name = name.map(|name| match name.strip_prefix(tag.prefix()) {
-                        Some(bare) => bare.trim_start().to_string(),
-                        None => name,
-                    });
-                    (MIRIncompleteMetadata::new(mir_tag(tag)), name)
-                }
-                None => {
-                    let layout = Some(MIRTypeLayout::new(size, alignment));
-                    (MIRIncompleteMetadata { tag: MIRIncompleteTag::Builtin, layout }, name)
-                }
-            };
-            let incomplete = MIRType::new(MIRTypeKind::Incomplete(metadata));
-            return Ok(lower_named(env, ty, incomplete, debug_name));
+        HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag)) => {
+            let undefined = MIRType::new(MIRTypeKind::Undefined(mir_tag(tag)));
+            let debug_name = env.resolve_type_id(ty).debug_name().map(str::to_string);
+            return Ok(lower_named(env, ty, undefined, debug_name));
         }
         HMIRTypeKind::Nominal(_) => unreachable!("an underlying type is not nominal"),
 
@@ -235,18 +216,17 @@ fn lower_underlying(
         HMIRTypeKind::ReferenceTo { inner, .. } => MIRTypeKind::MemoryReference {
             inner: lower_type(env, inner, span)?,
         },
-        HMIRTypeKind::Array { element, length } => {
-            let inner = lower_type(env, element, span)?;
-            match length {
-                Some(length) => MIRTypeKind::Array {
-                    length: length as usize,
-                    inner,
-                },
-                None => MIRTypeKind::Incomplete(MIRIncompleteMetadata::new(
-                    MIRIncompleteTag::Array { element: inner },
-                )),
-            }
-        }
+        HMIRTypeKind::Array { element, length } => MIRTypeKind::Array {
+            length: length as usize,
+            inner: lower_type(env, element, span)?,
+        },
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => MIRTypeKind::Undefined(MIRUndefined::Array {
+            element: lower_type(env, element, span)?,
+        }),
+        HMIRTypeKind::Builtin { name, size, alignment } => MIRTypeKind::Builtin {
+            name,
+            layout: MIRTypeLayout::new(size, alignment),
+        },
         HMIRTypeKind::Function(signature) => MIRTypeKind::Function {
             signature: lower_signature(env, &signature, span)?,
         },
@@ -273,14 +253,14 @@ fn lower_aggregate(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
     fields: &[HMIRFieldDef<HMIRTypeID>],
-    tag: MIRIncompleteTag,
+    tag: MIRUndefined,
     kind: impl FnOnce(Vec<MIRField>) -> MIRTypeKind,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
-    // An aggregate may refer to itself, so it is incomplete while its fields lower
-    let incomplete = MIRType::new(MIRTypeKind::Incomplete(MIRIncompleteMetadata::new(tag)));
+    // An aggregate may refer to itself, so it is undefined while its fields lower
+    let undefined = MIRType::new(MIRTypeKind::Undefined(tag));
     let debug_name = env.resolve_type_id(ty).debug_name().map(str::to_string);
-    let id = lower_named(env, ty, incomplete, debug_name);
+    let id = lower_named(env, ty, undefined, debug_name);
 
     let fields = fields
         .iter()
@@ -307,11 +287,11 @@ fn lower_aggregate(
     Ok(id)
 }
 
-fn mir_tag(tag: HIRTagKind) -> MIRIncompleteTag {
+fn mir_tag(tag: HIRTagKind) -> MIRUndefined {
     match tag {
-        HIRTagKind::Struct => MIRIncompleteTag::Struct,
-        HIRTagKind::Union => MIRIncompleteTag::Union,
-        HIRTagKind::Enum => MIRIncompleteTag::Enum,
+        HIRTagKind::Struct => MIRUndefined::Struct,
+        HIRTagKind::Union => MIRUndefined::Union,
+        HIRTagKind::Enum => MIRUndefined::Enum,
     }
 }
 

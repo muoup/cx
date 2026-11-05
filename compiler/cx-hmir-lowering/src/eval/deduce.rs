@@ -7,7 +7,8 @@ pub(crate) use subject::{detached, subject};
 use cx_hmir::{
     HMIRBody, HMIRUnitID,
     body::HMIRBodyID,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    expr::HMIRExprID,
+    ty::{HMIRExprType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext},
     unit::def::HMIRDeclarationPoint,
 };
 use cx_log::{
@@ -43,6 +44,8 @@ pub(crate) struct Incomplete<T> {
     evaluation: EvaluationID,
     span: TokenRange,
     partial: Option<T>,
+    // Whether the partial may stand as the result when nothing completes it
+    fallback: bool,
     resolve: Box<Resolver<T>>,
 }
 
@@ -60,6 +63,7 @@ impl<T: 'static> Incomplete<T> {
             evaluation: context.evaluation(),
             span: span.clone(),
             partial,
+            fallback: true,
             resolve: Box::new(resolve),
         }
     }
@@ -85,14 +89,20 @@ impl<T: 'static> Incomplete<T> {
         wrap: impl FnOnce(&mut LocalLoweringContext, &HMIRBody, HMIRTypeID, Box<Resolver<T>>) -> EvalResult<Evaluation<U>>
         + 'static,
     ) -> Incomplete<U> {
-        let Self { reason, evaluation, span, resolve, .. } = self;
+        let Self { reason, evaluation, span, fallback, resolve, .. } = self;
         Incomplete {
             reason,
             evaluation,
             span,
             partial,
+            fallback,
             resolve: Box::new(move |context, body, expected| wrap(context, body, expected, resolve)),
         }
+    }
+
+    pub(crate) fn without_fallback(mut self) -> Self {
+        self.fallback = false;
+        self
     }
 
     pub(crate) fn yielding(mut self) -> Self {
@@ -189,6 +199,10 @@ impl<T> Incomplete<T> {
         self.partial.as_ref()
     }
 
+    pub(super) fn fallback(&self) -> Option<&T> {
+        self.partial.as_ref().filter(|_| self.fallback)
+    }
+
     pub(crate) fn error(&self) -> CXError {
         let subject = match self.reason {
             IncompleteReason::ExpectedType => "this type",
@@ -209,14 +223,14 @@ pub(crate) fn type_result(
     if !context.env().resolver().settled(ty) {
         context.force_type(ty, span)?;
     }
-    if !matches!(context.env().resolve_kind(ty), HMIRTypeKind::Array { length: None, .. }) {
+    if !matches!(context.env().resolve_kind(ty), HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })) {
         return Ok(Evaluation::Ready(value));
     }
     let bound = span.clone();
     let incomplete = Incomplete::new(context, span, IncompleteReason::ArrayBound, Some(value), move |context, _, expected| {
         let span = &bound;
         let env = context.env();
-        let (HMIRTypeKind::Array { element: from, length: Some(length) }, HMIRTypeKind::Array { element: to, .. }) =
+        let (HMIRTypeKind::Array { element: from, length }, HMIRTypeKind::Undefined(HMIRUndefined::Array { element: to })) =
             (env.resolve_kind(expected), env.resolve_kind(ty))
         else {
             return Err(hmir_error(span, &typecheck::CANNOT_INFER, "the array bound".into()).into());
@@ -230,6 +244,21 @@ pub(crate) fn type_result(
         Ok(Evaluation::Ready(type_constant(context, ty, span)))
     });
     Ok(Evaluation::Incomplete(incomplete))
+}
+
+// Unlike 'T[]', a bound of '_' must be deduced, so its undefined array only guides what completes it
+pub(crate) fn hole_bound(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBody,
+    ty: &HMIRExprType,
+    element: HMIRExprID,
+    span: &TokenRange,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let undefined = types::undefined_array(context, body, ty, element)?;
+    match type_result(context, undefined, span)? {
+        Evaluation::Incomplete(incomplete) => Ok(Evaluation::Incomplete(incomplete.without_fallback())),
+        Evaluation::Ready(_) => unreachable!("an undefined array is completed from the type expected of it"),
+    }
 }
 
 pub(crate) fn hole(context: &mut LocalLoweringContext, span: &TokenRange) -> EvalResult<Evaluation<HMIRValue>> {

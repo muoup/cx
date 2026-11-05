@@ -8,7 +8,7 @@ pub enum HIRIntrinsicType {
     Bool,
     Integer { signed: bool, bytes: u8 },
     Float { bytes: u8 },
-    Opaque { size: usize, alignment: usize },
+    Builtin { size: usize, alignment: usize },
 }
 
 pub fn is_intrinsic_type(name: &str) -> bool {
@@ -261,7 +261,7 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<HIRIntrins
     // TODO: C header compatibility shims until MIR has long-double, complex, and
     // target ABI va_list types.
     ("__builtin_va_list", |_| {
-        Some(HIRIntrinsicType::Opaque {
+        Some(HIRIntrinsicType::Builtin {
             size: 24,
             alignment: 8,
         })
@@ -270,7 +270,7 @@ pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<HIRIntrins
         Some(HIRIntrinsicType::Float { bytes: 8 })
     }),
     ("__float128", |_| {
-        Some(HIRIntrinsicType::Opaque {
+        Some(HIRIntrinsicType::Builtin {
             size: 16,
             alignment: 16,
         })

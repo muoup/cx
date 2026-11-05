@@ -61,6 +61,14 @@ impl<T> Evaluation<T> {
             Self::Incomplete(incomplete) => incomplete.partial(),
         }
     }
+
+    // What may stand as the result if nothing completes it
+    pub(crate) fn standing(&self) -> Option<&T> {
+        match self {
+            Self::Ready(value) => Some(value),
+            Self::Incomplete(incomplete) => incomplete.fallback(),
+        }
+    }
 }
 
 impl<T: 'static> Evaluation<T> {
@@ -139,12 +147,23 @@ impl<T: 'static> Evaluation<T> {
 impl Evaluation<HMIRTypeID> {
     pub(crate) fn description(self) -> EvalResult<Evaluation<HMIRTypeID>> {
         Ok(match self {
-            Self::Incomplete(incomplete) => match incomplete.partial().copied() {
+            Self::Incomplete(incomplete) => match incomplete.fallback().copied() {
                 Some(value) => Self::Ready(value),
                 None => Self::Incomplete(incomplete),
             },
             result => result,
         })
+    }
+
+    // The type an evaluation is known to describe, even where it must still be completed
+    pub(crate) fn guide(self) -> Evaluation<HMIRTypeID> {
+        match self {
+            Self::Incomplete(incomplete) => match incomplete.partial().copied() {
+                Some(value) => Self::Ready(value),
+                None => Self::Incomplete(incomplete),
+            },
+            result => result,
+        }
     }
 }
 
