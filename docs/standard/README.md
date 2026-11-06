@@ -8,9 +8,10 @@ A standard states what the compiler *does*, not what it should do. Special cases
 
 | file | covers |
 |------|--------|
-| [hmir-lowering.md](hmir-lowering.md) | HMIR to MIR: expression evaluation |
+| [preparsing.md](preparsing.md) | tokens to the type-name registry, imports, namespace aliases |
+| [parsing.md](parsing.md) | tokens to HIR, HIR to HMIR |
+| [hmir-lowering.md](hmir-lowering.md) | HMIR to MIR: units, symbols, types, evaluation, comptime execution, MIR emission |
 
-Planned: preparse, HIR generation and desugaring (one file), the remaining HMIR-lowering parts (units, functions, globals, MIR codegen).
 
 ## Conventions
 

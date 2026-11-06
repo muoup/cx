@@ -1,6 +1,6 @@
 # HMIR lowering
 
-HMIR unit to MIR unit. Evaluation interprets comptime code, elaborates types, and emits runtime code in one pass over HMIR.
+HMIR unit to MIR unit. Evaluation interprets comptime code, elaborates types, and emits runtime code in one pass over HMIR; definitions are generated on demand.
 
 ## Terms
 
@@ -20,7 +20,189 @@ HMIR unit to MIR unit. Evaluation interprets comptime code, elaborates types, an
 - **collapse**: `T& ... &` read until a single `T&`.
 - **value type** of T: referent of T, unqualified.
 - **integer promotion**: int narrower than 32 bits, `bool` included, to `i32`.
-- **comptime-only type**: `@type`, staged `^T`, dependent `_`, or a function that is comptime-stage, has a comptime parameter, or a comptime-only parameter or return type.
+- **comptime-only type**: `@type`, staged `expr(T)`, dependent `_`, or a function that is comptime-stage, has a comptime parameter, or a comptime-only parameter or return type.
+- **declaration point**: position of a declaration in its unit. A context *at* a point sees declarations of its own unit up to it, and all of other units.
+- **def**: one symbol; holds every redeclaration of it, each a *declaration* (role declaration, tentative, or definition) with optional content and tag.
+
+## Unit
+
+*verified 425c5ff1*
+
+HMIR unit and imported HMIR to one MIR unit. Every def of the unit validated, in id order; then the generation queue drained in request order. Yields the MIR module.
+
+Settings: explicit return required unless the module file is `.c` (configurable); assertions on unless disabled by flag.
+
+### Validation
+
+*verified 425c5ff1*
+
+Per def: declaration selected (see [Selection](#selection)), linkage reconciled.
+- `rule/safe-variadic-definition` defined variadic function with safe contract: T0017.
+- `rule/generation-roots` requested for generation when not static and: runtime-stage, defined function not [needing specialization](#function-lowering); or global with initializer or not extern.
+- `rule/eager-comptime-globals` untagged comptime global definitions bound eagerly, so their errors surface unused. Def with several declarations whose selected is a global: bound eagerly.
+
+### Generation
+
+*verified 425c5ff1*
+
+Queue of definitions, specializations, constructors; first in, first out. A request made while lowering one function is generated after it.
+- `inv/generation-once` each def requested once; each specialization once per def and comptime arguments; each constructor once per type and variant.
+- def: selected declaration's content. Function: lowered only if runtime-stage, defined, not needing specialization. Global: [Global definition](#global-definition). Comptime global: nothing.
+- specialization: [Function lowering](#function-lowering) with its signature and bindings.
+- constructor: [Variant constructor](#variant-constructor).
+
+## Symbols
+
+*verified 425c5ff1*
+
+### Lookup
+
+*verified 425c5ff1*
+
+`a::b::n` from a source unit. Searched: source unit, then its imports. Yields best-ranked defs, sorted, deduplicated.
+
+Candidate names in order: as written; unqualified also in source namespace; for each namespace prefix with aliases, every alias target joined with the rest. Per candidate name: ordinary class, then tag class; first class with any match taken. Tagged lookup (`struct S`) searches tags only.
+
+- own unit always visible; other units need a public declaration, or package visibility with the name's namespace under the source's.
+- rank: own unit in the source namespace, then own unit elsewhere, then imports; then having a declaration with the looked-up tag (none, for untagged lookups). Only the best rank kept.
+
+See [Name](#name) for filtering and ambiguity.
+
+### Selection
+
+*verified 425c5ff1*
+
+Choosing the governing declaration of a def among those visible at a point. Yields its index.
+- `rule/no-visible-declaration` none visible: T0001.
+- `rule/mixed-tags` declarations with differing tags: T0067. Differing kinds (function, global, comptime global): T0006.
+- `rule/duplicate-definition` two definitions: T0007, unless both untagged type definitions.
+- selected: has content, highest role (definition, tentative, declaration), earliest among equals.
+- `rule/redeclaration-agrees` functions must agree with selected in stage, variadic, param count, comptime params, link name; globals in link name; comptime globals in being a type: else T0006.
+
+### Linkage
+
+*verified 425c5ff1*
+
+Reconciled over visible function and global declarations. None: standard.
+- first `static`: static. Otherwise the last non-`extern` linkage, else `extern`.
+- `rule/static-after-external` `static` after a non-static first: T0006.
+- `rule/global-standard-after-static` global without specifier after a `static` first: T0006; functions inherit.
+
+### Binding
+
+*verified 425c5ff1*
+
+Value of a def at a point, memoized (see [Memo](#memo)).
+
+- tagged declaration (`struct S`): forward type of that tag created if unrealized; yields type value.
+- function: signature of every visible declaration evaluated; all alike, else T0006. Signature of the selected declaration kept. Yields function constant.
+- global: declared type of every visible declaration evaluated; incomplete one completed from initializer value. Combined by [composite](#sameness), else T0006. Yields `T&` address of the global.
+  - `rule/tentative-array` unit end, `T[]`, not extern, no initializer: `T[1]`.
+  - `rule/incomplete-global` incomplete object type, not extern: T0009. Exempt: while initializing, tentative `T[]`.
+- comptime global: declared type evaluated. `@type`: alias published before its target is evaluated, so the target may refer to it; yields target type. Otherwise initializer value expecting declared type.
+  - `rule/comptime-redeclaration` other visible declarations must evaluate to alike types, else T0006; a non-type value with others: T0006.
+
+Initializer value: memoized in a comptime child at the body's point, then exported.
+
+## Functions
+
+*verified 425c5ff1*
+
+### Function lowering
+
+*verified 425c5ff1*
+
+Runtime function, or specialization with bound comptime parameters. Yields MIR function definition.
+
+*Needs specialization*: runtime-stage, and a comptime param, or a param type written as `expr(T)` or comptime-stage function type.
+- `rule/quirk-specialization-by-syntax` decided by the param's type expression form; aliases to such types not seen.
+
+Runtime context at the body's point, return type from signature, permission per contract safety. Address-taken labels registered. Root scope targets returns.
+- params: specialization-bound value, else fresh named place, initialized, bound as `T&`.
+- [Contracts](#contracts) entered, then body evaluated, then [fallthrough](#fallthrough). Divergence caught.
+
+Prototype: link name, reconciled linkage, lowered signature.
+- `rule/comptime-prototype` comptime-only function type: runtime-stage T0042, else M0031.
+
+### Variant constructor
+
+*verified 425c5ff1*
+
+Variant `S::V` used as runtime function: static `V.__cx_variant.<n>`; payload param moved into the variant, returned.
+
+## Globals
+
+*verified 425c5ff1*
+
+### Global declaration
+
+*verified 425c5ff1*
+
+Link name, reconciled linkage, lowered type; mutable unless const. Name already declared in module: same type and mutability, else M0004.
+
+### Global definition
+
+*verified 425c5ff1*
+
+- extern without initializer: declaration only.
+- `rule/global-redefined` already defined in module: M0007.
+- initializer: [initial value](#initial-value), lowered constant.
+- otherwise zero-initialized.
+
+#### Initial value
+
+Comptime child at the body's point. Initializer value expecting declared type; declared type completed by it; converted implicitly. Without initializer: zero of declared type, `T[]` as `T[1]`.
+- `rule/extern-initial-value` extern without initializer: M0029.
+- incomplete type, or no zero value: T0009.
+- zero: ints 0, floats 0.0, pointers null, `void` unit, aggregates zero per member, unions and tagged unions first member.
+
+## Types
+
+*verified 425c5ff1*
+
+### Memo
+
+*verified 425c5ff1*
+
+Defs and expressions evaluated once per key: def or expression, in a context of owner unit, point, visible known comptime bindings (canonicalized), expected type, expectations, initializer flag.
+
+Evaluated in a comptime child at the context's point, bindings rebound. Def: only the expectations' permission kept.
+- `inv/type-identity` type id is the memo entry of its type expression; same expression in a different context, a different type. Generic instances arise this way.
+- `rule/dependency-cycle` entry re-entered while evaluating, nothing published: M0028, naming the path.
+- incomplete or failed: entry reset, re-evaluated on next use.
+- expression: type node constructed. Otherwise evaluated, completed expecting expected, converted implicitly to it; with no expected, initializer non-types rvalue-decayed.
+
+### Forcing
+
+*verified 425c5ff1*
+
+Type id realized: aliases followed; pending forward-declared tag evaluated once visible.
+- `rule/expected-type-value` evaluates to non-type: T0053.
+- a type defined as itself: M0028.
+
+Preparing (before layout or lowering): forced through members, each validated ([Type expression](#type-expression) `rule/field-traits`, `rule/unreachable-pointee`). Forward-declared tag stops, left unprepared.
+
+Visible: not declared after the current point in the same unit. Complete: not undefined, not `unreachable`; arrays need complete element.
+
+### Sameness
+
+*verified 425c5ff1*
+
+- *same*: equal move semantics; underlying types structurally equal, qualifiers ignored at any depth. Functions: variadic, params, return; stage and safety ignored.
+- *alike*: equal semantics, qualifiers included at depth. Functions: stage, safety, variadic, comptime params, params and return alike ignoring top qualifiers.
+- *composite* of two: alike, the first; `T[]` and `T[n]` with alike elements, the bounded; else none.
+- `inv/canonical-types` settled types fingerprinted; alike types share one id. Named aggregates, tags, builtins, staged by underlying identity plus added semantics. Constants canonicalized with them; ints wrapped to width.
+
+### Type lowering
+
+*verified 425c5ff1*
+
+HMIR type to MIR type, cached per underlying type.
+- `rule/comptime-only-lowered` comptime-only type: T0065.
+- const and volatile become metadata. Qualified arrays qualify elements instead.
+- struct, union, tagged union: distinct per type, never shape-interned; undefined while fields lower, so self-reference works. Bitfields keep width. Forward-declared tag: undefined of that tag.
+- `void`, `unreachable`: void. Reference: memory reference. `T[]`: undefined array.
+- comptime-only types laid out pointer-sized in comptime memory.
 
 ## Expression evaluation
 
@@ -549,7 +731,7 @@ Runtime call to a def with pre or postcondition: params bound to const observed 
 
 Captures: free locals of the quoted expression, quote params and inner declarations excluded. Runtime: bindings as-is. Comptime: rvalue-decayed, exported. Missing binding: M0029.
 
-Incomplete until expected. Expected staged shape (`^T`, or comptime function from staged params to staged result): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
+Incomplete until expected. Expected staged shape (`expr(T)`, or comptime function from staged params to staged result): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
 - `rule/quote-materializes` non-staged expectation: quote materialized in place.
 
 ### Splice
@@ -668,3 +850,91 @@ Code applied to arguments; needs staged shape (T0002), argument count (T0015). R
 #### Materialize
 
 Quote inserted at runtime. Quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; non-reference params get storage; result completed expecting result type, converted; `void` result yields unit.
+
+## Comptime execution
+
+*verified 425c5ff1*
+
+Comptime storage and operations, as used by evaluation in comptime context.
+
+### Memory
+
+*verified 425c5ff1*
+
+Storage is regions of bytes, per-byte initialized flags, and *cells*: non-byte constants (addresses, functions, quotes, types) held at an offset and size. Regions numbered globally, never reused; shared by a context and its children.
+
+- allocation: uninitialized, sized by layout. Incomplete type: M0021.
+- `rule/comptime-invalid-access` M0040 when: region gone; access outside its size; uninitialized bytes read; part of a cell read; cell read as bytes; bytes read as an address, unless all zero (null); tag byte names no variant.
+- write over part of a cell: rest of that cell becomes uninitialized.
+- tagged union: payload at offset 0, one tag byte after the largest payload rounded to the largest alignment.
+- `rule/quirk-union-decode-largest-first` union read: members tried largest first; first that decodes is the active member.
+- string literal: one region per text, NUL-terminated; write: M0021.
+- runtime global: read through a region holding its [initial value](#initial-value); write: M0021.
+- other addresses (functions, labels) as storage: M0021.
+
+### Slots
+
+*verified 425c5ff1*
+
+Each allocation has a slot: uninitialized, live, or invalidated. Only whole-slot values change state; writes through fields do not.
+- read uninitialized: M0034. Read or write invalidated: A0004.
+- write or initialize: live. Drop: uninitialized. Move, leak: invalidated.
+- `inv/comptime-no-flow` state per slot only; no flow analysis, a dropped nodrop value not reported. Unconsumed nodrop at a comptime call's end: see [Dependent call](#dependent-call).
+
+### Scalar operations
+
+*verified 425c5ff1*
+
+- ints: two's complement wrap to width, signed included. `bool` unsigned.
+- `rule/comptime-zero-divisor` `/`, `%` by zero: M0023.
+- `rule/comptime-undefined-arithmetic` M0037 when: minimum `/` or `%` by -1, signed; shift count negative or not below width; float to int out of range or NaN.
+- floats: `f32` rounded after each step.
+- pointer comparison: same base by offset; different bases, or null against address or function, only `==`, `!=` (unequal); functions by identity. Otherwise M0021.
+- pointer offset: null plus 0 stays null; null plus other: M0037; storage address shifted, overflow M0022; function or label address: M0021.
+- pointer difference: same storage base, byte distance over element size; different bases M0037; not a multiple, or zero-sized element: M0037.
+- casts: int, float among each other; int 0 to null; null to 0; pointer to pointer keeps address. Otherwise M0021.
+- `rule/comptime-variadic` variadic intrinsic: M0021.
+
+## MIR emission
+
+*verified 425c5ff1*
+
+Runtime context writing a MIR function.
+
+### Instructions
+
+*verified 425c5ff1*
+
+- `inv/after-terminator` instruction after a terminator in its block dropped; a terminator suppresses emission until the next block switch.
+- `inv/unevaluated-forgets` unevaluated: nothing emitted. Store to a place forgets known values of slots bound to it; store through a pointer or to a global forgets every known value.
+- reachability: from entry, constant branches followed on the taken side only. Unterminated unreachable blocks end in `unreachable`.
+- operation results live in registers; registers have no address.
+
+### Storage
+
+*verified 425c5ff1*
+
+- declared storage: place in the current MIR scope, flagged nodrop and adopted as applicable. Parameter: place, initialized at entry.
+- scratch storage (temporaries, merges): one scope per function that is never closed, so never dropped.
+- `inv/scope-drop` closing a scope emits a drop invalidation for each of its places, newest first. Drop semantics belong to MIR analysis.
+- dereference: with assertions, pointer checked unequal to null ("dereferenced a null pointer"); then reinterpreted as reference.
+- contract assertions omitted without assertions.
+
+### Constants
+
+*verified 425c5ff1*
+
+- aggregate: zero members omitted. Union, tagged union: active member only.
+- function def: prototype declared; requested for generation if of this unit or static. Constructor: [Variant constructor](#variant-constructor). Curried: must be a generated specialization, else M0021.
+- address of a global: global with offset. Of a runtime place: local with offset.
+- `rule/comptime-value-at-runtime` comptime region, or register address, reaching runtime: M0032.
+- `todo/constant-lowering` any other constant (type, quote, ...): `todo!`.
+
+### Operations
+
+*verified 425c5ff1*
+
+- int operations signed or unsigned by the operand type; `>>` arithmetic when signed.
+- int cast sign-extends when the source is signed and not `bool`.
+- pointer offset: constant index pre-scaled by element size; otherwise multiplied, signed by the index type.
+- tag of a tagged union constant folded; otherwise read as sum index.
