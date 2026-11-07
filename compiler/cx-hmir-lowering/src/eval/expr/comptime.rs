@@ -12,14 +12,16 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::{ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeSlotState},
+    env::function::{
+        ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeSlotState,
+    },
     eval::{
         EvalResult, coerce, deduce, eval,
         flow::{EvalExit, Evaluation, StopReason},
         name::type_value,
     },
     log::hmir_error,
-    value::{HMIRPlace, HMIRValue, HMIRValueKind, address::HMIRAddress},
+    value::{HMIRReference, HMIRValue, HMIRValueKind, address::HMIRAddress},
 };
 
 // Evaluates an expression in a comptime child that sees only the known values of the visible locals
@@ -30,7 +32,9 @@ pub(crate) fn freeze(
     expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = body.expr(expr).span();
-    frozen(context, span, |child| evaluate(child, body, expr, expected, span))
+    frozen(context, span, |child| {
+        evaluate(child, body, expr, expected, span)
+    })
 }
 
 pub(crate) fn frozen<T: 'static>(
@@ -40,9 +44,9 @@ pub(crate) fn frozen<T: 'static>(
 ) -> EvalResult<Evaluation<T>> {
     let mut child = child(context);
     match evaluate(&mut child) {
-        Ok(Evaluation::Incomplete(incomplete)) => {
-            Ok(Evaluation::Incomplete(incomplete.in_context(child.into_context())))
-        }
+        Ok(Evaluation::Incomplete(incomplete)) => Ok(Evaluation::Incomplete(
+            incomplete.in_context(child.into_context()),
+        )),
         Err(EvalExit::Stop(StopReason::Comptime(_))) => {
             Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into())
         }
@@ -78,11 +82,11 @@ pub(crate) fn inputs(context: &mut LocalLoweringContext) -> Vec<(HMIRLocalID, HM
 pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<HMIRValue> {
     let value = match (value.kind(), context.context()) {
         (HMIRValueKind::Constant(_), _) => value.clone(),
-        (HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)), FnContext::Runtime(runtime)) => {
+        (HMIRValueKind::Reference(HMIRReference::Local(slot)), FnContext::Runtime(runtime)) => {
             runtime.slot(*slot).known().cloned()?
         }
         (
-            HMIRValueKind::PlaceRef(place @ HMIRPlace::Region(region)),
+            HMIRValueKind::Reference(place @ HMIRReference::Region(region)),
             FnContext::Comptime(comptime),
         ) => {
             let slot = comptime.slot(*region)?;
@@ -91,7 +95,9 @@ pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Op
             }
             let ty = slot.ty();
             let address = HMIRAddress::place(*place);
-            let constant = context.load(&address, ty, None, &TokenRange::Internal).ok()?;
+            let constant = context
+                .load(&address, ty, None, &TokenRange::Internal)
+                .ok()?;
             HMIRValue::constant(ty, constant)
         }
         _ => return None,
@@ -112,7 +118,8 @@ fn evaluate(
     let value = eval(context, body, expr)?;
     let value = match value.known().and_then(HMIRValue::as_type) {
         Some(_) => {
-            let ty = (deduce::described_type(context, body, value, span)?.description())?.ready()?;
+            let ty =
+                (deduce::described_type(context, body, value, span)?.description())?.ready()?;
             Evaluation::Ready(type_value(context, ty, span)?)
         }
         None => deduce::complete(context, body, value, expected)?,
@@ -162,7 +169,7 @@ fn settle(
                 "an exported value".into(),
             ),
         )),
-        HMIRValueKind::PlaceRef(_) | HMIRValueKind::Indirect(_) => {
+        HMIRValueKind::Reference(_) | HMIRValueKind::Indirect(_) => {
             let reference = emit::reference(context, &value, span)?;
             emit::copy(context, reference, span)
         }

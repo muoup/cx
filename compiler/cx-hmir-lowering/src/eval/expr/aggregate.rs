@@ -29,7 +29,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) fn eval_aggregate(
@@ -196,7 +196,7 @@ fn unpack(
 
     let constant = matches!(
         source.kind(),
-        HMIRValueKind::Constant(HMIRConstant::Aggregate { .. })
+        HMIRValueKind::Constant(HMIRImmediate::Aggregate { .. })
     );
     let comptime = !context.is_runtime();
     let source = match constant {

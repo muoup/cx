@@ -1,6 +1,6 @@
-pub mod op;
 pub mod float;
 pub mod int;
+pub mod op;
 
 pub use op::{binary, cast, difference, offset, unary};
 
@@ -21,11 +21,7 @@ use crate::{
     },
     eval::types,
     log::hmir_error,
-    value::{
-        HMIRPlace, HMIRRegionID, HMIRValue, HMIRValueKind,
-        address::{Addressable, HMIRAddress},
-        constant::HMIRConstant,
-    },
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,7 +39,7 @@ pub fn allocate(
     let region = context.allocate(ty, span)?;
     context.comptime_mut().declare_slot(region, ty, name);
 
-    Ok(HMIRValue::place(ty, HMIRPlace::Region(region)))
+    Ok(HMIRValue::place(ty, HMIRReference::Region(region)))
 }
 
 pub fn aggregate(
@@ -52,18 +48,18 @@ pub fn aggregate(
     fields: &[(usize, HMIRValue)],
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let Some(mut constant) = HMIRConstant::zero(context.env(), ty) else {
+    let Some(mut constant) = HMIRImmediate::zero(context.env(), ty) else {
         unreachable!("an initialized aggregate has a zero value")
     };
     for (index, value) in fields {
         let value = rvalue(context, value, span)?;
         match &mut constant {
-            HMIRConstant::Aggregate(items) => items[*index] = value,
-            HMIRConstant::Union {
+            HMIRImmediate::Aggregate(items) => items[*index] = value,
+            HMIRImmediate::Union {
                 member,
                 value: slot,
             }
-            | HMIRConstant::TaggedUnion {
+            | HMIRImmediate::TaggedUnion {
                 variant: member,
                 payload: slot,
             } => (*member, **slot) = (*index, value),
@@ -81,18 +77,18 @@ fn storage(
 ) -> CXResult<Option<(HMIRAddress, HMIRTypeID)>> {
     let inner = context.env().reference_inner(value.ty());
     Ok(match value.kind() {
-        HMIRValueKind::PlaceRef(place @ HMIRPlace::Region(region)) => {
+        HMIRValueKind::Reference(place @ HMIRReference::Region(region)) => {
             let slot = context.comptime().slot(*region).map(|slot| slot.ty());
             Some((HMIRAddress::place(*place), slot.unwrap_or(value.ty())))
         }
-        HMIRValueKind::PlaceRef(place) => {
+        HMIRValueKind::Reference(place) => {
             Some((HMIRAddress::place(*place), inner.unwrap_or(value.ty())))
         }
-        HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
+        HMIRValueKind::Constant(HMIRImmediate::Address(address)) => {
             inner.map(|inner| (address.clone(), inner))
         }
         HMIRValueKind::Indirect(pointer) => match rvalue(context, pointer, span)? {
-            HMIRConstant::Address(address) => Some((address, value.ty())),
+            HMIRImmediate::Address(address) => Some((address, value.ty())),
             _ => None,
         },
         HMIRValueKind::Constant(_) => None,
@@ -107,7 +103,7 @@ fn tracked(
     let Some((address, ty)) = storage(context, value, span)? else {
         return Ok(None);
     };
-    let Some(HMIRPlace::Region(region)) = address.whole_place() else {
+    let Some(HMIRReference::Region(region)) = address.whole_place() else {
         return Ok(None);
     };
     let Some(slot) = context.comptime().slot(region).map(|slot| slot.ty()) else {
@@ -124,7 +120,7 @@ fn live(
     writing: bool,
     span: &TokenRange,
 ) -> CXResult<()> {
-    let Addressable::Place(HMIRPlace::Region(region)) = address.base() else {
+    let Addressable::Place(HMIRReference::Region(region)) = address.base() else {
         return Ok(());
     };
     let Some(slot) = context.comptime().slot(*region) else {
@@ -158,7 +154,7 @@ fn read(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
-) -> CXResult<HMIRConstant> {
+) -> CXResult<HMIRImmediate> {
     let Some((address, ty)) = storage(context, value, span)? else {
         let HMIRValueKind::Constant(constant) = value.kind() else {
             unreachable!("a value without storage is a constant")
@@ -174,12 +170,12 @@ fn rvalue(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
-) -> CXResult<HMIRConstant> {
+) -> CXResult<HMIRImmediate> {
     match storage(context, value, span)? {
         Some((address, stored))
             if context.env().is_reference(value.ty()) && !context.env().is_reference(stored) =>
         {
-            Ok(HMIRConstant::Address(address))
+            Ok(HMIRImmediate::Address(address))
         }
         _ => read(context, value, span),
     }
@@ -228,7 +224,7 @@ pub fn write(
             context.store(&address, ty, &constant, bitfield, span)?;
         }
     }
-    if let Addressable::Place(HMIRPlace::Region(region)) = address.base()
+    if let Addressable::Place(HMIRReference::Region(region)) = address.base()
         && let Some(slot) = context.comptime_mut().slot_mut(*region)
     {
         slot.set_state(ComptimeSlotState::Live);
@@ -273,11 +269,11 @@ pub fn tag(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let HMIRConstant::TaggedUnion { variant, .. } = read(context, value, span)? else {
+    let HMIRImmediate::TaggedUnion { variant, .. } = read(context, value, span)? else {
         unreachable!("a tagged union constant names its variant")
     };
 
-    Ok(HMIRValue::constant(ty, HMIRConstant::Int(variant as i128)))
+    Ok(HMIRValue::constant(ty, HMIRImmediate::Int(variant as i128)))
 }
 
 pub fn address(
@@ -290,7 +286,7 @@ pub fn address(
         unreachable!("only storage has an address")
     };
 
-    Ok(HMIRValue::constant(ty, HMIRConstant::Address(address)))
+    Ok(HMIRValue::constant(ty, HMIRImmediate::Address(address)))
 }
 
 pub fn dereference(
@@ -299,7 +295,7 @@ pub fn dereference(
     inner: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let HMIRConstant::Address(address) = rvalue(context, &pointer, span)? else {
+    let HMIRImmediate::Address(address) = rvalue(context, &pointer, span)? else {
         let operation = "dereference".into();
         return Err(hmir_error(
             span,
@@ -310,7 +306,7 @@ pub fn dereference(
 
     Ok(HMIRValue::indirect(
         inner,
-        HMIRValue::constant(pointer.ty(), HMIRConstant::Address(address)),
+        HMIRValue::constant(pointer.ty(), HMIRImmediate::Address(address)),
     ))
 }
 
@@ -324,14 +320,14 @@ pub fn field(
 ) -> CXResult<HMIRValue> {
     let (address, owner) = match (storage(context, base, span)?, base.kind()) {
         (Some(storage), _) => storage,
-        (None, HMIRValueKind::Constant(HMIRConstant::Aggregate(items))) => {
+        (None, HMIRValueKind::Constant(HMIRImmediate::Aggregate(items))) => {
             return Ok(HMIRValue::constant(ty, items[index].clone()));
         }
         (
             None,
             HMIRValueKind::Constant(
-                HMIRConstant::Union { member, value }
-                | HMIRConstant::TaggedUnion {
+                HMIRImmediate::Union { member, value }
+                | HMIRImmediate::TaggedUnion {
                     variant: member,
                     payload: value,
                 },
@@ -344,7 +340,7 @@ pub fn field(
             write(context, &temporary, base, span)?;
             (
                 HMIRAddress::place(match temporary.kind() {
-                    HMIRValueKind::PlaceRef(place) => *place,
+                    HMIRValueKind::Reference(place) => *place,
                     _ => unreachable!("comptime storage is a place"),
                 }),
                 base.ty(),
@@ -359,7 +355,7 @@ pub fn field(
         return Err(hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ()));
     };
     let reference = types::reference(context.env_mut(), ty, bitfield, span);
-    let pointer = HMIRValue::constant(reference, HMIRConstant::Address(address));
+    let pointer = HMIRValue::constant(reference, HMIRImmediate::Address(address));
 
     // A bitfield only covers part of its storage unit, so it never names a whole place
     Ok(match bitfield {

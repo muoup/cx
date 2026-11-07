@@ -25,7 +25,7 @@ use crate::{
     eval::{EvalResult, eval, eval_type, flow::Evaluation},
     log::hmir_error,
     symbol::composite::alike,
-    value::{HMIRValue, constant::HMIRConstant},
+    value::{HMIRValue, immediate::HMIRImmediate},
 };
 
 pub(crate) fn eval_literal(
@@ -37,22 +37,22 @@ pub(crate) fn eval_literal(
         HMIRLiteral::Unit => unit(context, span),
         HMIRLiteral::Str(value) => {
             let ty = types::realize(context.env_mut(), HMIRTypeKind::Str, span);
-            HMIRValue::constant(ty, HMIRConstant::Str(value.clone()))
+            HMIRValue::constant(ty, HMIRImmediate::Str(value.clone()))
         }
         HMIRLiteral::Int { value, ty } => {
             let ty = types::int(context.env_mut(), ty.width(), ty.signed(), span);
-            HMIRValue::constant(ty, HMIRConstant::Int(*value))
+            HMIRValue::constant(ty, HMIRImmediate::Int(*value))
         }
         HMIRLiteral::Float { value, ty } => {
             let ty = types::realize(context.env_mut(), HMIRTypeKind::Float(*ty), span);
-            HMIRValue::constant(ty, HMIRConstant::Float(*value))
+            HMIRValue::constant(ty, HMIRImmediate::Float(*value))
         }
     }
 }
 
 pub(crate) fn unit(context: &mut LocalLoweringContext, span: &TokenRange) -> HMIRValue {
     let ty = types::realize(context.env_mut(), HMIRTypeKind::Void, span);
-    HMIRValue::constant(ty, HMIRConstant::Unit)
+    HMIRValue::constant(ty, HMIRImmediate::Unit)
 }
 
 pub(crate) fn eval_intrinsic(
@@ -114,7 +114,11 @@ pub(crate) fn require_nonsafe(
     operation: &str,
 ) -> CXResult<()> {
     if !context.is_unevaluated() && context.permission() < Permission::Nonsafe {
-        return Err(hmir_error(span, &typecheck::UNSAFE_OPERATION, operation.into()));
+        return Err(hmir_error(
+            span,
+            &typecheck::UNSAFE_OPERATION,
+            operation.into(),
+        ));
     }
     Ok(())
 }
@@ -125,7 +129,11 @@ pub(crate) fn require_impure(
     operation: &str,
 ) -> CXResult<()> {
     if !context.is_unevaluated() && !context.expectations().allows_impure() {
-        return Err(hmir_error(span, &typecheck::IMPURE_OPERATION, operation.into()));
+        return Err(hmir_error(
+            span,
+            &typecheck::IMPURE_OPERATION,
+            operation.into(),
+        ));
     }
     Ok(())
 }

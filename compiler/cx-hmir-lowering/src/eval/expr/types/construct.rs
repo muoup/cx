@@ -14,7 +14,10 @@ use cx_log::{
 };
 
 use crate::{
-    emit::comptime::int, env::{function::LocalLoweringContext, memo::MemoID, resolver::HMIRResolver}, eval::{eval_comptime, eval_type, flow, name::type_value, types}, log::hmir_error,
+    emit::comptime::int,
+    env::{function::LocalLoweringContext, memo::MemoID, resolver::HMIRResolver},
+    eval::{eval_comptime, eval_type, flow, name::type_value, types},
+    log::hmir_error,
 };
 
 pub(crate) fn eval_declared_type(
@@ -83,7 +86,8 @@ pub(crate) fn construct_type(
             return Ok(id);
         }
         HMIRExprTypeKind::Nominal(inner) => {
-            let inner = flow::top(eval_type(context, body, *inner).and_then(|ty| ty.description()))?;
+            let inner =
+                flow::top(eval_type(context, body, *inner).and_then(|ty| ty.description()))?;
             let current = context.env().semantics(inner);
             let semantics = current.apply(semantics);
             HMIRType::new(
@@ -111,7 +115,9 @@ pub(crate) fn construct_type(
 // An array bounded by '_' has no type of its own, only one an expected array type completes
 pub(crate) fn hole_bounded(body: &HMIRBodyContext, ty: &HMIRExprType) -> Option<HMIRExprID> {
     match ty.kind() {
-        HMIRExprTypeKind::Array { element, length } if matches!(body.expr(*length).kind(), HMIRExprKind::Hole(_)) => {
+        HMIRExprTypeKind::Array { element, length }
+            if matches!(body.expr(*length).kind(), HMIRExprKind::Hole(_)) =>
+        {
             Some(*element)
         }
         _ => None,
@@ -133,7 +139,11 @@ pub(crate) fn undefined_array(
     Ok(context.env_mut().resolver_mut().realize_type(undefined))
 }
 
-fn array_type(ty: &HMIRExprType, kind: HMIRTypeKind, move_semantics: HMIRMoveSemantics) -> CXResult<HMIRType> {
+fn array_type(
+    ty: &HMIRExprType,
+    kind: HMIRTypeKind,
+    move_semantics: HMIRMoveSemantics,
+) -> CXResult<HMIRType> {
     Ok(HMIRType::new(
         kind,
         ty.semantics().map(|_| CXResult::Ok(move_semantics))?,
@@ -164,7 +174,8 @@ fn declared_move(
     match declared {
         HMIRDeclaredMove::Explicit(semantics) => Ok(*semantics),
         HMIRDeclaredMove::CopyTraits(source) => {
-            let source = flow::top(eval_type(context, body, *source).and_then(|ty| ty.description()))?;
+            let source =
+                flow::top(eval_type(context, body, *source).and_then(|ty| ty.description()))?;
             Ok(types::owned_semantics(context.env(), source).move_semantics)
         }
     }
@@ -179,16 +190,20 @@ fn member(
     let ty = flow::top(eval_type(context, body, expr).and_then(|ty| ty.description()))?;
     let subject = match owner {
         HMIRExprTypeKind::Array { .. } => "array element",
-        HMIRExprTypeKind::Struct { .. } | HMIRExprTypeKind::Union { .. } | HMIRExprTypeKind::TaggedUnion { .. } => {
-            "member"
-        }
+        HMIRExprTypeKind::Struct { .. }
+        | HMIRExprTypeKind::Union { .. }
+        | HMIRExprTypeKind::TaggedUnion { .. } => "member",
         _ => return Ok(ty),
     };
     if types::is_complete(context.env(), ty) && context.type_visible(ty) {
         return Ok(ty);
     }
     let subject = format!("{subject} of type '{}'", types::name(context.env(), ty));
-    Err(hmir_error(body.expr(expr).span(), &typecheck::INCOMPLETE_TYPE, subject))
+    Err(hmir_error(
+        body.expr(expr).span(),
+        &typecheck::INCOMPLETE_TYPE,
+        subject,
+    ))
 }
 
 fn array_length(
@@ -198,13 +213,18 @@ fn array_length(
 ) -> CXResult<Option<u64>> {
     let span = body.expr(length).span();
     if matches!(body.expr(length).kind(), HMIRExprKind::Hole(_)) {
-        return Err(hmir_error(span, &typecheck::CANNOT_INFER, "the array bound".into()));
+        return Err(hmir_error(
+            span,
+            &typecheck::CANNOT_INFER,
+            "the array bound".into(),
+        ));
     }
     let value = eval_comptime(context, body, length, None)?;
     if matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Void) {
         return Ok(None);
     }
-    let (HMIRTypeKind::Int(ty), Some(value)) = (context.env().resolve_kind(value.ty()), value.as_int())
+    let (HMIRTypeKind::Int(ty), Some(value)) =
+        (context.env().resolve_kind(value.ty()), value.as_int())
     else {
         let subject = ("array length".into(), "integer".into());
         return Err(hmir_error(span, &mir::EXPECTED_CONSTANT, subject));

@@ -20,7 +20,7 @@ use crate::{
         runtime::{Emission, RuntimeScope},
     },
     lower::types::lower_type,
-    value::{Bindings, HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{Bindings, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub fn function_address(
@@ -32,11 +32,13 @@ pub fn function_address(
     let HMIRValueKind::Constant(function_constant) = function.kind() else {
         unreachable!("a function designator is constant")
     };
+
     let cx_mir::MIRConstant::Function(fn_id) =
         value::constant(context, function_constant, function.ty(), span)?
     else {
         unreachable!("a function designator lowers to a function")
     };
+
     let (out, result) = output(context, ty, span)?;
     intrinsic(context, MIRInternalIntrinsic::GetFnPtr { out, fn_id }, span);
     Ok(result)
@@ -180,7 +182,7 @@ pub fn call(
 
     let returns = context.env().resolve_kind(result);
     let (out, value) = match matches!(returns, HMIRTypeKind::Void | HMIRTypeKind::Unreachable) {
-        true => (None, HMIRValue::constant(result, HMIRConstant::Unit)),
+        true => (None, HMIRValue::constant(result, HMIRImmediate::Unit)),
         false => {
             let register = register(context, result, span)?;
             (
@@ -227,46 +229,4 @@ pub fn variadic(
     };
     intrinsic(context, instruction, span);
     Ok(result)
-}
-
-pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {
-    let runtime = context.runtime_mut();
-    let scope = runtime.builder_mut().add_scope(span.clone());
-    let scopes = runtime.scopes_mut();
-    let parent = scopes.top();
-
-    scopes.push(
-        RuntimeScope::new(Some(scope), false),
-        Some(parent),
-        Bindings::default(),
-    )
-}
-
-pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
-    let index = context.runtime().scopes().top();
-    drop_scope(context, index, span);
-    context.runtime_mut().scopes_mut().pop();
-}
-
-pub fn drop_scope(context: &mut LocalLoweringContext, index: usize, span: &TokenRange) {
-    let Some(scope) = context.runtime().scopes().control(index).mir() else {
-        return;
-    };
-    let places = context
-        .runtime()
-        .builder()
-        .places()
-        .iter()
-        .enumerate()
-        .filter(|(_, place)| place.scope() == scope)
-        .map(|(index, _)| MIRPlaceID::new(index))
-        .collect::<Vec<_>>();
-
-    for place in places.into_iter().rev() {
-        let invalidate = MIRInstructionKind::Invalidate {
-            place,
-            kind: MIRInvalidationKind::Drop,
-        };
-        context.runtime_mut().emit(invalidate, span.clone());
-    }
 }

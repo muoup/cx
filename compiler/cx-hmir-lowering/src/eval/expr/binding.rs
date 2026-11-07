@@ -11,9 +11,19 @@ use cx_log::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit, env::function::{FnContext, LocalLoweringContext}, eval::{
-        EvalResult, coerce, control::{self, closing}, deduce, eval, eval_type, expr::{self, place}, flow::{self, ComptimeStop, EvalExit, Evaluation, RuntimeStop, StopReason}, staged, types,
-    }, log::hmir_error, lower, value::HMIRValue,
+    emit,
+    env::function::{FnContext, LocalLoweringContext},
+    eval::{
+        EvalResult, coerce,
+        control::{self, closing},
+        deduce, eval, eval_type,
+        expr::{self, place},
+        flow::{self, ComptimeStop, EvalExit, Evaluation, RuntimeStop, StopReason},
+        staged, types,
+    },
+    log::hmir_error,
+    lower,
+    value::HMIRValue,
 };
 
 pub(crate) fn eval_local(
@@ -58,7 +68,10 @@ pub(crate) fn eval_let(
         && staged::is_code(context, ty)
     {
         let Some(initializer) = initializer else {
-            let kind = ("staged local".into(), "a declaration without an initializer".into());
+            let kind = (
+                "staged local".into(),
+                "a declaration without an initializer".into(),
+            );
             return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind).into());
         };
         let value = staged::argument(context, body, initializer, ty)?;
@@ -72,11 +85,15 @@ pub(crate) fn eval_let(
         return place::adopt(context, body, span, local_id, declared, operand, unsafe_);
     }
     let storage = match declared.known().copied() {
-        Some(ty) if context.complete_object(ty) => Some(declare(context, body, local_id, ty, span)?),
+        Some(ty) if context.complete_object(ty) => {
+            Some(declare(context, body, local_id, ty, span)?)
+        }
         _ => None,
     };
     let initialized = storage.is_some()
-        && declared.known().is_some_and(|ty| !context.env().is_nocopy(*ty))
+        && declared
+            .known()
+            .is_some_and(|ty| !context.env().is_nocopy(*ty))
         && context.is_runtime();
     if initialized && let Some(storage) = &storage {
         emit::initialize(context, storage, None, span)?;
@@ -114,34 +131,39 @@ pub(crate) fn eval_let(
             (false, _) => coerce::value_type(context, value.ty(), &span),
         };
         let subject = context.env().referent(inferred);
-        let function = matches!(context.env().resolve_kind(subject), HMIRTypeKind::Function(_));
+        let function = matches!(
+            context.env().resolve_kind(subject),
+            HMIRTypeKind::Function(_)
+        );
         let inferred = if function && !types::comptime_only(context.env(), subject) {
             types::pointer(context.env_mut(), subject, &span)
         } else {
             inferred
         };
-        declared.try_complete(context, body, Some(inferred))?.and_then(context, body, None, move |context, body, ty, _| {
-            let ty = match referent {
-                Some(_) => types::reference(context.env_mut(), ty, None, &span),
-                None => ty,
-            };
-            let value = coerce::implicit::standard(context, value, ty, &span)?;
-            let function = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_));
-            if is_runtime && function && types::comptime_only(context.env(), ty) {
-                emit::bind_local(context, local_id, value);
-                return Ok(Evaluation::Ready(expr::unit(context, &span)));
-            }
-            let storage = match storage {
-                Some(storage) => storage,
-                None => declare(context, body, local_id, ty, &span)?,
-            };
-            if initialized {
-                emit::write(context, &storage, &value, &span)?;
-            } else {
-                emit::initialize(context, &storage, Some(&value), &span)?;
-            }
-            Ok(Evaluation::Ready(expr::unit(context, &span)))
-        })
+        declared
+            .try_complete(context, body, Some(inferred))?
+            .and_then(context, body, None, move |context, body, ty, _| {
+                let ty = match referent {
+                    Some(_) => types::reference(context.env_mut(), ty, None, &span),
+                    None => ty,
+                };
+                let value = coerce::implicit::standard(context, value, ty, &span)?;
+                let function = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_));
+                if is_runtime && function && types::comptime_only(context.env(), ty) {
+                    emit::bind_local(context, local_id, value);
+                    return Ok(Evaluation::Ready(expr::unit(context, &span)));
+                }
+                let storage = match storage {
+                    Some(storage) => storage,
+                    None => declare(context, body, local_id, ty, &span)?,
+                };
+                if initialized {
+                    emit::write(context, &storage, &value, &span)?;
+                } else {
+                    emit::initialize(context, &storage, Some(&value), &span)?;
+                }
+                Ok(Evaluation::Ready(expr::unit(context, &span)))
+            })
     })
 }
 
@@ -151,7 +173,9 @@ fn auto_referent(body: &HMIRBodyContext, declared: HMIRExprID) -> Option<HMIRExp
         return None;
     };
     match ty.kind() {
-        HMIRExprTypeKind::ReferenceTo { inner, .. } if matches!(body.expr(*inner).kind(), HMIRExprKind::Hole(_)) => {
+        HMIRExprTypeKind::ReferenceTo { inner, .. }
+            if matches!(body.expr(*inner).kind(), HMIRExprKind::Hole(_)) =>
+        {
             Some(*inner)
         }
         _ => None,
@@ -167,7 +191,11 @@ fn declare(
 ) -> CXResult<HMIRValue> {
     let local = body.local(local_id);
     if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_)) {
-        let requirement = ("local variable".into(), "an object type".into(), Some(types::name(context.env(), ty)));
+        let requirement = (
+            "local variable".into(),
+            "an object type".into(),
+            Some(types::name(context.env(), ty)),
+        );
         return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
     }
     if !context.complete_object(ty) {
@@ -202,7 +230,11 @@ pub(crate) fn eval_block(
         }
     }
     let result = eval_statements(context, body, span, statements, yields, false);
-    let result = if yields { yielded(context, body, scope, result, span) } else { result };
+    let result = if yields {
+        yielded(context, body, scope, result, span)
+    } else {
+        result
+    };
     closing(context, body, result, span)
 }
 
@@ -222,14 +254,21 @@ fn yielded(
     let span = span.clone();
     flow::catch_diverged(result)?.and_then(context, body, None, move |context, _, value, _| {
         let block = lower::expr::current_block(context);
-        let mut exits = context.runtime_mut().scopes_mut().control_mut(scope).end_yield();
+        let mut exits = context
+            .runtime_mut()
+            .scopes_mut()
+            .control_mut(scope)
+            .end_yield();
         match value {
             Some(value) if exits.is_empty() => return Ok(Evaluation::Ready(value)),
             Some(value) => exits.push((block, value)),
             None => {}
         }
         let env = context.env();
-        let voids = exits.iter().filter(|(_, value)| env.is_void(value.ty())).count();
+        let voids = exits
+            .iter()
+            .filter(|(_, value)| env.is_void(value.ty()))
+            .count();
         if voids != 0 && voids != exits.len() {
             let subject = "every path of an expression block".into();
             return Err(hmir_error(&span, &typecheck::MISSING_YIELD, subject).into());
@@ -249,7 +288,10 @@ fn eval_statements(
     let mut dead = false;
     for (index, statement) in statements.iter().enumerate() {
         let result = eval(context, body, *statement);
-        if matches!(&result, Err(EvalExit::Stop(StopReason::Runtime(RuntimeStop::Diverged)))) {
+        if matches!(
+            &result,
+            Err(EvalExit::Stop(StopReason::Runtime(RuntimeStop::Diverged)))
+        ) {
             dead = true;
             unreachable(context);
             continue;
@@ -264,10 +306,15 @@ fn eval_statements(
         }
         if yielded {
             let result = result?;
-            let partial = result.known().filter(|value| value.as_type().is_some()).cloned();
+            let partial = result
+                .known()
+                .filter(|value| value.as_type().is_some())
+                .cloned();
             let span = span.clone();
             return result.and_then(context, body, partial, move |context, _, value, _| {
-                Ok(Evaluation::Ready(coerce::promotion::std_rvalue(context, value, &span)?))
+                Ok(Evaluation::Ready(coerce::promotion::std_rvalue(
+                    context, value, &span,
+                )?))
             });
         }
         match result {

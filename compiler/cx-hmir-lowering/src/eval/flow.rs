@@ -103,6 +103,17 @@ impl<T: 'static> Evaluation<T> {
         self.chain(context, body, None, partial, then)
     }
 
+    pub(crate) fn and_then_2<U: 'static>(
+        self,
+        then: impl FnOnce(T) -> EvalResult<Evaluation<U>>
+    ) -> EvalResult<Evaluation<U>> {
+        match self {
+            Self::Ready(value) => then(value),
+            Self::Incomplete(incomplete) => Ok(Evaluation::Incomplete(
+            ))
+        }
+    }
+
     fn chain<U: 'static>(
         self,
         context: &mut LocalLoweringContext,

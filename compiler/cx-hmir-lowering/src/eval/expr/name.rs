@@ -20,17 +20,13 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     env::function::LocalLoweringContext,
-    eval::{
-        EvalResult, aggregate::variant, deduce, eval_type,
-        flow::Evaluation,
-        types,
-    },
+    eval::{EvalResult, aggregate::variant, deduce, eval_type, flow::Evaluation, types},
     log::hmir_error,
     lower::{global, types::lower_prototype},
     symbol,
     value::{
-        HMIRPlace, HMIRValue, HMIRValueKind,
-        constant::{HMIRConstant, HMIRFunctionRef},
+        HMIRReference, HMIRValue, HMIRValueKind,
+        immediate::{HMIRImmediate, HMIRFunctionRef},
     },
 };
 
@@ -66,16 +62,18 @@ pub(crate) fn eval_def(
     let value = symbol::binding(context.env_mut(), id, point)?;
     let emitting = context.is_runtime() && !context.is_unevaluated();
     match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Type(ty)) => return deduce::type_result(context, *ty, span),
-        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def)))
+        HMIRValueKind::Constant(HMIRImmediate::Type(ty)) => {
+            return deduce::type_result(context, *ty, span);
+        }
+        HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def)))
             if emitting && !types::comptime_only(context.env(), value.ty()) =>
         {
             let prototype = lower_prototype(context.env_mut(), *def, point, span)?;
             context.env_mut().module_mut().declare_function(prototype);
             request(context, *def, point)?;
         }
-        HMIRValueKind::Constant(HMIRConstant::Address(address))
-            if let Some(HMIRPlace::Global(def)) = address.whole_place() =>
+        HMIRValueKind::Constant(HMIRImmediate::Address(address))
+            if let Some(HMIRReference::Global(def)) = address.whole_place() =>
         {
             request(context, def, point)?;
             if emitting {
@@ -88,7 +86,11 @@ pub(crate) fn eval_def(
     Ok(Evaluation::Ready(value))
 }
 
-fn request(context: &mut LocalLoweringContext, def: HMIRDefID, point: Option<HMIRDeclarationPoint>) -> CXResult<()> {
+fn request(
+    context: &mut LocalLoweringContext,
+    def: HMIRDefID,
+    point: Option<HMIRDeclarationPoint>,
+) -> CXResult<()> {
     let linkage = symbol::linkage(context.env_mut(), def, point)?;
     if def.brand() == context.env().symbols().local_unit().id() || linkage == LinkageMode::Static {
         context.env_mut().generation_mut().request(def);
@@ -96,13 +98,20 @@ fn request(context: &mut LocalLoweringContext, def: HMIRDefID, point: Option<HMI
     Ok(())
 }
 
-pub(crate) fn type_value(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> CXResult<HMIRValue> {
+pub(crate) fn type_value(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
     if context.is_runtime() && !context.is_unevaluated() {
-        let subject = (format!("type '{}'", types::name(context.env(), ty)), "a runtime expression".into());
+        let subject = (
+            format!("type '{}'", types::name(context.env(), ty)),
+            "a runtime expression".into(),
+        );
         return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject));
     }
     let universe = types::universe(context.env_mut(), span);
-    Ok(HMIRValue::constant(universe, HMIRConstant::Type(ty)))
+    Ok(HMIRValue::constant(universe, HMIRImmediate::Type(ty)))
 }
 
 pub(crate) fn intrinsic_type(
@@ -110,7 +119,9 @@ pub(crate) fn intrinsic_type(
     name: &str,
     span: &TokenRange,
 ) -> Option<HMIRTypeID> {
-    let (_, intrinsic) = INTRINSIC_TYPES.iter().find(|(builtin, _)| *builtin == name)?;
+    let (_, intrinsic) = INTRINSIC_TYPES
+        .iter()
+        .find(|(builtin, _)| *builtin == name)?;
     let kind = match intrinsic(context.env().architecture())? {
         HIRIntrinsicType::Void => HMIRTypeKind::Void,
         HIRIntrinsicType::Unreachable => HMIRTypeKind::Unreachable,
@@ -123,7 +134,11 @@ pub(crate) fn intrinsic_type(
         HIRIntrinsicType::Float { bytes } => HMIRTypeKind::Float(HMIRFloatType::new(
             HMIRFloatWidth::from_bytes(bytes as usize).unwrap(),
         )),
-        HIRIntrinsicType::Builtin { size, alignment } => HMIRTypeKind::Builtin { name: name.to_string(), size, alignment },
+        HIRIntrinsicType::Builtin { size, alignment } => HMIRTypeKind::Builtin {
+            name: name.to_string(),
+            size,
+            alignment,
+        },
     };
     Some(context.env_mut().resolver_mut().realize_type(HMIRType::new(
         kind,
@@ -149,14 +164,24 @@ pub(crate) fn resolve(
     if let Some((&first, rest)) = ids.split_first() {
         if let Some(tag) = tag {
             let def = context.env().symbols().resolve_definition(first);
-            if def.declarations().iter().any(|decl| decl.tag() != Some(tag)) {
-                return Err(hmir_error(span, &typecheck::INCOMPATIBLE_TAG, name.to_string()));
+            if def
+                .declarations()
+                .iter()
+                .any(|decl| decl.tag() != Some(tag))
+            {
+                return Err(hmir_error(
+                    span,
+                    &typecheck::INCOMPATIBLE_TAG,
+                    name.to_string(),
+                ));
             }
         }
         let symbols = context.env().symbols();
         let defines = |id: &&HMIRDefID| {
             let declarations = symbols.resolve_definition(**id).declarations();
-            declarations.iter().any(|decl| decl.role() == HMIRDeclarationRole::Definition)
+            declarations
+                .iter()
+                .any(|decl| decl.role() == HMIRDeclarationRole::Definition)
         };
         let multiple_definitions = ids.iter().filter(defines).count() > 1;
         for other in rest {
@@ -164,8 +189,16 @@ pub(crate) fn resolve(
                 let names = ids
                     .iter()
                     .map(|id| {
-                        let unit = context.env_mut().symbols_mut().owner(id.brand()).expect("candidate owner is available");
-                        format!("{} (module '{}')", unit.resolve_def(*id).unwrap().name(), unit.namespace())
+                        let unit = context
+                            .env_mut()
+                            .symbols_mut()
+                            .owner(id.brand())
+                            .expect("candidate owner is available");
+                        format!(
+                            "{} (module '{}')",
+                            unit.resolve_def(*id).unwrap().name(),
+                            unit.namespace()
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -180,8 +213,14 @@ pub(crate) fn resolve(
 fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) -> CXResult<bool> {
     let point = context.visible_through();
     let env = context.env_mut();
-    let (a_value, b_value) = (symbol::binding(env, a, point)?, symbol::binding(env, b, point)?);
-    let (Some(a_name), Some(b_name)) = (symbol::link_name(env, a, point)?, symbol::link_name(env, b, point)?) else {
+    let (a_value, b_value) = (
+        symbol::binding(env, a, point)?,
+        symbol::binding(env, b, point)?,
+    );
+    let (Some(a_name), Some(b_name)) = (
+        symbol::link_name(env, a, point)?,
+        symbol::link_name(env, b, point)?,
+    ) else {
         return Ok(false);
     };
     if a_name != b_name
@@ -191,13 +230,20 @@ fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) ->
         return Ok(false);
     }
 
-    Ok(match (env.resolve_kind(a_value.ty()), env.resolve_kind(b_value.ty())) {
-        (HMIRTypeKind::Function(a), HMIRTypeKind::Function(b)) => symbol::composite::signatures_alike(env, a, b),
-        (HMIRTypeKind::ReferenceTo { .. }, HMIRTypeKind::ReferenceTo { .. }) => {
-            symbol::composite::alike(env, a_value.ty(), b_value.ty(), true)
-        }
-        _ => false,
-    })
+    Ok(
+        match (
+            env.resolve_kind(a_value.ty()),
+            env.resolve_kind(b_value.ty()),
+        ) {
+            (HMIRTypeKind::Function(a), HMIRTypeKind::Function(b)) => {
+                symbol::composite::signatures_alike(env, a, b)
+            }
+            (HMIRTypeKind::ReferenceTo { .. }, HMIRTypeKind::ReferenceTo { .. }) => {
+                symbol::composite::alike(env, a_value.ty(), b_value.ty(), true)
+            }
+            _ => false,
+        },
+    )
 }
 
 fn qualified_constructor(
@@ -216,7 +262,7 @@ fn qualified_constructor(
         };
         let point = context.visible_through();
         let parent = symbol::binding(context.env_mut(), id, point)?;
-        let HMIRValueKind::Constant(HMIRConstant::Type(ty)) = parent.kind() else {
+        let HMIRValueKind::Constant(HMIRImmediate::Type(ty)) = parent.kind() else {
             continue;
         };
         if let Some(value) = variant::reference(context, *ty, &name.name, span)? {
@@ -236,7 +282,10 @@ pub(crate) fn eval_scope_access(
     let evaluated = eval_type(context, body, base)?;
     let (span, member) = (span.clone(), member.clone());
     evaluated.and_then(context, body, None, move |context, _, ty, _| {
-        if !matches!(context.env().resolve_kind(ty), HMIRTypeKind::TaggedUnion { .. }) {
+        if !matches!(
+            context.env().resolve_kind(ty),
+            HMIRTypeKind::TaggedUnion { .. }
+        ) {
             let kind = (types::name(context.env(), ty), "a tagged union".into());
             return Err(hmir_error(&span, &typecheck::UNEXPECTED_KIND, kind).into());
         }

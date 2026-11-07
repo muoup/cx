@@ -16,7 +16,8 @@ use cx_util::identifier::CXIdent;
 use crate::{
     env::function::LocalLoweringContext,
     eval::{
-        call::{self, Frame}, coerce,
+        call::{self, Frame},
+        coerce,
         deduce::{Incomplete, IncompleteReason, subject},
         eval,
         flow::{self, Evaluation},
@@ -26,7 +27,7 @@ use crate::{
     symbol::{self, composite::alike},
     value::{
         HMIRValue, HMIRValueKind,
-        constant::{HMIRConstant, HMIRFunctionRef},
+        immediate::{HMIRImmediate, HMIRFunctionRef},
     },
 };
 
@@ -92,7 +93,10 @@ impl<'a> Deduction<'a> {
                 ty: self.inferred[&index],
             })
             .collect();
-        match unresolved.into_iter().find(|index| self.pending.contains_key(index)) {
+        match unresolved
+            .into_iter()
+            .find(|index| self.pending.contains_key(index))
+        {
             Some(index) => Err(self.undeduced(index, span)),
             None => Ok(resolved),
         }
@@ -113,7 +117,9 @@ impl<'a> Deduction<'a> {
         span: &TokenRange,
     ) -> HMIRTypeID {
         match self.function.body().expr(form).kind() {
-            HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::ReferenceTo { .. }) => actual,
+            HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::ReferenceTo { .. }) => {
+                actual
+            }
             _ => coerce::value_type(context, actual, span),
         }
     }
@@ -135,10 +141,15 @@ impl<'a> Deduction<'a> {
                     None => Ok(()),
                 }
             }
-            HMIRExprKind::Call { callee, args, named } => {
+            HMIRExprKind::Call {
+                callee,
+                args,
+                named,
+            } => {
                 self.unify(context, frame, *callee, None, unresolved, span)?;
-                let applied =
-                    actual.and_then(|actual| self.applied(context, frame, *callee, args.len(), named, actual, span));
+                let applied = actual.and_then(|actual| {
+                    self.applied(context, frame, *callee, args.len(), named, actual, span)
+                });
                 let forms = args.iter().chain(named.iter().map(|(_, form)| form));
                 for (index, form) in forms.enumerate() {
                     let actual = applied
@@ -196,7 +207,8 @@ impl<'a> Deduction<'a> {
                 let actual = actual.filter(|_| {
                     !declared.unsafe_move && declared.move_semantics == HMIRDeclaredMove::default()
                 });
-                let actual = actual.map(|actual| types::qualify::remove(context, actual, qualifiers, span));
+                let actual =
+                    actual.map(|actual| types::qualify::remove(context, actual, qualifiers, span));
                 self.unify(context, frame, *inner, actual, unresolved, span)
             }
             HMIRExprTypeKind::Staged(inner) => {
@@ -253,23 +265,28 @@ impl<'a> Deduction<'a> {
             .enter(context, span, |child| flow::top(eval(child, body, callee)))
             .ok()?;
         let (callee, curried) = match value.kind() {
-            HMIRValueKind::Constant(HMIRConstant::Curried { callee, args }) => {
+            HMIRValueKind::Constant(HMIRImmediate::Curried { callee, args }) => {
                 (callee.as_ref(), args.as_slice())
             }
             _ => (&value, [].as_slice()),
         };
-        let HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) = callee.kind() else {
+        let HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) =
+            callee.kind()
+        else {
             return None;
         };
         let instance = instance(context, *def, actual)?;
         let source = context.env().symbols().resolve_definition(*def);
-        let Some(HMIRDefKind::Function(generator)) = source.declarations()[symbol::select(source, None).ok()?].kind()
+        let Some(HMIRDefKind::Function(generator)) =
+            source.declarations()[symbol::select(source, None).ok()?].kind()
         else {
             return None;
         };
         let params = generator.signature().params();
         let mut values = (0..params.len())
-            .filter(|index| curried.get(*index).is_none_or(Option::is_none) && !params[*index].defaulted())
+            .filter(|index| {
+                curried.get(*index).is_none_or(Option::is_none) && !params[*index].defaulted()
+            })
             .map(|index| instance.get(index).cloned())
             .take(args)
             .collect::<Vec<_>>();
@@ -290,7 +307,12 @@ impl<'a> Deduction<'a> {
         unresolved: &mut Vec<usize>,
         span: &TokenRange,
     ) -> CXResult<()> {
-        let unreachable = |actual| matches!(context.env().resolve_kind(actual), HMIRTypeKind::Unreachable);
+        let unreachable = |actual| {
+            matches!(
+                context.env().resolve_kind(actual),
+                HMIRTypeKind::Unreachable
+            )
+        };
         if actual.is_some_and(unreachable) {
             return Ok(());
         }
@@ -328,7 +350,11 @@ impl<'a> Deduction<'a> {
     }
 
     fn undeduced(&self, index: usize, span: &TokenRange) -> CXError {
-        let subject = format!("comptime argument '{}' of '{}'", self.parameter(index), self.name);
+        let subject = format!(
+            "comptime argument '{}' of '{}'",
+            self.parameter(index),
+            self.name
+        );
         hmir_error(span, &typecheck::TEMPLATE_DEDUCTION, subject)
     }
 }
@@ -382,22 +408,29 @@ pub(crate) fn generated(
     undeduced: CXError,
     span: &TokenRange,
 ) -> Evaluation<HMIRValue> {
-    let HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) = *callee.kind() else {
+    let HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) = *callee.kind()
+    else {
         unreachable!("a generated type has a generator")
     };
     let (callee, call_span) = (callee.clone(), span.clone());
-    Evaluation::Incomplete(Incomplete::new(context, span, IncompleteReason::ExpectedType, None, move |context, body, expected| {
-        let expected = context.env().referent(expected);
-        let Some(instance) = instance(context, def, expected) else {
-            return Err(undeduced.into());
-        };
-        let applied = values
-            .into_iter()
-            .zip(instance)
-            .map(|(value, bound)| Some(value.unwrap_or(bound)))
-            .collect::<Vec<_>>();
-        call::dependent(context, &callee, body, &[], &[], &applied, &call_span)
-    }))
+    Evaluation::Incomplete(Incomplete::new(
+        context,
+        span,
+        IncompleteReason::ExpectedType,
+        None,
+        move |context, body, expected| {
+            let expected = context.env().referent(expected);
+            let Some(instance) = instance(context, def, expected) else {
+                return Err(undeduced.into());
+            };
+            let applied = values
+                .into_iter()
+                .zip(instance)
+                .map(|(value, bound)| Some(value.unwrap_or(bound)))
+                .collect::<Vec<_>>();
+            call::dependent(context, &callee, body, &[], &[], &applied, &call_span)
+        },
+    ))
 }
 
 pub(crate) fn actual_type(
@@ -408,7 +441,10 @@ pub(crate) fn actual_type(
     loop {
         match body.expr(arg).kind() {
             HMIRExprKind::Piped(inner) => arg = *inner,
-            HMIRExprKind::Quote { params, body: inner } if params.is_empty() => arg = *inner,
+            HMIRExprKind::Quote {
+                params,
+                body: inner,
+            } if params.is_empty() => arg = *inner,
             HMIRExprKind::Hole(_) | HMIRExprKind::Quote { .. } => return Ok(None),
             _ => return Ok(Some(flow::top(subject(context, body, arg))?)),
         }

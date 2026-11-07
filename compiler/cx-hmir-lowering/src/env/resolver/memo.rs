@@ -10,7 +10,11 @@ use cx_tokens::TokenRange;
 use cx_util::dense_id;
 
 use crate::{
-    env::function::{ComptimeContext, Expectations, FnContext, LocalLoweringContext}, eval::{self, coerce, deduce, flow, types}, log::hmir_error, symbol, value::HMIRValue,
+    env::function::{ComptimeContext, Expectations, FnContext, LocalLoweringContext},
+    eval::{self, coerce, deduce, flow, types},
+    log::hmir_error,
+    symbol,
+    value::HMIRValue,
 };
 
 use super::HMIRResolver;

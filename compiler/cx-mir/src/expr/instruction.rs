@@ -1,5 +1,5 @@
 use cx_tokens::TokenRange;
-use cx_util::{dense_id, identifier::CXIdent};
+use cx_util::identifier::CXIdent;
 
 use crate::{
     MIRTarget,
@@ -8,8 +8,6 @@ use crate::{
     unit::MIRBasicBlockID,
     value::{MIRBindable, MIRBlockTarget, MIRPlaceID, MIRRegisterID, MIRValue},
 };
-
-dense_id!(MIRScopeID, "scope.");
 
 #[derive(Debug, Clone)]
 pub struct MIRBasicBlock {

@@ -21,9 +21,18 @@ use cx_mir::{MIRBasicBlockID, MIRValue};
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit, env::function::{FnContext, LocalLoweringContext, Permission}, eval::{
-        self, EvalResult, binding::eval_scoped, coerce, eval, expr, flow::{self, ComptimeStop, Evaluation}, types,
-    }, lower, symbol::composite::alike, value::HMIRValue,
+    emit,
+    env::function::{FnContext, LocalLoweringContext, Permission},
+    eval::{
+        self, EvalResult,
+        binding::eval_scoped,
+        coerce, eval, expr,
+        flow::{self, ComptimeStop, Evaluation},
+        types,
+    },
+    lower,
+    symbol::composite::alike,
+    value::HMIRValue,
 };
 
 pub(crate) fn eval_control(
@@ -110,8 +119,9 @@ fn branch(
 
             then_expr.and_then(context, body, None, move |context, body, then, expected| {
                 if let Some(else_branch) = else_branch {
-                    let mut arms =
-                        Vec::from_iter(then.map(|value| (lower::expr::current_block(context), value)));
+                    let mut arms = Vec::from_iter(
+                        then.map(|value| (lower::expr::current_block(context), value)),
+                    );
 
                     lower::expr::switch_to(context, else_block);
                     flow::catch_diverged(eval_scoped(context, body, else_branch, true))?
@@ -149,7 +159,10 @@ pub(crate) fn merge(
     let place = place
         && ty.is_some_and(|ty| {
             let env = context.env();
-            env.is_reference(ty) && arms.iter().all(|(_, value)| alike(env, ty, value.ty(), true))
+            env.is_reference(ty)
+                && arms
+                    .iter()
+                    .all(|(_, value)| alike(env, ty, value.ty(), true))
         });
     if !place {
         for (block, value) in &mut arms {
@@ -225,7 +238,9 @@ fn eval_condition(
     let span = body.expr(condition).span();
     let value = eval(context, body, condition)?.ready()?;
     let value = coerce::condition(context, value, span)?;
-    Ok(Evaluation::Ready(lower::expr::value::standard(context, &value, span)?))
+    Ok(Evaluation::Ready(lower::expr::value::standard(
+        context, &value, span,
+    )?))
 }
 
 fn logical_operand(
@@ -277,5 +292,7 @@ pub(crate) fn eval_short_circuit(
     emit::initialize(context, &result, Some(&left), span)?;
     lower::expr::jump(context, merge, span);
     lower::expr::switch_to(context, merge);
-    Ok(Evaluation::Ready(lower::expr::storage::capture(context, result, span)?))
+    Ok(Evaluation::Ready(lower::expr::storage::capture(
+        context, result, span,
+    )?))
 }

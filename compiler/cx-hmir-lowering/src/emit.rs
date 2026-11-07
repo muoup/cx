@@ -1,10 +1,5 @@
-// Might have gone a bit overboard removing the old emit.rs, we should however make this thinner and just for helpers;
-// ensure also that we call this via emit::method_name rather than naming it emit_method_name
-//
-// Avoid any routines in here that are hyper-specific and would only feasibly be used in one place
-
 pub mod comptime;
-mod storage;
+pub mod runtime;
 
 pub use storage::{
     adopt, allocate, bind_local, copy, initialize, invalidate, lift, materialize, scratch,
@@ -16,32 +11,23 @@ use cx_hmir::{
     ty::{HMIRTypeID, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_intrinsics::VAIntrinsic;
-use cx_log::{CXResult, catalogue};
+use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
     env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope, memory::placement},
     eval::types,
-    log::log_hmir_error,
     lower::expr,
     value::{
         Bindings, HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
-        constant::HMIRConstant,
+        immediate::HMIRImmediate,
     },
 };
 
-fn unsupported<T>(span: &TokenRange, operation: &str) -> CXResult<T> {
-    log_hmir_error(
-        span,
-        &catalogue::mir::COMPTIME_INVALID_OPERATION,
-        operation.into(),
-    )
-}
-
 pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {
     match context.context_mut() {
-        FnContext::Runtime(_) => expr::open_scope(context, span),
+        FnContext::Runtime(_) => runtime::open_scope(context, span),
         FnContext::Comptime(comptime) => {
             let scopes = comptime.scopes_mut();
             let parent = scopes.top();
@@ -52,7 +38,7 @@ pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usiz
 
 pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
     match context.context_mut() {
-        FnContext::Runtime(_) => expr::close_scope(context, span),
+        FnContext::Runtime(_) => runtime::close_scope(context, span),
         FnContext::Comptime(comptime) => {
             comptime.scopes_mut().pop();
         }
@@ -86,24 +72,21 @@ pub fn address(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Function(_) | HMIRConstant::Curried { .. }) => {
+        HMIRValueKind::Constant(HMIRImmediate::Function(_) | HMIRImmediate::Curried { .. }) => {
             return match context.context() {
                 FnContext::Runtime(_) => expr::function_address(context, value, ty, span),
-                FnContext::Comptime(_) => {
-                    let function = context.env_mut().canonical_value(value.clone());
-                    Ok(HMIRValue::constant(
-                        ty,
-                        HMIRConstant::Address(HMIRAddress::new(
-                            Addressable::Function(Box::new(function)),
-                            0,
-                        )),
-                    ))
-                }
+                FnContext::Comptime(_) => Ok(HMIRValue::constant(
+                    ty,
+                    HMIRImmediate::Address(HMIRAddress::new(
+                        Addressable::Function(Box::new(function)),
+                        0,
+                    )),
+                )),
             };
         }
-        HMIRValueKind::Constant(HMIRConstant::Str(text)) => {
+        HMIRValueKind::Constant(HMIRImmediate::Str(text)) => {
             let address = HMIRAddress::new(Addressable::Literal(text.clone()), 0);
-            return Ok(HMIRValue::constant(ty, HMIRConstant::Address(address)));
+            return Ok(HMIRValue::constant(ty, HMIRImmediate::Address(address)));
         }
         HMIRValueKind::Indirect(pointer) if context.env().pointer_inner(pointer.ty()).is_some() => {
             return Ok(pointer.as_ref().clone().with_ty(ty));

@@ -13,7 +13,7 @@ use crate::{
     eval::{EvalResult, flow::Evaluation, types},
     lower::{expr, types::lower_signature},
     symbol,
-    value::{HMIRValue, constant::HMIRFunctionRef},
+    value::{HMIRValue, immediate::HMIRFunctionRef},
 };
 
 pub(super) fn apply(

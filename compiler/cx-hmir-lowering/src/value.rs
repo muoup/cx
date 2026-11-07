@@ -1,27 +1,13 @@
-pub mod address;
-pub mod constant;
+pub mod immediate;
 pub mod staged;
 
-use rustc_hash::FxHashMap;
-
-use cx_hmir::{HMIRDefID, body::HMIRLocalID, ty::HMIRTypeID};
+use cx_hmir::ty::HMIRTypeID;
 use cx_util::dense_id;
 
-use crate::value::{address::Addressable, constant::HMIRConstant};
+use crate::value::immediate::HMIRImmediate;
 
-pub(crate) type Bindings = FxHashMap<HMIRLocalID, HMIRValue>;
-
-dense_id!(HMIRSlotID, "$");
-dense_id!(HMIRRegionID, "mem");
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum HMIRPlace {
-    Local(HMIRSlotID),
-    Global(HMIRDefID),
-    // REVIEW: HMIRRegionID and HMIRSlotID is a faulty distinction, the former is MIR-bound (bad), and the latter
-    // is interpreter memory bound, which is overly restricting. Investigate unifying this into clearer categories. 
-    Region(HMIRRegionID),
-}
+dense_id!(HMIRRegisterID, "$");
+dense_id!(HMIRPlaceID, "p");
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HMIRValue {
@@ -31,41 +17,30 @@ pub struct HMIRValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HMIRValueKind {
-    Constant(HMIRConstant),
-    PlaceRef(HMIRPlace),
-    Indirect(Box<HMIRValue>),
+    /// Well-formed representation of a full value, all comptime contexts must return values in this form
+    Immediate(HMIRImmediate),
+
+    /// Intermediate computed values of a function
+    Register(HMIRRegisterID),
+    
+    /// Addressable storage local to a function
+    /// 
+    /// Note that this shape was intentionally separated from HMIRImmediate::Address, while it is in essence addressable,
+    /// and offset-addresses are well-defined here, they are not valid for a comptime context to return, and there is no
+    /// issue of C backcompatibility as local pointers are not representable in comptime contexts like global initializers 
+    Place(HMIRPlaceID),
 }
 
 impl HMIRValue {
-    pub fn new(ty: HMIRTypeID, kind: HMIRValueKind) -> Self {
-        Self { ty, kind }
+    pub fn new(ty: HMIRTypeID, kind: impl Into<HMIRValueKind>) -> Self {
+        Self { ty, kind: kind.into() }
     }
 
-    pub fn constant(ty: HMIRTypeID, constant: HMIRConstant) -> Self {
-        Self::new(ty, HMIRValueKind::Constant(constant))
+    pub fn with_ty(mut self, ty: HMIRTypeID) -> Self {
+        self.ty = ty;
+        self
     }
-
-    pub fn curried(ty: HMIRTypeID, callee: Self, args: Vec<Option<Self>>) -> Self {
-        let callee = Box::new(callee);
-        Self::constant(ty, HMIRConstant::Curried { callee, args })
-    }
-
-    pub fn place(ty: HMIRTypeID, place: HMIRPlace) -> Self {
-        Self::new(ty, HMIRValueKind::PlaceRef(place))
-    }
-
-    pub fn indirect(ty: HMIRTypeID, pointer: HMIRValue) -> Self {
-        match &pointer.kind {
-            HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
-                match address.whole_place() {
-                    Some(place) => Self::place(ty, place),
-                    None => Self::new(ty, HMIRValueKind::Indirect(Box::new(pointer))),
-                }
-            }
-            _ => Self::new(ty, HMIRValueKind::Indirect(Box::new(pointer))),
-        }
-    }
-
+    
     pub fn ty(&self) -> HMIRTypeID {
         self.ty
     }
@@ -73,42 +48,22 @@ impl HMIRValue {
     pub fn kind(&self) -> &HMIRValueKind {
         &self.kind
     }
+}
 
-    pub fn as_type(&self) -> Option<HMIRTypeID> {
-        match self.kind {
-            HMIRValueKind::Constant(HMIRConstant::Type(ty)) => Some(ty),
-            _ => None,
-        }
+impl From<HMIRImmediate> for HMIRValueKind {
+    fn from(value: HMIRImmediate) -> Self {
+        HMIRValueKind::Immediate(value)
     }
+}
 
-    pub fn as_place(&self) -> Option<HMIRPlace> {
-        match self.kind {
-            HMIRValueKind::PlaceRef(place) => Some(place),
-            _ => None,
-        }
+impl From<HMIRRegisterID> for HMIRValueKind {
+    fn from(value: HMIRRegisterID) -> Self {
+        HMIRValueKind::Register(value)
     }
+}
 
-    pub fn as_function(&self) -> Option<&HMIRValue> {
-        match &self.kind {
-            HMIRValueKind::Constant(HMIRConstant::Address(address)) if address.offset() == 0 => {
-                match address.base() {
-                    Addressable::Function(function) => Some(function),
-                    _ => None,
-                }
-            }
-            _ => None,
-        }
-    }
-
-    pub fn as_int(&self) -> Option<i128> {
-        match self.kind {
-            HMIRValueKind::Constant(HMIRConstant::Int(value)) => Some(value),
-            _ => None,
-        }
-    }
-
-    pub fn with_ty(mut self, ty: HMIRTypeID) -> Self {
-        self.ty = ty;
-        self
+impl From<HMIRPlaceID> for HMIRValueKind {
+    fn from(value: HMIRPlaceID) -> Self {
+        HMIRValueKind::Place(value)
     }
 }

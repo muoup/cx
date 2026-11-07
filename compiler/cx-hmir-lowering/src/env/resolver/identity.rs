@@ -9,10 +9,10 @@ use cx_hmir::ty::{
 };
 
 use crate::{
+    emit::comptime::int,
     env::HMIREnvironment,
     symbol::composite::alike,
-    emit::comptime::int,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 impl HMIREnvironment<'_, '_> {
@@ -35,69 +35,6 @@ impl HMIREnvironment<'_, '_> {
             .or_default()
             .push(ty);
         ty
-    }
-
-    pub fn canonical_value(&mut self, value: HMIRValue) -> HMIRValue {
-        let ty = self.canonical_type(value.ty());
-        let HMIRValueKind::Constant(constant) = value.kind() else {
-            return value;
-        };
-        HMIRValue::constant(ty, self.canonical_constant(constant.clone(), ty))
-    }
-
-    fn canonical_constant(&mut self, value: HMIRConstant, ty: HMIRTypeID) -> HMIRConstant {
-        let kind = self.resolve_kind(ty).clone();
-        match (value, &kind) {
-            (HMIRConstant::Type(ty), _) => HMIRConstant::Type(self.canonical_type(ty)),
-            (HMIRConstant::Int(value), HMIRTypeKind::Int(integer)) => {
-                HMIRConstant::Int(int::normalize(value, *integer))
-            }
-            (HMIRConstant::Aggregate(items), _) => HMIRConstant::Aggregate(
-                items
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, item)| {
-                        let field = match &kind {
-                            HMIRTypeKind::Array { element, .. } => *element,
-                            HMIRTypeKind::Struct { fields } => *fields[index].ty(),
-                            _ => unreachable!("an aggregate constant is an array or structure"),
-                        };
-                        self.canonical_constant(item, field)
-                    })
-                    .collect(),
-            ),
-            (HMIRConstant::Union { member, value }, HMIRTypeKind::Union { fields }) => {
-                HMIRConstant::Union {
-                    member,
-                    value: Box::new(self.canonical_constant(*value, *fields[member].ty())),
-                }
-            }
-            (
-                HMIRConstant::TaggedUnion { variant, payload },
-                HMIRTypeKind::TaggedUnion { fields },
-            ) => HMIRConstant::TaggedUnion {
-                variant,
-                payload: Box::new(self.canonical_constant(*payload, *fields[variant].ty())),
-            },
-            (HMIRConstant::Address(address), _) => match address.base() {
-                crate::value::address::Addressable::Function(function) => {
-                    let function = self.canonical_value(function.as_ref().clone());
-                    HMIRConstant::Address(crate::value::address::HMIRAddress::new(
-                        crate::value::address::Addressable::Function(Box::new(function)),
-                        address.offset(),
-                    ))
-                }
-                _ => HMIRConstant::Address(address),
-            },
-            (HMIRConstant::Curried { callee, args }, _) => HMIRConstant::Curried {
-                callee: Box::new(self.canonical_value(*callee)),
-                args: args
-                    .into_iter()
-                    .map(|arg| arg.map(|arg| self.canonical_value(arg)))
-                    .collect(),
-            },
-            (value, _) => value,
-        }
     }
 }
 
@@ -143,7 +80,9 @@ fn fingerprint(env: &HMIREnvironment, ty: HMIRTypeID, hash: &mut impl Hasher) ->
             length.hash(hash);
             fingerprint(env, *element, hash)?;
         }
-        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => fingerprint(env, *element, hash)?,
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
+            fingerprint(env, *element, hash)?
+        }
         HMIRTypeKind::Function(signature) => {
             signature.stage().hash(hash);
             signature.is_variadic().hash(hash);

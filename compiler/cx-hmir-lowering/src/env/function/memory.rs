@@ -19,9 +19,9 @@ use crate::{
     log::hmir_error,
     symbol,
     value::{
-        HMIRPlace, HMIRRegionID, HMIRValueKind,
+        HMIRReference, HMIRRegionID, HMIRValueKind,
         address::{Addressable, HMIRAddress},
-        constant::HMIRConstant,
+        immediate::HMIRImmediate,
     },
 };
 
@@ -48,7 +48,7 @@ struct Image {
 #[derive(Debug, Clone)]
 struct Cell {
     size: usize,
-    value: HMIRConstant,
+    value: HMIRImmediate,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -130,14 +130,14 @@ impl Image {
         self.bytes[offset..offset + bytes.len()].copy_from_slice(bytes);
     }
 
-    fn cell(&self, offset: usize, size: usize) -> Option<&HMIRConstant> {
+    fn cell(&self, offset: usize, size: usize) -> Option<&HMIRImmediate> {
         self.cells
             .get(&offset)
             .filter(|cell| cell.size == size)
             .map(|cell| &cell.value)
     }
 
-    fn put_cell(&mut self, offset: usize, size: usize, value: HMIRConstant) {
+    fn put_cell(&mut self, offset: usize, size: usize, value: HMIRImmediate) {
         self.cells.insert(offset, Cell { size, value });
     }
 
@@ -239,7 +239,7 @@ impl LocalLoweringContext<'_, '_, '_> {
         ty: HMIRTypeID,
         bitfield: Option<HMIRBitfield>,
         span: &TokenRange,
-    ) -> CXResult<HMIRConstant> {
+    ) -> CXResult<HMIRImmediate> {
         let region = self.region(address, false, span)?;
         let size = layout(self.env_mut(), ty, span)?.size();
         let image = self
@@ -257,7 +257,7 @@ impl LocalLoweringContext<'_, '_, '_> {
         &mut self,
         address: &HMIRAddress,
         ty: HMIRTypeID,
-        value: &HMIRConstant,
+        value: &HMIRImmediate,
         bitfield: Option<HMIRBitfield>,
         span: &TokenRange,
     ) -> CXResult<()> {
@@ -304,13 +304,13 @@ impl LocalLoweringContext<'_, '_, '_> {
         span: &TokenRange,
     ) -> CXResult<HMIRRegionID> {
         match address.base() {
-            Addressable::Place(HMIRPlace::Region(region)) => Ok(*region),
-            Addressable::Place(HMIRPlace::Global(_)) if write => Err(hmir_error(
+            Addressable::Place(HMIRReference::Region(region)) => Ok(*region),
+            Addressable::Place(HMIRReference::Global(_)) if write => Err(hmir_error(
                 span,
                 &mir::COMPTIME_INVALID_OPERATION,
                 "writing to a runtime global".into(),
             )),
-            Addressable::Place(HMIRPlace::Global(def)) => self.global(*def, span),
+            Addressable::Place(HMIRReference::Global(def)) => self.global(*def, span),
             Addressable::Literal(_) if write => Err(hmir_error(
                 span,
                 &mir::COMPTIME_INVALID_OPERATION,

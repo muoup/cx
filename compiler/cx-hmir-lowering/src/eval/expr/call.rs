@@ -29,7 +29,7 @@ use crate::{
     value::{
         HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
-        constant::{HMIRConstant, HMIRFunctionRef},
+        immediate::{HMIRImmediate, HMIRFunctionRef},
     },
 };
 
@@ -65,7 +65,7 @@ fn evaluate(
     let callee = staged::read(context, callee, span)?;
     if matches!(
         callee.kind(),
-        HMIRValueKind::Constant(HMIRConstant::Quote(_))
+        HMIRValueKind::Constant(HMIRImmediate::Quote(_))
     ) {
         if let Some((_, value)) = named.first() {
             let context = ("a named argument".into(), "a staged expression call".into());
@@ -80,7 +80,7 @@ fn evaluate(
     }
     let callee = operand(context, callee, span)?;
     let (callee, applied) = match callee.as_function().map(HMIRValue::kind) {
-        Some(HMIRValueKind::Constant(HMIRConstant::Curried { callee, args })) => {
+        Some(HMIRValueKind::Constant(HMIRImmediate::Curried { callee, args })) => {
             let (inner, args) = (callee.as_ref().clone(), args.clone());
             (operand(context, inner, span)?, args)
         }
@@ -88,7 +88,7 @@ fn evaluate(
     };
     let target = callee.as_function().unwrap_or(&callee).clone();
     if context.is_unevaluated()
-        && let HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) =
+        && let HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) =
             target.kind()
     {
         let source = context.env().symbols().resolve_definition(*def);
@@ -109,10 +109,10 @@ fn evaluate(
 
     let env = context.env();
     let subject = || match target.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def))) => {
+        HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) => {
             format!("'{}'", env.symbols().resolve_definition(*def).name())
         }
-        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Constructor {
+        HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Constructor {
             ty,
             variant,
         })) => {
@@ -162,7 +162,7 @@ fn evaluate(
 
     let return_type = *signature.return_type();
     match target.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Def(def)))
+        HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def)))
             if context.is_runtime() && !context.is_unevaluated() =>
         {
             contract::call(context, *def, &values, span, |context| {
@@ -235,7 +235,7 @@ fn operand(
         let ty = types::reference(context.env_mut(), callee.ty(), None, span);
         let callee = context.env_mut().canonical_value(callee);
         let address = HMIRAddress::new(Addressable::Function(Box::new(callee)), 0);
-        return Ok(HMIRValue::constant(ty, HMIRConstant::Address(address)));
+        return Ok(HMIRValue::constant(ty, HMIRImmediate::Address(address)));
     }
     let pointer = coerce::promotion::std_rvalue(context, callee, span)?;
     match context.env().pointer_inner(pointer.ty()) {
@@ -249,7 +249,7 @@ fn operand(
 
 fn constructs(callee: &HMIRValue) -> Option<(HMIRTypeID, usize)> {
     match callee.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Function(HMIRFunctionRef::Constructor {
+        HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Constructor {
             ty,
             variant,
         })) => Some((*ty, *variant)),

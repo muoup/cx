@@ -14,7 +14,7 @@ use crate::{
     eval::{coerce::applied, expr, types},
     log::hmir_error,
     symbol::composite::signatures_alike,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) fn standard(
@@ -48,7 +48,7 @@ pub(crate) fn aggregate(
             todo!()
         }
 
-        _ => emit::materialize(context, value, span)?
+        _ => emit::materialize(context, value, span)?,
     };
 
     aggregate(context, step, span)
@@ -190,9 +190,9 @@ fn step(
     }
     Ok(match (from, to) {
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_))
-            if matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Int(0))) =>
+            if matches!(value.kind(), HMIRValueKind::Constant(HMIRImmediate::Int(0))) =>
         {
-            Coercion::Applied(HMIRValue::constant(target, HMIRConstant::Null))
+            Coercion::Applied(HMIRValue::constant(target, HMIRImmediate::Null))
         }
         (
             HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_),
@@ -234,10 +234,12 @@ fn bind(
     if !compatible(env, value.ty(), inner) {
         return Ok(Coercion::Unapplied(value));
     }
+    
     let storage = match is_designator(env, value.ty()) {
         true => value,
         false => emit::temporary(context, value, span)?,
     };
+    
     Ok(Coercion::Applied(emit::address(
         context, &storage, target, span,
     )?))
@@ -251,7 +253,7 @@ fn string(
     length: Option<u64>,
     span: &TokenRange,
 ) -> CXResult<Coercion> {
-    let HMIRValueKind::Constant(HMIRConstant::Str(string)) = value.kind() else {
+    let HMIRValueKind::Constant(HMIRImmediate::Str(string)) = value.kind() else {
         return Ok(Coercion::Unapplied(value));
     };
     if !is_char(context.env(), element) {
@@ -262,9 +264,9 @@ fn string(
         let limit = ("string".into(), usize::try_from(bound).ok());
         return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit));
     }
-    let mut items = vec![HMIRConstant::Int(0); bound as usize];
+    let mut items = vec![HMIRImmediate::Int(0); bound as usize];
     for (item, byte) in items.iter_mut().zip(string.bytes()) {
-        *item = HMIRConstant::Int(byte as i128);
+        *item = HMIRImmediate::Int(byte as i128);
     }
     let ty = match length {
         None => types::array(context.env_mut(), target, bound, span),
@@ -272,7 +274,7 @@ fn string(
     };
     Ok(Coercion::Applied(HMIRValue::constant(
         ty,
-        HMIRConstant::Aggregate(items),
+        HMIRImmediate::Aggregate(items),
     )))
 }
 

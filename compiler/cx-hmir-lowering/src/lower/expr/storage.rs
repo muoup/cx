@@ -17,9 +17,9 @@ use crate::{
     eval::types,
     lower::{global, types::lower_type},
     value::{
-        HMIRPlace, HMIRSlotID, HMIRValue, HMIRValueKind,
+        HMIRReference, HMIRRegisterID, HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
-        constant::HMIRConstant,
+        immediate::HMIRImmediate,
     },
 };
 
@@ -51,20 +51,20 @@ pub fn slot(
         .runtime_mut()
         .allocate_slot(Slot::new(bindable, None));
 
-    HMIRValue::place(ty, HMIRPlace::Local(slot))
+    HMIRValue::place(ty, HMIRReference::Local(slot))
 }
 
 fn place(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRPlaceID> {
     let place = match value.kind() {
-        HMIRValueKind::PlaceRef(place) => *place,
-        HMIRValueKind::Constant(HMIRConstant::Address(address))
+        HMIRValueKind::Reference(place) => *place,
+        HMIRValueKind::Constant(HMIRImmediate::Address(address))
             if context.env().is_reference(value.ty()) =>
         {
             address.whole_place()?
         }
         _ => return None,
     };
-    let HMIRPlace::Local(slot) = place else {
+    let HMIRReference::Local(slot) = place else {
         return None;
     };
 
@@ -87,11 +87,12 @@ fn target(
     let is_reference = context.env().is_reference(value.ty());
     let ty = context.env().referent(value.ty());
     Ok(match value.kind() {
-        HMIRValueKind::PlaceRef(HMIRPlace::Global(def)) => {
+        HMIRValueKind::Reference(HMIRReference::Global(def)) => {
             MIRTarget::Global(global::reference(context.env_mut(), *def, 0, ty, span)?)
         }
-        HMIRValueKind::Constant(HMIRConstant::Address(address))
-            if is_reference && let Addressable::Place(HMIRPlace::Global(def)) = address.base() =>
+        HMIRValueKind::Constant(HMIRImmediate::Address(address))
+            if is_reference
+                && let Addressable::Place(HMIRReference::Global(def)) = address.base() =>
         {
             let global = global::reference(context.env_mut(), *def, address.offset(), ty, span)?;
             MIRTarget::Global(global)
@@ -230,7 +231,7 @@ pub fn invalidate(
 pub fn lift(
     context: &mut LocalLoweringContext,
     source: &HMIRValue,
-    origin: HMIRSlotID,
+    origin: HMIRRegisterID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let Some(inner) = context.env().reference_inner(source.ty()) else {
@@ -365,17 +366,17 @@ pub fn address(
     let place = |place| {
         Ok(HMIRValue::constant(
             ty,
-            HMIRConstant::Address(HMIRAddress::place(place)),
+            HMIRImmediate::Address(HMIRAddress::place(place)),
         ))
     };
     let reference = match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Address(address)) => {
+        HMIRValueKind::Constant(HMIRImmediate::Address(address)) => {
             return Ok(HMIRValue::constant(
                 ty,
-                HMIRConstant::Address(address.clone()),
+                HMIRImmediate::Address(address.clone()),
             ));
         }
-        HMIRValueKind::PlaceRef(local @ HMIRPlace::Local(slot)) => {
+        HMIRValueKind::Reference(local @ HMIRReference::Local(slot)) => {
             match context.runtime().slot(*slot).binding() {
                 MIRBindable::Place(place_id) if context.env().pointer_inner(ty).is_some() => {
                     let place_id = *place_id;
@@ -395,7 +396,7 @@ pub fn address(
                 MIRBindable::Register(_) => unreachable!("a register has no address"),
             }
         }
-        HMIRValueKind::PlaceRef(other) => return place(*other),
+        HMIRValueKind::Reference(other) => return place(*other),
         HMIRValueKind::Indirect(pointer) => pointer,
         HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),
     };

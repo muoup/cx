@@ -10,7 +10,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{flow, types},
     log::hmir_error,
-    value::{HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRValueKind, immediate::HMIRImmediate},
 };
 
 use super::{HMIRResolver, memo::MemoKey};
@@ -145,7 +145,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             }
         }
         let value = flow::top(self.evaluate(HMIRResolver::type_memo(ty), span))?;
-        let HMIRValueKind::Constant(HMIRConstant::Type(target)) = value.kind() else {
+        let HMIRValueKind::Constant(HMIRImmediate::Type(target)) = value.kind() else {
             return Err(hmir_error(
                 span,
                 &typecheck::EXPECTED_TYPE,

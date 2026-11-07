@@ -23,7 +23,7 @@ use crate::{
     log::hmir_error,
     lower::expr,
     symbol,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 struct Shadowed {
@@ -56,7 +56,7 @@ pub(crate) fn check(
     let (owner, point) = (context.source(), context.visible_through());
     let value = condition(context, contract, owner, point, expression, span);
     restore(context, bindings);
-    if !matches!(value?.kind(), HMIRValueKind::Constant(HMIRConstant::Int(value)) if *value != 0) {
+    if !matches!(value?.kind(), HMIRValueKind::Constant(HMIRImmediate::Int(value)) if *value != 0) {
         return Err(hmir_error(
             span,
             &catalogue::mir::COMPTIME_ASSERTION,

@@ -9,7 +9,7 @@ pub(crate) mod format;
 pub use format::MIRDisplay;
 
 pub use expr::instruction::{
-    MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRScopeID, MIRStoreBitfield,
+    MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRStoreBitfield,
 };
 pub use expr::intrinsic::{
     MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic,

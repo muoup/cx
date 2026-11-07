@@ -55,6 +55,7 @@ pub(crate) fn lower_prototype(
     let symbol_name = symbol::link_name(env, def, point)?.expect("a prototype names a function");
     let linkage = symbol::linkage(env, def, point)?;
     let value = symbol::binding(env, def, point)?;
+    
     if comptime_only(env, value.ty()) {
         let source = env.symbols().resolve_definition(def);
         let selected = symbol::select(source, point)?;
@@ -73,6 +74,7 @@ pub(crate) fn lower_prototype(
             symbol_name.to_string(),
         ));
     }
+    
     let signature = symbol::signature(env, def, point)?;
     Ok(MIRFnPrototype::new(
         lower_signature(env, &signature, span)?,

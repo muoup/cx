@@ -20,7 +20,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{EvalResult, eval, eval_type, flow::Evaluation, types},
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) enum Coercion {
@@ -154,24 +154,24 @@ fn truth(
         HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I1 => {
             return Ok(Coercion::Applied(value));
         }
-        HMIRTypeKind::Int(_) => HMIRConstant::Int(0),
-        HMIRTypeKind::Float(_) => HMIRConstant::Float(FloatWrapper::from(0.0)),
-        HMIRTypeKind::PointerTo(_) => HMIRConstant::Null,
+        HMIRTypeKind::Int(_) => HMIRImmediate::Int(0),
+        HMIRTypeKind::Float(_) => HMIRImmediate::Float(FloatWrapper::from(0.0)),
+        HMIRTypeKind::PointerTo(_) => HMIRImmediate::Null,
         _ => return Ok(Coercion::Unapplied(value)),
     };
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let known = match (value.kind(), context.env().resolve_kind(ty)) {
-        (HMIRValueKind::Constant(HMIRConstant::Int(value)), HMIRTypeKind::Int(ty)) => {
+        (HMIRValueKind::Constant(HMIRImmediate::Int(value)), HMIRTypeKind::Int(ty)) => {
             Some(int::normalize(*value, *ty) != 0)
         }
-        (HMIRValueKind::Constant(HMIRConstant::Float(value)), HMIRTypeKind::Float(ty)) => {
+        (HMIRValueKind::Constant(HMIRImmediate::Float(value)), HMIRTypeKind::Float(ty)) => {
             Some(float::round(f64::from(value), ty.width()) != 0.0)
         }
-        (HMIRValueKind::Constant(HMIRConstant::Null), HMIRTypeKind::PointerTo(_)) => Some(false),
+        (HMIRValueKind::Constant(HMIRImmediate::Null), HMIRTypeKind::PointerTo(_)) => Some(false),
         _ => None,
     };
     Ok(Coercion::Applied(match known {
-        Some(known) => HMIRValue::constant(boolean, HMIRConstant::Int(i128::from(known))),
+        Some(known) => HMIRValue::constant(boolean, HMIRImmediate::Int(i128::from(known))),
         None => {
             let zero = HMIRValue::constant(ty, zero);
             emit::binary(context, HMIRBinaryOp::Neq, &value, &zero, boolean, span)?

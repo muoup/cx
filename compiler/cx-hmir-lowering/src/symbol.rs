@@ -114,7 +114,7 @@ pub(crate) fn value_type(
     Ok(env.referent(value.ty()))
 }
 
-pub(crate) fn signature(
+pub(crate) fn signaturecontexts(
     env: &mut HMIREnvironment,
     id: HMIRDefID,
     point: Option<HMIRDeclarationPoint>,

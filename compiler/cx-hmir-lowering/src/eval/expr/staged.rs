@@ -31,7 +31,7 @@ use crate::{
     log::hmir_error,
     value::{
         HMIRValue, HMIRValueKind,
-        constant::HMIRConstant,
+        immediate::HMIRImmediate,
         staged::{Quote, QuoteRef},
     },
 };
@@ -116,7 +116,7 @@ pub(crate) fn splice(context: &mut LocalLoweringContext, value: HMIRValue, span:
     let value = (comptime::export(context, value, span))?.ready()?;
     let staged = matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Staged(_));
     match value.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Quote(_)) if staged => materialize(context, &value, &[]),
+        HMIRValueKind::Constant(HMIRImmediate::Quote(_)) if staged => materialize(context, &value, &[]),
         _ => Ok(Evaluation::Ready(value)),
     }
 }
@@ -154,7 +154,7 @@ fn resolve(
     }
     check_params(context, code.get(), &params, span)?;
     let ty = signature(context, params, result, span);
-    let value = HMIRValue::constant(ty, HMIRConstant::Quote(code));
+    let value = HMIRValue::constant(ty, HMIRImmediate::Quote(code));
     match insert {
         true => materialize(context, &value, &[]),
         false => Ok(Evaluation::Ready(value)),
@@ -268,7 +268,7 @@ pub(crate) fn apply(
     if runtime {
         return materialize(context, &code, &values);
     }
-    let HMIRValueKind::Constant(HMIRConstant::Quote(node)) = code.kind() else {
+    let HMIRValueKind::Constant(HMIRImmediate::Quote(node)) = code.kind() else {
         unreachable!("compile-time code is a quote")
     };
     let source = node.get();
@@ -276,7 +276,7 @@ pub(crate) fn apply(
     captures.extend(source.params().iter().copied().zip(values));
     let applied = Quote::new(source.source(), source.root(), Vec::new(), captures, source.visible_through());
     let ty = signature(context, Vec::new(), result, span);
-    Ok(Evaluation::Ready(HMIRValue::constant(ty, HMIRConstant::Quote(QuoteRef::new(applied)))))
+    Ok(Evaluation::Ready(HMIRValue::constant(ty, HMIRImmediate::Quote(QuoteRef::new(applied)))))
 }
 
 pub(crate) fn materialize(
@@ -284,7 +284,7 @@ pub(crate) fn materialize(
     code: &HMIRValue,
     args: &[HMIRValue],
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let HMIRValueKind::Constant(HMIRConstant::Quote(node)) = code.kind() else {
+    let HMIRValueKind::Constant(HMIRImmediate::Quote(node)) = code.kind() else {
         let subject = "this staged value".into();
         return Err(hmir_error(&TokenRange::internal(), &mir::COMPTIME_UNAVAILABLE, subject).into());
     };

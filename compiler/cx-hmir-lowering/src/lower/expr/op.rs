@@ -14,7 +14,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::types,
     lower::types::{lower_type, mir_float, mir_int},
-    value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
@@ -374,15 +374,15 @@ pub fn offset(
     let size = element_size(context, element, span)?;
 
     let (ptr, offset) = match index.kind() {
-        HMIRValueKind::Constant(HMIRConstant::Int(value)) => {
+        HMIRValueKind::Constant(HMIRImmediate::Int(value)) => {
             let value = value * size;
-            let offset = HMIRValue::constant(ty, HMIRConstant::Int(value));
+            let offset = HMIRValue::constant(ty, HMIRImmediate::Int(value));
 
             let ptr = value::standard(context, pointer, span)?;
             (ptr, value::standard(context, &offset, span)?)
         }
         _ => {
-            let size = HMIRValue::constant(ty, HMIRConstant::Int(size));
+            let size = HMIRValue::constant(ty, HMIRImmediate::Int(size));
             let lhs = value::standard(context, index, span)?;
             let rhs = value::standard(context, &size, span)?;
             let ptr = value::standard(context, pointer, span)?;
@@ -441,8 +441,8 @@ pub fn tag(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if let HMIRValueKind::Constant(HMIRConstant::TaggedUnion { variant, .. }) = value.kind() {
-        return Ok(HMIRValue::constant(ty, HMIRConstant::Int(*variant as i128)));
+    if let HMIRValueKind::Constant(HMIRImmediate::TaggedUnion { variant, .. }) = value.kind() {
+        return Ok(HMIRValue::constant(ty, HMIRImmediate::Int(*variant as i128)));
     }
 
     let stored = context.env().referent(value.ty());

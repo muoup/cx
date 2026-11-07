@@ -17,13 +17,17 @@ use crate::{
     log::hmir_error,
     lower::expr,
     value::{
-        Bindings, HMIRPlace, HMIRValue, HMIRValueKind,
-        constant::HMIRConstant,
+        Bindings, HMIRReference, HMIRValue, HMIRValueKind,
+        immediate::HMIRImmediate,
         staged::{Quote, QuoteRef},
     },
 };
 
-use crate::eval::{EvalResult, coerce, comptime, eval, flow::{EvalExit, Evaluation, RuntimeStop, StopReason}, types};
+use crate::eval::{
+    EvalResult, coerce, comptime, eval,
+    flow::{EvalExit, Evaluation, RuntimeStop, StopReason},
+    types,
+};
 
 // The type of an operand evaluated without emitting it; a diverging operand is typed unreachable
 pub(crate) fn subject(
@@ -35,7 +39,11 @@ pub(crate) fn subject(
     let mut child = detached(context, Emission::Unevaluated, false, span)?;
     let result = match eval(&mut child, body, operand) {
         Err(EvalExit::Stop(StopReason::Runtime(RuntimeStop::Diverged))) => {
-            return Ok(Evaluation::Ready(types::realize(child.env_mut(), HMIRTypeKind::Unreachable, span)));
+            return Ok(Evaluation::Ready(types::realize(
+                child.env_mut(),
+                HMIRTypeKind::Unreachable,
+                span,
+            )));
         }
         result => result?,
     };
@@ -45,11 +53,21 @@ pub(crate) fn subject(
         let ty = match (context.env().resolve_kind(referent), value.kind()) {
             (HMIRTypeKind::Type, _) => coerce::promotion::std_rvalue(context, value, &span)?
                 .as_type()
-                .ok_or_else(|| hmir_error(&span, &typecheck::EXPECTED_TYPE, "an unknown type value".into()))?,
-            (_, HMIRValueKind::Constant(HMIRConstant::Str(string))) => {
+                .ok_or_else(|| {
+                    hmir_error(
+                        &span,
+                        &typecheck::EXPECTED_TYPE,
+                        "an unknown type value".into(),
+                    )
+                })?,
+            (_, HMIRValueKind::Constant(HMIRImmediate::Str(string))) => {
                 let element = types::int(context.env_mut(), HMIRIntWidth::I8, false, &span);
                 let length = (string.len() + 1) as u64;
-                types::realize(context.env_mut(), HMIRTypeKind::Array { element, length }, &span)
+                types::realize(
+                    context.env_mut(),
+                    HMIRTypeKind::Array { element, length },
+                    &span,
+                )
             }
             _ => referent,
         };
@@ -92,8 +110,7 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
             .iter()
             .find_map(|(id, known)| (*id == local).then_some(known));
         let value = match known {
-            Some(known) if known.as_type().is_some() || known == &value =>
-            {
+            Some(known) if known.as_type().is_some() || known == &value => {
                 shadow(&mut child, known.clone(), span)?
             }
             _ => {
@@ -102,8 +119,11 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
                     true => emit::scratch(&mut child, ty, span)?.with_ty(value.ty()),
                     false => expr::placeholder(&mut child, value.ty(), span)?,
                 };
-                if let HMIRValueKind::PlaceRef(HMIRPlace::Local(slot)) = storage.kind() {
-                    child.runtime_mut().slot_mut(*slot).set_known(known.cloned());
+                if let HMIRValueKind::Reference(HMIRReference::Local(slot)) = storage.kind() {
+                    child
+                        .runtime_mut()
+                        .slot_mut(*slot)
+                        .set_known(known.cloned());
                 }
                 storage.with_ty(value.ty())
             }
@@ -112,7 +132,11 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
     }
     let scopes = child.runtime_mut().scopes_mut();
     let parent = scopes.top();
-    scopes.push(RuntimeScope::new(Some(scope), deferred), Some(parent), Bindings::default());
+    scopes.push(
+        RuntimeScope::new(Some(scope), deferred),
+        Some(parent),
+        Bindings::default(),
+    );
 
     Ok(child)
 }
@@ -122,7 +146,7 @@ fn shadow(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if let HMIRValueKind::Constant(HMIRConstant::Quote(node)) = value.kind() {
+    if let HMIRValueKind::Constant(HMIRImmediate::Quote(node)) = value.kind() {
         let quote = node.get();
         let mut captures = Bindings::default();
         for (local, captured) in quote.captures() {
@@ -135,7 +159,10 @@ fn shadow(
             captures,
             quote.visible_through(),
         );
-        return Ok(HMIRValue::constant(value.ty(), HMIRConstant::Quote(QuoteRef::new(code))));
+        return Ok(HMIRValue::constant(
+            value.ty(),
+            HMIRImmediate::Quote(QuoteRef::new(code)),
+        ));
     }
     let frozen = matches!(
         value.kind(),

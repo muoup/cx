@@ -12,12 +12,12 @@ use cx_mir::ty::layout::{MIRTypeLayout, calculate_field_layout, calculate_type_l
 use cx_tokens::TokenRange;
 
 use crate::{
+    emit::comptime::int,
     env::function::LocalLoweringContext,
     eval::{EvalResult, aggregate, deduce, eval_comptime, flow::Evaluation, types},
     log::hmir_error,
     lower::types::lower_type,
-    emit::comptime::int,
-    value::{HMIRValue, constant::HMIRConstant}
+    value::{HMIRValue, immediate::HMIRImmediate},
 };
 
 pub(crate) fn eval_type_op(
@@ -26,8 +26,9 @@ pub(crate) fn eval_type_op(
     span: &TokenRange,
     op: &HMIRTypeOp,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let (HMIRTypeOp::SizeOf(subject) | HMIRTypeOp::AlignOf(subject) | HMIRTypeOp::OffsetOf { ty: subject, .. }) =
-        op
+    let (HMIRTypeOp::SizeOf(subject)
+    | HMIRTypeOp::AlignOf(subject)
+    | HMIRTypeOp::OffsetOf { ty: subject, .. }) = op
     else {
         todo!("HMIRTypeOp: {}", op.path())
     };
@@ -44,11 +45,18 @@ pub(crate) fn eval_type_op(
             }
             _ => unreachable!("only layout queries are evaluated here"),
         };
-        Ok(Evaluation::Ready(HMIRValue::constant(size_type, HMIRConstant::Int(value))))
+        Ok(Evaluation::Ready(HMIRValue::constant(
+            size_type,
+            HMIRImmediate::Int(value),
+        )))
     })
 }
 
-fn layout(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> CXResult<MIRTypeLayout> {
+fn layout(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<MIRTypeLayout> {
     if !context.complete_object(ty) {
         return Err(incomplete_type(context, ty, span));
     }
@@ -115,8 +123,16 @@ fn field(
     index: usize,
     span: &TokenRange,
 ) -> CXResult<(HMIRTypeID, usize)> {
-    let missing = || hmir_error(span, &mir::MISSING_ENTITY, (format!("field {index}"), "aggregate layout".into()));
-    let field = aggregate::member_fields(context.env(), owner).get(index).ok_or_else(missing)?;
+    let missing = || {
+        hmir_error(
+            span,
+            &mir::MISSING_ENTITY,
+            (format!("field {index}"), "aggregate layout".into()),
+        )
+    };
+    let field = aggregate::member_fields(context.env(), owner)
+        .get(index)
+        .ok_or_else(missing)?;
     if field.bit_width().is_some() {
         let form = ("offsetof".into(), "bit-field member".into());
         return Err(hmir_error(span, &typecheck::INVALID_FORM, form));
@@ -124,7 +140,8 @@ fn field(
 
     let field_ty = *field.ty();
     let owner = lower_type(context.env_mut(), owner, span)?;
-    let layout = calculate_field_layout(context.env().module(), owner, index).ok_or_else(missing)?;
+    let layout =
+        calculate_field_layout(context.env().module(), owner, index).ok_or_else(missing)?;
     Ok((field_ty, layout.offset()))
 }
 

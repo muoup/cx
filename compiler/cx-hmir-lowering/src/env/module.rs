@@ -1,10 +1,14 @@
 use rustc_hash::FxHashMap;
 use std::collections::BTreeMap;
 
-use cx_mir::{MIRConstant, MIRValue, expr::visit::successors};
 use cx_mir::{
-    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRInstruction, MIRInstructionKind, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl, MIRScopeID, MIRType, MIRTypeID, MIRTypeKind, MIRTypeMetadata, MIRUnit, ty::{interface::MTRegistry, registry::MIRTypeRegistry},
+    MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
+    MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRInstruction, MIRInstructionKind,
+    MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl, MIRType, MIRTypeID,
+    MIRTypeKind, MIRTypeMetadata, MIRUnit,
+    ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
+use cx_mir::{MIRConstant, MIRValue, expr::visit::successors};
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -86,7 +90,10 @@ impl MIRModuleBuilder {
     }
 
     pub fn qualifications(&self, base: MIRTypeID) -> &[(MIRTypeMetadata, MIRTypeID)] {
-        self.qualified.get(&base).map(Vec::as_slice).unwrap_or_default()
+        self.qualified
+            .get(&base)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     pub fn cache_qualified(&mut self, base: MIRTypeID, metadata: MIRTypeMetadata, id: MIRTypeID) {
@@ -131,11 +138,16 @@ impl MIRModuleBuilder {
     }
 
     pub fn define_global(&mut self, id: MIRGlobalID, state: MIRGlobalState) {
-        let global = self.globals
+        let global = self
+            .globals
             .get_mut(&id)
             .unwrap_or_else(|| panic!("Could not define unknown global id: {id}"));
         *global = MIRGlobalVariable::new(
-            global.name().clone(), global.linkage(), global.ty(), state, global.is_mutable(),
+            global.name().clone(),
+            global.linkage(),
+            global.ty(),
+            state,
+            global.is_mutable(),
         );
     }
 
@@ -187,7 +199,6 @@ pub struct MIRFunctionBuilder {
     blocks: IndexVec<MIRBasicBlockID, MIRBasicBlock>,
     registers: IndexVec<MIRRegister, MIRRegisterDecl>,
     places: IndexVec<MIRPlaceID, MIRPlaceDecl>,
-    scopes: IndexVec<MIRScopeID, MIRScopeDecl>,
     address_labels: Vec<(String, MIRBasicBlockID)>,
 
     current_block: MIRBasicBlockID,
@@ -206,7 +217,6 @@ impl MIRFunctionBuilder {
             blocks,
             registers: IndexVec::new(),
             places: IndexVec::new(),
-            scopes: IndexVec::new(),
             address_labels: Vec::new(),
 
             current_block: entry,
@@ -276,8 +286,16 @@ impl MIRFunctionBuilder {
                     cond: MIRValue::Constant(MIRConstant::Integer { value, .. }),
                     true_target,
                     false_target,
-                } => pending.push(if *value != 0 { true_target.block } else { false_target.block }),
-                _ => pending.extend(successors(instruction).into_iter().map(|target| target.block)),
+                } => pending.push(if *value != 0 {
+                    true_target.block
+                } else {
+                    false_target.block
+                }),
+                _ => pending.extend(
+                    successors(instruction)
+                        .into_iter()
+                        .map(|target| target.block),
+                ),
             }
         }
         visited
@@ -312,21 +330,12 @@ impl MIRFunctionBuilder {
         &self.address_labels
     }
 
-    pub fn add_scope(&mut self, span: TokenRange) -> MIRScopeID {
-        self.scopes.push(MIRScopeDecl::new(span))
-    }
-
     pub fn places(&self) -> &[MIRPlaceDecl] {
         self.places.as_raw_slice()
     }
 
     pub fn allocate_place(&mut self, place: MIRPlaceDecl) -> MIRPlaceID {
         self.places.push(place)
-    }
-
-    #[allow(dead_code)]
-    pub fn scopes(&self) -> &[MIRScopeDecl] {
-        self.scopes.as_raw_slice()
     }
 
     pub fn allocate_register(&mut self, register: MIRRegisterDecl) -> MIRRegister {
@@ -354,7 +363,6 @@ impl MIRFunctionBuilder {
                 self.places.raw,
                 self.parameters,
                 self.registers.raw,
-                self.scopes.raw,
                 self.address_labels,
             )),
         )

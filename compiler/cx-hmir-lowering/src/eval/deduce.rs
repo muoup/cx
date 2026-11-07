@@ -27,10 +27,14 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{HMIRValue, constant::HMIRConstant},
+    value::{HMIRValue, immediate::HMIRImmediate},
 };
 
-type Resolver<T> = dyn FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, HMIRTypeID) -> EvalResult<Evaluation<T>>;
+type Resolver<T> = dyn FnOnce(
+    &mut LocalLoweringContext,
+    &HMIRBodyContext,
+    HMIRTypeID,
+) -> EvalResult<Evaluation<T>>;
 
 pub(crate) enum IncompleteReason {
     ExpectedType,
@@ -55,7 +59,11 @@ impl<T: 'static> Incomplete<T> {
         span: &TokenRange,
         reason: IncompleteReason,
         partial: Option<T>,
-        resolve: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, HMIRTypeID) -> EvalResult<Evaluation<T>>
+        resolve: impl FnOnce(
+            &mut LocalLoweringContext,
+            &HMIRBodyContext,
+            HMIRTypeID,
+        ) -> EvalResult<Evaluation<T>>
         + 'static,
     ) -> Self {
         Self {
@@ -86,17 +94,31 @@ impl<T: 'static> Incomplete<T> {
     pub(super) fn wrap<U: 'static>(
         self,
         partial: Option<U>,
-        wrap: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, HMIRTypeID, Box<Resolver<T>>) -> EvalResult<Evaluation<U>>
+        wrap: impl FnOnce(
+            &mut LocalLoweringContext,
+            &HMIRBodyContext,
+            HMIRTypeID,
+            Box<Resolver<T>>,
+        ) -> EvalResult<Evaluation<U>>
         + 'static,
     ) -> Incomplete<U> {
-        let Self { reason, evaluation, span, fallback, resolve, .. } = self;
+        let Self {
+            reason,
+            evaluation,
+            span,
+            fallback,
+            resolve,
+            ..
+        } = self;
         Incomplete {
             reason,
             evaluation,
             span,
             partial,
             fallback,
-            resolve: Box::new(move |context, body, expected| wrap(context, body, expected, resolve)),
+            resolve: Box::new(move |context, body, expected| {
+                wrap(context, body, expected, resolve)
+            }),
         }
     }
 
@@ -145,7 +167,9 @@ impl<T: 'static> Incomplete<T> {
                 Ok(Evaluation::Incomplete(incomplete)) => Ok(Evaluation::Incomplete(
                     incomplete.in_context(child.into_context()),
                 )),
-                Err(flow::EvalExit::Stop(_)) => Err(hmir_error(&span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into()),
+                Err(flow::EvalExit::Stop(_)) => {
+                    Err(hmir_error(&span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into())
+                }
                 result => result,
             }
         })
@@ -154,7 +178,9 @@ impl<T: 'static> Incomplete<T> {
     pub(super) fn scoped(mut self, expectations: Expectations) -> Self {
         let partial = self.partial.take();
         self.wrap(partial, move |context, body, expected, resolve| {
-            flow::scoped(context, expectations, |context| resolve(context, body, expected))
+            flow::scoped(context, expectations, |context| {
+                resolve(context, body, expected)
+            })
         })
     }
 
@@ -167,7 +193,11 @@ impl<T: 'static> Incomplete<T> {
 
     pub(crate) fn settle(
         mut self,
-        settle: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, EvalResult<Evaluation<T>>) -> EvalResult<Evaluation<T>>
+        settle: impl FnOnce(
+            &mut LocalLoweringContext,
+            &HMIRBodyContext,
+            EvalResult<Evaluation<T>>,
+        ) -> EvalResult<Evaluation<T>>
         + 'static,
     ) -> Self {
         let partial = self.partial.take();
@@ -223,26 +253,46 @@ pub(crate) fn type_result(
     if !context.env().resolver().settled(ty) {
         context.force_type(ty, span)?;
     }
-    if !matches!(context.env().resolve_kind(ty), HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })) {
+    if !matches!(
+        context.env().resolve_kind(ty),
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })
+    ) {
         return Ok(Evaluation::Ready(value));
     }
     let bound = span.clone();
-    let incomplete = Incomplete::new(context, span, IncompleteReason::ArrayBound, Some(value), move |context, _, expected| {
-        let span = &bound;
-        let env = context.env();
-        let (HMIRTypeKind::Array { element: from, length }, HMIRTypeKind::Undefined(HMIRUndefined::Array { element: to })) =
-            (env.resolve_kind(expected), env.resolve_kind(ty))
-        else {
-            return Err(hmir_error(span, &typecheck::CANNOT_INFER, "the array bound".into()).into());
-        };
-        if !env.same_type(*from, *to) {
-            let requirement = ("array initializer".into(), types::name(env, ty), Some(types::name(env, expected)));
-            return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).into());
-        }
-        let length = *length;
-        let ty = types::array(context.env_mut(), ty, length, span);
-        Ok(Evaluation::Ready(type_constant(context, ty, span)))
-    });
+    let incomplete = Incomplete::new(
+        context,
+        span,
+        IncompleteReason::ArrayBound,
+        Some(value),
+        move |context, _, expected| {
+            let span = &bound;
+            let env = context.env();
+            let (
+                HMIRTypeKind::Array {
+                    element: from,
+                    length,
+                },
+                HMIRTypeKind::Undefined(HMIRUndefined::Array { element: to }),
+            ) = (env.resolve_kind(expected), env.resolve_kind(ty))
+            else {
+                return Err(
+                    hmir_error(span, &typecheck::CANNOT_INFER, "the array bound".into()).into(),
+                );
+            };
+            if !env.same_type(*from, *to) {
+                let requirement = (
+                    "array initializer".into(),
+                    types::name(env, ty),
+                    Some(types::name(env, expected)),
+                );
+                return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).into());
+            }
+            let length = *length;
+            let ty = types::array(context.env_mut(), ty, length, span);
+            Ok(Evaluation::Ready(type_constant(context, ty, span)))
+        },
+    );
     Ok(Evaluation::Incomplete(incomplete))
 }
 
@@ -256,22 +306,37 @@ pub(crate) fn hole_bound(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let undefined = types::undefined_array(context, body, ty, element)?;
     match type_result(context, undefined, span)? {
-        Evaluation::Incomplete(incomplete) => Ok(Evaluation::Incomplete(incomplete.without_fallback())),
-        Evaluation::Ready(_) => unreachable!("an undefined array is completed from the type expected of it"),
+        Evaluation::Incomplete(incomplete) => {
+            Ok(Evaluation::Incomplete(incomplete.without_fallback()))
+        }
+        Evaluation::Ready(_) => {
+            unreachable!("an undefined array is completed from the type expected of it")
+        }
     }
 }
 
-pub(crate) fn hole(context: &mut LocalLoweringContext, span: &TokenRange) -> EvalResult<Evaluation<HMIRValue>> {
+pub(crate) fn hole(
+    context: &mut LocalLoweringContext,
+    span: &TokenRange,
+) -> EvalResult<Evaluation<HMIRValue>> {
     let hole = span.clone();
-    let incomplete = Incomplete::new(context, span, IncompleteReason::ExpectedType, None, move |context, _, expected| {
-        Ok(Evaluation::Ready(type_constant(context, expected, &hole)))
-    });
+    let incomplete = Incomplete::new(
+        context,
+        span,
+        IncompleteReason::ExpectedType,
+        None,
+        move |context, _, expected| Ok(Evaluation::Ready(type_constant(context, expected, &hole))),
+    );
     Ok(Evaluation::Incomplete(incomplete))
 }
 
-fn type_constant(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRValue {
+fn type_constant(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> HMIRValue {
     let universe = types::universe(context.env_mut(), span);
-    HMIRValue::constant(universe, HMIRConstant::Type(ty))
+    HMIRValue::new(universe, HMIRImmediate::Type(ty))
 }
 
 // Completes an evaluation from the type expected of it, unless a type is expected and the evaluation describes one
@@ -301,14 +366,18 @@ pub(crate) fn described_type(
     value.and_then(context, body, partial, move |context, _, value, _| {
         let value = coerce::promotion::std_rvalue(context, value, &span)?;
         let Some(ty) = value.as_type() else {
-            let found = format!("expression of type '{}'", types::name(context.env(), value.ty()));
+            let found = format!(
+                "expression of type '{}'",
+                types::name(context.env(), value.ty())
+            );
             return Err(hmir_error(&span, &typecheck::EXPECTED_TYPE, found).into());
         };
         context.prepare_type(ty, &span)?;
         Ok(match type_result(context, ty, &span)? {
             Evaluation::Ready(_) => Evaluation::Ready(ty),
             Evaluation::Incomplete(incomplete) => Evaluation::Incomplete(
-                incomplete.project(|value| value.as_type().expect("type completion returns a type")),
+                incomplete
+                    .project(|value| value.as_type().expect("type completion returns a type")),
             ),
         })
     })

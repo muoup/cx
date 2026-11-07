@@ -4,15 +4,16 @@ use std::{
 };
 
 use cx_hmir::{HMIRUnitID, body::HMIRLocalID, expr::HMIRExprID, unit::def::HMIRDeclarationPoint};
+use rustc_hash::FxHashMap;
 
-use crate::value::Bindings;
+use crate::value::HMIRValue;
 
 #[derive(Debug)]
 pub(crate) struct Quote {
     source: HMIRUnitID,
     root: HMIRExprID,
     params: Vec<HMIRLocalID>,
-    captures: Bindings,
+    captures: FxHashMap<HMIRLocalID, HMIRValue>,
     visible_through: Option<HMIRDeclarationPoint>,
 }
 
@@ -21,7 +22,7 @@ impl Quote {
         source: HMIRUnitID,
         root: HMIRExprID,
         params: Vec<HMIRLocalID>,
-        captures: Bindings,
+        captures: FxHashMap<HMIRLocalID, HMIRValue>,
         visible_through: Option<HMIRDeclarationPoint>,
     ) -> Self {
         Self {
@@ -36,15 +37,19 @@ impl Quote {
     pub(crate) fn source(&self) -> HMIRUnitID {
         self.source
     }
+    
     pub(crate) fn root(&self) -> HMIRExprID {
         self.root
     }
+    
     pub(crate) fn params(&self) -> &[HMIRLocalID] {
         &self.params
     }
-    pub(crate) fn captures(&self) -> &Bindings {
+
+    pub(crate) fn captures(&self) -> &FxHashMap<HMIRLocalID, HMIRValue> {
         &self.captures
     }
+    
     pub(crate) fn visible_through(&self) -> Option<HMIRDeclarationPoint> {
         self.visible_through
     }
@@ -57,6 +62,7 @@ impl QuoteRef {
     pub(crate) fn new(quote: Quote) -> Self {
         Self(Rc::new(quote))
     }
+    
     pub(crate) fn get(&self) -> &Quote {
         &self.0
     }

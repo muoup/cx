@@ -12,9 +12,19 @@ use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit, env::function::{LocalLoweringContext, Permission}, eval::{
-        EvalResult, coerce::{self, promotion}, eval, expr::{self, require_impure, require_nonsafe}, flow::{self, EvalExit, Evaluation}, op::{binary_operands, eval_operand}, types::{self, qualify},
-    }, log::{hmir_error, log_hmir_error}, value::HMIRValue,
+    emit,
+    env::function::{LocalLoweringContext, Permission},
+    eval::{
+        EvalResult,
+        coerce::{self, promotion},
+        eval,
+        expr::{self, require_impure, require_nonsafe},
+        flow::{self, EvalExit, Evaluation},
+        op::{binary_operands, eval_operand},
+        types::{self, qualify},
+    },
+    log::{hmir_error, log_hmir_error},
+    value::HMIRValue,
 };
 
 pub(crate) fn eval_assign(
@@ -325,7 +335,7 @@ pub(crate) fn dereference_hmir(
         let kind = (types::name(context.env(), pointer.ty()), "a pointer".into());
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
     };
-    
+
     require_nonsafe(context, span, "dereferencing a pointer")?;
     emit::dereference(context, pointer, inner, base, span)
 }

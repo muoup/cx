@@ -14,7 +14,7 @@ use cx_util::unsafe_float::FloatWrapper;
 use super::{Fault, Image};
 use crate::{
     emit::comptime::int, env::HMIREnvironment, eval::types, log::hmir_error,
-    lower::types::lower_type, value::constant::HMIRConstant,
+    lower::types::lower_type, value::immediate::HMIRImmediate,
 };
 
 pub(crate) fn layout(
@@ -30,10 +30,7 @@ pub(crate) fn layout(
                 architecture.pointer_alignment(),
             ))
         }
-        HMIRTypeKind::Array {
-            element,
-            length,
-        } => {
+        HMIRTypeKind::Array { element, length } => {
             let element = layout(env, element, span)?;
             let size = usize::try_from(length)
                 .ok()
@@ -113,18 +110,18 @@ pub(super) fn extract(
     unit: &Image,
     bitfield: HMIRBitfield,
     span: &TokenRange,
-) -> CXResult<HMIRConstant> {
+) -> CXResult<HMIRImmediate> {
     let HMIRTypeKind::Int(int) = *env.resolve_kind(ty) else {
         unreachable!("a bitfield holds an integer")
     };
     let word = unit
         .bytes(0..unit.len())
         .map_err(|fault| fault.error(span))?;
-    Ok(HMIRConstant::Int(bits(word, int::signed(int), bitfield)))
+    Ok(HMIRImmediate::Int(bits(word, int::signed(int), bitfield)))
 }
 
-pub(super) fn insert(unit: &Image, value: &HMIRConstant, bitfield: HMIRBitfield) -> Image {
-    let HMIRConstant::Int(value) = value else {
+pub(super) fn insert(unit: &Image, value: &HMIRImmediate, bitfield: HMIRBitfield) -> Image {
+    let HMIRImmediate::Int(value) = value else {
         unreachable!("a bitfield holds an integer")
     };
     let mut image = Image::zeroed(unit.len());
@@ -174,7 +171,7 @@ fn set_bits(bytes: &mut [u8], value: i128, bitfield: HMIRBitfield) {
 pub(super) fn encode(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
-    value: &HMIRConstant,
+    value: &HMIRImmediate,
     span: &TokenRange,
 ) -> CXResult<Image> {
     let mut image = Image::zeroed(layout(env, ty, span)?.size());
@@ -185,30 +182,30 @@ pub(super) fn encode(
 fn write(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
-    value: &HMIRConstant,
+    value: &HMIRImmediate,
     image: &mut Image,
     offset: usize,
     span: &TokenRange,
 ) -> CXResult<()> {
     match (env.resolve_kind(ty).clone(), value) {
-        (HMIRTypeKind::Int(int), HMIRConstant::Int(value)) => {
+        (HMIRTypeKind::Int(int), HMIRImmediate::Int(value)) => {
             image.put(offset, &value.to_le_bytes()[..int.width().bytes()]);
         }
-        (HMIRTypeKind::Float(float), HMIRConstant::Float(value)) => {
+        (HMIRTypeKind::Float(float), HMIRImmediate::Float(value)) => {
             let value = f64::from(value);
             match float.width() {
                 HMIRFloatWidth::F32 => image.put(offset, &(value as f32).to_le_bytes()),
                 HMIRFloatWidth::F64 => image.put(offset, &value.to_le_bytes()),
             }
         }
-        (_, HMIRConstant::Null | HMIRConstant::Unit) => {}
-        (HMIRTypeKind::Array { element, .. }, HMIRConstant::Aggregate(items)) => {
+        (_, HMIRImmediate::Null | HMIRImmediate::Unit) => {}
+        (HMIRTypeKind::Array { element, .. }, HMIRImmediate::Aggregate(items)) => {
             let stride = layout(env, element, span)?.size();
             for (index, item) in items.iter().enumerate() {
                 write(env, element, item, image, offset + index * stride, span)?;
             }
         }
-        (HMIRTypeKind::Struct { fields }, HMIRConstant::Aggregate(items)) => {
+        (HMIRTypeKind::Struct { fields }, HMIRImmediate::Aggregate(items)) => {
             let layouts = self::fields(env, ty, span)?;
             for ((field, layout), item) in fields.iter().zip(layouts).zip(items) {
                 let MIRFieldLayout::Bitfield {
@@ -228,7 +225,7 @@ fn write(
                     )?;
                     continue;
                 };
-                let (HMIRTypeKind::Int(int), HMIRConstant::Int(value)) =
+                let (HMIRTypeKind::Int(int), HMIRImmediate::Int(value)) =
                     (env.resolve_kind(*field.ty()), item)
                 else {
                     unreachable!("a bitfield holds an integer")
@@ -241,10 +238,10 @@ fn write(
                 set_bits(&mut image.bytes[range], *value, bitfield);
             }
         }
-        (HMIRTypeKind::Union { fields }, HMIRConstant::Union { member, value }) => {
+        (HMIRTypeKind::Union { fields }, HMIRImmediate::Union { member, value }) => {
             write(env, *fields[*member].ty(), value, image, offset, span)?;
         }
-        (HMIRTypeKind::TaggedUnion { fields }, HMIRConstant::TaggedUnion { variant, payload }) => {
+        (HMIRTypeKind::TaggedUnion { fields }, HMIRImmediate::TaggedUnion { variant, payload }) => {
             write(env, *fields[*variant].ty(), payload, image, offset, span)?;
             let tag = offset + tag_offset(env, &fields, span)?;
             image.put(tag, &[*variant as u8]);
@@ -263,10 +260,10 @@ pub(super) fn decode(
     image: &Image,
     offset: usize,
     span: &TokenRange,
-) -> CXResult<HMIRConstant> {
+) -> CXResult<HMIRImmediate> {
     let fault = |fault: Fault| fault.error(span);
     Ok(match env.resolve_kind(ty).clone() {
-        HMIRTypeKind::Int(int) => HMIRConstant::Int(integer(image, offset, int).map_err(fault)?),
+        HMIRTypeKind::Int(int) => HMIRImmediate::Int(integer(image, offset, int).map_err(fault)?),
         HMIRTypeKind::Float(float) => {
             let bytes = image
                 .bytes(offset..offset + float.width().bytes())
@@ -275,15 +272,12 @@ pub(super) fn decode(
                 HMIRFloatWidth::F32 => f32::from_le_bytes(bytes.try_into().unwrap()) as f64,
                 HMIRFloatWidth::F64 => f64::from_le_bytes(bytes.try_into().unwrap()),
             };
-            HMIRConstant::Float(FloatWrapper::from(value))
+            HMIRImmediate::Float(FloatWrapper::from(value))
         }
-        HMIRTypeKind::Void | HMIRTypeKind::Unreachable => HMIRConstant::Unit,
-        HMIRTypeKind::Array {
-            element,
-            length,
-        } => {
+        HMIRTypeKind::Void | HMIRTypeKind::Unreachable => HMIRImmediate::Unit,
+        HMIRTypeKind::Array { element, length } => {
             let stride = layout(env, element, span)?.size();
-            HMIRConstant::Aggregate(
+            HMIRImmediate::Aggregate(
                 (0..length as usize)
                     .map(|index| decode(env, element, image, offset + index * stride, span))
                     .collect::<CXResult<_>>()?,
@@ -318,9 +312,9 @@ pub(super) fn decode(
                     width: bit_width,
                 };
                 let bytes = image.bytes(range).map_err(fault)?;
-                items.push(HMIRConstant::Int(bits(bytes, int::signed(int), bitfield)));
+                items.push(HMIRImmediate::Int(bits(bytes, int::signed(int), bitfield)));
             }
-            HMIRConstant::Aggregate(items)
+            HMIRImmediate::Aggregate(items)
         }
         HMIRTypeKind::Union { fields } => {
             let mut members = Vec::with_capacity(fields.len());
@@ -333,7 +327,7 @@ pub(super) fn decode(
                 match decode(env, *fields[member].ty(), image, offset, span) {
                     Ok(value) => {
                         let value = Box::new(value);
-                        return Ok(HMIRConstant::Union { member, value });
+                        return Ok(HMIRImmediate::Union { member, value });
                     }
                     Err(error) => {
                         failure.get_or_insert(error);
@@ -349,7 +343,7 @@ pub(super) fn decode(
                 return Err(fault(Fault::Discriminant));
             };
             let payload = Box::new(decode(env, *field.ty(), image, offset, span)?);
-            HMIRConstant::TaggedUnion { variant, payload }
+            HMIRImmediate::TaggedUnion { variant, payload }
         }
         kind => {
             let size = layout(env, ty, span)?.size();
@@ -359,7 +353,7 @@ pub(super) fn decode(
             let bytes = image.bytes(offset..offset + size).map_err(fault)?;
             match kind {
                 HMIRTypeKind::PointerTo(_) if bytes.iter().all(|byte| *byte == 0) => {
-                    HMIRConstant::Null
+                    HMIRImmediate::Null
                 }
                 _ => return Err(fault(Fault::Forged)),
             }

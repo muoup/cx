@@ -3,7 +3,7 @@ use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit, env::function::LocalLoweringContext, eval::{coerce::{Coercion, applied, implicit, is_char, promotion}, expr}, value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    emit, env::function::LocalLoweringContext, eval::{coerce::{Coercion, applied, implicit, is_char, promotion}, expr}, value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) fn standard(
@@ -55,7 +55,7 @@ fn extension(
             Coercion::Applied(value.with_ty(target))
         }
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_)) => {
-            if !matches!(value.kind(), HMIRValueKind::Constant(HMIRConstant::Int(0))) {
+            if !matches!(value.kind(), HMIRValueKind::Constant(HMIRImmediate::Int(0))) {
                 expr::require_nonsafe(context, span, "Unsafe type conversion")?;
             }
             Coercion::Applied(emit::cast(context, &value, target, span)?)

@@ -6,7 +6,7 @@ use cx_mir::MIRTypeID;
 use cx_tokens::TokenRange;
 use index_vec::IndexVec;
 
-use crate::value::{HMIRValue, constant::HMIRConstant};
+use crate::value::{HMIRValue, immediate::HMIRImmediate};
 
 mod demand;
 mod identity;
@@ -59,7 +59,7 @@ impl HMIRResolver {
         };
         let id = MemoID::new(self.entries.len());
         let ty_id = Self::type_id(id);
-        let value = HMIRValue::constant(universe.unwrap_or(ty_id), HMIRConstant::Type(ty_id));
+        let value = HMIRValue::constant(universe.unwrap_or(ty_id), HMIRImmediate::Type(ty_id));
         self.entries.push(MemoEntry::ready(value));
         self.state_mut(ty_id).realized = Some(ty);
         if universe.is_none() {

@@ -8,11 +8,18 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    emit, env::{
+    emit,
+    env::{
         HMIREnvironment,
         function::{FnContext, LocalLoweringContext, RuntimeContext},
         generation::Constructor,
-    }, eval::{aggregate::variant, types}, lower::{expr::{self, value}, types::lower_signature}, value::constant::HMIRFunctionRef,
+    },
+    eval::{aggregate::variant, types},
+    lower::{
+        expr::{self, value},
+        types::lower_signature,
+    },
+    value::immediate::HMIRFunctionRef,
 };
 
 pub(crate) fn declare(
@@ -36,7 +43,8 @@ pub(crate) fn declare(
     let signature = lower_signature(env, &variant::signature(env, ty, index), span)?;
     let prototype = MIRFnPrototype::new(signature, LinkageMode::Static, name, None);
     let id = env.module_mut().declare_function(prototype);
-    env.generation_mut().construct(Constructor::new(ty, index, id));
+    env.generation_mut()
+        .construct(Constructor::new(ty, index, id));
     Ok(id)
 }
 
@@ -55,7 +63,8 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
     let payload = match variant::payload(context.env(), ty, index) {
         Some(payload) => {
             let reference = types::reference(context.env_mut(), payload, None, &span);
-            let param = expr::storage::parameter(&mut context, payload, None, &span)?.with_ty(reference);
+            let param =
+                expr::storage::parameter(&mut context, payload, None, &span)?.with_ty(reference);
             let origin = param.as_place().expect("a parameter names its own storage");
             let moved = emit::lift(&mut context, &param, origin, &span)?;
             emit::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span);

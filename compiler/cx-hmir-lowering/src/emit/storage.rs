@@ -8,7 +8,7 @@ use super::{comptime, unsupported};
 use crate::{
     env::function::{FnContext, LocalLoweringContext},
     lower::expr,
-    value::{HMIRPlace, HMIRValue},
+    value::{HMIRReference, HMIRValue},
 };
 
 // Fresh, uninitialized storage of type 'ty' declared in the current scope, which carries the drop obligations of
@@ -79,12 +79,12 @@ pub fn copy(
 pub fn lift(
     context: &mut LocalLoweringContext,
     source: &HMIRValue,
-    origin: HMIRPlace,
+    origin: HMIRReference,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => { 
-            let HMIRPlace::Local(local) = origin else {
+            let HMIRReference::Local(local) = origin else {
                 unreachable!("lifting a non-local in runtime")
             };
 

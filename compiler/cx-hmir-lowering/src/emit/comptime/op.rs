@@ -10,13 +10,10 @@ use cx_util::unsafe_float::FloatWrapper;
 
 use super::rvalue;
 use crate::{
+    emit::comptime::{ScalarFault, float, int},
     env::function::{LocalLoweringContext, memory::layout},
     log::hmir_error,
-    emit::comptime::{ScalarFault, float, int},
-    value::{
-        HMIRValue,
-        constant::HMIRConstant,
-    },
+    value::{HMIRValue, immediate::HMIRImmediate},
 };
 
 fn integer(context: &LocalLoweringContext, value: i128, ty: HMIRTypeID) -> HMIRValue {
@@ -25,7 +22,7 @@ fn integer(context: &LocalLoweringContext, value: i128, ty: HMIRTypeID) -> HMIRV
     };
     let value = int::normalize(value, *int);
 
-    HMIRValue::constant(ty, HMIRConstant::Int(value))
+    HMIRValue::new(ty, HMIRImmediate::Int(value))
 }
 
 fn floating(context: &LocalLoweringContext, value: f64, ty: HMIRTypeID) -> HMIRValue {
@@ -34,7 +31,7 @@ fn floating(context: &LocalLoweringContext, value: f64, ty: HMIRTypeID) -> HMIRV
     };
     let value = FloatWrapper::from(float::round(value, float.width()));
 
-    HMIRValue::constant(ty, HMIRConstant::Float(value))
+    HMIRValue::new(ty, HMIRImmediate::Float(value))
 }
 
 fn fault(span: &TokenRange, fault: ScalarFault, operation: &str) -> CXError {
@@ -54,47 +51,20 @@ fn unsupported<T>(span: &TokenRange, operation: String) -> CXResult<T> {
     ))
 }
 
-fn compare(op: HMIRBinaryOp, lhs: &HMIRConstant, rhs: &HMIRConstant) -> Option<bool> {
-    let ordering = match (lhs, rhs) {
-        (HMIRConstant::Null, HMIRConstant::Null) => Ordering::Equal,
-        (HMIRConstant::Address(lhs), HMIRConstant::Address(rhs)) if lhs.base() == rhs.base() => {
+fn compare(lhs: &HMIRImmediate, rhs: &HMIRImmediate) -> Option<Ordering> {
+    Some(match (lhs, rhs) {
+        (HMIRImmediate::Unit, HMIRImmediate::Unit) => Ordering::Equal,
+        (HMIRImmediate::Address(lhs), HMIRImmediate::Address(rhs)) if lhs.base() == rhs.base() => {
             lhs.offset().cmp(&rhs.offset())
-        }
-        (
-            HMIRConstant::Null,
-            HMIRConstant::Address(_) | HMIRConstant::Function(_) | HMIRConstant::Curried { .. },
-        )
-        | (
-            HMIRConstant::Address(_) | HMIRConstant::Function(_) | HMIRConstant::Curried { .. },
-            HMIRConstant::Null,
-        )
-        | (HMIRConstant::Address(_), HMIRConstant::Address(_)) => {
-            return match op {
-                HMIRBinaryOp::Eq => Some(false),
-                HMIRBinaryOp::Neq => Some(true),
-                _ => None,
-            };
-        }
-        (
-            HMIRConstant::Function(_) | HMIRConstant::Curried { .. },
-            HMIRConstant::Function(_) | HMIRConstant::Curried { .. },
-        ) => {
-            return match op {
-                HMIRBinaryOp::Eq => Some(lhs == rhs),
-                HMIRBinaryOp::Neq => Some(lhs != rhs),
-                _ => None,
-            };
-        }
-        _ => return None,
-    };
-    Some(match op {
-        HMIRBinaryOp::Eq => ordering.is_eq(),
-        HMIRBinaryOp::Neq => ordering.is_ne(),
-        HMIRBinaryOp::Lt => ordering.is_lt(),
-        HMIRBinaryOp::Le => ordering.is_le(),
-        HMIRBinaryOp::Gt => ordering.is_gt(),
-        HMIRBinaryOp::Ge => ordering.is_ge(),
-        _ => return None,
+        },
+        (HMIRImmediate::Int(i1), HMIRImmediate::Int(i2)) => {
+            i1.cmp(i2)
+        },
+        (HMIRImmediate::Float(f1), HMIRImmediate::Float(f2)) => {
+            f1.cmp(f2)
+        },
+
+        _ => return None
     })
 }
 
@@ -111,7 +81,7 @@ pub fn binary(
     let constants = (rvalue(context, lhs, span)?, rvalue(context, rhs, span)?);
 
     match (operands, constants) {
-        (HMIRTypeKind::Int(ty), (HMIRConstant::Int(lhs), HMIRConstant::Int(rhs))) => {
+        (HMIRTypeKind::Int(ty), (HMIRImmediate::Int(lhs), HMIRImmediate::Int(rhs))) => {
             if let Some(truth) = int::compare(op, lhs, rhs, *ty) {
                 return Ok(integer(context, truth as i128, result));
             }
@@ -120,7 +90,7 @@ pub fn binary(
                 .map(|value| integer(context, value, result))
                 .map_err(|error| fault(span, error, op.path()))
         }
-        (HMIRTypeKind::Float(ty), (HMIRConstant::Float(lhs), HMIRConstant::Float(rhs))) => {
+        (HMIRTypeKind::Float(ty), (HMIRImmediate::Float(lhs), HMIRImmediate::Float(rhs))) => {
             let (lhs, rhs) = (
                 float::round(f64::from(&lhs), ty.width()),
                 float::round(f64::from(&rhs), ty.width()),
@@ -153,10 +123,10 @@ pub fn unary(
 
     let kind = context.env().resolve_kind(ty).clone();
     match (&kind, rvalue(context, value, span)?) {
-        (HMIRTypeKind::Int(int), HMIRConstant::Int(value)) => {
+        (HMIRTypeKind::Int(int), HMIRImmediate::Int(value)) => {
             Ok(integer(context, int::unary(op, value, *int), ty))
         }
-        (HMIRTypeKind::Float(_), HMIRConstant::Float(value)) if op == HMIRUnaryOp::Neg => {
+        (HMIRTypeKind::Float(_), HMIRImmediate::Float(value)) if op == HMIRUnaryOp::Neg => {
             Ok(floating(context, -f64::from(&value), ty))
         }
         _ => unsupported(span, format!("'{}' on this operand", op.path())),
@@ -174,20 +144,20 @@ pub fn cast(
     let kinds = (&source_kind, &target_kind);
 
     match (kinds, rvalue(context, value, span)?) {
-        ((HMIRTypeKind::Int(from), HMIRTypeKind::Int(_)), HMIRConstant::Int(value)) => {
+        ((HMIRTypeKind::Int(from), HMIRTypeKind::Int(_)), HMIRImmediate::Int(value)) => {
             Ok(integer(context, int::normalize(value, *from), target))
         }
-        ((HMIRTypeKind::Int(from), HMIRTypeKind::Float(to)), HMIRConstant::Int(value)) => {
+        ((HMIRTypeKind::Int(from), HMIRTypeKind::Float(to)), HMIRImmediate::Int(value)) => {
             let value = int::to_float(value, *from, to.width());
             Ok(floating(context, value, target))
         }
-        ((HMIRTypeKind::Float(from), HMIRTypeKind::Int(to)), HMIRConstant::Float(value)) => {
+        ((HMIRTypeKind::Float(from), HMIRTypeKind::Int(to)), HMIRImmediate::Float(value)) => {
             let value = float::round(f64::from(&value), from.width());
             float::to_int(value, *to)
                 .map(|value| integer(context, value, target))
                 .map_err(|error| fault(span, error, "conversion"))
         }
-        ((HMIRTypeKind::Float(from), HMIRTypeKind::Float(_)), HMIRConstant::Float(value)) => {
+        ((HMIRTypeKind::Float(from), HMIRTypeKind::Float(_)), HMIRImmediate::Float(value)) => {
             Ok(floating(
                 context,
                 float::round(f64::from(&value), from.width()),
@@ -195,20 +165,20 @@ pub fn cast(
             ))
         }
 
-        ((HMIRTypeKind::Int(from), HMIRTypeKind::PointerTo(_)), HMIRConstant::Int(value))
+        ((HMIRTypeKind::Int(from), HMIRTypeKind::PointerTo(_)), HMIRImmediate::Int(value))
             if int::normalize(value, *from) == 0 =>
         {
-            Ok(HMIRValue::constant(target, HMIRConstant::Null))
+            Ok(HMIRValue::constant(target, HMIRImmediate::Null))
         }
-        ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)), HMIRConstant::Null) => {
+        ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)), HMIRImmediate::Null) => {
             Ok(integer(context, 0, target))
         }
-        ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)), HMIRConstant::Null) => {
-            Ok(HMIRValue::constant(target, HMIRConstant::Null))
+        ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)), HMIRImmediate::Null) => {
+            Ok(HMIRValue::constant(target, HMIRImmediate::Null))
         }
         (
             (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)),
-            address @ HMIRConstant::Address(_),
+            address @ HMIRImmediate::Address(_),
         ) => Ok(HMIRValue::constant(target, address)),
 
         _ => unsupported(span, "this conversion".into()),
@@ -231,7 +201,7 @@ pub fn offset(
     subtract: bool,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let HMIRConstant::Int(index) = rvalue(context, index, span)? else {
+    let HMIRImmediate::Int(index) = rvalue(context, index, span)? else {
         unreachable!("a pointer offset is an integer")
     };
     let bytes = element_size(context, element, span)?
@@ -239,8 +209,8 @@ pub fn offset(
         .and_then(|bytes| i64::try_from(bytes).ok());
     let constant = match (rvalue(context, pointer, span)?, bytes) {
         (_, None) => return Err(hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ())),
-        (HMIRConstant::Null, Some(0)) => HMIRConstant::Null,
-        (HMIRConstant::Address(address), Some(bytes)) if address.base().is_storage() => {
+        (HMIRImmediate::Null, Some(0)) => HMIRImmediate::Null,
+        (HMIRImmediate::Address(address), Some(bytes)) if address.base().is_storage() => {
             let address = match subtract {
                 true => address.checked_sub(bytes),
                 false => address.checked_add(bytes),
@@ -248,9 +218,9 @@ pub fn offset(
             let Some(address) = address else {
                 return Err(hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ()));
             };
-            HMIRConstant::Address(address)
+            HMIRImmediate::Address(address)
         }
-        (HMIRConstant::Null, Some(_)) => {
+        (HMIRImmediate::Null, Some(_)) => {
             let operation = "pointer arithmetic".into();
             return Err(hmir_error(
                 span,
@@ -274,13 +244,13 @@ pub fn difference(
 ) -> CXResult<HMIRValue> {
     let size = element_size(context, element, span)?;
     let bytes = match (rvalue(context, lhs, span)?, rvalue(context, rhs, span)?) {
-        (HMIRConstant::Null, HMIRConstant::Null) => 0,
-        (HMIRConstant::Address(lhs), HMIRConstant::Address(rhs))
+        (HMIRImmediate::Null, HMIRImmediate::Null) => 0,
+        (HMIRImmediate::Address(lhs), HMIRImmediate::Address(rhs))
             if lhs.base() == rhs.base() && lhs.base().is_storage() =>
         {
             lhs.offset() as i128 - rhs.offset() as i128
         }
-        (HMIRConstant::Address(lhs), HMIRConstant::Address(rhs))
+        (HMIRImmediate::Address(lhs), HMIRImmediate::Address(rhs))
             if lhs.base().is_storage() && rhs.base().is_storage() =>
         {
             let operation = "pointer difference across allocations".into();

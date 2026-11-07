@@ -12,14 +12,21 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    env::function::{FnContext, LocalLoweringContext}, eval::{
+    env::function::{FnContext, LocalLoweringContext},
+    eval::{
         EvalResult, coerce, eval,
         flow::{self, Evaluation},
         types,
-    }, log::hmir_error, lower::{expr::{self, value}, types::lower_prototype}, value::{
+    },
+    log::hmir_error,
+    lower::{
+        expr::{self, value},
+        types::lower_prototype,
+    },
+    value::{
         HMIRValue,
         address::{Addressable, HMIRAddress},
-        constant::HMIRConstant,
+        immediate::HMIRImmediate,
     },
 };
 
@@ -95,7 +102,7 @@ pub(super) fn eval_label_address(
     };
     Ok(Evaluation::Ready(HMIRValue::constant(
         ty,
-        HMIRConstant::Address(HMIRAddress::new(label, 0)),
+        HMIRImmediate::Address(HMIRAddress::new(label, 0)),
     )))
 }
 

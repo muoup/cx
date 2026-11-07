@@ -12,16 +12,21 @@ use cx_tokens::TokenRange;
 
 use super::{closing, loops::eval_while};
 use crate::{
-    emit::{self, comptime::int}, env::function::{
+    emit::{self, comptime::int},
+    env::function::{
         FnContext, LocalLoweringContext,
         runtime::{Emission, Exit},
-    }, eval::{
+    },
+    eval::{
         EvalResult,
         binding::{eval_block, eval_scoped},
         coerce, eval, eval_comptime, expr,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
         types,
-    }, log::hmir_error, lower::{self, expr::value}, value::{HMIRValue, HMIRValueKind, constant::HMIRConstant},
+    },
+    log::hmir_error,
+    lower::{self, expr::value},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 struct CaseLabel {
@@ -166,7 +171,7 @@ fn case_value(
 ) -> CXResult<i128> {
     let value = eval_comptime(context, body, expr, None)?;
     match (context.env().resolve_kind(value.ty()), value.kind()) {
-        (HMIRTypeKind::Int(source), HMIRValueKind::Constant(HMIRConstant::Int(value))) => {
+        (HMIRTypeKind::Int(source), HMIRValueKind::Constant(HMIRImmediate::Int(value))) => {
             Ok(int::normalize(int::normalize(*value, *source), integer))
         }
         _ => {

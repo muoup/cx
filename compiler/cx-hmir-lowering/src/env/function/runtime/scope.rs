@@ -80,7 +80,6 @@ impl Defer {
 
 #[derive(Debug, Default)]
 pub(crate) struct RuntimeScope {
-    mir: Option<MIRScopeID>,
     deferred: bool,
     defers: Vec<Defer>,
     exit: Option<Exit>,
@@ -90,9 +89,8 @@ pub(crate) struct RuntimeScope {
 }
 
 impl RuntimeScope {
-    pub(crate) fn new(mir: Option<MIRScopeID>, deferred: bool) -> Self {
+    pub(crate) fn new(deferred: bool) -> Self {
         Self {
-            mir,
             deferred,
             ..Self::default()
         }

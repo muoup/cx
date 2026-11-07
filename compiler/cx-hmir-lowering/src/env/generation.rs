@@ -4,7 +4,7 @@ use std::collections::{VecDeque, hash_map::Entry};
 use cx_hmir::{HMIRDefID, HMIRFnSignature, ty::HMIRTypeID};
 use cx_mir::MIRFunctionID;
 
-use crate::value::{HMIRValue, constant::HMIRFunctionRef};
+use crate::value::{HMIRValue, immediate::HMIRFunctionRef};
 
 ///
 /// Tracks the definitions that the unit has to generate. A definition is requested by whatever refers to it, at

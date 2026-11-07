@@ -11,7 +11,7 @@ use index_vec::IndexVec;
 
 use crate::{
     env::{function::scope::Scopes, module::MIRFunctionBuilder},
-    value::{HMIRSlotID, HMIRValue},
+    value::{HMIRRegisterID, HMIRValue},
 };
 
 mod scope;
@@ -30,10 +30,12 @@ pub enum Emission {
 #[derive(Debug)]
 pub struct RuntimeContext {
     builder: MIRFunctionBuilder,
-    emission: Emission,
-    slots: IndexVec<HMIRSlotID, Slot>,
     scopes: Scopes<RuntimeScope>,
+
+    emission: Emission,
     scratch_scope: MIRScopeID,
+
+    slots: IndexVec<HMIRRegisterID, Slot>,
     labels: FxHashMap<String, MIRBasicBlockID>,
 }
 
@@ -76,7 +78,9 @@ impl RuntimeContext {
                         target: MIRTarget::Place(place),
                         ..
                     }
-                    | MIRInstructionKind::Invalidate { place, .. } => Some(MIRBindable::Place(*place)),
+                    | MIRInstructionKind::Invalidate { place, .. } => {
+                        Some(MIRBindable::Place(*place))
+                    }
                     MIRInstructionKind::Store {
                         target: MIRTarget::Indirect { .. } | MIRTarget::Global(_),
                         ..
@@ -107,15 +111,15 @@ impl RuntimeContext {
         }
     }
 
-    pub(crate) fn slot(&self, slot: HMIRSlotID) -> &Slot {
+    pub(crate) fn slot(&self, slot: HMIRRegisterID) -> &Slot {
         &self.slots[slot]
     }
 
-    pub(crate) fn slot_mut(&mut self, slot: HMIRSlotID) -> &mut Slot {
+    pub(crate) fn slot_mut(&mut self, slot: HMIRRegisterID) -> &mut Slot {
         &mut self.slots[slot]
     }
 
-    pub(crate) fn allocate_slot(&mut self, slot: Slot) -> HMIRSlotID {
+    pub(crate) fn allocate_slot(&mut self, slot: Slot) -> HMIRRegisterID {
         self.slots.push(slot)
     }
 

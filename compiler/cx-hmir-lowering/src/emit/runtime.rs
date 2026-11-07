@@ -1,7 +1,7 @@
 use cx_mir::{MIRInstructionKind, MIRPlaceID, expr::instruction::MIRInvalidationKind};
 use cx_tokens::TokenRange;
 
-use crate::{env::function::{LocalLoweringContext, runtime::RuntimeScope}, value::Bindings};
+use crate::env::function::{LocalLoweringContext, runtime::RuntimeScope};
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {
     let runtime = context.runtime_mut();
@@ -21,7 +21,7 @@ pub fn drop_scope(context: &mut LocalLoweringContext, index: usize, span: &Token
     let Some(scope) = context.runtime().scopes().control(index).mir() else {
         return;
     };
-    
+
     let places = context
         .runtime()
         .builder()

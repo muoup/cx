@@ -1,7 +1,7 @@
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use crate::{MIRBasicBlock, MIRBasicBlockID, MIRPlaceID, MIRRegister, MIRScopeID, MIRTypeID};
+use crate::{MIRBasicBlock, MIRBasicBlockID, MIRPlaceID, MIRRegister, MIRTypeID};
 
 #[derive(Debug, Clone)]
 pub struct MIRBody {
@@ -11,7 +11,6 @@ pub struct MIRBody {
     places: Vec<MIRPlaceDecl>,
     parameters: Vec<MIRPlaceID>,
     registers: Vec<MIRRegisterDecl>,
-    scopes: Vec<MIRScopeDecl>,
     address_labels: Vec<(String, MIRBasicBlockID)>,
 }
 
@@ -22,7 +21,6 @@ impl MIRBody {
         places: Vec<MIRPlaceDecl>,
         parameters: Vec<MIRPlaceID>,
         registers: Vec<MIRRegisterDecl>,
-        scopes: Vec<MIRScopeDecl>,
         address_labels: Vec<(String, MIRBasicBlockID)>,
     ) -> Self {
         Self {
@@ -31,7 +29,6 @@ impl MIRBody {
             places,
             parameters,
             registers,
-            scopes,
             address_labels,
         }
     }
@@ -72,21 +69,8 @@ impl MIRBody {
         &self.places[id.index()]
     }
 
-    pub fn scopes(&self) -> impl Iterator<Item = (MIRScopeID, &MIRScopeDecl)> {
-        self.scopes
-            .iter()
-            .enumerate()
-            .map(|(index, scope)| (MIRScopeID::new(index), scope))
-    }
-
-    pub fn scope(&self, id: MIRScopeID) -> &MIRScopeDecl {
-        &self.scopes[id.index()]
-    }
-
     pub fn parameters(&self) -> impl Iterator<Item = (MIRPlaceID, &MIRPlaceDecl)> {
-        self.parameters
-            .iter()
-            .map(|&id| (id, self.place(id)))
+        self.parameters.iter().map(|&id| (id, self.place(id)))
     }
 
     pub fn parameter(&self, idx: usize) -> MIRPlaceID {
@@ -109,7 +93,6 @@ impl MIRBody {
 pub struct MIRPlaceDecl {
     ty: MIRTypeID,
     debug_name: Option<CXIdent>,
-    scope: MIRScopeID,
 
     nodrop: bool,
     adopted: bool,
@@ -127,17 +110,10 @@ pub struct MIRRegisterDecl {
 }
 
 impl MIRPlaceDecl {
-    pub fn new(
-        ty: MIRTypeID,
-        debug_name: Option<CXIdent>,
-        scope: MIRScopeID,
-        nodrop: bool,
-        adopted: bool,
-    ) -> Self {
+    pub fn new(ty: MIRTypeID, debug_name: Option<CXIdent>, nodrop: bool, adopted: bool) -> Self {
         Self {
             ty,
             debug_name,
-            scope,
             nodrop,
             adopted,
         }
@@ -151,26 +127,12 @@ impl MIRPlaceDecl {
         self.debug_name.as_ref()
     }
 
-    pub fn scope(&self) -> MIRScopeID {
-        self.scope
-    }
-
     pub fn nodrop(&self) -> bool {
         self.nodrop
     }
 
     pub fn adopted(&self) -> bool {
         self.adopted
-    }
-}
-
-impl MIRScopeDecl {
-    pub fn new(token_range: TokenRange) -> Self {
-        Self { token_range }
-    }
-
-    pub fn token_range(&self) -> &TokenRange {
-        &self.token_range
     }
 }
 
