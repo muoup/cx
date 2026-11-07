@@ -116,7 +116,7 @@ pub(crate) fn splice(context: &mut LocalLoweringContext, value: HMIRValue, span:
     let value = (comptime::export(context, value, span))?.ready()?;
     let staged = matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Staged(_));
     match value.kind() {
-        HMIRValueKind::Constant(HMIRImmediate::Quote(_)) if staged => materialize(context, &value, &[]),
+        HMIRValueKind::Immediate(HMIRImmediate::Quote(_)) if staged => materialize(context, &value, &[]),
         _ => Ok(Evaluation::Ready(value)),
     }
 }
@@ -268,7 +268,7 @@ pub(crate) fn apply(
     if runtime {
         return materialize(context, &code, &values);
     }
-    let HMIRValueKind::Constant(HMIRImmediate::Quote(node)) = code.kind() else {
+    let HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) = code.kind() else {
         unreachable!("compile-time code is a quote")
     };
     let source = node.get();
@@ -284,7 +284,7 @@ pub(crate) fn materialize(
     code: &HMIRValue,
     args: &[HMIRValue],
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let HMIRValueKind::Constant(HMIRImmediate::Quote(node)) = code.kind() else {
+    let HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) = code.kind() else {
         let subject = "this staged value".into();
         return Err(hmir_error(&TokenRange::internal(), &mir::COMPTIME_UNAVAILABLE, subject).into());
     };

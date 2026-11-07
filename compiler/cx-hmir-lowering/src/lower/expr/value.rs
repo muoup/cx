@@ -17,9 +17,8 @@ use crate::{
     },
     symbol,
     value::{
-        HMIRReference, HMIRValue, HMIRValueKind,
-        address::Addressable,
-        immediate::{HMIRImmediate, HMIRFunctionRef},
+        HMIRValue, HMIRValueKind,
+        immediate::{HMIRFunctionRef, HMIRImmediate},
     },
 };
 
@@ -29,7 +28,7 @@ pub fn standard(
     span: &TokenRange,
 ) -> CXResult<MIRValue> {
     Ok(match value.kind() {
-        HMIRValueKind::Constant(constant) => {
+        HMIRValueKind::Immediate(constant) => {
             MIRValue::Constant(self::constant(context, constant, value.ty(), span)?)
         }
         HMIRValueKind::Reference(place) => match place {
@@ -123,7 +122,7 @@ pub fn constant(
                             "function address offset".into(),
                         ));
                     }
-                    let HMIRValueKind::Constant(function_constant) = function.kind() else {
+                    let HMIRValueKind::Immediate(function_constant) = function.kind() else {
                         unreachable!("a function address names a function constant")
                     };
                     let MIRConstant::Function(function) =
@@ -195,7 +194,7 @@ pub fn constant(
             }
             (HMIRImmediate::Curried { callee, args }, _) => {
                 let args = args.iter().flatten().cloned().collect::<Vec<_>>();
-                if let HMIRValueKind::Constant(HMIRImmediate::Function(function)) = callee.kind()
+                if let HMIRValueKind::Immediate(HMIRImmediate::Function(function)) = callee.kind()
                     && let Some(function) = context.env().generation().generated(*function, &args)
                 {
                     MIRConstant::Function(function)

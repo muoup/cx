@@ -56,7 +56,7 @@ pub(crate) fn check(
     let (owner, point) = (context.source(), context.visible_through());
     let value = condition(context, contract, owner, point, expression, span);
     restore(context, bindings);
-    if !matches!(value?.kind(), HMIRValueKind::Constant(HMIRImmediate::Int(value)) if *value != 0) {
+    if !matches!(value?.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(value)) if *value != 0) {
         return Err(hmir_error(
             span,
             &catalogue::mir::COMPTIME_ASSERTION,
@@ -112,7 +112,7 @@ pub(crate) fn enter(
     for (local, param) in contract.params().iter().zip(params) {
         let value = context.get_local(param).cloned().expect("parameters are bound before the contract");
         let value = match value.kind() {
-            HMIRValueKind::Constant(_) => value,
+            HMIRValueKind::Immediate(_) => value,
             _ => emit::copy(context, value, span)?,
         };
         let value = observe(context, value, span)?;
@@ -201,7 +201,7 @@ fn observe(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if let HMIRValueKind::Constant(_) = value.kind() {
+    if let HMIRValueKind::Immediate(_) = value.kind() {
         return Ok(value);
     }
     let storage = emit::temporary(context, value, span)?;

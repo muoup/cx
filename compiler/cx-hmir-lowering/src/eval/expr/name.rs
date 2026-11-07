@@ -62,17 +62,17 @@ pub(crate) fn eval_def(
     let value = symbol::binding(context.env_mut(), id, point)?;
     let emitting = context.is_runtime() && !context.is_unevaluated();
     match value.kind() {
-        HMIRValueKind::Constant(HMIRImmediate::Type(ty)) => {
+        HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) => {
             return deduce::type_result(context, *ty, span);
         }
-        HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def)))
+        HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def)))
             if emitting && !types::comptime_only(context.env(), value.ty()) =>
         {
             let prototype = lower_prototype(context.env_mut(), *def, point, span)?;
             context.env_mut().module_mut().declare_function(prototype);
             request(context, *def, point)?;
         }
-        HMIRValueKind::Constant(HMIRImmediate::Address(address))
+        HMIRValueKind::Immediate(HMIRImmediate::Address(address))
             if let Some(HMIRReference::Global(def)) = address.whole_place() =>
         {
             request(context, def, point)?;
@@ -262,7 +262,7 @@ fn qualified_constructor(
         };
         let point = context.visible_through();
         let parent = symbol::binding(context.env_mut(), id, point)?;
-        let HMIRValueKind::Constant(HMIRImmediate::Type(ty)) = parent.kind() else {
+        let HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) = parent.kind() else {
             continue;
         };
         if let Some(value) = variant::reference(context, *ty, &name.name, span)? {

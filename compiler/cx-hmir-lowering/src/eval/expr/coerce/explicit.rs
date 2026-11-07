@@ -55,7 +55,7 @@ fn extension(
             Coercion::Applied(value.with_ty(target))
         }
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_)) => {
-            if !matches!(value.kind(), HMIRValueKind::Constant(HMIRImmediate::Int(0))) {
+            if !matches!(value.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(0))) {
                 expr::require_nonsafe(context, span, "Unsafe type conversion")?;
             }
             Coercion::Applied(emit::cast(context, &value, target, span)?)

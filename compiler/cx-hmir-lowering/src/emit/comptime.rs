@@ -30,6 +30,25 @@ pub enum ScalarFault {
     Undefined,
 }
 
+pub fn null_check(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange
+) -> CXResult<()> {
+    let immediate : HMIRValueKind = todo!();
+
+    match immediate {
+        HMIRValueKind::Immediate(HMIRImmediate::Int(0)) |
+        HMIRValueKind::Immediate(HMIRImmediate::Unit) => {
+            Err(
+                hmir_error(span, &typecheck::COMPTIME_INTERPRETATION, "attempted to dereference a null pointer")
+            )
+        },
+
+        _ => Ok(())
+    }
+}
+
 pub fn allocate(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
@@ -84,14 +103,14 @@ fn storage(
         HMIRValueKind::Reference(place) => {
             Some((HMIRAddress::place(*place), inner.unwrap_or(value.ty())))
         }
-        HMIRValueKind::Constant(HMIRImmediate::Address(address)) => {
+        HMIRValueKind::Immediate(HMIRImmediate::Address(address)) => {
             inner.map(|inner| (address.clone(), inner))
         }
         HMIRValueKind::Indirect(pointer) => match rvalue(context, pointer, span)? {
             HMIRImmediate::Address(address) => Some((address, value.ty())),
             _ => None,
         },
-        HMIRValueKind::Constant(_) => None,
+        HMIRValueKind::Immediate(_) => None,
     })
 }
 
@@ -156,7 +175,7 @@ fn read(
     span: &TokenRange,
 ) -> CXResult<HMIRImmediate> {
     let Some((address, ty)) = storage(context, value, span)? else {
-        let HMIRValueKind::Constant(constant) = value.kind() else {
+        let HMIRValueKind::Immediate(constant) = value.kind() else {
             unreachable!("a value without storage is a constant")
         };
         return Ok(constant.clone());
@@ -320,12 +339,12 @@ pub fn field(
 ) -> CXResult<HMIRValue> {
     let (address, owner) = match (storage(context, base, span)?, base.kind()) {
         (Some(storage), _) => storage,
-        (None, HMIRValueKind::Constant(HMIRImmediate::Aggregate(items))) => {
+        (None, HMIRValueKind::Immediate(HMIRImmediate::Aggregate(items))) => {
             return Ok(HMIRValue::constant(ty, items[index].clone()));
         }
         (
             None,
-            HMIRValueKind::Constant(
+            HMIRValueKind::Immediate(
                 HMIRImmediate::Union { member, value }
                 | HMIRImmediate::TaggedUnion {
                     variant: member,

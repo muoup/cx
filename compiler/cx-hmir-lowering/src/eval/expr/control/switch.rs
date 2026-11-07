@@ -171,7 +171,7 @@ fn case_value(
 ) -> CXResult<i128> {
     let value = eval_comptime(context, body, expr, None)?;
     match (context.env().resolve_kind(value.ty()), value.kind()) {
-        (HMIRTypeKind::Int(source), HMIRValueKind::Constant(HMIRImmediate::Int(value))) => {
+        (HMIRTypeKind::Int(source), HMIRValueKind::Immediate(HMIRImmediate::Int(value))) => {
             Ok(int::normalize(int::normalize(*value, *source), integer))
         }
         _ => {

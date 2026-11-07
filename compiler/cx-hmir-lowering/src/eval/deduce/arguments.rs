@@ -265,12 +265,12 @@ impl<'a> Deduction<'a> {
             .enter(context, span, |child| flow::top(eval(child, body, callee)))
             .ok()?;
         let (callee, curried) = match value.kind() {
-            HMIRValueKind::Constant(HMIRImmediate::Curried { callee, args }) => {
+            HMIRValueKind::Immediate(HMIRImmediate::Curried { callee, args }) => {
                 (callee.as_ref(), args.as_slice())
             }
             _ => (&value, [].as_slice()),
         };
-        let HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) =
+        let HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) =
             callee.kind()
         else {
             return None;
@@ -408,7 +408,7 @@ pub(crate) fn generated(
     undeduced: CXError,
     span: &TokenRange,
 ) -> Evaluation<HMIRValue> {
-    let HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) = *callee.kind()
+    let HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) = *callee.kind()
     else {
         unreachable!("a generated type has a generator")
     };

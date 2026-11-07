@@ -81,7 +81,7 @@ pub(crate) fn inputs(context: &mut LocalLoweringContext) -> Vec<(HMIRLocalID, HM
 
 pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<HMIRValue> {
     let value = match (value.kind(), context.context()) {
-        (HMIRValueKind::Constant(_), _) => value.clone(),
+        (HMIRValueKind::Immediate(_), _) => value.clone(),
         (HMIRValueKind::Reference(HMIRReference::Local(slot)), FnContext::Runtime(runtime)) => {
             runtime.slot(*slot).known().cloned()?
         }
@@ -103,7 +103,7 @@ pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Op
         _ => return None,
     };
     match value.kind() {
-        HMIRValueKind::Constant(constant) if !constant.holds_local_address() => Some(value),
+        HMIRValueKind::Immediate(constant) if !constant.holds_local_address() => Some(value),
         _ => None,
     }
 }
@@ -141,7 +141,7 @@ pub(crate) fn export(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let value = settle(context, value, span)?;
     match value.kind() {
-        HMIRValueKind::Constant(constant) if !constant.holds_local_address() => {
+        HMIRValueKind::Immediate(constant) if !constant.holds_local_address() => {
             Ok(Evaluation::Ready(value))
         }
         _ => {
@@ -160,7 +160,7 @@ fn settle(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match value.kind() {
-        HMIRValueKind::Constant(_) => Ok(value),
+        HMIRValueKind::Immediate(_) => Ok(value),
         _ if context.env().is_reference(value.ty()) => Err(hmir_error(
             span,
             &typecheck::INVALID_CONTEXT,

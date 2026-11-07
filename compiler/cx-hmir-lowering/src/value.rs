@@ -20,15 +20,15 @@ pub enum HMIRValueKind {
     /// Well-formed representation of a full value, all comptime contexts must return values in this form
     Immediate(HMIRImmediate),
 
-    /// Intermediate computed values of a function
-    Register(HMIRRegisterID),
-    
     /// Addressable storage local to a function
     /// 
     /// Note that this shape was intentionally separated from HMIRImmediate::Address, while it is in essence addressable,
     /// and offset-addresses are well-defined here, they are not valid for a comptime context to return, and there is no
     /// issue of C backcompatibility as local pointers are not representable in comptime contexts like global initializers 
     Place(HMIRPlaceID),
+
+    /// Intermediate computed values of a function, non-addressable
+    Register(HMIRRegisterID),
 }
 
 impl HMIRValue {

@@ -374,7 +374,7 @@ pub fn offset(
     let size = element_size(context, element, span)?;
 
     let (ptr, offset) = match index.kind() {
-        HMIRValueKind::Constant(HMIRImmediate::Int(value)) => {
+        HMIRValueKind::Immediate(HMIRImmediate::Int(value)) => {
             let value = value * size;
             let offset = HMIRValue::constant(ty, HMIRImmediate::Int(value));
 
@@ -441,8 +441,8 @@ pub fn tag(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if let HMIRValueKind::Constant(HMIRImmediate::TaggedUnion { variant, .. }) = value.kind() {
-        return Ok(HMIRValue::constant(ty, HMIRImmediate::Int(*variant as i128)));
+    if let HMIRValueKind::Immediate(HMIRImmediate::TaggedUnion { variant, .. }) = value.kind() {
+        return Ok(HMIRValue::new(ty, HMIRImmediate::Int(*variant as i128)));
     }
 
     let stored = context.env().referent(value.ty());

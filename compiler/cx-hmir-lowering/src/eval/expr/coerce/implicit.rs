@@ -190,7 +190,7 @@ fn step(
     }
     Ok(match (from, to) {
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_))
-            if matches!(value.kind(), HMIRValueKind::Constant(HMIRImmediate::Int(0))) =>
+            if matches!(value.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(0))) =>
         {
             Coercion::Applied(HMIRValue::constant(target, HMIRImmediate::Null))
         }
@@ -253,7 +253,7 @@ fn string(
     length: Option<u64>,
     span: &TokenRange,
 ) -> CXResult<Coercion> {
-    let HMIRValueKind::Constant(HMIRImmediate::Str(string)) = value.kind() else {
+    let HMIRValueKind::Immediate(HMIRImmediate::Str(string)) = value.kind() else {
         return Ok(Coercion::Unapplied(value));
     };
     if !is_char(context.env(), element) {

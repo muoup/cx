@@ -117,6 +117,28 @@ pub(crate) fn binary_operands(
     }
 }
 
+pub fn dereference(
+    context: &mut LocalLoweringContext,
+    pointer: HMIRValue,
+    base: Option<&HMIRValue>,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let Some(inner) = context.env().pointer_inner(pointer.ty()) else {
+        let subject = "dereferencing";
+        let expected = "a pointer type";
+        let found = types::name(context.env(), pointer.ty());
+
+        return Err(hmir_error(
+            span,
+            &typecheck::TYPE_REQUIREMENT,
+            (subject.into(), expected.into(), found.into()),
+        ));
+    };
+
+    emit::null_check(context, base.unwrap_or(&pointer), span)?;
+    Ok(pointer.with_ty(types::reference(context.env_mut(), inner, None, span)))
+}
+
 fn arithmetic(
     context: &mut LocalLoweringContext,
     span: &TokenRange,

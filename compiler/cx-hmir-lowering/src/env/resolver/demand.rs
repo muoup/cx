@@ -145,7 +145,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             }
         }
         let value = flow::top(self.evaluate(HMIRResolver::type_memo(ty), span))?;
-        let HMIRValueKind::Constant(HMIRImmediate::Type(target)) = value.kind() else {
+        let HMIRValueKind::Immediate(HMIRImmediate::Type(target)) = value.kind() else {
             return Err(hmir_error(
                 span,
                 &typecheck::EXPECTED_TYPE,

@@ -57,7 +57,7 @@ pub fn slot(
 fn place(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRPlaceID> {
     let place = match value.kind() {
         HMIRValueKind::Reference(place) => *place,
-        HMIRValueKind::Constant(HMIRImmediate::Address(address))
+        HMIRValueKind::Immediate(HMIRImmediate::Address(address))
             if context.env().is_reference(value.ty()) =>
         {
             address.whole_place()?
@@ -90,7 +90,7 @@ fn target(
         HMIRValueKind::Reference(HMIRReference::Global(def)) => {
             MIRTarget::Global(global::reference(context.env_mut(), *def, 0, ty, span)?)
         }
-        HMIRValueKind::Constant(HMIRImmediate::Address(address))
+        HMIRValueKind::Immediate(HMIRImmediate::Address(address))
             if is_reference
                 && let Addressable::Place(HMIRReference::Global(def)) = address.base() =>
         {
@@ -370,7 +370,7 @@ pub fn address(
         ))
     };
     let reference = match value.kind() {
-        HMIRValueKind::Constant(HMIRImmediate::Address(address)) => {
+        HMIRValueKind::Immediate(HMIRImmediate::Address(address)) => {
             return Ok(HMIRValue::constant(
                 ty,
                 HMIRImmediate::Address(address.clone()),
@@ -398,7 +398,7 @@ pub fn address(
         }
         HMIRValueKind::Reference(other) => return place(*other),
         HMIRValueKind::Indirect(pointer) => pointer,
-        HMIRValueKind::Constant(_) => unreachable!("only storage has an address"),
+        HMIRValueKind::Immediate(_) => unreachable!("only storage has an address"),
     };
 
     let reference = value::standard(context, reference, span)?;

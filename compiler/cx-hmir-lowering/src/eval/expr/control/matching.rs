@@ -167,7 +167,7 @@ fn cases(
             HMIRPattern::Value(expr) if variants.is_none() => {
                 let value = eval_comptime(context, body, *expr, Some(dispatch_ty))?;
                 match value.kind() {
-                    HMIRValueKind::Constant(HMIRImmediate::Int(value)) => Some(*value),
+                    HMIRValueKind::Immediate(HMIRImmediate::Int(value)) => Some(*value),
                     _ => return Err(hmir_error(arm_span, &typecheck::VALUE_PATTERN_CONSTANT, ())),
                 }
             }

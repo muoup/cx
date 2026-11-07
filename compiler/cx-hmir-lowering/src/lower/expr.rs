@@ -29,7 +29,7 @@ pub fn function_address(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let HMIRValueKind::Constant(function_constant) = function.kind() else {
+    let HMIRValueKind::Immediate(function_constant) = function.kind() else {
         unreachable!("a function designator is constant")
     };
 
@@ -163,7 +163,7 @@ pub fn call(
 ) -> CXResult<HMIRValue> {
     let callee = match callee.as_function() {
         Some(function) => {
-            let HMIRValueKind::Constant(constant_value) = function.kind() else {
+            let HMIRValueKind::Immediate(constant_value) = function.kind() else {
                 unreachable!("a known function is constant")
             };
             MIRValue::Constant(value::constant(

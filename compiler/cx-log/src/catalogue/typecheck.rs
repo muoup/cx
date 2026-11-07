@@ -113,5 +113,7 @@ define_errors! {
     UNKNOWN_PARAMETER: (String, String) = "T0072" => |(function, name)| format!("{function} has no comptime parameter named '{name}'");
     UNCOPYABLE: String = "T0073" => |ty| format!("a value of type '{ty}' cannot be copied");
 
+    COMPTIME_INTERPRETATION: String = "T0074" => |action| format!("failure during comptime evaluation: {action}");
+
     POP_EMPTY_SCOPE: () = "TX001" => |()| "attempted to pop a scope from an empty scope stack".into();
 }

@@ -330,7 +330,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             return Ok(*region);
         }
         let value = symbol::initialize(self, def)?;
-        let HMIRValueKind::Constant(constant) = value.kind() else {
+        let HMIRValueKind::Immediate(constant) = value.kind() else {
             unreachable!("a global initializer is frozen");
         };
         let image = codec::encode(self.env_mut(), value.ty(), constant, span)?;

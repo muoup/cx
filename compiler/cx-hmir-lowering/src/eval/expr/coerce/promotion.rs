@@ -115,7 +115,7 @@ pub fn reference_load(
     let semantics = env.semantics(inner);
     let external_write = matches!(
         value.kind(),
-        HMIRValueKind::Reference(HMIRReference::Global(_)) | HMIRValueKind::Constant(_)
+        HMIRValueKind::Reference(HMIRReference::Global(_)) | HMIRValueKind::Immediate(_)
     );
 
     if semantics.volatile {

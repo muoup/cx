@@ -196,7 +196,7 @@ fn unpack(
 
     let constant = matches!(
         source.kind(),
-        HMIRValueKind::Constant(HMIRImmediate::Aggregate { .. })
+        HMIRValueKind::Immediate(HMIRImmediate::Aggregate { .. })
     );
     let comptime = !context.is_runtime();
     let source = match constant {

@@ -60,7 +60,7 @@ pub(crate) fn subject(
                         "an unknown type value".into(),
                     )
                 })?,
-            (_, HMIRValueKind::Constant(HMIRImmediate::Str(string))) => {
+            (_, HMIRValueKind::Immediate(HMIRImmediate::Str(string))) => {
                 let element = types::int(context.env_mut(), HMIRIntWidth::I8, false, &span);
                 let length = (string.len() + 1) as u64;
                 types::realize(
@@ -146,7 +146,7 @@ fn shadow(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if let HMIRValueKind::Constant(HMIRImmediate::Quote(node)) = value.kind() {
+    if let HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) = value.kind() {
         let quote = node.get();
         let mut captures = Bindings::default();
         for (local, captured) in quote.captures() {
@@ -166,7 +166,7 @@ fn shadow(
     }
     let frozen = matches!(
         value.kind(),
-        HMIRValueKind::Constant(constant) if !constant.holds_local_address()
+        HMIRValueKind::Immediate(constant) if !constant.holds_local_address()
     );
     if frozen {
         return Ok(value);

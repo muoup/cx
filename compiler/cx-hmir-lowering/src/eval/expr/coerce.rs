@@ -160,20 +160,10 @@ fn truth(
         _ => return Ok(Coercion::Unapplied(value)),
     };
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    let known = match (value.kind(), context.env().resolve_kind(ty)) {
-        (HMIRValueKind::Constant(HMIRImmediate::Int(value)), HMIRTypeKind::Int(ty)) => {
-            Some(int::normalize(*value, *ty) != 0)
-        }
-        (HMIRValueKind::Constant(HMIRImmediate::Float(value)), HMIRTypeKind::Float(ty)) => {
-            Some(float::round(f64::from(value), ty.width()) != 0.0)
-        }
-        (HMIRValueKind::Constant(HMIRImmediate::Null), HMIRTypeKind::PointerTo(_)) => Some(false),
-        _ => None,
-    };
     Ok(Coercion::Applied(match known {
-        Some(known) => HMIRValue::constant(boolean, HMIRImmediate::Int(i128::from(known))),
+        Some(known) => HMIRValue::new(boolean, HMIRImmediate::Int(i128::from(known))),
         None => {
-            let zero = HMIRValue::constant(ty, zero);
+            let zero = HMIRValue::new(ty, zero);
             emit::binary(context, HMIRBinaryOp::Neq, &value, &zero, boolean, span)?
         }
     }))

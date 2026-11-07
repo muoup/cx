@@ -266,7 +266,7 @@ pub(crate) fn dependent(
     applied: &[Option<HMIRValue>],
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let HMIRValueKind::Constant(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) = callee.kind()
+    let HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) = callee.kind()
     else {
         return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, "this function".into()).into());
     };

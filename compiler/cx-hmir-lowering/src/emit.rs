@@ -8,21 +8,18 @@ pub use storage::{
 
 use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,
-    ty::{HMIRTypeID, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_intrinsics::VAIntrinsic;
-use cx_log::CXResult;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 
 use crate::{
     env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope, memory::placement},
     eval::types,
+    log::hmir_error,
     lower::expr,
-    value::{
-        Bindings, HMIRValue, HMIRValueKind,
-        address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
-    },
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {
@@ -45,70 +42,11 @@ pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
     }
 }
 
-pub fn reference(
+pub fn null_check(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
-    span: &TokenRange,
+    span: &TokenRange
 ) -> CXResult<HMIRValue> {
-    let bitfield = match value.kind() {
-        HMIRValueKind::Indirect(_) => types::bitfield(context.env(), value),
-        _ => None,
-    };
-
-    let ty = types::reference(context.env_mut(), value.ty(), bitfield, span);
-
-    match value.kind() {
-        HMIRValueKind::Indirect(pointer) if context.env().same_type(pointer.ty(), ty) => {
-            Ok(pointer.as_ref().clone())
-        }
-        _ => address(context, value, ty, span),
-    }
-}
-
-pub fn address(
-    context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    match value.kind() {
-        HMIRValueKind::Constant(HMIRImmediate::Function(_) | HMIRImmediate::Curried { .. }) => {
-            return match context.context() {
-                FnContext::Runtime(_) => expr::function_address(context, value, ty, span),
-                FnContext::Comptime(_) => Ok(HMIRValue::constant(
-                    ty,
-                    HMIRImmediate::Address(HMIRAddress::new(
-                        Addressable::Function(Box::new(function)),
-                        0,
-                    )),
-                )),
-            };
-        }
-        HMIRValueKind::Constant(HMIRImmediate::Str(text)) => {
-            let address = HMIRAddress::new(Addressable::Literal(text.clone()), 0);
-            return Ok(HMIRValue::constant(ty, HMIRImmediate::Address(address)));
-        }
-        HMIRValueKind::Indirect(pointer) if context.env().pointer_inner(pointer.ty()).is_some() => {
-            return Ok(pointer.as_ref().clone().with_ty(ty));
-        }
-        _ => {}
-    }
-
-    match context.context() {
-        FnContext::Runtime(_) => expr::storage::address(context, value, ty, span),
-        FnContext::Comptime(_) => comptime::address(context, value, ty, span),
-    }
-}
-
-pub fn dereference(
-    context: &mut LocalLoweringContext,
-    pointer: HMIRValue,
-    inner: HMIRTypeID,
-    base: Option<&HMIRValue>,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    expr::storage::null_check(context, base.unwrap_or(&pointer), span)?;
-
     todo!()
 }
 
