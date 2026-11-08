@@ -160,7 +160,7 @@ pub(crate) fn eval_is(
     }
     let Variant { index, payload } = self::variant(context, body, ty, pattern, span)?;
     let tag = emit::tag(context, &subject, span)?;
-    let expected = HMIRValue::constant(tag.ty(), HMIRImmediate::Int(index as i128));
+    let expected = HMIRValue::new(tag.ty(), HMIRImmediate::Int(index as i128));
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = emit::binary(context, HMIRBinaryOp::Eq, &tag, &expected, boolean, span)?;
     if let Some(HMIRPattern::Binding(local)) = inner.as_deref() {

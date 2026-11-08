@@ -1,8 +1,14 @@
+use cx_hmir::ty::HMIRTypeID;
+use cx_log::CXResult;
 use cx_mir::{MIRBasicBlockID, MIRBlockTarget, MIRInstructionKind, MIRValue};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use crate::env::function::{LocalLoweringContext, runtime::Emission};
+use crate::{
+    emit::runtime,
+    env::function::{LocalLoweringContext, runtime::Emission},
+    value::HMIRValue,
+};
 
 pub fn block(context: &mut LocalLoweringContext, name: &str) -> MIRBasicBlockID {
     context
@@ -45,4 +51,32 @@ pub fn branch(
     };
 
     context.runtime_mut().emit(branch, span.clone())
+}
+
+pub fn call(
+    context: &mut LocalLoweringContext,
+    callee: &HMIRValue,
+    args: &[HMIRValue],
+    result: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let callee = runtime::value(context, callee, span)?;
+    let args = args
+        .iter()
+        .map(|arg| runtime::value(context, arg, span))
+        .collect::<CXResult<_>>()?;
+
+    let mir_out = runtime::register(context, result, span)?;
+    let hmir_out = context.runtime().hmir_register(mir_out);
+
+    context.runtime_mut().emit(
+        MIRInstructionKind::Call {
+            out: Some(mir_out),
+            callee,
+            args,
+        },
+        span.clone(),
+    );
+
+    Ok(HMIRValue::new(result, hmir_out))
 }

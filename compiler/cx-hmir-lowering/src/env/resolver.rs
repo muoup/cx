@@ -59,7 +59,7 @@ impl HMIRResolver {
         };
         let id = MemoID::new(self.entries.len());
         let ty_id = Self::type_id(id);
-        let value = HMIRValue::constant(universe.unwrap_or(ty_id), HMIRImmediate::Type(ty_id));
+        let value = HMIRValue::new(universe.unwrap_or(ty_id), HMIRImmediate::Type(ty_id));
         self.entries.push(MemoEntry::ready(value));
         self.state_mut(ty_id).realized = Some(ty);
         if universe.is_none() {

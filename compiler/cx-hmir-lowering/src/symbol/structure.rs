@@ -55,25 +55,27 @@ pub(crate) fn select(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> CXRe
             ));
         }
         if let (Some(kind), Some(other)) = (kind, declaration.kind())
-            && discriminant(kind) != discriminant(other) {
-                return Err(incompatible(def, declaration));
-            }
+            && discriminant(kind) != discriminant(other)
+        {
+            return Err(incompatible(def, declaration));
+        }
     }
     let mut definitions = declarations
         .iter()
         .filter(|(_, declaration)| declaration.role() == HMIRDeclarationRole::Definition);
     if let Some((_, _)) = definitions.next()
         && let Some((_, duplicate)) = definitions.next()
-            && (first.tag().is_some() || !is_type(first)) {
-                return Err(hmir_error(
-                    duplicate.span(),
-                    &typecheck::DUPLICATE_ITEM,
-                    (
-                        format!("definition of '{}'", def.name()),
-                        "this unit".into(),
-                    ),
-                ));
-            }
+        && (first.tag().is_some() || !is_type(first))
+    {
+        return Err(hmir_error(
+            duplicate.span(),
+            &typecheck::DUPLICATE_ITEM,
+            (
+                format!("definition of '{}'", def.name()),
+                "this unit".into(),
+            ),
+        ));
+    }
     let selected = declarations
         .iter()
         .filter(|(_, declaration)| declaration.kind().is_some())
@@ -116,19 +118,12 @@ pub(crate) fn select(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> CXRe
 }
 
 pub(crate) fn needs_specialization(function: &HMIRFunction) -> bool {
-    function.signature().params().iter().any(|param| {
-        (param.comptime() && function.signature().stage() == HMIRFunctionStage::Runtime)
-            || matches!(
-                function.body().expr(*param.ty()).kind(),
-                HMIRExprKind::Type(ty) if match ty.kind() {
-                    HMIRExprTypeKind::Staged(_) => true,
-                    HMIRExprTypeKind::Function(signature) => {
-                        signature.stage() == HMIRFunctionStage::Comptime
-                    }
-                    _ => false,
-                }
-            )
-    })
+    function.signature().stage() == HMIRFunctionStage::Runtime
+        || function
+            .signature()
+            .params()
+            .iter()
+            .any(|param| param.comptime())
 }
 
 pub(crate) fn reconcile_linkage(

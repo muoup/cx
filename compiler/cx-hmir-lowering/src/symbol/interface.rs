@@ -28,9 +28,8 @@ use crate::{
         structure::{self, incompatible},
     },
     value::{
-        HMIRReference, HMIRValue,
-        address::HMIRAddress,
-        immediate::{HMIRImmediate, HMIRFunctionRef},
+        HMIRValue,
+        immediate::{HMIRFunctionRef, HMIRImmediate},
     },
 };
 
@@ -95,7 +94,7 @@ pub(crate) fn definition(
                 span.clone(),
                 None,
             ));
-            Ok(HMIRValue::constant(
+            Ok(HMIRValue::new(
                 ty,
                 HMIRImmediate::Function(HMIRFunctionRef::Def(id)),
             ))
@@ -168,7 +167,7 @@ pub(crate) fn definition(
                 ));
             }
             let reference = types::reference(context.env_mut(), ty, None, span);
-            Ok(HMIRValue::constant(
+            Ok(HMIRValue::new(
                 reference,
                 HMIRImmediate::Address(HMIRAddress::place(HMIRReference::Global(id))),
             ))
@@ -293,8 +292,7 @@ pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> C
             } else {
                 ty
             };
-            return zero(&mut child, ty, declaration.span())
-                .map(|value| HMIRValue::constant(ty, value));
+            return zero(&mut child, ty, declaration.span()).map(|value| HMIRValue::new(ty, value));
         }
     };
     let ty = flow::boundary(declared.complete(&mut child, global.body(), Some(value.ty())))?;

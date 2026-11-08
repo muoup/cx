@@ -7,8 +7,7 @@ use crate::{
     env::{
         HMIREnvironment,
         generation::{Generation, Specialization},
-    },
-    symbol,
+    }, lower::types::lower_signature, symbol,
 };
 use cx_hmir::{HMIRDefID, HMIRDefKind, HMIRFunctionStage, HMIRUnit};
 use cx_log::CXResult;
@@ -65,7 +64,8 @@ fn generate(
             {
                 return Ok(());
             }
-            let signature = symbol::signature(env, id, None)?;
+            
+            let signature = lower_signature(env, id, None)?;
             function::lower(env, id, function, &signature, None)
         }
         Some(HMIRDefKind::Global(_)) => global::lower(env, id),

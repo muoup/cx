@@ -111,7 +111,7 @@ pub(crate) fn type_value(
         return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject));
     }
     let universe = types::universe(context.env_mut(), span);
-    Ok(HMIRValue::constant(universe, HMIRImmediate::Type(ty)))
+    Ok(HMIRValue::new(universe, HMIRImmediate::Type(ty)))
 }
 
 pub(crate) fn intrinsic_type(

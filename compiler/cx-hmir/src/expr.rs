@@ -15,7 +15,7 @@ pub mod aggregate;
 pub mod literal;
 pub mod op;
 
-pub type HMIRIntrinsic = Intrinsic<HMIRExprID, HMIRExprID>;
+pub type HMIRExprIntrinsic = Intrinsic<HMIRExprID, HMIRExprID>;
 
 #[derive(Debug, Clone)]
 pub struct HMIRExpr {
@@ -32,20 +32,23 @@ pub struct HMIRExprID {
 #[derive(Debug, Clone)]
 pub enum HMIRExprKind {
     Literal(HMIRLiteral),
+    Hole(HMIRHoleID),
+    Type(Box<HMIRExprType>),
+
     Local(HMIRLocalID),
     Def(HMIRDefID),
     Name {
         name: QualifiedName,
         tag: Option<HIRTagKind>,
     },
-    Hole(HMIRHoleID),
-    Type(Box<HMIRExprType>),
     ScopeAccess {
         base: HMIRExprID,
         member: CXIdent,
     },
 
     Comptime(HMIRExprID),
+
+    // REVIEW: These should be under HMIROp
     Quote {
         params: Vec<HMIRLocalID>,
         body: HMIRExprID,
@@ -55,9 +58,8 @@ pub enum HMIRExprKind {
         args: Vec<HMIRExprID>,
     },
 
-    Intrinsic(HMIRIntrinsic),
+    Intrinsic(HMIRExprIntrinsic),
     Op(HMIROp),
-    Error(CXIdent),
 
     Let {
         local: HMIRLocalID,

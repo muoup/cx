@@ -268,8 +268,7 @@ impl Locals<'_> {
             HMIRExprKind::Literal(_)
             | HMIRExprKind::Def(_)
             | HMIRExprKind::Name { .. }
-            | HMIRExprKind::Hole(_)
-            | HMIRExprKind::Error(_) => {}
+            | HMIRExprKind::Hole(_) => {}
         }
         for child in children {
             self.visit(child);

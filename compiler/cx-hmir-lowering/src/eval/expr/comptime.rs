@@ -98,7 +98,7 @@ pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Op
             let constant = context
                 .load(&address, ty, None, &TokenRange::Internal)
                 .ok()?;
-            HMIRValue::constant(ty, constant)
+            HMIRValue::new(ty, constant)
         }
         _ => return None,
     };

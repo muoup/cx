@@ -6,31 +6,14 @@ use cx_hmir::{
     HMIRBinaryOp,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
-use cx_log::{CXResult, catalogue::mir};
+use cx_log::CXResult;
 use cx_mir::{
-    MIRBindable, MIRConstant, MIRInstructionKind, MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceID,
-    MIRRegister, MIRRegisterDecl, MIRTarget, MIRValue, constant::MIRAddressable,
-    expr::instruction::MIRInvalidationKind,
+    MIRConstant, MIRInstructionKind, MIRInternalIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
-use cx_util::linkage::LinkageMode;
 
 use crate::{
-    env::function::{
-        LocalLoweringContext,
-        runtime::{RuntimeScope, Slot},
-    },
-    eval::types,
-    log::hmir_error,
-    lower::{
-        constructor, global,
-        types::{lower_prototype, lower_type, mir_float, mir_int},
-    },
-    symbol,
-    value::{
-        HMIRValue, HMIRValueKind,
-        immediate::{HMIRFunctionRef, HMIRImmediate},
-    },
+    emit::runtime, env::function::{LocalLoweringContext, runtime::RuntimeScope}, eval::types, lower::types::{lower_type, mir_float, mir_int}, value::{HMIRPlaceID, HMIRRegisterID, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {
@@ -81,20 +64,17 @@ pub fn null_check(
     let bool = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let compare_to = HMIRValue::new(value.ty(), HMIRImmediate::Int(0));
 
-    let comparison = intrinsics::binary(context, HMIRBinaryOp::Neq, &value, &compare_to, bool, span)?;
+    let comparison =
+        intrinsics::binary(context, HMIRBinaryOp::Neq, &value, &compare_to, bool, span)
+            .and_then(|comparison| runtime::value(context, &comparison, span))?;
 
-    context.runtime_mut()
-        .emit(
-            MIRInstructionKind::IntrinsicOp(
-                MIRIntrinsic::Internal(
-                    MIRInternalIntrinsic::Assert { 
-                        condition: comparison, 
-                        message: Some("Attempted to dereference a null pointer".into())
-                    }
-                )
-            ),
-            span.clone()
-        );
+    context.runtime_mut().emit_intrinsic(
+        MIRInternalIntrinsic::Assert {
+            condition: comparison,
+            message: Some("Attempted to dereference a null pointer".into()),
+        },
+        span.clone(),
+    );
 
     Ok(())
 }
@@ -108,37 +88,7 @@ pub fn value(
         HMIRValueKind::Immediate(constant) => {
             MIRValue::Constant(self::constant(context, constant, value.ty(), span)?)
         }
-        HMIRValueKind::Reference(place) => match place {
-            HMIRReference::Local(slot) => match *context.runtime().slot(*slot).binding() {
-                MIRBindable::Register(register) => MIRValue::Register(register),
-                MIRBindable::Place(place) => {
-                    assert!(
-                        context.env().is_reference(value.ty()),
-                        "storage must be captured before it is an operand"
-                    );
-                    MIRValue::Register(produce(context, value.ty(), span, |out| {
-                        MIRInternalIntrinsic::PlaceAddress { out, place }
-                    })?)
-                }
-            },
-
-            HMIRReference::Global(def) => MIRValue::GlobalRef(global::reference(
-                context.env_mut(),
-                *def,
-                0,
-                value.ty(),
-                span,
-            )?),
-
-            HMIRReference::Region(_) => {
-                // REVIEW: Perhaps this should incur a static memory allocation?
-                return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
-            }
-        },
-        HMIRValueKind::Indirect(pointer) => MIRValue::Indirect {
-            value: Box::new(self::value(context, pointer, span)?),
-            ty: lower_type(context.env_mut(), value.ty(), span)?,
-        },
+        _ => todo!(),
     })
 }
 
@@ -159,192 +109,39 @@ pub fn constant(
                 value: *value,
                 ty: mir_float(float.width()),
             },
-            (HMIRImmediate::Null, _) => MIRConstant::Nullptr {
-                ty: lower_type(context.env_mut(), ty, span)?,
-            },
-            (HMIRImmediate::Str(value), _) => MIRConstant::String {
-                value: value.clone(),
-                offset: 0,
-            },
-            (HMIRImmediate::Address(address), _) => match address.base() {
-                Addressable::Place(place) => match place {
-                    HMIRReference::Global(def) => {
-                        let object = symbol::value_type(context.env_mut(), *def, None)?;
-                        let global_id = global::declare(context.env_mut(), *def, object, span)?;
-
-                        MIRConstant::Address {
-                            base: MIRAddressable::Global(global_id),
-                            offset: address.offset(),
-                        }
-                    }
-
-                    HMIRReference::Local(slot) if context.is_runtime() => {
-                        match context.runtime().slot(*slot).binding() {
-                            MIRBindable::Place(place) => MIRConstant::Address {
-                                base: MIRAddressable::Local(*place),
-                                offset: address.offset(),
-                            },
-                            MIRBindable::Register(_) => {
-                                return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ()));
-                            }
-                        }
-                    }
-                    _ => return Err(hmir_error(span, &mir::COMPTIME_VALUE_AT_RUNTIME, ())),
-                },
-                Addressable::Function(function) => {
-                    if address.offset() != 0 {
-                        return Err(hmir_error(
-                            span,
-                            &mir::COMPTIME_INVALID_OPERATION,
-                            "function address offset".into(),
-                        ));
-                    }
-                    let HMIRValueKind::Immediate(function_constant) = function.kind() else {
-                        unreachable!("a function address names a function constant")
-                    };
-                    let MIRConstant::Function(function) =
-                        self::constant(context, function_constant, function.ty(), span)?
-                    else {
-                        unreachable!("a function address lowers from a function")
-                    };
-                    MIRConstant::Address {
-                        base: MIRAddressable::Function(function),
-                        offset: 0,
-                    }
-                }
-                Addressable::Label { function, label } => MIRConstant::BlockAddress {
-                    function: *function,
-                    label: label.to_string(),
-                },
-                Addressable::Literal(value) => MIRConstant::String {
-                    value: value.clone(),
-                    offset: address.offset(),
-                },
-            },
-            (HMIRImmediate::Aggregate(items), kind) => {
-                let mut fields = Vec::new();
-                for (index, item) in items.iter().enumerate() {
-                    let field = match &kind {
-                        HMIRTypeKind::Array { element, .. } => *element,
-                        HMIRTypeKind::Struct { fields } => *fields[index].ty(),
-                        _ => unreachable!("an aggregate constant is an array or structure"),
-                    };
-                    if !item.is_zero() {
-                        fields.push((index, self::constant(context, item, field, span)?));
-                    }
-                }
-                MIRConstant::Aggregate {
-                    ty: lower_type(context.env_mut(), ty, span)?,
-                    fields,
-                }
-            }
-            (
-                HMIRImmediate::Union { member, value }
-                | HMIRImmediate::TaggedUnion {
-                    variant: member,
-                    payload: value,
-                },
-                HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields },
-            ) => MIRConstant::Aggregate {
-                ty: lower_type(context.env_mut(), ty, span)?,
-                fields: vec![(
-                    *member,
-                    self::constant(context, value, *fields[*member].ty(), span)?,
-                )],
-            },
-            (HMIRImmediate::Function(HMIRFunctionRef::Constructor { ty, variant }), _) => {
-                MIRConstant::Function(constructor::declare(
-                    context.env_mut(),
-                    *ty,
-                    *variant,
-                    span,
-                )?)
-            }
-            (HMIRImmediate::Function(HMIRFunctionRef::Def(def)), _) => {
-                let prototype = lower_prototype(context.env_mut(), *def, None, span)?;
-                if def.brand() == context.env().symbols().local_unit().id()
-                    || prototype.linkage == LinkageMode::Static
-                {
-                    context.env_mut().generation_mut().request(*def);
-                }
-                MIRConstant::Function(context.env_mut().module_mut().declare_function(prototype))
-            }
-            (HMIRImmediate::Curried { callee, args }, _) => {
-                let args = args.iter().flatten().cloned().collect::<Vec<_>>();
-                if let HMIRValueKind::Immediate(HMIRImmediate::Function(function)) = callee.kind()
-                    && let Some(function) = context.env().generation().generated(*function, &args)
-                {
-                    MIRConstant::Function(function)
-                } else {
-                    return Err(hmir_error(
-                        span,
-                        &mir::COMPTIME_INVALID_OPERATION,
-                        "lowering an unresolved curried callable to runtime".into(),
-                    ));
-                }
-            }
-            (other, _) => todo!("constant {other:?}"),
+            _ => todo!(),
         },
     )
-}
-
-fn produce(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-    instruction: impl FnOnce(MIRTarget) -> MIRInternalIntrinsic,
-) -> CXResult<MIRRegister> {
-    let out = register(context, ty, span)?;
-    context
-        .runtime_mut()
-        .emit_intrinsic(instruction(MIRTarget::Register(out)), span);
-    Ok(out)
 }
 
 pub(crate) fn register(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,
-) -> CXResult<MIRRegister> {
+) -> CXResult<HMIRRegisterID> {
     let ty = lower_type(context.env_mut(), ty, span)?;
+    let runtime = context.runtime_mut();
 
-    Ok(context
-        .runtime_mut()
+    let mir_register = runtime
         .builder_mut()
-        .allocate_register(MIRRegisterDecl::new(ty, None)))
+        .allocate_register(MIRRegisterDecl::new(ty, None));
+
+    Ok(HMIRRegisterID::new(mir_register.0))
 }
 
-// A fresh register for the result of an operation, which holds it once the operation that writes it is emitted
-pub(crate) fn output(
+pub(crate) fn place(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
-    span: &TokenRange,
-) -> CXResult<(MIRTarget, HMIRValue)> {
-    let register = register(context, ty, span)?;
+    nodrop: bool,
+    adopted: bool,
+    span: &TokenRange
+) -> CXResult<HMIRPlaceID> {
+    let ty = lower_type(context.env_mut(), ty, span)?;
+    let runtime = context.runtime_mut();
 
-    Ok((
-        MIRTarget::Register(register),
-        slot(context, ty, MIRBindable::Register(register)),
-    ))
-}
+    let mir_place = runtime
+        .builder_mut()
+        .allocate_place(MIRPlaceDecl::new(ty, None, nodrop, adopted));
 
-pub fn placeholder(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    Ok(output(context, ty, span)?.1)
-}
-
-// Registers a MIR binding as a fresh evaluation slot; this names storage and never binds a local
-pub fn slot(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    bindable: MIRBindable,
-) -> HMIRValue {
-    let slot = context
-        .runtime_mut()
-        .allocate_slot(Slot::new(bindable, None));
-
-    HMIRValue::place(ty, HMIRReference::Local(slot))
+    Ok(HMIRPlaceID::new(mir_place.0))
 }

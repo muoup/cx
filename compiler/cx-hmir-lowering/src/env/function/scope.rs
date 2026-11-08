@@ -2,7 +2,7 @@ use std::iter;
 
 use cx_hmir::body::HMIRLocalID;
 
-use crate::value::{Bindings, HMIRValue};
+use crate::value::HMIRValue;
 
 #[derive(Debug)]
 struct Scope<C> {

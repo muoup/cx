@@ -2,7 +2,8 @@ use rustc_hash::FxHashMap;
 
 use cx_hmir::body::HMIRBodyID;
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRIntrinsic, MIRScopeID, MIRTarget,
+    MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRIntrinsic, MIRPlaceID,
+    MIRRegister,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -10,14 +11,12 @@ use index_vec::IndexVec;
 
 use crate::{
     env::{function::scope::Scopes, module::MIRFunctionBuilder},
-    value::{HMIRRegisterID, HMIRValue},
+    value::{HMIRPlaceID, HMIRRegisterID, HMIRValue},
 };
 
 mod scope;
-mod slot;
 
 pub(crate) use scope::{Defer, Exit, RuntimeScope};
-pub(crate) use slot::Slot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Emission {
@@ -29,26 +28,19 @@ pub enum Emission {
 #[derive(Debug)]
 pub struct RuntimeContext {
     builder: MIRFunctionBuilder,
-    scopes: Scopes<RuntimeScope>,
-
     emission: Emission,
-    scratch_scope: MIRScopeID,
 
-    slots: IndexVec<HMIRRegisterID, Slot>,
+    scopes: Scopes<RuntimeScope>,
     labels: FxHashMap<String, MIRBasicBlockID>,
 }
 
 impl RuntimeContext {
     pub fn new(prototype: MIRFnPrototype) -> Self {
-        let mut builder = MIRFunctionBuilder::new(prototype);
-        let scratch_scope = builder.add_scope(TokenRange::internal());
-
         Self {
-            builder,
-            slots: IndexVec::new(),
-            scopes: Scopes::default(),
-            scratch_scope,
+            builder: MIRFunctionBuilder::new(prototype),
             emission: Emission::Enabled,
+
+            scopes: Scopes::default(),
             labels: FxHashMap::default(),
         }
     }
@@ -65,68 +57,24 @@ impl RuntimeContext {
         self.emission
     }
 
-    pub fn set_emission(&mut self, emission: Emission) -> Emission {
-        std::mem::replace(&mut self.emission, emission)
+    pub fn set_emission(&mut self, emission: Emission) {
+        self.emission = emission;
     }
 
     pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
-        if self.emission != Emission::Enabled {
-            if self.emission == Emission::Unevaluated {
-                let written = match &kind {
-                    MIRInstructionKind::Store {
-                        target: MIRTarget::Place(place),
-                        ..
-                    }
-                    | MIRInstructionKind::Invalidate { place, .. } => {
-                        Some(MIRBindable::Place(*place))
-                    }
-                    MIRInstructionKind::Store {
-                        target: MIRTarget::Indirect { .. } | MIRTarget::Global(_),
-                        ..
-                    } => {
-                        for slot in &mut self.slots {
-                            slot.set_known(None);
-                        }
-                        None
-                    }
-                    _ => None,
-                };
-                if let Some(written) = written {
-                    for slot in &mut self.slots {
-                        if slot.binding() == &written {
-                            slot.set_known(None);
-                        }
-                    }
-                }
-            }
-            return;
-        }
-
-        let terminator = kind.is_terminator();
-        self.builder.emit(kind, span);
-
-        if terminator {
-            self.set_emission(Emission::Suppressed);
-        }
+        todo!()
     }
 
-    pub fn emit_intrinsic(&mut self, intrinsic: impl Into<MIRIntrinsic>, span: &TokenRange) {
-        self.emit(
-            MIRInstructionKind::IntrinsicOp(intrinsic.into()),
-            span.clone(),
-        )
+    pub fn emit_intrinsic(&mut self, intrinsic: impl Into<MIRIntrinsic>, span: TokenRange) {
+        self.emit(MIRInstructionKind::IntrinsicOp(intrinsic.into()), span)
     }
 
-    pub(crate) fn slot(&self, slot: HMIRRegisterID) -> &Slot {
-        &self.slots[slot]
+    pub(crate) fn register(&self, id: HMIRRegisterID) -> MIRRegister {
+        MIRRegister::new(id.0)
     }
 
-    pub(crate) fn slot_mut(&mut self, slot: HMIRRegisterID) -> &mut Slot {
-        &mut self.slots[slot]
-    }
-
-    pub(crate) fn allocate_slot(&mut self, slot: Slot) -> HMIRRegisterID {
-        self.slots.push(slot)
+    pub(crate) fn place(&self, id: HMIRPlaceID) -> MIRPlaceID {
+        MIRPlaceID::new(id.0)
     }
 
     pub(crate) fn scopes(&self) -> &Scopes<RuntimeScope> {
@@ -135,14 +83,6 @@ impl RuntimeContext {
 
     pub(crate) fn scopes_mut(&mut self) -> &mut Scopes<RuntimeScope> {
         &mut self.scopes
-    }
-
-    pub(crate) fn current_scope(&self) -> MIRScopeID {
-        self.scopes
-            .controls()
-            .rev()
-            .find_map(|(_, scope)| scope.mir())
-            .expect("Place allocated outside of a scope")
     }
 
     pub(crate) fn deferred(&self) -> bool {
@@ -208,10 +148,6 @@ impl RuntimeContext {
         let block = self.builder.add_block(Some(name.clone()));
         self.labels.insert(name.to_string(), block);
         block
-    }
-
-    pub fn scratch_scope(&self) -> MIRScopeID {
-        self.scratch_scope
     }
 
     pub fn finish(self) -> MIRFunction {

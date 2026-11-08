@@ -44,7 +44,6 @@ impl BodyPrinter<'_> {
             HMIRExprKind::ScopeAccess { base, member } => {
                 format!("{}::{member}", self.inline(*base))
             }
-            HMIRExprKind::Error(_) => "<error>".to_string(),
             HMIRExprKind::Comptime(inner) => format!("comptime({})", self.inline(*inner)),
             HMIRExprKind::Piped(value) => format!("piped({})", self.inline(*value)),
             HMIRExprKind::Splice { quote, args } => {

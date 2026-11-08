@@ -134,7 +134,6 @@ pub(crate) fn eval(
             staged::eval_splice(context, body, span, *quote, args)
         }
         HMIRExprKind::Intrinsic(op) => expr::eval_intrinsic(context, body, span, op),
-        HMIRExprKind::Error(_) => todo!("HMIRExprKind::Error"),
     }?;
 
     let partial = result.known().cloned();

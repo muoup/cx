@@ -22,7 +22,7 @@ use self::memory::Memory;
 use crate::{
     env::{HMIREnvironment, symbols::HMIRUnitHandle},
     log::hmir_error,
-    value::{Bindings, HMIRValue},
+    value::HMIRValue,
 };
 
 pub use self::{
@@ -49,7 +49,7 @@ impl EvaluationID {
 #[derive(Debug)]
 pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     env: &'env mut HMIREnvironment<'global, 'hmir>,
-    
+
     source: HMIRUnitID,
     evaluation: EvaluationID,
 
@@ -128,11 +128,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
     pub(crate) fn enter_call(&mut self, span: &TokenRange) -> CXResult<()> {
         const LIMIT: usize = 64;
         if self.call_depth >= LIMIT {
-            return Err(hmir_error(
-                span,
-                &mir::COMPTIME_CALL_DEPTH,
-                LIMIT,
-            ));
+            return Err(hmir_error(span, &mir::COMPTIME_CALL_DEPTH, LIMIT));
         }
         self.call_depth += 1;
         Ok(())
@@ -281,13 +277,17 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
     pub fn into_runtime(self) -> RuntimeContext {
         match self.context {
             FnContext::Runtime(context) => context,
-            FnContext::Comptime(_) => unreachable!("runtime context requested in a comptime context"),
+            FnContext::Comptime(_) => {
+                unreachable!("runtime context requested in a comptime context")
+            }
         }
     }
 
     pub fn into_comptime(self) -> ComptimeContext {
         match self.context {
-            FnContext::Runtime(_) => unreachable!("comptime context requested in a runtime context"),
+            FnContext::Runtime(_) => {
+                unreachable!("comptime context requested in a runtime context")
+            }
             FnContext::Comptime(context) => context,
         }
     }

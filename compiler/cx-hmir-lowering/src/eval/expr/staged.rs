@@ -154,7 +154,7 @@ fn resolve(
     }
     check_params(context, code.get(), &params, span)?;
     let ty = signature(context, params, result, span);
-    let value = HMIRValue::constant(ty, HMIRImmediate::Quote(code));
+    let value = HMIRValue::new(ty, HMIRImmediate::Quote(code));
     match insert {
         true => materialize(context, &value, &[]),
         false => Ok(Evaluation::Ready(value)),
@@ -276,7 +276,7 @@ pub(crate) fn apply(
     captures.extend(source.params().iter().copied().zip(values));
     let applied = Quote::new(source.source(), source.root(), Vec::new(), captures, source.visible_through());
     let ty = signature(context, Vec::new(), result, span);
-    Ok(Evaluation::Ready(HMIRValue::constant(ty, HMIRImmediate::Quote(QuoteRef::new(applied)))))
+    Ok(Evaluation::Ready(HMIRValue::new(ty, HMIRImmediate::Quote(QuoteRef::new(applied)))))
 }
 
 pub(crate) fn materialize(

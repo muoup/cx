@@ -2,12 +2,15 @@ pub mod immediate;
 pub mod staged;
 
 use cx_hmir::ty::HMIRTypeID;
+use cx_intrinsics::Intrinsic;
 use cx_util::dense_id;
 
 use crate::value::immediate::HMIRImmediate;
 
 dense_id!(HMIRRegisterID, "$");
 dense_id!(HMIRPlaceID, "p");
+
+pub type HMIRValIntrinsic = Intrinsic<HMIRValue, HMIRTypeID>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HMIRValue {
@@ -34,6 +37,10 @@ pub enum HMIRValueKind {
 impl HMIRValue {
     pub fn new(ty: HMIRTypeID, kind: impl Into<HMIRValueKind>) -> Self {
         Self { ty, kind: kind.into() }
+    }
+
+    pub fn unit() -> Self {
+        Self::new(HMIRTypeID::new(0), HMIRImmediate::Unit)
     }
 
     pub fn with_ty(mut self, ty: HMIRTypeID) -> Self {

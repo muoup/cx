@@ -192,7 +192,7 @@ fn step(
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_))
             if matches!(value.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(0))) =>
         {
-            Coercion::Applied(HMIRValue::constant(target, HMIRImmediate::Null))
+            Coercion::Applied(HMIRValue::new(target, HMIRImmediate::Null))
         }
         (
             HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_),
@@ -272,7 +272,7 @@ fn string(
         None => types::array(context.env_mut(), target, bound, span),
         Some(_) => target,
     };
-    Ok(Coercion::Applied(HMIRValue::constant(
+    Ok(Coercion::Applied(HMIRValue::new(
         ty,
         HMIRImmediate::Aggregate(items),
     )))

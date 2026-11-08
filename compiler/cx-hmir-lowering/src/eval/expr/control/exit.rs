@@ -192,7 +192,7 @@ pub(crate) fn fallthrough(
     match context.env().resolve_kind(ty) {
         HMIRTypeKind::Void => return_value(context, body, None, false, span),
         HMIRTypeKind::Int(_) if is_main => {
-            let zero = HMIRValue::constant(ty, HMIRImmediate::Int(0));
+            let zero = HMIRValue::new(ty, HMIRImmediate::Int(0));
             return_value(context, body, Some(Evaluation::Ready(zero)), false, span)
         }
         kind if !matches!(kind, HMIRTypeKind::Unreachable)

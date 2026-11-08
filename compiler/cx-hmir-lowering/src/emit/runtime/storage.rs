@@ -5,60 +5,16 @@ use cx_hmir::ty::{
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRConstant, MIRInstructionKind,
-    MIRInternalIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRPtrIntrinsic, MIRStoreBitfield,
-    MIRTarget, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
+    MIRInternalIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRPtrIntrinsic, MIRStoreBitfield, MIRTarget,
+    MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{output, register, slot};
+use super::register;
 use crate::{
-    env::function::LocalLoweringContext,
-    eval::types,
-    lower::{global, types::lower_type},
-    value::{
-        HMIRRegisterID, HMIRValue, HMIRValueKind,
-        immediate::HMIRImmediate,
-    },
+    emit::runtime, env::function::LocalLoweringContext, eval::types, lower::{global, types::lower_type}, value::{HMIRRegisterID, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
-
-fn allocate_place(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    name: Option<CXIdent>,
-    scope: MIRScopeID,
-    nodrop: bool,
-    adopted: bool,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let mir_ty = lower_type(context.env_mut(), ty, span)?;
-    let place = context
-        .runtime_mut()
-        .builder_mut()
-        .allocate_place(MIRPlaceDecl::new(mir_ty, name, nodrop, adopted));
-
-    Ok(slot(context, ty, MIRBindable::Place(place)))
-}
-
-fn place(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRPlaceID> {
-    let place = match value.kind() {
-        HMIRValueKind::Reference(place) => *place,
-        HMIRValueKind::Immediate(HMIRImmediate::Address(address))
-            if context.env().is_reference(value.ty()) =>
-        {
-            address.whole_place()?
-        }
-        _ => return None,
-    };
-    let HMIRReference::Local(slot) = place else {
-        return None;
-    };
-
-    match context.runtime().slot(slot).binding() {
-        MIRBindable::Place(place) => Some(*place),
-        MIRBindable::Register(_) => None,
-    }
-}
 
 // Where the storage of a value can be written: for a reference, the storage it designates, otherwise the value's
 // own place or the storage behind its pointer; a register has no address
@@ -106,6 +62,7 @@ pub(crate) fn read(
         .reference_inner(value.ty())
         .expect("a load reads through a reference");
     let ty = lower_type(context.env_mut(), inner, span)?;
+    
     Ok(match target(context, value, span)? {
         MIRTarget::Place(place) => MIRValue::PlaceRef { place, ty },
         MIRTarget::Global(global) => MIRValue::GlobalRef(global),
@@ -167,10 +124,9 @@ pub fn adopt(
         unreachable!("an adopting place is declared")
     };
 
-    context.runtime_mut().emit_intrinsic(
-        MIRInternalIntrinsic::AdoptPlace { place, address },
-        span,
-    );
+    context
+        .runtime_mut()
+        .emit_intrinsic(MIRInternalIntrinsic::AdoptPlace { place, address }, span.clone());
     initialize(context, &target, span);
 
     Ok(target)
@@ -223,20 +179,22 @@ pub fn lift(
         unreachable!("a lift reads through a reference")
     };
 
-    let origin = context.runtime().slot(origin).binding().clone();
+    let origin = context.runtime().register(origin);
     let source = target(context, source, span)?;
-    let out = register(context, inner, span)?;
 
+    let mir_out = runtime::register(context, inner, span)?;
+    let hmir_out = context.runtime().
+    
     context.runtime_mut().emit(
         MIRInstructionKind::Lift {
-            out,
+            out: mir_out,
             source,
-            origin,
+            origin: MIRBindable::Register(origin),
         },
         span.clone(),
     );
 
-    Ok(slot(context, inner, MIRBindable::Register(out)))
+    Ok(mir_out)
 }
 
 pub fn materialize(
@@ -349,17 +307,14 @@ pub fn address(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let place = |place| {
-        Ok(HMIRValue::constant(
+        Ok(HMIRValue::new(
             ty,
             HMIRImmediate::Address(HMIRAddress::place(place)),
         ))
     };
     let reference = match value.kind() {
         HMIRValueKind::Immediate(HMIRImmediate::Address(address)) => {
-            return Ok(HMIRValue::constant(
-                ty,
-                HMIRImmediate::Address(address.clone()),
-            ));
+            return Ok(HMIRValue::new(ty, HMIRImmediate::Address(address.clone())));
         }
         HMIRValueKind::Reference(local @ HMIRReference::Local(slot)) => {
             match context.runtime().slot(*slot).binding() {

@@ -21,7 +21,6 @@ pub enum HMIRImmediate {
     },
 
     Quote(QuoteRef),
-    Function(HMIRFunctionRef),
     Curried {
         callee: Box<HMIRValue>,
         args: Vec<Option<HMIRValue>>,
@@ -58,7 +57,7 @@ impl HMIRAddress {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Addressable {
-    Function(Box<HMIRValue>),
+    Function(HMIRFunctionRef),
     Label {
         function: MIRFunctionID,
         label: CXIdent,

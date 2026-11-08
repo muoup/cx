@@ -158,7 +158,7 @@ fn shadow(
             captures,
             quote.visible_through(),
         );
-        return Ok(HMIRValue::constant(
+        return Ok(HMIRValue::new(
             value.ty(),
             HMIRImmediate::Quote(QuoteRef::new(code)),
         ));

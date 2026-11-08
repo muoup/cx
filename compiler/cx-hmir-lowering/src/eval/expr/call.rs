@@ -235,7 +235,7 @@ fn operand(
         let ty = types::reference(context.env_mut(), callee.ty(), None, span);
         let callee = context.env_mut().canonical_value(callee);
         let address = HMIRAddress::new(Addressable::Function(Box::new(callee)), 0);
-        return Ok(HMIRValue::constant(ty, HMIRImmediate::Address(address)));
+        return Ok(HMIRValue::new(ty, HMIRImmediate::Address(address)));
     }
     let pointer = coerce::promotion::std_rvalue(context, callee, span)?;
     match context.env().pointer_inner(pointer.ty()) {

@@ -2,7 +2,7 @@ use cx_intrinsics::IntrinsicArg;
 use cx_util::identifier::CXIdent;
 
 use crate::expr::{
-    HMIRExprID, HMIRIntrinsic,
+    HMIRExprID, HMIRExprIntrinsic,
     aggregate::HMIRAggregateOp,
     op::{HMIRControlOp, HMIRMemberStep, HMIROp, HMIROwnershipOp, HMIRTypeOp, HMIRUnaryOp},
 };
@@ -139,7 +139,7 @@ impl BodyPrinter<'_> {
         (op.path().to_string(), args)
     }
 
-    pub(super) fn intrinsic_args(&self, intrinsic: &HMIRIntrinsic) -> Vec<Arg> {
+    pub(super) fn intrinsic_args(&self, intrinsic: &HMIRExprIntrinsic) -> Vec<Arg> {
         intrinsic
             .args()
             .into_iter()

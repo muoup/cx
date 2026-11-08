@@ -21,8 +21,7 @@ impl Emitter<'_> {
             | HMIRExprKind::Name { .. }
             | HMIRExprKind::Hole(_)
             | HMIRExprKind::Type(_)
-            | HMIRExprKind::ScopeAccess { .. }
-            | HMIRExprKind::Error(_) => printer.inline(id),
+            | HMIRExprKind::ScopeAccess { .. } => printer.inline(id),
 
             HMIRExprKind::Comptime(inner) => {
                 let inner = self.comptime_scope(true, |emitter| emitter.atom(*inner));

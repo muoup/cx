@@ -1,5 +1,5 @@
 use cx_hmir::{HMIRUnitID, body::HMIRBodyID, expr::HMIRExprID, unit::def::HMIRDeclarationPoint};
-use cx_mir::{MIRBasicBlockID, MIRScopeID};
+use cx_mir::MIRBasicBlockID;
 
 use crate::{env::function::Expectations, value::HMIRValue};
 

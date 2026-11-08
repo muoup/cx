@@ -12,7 +12,7 @@ pub(crate) mod types;
 
 use cx_hmir::{
     HMIRBodyContext,
-    expr::{HMIRExprID, HMIRIntrinsic, literal::HMIRLiteral},
+    expr::{HMIRExprID, HMIRExprIntrinsic, literal::HMIRLiteral},
     ty::{HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
@@ -37,33 +37,30 @@ pub(crate) fn eval_literal(
         HMIRLiteral::Unit => unit(context, span),
         HMIRLiteral::Str(value) => {
             let ty = types::realize(context.env_mut(), HMIRTypeKind::Str, span);
-            HMIRValue::constant(ty, HMIRImmediate::Str(value.clone()))
+            HMIRValue::new(ty, HMIRImmediate::Str(value.clone()))
         }
         HMIRLiteral::Int { value, ty } => {
             let ty = types::int(context.env_mut(), ty.width(), ty.signed(), span);
-            HMIRValue::constant(ty, HMIRImmediate::Int(*value))
+            HMIRValue::new(ty, HMIRImmediate::Int(*value))
         }
         HMIRLiteral::Float { value, ty } => {
             let ty = types::realize(context.env_mut(), HMIRTypeKind::Float(*ty), span);
-            HMIRValue::constant(ty, HMIRImmediate::Float(*value))
+            HMIRValue::new(ty, HMIRImmediate::Float(*value))
         }
     }
 }
 
 pub(crate) fn unit(context: &mut LocalLoweringContext, span: &TokenRange) -> HMIRValue {
     let ty = types::realize(context.env_mut(), HMIRTypeKind::Void, span);
-    HMIRValue::constant(ty, HMIRImmediate::Unit)
+    HMIRValue::new(ty, HMIRImmediate::Unit)
 }
 
 pub(crate) fn eval_intrinsic(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
-    intrinsic: &HMIRIntrinsic,
+    intrinsic: &VAIntrinsic<HMIRExprID, HMIRExprID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let Intrinsic::VA(intrinsic) = intrinsic else {
-        unreachable!("only variadic intrinsics are lowered to HMIR")
-    };
     let intrinsic = match intrinsic {
         VAIntrinsic::Start { list, last } => {
             let list = (va_list(context, body, *list))?.ready()?;

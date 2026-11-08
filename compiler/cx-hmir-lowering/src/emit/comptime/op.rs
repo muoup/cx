@@ -168,18 +168,18 @@ pub fn cast(
         ((HMIRTypeKind::Int(from), HMIRTypeKind::PointerTo(_)), HMIRImmediate::Int(value))
             if int::normalize(value, *from) == 0 =>
         {
-            Ok(HMIRValue::constant(target, HMIRImmediate::Null))
+            Ok(HMIRValue::new(target, HMIRImmediate::Null))
         }
         ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)), HMIRImmediate::Null) => {
             Ok(integer(context, 0, target))
         }
         ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)), HMIRImmediate::Null) => {
-            Ok(HMIRValue::constant(target, HMIRImmediate::Null))
+            Ok(HMIRValue::new(target, HMIRImmediate::Null))
         }
         (
             (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)),
             address @ HMIRImmediate::Address(_),
-        ) => Ok(HMIRValue::constant(target, address)),
+        ) => Ok(HMIRValue::new(target, address)),
 
         _ => unsupported(span, "this conversion".into()),
     }
@@ -231,7 +231,7 @@ pub fn offset(
         _ => return unsupported(span, "arithmetic on this address".into()),
     };
 
-    Ok(HMIRValue::constant(pointer.ty(), constant))
+    Ok(HMIRValue::new(pointer.ty(), constant))
 }
 
 pub fn difference(

@@ -45,7 +45,7 @@ pub(crate) fn eval_type_op(
             }
             _ => unreachable!("only layout queries are evaluated here"),
         };
-        Ok(Evaluation::Ready(HMIRValue::constant(
+        Ok(Evaluation::Ready(HMIRValue::new(
             size_type,
             HMIRImmediate::Int(value),
         )))

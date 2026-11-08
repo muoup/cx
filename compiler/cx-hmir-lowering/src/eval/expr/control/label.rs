@@ -98,7 +98,7 @@ pub(super) fn eval_label_address(
         function,
         label: name.clone(),
     };
-    Ok(Evaluation::Ready(HMIRValue::constant(
+    Ok(Evaluation::Ready(HMIRValue::new(
         ty,
         HMIRImmediate::Address(HMIRAddress::new(label, 0)),
     )))

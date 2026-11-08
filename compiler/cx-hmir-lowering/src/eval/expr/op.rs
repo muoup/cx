@@ -273,17 +273,17 @@ fn increment(
     let current = coerce::promotion::std_rvalue(context, target.clone(), span)?;
     let updated = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Int(_) => {
-            let one = HMIRValue::constant(ty, HMIRImmediate::Int(1));
+            let one = HMIRValue::new(ty, HMIRImmediate::Int(1));
             emit::binary(context, op, &current, &one, ty, span)?
         }
         HMIRTypeKind::Float(_) => {
-            let one = HMIRValue::constant(ty, HMIRImmediate::Float(FloatWrapper::from(1.0)));
+            let one = HMIRValue::new(ty, HMIRImmediate::Float(FloatWrapper::from(1.0)));
             emit::binary(context, op, &current, &one, ty, span)?
         }
         HMIRTypeKind::PointerTo(element) => {
             let element = *element;
             let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
-            let one = HMIRValue::constant(offset_ty, HMIRImmediate::Int(1));
+            let one = HMIRValue::new(offset_ty, HMIRImmediate::Int(1));
             emit::offset(
                 context,
                 &current,

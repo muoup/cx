@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use cx_mir::{
     MIRBasicBlock, MIRBasicBlockID, MIRBody, MIRFnPrototype, MIRFunction, MIRFunctionID,
     MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRInstruction, MIRInstructionKind,
-    MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRScopeDecl, MIRType, MIRTypeID,
-    MIRTypeKind, MIRTypeMetadata, MIRUnit,
+    MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRType, MIRTypeID, MIRTypeKind,
+    MIRTypeMetadata, MIRUnit,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
 use cx_mir::{MIRConstant, MIRValue, expr::visit::successors};

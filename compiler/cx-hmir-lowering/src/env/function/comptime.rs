@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 use cx_hmir::{expr::HMIRExprID, ty::HMIRTypeID};
 use cx_util::identifier::CXIdent;
 
-use crate::{env::function::scope::Scopes, value::HMIRRegionID};
+use crate::env::function::scope::Scopes;
 
 #[derive(Debug, Default)]
 pub struct ComptimeContext {
@@ -63,7 +63,10 @@ impl ComptimeContext {
     }
 
     pub(crate) fn switch(&self) -> Option<Switch> {
-        self.scopes.controls().rev().find_map(|(_, scope)| scope.switch)
+        self.scopes
+            .controls()
+            .rev()
+            .find_map(|(_, scope)| scope.switch)
     }
 
     pub(crate) fn selected_case(&self) -> Option<HMIRExprID> {

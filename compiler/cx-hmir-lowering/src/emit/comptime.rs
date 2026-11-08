@@ -70,7 +70,7 @@ pub fn allocate(
     let region = context.allocate(ty, span)?;
     context.comptime_mut().declare_slot(region, ty, name);
 
-    Ok(HMIRValue::place(ty, HMIRReference::Region(region)))
+    Ok(HMIRValue::new(ty, HMIRReference::Region(region)))
 }
 
 pub fn aggregate(
@@ -98,7 +98,7 @@ pub fn aggregate(
         }
     }
 
-    Ok(HMIRValue::constant(ty, constant))
+    Ok(HMIRValue::new(ty, constant))
 }
 
 fn storage(
@@ -221,7 +221,7 @@ pub fn copy(
         unreachable!("a comptime copy reads from a reference")
     };
 
-    Ok(HMIRValue::constant(inner, read(context, &value, span)?))
+    Ok(HMIRValue::new(inner, read(context, &value, span)?))
 }
 
 pub fn write(
@@ -304,7 +304,7 @@ pub fn tag(
         unreachable!("a tagged union constant names its variant")
     };
 
-    Ok(HMIRValue::constant(ty, HMIRImmediate::Int(variant as i128)))
+    Ok(HMIRValue::new(ty, HMIRImmediate::Int(variant as i128)))
 }
 
 pub fn address(
@@ -317,7 +317,7 @@ pub fn address(
         unreachable!("only storage has an address")
     };
 
-    Ok(HMIRValue::constant(ty, HMIRImmediate::Address(address)))
+    Ok(HMIRValue::new(ty, HMIRImmediate::Address(address)))
 }
 
 pub fn dereference(
@@ -337,7 +337,7 @@ pub fn dereference(
 
     Ok(HMIRValue::indirect(
         inner,
-        HMIRValue::constant(pointer.ty(), HMIRImmediate::Address(address)),
+        HMIRValue::new(pointer.ty(), HMIRImmediate::Address(address)),
     ))
 }
 
@@ -352,7 +352,7 @@ pub fn field(
     let (address, owner) = match (storage(context, base, span)?, base.kind()) {
         (Some(storage), _) => storage,
         (None, HMIRValueKind::Immediate(HMIRImmediate::Aggregate(items))) => {
-            return Ok(HMIRValue::constant(ty, items[index].clone()));
+            return Ok(HMIRValue::new(ty, items[index].clone()));
         }
         (
             None,
@@ -364,7 +364,7 @@ pub fn field(
                 },
             ),
         ) if *member == index => {
-            return Ok(HMIRValue::constant(ty, value.as_ref().clone()));
+            return Ok(HMIRValue::new(ty, value.as_ref().clone()));
         }
         (None, _) => {
             let temporary = allocate(context, base.ty(), None, span)?;
@@ -386,7 +386,7 @@ pub fn field(
         return Err(hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ()));
     };
     let reference = types::reference(context.env_mut(), ty, bitfield, span);
-    let pointer = HMIRValue::constant(reference, HMIRImmediate::Address(address));
+    let pointer = HMIRValue::new(reference, HMIRImmediate::Address(address));
 
     // A bitfield only covers part of its storage unit, so it never names a whole place
     Ok(match bitfield {
