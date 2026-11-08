@@ -8,18 +8,17 @@ pub use storage::{
 
 use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{HMIRTypeID, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
 use cx_intrinsics::VAIntrinsic;
-use cx_log::{CXResult, catalogue::typecheck};
+use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
     env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope, memory::placement},
     eval::types,
-    log::hmir_error,
     lower::expr,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::HMIRValue,
 };
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {
@@ -45,9 +44,12 @@ pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
 pub fn null_check(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
-    span: &TokenRange
-) -> CXResult<HMIRValue> {
-    todo!()
+    span: &TokenRange,
+) -> CXResult<()> {
+    match context.context_mut() {
+        FnContext::Runtime(_) => runtime::null_check(context, value, span),
+        FnContext::Comptime(_) => comptime::null_check(context, value, span)
+    }
 }
 
 pub fn field(

@@ -7,7 +7,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
 
-use super::{intrinsic, register};
+use super::register;
 use crate::{
     env::function::LocalLoweringContext,
     log::hmir_error,

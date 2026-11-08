@@ -9,12 +9,8 @@ use cx_mir::{
 };
 use cx_tokens::TokenRange;
 
-use super::{intrinsic, output, register, storage::read, value};
 use crate::{
-    env::function::LocalLoweringContext,
-    eval::types,
-    lower::types::{lower_type, mir_float, mir_int},
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    env::function::LocalLoweringContext, eval::types, lower::{expr::value, types::{lower_type, mir_float, mir_int}}, value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
@@ -258,7 +254,7 @@ pub fn binary(
             unreachable!("'{}' does not apply to these {lhs} and {rhs}", op.path())
         }
     };
-    intrinsic(context, instruction, span);
+    context.runtime_mut().emit_intrinsic(instruction, span);
 
     Ok(result)
 }

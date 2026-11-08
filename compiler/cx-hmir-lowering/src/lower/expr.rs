@@ -7,20 +7,16 @@ use cx_intrinsics::VAIntrinsic;
 use cx_log::CXResult;
 use cx_mir::{
     MIRBasicBlockID, MIRBindable, MIRBlockTarget, MIRInstructionKind, MIRInternalIntrinsic,
-    MIRIntrinsic, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRTarget, MIRVAIntrinsic, MIRValue,
-    expr::instruction::MIRInvalidationKind,
+    MIRRegister, MIRRegisterDecl, MIRTarget, MIRVAIntrinsic, MIRValue,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use self::storage::slot;
 use crate::{
-    env::function::{
-        LocalLoweringContext,
-        runtime::{Emission, RuntimeScope},
-    },
+    env::function::{LocalLoweringContext, runtime::Emission},
     lower::types::lower_type,
-    value::{Bindings, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub fn function_address(
@@ -40,7 +36,9 @@ pub fn function_address(
     };
 
     let (out, result) = output(context, ty, span)?;
-    intrinsic(context, MIRInternalIntrinsic::GetFnPtr { out, fn_id }, span);
+    context
+        .runtime_mut()
+        .emit_intrinsic(MIRInternalIntrinsic::GetFnPtr { out, fn_id }, span);
     Ok(result)
 }
 
@@ -83,18 +81,8 @@ pub fn branch(
         true_target: MIRBlockTarget::new(true_target),
         false_target: MIRBlockTarget::new(false_target),
     };
-    context.runtime_mut().emit(branch, span.clone())
-}
 
-fn intrinsic(
-    context: &mut LocalLoweringContext,
-    intrinsic: impl Into<MIRIntrinsic>,
-    span: &TokenRange,
-) {
-    context.runtime_mut().emit(
-        MIRInstructionKind::IntrinsicOp(intrinsic.into()),
-        span.clone(),
-    )
+    context.runtime_mut().emit(branch, span.clone())
 }
 
 pub fn assert(

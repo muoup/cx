@@ -9,7 +9,6 @@ use cx_mir::{MIRInstructionKind, MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceID,
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
     env::function::{LocalLoweringContext, runtime::RuntimeScope},
     eval::types,
     value::{HMIRValue, immediate::HMIRImmediate},

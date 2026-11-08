@@ -2,12 +2,13 @@ pub mod float;
 pub mod int;
 pub mod op;
 
+use std::borrow::Cow;
+
 pub use op::{binary, cast, difference, offset, unary};
 
 use cx_hmir::ty::{HMIRTypeID, aggregate::HMIRBitfield, context::HMIRTypeContext};
 use cx_log::{
-    CXResult,
-    catalogue::{analysis, mir},
+    CXResult, catalogue::{analysis, mir, typecheck},
 };
 use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
@@ -30,22 +31,33 @@ pub enum ScalarFault {
     Undefined,
 }
 
+pub(crate) fn immediate<'value>(
+    context: &mut LocalLoweringContext,
+    value: &'value HMIRValue,
+    span: &TokenRange,
+) -> CXResult<Cow<'value, HMIRImmediate>> {
+    match value.kind() {
+        HMIRValueKind::Immediate(imm) => Ok(Cow::Borrowed(imm)),
+
+        _ => todo!("loading immediates from comptime memory")
+    }
+}
+
 pub fn null_check(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
-    span: &TokenRange
+    span: &TokenRange,
 ) -> CXResult<()> {
-    let immediate : HMIRValueKind = todo!();
+    let immediate = immediate(context, value, span)?;
 
-    match immediate {
-        HMIRValueKind::Immediate(HMIRImmediate::Int(0)) |
-        HMIRValueKind::Immediate(HMIRImmediate::Unit) => {
-            Err(
-                hmir_error(span, &typecheck::COMPTIME_INTERPRETATION, "attempted to dereference a null pointer")
-            )
-        },
+    match immediate.as_ref() {
+        HMIRImmediate::Int(0) | HMIRImmediate::Unit => Err(hmir_error(
+            span,
+            &typecheck::COMPTIME_INTERPRETATION,
+            "attempted to dereference a null pointer".into(),
+        )),
 
-        _ => Ok(())
+        _ => Ok(()),
     }
 }
 

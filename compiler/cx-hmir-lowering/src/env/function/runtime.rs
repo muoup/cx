@@ -2,8 +2,7 @@ use rustc_hash::FxHashMap;
 
 use cx_hmir::body::HMIRBodyID;
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRScopeID,
-    MIRTarget,
+    MIRBasicBlockID, MIRBindable, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRIntrinsic, MIRScopeID, MIRTarget,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -109,6 +108,13 @@ impl RuntimeContext {
         if terminator {
             self.set_emission(Emission::Suppressed);
         }
+    }
+
+    pub fn emit_intrinsic(&mut self, intrinsic: impl Into<MIRIntrinsic>, span: &TokenRange) {
+        self.emit(
+            MIRInstructionKind::IntrinsicOp(intrinsic.into()),
+            span.clone(),
+        )
     }
 
     pub(crate) fn slot(&self, slot: HMIRRegisterID) -> &Slot {
