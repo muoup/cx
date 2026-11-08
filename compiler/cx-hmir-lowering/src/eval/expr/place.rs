@@ -337,5 +337,8 @@ pub(crate) fn dereference_hmir(
     };
 
     require_nonsafe(context, span, "dereferencing a pointer")?;
-    emit::dereference(context, pointer, inner, base, span)
+    emit::null_check(context, base.unwrap_or(&pointer), span);
+    
+    let ref_ty = types::reference(context.env_mut(), inner, None, span);
+    Ok(pointer.with_ty(ref_ty))
 }
