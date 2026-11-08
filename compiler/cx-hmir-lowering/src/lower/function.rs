@@ -3,7 +3,7 @@ use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit,
+    emit::{self, runtime},
     env::{
         HMIREnvironment,
         function::{FnContext, LocalLoweringContext, RuntimeContext},
@@ -14,7 +14,7 @@ use crate::{
         call::{self, contract},
         flow, types,
     },
-    lower::{expr, types::lower_prototype},
+    lower::types::lower_prototype,
     value::HMIRValue,
 };
 
@@ -87,7 +87,7 @@ fn definition(
             None => {
                 let decl = body.local(*local);
                 let reference = types::reference(context.env_mut(), *param.ty(), None, decl.span());
-                expr::storage::parameter(context, *param.ty(), decl.name().cloned(), decl.span())?
+                runtime::storage::parameter(context, *param.ty(), decl.name().cloned(), decl.span())?
                     .with_ty(reference)
             }
         };

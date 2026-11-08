@@ -25,7 +25,7 @@ use crate::{
         staged, types,
     },
     log::hmir_error,
-    lower, symbol,
+    symbol,
     value::{
         HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
@@ -196,7 +196,7 @@ fn finish(
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     if context.is_unevaluated() {
-        return Ok(Evaluation::Ready(lower::expr::placeholder(
+        return Ok(Evaluation::Ready(emit::runtime::placeholder(
             context,
             return_type,
             span,

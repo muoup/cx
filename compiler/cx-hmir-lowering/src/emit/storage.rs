@@ -4,10 +4,9 @@ use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{comptime, unsupported};
+use super::{comptime, runtime, unsupported};
 use crate::{
     env::function::{FnContext, LocalLoweringContext},
-    lower::expr,
     value::{HMIRReference, HMIRValue},
 };
 
@@ -20,7 +19,7 @@ pub fn allocate(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::storage::allocate(context, ty, name, span),
+        FnContext::Runtime(_) => runtime::storage::allocate(context, ty, name, span),
         FnContext::Comptime(_) => comptime::allocate(context, ty, name, span),
     }
 }
@@ -33,7 +32,7 @@ pub fn scratch(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::storage::scratch(context, ty, span),
+        FnContext::Runtime(_) => runtime::storage::scratch(context, ty, span),
         FnContext::Comptime(_) => comptime::allocate(context, ty, None, span),
     }
 }
@@ -48,7 +47,7 @@ pub fn adopt(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::storage::adopt(context, ty, name, source, span),
+        FnContext::Runtime(_) => runtime::storage::adopt(context, ty, name, source, span),
         FnContext::Comptime(_) => unsupported(span, "'@adopt'"),
     }
 }
@@ -69,7 +68,7 @@ pub fn copy(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::storage::load(context, value, span),
+        FnContext::Runtime(_) => runtime::storage::load(context, value, span),
         FnContext::Comptime(_) => comptime::copy(context, value, span),
     }
 }
@@ -88,7 +87,7 @@ pub fn lift(
                 unreachable!("lifting a non-local in runtime")
             };
 
-            expr::storage::lift(context, source, local, span)
+            runtime::storage::lift(context, source, local, span)
         },
         FnContext::Comptime(_) => comptime::copy(context, source.clone(), span),
     }
@@ -101,7 +100,7 @@ pub fn materialize(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::storage::materialize(context, &value, span),
+        FnContext::Runtime(_) => runtime::storage::materialize(context, &value, span),
         FnContext::Comptime(_) => Ok(value),
     }
 }
@@ -115,7 +114,7 @@ pub fn write(
     span: &TokenRange,
 ) -> CXResult<()> {
     match context.context() {
-        FnContext::Runtime(_) => expr::storage::write(context, target, value, span),
+        FnContext::Runtime(_) => runtime::storage::write(context, target, value, span),
         FnContext::Comptime(_) => comptime::write(context, target, value, span),
     }
 }
@@ -133,7 +132,7 @@ pub fn initialize(
         write(context, target, value, span)?;
     }
     match context.context() {
-        FnContext::Runtime(_) => expr::storage::initialize(context, target, span),
+        FnContext::Runtime(_) => runtime::storage::initialize(context, target, span),
         FnContext::Comptime(_) => comptime::initialize(context, target, span),
     }
     Ok(())
@@ -161,7 +160,7 @@ pub fn invalidate(
     span: &TokenRange,
 ) {
     match context.context() {
-        FnContext::Runtime(_) => expr::storage::invalidate(context, value, kind, span),
+        FnContext::Runtime(_) => runtime::storage::invalidate(context, value, kind, span),
         FnContext::Comptime(_) => comptime::invalidate(context, value, kind, span),
     }
 }

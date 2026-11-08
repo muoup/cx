@@ -5,20 +5,19 @@ use cx_hmir::ty::{
 use cx_log::CXResult;
 use cx_mir::{
     MIRAggregateIntrinsic, MIRBindable, MIRBitfieldAccess, MIRConstant, MIRInstructionKind,
-    MIRInternalIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRPtrIntrinsic, MIRScopeID, MIRStoreBitfield,
+    MIRInternalIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRPtrIntrinsic, MIRStoreBitfield,
     MIRTarget, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{intrinsic, output, register, value};
+use super::{output, register, slot};
 use crate::{
-    env::function::{LocalLoweringContext, runtime::Slot},
+    env::function::LocalLoweringContext,
     eval::types,
     lower::{global, types::lower_type},
     value::{
-        HMIRReference, HMIRRegisterID, HMIRValue, HMIRValueKind,
-        address::{Addressable, HMIRAddress},
+        HMIRRegisterID, HMIRValue, HMIRValueKind,
         immediate::HMIRImmediate,
     },
 };
@@ -36,22 +35,9 @@ fn allocate_place(
     let place = context
         .runtime_mut()
         .builder_mut()
-        .allocate_place(MIRPlaceDecl::new(mir_ty, name, scope, nodrop, adopted));
+        .allocate_place(MIRPlaceDecl::new(mir_ty, name, nodrop, adopted));
 
     Ok(slot(context, ty, MIRBindable::Place(place)))
-}
-
-// Registers a MIR binding as a fresh evaluation slot; this names storage and never binds a local
-pub fn slot(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    bindable: MIRBindable,
-) -> HMIRValue {
-    let slot = context
-        .runtime_mut()
-        .allocate_slot(Slot::new(bindable, None));
-
-    HMIRValue::place(ty, HMIRReference::Local(slot))
 }
 
 fn place(context: &LocalLoweringContext, value: &HMIRValue) -> Option<MIRPlaceID> {
@@ -98,11 +84,11 @@ fn target(
             MIRTarget::Global(global)
         }
         _ if is_reference => MIRTarget::Indirect {
-            value: value::standard(context, value, span)?,
+            value: super::value(context, value, span)?,
             ty: lower_type(context.env_mut(), ty, span)?,
         },
         HMIRValueKind::Indirect(pointer) => MIRTarget::Indirect {
-            value: value::standard(context, pointer, span)?,
+            value: super::value(context, pointer, span)?,
             ty: lower_type(context.env_mut(), ty, span)?,
         },
 
@@ -110,7 +96,7 @@ fn target(
     })
 }
 
-pub(super) fn read(
+pub(crate) fn read(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,
     span: &TokenRange,
@@ -173,7 +159,7 @@ pub fn adopt(
     source: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let address = value::standard(context, source, span)?;
+    let address = super::value(context, source, span)?;
     let nodrop = context.env().is_nodrop(ty);
     let scope = context.runtime().current_scope();
     let target = allocate_place(context, ty, name, scope, nodrop, true, span)?;
@@ -181,8 +167,7 @@ pub fn adopt(
         unreachable!("an adopting place is declared")
     };
 
-    intrinsic(
-        context,
+    context.runtime_mut().emit_intrinsic(
         MIRInternalIntrinsic::AdoptPlace { place, address },
         span,
     );
@@ -260,7 +245,7 @@ pub fn materialize(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let ty = lower_type(context.env_mut(), value.ty(), span)?;
-    let source = value::standard(context, value, span)?;
+    let source = super::value(context, value, span)?;
     let (target, result) = output(context, value.ty(), span)?;
     store(context, target, source, ty, None, span);
 
@@ -319,7 +304,7 @@ pub fn write(
     let bitfield = types::bitfield(context.env(), target)
         .map(|bitfield| MIRStoreBitfield::Target(access(context, stored, bitfield)));
     let ty = lower_type(context.env_mut(), stored, span)?;
-    let source = value::standard(context, value, span)?;
+    let source = super::value(context, value, span)?;
     store(context, destination, source, ty, bitfield, span);
 
     Ok(())
@@ -381,8 +366,7 @@ pub fn address(
                 MIRBindable::Place(place_id) if context.env().pointer_inner(ty).is_some() => {
                     let place_id = *place_id;
                     let (out, result) = output(context, ty, span)?;
-                    intrinsic(
-                        context,
+                    context.runtime_mut().emit_intrinsic(
                         MIRInternalIntrinsic::PlaceAddress {
                             out,
                             place: place_id,
@@ -401,10 +385,9 @@ pub fn address(
         HMIRValueKind::Immediate(_) => unreachable!("only storage has an address"),
     };
 
-    let reference = value::standard(context, reference, span)?;
+    let reference = super::value(context, reference, span)?;
     let (out, result) = output(context, ty, span)?;
-    intrinsic(
-        context,
+    context.runtime_mut().emit_intrinsic(
         MIRInternalIntrinsic::ReferenceAddress { out, reference },
         span,
     );
@@ -419,7 +402,7 @@ pub fn dereference(
     base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let value = value::standard(context, &pointer, span)?;
+    let value = super::value(context, &pointer, span)?;
     if context.env().settings().assertions() {
         null_check(context, base.unwrap_or(&pointer), span)?;
     }
@@ -427,8 +410,7 @@ pub fn dereference(
     let reference_ty = types::reference(context.env_mut(), inner, None, span);
     let target_ty = lower_type(context.env_mut(), reference_ty, span)?;
     let (out, reference) = output(context, reference_ty, span)?;
-    intrinsic(
-        context,
+    context.runtime_mut().emit_intrinsic(
         MIRInternalIntrinsic::Bitcast {
             out,
             value,
@@ -445,7 +427,7 @@ pub fn null_check(
     pointer: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<()> {
-    let checked = value::standard(context, pointer, span)?;
+    let checked = super::value(context, pointer, span)?;
     let null = MIRConstant::Nullptr {
         ty: lower_type(context.env_mut(), pointer.ty(), span)?,
     };
@@ -456,10 +438,9 @@ pub fn null_check(
         lhs: checked,
         rhs: MIRValue::Constant(null),
     };
-    intrinsic(context, check, span);
+    context.runtime_mut().emit_intrinsic(check, span);
     let message = Some("dereferenced a null pointer".into());
-    intrinsic(
-        context,
+    context.runtime_mut().emit_intrinsic(
         MIRInternalIntrinsic::Assert {
             condition: MIRValue::Register(condition),
             message,
@@ -486,7 +467,7 @@ pub fn field(
     let base = if context.env().is_reference(base.ty()) {
         read(context, base, span)?
     } else {
-        value::standard(context, base, span)?
+        super::value(context, base, span)?
     };
 
     let reference_ty = types::reference(context.env_mut(), ty, bitfield, span);
@@ -505,7 +486,7 @@ pub fn field(
             struct_ty: aggregate_ty,
         },
     };
-    intrinsic(context, projection, span);
+    context.runtime_mut().emit_intrinsic(projection, span);
 
     Ok(HMIRValue::indirect(ty, reference))
 }

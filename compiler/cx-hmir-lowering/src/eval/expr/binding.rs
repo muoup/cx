@@ -22,7 +22,6 @@ use crate::{
         staged, types,
     },
     log::hmir_error,
-    lower,
     value::HMIRValue,
 };
 
@@ -253,7 +252,7 @@ fn yielded(
     }
     let span = span.clone();
     flow::catch_diverged(result)?.and_then(context, body, None, move |context, _, value, _| {
-        let block = lower::expr::current_block(context);
+        let block = emit::runtime::flow::current_block(context);
         let mut exits = context
             .runtime_mut()
             .scopes_mut()
@@ -345,8 +344,8 @@ fn eval_statements(
 // Code after a divergence is still checked, in a block nothing jumps to unless a label or case inside it is entered
 fn unreachable(context: &mut LocalLoweringContext) {
     if !context.is_unevaluated() {
-        let block = lower::expr::block(context, "unreachable");
-        lower::expr::switch_to(context, block);
+        let block = emit::runtime::flow::block(context, "unreachable");
+        emit::runtime::flow::switch_to(context, block);
     }
 }
 

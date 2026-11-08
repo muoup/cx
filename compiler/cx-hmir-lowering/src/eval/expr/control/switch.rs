@@ -25,7 +25,6 @@ use crate::{
         types,
     },
     log::hmir_error,
-    lower::{self, expr::value},
     value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
@@ -111,9 +110,9 @@ pub(crate) fn eval_case(
         return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, invalid).into());
     }
     if context.runtime().emission() == Emission::Enabled {
-        lower::expr::jump(context, target, span);
+        emit::runtime::flow::jump(context, target, span);
     }
-    lower::expr::switch_to(context, target);
+    emit::runtime::flow::switch_to(context, target);
     let span = span.clone();
     eval(context, body, statement)?.map(context, move |context, _| Ok(expr::unit(context, &span)))
 }
@@ -194,13 +193,13 @@ fn runtime_switch(
     integer: HMIRIntType,
     labels: Vec<CaseLabel>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let condition = value::standard(context, &condition, span)?;
-    let exit = lower::expr::block(context, "switch.exit");
+    let condition = emit::runtime::value(context, &condition, span)?;
+    let exit = emit::runtime::flow::block(context, "switch.exit");
     let mut blocks = Vec::new();
     let mut cases = Vec::new();
     let mut default = exit;
     for label in &labels {
-        let block = lower::expr::block(
+        let block = emit::runtime::flow::block(
             context,
             if label.value.is_some() {
                 "switch.case"
@@ -214,7 +213,7 @@ fn runtime_switch(
         }
         blocks.push((label.id, block));
     }
-    let entry = lower::expr::block(context, "switch.body");
+    let entry = emit::runtime::flow::block(context, "switch.body");
     let branch = MIRInstructionKind::CaseBranch {
         value: condition,
         signed: int::signed(integer),
@@ -223,7 +222,7 @@ fn runtime_switch(
     };
     context.runtime_mut().emit(branch, span.clone());
 
-    lower::expr::switch_to(context, entry);
+    emit::runtime::flow::switch_to(context, entry);
     let scope = emit::open_scope(context, span);
     context
         .runtime_mut()
@@ -235,9 +234,9 @@ fn runtime_switch(
     let completion = flow::finally(context, body, completion, move |context, _, _| {
         emit::close_scope(context, &finish);
         if context.runtime().emission() == Emission::Enabled {
-            lower::expr::jump(context, exit, &finish);
+            emit::runtime::flow::jump(context, exit, &finish);
         }
-        lower::expr::switch_to(context, exit);
+        emit::runtime::flow::switch_to(context, exit);
         Ok(())
     });
     let span = span.clone();

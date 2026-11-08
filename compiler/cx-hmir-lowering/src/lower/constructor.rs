@@ -8,17 +8,14 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    emit,
+    emit::{self, runtime},
     env::{
         HMIREnvironment,
         function::{FnContext, LocalLoweringContext, RuntimeContext},
         generation::Constructor,
     },
     eval::{aggregate::variant, types},
-    lower::{
-        expr::{self, value},
-        types::lower_signature,
-    },
+    lower::types::lower_signature,
     value::immediate::HMIRFunctionRef,
 };
 
@@ -64,7 +61,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
         Some(payload) => {
             let reference = types::reference(context.env_mut(), payload, None, &span);
             let param =
-                expr::storage::parameter(&mut context, payload, None, &span)?.with_ty(reference);
+                runtime::storage::parameter(&mut context, payload, None, &span)?.with_ty(reference);
             let origin = param.as_place().expect("a parameter names its own storage");
             let moved = emit::lift(&mut context, &param, origin, &span)?;
             emit::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span);
@@ -73,8 +70,8 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
         None => None,
     };
     let value = variant::construct(&mut context, ty, index, payload, &span)?;
-    let value = Some(value::standard(&mut context, &value, &span)?);
-    expr::drop_scope(&mut context, scope, &span);
+    let value = Some(runtime::value(&mut context, &value, &span)?);
+    runtime::drop_scope(&mut context, scope, &span);
     context
         .runtime_mut()
         .emit(MIRInstructionKind::Return { value }, span.clone());

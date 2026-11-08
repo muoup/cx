@@ -10,12 +10,13 @@ use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
 
 use crate::{
+    emit::runtime,
     env::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
     log::hmir_error,
-    lower::{expr::value, types::lower_type},
+    lower::types::lower_type,
     symbol,
     value::HMIRValueKind,
 };
@@ -91,7 +92,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
                 unreachable!("an exported comptime value is a constant")
             };
             let span = source.body().expr(initializer).span();
-            let constant = value::constant(&mut context, constant, value.ty(), span)?;
+            let constant = runtime::constant(&mut context, constant, value.ty(), span)?;
             MIRGlobalState::Initialized(constant)
         }
         None => MIRGlobalState::ZeroInitialized,

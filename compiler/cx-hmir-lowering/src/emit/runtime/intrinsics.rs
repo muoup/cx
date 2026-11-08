@@ -2,15 +2,21 @@ use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
+use cx_intrinsics::VAIntrinsic;
 use cx_log::CXResult;
 use cx_mir::{
-    MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic,
-    MIRPtrIntrinsic, MIRTarget, MIRValue, ty::layout::calculate_type_layout,
+    MIRAggregateIntrinsic, MIRBindable, MIRFloatIntrinsic, MIRInstructionKind, MIRIntIntrinsic,
+    MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRVAIntrinsic, MIRValue,
+    ty::layout::calculate_type_layout,
 };
 use cx_tokens::TokenRange;
 
+use super::{output, register, slot, storage::read};
 use crate::{
-    env::function::LocalLoweringContext, eval::types, lower::{expr::value, types::{lower_type, mir_float, mir_int}}, value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    env::function::LocalLoweringContext,
+    eval::types,
+    lower::types::{lower_type, mir_float, mir_int},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 fn kind(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRTypeKind {
@@ -26,8 +32,8 @@ pub fn binary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let operands = kind(context, lhs.ty());
-    let ml = value::standard(context, lhs, span)?;
-    let mr = value::standard(context, rhs, span)?;
+    let ml = super::value(context, lhs, span)?;
+    let mr = super::value(context, rhs, span)?;
     let (out, result) = output(context, result, span)?;
 
     let instruction: MIRIntrinsic = match operands {
@@ -266,7 +272,7 @@ pub fn unary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let ty = value.ty();
-    let value = value::standard(context, value, span)?;
+    let value = super::value(context, value, span)?;
     let (out, result) = output(context, ty, span)?;
 
     let instruction: MIRIntrinsic = match (op, kind(context, ty)) {
@@ -276,7 +282,7 @@ pub fn unary(
         (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => MIRIntIntrinsic::BNot { out, value }.into(),
         _ => unreachable!("'{}' does not apply to this operand", op.path()),
     };
-    intrinsic(context, instruction, span);
+    context.runtime_mut().emit_intrinsic(instruction, span);
 
     Ok(result)
 }
@@ -289,7 +295,7 @@ pub fn cast(
 ) -> CXResult<HMIRValue> {
     let kinds = (kind(context, value.ty()), kind(context, target));
     let target_ty = lower_type(context.env_mut(), target, span)?;
-    let value = value::standard(context, value, span)?;
+    let value = super::value(context, value, span)?;
     let (out, result) = output(context, target, span)?;
 
     let instruction: MIRIntrinsic = match kinds {
@@ -343,7 +349,7 @@ pub fn cast(
 
         _ => unreachable!("conversions are between scalar types"),
     };
-    intrinsic(context, instruction, span);
+    context.runtime_mut().emit_intrinsic(instruction, span);
 
     Ok(result)
 }
@@ -374,14 +380,14 @@ pub fn offset(
             let value = value * size;
             let offset = HMIRValue::constant(ty, HMIRImmediate::Int(value));
 
-            let ptr = value::standard(context, pointer, span)?;
-            (ptr, value::standard(context, &offset, span)?)
+            let ptr = super::value(context, pointer, span)?;
+            (ptr, super::value(context, &offset, span)?)
         }
         _ => {
             let size = HMIRValue::constant(ty, HMIRImmediate::Int(size));
-            let lhs = value::standard(context, index, span)?;
-            let rhs = value::standard(context, &size, span)?;
-            let ptr = value::standard(context, pointer, span)?;
+            let lhs = super::value(context, index, span)?;
+            let rhs = super::value(context, &size, span)?;
+            let ptr = super::value(context, pointer, span)?;
 
             let scaled = register(context, ty, span)?;
             let out = MIRTarget::Register(scaled);
@@ -389,7 +395,7 @@ pub fn offset(
                 HMIRTypeKind::Int(int) if int.signed() => MIRIntIntrinsic::SMul { out, lhs, rhs },
                 _ => MIRIntIntrinsic::UMul { out, lhs, rhs },
             };
-            intrinsic(context, scale, span);
+            context.runtime_mut().emit_intrinsic(scale, span);
 
             (ptr, MIRValue::Register(scaled))
         }
@@ -400,7 +406,7 @@ pub fn offset(
         true => MIRPtrIntrinsic::Sub { out, ptr, offset },
         false => MIRPtrIntrinsic::Add { out, ptr, offset },
     };
-    intrinsic(context, instruction, span);
+    context.runtime_mut().emit_intrinsic(instruction, span);
 
     Ok(result)
 }
@@ -414,11 +420,10 @@ pub fn difference(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let element_ty = lower_type(context.env_mut(), element, span)?;
-    let lhs = value::standard(context, lhs, span)?;
-    let rhs = value::standard(context, rhs, span)?;
+    let lhs = super::value(context, lhs, span)?;
+    let rhs = super::value(context, rhs, span)?;
     let (out, result) = output(context, result, span)?;
-    intrinsic(
-        context,
+    context.runtime_mut().emit_intrinsic(
         MIRPtrIntrinsic::Diff {
             out,
             lhs,
@@ -446,11 +451,10 @@ pub fn tag(
     let value = if context.env().is_reference(value.ty()) {
         read(context, value, span)?
     } else {
-        value::standard(context, value, span)?
+        super::value(context, value, span)?
     };
     let (out, result) = output(context, ty, span)?;
-    intrinsic(
-        context,
+    context.runtime_mut().emit_intrinsic(
         MIRAggregateIntrinsic::SumIndex { out, value, sum_ty },
         span,
     );
@@ -466,13 +470,12 @@ pub fn aggregate(
 ) -> CXResult<HMIRValue> {
     let fields = fields
         .iter()
-        .map(|(index, value)| Ok((*index, value::standard(context, value, span)?)))
+        .map(|(index, value)| Ok((*index, super::value(context, value, span)?)))
         .collect::<CXResult<_>>()?;
 
     let mir_ty = lower_type(context.env_mut(), ty, span)?;
     let (out, result) = output(context, ty, span)?;
-    intrinsic(
-        context,
+    context.runtime_mut().emit_intrinsic(
         MIRAggregateIntrinsic::AggregateInit {
             out,
             ty: mir_ty,
@@ -481,5 +484,127 @@ pub fn aggregate(
         span,
     );
 
+    Ok(result)
+}
+
+pub fn function_address(
+    context: &mut LocalLoweringContext,
+    function: &HMIRValue,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let HMIRValueKind::Immediate(function_constant) = function.kind() else {
+        unreachable!("a function designator is constant")
+    };
+
+    let cx_mir::MIRConstant::Function(fn_id) =
+        super::constant(context, function_constant, function.ty(), span)?
+    else {
+        unreachable!("a function designator lowers to a function")
+    };
+
+    let (out, result) = output(context, ty, span)?;
+    context
+        .runtime_mut()
+        .emit_intrinsic(MIRInternalIntrinsic::GetFnPtr { out, fn_id }, span);
+    Ok(result)
+}
+
+pub fn assert(
+    context: &mut LocalLoweringContext,
+    condition: &HMIRValue,
+    message: Option<&str>,
+    span: &TokenRange,
+) -> CXResult<()> {
+    if message.is_some() && !context.env().settings().assertions() {
+        return Ok(());
+    }
+
+    let condition = super::value(context, condition, span)?;
+    let kind = match message {
+        Some(message) => MIRInternalIntrinsic::Assert {
+            condition,
+            message: Some(message.into()),
+        },
+        None => MIRInternalIntrinsic::Assume { condition },
+    };
+    context.runtime_mut().emit_intrinsic(kind, span);
+    Ok(())
+}
+
+pub fn call(
+    context: &mut LocalLoweringContext,
+    callee: &HMIRValue,
+    args: &[HMIRValue],
+    result: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let callee = match callee.as_function() {
+        Some(function) => {
+            let HMIRValueKind::Immediate(constant_value) = function.kind() else {
+                unreachable!("a known function is constant")
+            };
+            MIRValue::Constant(super::constant(
+                context,
+                constant_value,
+                function.ty(),
+                span,
+            )?)
+        }
+        None => super::value(context, callee, span)?,
+    };
+    let args = args
+        .iter()
+        .map(|arg| super::value(context, arg, span))
+        .collect::<CXResult<_>>()?;
+
+    let returns = context.env().resolve_kind(result);
+    let (out, value) = match matches!(returns, HMIRTypeKind::Void | HMIRTypeKind::Unreachable) {
+        true => (None, HMIRValue::constant(result, HMIRImmediate::Unit)),
+        false => {
+            let register = register(context, result, span)?;
+            (
+                Some(register),
+                slot(context, result, MIRBindable::Register(register)),
+            )
+        }
+    };
+    context
+        .runtime_mut()
+        .emit(MIRInstructionKind::Call { out, callee, args }, span.clone());
+
+    Ok(value)
+}
+
+pub fn variadic(
+    context: &mut LocalLoweringContext,
+    op: &VAIntrinsic<HMIRValue, HMIRTypeID>,
+    span: &TokenRange,
+) -> CXResult<Option<HMIRValue>> {
+    let (instruction, result) = match op {
+        VAIntrinsic::Start { list, last } => {
+            let list = super::value(context, list, span)?;
+            let last = super::value(context, last, span)?;
+            (MIRVAIntrinsic::VaStart { list, last }, None)
+        }
+        VAIntrinsic::End { list } => {
+            let list = super::value(context, list, span)?;
+            (MIRVAIntrinsic::VaEnd { list }, None)
+        }
+        VAIntrinsic::Arg { list, ty } => {
+            let list = super::value(context, list, span)?;
+            let mir_ty = lower_type(context.env_mut(), *ty, span)?;
+            let (out, result) = output(context, *ty, span)?;
+            (
+                MIRVAIntrinsic::VaArg {
+                    out,
+                    list,
+                    ty: mir_ty,
+                },
+                Some(result),
+            )
+        }
+    };
+    context.runtime_mut().emit_intrinsic(instruction, span);
     Ok(result)
 }

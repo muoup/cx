@@ -21,7 +21,6 @@ use crate::{
     },
     eval::{EvalResult, coerce, eval, flow::{EvalExit, Evaluation}, types},
     log::hmir_error,
-    lower::expr,
     symbol,
     value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
@@ -88,13 +87,13 @@ pub(crate) fn call(
     let mut bindings = bind_params(context, contract, args, span)?;
     if let Some(expression) = contract.precondition() {
         let value = condition(context, contract, def.brand(), point, expression, span)?;
-        expr::assert(context, &value, Some("precondition failed"), span)?;
+        emit::runtime::intrinsics::assert(context, &value, Some("precondition failed"), span)?;
     }
     let result = emit(context)?;
     if let (Evaluation::Ready(value), Some((local, expression))) = (&result, contract.postcondition()) {
         bindings.extend(bind_result(context, local, Some(value), span)?);
         let value = condition(context, contract, def.brand(), point, expression, span)?;
-        expr::assert(context, &value, None, span)?;
+        emit::runtime::intrinsics::assert(context, &value, None, span)?;
     }
     restore(context, bindings);
     Ok(result)
@@ -121,7 +120,7 @@ pub(crate) fn enter(
     if let Some(expression) = contract.precondition() {
         let (owner, point) = (context.source(), context.visible_through());
         let value = condition(context, contract, owner, point, expression, span)?;
-        expr::assert(context, &value, None, span)?;
+        emit::runtime::intrinsics::assert(context, &value, None, span)?;
     }
     Ok(())
 }
@@ -162,7 +161,7 @@ fn exit_condition(
     let (owner, point) = (context.source(), context.visible_through());
     let value = condition(context, contract, owner, point, expression, span);
     restore(context, bindings);
-    expr::assert(context, &value?, Some("postcondition failed"), span)
+    emit::runtime::intrinsics::assert(context, &value?, Some("postcondition failed"), span)
 }
 
 fn condition(

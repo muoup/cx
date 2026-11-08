@@ -1,7 +1,6 @@
 pub(crate) mod constructor;
 pub(crate) mod function;
 pub(crate) mod global;
-pub(crate) mod expr;
 pub(crate) mod types;
 
 use crate::{

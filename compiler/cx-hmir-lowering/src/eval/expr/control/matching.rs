@@ -24,10 +24,6 @@ use crate::{
         types,
     },
     log::hmir_error,
-    lower::{
-        self,
-        expr::{self, value},
-    },
     value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
@@ -88,16 +84,16 @@ pub(crate) fn eval_match(
     let result = if context.is_runtime() {
         let blocks = arms
             .iter()
-            .map(|_| expr::block(context, "match.arm"))
+            .map(|_| emit::runtime::flow::block(context, "match.arm"))
             .collect::<Vec<_>>();
         let catchall = cases.iter().position(Option::is_none);
         let default = match catchall {
             Some(index) => blocks[index],
-            None => expr::block(context, "match.unreachable"),
+            None => emit::runtime::flow::block(context, "match.unreachable"),
         };
         let signed = matches!(context.env().resolve_kind(dispatch.ty()), HMIRTypeKind::Int(ty) if ty.signed());
         let branch = MIRInstructionKind::CaseBranch {
-            value: value::standard(context, &dispatch, span)?,
+            value: emit::runtime::value(context, &dispatch, span)?,
             signed,
             cases: cases
                 .iter()
@@ -108,7 +104,7 @@ pub(crate) fn eval_match(
         };
         context.runtime_mut().emit(branch, span.clone());
         if catchall.is_none() {
-            expr::switch_to(context, default);
+            emit::runtime::flow::switch_to(context, default);
             context
                 .runtime_mut()
                 .emit(MIRInstructionKind::Unreachable, span.clone());
@@ -263,11 +259,11 @@ fn lower_arms(
         return merge(context, state.exits, true, &state.span);
     };
 
-    expr::switch_to(context, state.blocks[index]);
+    emit::runtime::flow::switch_to(context, state.blocks[index]);
     let declared = context
         .env()
         .is_reference(state.subject.ty())
-        .then(|| expr::storage::scoped_places(context));
+        .then(|| emit::runtime::storage::scoped_places(context));
     emit::open_scope(context, body.expr(arm).span());
     bind_arm(context, body, &state.subject, &pattern, &state.span)?;
     let result = arm_value(context, body, arm, &state.span, declared);
@@ -287,7 +283,7 @@ fn lower_arms(
         None,
         move |context, body, value, expected| {
             if let Some(value) = value {
-                state.exits.push((expr::current_block(context), value));
+                state.exits.push((emit::runtime::flow::current_block(context), value));
             }
             lower_arms(context, body, state, index + 1, expected)
         },
@@ -306,7 +302,7 @@ fn arm_value(
     let span = span.clone();
     eval(context, body, arm)?.map(context, move |context, value| {
         let outlives = declared
-            .is_some_and(|declared| lower::expr::storage::scoped_places(context) == declared);
+            .is_some_and(|declared| emit::runtime::storage::scoped_places(context) == declared);
         if outlives && context.env().is_reference(value.ty()) {
             return Ok(value);
         }

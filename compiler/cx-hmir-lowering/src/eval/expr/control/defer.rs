@@ -21,7 +21,6 @@ use crate::{
         flow::{self, Evaluation},
     },
     log::hmir_error,
-    lower,
     value::{Bindings, HMIRValue},
 };
 
@@ -89,7 +88,7 @@ pub(super) fn leave(
 ) -> CXResult<()> {
     for index in (depth..context.runtime().scopes().len()).rev() {
         expand(context, index)?;
-        lower::expr::drop_scope(context, index, span);
+        emit::runtime::drop_scope(context, index, span);
     }
     Ok(())
 }

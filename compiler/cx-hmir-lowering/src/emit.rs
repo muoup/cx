@@ -17,7 +17,6 @@ use cx_tokens::TokenRange;
 use crate::{
     env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope, memory::placement},
     eval::types,
-    lower::expr,
     value::HMIRValue,
 };
 
@@ -62,7 +61,7 @@ pub fn field(
     let owner = context.env().referent(base.ty());
     let bitfield = placement(context.env_mut(), owner, index, span)?;
     match context.context() {
-        FnContext::Runtime(_) => expr::storage::field(context, base, index, ty, bitfield, span),
+        FnContext::Runtime(_) => runtime::storage::field(context, base, index, ty, bitfield, span),
         FnContext::Comptime(_) => comptime::field(context, base, index, ty, bitfield, span),
     }
 }
@@ -74,7 +73,7 @@ pub fn aggregate(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::op::aggregate(context, ty, fields, span),
+        FnContext::Runtime(_) => runtime::intrinsics::aggregate(context, ty, fields, span),
         FnContext::Comptime(_) => comptime::aggregate(context, ty, fields, span),
     }
 }
@@ -86,7 +85,7 @@ pub fn tag(
 ) -> CXResult<HMIRValue> {
     let ty = types::int(context.env_mut(), HMIRIntWidth::I8, false, span);
     match context.context() {
-        FnContext::Runtime(_) => expr::op::tag(context, value, ty, span),
+        FnContext::Runtime(_) => runtime::intrinsics::tag(context, value, ty, span),
         FnContext::Comptime(_) => comptime::tag(context, value, ty, span),
     }
 }
@@ -100,7 +99,7 @@ pub fn binary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::op::binary(context, op, lhs, rhs, result, span),
+        FnContext::Runtime(_) => runtime::intrinsics::binary(context, op, lhs, rhs, result, span),
         FnContext::Comptime(_) => comptime::binary(context, op, lhs, rhs, result, span),
     }
 }
@@ -112,7 +111,7 @@ pub fn unary(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::op::unary(context, op, value, span),
+        FnContext::Runtime(_) => runtime::intrinsics::unary(context, op, value, span),
         FnContext::Comptime(_) => comptime::unary(context, op, value, span),
     }
 }
@@ -124,7 +123,7 @@ pub fn cast(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::op::cast(context, value, target, span),
+        FnContext::Runtime(_) => runtime::intrinsics::cast(context, value, target, span),
         FnContext::Comptime(_) => comptime::cast(context, value, target, span),
     }
 }
@@ -135,7 +134,7 @@ pub fn variadic(
     span: &TokenRange,
 ) -> CXResult<Option<HMIRValue>> {
     match context.context() {
-        FnContext::Runtime(_) => expr::variadic(context, intrinsic, span),
+        FnContext::Runtime(_) => runtime::intrinsics::variadic(context, intrinsic, span),
         FnContext::Comptime(_) => unsupported(span, intrinsic.path()),
     }
 }
@@ -148,7 +147,7 @@ pub fn call(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::call(context, callee, args, result, span),
+        FnContext::Runtime(_) => runtime::intrinsics::call(context, callee, args, result, span),
         FnContext::Comptime(_) => unsupported(span, "a function call"),
     }
 }
@@ -162,7 +161,7 @@ pub fn offset(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::op::offset(context, pointer, index, element, subtract, span),
+        FnContext::Runtime(_) => runtime::intrinsics::offset(context, pointer, index, element, subtract, span),
         FnContext::Comptime(_) => {
             comptime::offset(context, pointer, index, element, subtract, span)
         }
@@ -178,7 +177,7 @@ pub fn difference(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => expr::op::difference(context, lhs, rhs, element, result, span),
+        FnContext::Runtime(_) => runtime::intrinsics::difference(context, lhs, rhs, element, result, span),
         FnContext::Comptime(_) => comptime::difference(context, lhs, rhs, element, result, span),
     }
 }

@@ -9,6 +9,7 @@ use cx_tokens::TokenRange;
 
 use super::defer;
 use crate::{
+    emit,
     env::function::{
         FnContext, LocalLoweringContext,
         runtime::{Emission, Exit},
@@ -20,7 +21,6 @@ use crate::{
         flow::{self, ComptimeStop, EvalExit, Evaluation},
     },
     log::hmir_error,
-    lower::{self, expr::value},
     value::{HMIRValue, immediate::HMIRImmediate},
 };
 
@@ -98,7 +98,7 @@ pub(super) fn eval_loop_exit(
         };
     };
     defer::leave(context, depth, span)?;
-    lower::expr::jump(context, target, span);
+    emit::runtime::flow::jump(context, target, span);
     flow::diverged()
 }
 
@@ -174,7 +174,7 @@ pub(crate) fn return_value(
     contract::exit(context, value.as_ref(), span)?;
     defer::leave(context, 0, span)?;
     let value = value
-        .map(|value| value::standard(context, &value, span))
+        .map(|value| emit::runtime::value(context, &value, span))
         .transpose()?;
     context
         .runtime_mut()

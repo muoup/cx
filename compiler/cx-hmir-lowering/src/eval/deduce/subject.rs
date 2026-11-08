@@ -15,7 +15,6 @@ use crate::{
         runtime::{Emission, RuntimeScope},
     },
     log::hmir_error,
-    lower::expr,
     value::{
         Bindings, HMIRReference, HMIRValue, HMIRValueKind,
         immediate::HMIRImmediate,
@@ -117,7 +116,7 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
                 let ty = child.env().referent(value.ty());
                 let storage = match child.env().is_reference(value.ty()) {
                     true => emit::scratch(&mut child, ty, span)?.with_ty(value.ty()),
-                    false => expr::placeholder(&mut child, value.ty(), span)?,
+                    false => emit::runtime::placeholder(&mut child, value.ty(), span)?,
                 };
                 if let HMIRValueKind::Reference(HMIRReference::Local(slot)) = storage.kind() {
                     child
@@ -173,6 +172,6 @@ fn shadow(
     }
     match context.env().reference_inner(value.ty()) {
         Some(ty) => Ok(emit::scratch(context, ty, span)?.with_ty(value.ty())),
-        None => expr::placeholder(context, value.ty(), span),
+        None => emit::runtime::placeholder(context, value.ty(), span),
     }
 }
