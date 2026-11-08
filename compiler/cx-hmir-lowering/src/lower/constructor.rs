@@ -16,7 +16,7 @@ use crate::{
     },
     eval::{aggregate::variant, types},
     lower::types::lower_signature,
-    value::immediate::HMIRFunctionRef,
+    value::{self, immediate::HMIRFunctionRef},
 };
 
 pub(crate) fn declare(
@@ -62,7 +62,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXR
             let reference = types::reference(context.env_mut(), payload, None, &span);
             let param =
                 runtime::storage::parameter(&mut context, payload, None, &span)?.with_ty(reference);
-            let origin = param.as_place().expect("a parameter names its own storage");
+            let origin = value::as_place(&param).expect("a parameter names its own storage");
             let moved = emit::lift(&mut context, &param, origin, &span)?;
             emit::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span);
             Some(moved)

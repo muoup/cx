@@ -156,7 +156,7 @@ fn truth(
         }
         HMIRTypeKind::Int(_) => HMIRImmediate::Int(0),
         HMIRTypeKind::Float(_) => HMIRImmediate::Float(FloatWrapper::from(0.0)),
-        HMIRTypeKind::PointerTo(_) => HMIRImmediate::Null,
+        HMIRTypeKind::PointerTo(_) => HMIRImmediate::Int(0),
         _ => return Ok(Coercion::Unapplied(value)),
     };
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);

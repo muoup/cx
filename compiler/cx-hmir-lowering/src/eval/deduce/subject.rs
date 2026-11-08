@@ -13,10 +13,11 @@ use crate::{
     env::function::{
         FnContext, LocalLoweringContext, RuntimeContext,
         runtime::{Emission, RuntimeScope},
+        scope::Bindings,
     },
     log::hmir_error,
     value::{
-        Bindings, HMIRReference, HMIRValue, HMIRValueKind,
+        self, HMIRReference, HMIRValue, HMIRValueKind,
         immediate::HMIRImmediate,
         staged::{Quote, QuoteRef},
     },
@@ -50,16 +51,19 @@ pub(crate) fn subject(
     let result = result.map(&mut child, move |context, value| {
         let referent = context.env().referent(value.ty());
         let ty = match (context.env().resolve_kind(referent), value.kind()) {
-            (HMIRTypeKind::Type, _) => coerce::promotion::std_rvalue(context, value, &span)?
-                .as_type()
-                .ok_or_else(|| {
+            (HMIRTypeKind::Type, _) => {
+                let value = coerce::promotion::std_rvalue(context, value, &span)?;
+                value::as_type(&value).ok_or_else(|| {
                     hmir_error(
                         &span,
                         &typecheck::EXPECTED_TYPE,
                         "an unknown type value".into(),
                     )
-                })?,
-            (_, HMIRValueKind::Immediate(HMIRImmediate::Str(string))) => {
+                })?
+            }
+            (_, HMIRValueKind::Immediate(HMIRImmediate::Address(_)))
+                if let Some(string) = value::as_literal(&value) =>
+            {
                 let element = types::int(context.env_mut(), HMIRIntWidth::I8, false, &span);
                 let length = (string.len() + 1) as u64;
                 types::realize(
@@ -103,13 +107,12 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
     runtime.set_emission(emission);
     let evaluation = context.evaluation();
     let mut child = context.child(None, FnContext::Runtime(runtime), Some(evaluation));
-    let scope = child.runtime_mut().builder_mut().add_scope(span.clone());
     for (local, value) in locals {
         let known = frozen
             .iter()
             .find_map(|(id, known)| (*id == local).then_some(known));
         let value = match known {
-            Some(known) if known.as_type().is_some() || known == &value => {
+            Some(known) if value::as_type(known).is_some() || known == &value => {
                 shadow(&mut child, known.clone(), span)?
             }
             _ => {
@@ -132,7 +135,7 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
     let scopes = child.runtime_mut().scopes_mut();
     let parent = scopes.top();
     scopes.push(
-        RuntimeScope::new(Some(scope), deferred),
+        RuntimeScope::new(deferred),
         Some(parent),
         Bindings::default(),
     );

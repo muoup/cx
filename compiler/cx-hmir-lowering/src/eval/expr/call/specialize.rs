@@ -14,7 +14,7 @@ use crate::{
     eval::{EvalResult, flow::Evaluation, types},
     lower::types::lower_signature,
     symbol,
-    value::{HMIRValue, immediate::HMIRFunctionRef},
+    value::{self, HMIRValue, immediate::HMIRFunctionRef},
 };
 
 pub(super) fn apply(
@@ -75,5 +75,5 @@ pub(super) fn declare(
     }
     let ty = types::realize(context.env_mut(), HMIRTypeKind::Function(concrete), span);
     let callee = symbol::binding(context.env_mut(), def, None)?;
-    Ok(HMIRValue::curried(ty, callee, bindings))
+    Ok(value::curried(ty, callee, bindings))
 }

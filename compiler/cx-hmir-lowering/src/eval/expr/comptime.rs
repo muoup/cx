@@ -21,7 +21,7 @@ use crate::{
         name::type_value,
     },
     log::hmir_error,
-    value::{HMIRReference, HMIRValue, HMIRValueKind, address::HMIRAddress},
+    value::{self, HMIRReference, HMIRValue, HMIRValueKind, address::HMIRAddress},
 };
 
 // Evaluates an expression in a comptime child that sees only the known values of the visible locals
@@ -116,7 +116,7 @@ fn evaluate(
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let value = eval(context, body, expr)?;
-    let value = match value.known().and_then(HMIRValue::as_type) {
+    let value = match value.known().and_then(value::as_type) {
         Some(_) => {
             let ty =
                 (deduce::described_type(context, body, value, span)?.description())?.ready()?;

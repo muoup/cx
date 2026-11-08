@@ -20,7 +20,7 @@ pub(crate) mod scope;
 
 use self::memory::Memory;
 use crate::{
-    env::{HMIREnvironment, symbols::HMIRUnitHandle},
+    env::{HMIREnvironment, function::scope::Bindings, symbols::HMIRUnitHandle},
     log::hmir_error,
     value::HMIRValue,
 };

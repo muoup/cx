@@ -18,6 +18,7 @@ use crate::{
     env::{function::LocalLoweringContext, memo::MemoID, resolver::HMIRResolver},
     eval::{eval_comptime, eval_type, flow, name::type_value, types},
     log::hmir_error,
+    value,
 };
 
 pub(crate) fn eval_declared_type(
@@ -224,7 +225,7 @@ fn array_length(
         return Ok(None);
     }
     let (HMIRTypeKind::Int(ty), Some(value)) =
-        (context.env().resolve_kind(value.ty()), value.as_int())
+        (context.env().resolve_kind(value.ty()), value::as_int(&value))
     else {
         let subject = ("array length".into(), "integer".into());
         return Err(hmir_error(span, &mir::EXPECTED_CONSTANT, subject));

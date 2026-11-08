@@ -27,7 +27,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue, immediate::HMIRImmediate},
 };
 
 type Resolver<T> = dyn FnOnce(
@@ -361,11 +361,11 @@ pub(crate) fn described_type(
     value: Evaluation<HMIRValue>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
-    let partial = value.known().and_then(HMIRValue::as_type);
+    let partial = value.known().and_then(value::as_type);
     let span = span.clone();
     value.and_then(context, body, partial, move |context, _, value, _| {
         let value = coerce::promotion::std_rvalue(context, value, &span)?;
-        let Some(ty) = value.as_type() else {
+        let Some(ty) = value::as_type(&value) else {
             let found = format!(
                 "expression of type '{}'",
                 types::name(context.env(), value.ty())
@@ -377,7 +377,9 @@ pub(crate) fn described_type(
             Evaluation::Ready(_) => Evaluation::Ready(ty),
             Evaluation::Incomplete(incomplete) => Evaluation::Incomplete(
                 incomplete
-                    .project(|value| value.as_type().expect("type completion returns a type")),
+                    .project(|value| {
+                        value::as_type(&value).expect("type completion returns a type")
+                    }),
             ),
         })
     })

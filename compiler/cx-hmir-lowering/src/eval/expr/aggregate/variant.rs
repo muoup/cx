@@ -13,7 +13,7 @@ use crate::{
     eval::{expr, types},
     value::{
         HMIRValue,
-        immediate::{HMIRImmediate, HMIRFunctionRef},
+        immediate::{Addressable, HMIRAddress, HMIRFunctionRef, HMIRImmediate},
     },
 };
 
@@ -68,8 +68,9 @@ pub(crate) fn reference(
     };
     let signature = signature(context.env(), ty, index);
     let callable = types::realize(context.env_mut(), HMIRTypeKind::Function(signature), span);
-    let function = HMIRFunctionRef::Constructor { ty, variant: index };
-    Ok(Some(HMIRValue::new(callable, HMIRImmediate::Function(function))))
+    let function = Addressable::Function(HMIRFunctionRef::Constructor { ty, variant: index });
+    let address = HMIRAddress::new(function, 0);
+    Ok(Some(HMIRValue::new(callable, HMIRImmediate::Address(address))))
 }
 
 pub(crate) fn construct(

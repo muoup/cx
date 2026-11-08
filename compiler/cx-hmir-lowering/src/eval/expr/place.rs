@@ -24,7 +24,7 @@ use crate::{
         types::{self, qualify},
     },
     log::{hmir_error, log_hmir_error},
-    value::HMIRValue,
+    value::{self, HMIRValue},
 };
 
 pub(crate) fn eval_assign(
@@ -109,7 +109,7 @@ fn eval_move(
         .cloned()
         .expect("an evaluated local has a binding");
     let (Some(place), Some(inner)) = (
-        binding.as_place(),
+        value::as_place(&binding),
         context.env().reference_inner(binding.ty()),
     ) else {
         let invalid = ("non-local variable".into(), "move expression".into());

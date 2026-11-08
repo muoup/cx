@@ -13,7 +13,10 @@ use crate::{
     emit::comptime::{ScalarFault, float, int},
     env::function::{LocalLoweringContext, memory::layout},
     log::hmir_error,
-    value::{HMIRValue, immediate::HMIRImmediate},
+    value::{
+        HMIRValue,
+        immediate::{HMIRAddress, HMIRImmediate},
+    },
 };
 
 fn integer(context: &LocalLoweringContext, value: i128, ty: HMIRTypeID) -> HMIRValue {
@@ -168,13 +171,13 @@ pub fn cast(
         ((HMIRTypeKind::Int(from), HMIRTypeKind::PointerTo(_)), HMIRImmediate::Int(value))
             if int::normalize(value, *from) == 0 =>
         {
-            Ok(HMIRValue::new(target, HMIRImmediate::Null))
+            Ok(HMIRValue::new(target, HMIRImmediate::Int(0)))
         }
-        ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)), HMIRImmediate::Null) => {
+        ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)), HMIRImmediate::Int(0)) => {
             Ok(integer(context, 0, target))
         }
-        ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)), HMIRImmediate::Null) => {
-            Ok(HMIRValue::new(target, HMIRImmediate::Null))
+        ((HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)), HMIRImmediate::Int(0)) => {
+            Ok(HMIRValue::new(target, HMIRImmediate::Int(0)))
         }
         (
             (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)),
@@ -209,18 +212,18 @@ pub fn offset(
         .and_then(|bytes| i64::try_from(bytes).ok());
     let constant = match (rvalue(context, pointer, span)?, bytes) {
         (_, None) => return Err(hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ())),
-        (HMIRImmediate::Null, Some(0)) => HMIRImmediate::Null,
+        (HMIRImmediate::Int(0), Some(0)) => HMIRImmediate::Int(0),
         (HMIRImmediate::Address(address), Some(bytes)) if address.base().is_storage() => {
-            let address = match subtract {
-                true => address.checked_sub(bytes),
-                false => address.checked_add(bytes),
+            let offset = match subtract {
+                true => address.offset().checked_sub(bytes),
+                false => address.offset().checked_add(bytes),
             };
-            let Some(address) = address else {
+            let Some(offset) = offset else {
                 return Err(hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ()));
             };
-            HMIRImmediate::Address(address)
+            HMIRImmediate::Address(HMIRAddress::new(address.base().clone(), offset))
         }
-        (HMIRImmediate::Null, Some(_)) => {
+        (HMIRImmediate::Int(0), Some(_)) => {
             let operation = "pointer arithmetic".into();
             return Err(hmir_error(
                 span,
@@ -244,7 +247,7 @@ pub fn difference(
 ) -> CXResult<HMIRValue> {
     let size = element_size(context, element, span)?;
     let bytes = match (rvalue(context, lhs, span)?, rvalue(context, rhs, span)?) {
-        (HMIRImmediate::Null, HMIRImmediate::Null) => 0,
+        (HMIRImmediate::Int(0), HMIRImmediate::Int(0)) => 0,
         (HMIRImmediate::Address(lhs), HMIRImmediate::Address(rhs))
             if lhs.base() == rhs.base() && lhs.base().is_storage() =>
         {

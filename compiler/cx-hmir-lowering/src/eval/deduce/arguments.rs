@@ -26,8 +26,8 @@ use crate::{
     log::hmir_error,
     symbol::{self, composite::alike},
     value::{
-        HMIRValue, HMIRValueKind,
-        immediate::{HMIRImmediate, HMIRFunctionRef},
+        self, HMIRValue, HMIRValueKind,
+        immediate::{HMIRFunctionRef, HMIRImmediate},
     },
 };
 
@@ -156,7 +156,7 @@ impl<'a> Deduction<'a> {
                         .as_ref()
                         .and_then(|values| values.get(index))
                         .and_then(Option::as_ref)
-                        .and_then(HMIRValue::as_type);
+                        .and_then(value::as_type);
                     self.unify(context, frame, *form, actual, unresolved, span)?;
                 }
                 Ok(())
@@ -270,13 +270,11 @@ impl<'a> Deduction<'a> {
             }
             _ => (&value, [].as_slice()),
         };
-        let HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) =
-            callee.kind()
-        else {
+        let Some(HMIRFunctionRef::Def(def)) = value::as_function(callee) else {
             return None;
         };
-        let instance = instance(context, *def, actual)?;
-        let source = context.env().symbols().resolve_definition(*def);
+        let instance = instance(context, def, actual)?;
+        let source = context.env().symbols().resolve_definition(def);
         let Some(HMIRDefKind::Function(generator)) =
             source.declarations()[symbol::select(source, None).ok()?].kind()
         else {
@@ -408,8 +406,7 @@ pub(crate) fn generated(
     undeduced: CXError,
     span: &TokenRange,
 ) -> Evaluation<HMIRValue> {
-    let HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) = *callee.kind()
-    else {
+    let Some(HMIRFunctionRef::Def(def)) = value::as_function(callee) else {
         unreachable!("a generated type has a generator")
     };
     let (callee, call_span) = (callee.clone(), span.clone());

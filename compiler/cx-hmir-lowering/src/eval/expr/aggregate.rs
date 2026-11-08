@@ -29,7 +29,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) fn eval_aggregate(
@@ -218,8 +218,7 @@ fn unpack(
             match types::bitfield(context.env(), &reference) {
                 Some(_) => emit::copy(context, reference, span)?,
                 None => {
-                    let origin = source
-                        .as_place()
+                    let origin = value::as_place(&source)
                         .expect("an unpacked value is held in storage");
                     emit::lift(context, &reference, origin, span)?
                 }

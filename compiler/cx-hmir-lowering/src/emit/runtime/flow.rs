@@ -66,8 +66,8 @@ pub fn call(
         .map(|arg| runtime::value(context, arg, span))
         .collect::<CXResult<_>>()?;
 
-    let mir_out = runtime::register(context, result, span)?;
-    let hmir_out = context.runtime().hmir_register(mir_out);
+    let out = runtime::register(context, result, span)?;
+    let mir_out = context.runtime().register(out);
 
     context.runtime_mut().emit(
         MIRInstructionKind::Call {
@@ -78,5 +78,5 @@ pub fn call(
         span.clone(),
     );
 
-    Ok(HMIRValue::new(result, hmir_out))
+    Ok(HMIRValue::new(result, out))
 }

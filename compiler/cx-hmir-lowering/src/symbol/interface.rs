@@ -28,8 +28,8 @@ use crate::{
         structure::{self, incompatible},
     },
     value::{
-        HMIRValue,
-        immediate::{HMIRFunctionRef, HMIRImmediate},
+        self, HMIRValue,
+        immediate::{Addressable, HMIRAddress, HMIRFunctionRef, HMIRImmediate},
     },
 };
 
@@ -94,9 +94,10 @@ pub(crate) fn definition(
                 span.clone(),
                 None,
             ));
+            let function = Addressable::Function(HMIRFunctionRef::Def(id));
             Ok(HMIRValue::new(
                 ty,
-                HMIRImmediate::Function(HMIRFunctionRef::Def(id)),
+                HMIRImmediate::Address(HMIRAddress::new(function, 0)),
             ))
         }
         HMIRDefKind::Global(_) => {
@@ -214,7 +215,7 @@ pub(crate) fn definition(
                     ))?
                     .description(),
                 )?;
-                let Some(ty) = value.as_type() else {
+                let Some(ty) = value::as_type(&value) else {
                     return Err(incompatible(def, other));
                 };
                 if !alike(context.env(), ty, other_ty, true) {
@@ -311,7 +312,7 @@ pub(crate) fn zero(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRImmediate> {
-    HMIRImmediate::zero(context.env(), ty).ok_or_else(|| {
+    types::zero(context.env(), ty).ok_or_else(|| {
         hmir_error(
             span,
             &typecheck::INCOMPLETE_TYPE,

@@ -15,7 +15,10 @@ use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope, memory::placement},
+    env::function::{
+        FnContext, LocalLoweringContext, comptime::ComptimeScope, memory::placement,
+        scope::Bindings,
+    },
     eval::types,
     value::HMIRValue,
 };

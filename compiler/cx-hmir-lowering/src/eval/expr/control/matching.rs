@@ -24,7 +24,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 struct Match {
@@ -118,7 +118,7 @@ pub(crate) fn eval_match(
         };
         lower_arms(context, body, state, 0, None)
     } else {
-        let value = dispatch.as_int().expect("comptime dispatch is constant");
+        let value = value::as_int(&dispatch).expect("comptime dispatch is constant");
         let selected = cases
             .iter()
             .position(|case| *case == Some(value))

@@ -17,7 +17,7 @@ use crate::{
     eval::{EvalResult, aggregate, deduce, eval_comptime, flow::Evaluation, types},
     log::hmir_error,
     lower::types::lower_type,
-    value::{HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue, immediate::HMIRImmediate},
 };
 
 pub(crate) fn eval_type_op(
@@ -102,7 +102,7 @@ fn offset(
                 let element_size = layout(context, element, span)?.size() as i128;
                 let value = eval_comptime(context, body, *index, Some(size_type))?;
                 let (HMIRTypeKind::Int(int_type), Some(value)) =
-                    (context.env().resolve_kind(value.ty()), value.as_int())
+                    (context.env().resolve_kind(value.ty()), value::as_int(&value))
                 else {
                     let subject = ("offsetof subscript".into(), "integer".into());
                     return Err(hmir_error(index_span, &mir::EXPECTED_CONSTANT, subject));

@@ -1,8 +1,12 @@
 use std::iter;
 
+use rustc_hash::FxHashMap;
+
 use cx_hmir::body::HMIRLocalID;
 
 use crate::value::HMIRValue;
+
+pub(crate) type Bindings = FxHashMap<HMIRLocalID, HMIRValue>;
 
 #[derive(Debug)]
 struct Scope<C> {

@@ -31,7 +31,7 @@ use crate::{
         types,
     },
     symbol::composite::alike,
-    value::HMIRValue,
+    value::{self, HMIRValue},
 };
 
 pub(crate) fn eval_control(
@@ -223,10 +223,7 @@ fn merged_type(
 }
 
 pub(super) fn comptime_truth(condition: &HMIRValue) -> bool {
-    condition
-        .as_int()
-        .expect("a comptime condition reads as an integer constant")
-        != 0
+    value::as_int(condition).expect("a comptime condition reads as an integer constant") != 0
 }
 
 fn eval_condition(

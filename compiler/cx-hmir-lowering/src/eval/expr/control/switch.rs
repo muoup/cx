@@ -25,7 +25,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 struct CaseLabel {
@@ -253,8 +253,7 @@ fn comptime_switch(
     labels: Vec<CaseLabel>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let value = int::normalize(
-        condition
-            .as_int()
+        value::as_int(&condition)
             .expect("a comptime integer condition is constant"),
         integer,
     );

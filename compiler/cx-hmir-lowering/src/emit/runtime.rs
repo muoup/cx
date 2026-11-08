@@ -13,7 +13,7 @@ use cx_mir::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::runtime, env::function::{LocalLoweringContext, runtime::RuntimeScope}, eval::types, lower::types::{lower_type, mir_float, mir_int}, value::{HMIRPlaceID, HMIRRegisterID, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    emit::runtime, env::function::{LocalLoweringContext, runtime::RuntimeScope, scope::Bindings}, eval::types, lower::types::{lower_type, mir_float, mir_int}, value::{HMIRPlaceID, HMIRRegisterID, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {

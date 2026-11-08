@@ -13,10 +13,9 @@ use cx_hmir::{
 use cx_log::{CXResult, catalogue::mir};
 
 use crate::{
-    env::function::{FnContext, LocalLoweringContext},
+    env::function::{FnContext, LocalLoweringContext, scope::Bindings},
     eval::{coerce, comptime, flow},
     log::hmir_error,
-    value::Bindings,
 };
 
 pub(super) fn collect(

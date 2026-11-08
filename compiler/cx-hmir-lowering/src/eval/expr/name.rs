@@ -25,8 +25,8 @@ use crate::{
     lower::{global, types::lower_prototype},
     symbol,
     value::{
-        HMIRReference, HMIRValue, HMIRValueKind,
-        immediate::{HMIRImmediate, HMIRFunctionRef},
+        self, HMIRReference, HMIRValue, HMIRValueKind,
+        immediate::{HMIRFunctionRef, HMIRImmediate},
     },
 };
 
@@ -65,12 +65,14 @@ pub(crate) fn eval_def(
         HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) => {
             return deduce::type_result(context, *ty, span);
         }
-        HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def)))
-            if emitting && !types::comptime_only(context.env(), value.ty()) =>
+        HMIRValueKind::Immediate(HMIRImmediate::Address(_))
+            if let Some(HMIRFunctionRef::Def(def)) = value::as_function(&value)
+                && emitting
+                && !types::comptime_only(context.env(), value.ty()) =>
         {
-            let prototype = lower_prototype(context.env_mut(), *def, point, span)?;
+            let prototype = lower_prototype(context.env_mut(), def, point, span)?;
             context.env_mut().module_mut().declare_function(prototype);
-            request(context, *def, point)?;
+            request(context, def, point)?;
         }
         HMIRValueKind::Immediate(HMIRImmediate::Address(address))
             if let Some(HMIRReference::Global(def)) = address.whole_place() =>

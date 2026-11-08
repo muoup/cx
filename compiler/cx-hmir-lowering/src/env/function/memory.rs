@@ -20,8 +20,7 @@ use crate::{
     symbol,
     value::{
         HMIRReference, HMIRRegionID, HMIRValueKind,
-        address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        immediate::{Addressable, HMIRAddress, HMIRImmediate},
     },
 };
 

@@ -14,7 +14,7 @@ use crate::{
     eval::{coerce::applied, expr, types},
     log::hmir_error,
     symbol::composite::signatures_alike,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) fn standard(
@@ -192,7 +192,7 @@ fn step(
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_))
             if matches!(value.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(0))) =>
         {
-            Coercion::Applied(HMIRValue::new(target, HMIRImmediate::Null))
+            Coercion::Applied(HMIRValue::new(target, HMIRImmediate::Int(0)))
         }
         (
             HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_),
@@ -253,7 +253,7 @@ fn string(
     length: Option<u64>,
     span: &TokenRange,
 ) -> CXResult<Coercion> {
-    let HMIRValueKind::Immediate(HMIRImmediate::Str(string)) = value.kind() else {
+    let Some(string) = value::as_literal(&value) else {
         return Ok(Coercion::Unapplied(value));
     };
     if !is_char(context.env(), element) {
@@ -274,7 +274,7 @@ fn string(
     };
     Ok(Coercion::Applied(HMIRValue::new(
         ty,
-        HMIRImmediate::Aggregate(items),
+        HMIRImmediate::Aggregate { fields: items },
     )))
 }
 

@@ -303,8 +303,7 @@ pub(crate) fn materialize(
     }
 
     let result = (!context.env().is_void(result)).then_some(result);
-    let mir = context.runtime_mut().builder_mut().add_scope(span.clone());
-    let scope = RuntimeScope::new(Some(mir), false).quoted(body.id());
+    let scope = RuntimeScope::new(false).quoted(body.id());
     context.runtime_mut().scopes_mut().push(scope, None, quote.captures().clone());
 
     let (source, point) = (quote.source(), quote.visible_through());

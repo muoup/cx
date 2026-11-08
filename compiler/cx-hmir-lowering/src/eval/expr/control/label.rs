@@ -23,8 +23,7 @@ use crate::{
     lower::types::lower_prototype,
     value::{
         HMIRValue,
-        address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        immediate::{Addressable, HMIRAddress, HMIRImmediate},
     },
 };
 

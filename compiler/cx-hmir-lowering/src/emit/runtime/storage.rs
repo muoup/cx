@@ -182,9 +182,9 @@ pub fn lift(
     let origin = context.runtime().register(origin);
     let source = target(context, source, span)?;
 
-    let mir_out = runtime::register(context, inner, span)?;
-    let hmir_out = context.runtime().
-    
+    let out = runtime::register(context, inner, span)?;
+    let mir_out = context.runtime().register(out);
+
     context.runtime_mut().emit(
         MIRInstructionKind::Lift {
             out: mir_out,
@@ -194,7 +194,7 @@ pub fn lift(
         span.clone(),
     );
 
-    Ok(mir_out)
+    Ok(HMIRValue::new(inner, out))
 }
 
 pub fn materialize(
@@ -326,7 +326,7 @@ pub fn address(
                             out,
                             place: place_id,
                         },
-                        span,
+                        span.clone(),
                     );
                     return Ok(result);
                 }
@@ -344,7 +344,7 @@ pub fn address(
     let (out, result) = output(context, ty, span)?;
     context.runtime_mut().emit_intrinsic(
         MIRInternalIntrinsic::ReferenceAddress { out, reference },
-        span,
+        span.clone(),
     );
 
     Ok(result)
@@ -371,7 +371,7 @@ pub fn dereference(
             value,
             target_ty,
         },
-        span,
+        span.clone(),
     );
 
     Ok(HMIRValue::indirect(inner, reference))
@@ -388,19 +388,20 @@ pub fn null_check(
     };
     let bool_ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let condition = register(context, bool_ty, span)?;
+    let condition = context.runtime().register(condition);
     let check = MIRPtrIntrinsic::Neq {
         out: MIRTarget::Register(condition),
         lhs: checked,
         rhs: MIRValue::Constant(null),
     };
-    context.runtime_mut().emit_intrinsic(check, span);
+    context.runtime_mut().emit_intrinsic(check, span.clone());
     let message = Some("dereferenced a null pointer".into());
     context.runtime_mut().emit_intrinsic(
         MIRInternalIntrinsic::Assert {
             condition: MIRValue::Register(condition),
             message,
         },
-        span,
+        span.clone(),
     );
     Ok(())
 }
@@ -441,7 +442,7 @@ pub fn field(
             struct_ty: aggregate_ty,
         },
     };
-    context.runtime_mut().emit_intrinsic(projection, span);
+    context.runtime_mut().emit_intrinsic(projection, span.clone());
 
     Ok(HMIRValue::indirect(ty, reference))
 }

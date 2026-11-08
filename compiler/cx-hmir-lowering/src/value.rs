@@ -5,12 +5,62 @@ use cx_hmir::ty::HMIRTypeID;
 use cx_intrinsics::Intrinsic;
 use cx_util::dense_id;
 
-use crate::value::immediate::HMIRImmediate;
+use crate::value::immediate::{Addressable, HMIRFunctionRef, HMIRImmediate};
 
 dense_id!(HMIRRegisterID, "$");
 dense_id!(HMIRPlaceID, "p");
 
 pub type HMIRValIntrinsic = Intrinsic<HMIRValue, HMIRTypeID>;
+
+pub fn as_type(value: &HMIRValue) -> Option<HMIRTypeID> {
+    match value.kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) => Some(*ty),
+        _ => None,
+    }
+}
+
+pub fn as_int(value: &HMIRValue) -> Option<i128> {
+    match value.kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Int(int)) => Some(*int),
+        _ => None,
+    }
+}
+
+pub fn as_function(value: &HMIRValue) -> Option<HMIRFunctionRef> {
+    match value.kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Address(address)) if address.offset() == 0 => {
+            match address.base() {
+                Addressable::Function(function) => Some(*function),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+pub fn as_literal(value: &HMIRValue) -> Option<&str> {
+    match value.kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Address(address)) if address.offset() == 0 => {
+            match address.base() {
+                Addressable::Literal(string) => Some(string),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+pub fn as_place(value: &HMIRValue) -> Option<HMIRPlaceID> {
+    match value.kind() {
+        HMIRValueKind::Place(place) => Some(*place),
+        _ => None,
+    }
+}
+
+pub fn curried(ty: HMIRTypeID, callee: HMIRValue, args: Vec<Option<HMIRValue>>) -> HMIRValue {
+    let callee = Box::new(callee);
+    HMIRValue::new(ty, HMIRImmediate::Curried { callee, args })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HMIRValue {

@@ -13,6 +13,7 @@ use crate::{
     env::function::{
         FnContext, LocalLoweringContext,
         runtime::{Defer, Emission, RuntimeScope},
+        scope::Bindings,
     },
     eval::{
         EvalResult,
@@ -21,7 +22,7 @@ use crate::{
         flow::{self, Evaluation},
     },
     log::hmir_error,
-    value::{Bindings, HMIRValue},
+    value::HMIRValue,
 };
 
 pub(super) fn eval_defer(
@@ -102,7 +103,7 @@ fn expand(context: &mut LocalLoweringContext, index: usize) -> CXResult<()> {
             .expect("a deferred expression belongs to its source");
         let scopes = context.runtime_mut().scopes_mut();
         scopes.push(
-            RuntimeScope::new(None, true),
+            RuntimeScope::new(true),
             Some(index),
             Bindings::default(),
         );

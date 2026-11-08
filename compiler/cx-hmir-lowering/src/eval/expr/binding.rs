@@ -22,7 +22,7 @@ use crate::{
         staged, types,
     },
     log::hmir_error,
-    value::HMIRValue,
+    value::{self, HMIRValue},
 };
 
 pub(crate) fn eval_local(
@@ -307,7 +307,7 @@ fn eval_statements(
             let result = result?;
             let partial = result
                 .known()
-                .filter(|value| value.as_type().is_some())
+                .filter(|value| value::as_type(value).is_some())
                 .cloned();
             let span = span.clone();
             return result.and_then(context, body, partial, move |context, _, value, _| {

@@ -47,8 +47,8 @@ pub fn variadic(
         VAIntrinsic::Arg { list, ty } => {
             let list = runtime::value(context, list, span)?;
 
-            let mir_out = runtime::register(context, *ty, span)?;
-            let hmir_out = context.runtime().hmir_register(mir_out);
+            let out = runtime::register(context, *ty, span)?;
+            let mir_out = context.runtime().register(out);
 
             let mir_ty = lower_type(context.env_mut(), *ty, span)?;
 
@@ -58,7 +58,7 @@ pub fn variadic(
                     list,
                     ty: mir_ty,
                 },
-                HMIRValue::new(*ty, hmir_out),
+                HMIRValue::new(*ty, out),
             )
         }
     };

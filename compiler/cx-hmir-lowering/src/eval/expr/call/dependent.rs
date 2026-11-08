@@ -29,8 +29,8 @@ use crate::{
         composite::{alike, signatures_alike},
     },
     value::{
-        HMIRValue, HMIRValueKind,
-        immediate::{HMIRImmediate, HMIRFunctionRef},
+        self, HMIRValue, HMIRValueKind,
+        immediate::{HMIRFunctionRef, HMIRImmediate},
     },
 };
 
@@ -169,7 +169,7 @@ impl Frame<'_> {
         span: &TokenRange,
         arg_span: &TokenRange,
     ) -> CXResult<HMIRValue> {
-        if let Some(ty) = value.as_type() {
+        if let Some(ty) = value::as_type(&value) {
             caller.prepare_type(ty, arg_span)?;
         }
         let frozen = self.function.signature().params()[index].comptime();
@@ -266,8 +266,7 @@ pub(crate) fn dependent(
     applied: &[Option<HMIRValue>],
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) = callee.kind()
-    else {
+    let Some(HMIRFunctionRef::Def(def)) = value::as_function(callee) else {
         return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, "this function".into()).into());
     };
     let unit = context
@@ -275,7 +274,7 @@ pub(crate) fn dependent(
         .symbols_mut()
         .owner(def.brand())
         .expect("function owner exists");
-    let source = unit.resolve_def(*def).expect("function exists");
+    let source = unit.resolve_def(def).expect("function exists");
     let name = source.name().to_string();
     let selected = symbol::select(source, None)?;
     let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind() else {
@@ -305,7 +304,7 @@ pub(crate) fn dependent(
     }
     let mut frame = Frame {
         function,
-        def: *def,
+        def,
         state: ComptimeContext::of(name.clone()),
         return_type: None,
         runtime,
@@ -400,7 +399,7 @@ pub(crate) fn dependent(
             .zip(&params)
             .any(|(param, bound)| bound.is_none() && param.comptime());
     if partial && curries {
-        return Ok(Evaluation::Ready(HMIRValue::curried(
+        return Ok(Evaluation::Ready(value::curried(
             callee.ty(),
             callee.clone(),
             values,
@@ -430,7 +429,7 @@ pub(crate) fn dependent(
         };
         let mut other = Frame {
             function: other,
-            def: *def,
+            def,
             state: ComptimeContext::new(),
             return_type: None,
             runtime,
@@ -462,7 +461,7 @@ pub(crate) fn dependent(
         }
     }
     if partial {
-        let value = specialize::declare(context, *def, &signature, values, span)?;
+        let value = specialize::declare(context, def, &signature, values, span)?;
         return Ok(Evaluation::Ready(value));
     }
     let values = values
@@ -470,7 +469,7 @@ pub(crate) fn dependent(
         .map(|value| value.expect("all arguments are complete"))
         .collect::<Vec<_>>();
     if runtime {
-        return specialize::apply(context, *def, &signature, values, span);
+        return specialize::apply(context, def, &signature, values, span);
     }
     let value = frame.enter(context, span, |child| {
         execute(child, function, &signature, &values, &name, span)

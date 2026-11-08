@@ -107,10 +107,6 @@ impl RuntimeScope {
         self.quote
     }
 
-    pub(crate) fn mir(&self) -> Option<MIRScopeID> {
-        self.mir
-    }
-
     pub(crate) fn deferred(&self) -> bool {
         self.deferred
     }

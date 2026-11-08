@@ -6,7 +6,7 @@ use std::borrow::Cow;
 
 pub use op::{binary, cast, difference, offset, unary};
 
-use cx_hmir::ty::{HMIRTypeID, aggregate::HMIRBitfield, context::HMIRTypeContext};
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRBitfield, context::HMIRTypeContext};
 use cx_log::{
     CXResult, catalogue::{analysis, mir, typecheck},
 };
@@ -79,18 +79,19 @@ pub fn aggregate(
     fields: &[(usize, HMIRValue)],
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let Some(mut constant) = HMIRImmediate::zero(context.env(), ty) else {
+    let Some(mut constant) = types::zero(context.env(), ty) else {
         unreachable!("an initialized aggregate has a zero value")
     };
+    let union = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Union { .. });
     for (index, value) in fields {
         let value = rvalue(context, value, span)?;
+        if union {
+            constant = value;
+            continue;
+        }
         match &mut constant {
-            HMIRImmediate::Aggregate(items) => items[*index] = value,
-            HMIRImmediate::Union {
-                member,
-                value: slot,
-            }
-            | HMIRImmediate::TaggedUnion {
+            HMIRImmediate::Aggregate { fields: items } => items[*index] = value,
+            HMIRImmediate::TaggedUnion {
                 variant: member,
                 payload: slot,
             } => (*member, **slot) = (*index, value),
@@ -351,17 +352,16 @@ pub fn field(
 ) -> CXResult<HMIRValue> {
     let (address, owner) = match (storage(context, base, span)?, base.kind()) {
         (Some(storage), _) => storage,
-        (None, HMIRValueKind::Immediate(HMIRImmediate::Aggregate(items))) => {
+        (None, HMIRValueKind::Immediate(HMIRImmediate::Aggregate { fields: items })) => {
             return Ok(HMIRValue::new(ty, items[index].clone()));
         }
         (
             None,
             HMIRValueKind::Immediate(
-                HMIRImmediate::Union { member, value }
-                | HMIRImmediate::TaggedUnion {
-                    variant: member,
-                    payload: value,
-                },
+                HMIRImmediate::TaggedUnion {
+                variant: member,
+                payload: value,
+            },
             ),
         ) if *member == index => {
             return Ok(HMIRValue::new(ty, value.as_ref().clone()));

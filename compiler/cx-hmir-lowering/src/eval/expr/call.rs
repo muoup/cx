@@ -27,9 +27,8 @@ use crate::{
     log::hmir_error,
     symbol,
     value::{
-        HMIRValue, HMIRValueKind,
-        address::{Addressable, HMIRAddress},
-        immediate::{HMIRImmediate, HMIRFunctionRef},
+        self, HMIRValue, HMIRValueKind,
+        immediate::{HMIRFunctionRef, HMIRImmediate},
     },
 };
 
@@ -79,44 +78,39 @@ fn evaluate(
         return staged::apply(context, body, callee, args, span);
     }
     let callee = operand(context, callee, span)?;
-    let (callee, applied) = match callee.as_function().map(HMIRValue::kind) {
-        Some(HMIRValueKind::Immediate(HMIRImmediate::Curried { callee, args })) => {
+    let (callee, applied) = match callee.kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Curried { callee, args }) => {
             let (inner, args) = (callee.as_ref().clone(), args.clone());
             (operand(context, inner, span)?, args)
         }
         _ => (callee, Vec::new()),
     };
-    let target = callee.as_function().unwrap_or(&callee).clone();
     if context.is_unevaluated()
-        && let HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) =
-            target.kind()
+        && let Some(HMIRFunctionRef::Def(def)) = value::as_function(&callee)
     {
-        let source = context.env().symbols().resolve_definition(*def);
+        let source = context.env().symbols().resolve_definition(def);
         let selected = symbol::select(source, None)?;
         if let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind()
             && function.signature().stage() == HMIRFunctionStage::Comptime
         {
             let mut child = comptime::child(context);
-            return dependent(&mut child, &target, body, args, named, &applied, span);
+            return dependent(&mut child, &callee, body, args, named, &applied, span);
         }
     }
     let referent = context.env().referent(callee.ty());
-    if (!context.is_runtime() && constructs(&target).is_none())
+    if (!context.is_runtime() && constructs(&callee).is_none())
         || types::comptime_only(context.env(), referent)
     {
-        return dependent(context, &target, body, args, named, &applied, span);
+        return dependent(context, &callee, body, args, named, &applied, span);
     }
 
     let env = context.env();
-    let subject = || match target.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def))) => {
-            format!("'{}'", env.symbols().resolve_definition(*def).name())
+    let subject = || match value::as_function(&callee) {
+        Some(HMIRFunctionRef::Def(def)) => {
+            format!("'{}'", env.symbols().resolve_definition(def).name())
         }
-        HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Constructor {
-            ty,
-            variant,
-        })) => {
-            format!("'{}'", variant::name(env, *ty, *variant))
+        Some(HMIRFunctionRef::Constructor { ty, variant }) => {
+            format!("'{}'", variant::name(env, ty, variant))
         }
         _ => "function".into(),
     };
@@ -141,7 +135,7 @@ fn evaluate(
         let counts = (subject(), params.len(), count, signature.is_variadic());
         return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts).into());
     }
-    let source_defined = constructs(&target).is_none();
+    let source_defined = constructs(&callee).is_none();
     require(
         context,
         span,
@@ -161,11 +155,9 @@ fn evaluate(
     }
 
     let return_type = *signature.return_type();
-    match target.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Def(def)))
-            if context.is_runtime() && !context.is_unevaluated() =>
-        {
-            contract::call(context, *def, &values, span, |context| {
+    match value::as_function(&callee) {
+        Some(HMIRFunctionRef::Def(def)) if context.is_runtime() && !context.is_unevaluated() => {
+            contract::call(context, def, &values, span, |context| {
                 finish(context, &callee, &values, return_type, span)
             })
         }
@@ -203,7 +195,7 @@ fn finish(
         )?));
     }
     if !context.is_runtime()
-        && let Some((ty, variant)) = callee.as_function().and_then(constructs)
+        && let Some((ty, variant)) = constructs(callee)
     {
         let value = variant::construct(context, ty, variant, values.first().cloned(), span)?;
         return Ok(Evaluation::Ready(value));
@@ -233,9 +225,7 @@ fn operand(
     }
     if function(callee.ty()) {
         let ty = types::reference(context.env_mut(), callee.ty(), None, span);
-        let callee = context.env_mut().canonical_value(callee);
-        let address = HMIRAddress::new(Addressable::Function(Box::new(callee)), 0);
-        return Ok(HMIRValue::new(ty, HMIRImmediate::Address(address)));
+        return Ok(callee.with_ty(ty));
     }
     let pointer = coerce::promotion::std_rvalue(context, callee, span)?;
     match context.env().pointer_inner(pointer.ty()) {
@@ -248,11 +238,8 @@ fn operand(
 }
 
 fn constructs(callee: &HMIRValue) -> Option<(HMIRTypeID, usize)> {
-    match callee.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Function(HMIRFunctionRef::Constructor {
-            ty,
-            variant,
-        })) => Some((*ty, *variant)),
+    match value::as_function(callee) {
+        Some(HMIRFunctionRef::Constructor { ty, variant }) => Some((ty, variant)),
         _ => None,
     }
 }

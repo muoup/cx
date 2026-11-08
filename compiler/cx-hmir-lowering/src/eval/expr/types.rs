@@ -28,7 +28,7 @@ use crate::{
         staged,
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 // A slot naming a parameter is only fixed by the arguments of a call, so the shape leaves it dependent
@@ -219,6 +219,29 @@ pub(crate) fn owned_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRType
         | HMIRTypeKind::TaggedUnion { .. } => env.semantics(ty),
         _ => HMIRTypeSemantics::default(),
     }
+}
+
+pub(crate) fn zero(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<HMIRImmediate> {
+    Some(match env.resolve_kind(ty) {
+        HMIRTypeKind::Int(_) | HMIRTypeKind::PointerTo(_) => HMIRImmediate::Int(0),
+        HMIRTypeKind::Float(_) => HMIRImmediate::Float(0.0.into()),
+        HMIRTypeKind::Void => HMIRImmediate::Unit,
+        HMIRTypeKind::Array { element, length } => HMIRImmediate::Aggregate {
+            fields: vec![zero(env, *element)?; *length as usize],
+        },
+        HMIRTypeKind::Struct { fields } => HMIRImmediate::Aggregate {
+            fields: fields
+                .iter()
+                .map(|field| zero(env, *field.ty()))
+                .collect::<Option<_>>()?,
+        },
+        HMIRTypeKind::Union { fields } => zero(env, *fields.first()?.ty())?,
+        HMIRTypeKind::TaggedUnion { fields } => HMIRImmediate::TaggedUnion {
+            variant: 0,
+            payload: Box::new(zero(env, *fields.first()?.ty())?),
+        },
+        _ => return None,
+    })
 }
 
 pub(crate) fn is_complete(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {

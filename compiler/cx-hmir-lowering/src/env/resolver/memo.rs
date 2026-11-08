@@ -14,7 +14,7 @@ use crate::{
     eval::{self, coerce, deduce, flow, types},
     log::hmir_error,
     symbol,
-    value::HMIRValue,
+    value::{self, HMIRValue},
 };
 
 use super::HMIRResolver;
@@ -241,13 +241,13 @@ fn expression(
     let result = eval::eval(context, body, expr)?.try_complete(context, body, expected)?;
     let partial = result
         .known()
-        .filter(|value| value.as_type().is_some())
+        .filter(|value| value::as_type(value).is_some())
         .cloned();
     let span = span.clone();
     result.and_then(context, body, partial, move |context, _, value, _| {
         let value = match expected {
             Some(expected) => coerce::implicit::standard(context, value, expected, &span)?,
-            None if initializer && value.as_type().is_none() => {
+            None if initializer && value::as_type(&value).is_none() => {
                 coerce::promotion::std_rvalue(context, value, &span)?
             }
             None => value,

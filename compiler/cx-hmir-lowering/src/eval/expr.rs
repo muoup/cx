@@ -25,7 +25,10 @@ use crate::{
     eval::{EvalResult, eval, eval_type, flow::Evaluation},
     log::hmir_error,
     symbol::composite::alike,
-    value::{HMIRValue, immediate::HMIRImmediate},
+    value::{
+        HMIRValue,
+        immediate::{Addressable, HMIRAddress, HMIRImmediate},
+    },
 };
 
 pub(crate) fn eval_literal(
@@ -37,7 +40,8 @@ pub(crate) fn eval_literal(
         HMIRLiteral::Unit => unit(context, span),
         HMIRLiteral::Str(value) => {
             let ty = types::realize(context.env_mut(), HMIRTypeKind::Str, span);
-            HMIRValue::new(ty, HMIRImmediate::Str(value.clone()))
+            let literal = HMIRAddress::new(Addressable::Literal(value.clone()), 0);
+            HMIRValue::new(ty, HMIRImmediate::Address(literal))
         }
         HMIRLiteral::Int { value, ty } => {
             let ty = types::int(context.env_mut(), ty.width(), ty.signed(), span);
