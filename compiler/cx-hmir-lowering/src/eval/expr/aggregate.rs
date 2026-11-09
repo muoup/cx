@@ -8,11 +8,7 @@ use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBodyContext,
     body::HMIRLocalID,
     expr::HMIRExprID,
-    ty::{
-        HMIRTypeID, HMIRTypeKind,
-        aggregate::{HMIRFieldDef, HMIRTypeSemantics},
-        context::HMIRTypeContext,
-    },
+    ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRFieldDef, context::HMIRTypeContext},
 };
 use cx_log::catalogue::typecheck;
 use cx_tokens::TokenRange;
@@ -82,41 +78,27 @@ fn eval_member(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let value = eval(context, body, base)?
         .ready()
-        .and_then(|value| coerce::collapse(context, value, &span).map_err(EvalExit::from))?;
- 
-    let subject = types::referent(context.env(), value.ty());
-    let indirect = context.env().is_pointer(subject) || context.env().is_array(subject);
+        .and_then(|value| coerce::aggregate(context, value, &span).map_err(EvalExit::from))?;
 
-    let mut value = if indirect {
-        dereference_hmir(context, value, None, &span)?
-    } else if context.env().is_reference(value.ty()) {
-        value
-    } else {
-        emit::temporary(context, value, &span)?
+    let Some(aggregate_type) = context.env().reference_inner(value.ty()) else {
+        unreachable!("coerce::aggregate did not return a reference type")
     };
 
-    let mut owner = context.env().referent(value.ty());
-    let Some(path) = member_path(context.env(), owner, name) else {
-        let member = (types::name(context.env(), owner), name.to_string());
-        return Err(hmir_error(&span, &typecheck::UNKNOWN_MEMBER, member).into());
-    };
+    let index = match context.env().resolve_kind(aggregate_type) {
+        HMIRTypeKind::Struct { fields } => fields.iter().position(|f| f.name() == Some(name)),
+        HMIRTypeKind::Union { fields } => fields.iter().position(|f| f.name() == Some(name)),
 
-    for index in path {
-        let mut ty = *member_fields(context.env(), owner)[index].ty();
-        let semantics = context.env().semantics(owner);
-        if semantics.constant || semantics.volatile {
-            let qualifiers = HMIRTypeSemantics {
-                constant: semantics.constant,
-                volatile: semantics.volatile,
-                ..Default::default()
-            };
-            ty = types::qualify::specify(context, ty, qualifiers, &span);
-        }
-        value = emit::field(context, &value, index, ty, &span)?;
-        owner = ty;
+        _ => None,
     }
+    .ok_or_else(|| hmir_error(span, todo!(), todo!()))?;
 
-    Ok(Evaluation::Ready(emit::reference(context, &value, &span)?))
+    Ok(Evaluation::Ready(emit::field(
+        context,
+        &value,
+        index,
+        aggregate_type,
+        &span,
+    )?))
 }
 
 fn unpack(
@@ -218,8 +200,8 @@ fn unpack(
             match types::bitfield(context.env(), &reference) {
                 Some(_) => emit::copy(context, reference, span)?,
                 None => {
-                    let origin = value::as_place(&source)
-                        .expect("an unpacked value is held in storage");
+                    let origin =
+                        value::as_place(&source).expect("an unpacked value is held in storage");
                     emit::lift(context, &reference, origin, span)?
                 }
             }

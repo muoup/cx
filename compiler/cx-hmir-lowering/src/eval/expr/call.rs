@@ -10,23 +10,13 @@ use cx_hmir::{
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue::typecheck};
-use cx_mir::MIRInstructionKind;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    emit,
-    env::function::LocalLoweringContext,
-    eval::{
-        EvalResult,
-        aggregate::variant,
-        coerce, comptime, eval, expr,
-        flow::{self, Evaluation},
-        staged, types,
-    },
-    log::hmir_error,
-    symbol,
-    value::{
+    emit, env::function::LocalLoweringContext, eval::{
+        EvalResult, aggregate::variant, coerce, comptime, eval, expr, flow::Evaluation, helpers, staged, types,
+    }, log::hmir_error, symbol, value::{
         self, HMIRValue, HMIRValueKind,
         immediate::{HMIRFunctionRef, HMIRImmediate},
     },
@@ -40,69 +30,66 @@ pub(crate) fn eval_call(
     args: &[HMIRExprID],
     named: &[(CXIdent, HMIRExprID)],
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let (args, named, span) = (args.to_vec(), named.to_vec(), span.clone());
+    let span = span.clone();
+    let args = args
+        .iter()
+        .map(|expr| eval(context, body, *expr))
+        .collect::<EvalResult<Vec<_>>>()?;
 
-    eval(context, body, callee)?.and_then(
-        context,
-        body,
-        None,
-        move |context, body, callee, expected| {
-            evaluate(context, body, &span, callee, &args, &named)?
-                .try_complete(context, body, expected)
-        },
-    )
+    let named = named
+        .iter()
+        .map(|(name, expr)| eval(context, body, *expr).map(|expr| (name.clone(), expr)))
+        .collect::<EvalResult<Vec<_>>>()?;
+
+    eval(context, body, callee)?.and_then(context, body, None, move |context, body, callee, _| {
+        hmir_call(context, body, &span, callee, &args, &named)
+    })
 }
 
-fn evaluate(
+pub(crate) fn hmir_call(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
     callee: HMIRValue,
-    args: &[HMIRExprID],
-    named: &[(CXIdent, HMIRExprID)],
+    args: &[Evaluation<HMIRValue>],
+    named: &[(CXIdent, Evaluation<HMIRValue>)],
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let callee = staged::read(context, callee, span)?;
-    if matches!(
-        callee.kind(),
-        HMIRValueKind::Immediate(HMIRImmediate::Quote(_))
-    ) {
-        if let Some((_, value)) = named.first() {
-            let context = ("a named argument".into(), "a staged expression call".into());
-            return Err(hmir_error(
-                body.expr(*value).span(),
-                &typecheck::INVALID_CONTEXT,
-                context,
-            )
-            .into());
-        }
-        return staged::apply(context, body, callee, args, span);
-    }
-    let callee = operand(context, callee, span)?;
-    let (callee, applied) = match callee.kind() {
+    let callee = coerce::collapse(context, callee, span)?;
+    let ty = callee.ty();
+
+    let (callee, applied) = match callee.take_kind() {
         HMIRValueKind::Immediate(HMIRImmediate::Curried { callee, args }) => {
-            let (inner, args) = (callee.as_ref().clone(), args.clone());
-            (operand(context, inner, span)?, args)
+            (*callee, Some(args.as_slice()))
         }
-        _ => (callee, Vec::new()),
+
+        HMIRValueKind::Immediate(HMIRImmediate::Quote(_)) => {
+            if !named.is_empty() {
+                // ERROR: A quote does not have named arguments, so named parameters cannot match
+
+                let context = ("a named argument".into(), "a staged expression call".into());
+                return Err(hmir_error(&span, &typecheck::INVALID_CONTEXT, context).into());
+            }
+
+            return staged::apply(context, body, callee, &args, &span);
+        }
+
+        _ => (callee.with_ty(ty), None),
     };
-    if context.is_unevaluated()
-        && let Some(HMIRFunctionRef::Def(def)) = value::as_function(&callee)
-    {
-        let source = context.env().symbols().resolve_definition(def);
-        let selected = symbol::select(source, None)?;
-        if let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind()
-            && function.signature().stage() == HMIRFunctionStage::Comptime
-        {
-            let mut child = comptime::child(context);
-            return dependent(&mut child, &callee, body, args, named, &applied, span);
+
+    // To simplify semantics, all function callees are unified under a @fn& types, this gives us three implicitly
+    // supported no ops:
+    // 
+    // @fn* -> @fn& -- 
+    // @fn -> @fn& -- either a 
+    let ty = match context.env().resolve_kind(ty) {
+        HMIRTypeKind::ReferenceTo { inner, .. } => *inner,
+        HMIRTypeKind::PointerTo(base) => {
+            helpers::null_check(context, callee.clone(), span)?;
+            types::reference(context.env_mut(), *base, None, span)
         }
-    }
-    let referent = context.env().referent(callee.ty());
-    if (!context.is_runtime() && constructs(&callee).is_none())
-        || types::comptime_only(context.env(), referent)
-    {
-        return dependent(context, &callee, body, args, named, &applied, span);
-    }
+        
+        _ => types::reference(context.env_mut(), ty, None, span),
+    };
 
     let env = context.env();
     let subject = || match value::as_function(&callee) {
@@ -178,68 +165,4 @@ fn require(
         expr::require_impure(context, span, "call to a user-defined function")?;
     }
     Ok(())
-}
-
-fn finish(
-    context: &mut LocalLoweringContext,
-    callee: &HMIRValue,
-    values: &[HMIRValue],
-    return_type: HMIRTypeID,
-    span: &TokenRange,
-) -> EvalResult<Evaluation<HMIRValue>> {
-    if context.is_unevaluated() {
-        return Ok(Evaluation::Ready(emit::runtime::placeholder(
-            context,
-            return_type,
-            span,
-        )?));
-    }
-    if !context.is_runtime()
-        && let Some((ty, variant)) = constructs(callee)
-    {
-        let value = variant::construct(context, ty, variant, values.first().cloned(), span)?;
-        return Ok(Evaluation::Ready(value));
-    }
-    let result = emit::call(context, callee, values, return_type, span)?;
-    if matches!(
-        context.env().resolve_kind(return_type),
-        HMIRTypeKind::Unreachable
-    ) {
-        context
-            .runtime_mut()
-            .emit(MIRInstructionKind::Unreachable, span.clone());
-        return flow::diverged();
-    }
-    Ok(Evaluation::Ready(result))
-}
-
-fn operand(
-    context: &mut LocalLoweringContext,
-    callee: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let env = context.env();
-    let function = |ty| matches!(env.resolve_kind(ty), HMIRTypeKind::Function(_));
-    if env.reference_inner(callee.ty()).is_some_and(function) {
-        return Ok(callee);
-    }
-    if function(callee.ty()) {
-        let ty = types::reference(context.env_mut(), callee.ty(), None, span);
-        return Ok(callee.with_ty(ty));
-    }
-    let pointer = coerce::promotion::std_rvalue(context, callee, span)?;
-    match context.env().pointer_inner(pointer.ty()) {
-        Some(inner) if matches!(context.env().resolve_kind(inner), HMIRTypeKind::Function(_)) => {
-            let storage = emit::dereference(context, pointer, inner, None, span)?;
-            emit::reference(context, &storage, span)
-        }
-        _ => Ok(pointer),
-    }
-}
-
-fn constructs(callee: &HMIRValue) -> Option<(HMIRTypeID, usize)> {
-    match value::as_function(callee) {
-        Some(HMIRFunctionRef::Constructor { ty, variant }) => Some((ty, variant)),
-        _ => None,
-    }
 }

@@ -105,6 +105,10 @@ impl HMIRValue {
     pub fn kind(&self) -> &HMIRValueKind {
         &self.kind
     }
+
+    pub fn take_kind(self) -> HMIRValueKind {
+        self.kind
+    }
 }
 
 impl From<HMIRImmediate> for HMIRValueKind {

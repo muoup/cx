@@ -43,24 +43,6 @@ pub(crate) fn immediate<'value>(
     }
 }
 
-pub fn null_check(
-    context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    span: &TokenRange,
-) -> CXResult<()> {
-    let immediate = immediate(context, value, span)?;
-
-    match immediate.as_ref() {
-        HMIRImmediate::Int(0) | HMIRImmediate::Unit => Err(hmir_error(
-            span,
-            &typecheck::COMPTIME_INTERPRETATION,
-            "attempted to dereference a null pointer".into(),
-        )),
-
-        _ => Ok(()),
-    }
-}
-
 pub fn allocate(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,

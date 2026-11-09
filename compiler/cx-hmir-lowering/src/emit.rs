@@ -1,10 +1,6 @@
 pub mod comptime;
 pub mod runtime;
-
-pub use storage::{
-    adopt, allocate, bind_local, copy, initialize, invalidate, lift, materialize, scratch,
-    temporary, write,
-};
+pub mod storage;
 
 use cx_hmir::{
     HMIRBinaryOp, HMIRUnaryOp,
@@ -18,9 +14,7 @@ use crate::{
     env::function::{
         FnContext, LocalLoweringContext, comptime::ComptimeScope, memory::placement,
         scope::Bindings,
-    },
-    eval::types,
-    value::HMIRValue,
+    }, eval::types, value::{HMIRValIntrinsic, HMIRValue},
 };
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {
@@ -43,14 +37,14 @@ pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
     }
 }
 
-pub fn null_check(
+pub fn intrinsic(
     context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    span: &TokenRange,
-) -> CXResult<()> {
-    match context.context_mut() {
-        FnContext::Runtime(_) => runtime::null_check(context, value, span),
-        FnContext::Comptime(_) => comptime::null_check(context, value, span)
+    intrinsic: &HMIRValIntrinsic,
+    span: &TokenRange
+) -> CXResult<HMIRValue> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::intrinsics::intrinsic(context, intrinsic, span),
+        FnContext::Comptime(_) => todo!()
     }
 }
 

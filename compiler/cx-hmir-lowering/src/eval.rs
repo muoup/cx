@@ -1,6 +1,8 @@
 pub(crate) mod deduce;
-mod expr;
 pub(crate) mod flow;
+pub(crate) mod helpers;
+
+mod expr;
 
 pub(crate) use expr::{
     aggregate, binding, call, coerce, comptime, control, name, op, place, staged, types,

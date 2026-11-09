@@ -6,14 +6,25 @@ use cx_hmir::{
     HMIRBinaryOp,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
+use cx_intrinsics::{
+    IntBinaryOp, IntIntrinsic, InternalIntrinsic, PointerCompareOp, PointerIntrinsic,
+};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRConstant, MIRInstructionKind, MIRInternalIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRValue, expr::instruction::MIRInvalidationKind,
+    MIRConstant, MIRInstructionKind, MIRInternalIntrinsic, MIRPlaceDecl, MIRPlaceID, MIRRegister,
+    MIRRegisterDecl, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 
 use crate::{
-    emit::runtime, env::function::{LocalLoweringContext, runtime::RuntimeScope, scope::Bindings}, eval::types, lower::types::{lower_type, mir_float, mir_int}, value::{HMIRPlaceID, HMIRRegisterID, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    emit::runtime,
+    env::function::{LocalLoweringContext, runtime::RuntimeScope, scope::Bindings},
+    eval::types,
+    lower::types::{lower_type, mir_float, mir_int},
+    value::{
+        HMIRPlaceID, HMIRRegisterID, HMIRValIntrinsic, HMIRValue, HMIRValueKind,
+        immediate::HMIRImmediate,
+    },
 };
 
 pub fn open_scope(context: &mut LocalLoweringContext, span: &TokenRange) -> usize {
@@ -52,31 +63,6 @@ pub fn drop_scope(context: &mut LocalLoweringContext, index: usize, span: &Token
         };
         context.runtime_mut().emit(invalidate, span.clone());
     }
-}
-
-pub fn null_check(
-    context: &mut LocalLoweringContext,
-    value: &HMIRValue,
-    span: &TokenRange,
-) -> CXResult<()> {
-    assert!(context.env().is_pointer(value.ty()));
-
-    let bool = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    let compare_to = HMIRValue::new(value.ty(), HMIRImmediate::Int(0));
-
-    let comparison =
-        intrinsics::binary(context, HMIRBinaryOp::Neq, &value, &compare_to, bool, span)
-            .and_then(|comparison| runtime::value(context, &comparison, span))?;
-
-    context.runtime_mut().emit_intrinsic(
-        MIRInternalIntrinsic::Assert {
-            condition: comparison,
-            message: Some("Attempted to dereference a null pointer".into()),
-        },
-        span.clone(),
-    );
-
-    Ok(())
 }
 
 pub fn value(
@@ -134,7 +120,7 @@ pub(crate) fn place(
     ty: HMIRTypeID,
     nodrop: bool,
     adopted: bool,
-    span: &TokenRange
+    span: &TokenRange,
 ) -> CXResult<HMIRPlaceID> {
     let ty = lower_type(context.env_mut(), ty, span)?;
     let runtime = context.runtime_mut();

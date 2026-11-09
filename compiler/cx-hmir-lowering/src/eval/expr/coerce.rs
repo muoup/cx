@@ -15,12 +15,7 @@ use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
-    emit,
-    emit::comptime::{float, int},
-    env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{EvalResult, eval, eval_type, flow::Evaluation, types},
-    log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    emit, env::{HMIREnvironment, function::LocalLoweringContext}, eval::{EvalResult, eval, eval_type, flow::Evaluation, place::dereference_hmir, types}, log::hmir_error, value::{HMIRValue, immediate::HMIRImmediate},
 };
 
 pub(crate) enum Coercion {
@@ -67,15 +62,6 @@ pub(crate) fn eval_coerce(
     }))
 }
 
-pub(crate) fn value_type(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-) -> HMIRTypeID {
-    let ty = context.env().referent(ty);
-    types::qualify::unqualified(context, ty, span)
-}
-
 pub(crate) fn read(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
@@ -105,6 +91,29 @@ pub(crate) fn collapse(
 
         value = read(context, value, span)?;
     }
+}
+
+// Coerces towards a single reference layer -- i.e. T& -- useful for aggregate operations 
+pub(crate) fn aggregate(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange
+) -> CXResult<HMIRValue> {
+    let coerced = match context.env().resolve_kind(value.ty()) {
+        HMIRTypeKind::ReferenceTo { inner, bitfield: _ } => {
+            if !context.env().is_reference(*inner) { return Ok(value); }
+
+            promotion::reference_load(context, value, *inner, span)?
+        },
+
+        HMIRTypeKind::PointerTo(_) => {
+            dereference_hmir(context, value, None, span)?
+        },
+
+        _ => emit::storage::materialize(context, value, span)?
+    };
+
+    aggregate(context, coerced, span)
 }
 
 pub(crate) fn arithmetic(
@@ -167,15 +176,6 @@ fn truth(
             emit::binary(context, HMIRBinaryOp::Neq, &value, &zero, boolean, span)?
         }
     }))
-}
-
-pub(crate) fn common(
-    context: &mut LocalLoweringContext,
-    lhs: HMIRTypeID,
-    rhs: HMIRTypeID,
-    span: &TokenRange,
-) -> Option<HMIRTypeID> {
-    promotion::common(context, lhs, rhs, span)
 }
 
 pub(crate) fn pointer(

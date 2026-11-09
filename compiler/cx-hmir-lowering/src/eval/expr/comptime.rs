@@ -71,43 +71,6 @@ pub(crate) fn child<'a, 'global, 'hmir>(
     child
 }
 
-pub(crate) fn inputs(context: &mut LocalLoweringContext) -> Vec<(HMIRLocalID, HMIRValue)> {
-    context
-        .visible_locals()
-        .into_iter()
-        .filter_map(|(local, value)| Some((local, known(context, &value)?)))
-        .collect()
-}
-
-pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<HMIRValue> {
-    let value = match (value.kind(), context.context()) {
-        (HMIRValueKind::Immediate(_), _) => value.clone(),
-        (HMIRValueKind::Reference(HMIRReference::Local(slot)), FnContext::Runtime(runtime)) => {
-            runtime.slot(*slot).known().cloned()?
-        }
-        (
-            HMIRValueKind::Reference(place @ HMIRReference::Region(region)),
-            FnContext::Comptime(comptime),
-        ) => {
-            let slot = comptime.slot(*region)?;
-            if slot.state() != ComptimeSlotState::Live {
-                return None;
-            }
-            let ty = slot.ty();
-            let address = HMIRAddress::place(*place);
-            let constant = context
-                .load(&address, ty, None, &TokenRange::Internal)
-                .ok()?;
-            HMIRValue::new(ty, constant)
-        }
-        _ => return None,
-    };
-    match value.kind() {
-        HMIRValueKind::Immediate(constant) if !constant.holds_local_address() => Some(value),
-        _ => None,
-    }
-}
-
 fn evaluate(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,

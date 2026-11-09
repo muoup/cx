@@ -15,7 +15,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{expr, flow, staged, types},
     log::hmir_error,
-    value::{HMIRReference, HMIRValue, HMIRValueKind},
+    value::{HMIRValue, HMIRValueKind},
 };
 
 pub(crate) fn std_rvalue(
@@ -113,10 +113,7 @@ pub fn reference_load(
     }
 
     let semantics = env.semantics(inner);
-    let external_write = matches!(
-        value.kind(),
-        HMIRValueKind::Reference(HMIRReference::Global(_)) | HMIRValueKind::Immediate(_)
-    );
+    let external_write = matches!(value.kind(), HMIRValueKind::Immediate(_));
 
     if semantics.volatile {
         expr::require_impure(context, span, "reading a volatile value")?;
