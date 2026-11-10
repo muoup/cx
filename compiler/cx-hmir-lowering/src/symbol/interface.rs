@@ -94,7 +94,7 @@ pub(crate) fn definition(
                 span.clone(),
                 None,
             ));
-            let function = Addressable::Function(HMIRFunctionRef::Def(id));
+            let function = Addressable::Def(HMIRFunctionRef::Def(id));
             Ok(HMIRValue::new(
                 ty,
                 HMIRImmediate::Address(HMIRAddress::new(function, 0)),

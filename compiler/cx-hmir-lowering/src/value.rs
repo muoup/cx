@@ -30,7 +30,7 @@ pub fn as_function(value: &HMIRValue) -> Option<HMIRFunctionRef> {
     match value.kind() {
         HMIRValueKind::Immediate(HMIRImmediate::Address(address)) if address.offset() == 0 => {
             match address.base() {
-                Addressable::Function(function) => Some(*function),
+                Addressable::Def(function) => Some(*function),
                 _ => None,
             }
         }

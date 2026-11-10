@@ -290,7 +290,7 @@ pub(crate) fn dependent(
     let arguments = bind(function, &name, caller_body, applied, args, named, span)?;
     let partial = arguments.iter().any(Option::is_none);
     if !partial {
-        super::require(context, span, declared.contract().is_safe(), true)?;
+        super::context_require(context, span, declared.contract().is_safe(), true)?;
     }
     if function.def().is_none() {
         return Err(match runtime {

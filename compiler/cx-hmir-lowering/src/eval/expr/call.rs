@@ -5,21 +5,19 @@ mod specialize;
 pub(crate) use dependent::{Frame, body, dependent, parameter_name};
 
 use cx_hmir::{
-    HMIRBodyContext, HMIRDefKind, HMIRFunctionStage,
+    HMIRBodyContext,
     expr::HMIRExprID,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::{HMIRTypeKind, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    emit, env::function::LocalLoweringContext, eval::{
-        EvalResult, aggregate::variant, coerce, comptime, eval, expr, flow::Evaluation, helpers, staged, types,
-    }, log::hmir_error, symbol, value::{
-        self, HMIRValue, HMIRValueKind,
-        immediate::{HMIRFunctionRef, HMIRImmediate},
-    },
+    env::function::LocalLoweringContext,
+    eval::{EvalResult, coerce, eval, expr, flow::Evaluation, helpers, staged, types},
+    log::hmir_error,
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) fn eval_call(
@@ -76,59 +74,28 @@ pub(crate) fn hmir_call(
         _ => (callee.with_ty(ty), None),
     };
 
-    // To simplify semantics, all function callees are unified under a @fn& types, this gives us three implicitly
-    // supported no ops:
-    // 
-    // @fn* -> @fn& -- 
-    // @fn -> @fn& -- either a 
-    let ty = match context.env().resolve_kind(ty) {
-        HMIRTypeKind::ReferenceTo { inner, .. } => *inner,
+    // To simplify semantics, all function callees are unified into a @fn& types. Whether a direct or indirect
+    // call is generated at runtime depends on the underlying MIRValue produced, not on the type.
+    let (subject, ty) = match context.env().resolve_kind(ty) {
+        HMIRTypeKind::ReferenceTo { inner, .. } => (*inner, ty),
         HMIRTypeKind::PointerTo(base) => {
             helpers::null_check(context, callee.clone(), span)?;
-            types::reference(context.env_mut(), *base, None, span)
+            (
+                *base,
+                types::reference(context.env_mut(), *base, None, span),
+            )
         }
-        
-        _ => types::reference(context.env_mut(), ty, None, span),
+
+        _ => (ty, types::reference(context.env_mut(), ty, None, span)),
     };
 
-    let env = context.env();
-    let subject = || match value::as_function(&callee) {
-        Some(HMIRFunctionRef::Def(def)) => {
-            format!("'{}'", env.symbols().resolve_definition(def).name())
-        }
-        Some(HMIRFunctionRef::Constructor { ty, variant }) => {
-            format!("'{}'", variant::name(env, ty, variant))
-        }
-        _ => "function".into(),
-    };
-    if let Some((name, value)) = named.first() {
-        let unknown = (subject(), name.to_string());
-        return Err(hmir_error(
-            body.expr(*value).span(),
-            &typecheck::UNKNOWN_PARAMETER,
-            unknown,
-        )
-        .into());
-    }
-    let HMIRTypeKind::Function(signature) = env.resolve_kind(referent) else {
-        let kind = (types::name(env, callee.ty()), "callable".into());
+    let HMIRTypeKind::Function(signature) = context.env().resolve_kind(subject) else {
+        let kind = (types::name(context.env(), callee.ty()), "callable".into());
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
     };
-    let signature = signature.clone();
-    let params = signature.params();
-    let applied = applied.into_iter().flatten().collect::<Vec<_>>();
-    let count = applied.len() + args.len();
-    if count < params.len() || (!signature.is_variadic() && count > params.len()) {
-        let counts = (subject(), params.len(), count, signature.is_variadic());
-        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts).into());
-    }
-    let source_defined = constructs(&callee).is_none();
-    require(
-        context,
-        span,
-        !source_defined || signature.contract().is_safe(),
-        source_defined,
-    )?;
+
+    let safe = signature.contract().is_safe();
+    context_require(context, span, safe, false)?;
 
     let mut values = applied;
     for arg in args {
@@ -152,16 +119,16 @@ pub(crate) fn hmir_call(
     }
 }
 
-fn require(
+pub(crate) fn context_require(
     context: &LocalLoweringContext,
     span: &TokenRange,
     safe: bool,
-    source_defined: bool,
+    pure: bool,
 ) -> CXResult<()> {
     if !safe {
         expr::require_nonsafe(context, span, "call to non-safe function")?;
     }
-    if source_defined {
+    if !pure {
         expr::require_impure(context, span, "call to a user-defined function")?;
     }
     Ok(())

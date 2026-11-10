@@ -29,12 +29,6 @@ pub enum HMIRImmediate {
     Type(HMIRTypeID),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum HMIRFunctionRef {
-    Def(HMIRDefID),
-    Constructor { ty: HMIRTypeID, variant: usize },
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HMIRAddress {
     base: Addressable,
@@ -57,16 +51,10 @@ impl HMIRAddress {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Addressable {
-    Function(HMIRFunctionRef),
+    Def(HMIRDefID),
     Label {
         function: MIRFunctionID,
         label: CXIdent,
     },
     Literal(String),
-}
-
-impl Addressable {
-    pub fn is_storage(&self) -> bool {
-        !matches!(self, Self::Label { .. } | Self::Function(_))
-    }
 }
