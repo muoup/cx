@@ -187,9 +187,6 @@ fn arguments(
     let mut values = Vec::with_capacity(args.len());
     for (index, arg) in args.iter().enumerate() {
         let param = signature.params().get(index).map(|param| *param.ty());
-        let defaulted = declared.filter(|(_, function)| {
-            !partial && function.prototype().params()[index].default().is_some()
-        });
         values.push(match (applied.next().flatten(), *arg, param) {
             (Some(value), _, _) => Some(value),
             (None, Some(arg), Some(ty)) => {
@@ -200,9 +197,13 @@ fn arguments(
                 let value = eval(context, body, arg)?.complete(context, body, None)?;
                 Some(coerce::default_argument(context, value, body.expr(arg).span())?)
             }
-            (None, None, Some(ty)) => match defaulted {
-                Some((def, function)) => Some(default(context, def, function, index, ty)?),
-                None => None,
+            (None, None, Some(ty)) => match declared {
+                Some((def, function))
+                    if !partial && function.prototype().params()[index].default().is_some() =>
+                {
+                    Some(default(context, def, function, index, ty)?)
+                }
+                _ => None,
             },
             (None, None, None) => None,
         });
