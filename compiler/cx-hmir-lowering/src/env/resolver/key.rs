@@ -24,7 +24,7 @@ pub(super) fn key(ty: &HMIRType) -> TypeKey {
     };
     match ty.kind() {
         HMIRTypeKind::Int(int) => {
-            key.scalars.push(int.width().bytes() as u64);
+            key.scalars.push(int.width() as u64);
             key.scalars.push(int.signed() as u64);
         }
         HMIRTypeKind::Float(float) => key.scalars.push(float.width().bytes() as u64),

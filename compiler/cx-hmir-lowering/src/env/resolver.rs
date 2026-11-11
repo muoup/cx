@@ -8,6 +8,7 @@ use cx_hmir::{
     },
 };
 use cx_mir::MIRTypeID;
+use cx_tokens::TokenRange;
 use index_vec::IndexVec;
 
 use crate::value::{self, HMIRValue};
@@ -44,8 +45,17 @@ pub(crate) struct HMIRResolver {
 }
 
 impl HMIRResolver {
+    // Void is always type 0, which unit values rely on
     pub fn new() -> Self {
-        Self::default()
+        let mut resolver = Self::default();
+        let void = HMIRType::new(
+            HMIRTypeKind::Void,
+            HMIRTypeSemantics::default(),
+            TokenRange::Internal,
+            None,
+        );
+        resolver.intern(void);
+        resolver
     }
 
     // A named aggregate is a type of its own; any other type is the one type of its structure

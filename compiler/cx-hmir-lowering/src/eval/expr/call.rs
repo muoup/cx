@@ -360,11 +360,10 @@ fn finish(
     return_type: HMIRTypeID,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    if context.is_unevaluated() {
-        todo!("call::finish -- context.is_unevaluated()");
-    }
-    
-    let result = emit::call(context, callee, args, return_type, span)?;
+    let result = match context.is_unevaluated() {
+        true => HMIRValue::new(return_type, emit::runtime::register(context, return_type, span)?),
+        false => emit::call(context, callee, args, return_type, span)?,
+    };
 
     match context.env().resolve_kind(return_type) {
         HMIRTypeKind::Unreachable => {
