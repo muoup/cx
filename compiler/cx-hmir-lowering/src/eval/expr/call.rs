@@ -1,11 +1,8 @@
-pub(crate) mod argument;
-pub(crate) mod bind;
 pub(crate) mod contract;
 pub(crate) mod dependent;
-mod specialize;
 
 use cx_hmir::{
-    HMIRBodyContext, HMIRFnSignature, HMIRFunctionStage,
+    HMIRBodyContext, HMIRDefID, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
@@ -19,7 +16,8 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     emit,
-    env::function::LocalLoweringContext,
+    env::function::{ComptimeContext, FnContext, LocalLoweringContext},
+    symbol,
     eval::{
         EvalResult,
         aggregate::variant,
@@ -56,8 +54,8 @@ pub(crate) fn eval_call(
     )
 }
 
-// Decides what each argument of a call is evaluated as from the parameter that it binds, and calls the callee
-// with the values, or curries it with them where they leave parameters open
+// Binds the arguments of a call to the parameters of its callee, evaluates them, and calls the callee with the
+// values, or curries it with them where the call is partial
 fn apply(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
@@ -80,41 +78,152 @@ fn apply(
 
     let (callee, applied) = value::uncurried(callee);
     let (callee, signature) = coerce_callee(context, callee, span)?;
-    if context.is_unevaluated()
-        && signature.stage() == HMIRFunctionStage::Comptime
-        && value::as_function(&callee).is_some()
-    {
+    let def = value::as_function(&callee);
+    if context.is_unevaluated() && signature.stage() == HMIRFunctionStage::Comptime && def.is_some() {
         let mut child = comptime::child(context);
         let callee = value::curried(callee.ty(), callee, applied);
         return apply(&mut child, body, span, callee, args, named);
     }
 
-    let parameters = bind::parameters(context, &callee, &signature);
-    let binding = bind::bind(
-        &parameters,
-        signature.is_variadic(),
-        &name(context, &callee),
-        body,
-        applied,
-        args,
-        named,
-        span,
-    )?;
-    let partial = binding.is_partial();
-    let span = span.clone();
-    argument::evaluate(context, body, &callee, &signature, binding, &span)?.and_then(
-        context,
-        body,
-        move |context, _, values| match partial {
-            true => curry(context, callee, &signature, values, &span),
-            false => hmir_call(
-                context,
-                &span,
-                callee,
-                values.into_iter().flatten().collect(),
-            ),
-        },
-    )
+    // Only a callee that names a function knows the names and the defaults of its parameters
+    let unit = def.map(|def| {
+        let symbols = context.env_mut().symbols_mut();
+        symbols.owner(def.brand()).expect("function owner exists")
+    });
+    let declared = match (def, &unit) {
+        (Some(def), Some(unit)) => {
+            let source = unit.resolve_def(def).expect("function exists");
+            Some((def, symbol::structure::function(source)?))
+        }
+        _ => None,
+    };
+    let function = declared.map(|(_, function)| function);
+    let name = name(context, &callee);
+    let (args, partial) = bind(function, &signature, &applied, body, args, named, &name, span)?;
+
+    let referent = context.env().referent(callee.ty());
+    if let Some((def, function)) = declared.filter(|_| dependent::applies(context, referent)) {
+        if !partial {
+            context_require(context, span, signature.contract().is_safe(), false)?;
+        }
+        return dependent::call(context, body, def, function, applied, &args, partial, span);
+    }
+    let values = arguments(context, body, &signature, declared, applied, &args, partial)?;
+    if partial {
+        let residual = types::residual(&signature, |index| values[index].is_some());
+        let ty = types::realize(context.env_mut(), HMIRTypeKind::Function(residual), span);
+        return Ok(Evaluation::Ready(value::curried(ty, callee, values)));
+    }
+    hmir_call(context, span, callee, values.into_iter().flatten().collect())
+}
+
+// The argument of each parameter of a callee, then those past the parameters of a variadic one:
+//   - 'named' bind the parameters that have a default, by name;
+//   - 'args' bind the parameters that have none, in order, less those that 'applied' has bound.
+// A call that leaves one of the latter unbound is partial, which only a call whose every argument binds a comptime
+// parameter may be
+fn bind(
+    function: Option<&HMIRFunction>,
+    signature: &HMIRFnSignature<HMIRTypeID>,
+    applied: &[Option<HMIRValue>],
+    body: &HMIRBodyContext,
+    args: &[HMIRExprID],
+    named: &[(CXIdent, HMIRExprID)],
+    name: &str,
+    span: &TokenRange,
+) -> CXResult<(Vec<Option<HMIRExprID>>, bool)> {
+    let params = signature.params();
+    let declared = function.map_or(&[][..], |function| function.prototype().params());
+    let defaulted = |index: usize| declared.get(index).is_some_and(|param| param.default().is_some());
+    let applied = |index: usize| applied.get(index).is_some_and(Option::is_some);
+
+    let mut bound = vec![None; params.len()];
+    for (argument, expr) in named {
+        let named = |index: &usize| defaulted(*index) && declared[*index].name() == Some(argument);
+        let arg_span = body.expr(*expr).span();
+        let Some(index) = (0..params.len()).find(named) else {
+            let unknown = (format!("'{name}'"), argument.to_string());
+            return Err(hmir_error(arg_span, &typecheck::UNKNOWN_PARAMETER, unknown));
+        };
+        if applied(index) || bound[index].is_some() {
+            let duplicate = (format!("argument '{argument}'"), format!("call to '{name}'"));
+            return Err(hmir_error(arg_span, &typecheck::DUPLICATE_ITEM, duplicate));
+        }
+        bound[index] = Some(*expr);
+    }
+
+    let positional = (0..params.len()).filter(|index| !applied(*index) && !defaulted(*index));
+    let positional = positional.collect::<Vec<_>>();
+    for (index, expr) in positional.iter().zip(args) {
+        bound[*index] = Some(*expr);
+    }
+    let partial = args.len() < positional.len();
+    let comptime = |index: usize| {
+        signature.stage() == HMIRFunctionStage::Comptime || params[index].comptime()
+    };
+    let curries = (!args.is_empty() || !named.is_empty())
+        && (0..params.len()).all(|index| bound[index].is_none() || comptime(index));
+    if (partial && !curries) || (args.len() > positional.len() && !signature.is_variadic()) {
+        let counts = (format!("'{name}'"), positional.len(), args.len(), signature.is_variadic());
+        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts));
+    }
+    bound.extend(args.iter().skip(positional.len()).map(|arg| Some(*arg)));
+    Ok((bound, partial))
+}
+
+// The value of each argument of a call that is emitted as it is. A parameter without one takes its default,
+// unless the call is partial, which leaves it open
+fn arguments(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    signature: &HMIRFnSignature<HMIRTypeID>,
+    declared: Option<(HMIRDefID, &HMIRFunction)>,
+    applied: Vec<Option<HMIRValue>>,
+    args: &[Option<HMIRExprID>],
+    partial: bool,
+) -> EvalResult<Vec<Option<HMIRValue>>> {
+    let mut applied = applied.into_iter();
+    let mut values = Vec::with_capacity(args.len());
+    for (index, arg) in args.iter().enumerate() {
+        let param = signature.params().get(index).map(|param| *param.ty());
+        let defaulted = declared.filter(|(_, function)| {
+            !partial && function.prototype().params()[index].default().is_some()
+        });
+        values.push(match (applied.next().flatten(), *arg, param) {
+            (Some(value), _, _) => Some(value),
+            (None, Some(arg), Some(ty)) => {
+                let value = eval(context, body, arg)?.complete(context, body, Some(ty))?;
+                Some(coerce::implicit::standard(context, value, ty, body.expr(arg).span())?)
+            }
+            (None, Some(arg), None) => {
+                let value = eval(context, body, arg)?.complete(context, body, None)?;
+                Some(coerce::default_argument(context, value, body.expr(arg).span())?)
+            }
+            (None, None, Some(ty)) => match defaulted {
+                Some((def, function)) => Some(default(context, def, function, index, ty)?),
+                None => None,
+            },
+            (None, None, None) => None,
+        });
+    }
+    Ok(values)
+}
+
+// The default of a parameter means the same at every call: it is evaluated apart from the call, in the unit
+// that declares the function
+fn default(
+    context: &mut LocalLoweringContext,
+    def: HMIRDefID,
+    function: &HMIRFunction,
+    index: usize,
+    ty: HMIRTypeID,
+) -> CXResult<HMIRValue> {
+    let prototype = function.prototype();
+    let default = prototype.params()[index].default();
+    let default = default.expect("a parameter left to its default has one");
+    let comptime = FnContext::Comptime(ComptimeContext::new());
+    let mut child = context.child(None, comptime, None).sourced(def.brand());
+    symbol::interface::initializer_value(&mut child, prototype.defaults(), default, Some(ty))
 }
 
 // Calls 'callee', which is not curried, with a value for each of its parameters
@@ -174,28 +283,6 @@ pub(crate) fn hmir_call(
         }
         _ => finish(context, &callee, &values, return_type, span),
     }
-}
-
-// A partial call binds 'values' to the parameters of 'callee'. Once they bind every comptime parameter of a
-// function, the result is the function generated for them
-fn curry(
-    context: &mut LocalLoweringContext,
-    callee: HMIRValue,
-    signature: &HMIRFnSignature<HMIRTypeID>,
-    values: Vec<Option<HMIRValue>>,
-    span: &TokenRange,
-) -> EvalResult<Evaluation<HMIRValue>> {
-    let open = signature.params().iter().zip(&values);
-    let curries = signature.stage() == HMIRFunctionStage::Comptime
-        || open
-            .clone()
-            .any(|(param, value)| value.is_none() && param.comptime());
-    if !curries && let Some(def) = value::as_function(&callee) {
-        return dependent::apply(context, def, values, span);
-    }
-    let residual = types::residual(signature, |index| values[index].is_some());
-    let ty = types::realize(context.env_mut(), HMIRTypeKind::Function(residual), span);
-    Ok(Evaluation::Ready(value::curried(ty, callee, values)))
 }
 
 // To simplify semantics, all function callees are unified into a @fn& types. Whether a direct or indirect

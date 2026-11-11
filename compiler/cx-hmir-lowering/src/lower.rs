@@ -4,13 +4,11 @@ pub(crate) mod global;
 pub(crate) mod types;
 
 use crate::{
-    env::{
-        HMIREnvironment,
-        generation::{Generated, Generation, Instance},
-    },
-    eval::{self, aggregate::variant},
+    env::{HMIREnvironment, generation::Generation},
+    eval::aggregate::variant,
     lower::types::lower_signature,
     symbol,
+    value::HMIRValue,
 };
 use cx_hmir::{
     HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage, HMIRUnit, ty::HMIRTypeID,
@@ -31,64 +29,64 @@ pub fn lower_unit<'hmir>(
         symbol::validate(env, id)?;
     }
 
-    while let Some(id) = env.generation_mut().next() {
-        match id {
-            Generation::Definition(id) => generate(id, env, None)?,
-            Generation::Instance(instance) => match *instance.source() {
-                Generated::Template { def, .. } => generate(def, env, Some(&instance))?,
-                Generated::Constructor { ty, variant } => {
-                    let function = constructor::lower(env, ty, variant, instance.function())?;
-                    env.module_mut()
-                        .define_function(instance.function(), function);
-                }
-            },
+    while let Some(generation) = env.generation_mut().next() {
+        let function = env.generation().function(&generation);
+        match (generation, function) {
+            (Generation::Definition(def), _) => generate(def, env, None)?,
+            (Generation::Template { def, comptime_bindings }, Some(function)) => {
+                generate(def, env, Some((function, &comptime_bindings)))?
+            }
+            (Generation::Constructor { ty, variant }, Some(function)) => {
+                let lowered = constructor::lower(env, ty, variant, function)?;
+                env.module_mut().define_function(function, lowered);
+            }
+            (generation, None) => unreachable!("{generation:?} was requested undeclared"),
         }
     }
 
     Ok(())
 }
 
-// The function generated for 'source', declared and queued for generation the first time it is asked for.
-// 'signature' is that of the source; the parameters it has bound are not parameters of the generated function
+// The function generated for 'generation', which no definition declares: it is declared and requested the first
+// time it is asked for. 'signature' is that of the generated function
 pub(crate) fn declare(
     env: &mut HMIREnvironment,
-    source: Generated,
+    generation: Generation,
     signature: &HMIRFnSignature<HMIRTypeID>,
     span: &TokenRange,
 ) -> CXResult<MIRFunctionID> {
-    if let Some(function) = env.generation().generated(&source) {
+    if let Some(function) = env.generation().function(&generation) {
         return Ok(function);
     }
-    let count = env.generation().generated_count();
-    let (name, original, bindings) = match &source {
-        Generated::Template { def, bindings } => {
+    let count = env.generation().requested_count();
+    let (name, original) = match &generation {
+        Generation::Template { def, .. } => {
             let original = symbol::link_name(env, *def, None)?.expect("a template names a function");
-            let name = format!("{original}.__cx_specialize.{count}");
-            (name, Some(original), bindings.as_slice())
+            (format!("{original}.__cx_specialize.{count}"), Some(original))
         }
-        Generated::Constructor { ty, variant } => {
+        Generation::Constructor { ty, variant } => {
             let name = variant::field(env, *ty, *variant).name().expect("a variant is named");
-            (format!("{name}.__cx_variant.{count}"), None, [].as_slice())
+            (format!("{name}.__cx_variant.{count}"), None)
         }
+        Generation::Definition(_) => unreachable!("a definition declares its own function"),
     };
-    let bound = |index| bindings.get(index).is_some_and(Option::is_some);
-    let unbound = eval::types::residual(signature, bound);
     let prototype = MIRFnPrototype::new(
-        lower_signature(env, &unbound, span)?,
+        lower_signature(env, signature, span)?,
         LinkageMode::Static,
         CXIdent::new(name),
         original,
     );
     let function = env.module_mut().declare_function(prototype);
-    env.generation_mut()
-        .generate(Instance::new(source, function, signature.clone()));
+    env.generation_mut().request(generation, Some(function));
     Ok(function)
 }
 
+// 'template' is the function declared for a template of the definition, and the arguments of its comptime
+// parameters
 fn generate(
     id: HMIRDefID,
     env: &mut HMIREnvironment,
-    specialization: Option<&Instance>,
+    template: Option<(MIRFunctionID, &[HMIRValue])>,
 ) -> CXResult<()> {
     let unit = env
         .symbols_mut()
@@ -100,18 +98,13 @@ fn generate(
 
     match kind {
         Some(HMIRDefKind::Function(function)) => {
-            if let Some(specialization) = specialization {
-                return function::lower(env, id, function, specialization.signature(), Some(specialization));
-            }
-            if function.signature().stage() != HMIRFunctionStage::Runtime
-                || symbol::needs_specialization(function)
-                || function.def().is_none()
-            {
+            let standalone = function.signature().stage() == HMIRFunctionStage::Runtime
+                && !symbol::needs_specialization(function)
+                && function.def().is_some();
+            if template.is_none() && !standalone {
                 return Ok(());
             }
-            
-            let signature = lower_signature(env, id, None)?;
-            function::lower(env, id, function, &signature, None)
+            function::lower(env, id, function, template)
         }
         Some(HMIRDefKind::Global(_)) => global::lower(env, id),
         Some(HMIRDefKind::ComptimeGlobal(_)) | None => Ok(()),

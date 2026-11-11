@@ -1,7 +1,7 @@
 use std::mem;
 
 use cx_hmir::{
-    HMIRDefID, HMIRDefKind, HMIRUnitID,
+    HMIRDefID, HMIRUnitID,
     body::HMIRLocalID,
     expr::HMIRExprID,
     ty::{aggregate::HMIRTypeSemantics, context::HMIRTypeContext},
@@ -73,11 +73,7 @@ pub(crate) fn call(
     emit: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<HMIRValue>>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let unit = context.env_mut().symbols_mut().owner(def.brand()).expect("function owner exists");
-    let source = unit.resolve_def(def).expect("function exists");
-    let selected = symbol::select(source, None)?;
-    let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind() else {
-        unreachable!("a called definition is a function")
-    };
+    let function = symbol::structure::function(unit.resolve_def(def).expect("function exists"))?;
     let contract = function.signature().contract();
     if contract.precondition().is_none() && contract.postcondition().is_none() {
         return emit(context);

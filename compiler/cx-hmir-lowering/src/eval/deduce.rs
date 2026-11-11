@@ -1,7 +1,7 @@
 mod arguments;
 mod subject;
 
-pub(crate) use arguments::{Deduction, actual_type, generated, generates_type};
+pub(crate) use arguments::{Deduction, generated, generates_type};
 pub(crate) use subject::{detached, subject};
 
 use cx_hmir::{

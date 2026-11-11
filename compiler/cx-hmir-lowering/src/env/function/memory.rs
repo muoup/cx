@@ -1,11 +1,7 @@
 mod codec;
 
 use rustc_hash::FxHashMap;
-use std::{
-    cell::Cell as Counter,
-    collections::BTreeMap,
-    ops::Range,
-};
+use std::{cell::Cell as Counter, collections::BTreeMap, ops::Range};
 
 use cx_hmir::{
     HMIRDefID,
@@ -19,7 +15,7 @@ use crate::{
     log::hmir_error,
     symbol,
     value::{
-        HMIRReference, HMIRRegionID, HMIRValueKind,
+        HMIRValueKind,
         immediate::{Addressable, HMIRAddress, HMIRImmediate},
     },
 };

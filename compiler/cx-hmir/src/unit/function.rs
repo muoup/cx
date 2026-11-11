@@ -25,10 +25,12 @@ pub struct HMIRFnPrototype {
     linkage: LinkageMode,
     signature: HMIRFnSignature<HMIRExprID>,
     params: Vec<HMIRFnParamDecl>,
+    defaults: HMIRBodyContext,
 }
 
 // What a declaration says of a parameter beyond its type, which a function type does not carry: only a call that
-// names the function can bind an argument by name or leave a default to stand
+// names the function can bind an argument by name or leave a default to stand. A default is an expression of the
+// prototype's own body, which declares no locals
 #[derive(Debug, Clone)]
 pub struct HMIRFnParamDecl {
     name: Option<CXIdent>,
@@ -109,13 +111,19 @@ impl HMIRFnPrototype {
         linkage: LinkageMode,
         signature: HMIRFnSignature<HMIRExprID>,
         params: Vec<HMIRFnParamDecl>,
+        defaults: HMIRBodyContext,
     ) -> Self {
         Self {
             symbol_name,
             linkage,
             signature,
             params,
+            defaults,
         }
+    }
+
+    pub fn defaults(&self) -> &HMIRBodyContext {
+        &self.defaults
     }
 
     pub fn symbol_name(&self) -> &CXIdent {

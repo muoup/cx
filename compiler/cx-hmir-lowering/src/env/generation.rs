@@ -1,45 +1,33 @@
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 
-use cx_hmir::{HMIRDefID, HMIRFnSignature, ty::HMIRTypeID};
+use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
 use cx_mir::MIRFunctionID;
 
 use crate::value::HMIRValue;
 
-///
-/// Tracks the definitions that the unit has to generate. A definition is requested by whatever refers to it, at
-/// most once, and is generated only after the definition being lowered at the time of the request has finished.
-///
-#[derive(Debug, Default)]
-pub struct GenerationQueue {
-    requested: FxHashSet<HMIRDefID>,
-    pending: VecDeque<Generation>,
-    generated: FxHashMap<Generated, MIRFunctionID>,
-}
-
-/// A function that no definition declares as it is generated
+/// Something the unit has to generate, as whatever refers to it asks for it
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Generated {
-    /// A function definition completed with the comptime arguments bound to its parameters
+pub enum Generation {
+    /// The function or global that a definition declares
+    Definition(HMIRDefID),
+    /// A function definition completed with the arguments of its comptime parameters, in their order
     Template {
         def: HMIRDefID,
-        bindings: Vec<Option<HMIRValue>>,
+        comptime_bindings: Vec<HMIRValue>,
     },
     /// The function constructing a variant of a tagged union from its payload
     Constructor { ty: HMIRTypeID, variant: usize },
 }
 
-#[derive(Debug)]
-pub enum Generation {
-    Definition(HMIRDefID),
-    Instance(Instance),
-}
-
-#[derive(Debug)]
-pub struct Instance {
-    source: Generated,
-    function: MIRFunctionID,
-    signature: HMIRFnSignature<HMIRTypeID>,
+///
+/// Tracks what the unit has to generate. Each generation is requested at most once, and is generated only after
+/// the definition being lowered at the time of the request has finished.
+///
+#[derive(Debug, Default)]
+pub struct GenerationQueue {
+    requested: FxHashMap<Generation, Option<MIRFunctionID>>,
+    pending: VecDeque<Generation>,
 }
 
 impl GenerationQueue {
@@ -47,63 +35,23 @@ impl GenerationQueue {
         Self::default()
     }
 
-    pub fn request(&mut self, def: HMIRDefID) {
-        if self.requested.insert(def) {
-            self.pending.push_back(Generation::Definition(def));
+    // 'function' is the function declared for the generation, where no definition declares it
+    pub fn request(&mut self, generation: Generation, function: Option<MIRFunctionID>) {
+        if !self.requested.contains_key(&generation) {
+            self.requested.insert(generation.clone(), function);
+            self.pending.push_back(generation);
         }
     }
 
-    pub fn generated_count(&self) -> usize {
-        self.generated.len()
+    pub fn requested_count(&self) -> usize {
+        self.requested.len()
     }
 
-    pub fn generated(&self, source: &Generated) -> Option<MIRFunctionID> {
-        self.generated.get(source).copied()
-    }
-
-    // 'instance' must not have been generated before
-    pub fn generate(&mut self, instance: Instance) {
-        let previous = self.generated.insert(instance.source.clone(), instance.function);
-        assert!(previous.is_none(), "a function is generated once");
-        self.pending.push_back(Generation::Instance(instance));
+    pub fn function(&self, generation: &Generation) -> Option<MIRFunctionID> {
+        self.requested.get(generation).copied().flatten()
     }
 
     pub fn next(&mut self) -> Option<Generation> {
         self.pending.pop_front()
-    }
-}
-
-impl Instance {
-    pub fn new(
-        source: Generated,
-        function: MIRFunctionID,
-        signature: HMIRFnSignature<HMIRTypeID>,
-    ) -> Self {
-        Self {
-            source,
-            function,
-            signature,
-        }
-    }
-
-    pub fn source(&self) -> &Generated {
-        &self.source
-    }
-
-    pub fn function(&self) -> MIRFunctionID {
-        self.function
-    }
-
-    // The values the generated function has bound, by parameter of the source
-    pub fn bindings(&self) -> &[Option<HMIRValue>] {
-        match &self.source {
-            Generated::Template { bindings, .. } => bindings,
-            Generated::Constructor { .. } => &[],
-        }
-    }
-
-    // The signature of the source, which keeps the parameters that the generated function has bound
-    pub fn signature(&self) -> &HMIRFnSignature<HMIRTypeID> {
-        &self.signature
     }
 }

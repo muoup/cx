@@ -10,8 +10,13 @@ use cx_tokens::TokenRange;
 use cx_util::dense_id;
 
 use crate::{
+    emit,
     env::function::{ComptimeContext, Expectations, FnContext, LocalLoweringContext},
-    eval::{self, coerce, deduce, flow, types},
+    eval::{
+        self, EvalResult, coerce, deduce,
+        flow::{self, Evaluation},
+        types,
+    },
     log::hmir_error,
     symbol,
     value::{self, HMIRValue},
@@ -177,7 +182,7 @@ impl LocalLoweringContext<'_, '_, '_> {
                 .sourced(owner)
                 .at(captured.visible_through);
             for (local, value) in captured.bindings {
-                crate::emit::bind_local(&mut child, local, value);
+                emit::bind_local(&mut child, local, value);
             }
             let expectations = match key {
                 MemoKey::Definition(..) => Expectations::new(captured.expectations.permission()),
@@ -219,7 +224,7 @@ fn expression(
     expected: Option<HMIRTypeID>,
     initializer: bool,
     span: &TokenRange,
-) -> eval::EvalResult<flow::Evaluation<HMIRValue>> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let owner = context.source();
     let unit = context
         .env_mut()

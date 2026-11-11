@@ -1,7 +1,7 @@
 use std::ptr;
 
 use cx_hmir::{
-    HMIRBodyContext, HMIRDeclarationRole, HMIRDefID, HMIRDefKind, HMIRFnSignature,
+    HMIRBodyContext, HMIRDeclarationRole, HMIRDefID, HMIRDefKind,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics,
@@ -21,7 +21,7 @@ use crate::{
         memo::{MemoContextID, MemoKey},
         resolver::HMIRResolver,
     },
-    eval::{self, call::dependent::Frame, coerce, eval_type, flow, types},
+    eval::{self, coerce, eval_type, flow, types},
     log::hmir_error,
     symbol::{
         composite::{alike, composite, signatures_alike},
@@ -74,8 +74,7 @@ pub(crate) fn definition(
     {
         HMIRDefKind::Function(_) => {
             let mut canonical = None;
-            let mut first = None;
-            for (_, declaration) in structure::visible(def, context.visible_through()) {
+            for (_, declaration) in structure::visible(def, None) {
                 let Some(HMIRDefKind::Function(function)) = declaration.kind() else {
                     continue;
                 };
@@ -83,9 +82,6 @@ pub(crate) fn definition(
                 if let Some(previous) = &canonical
                     && !signatures_alike(context.env(), previous, &signature)
                 {
-                    return Err(incompatible(def, declaration));
-                }
-                if !structure::defaults_alike(first.get_or_insert(function), function) {
                     return Err(incompatible(def, declaration));
                 }
                 if canonical.is_none() || ptr::eq(declaration, &def.declarations()[selected]) {
@@ -229,42 +225,6 @@ pub(crate) fn definition(
             Ok(value)
         }
     }
-}
-
-// The selected declaration of the function 'def' instantiated to 'signature' from 'values'; every other visible
-// declaration must instantiate to the same signature from them
-pub(crate) fn check_instance(
-    context: &mut LocalLoweringContext,
-    id: HMIRDefID,
-    signature: &HMIRFnSignature<HMIRTypeID>,
-    values: &[Option<HMIRValue>],
-    runtime: bool,
-    span: &TokenRange,
-) -> CXResult<()> {
-    let unit = context
-        .env_mut()
-        .symbols_mut()
-        .owner(id.brand())
-        .expect("definition owner exists");
-    let def = unit.resolve_def(id).unwrap();
-    let selected = structure::select(def, None)?;
-    for (index, declaration) in structure::visible(def, context.visible_through()) {
-        let Some(HMIRDefKind::Function(other)) = declaration.kind() else {
-            continue;
-        };
-        if index == selected {
-            continue;
-        }
-        if other.signature().params().len() != values.len() {
-            return Err(incompatible(def, declaration));
-        }
-        let mut frame = Frame::new(other, id, ComptimeContext::new(), runtime);
-        let (other, _) = frame.instantiate(context, values.to_vec(), span)?;
-        if !signatures_alike(context.env(), signature, &other) {
-            return Err(incompatible(def, declaration));
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn initializer_value(

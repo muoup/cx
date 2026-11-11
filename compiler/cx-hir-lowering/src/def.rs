@@ -15,14 +15,13 @@ use cx_hmir::{
     },
     unit::function::HMIRFnPrototype,
 };
-use cx_log::{CXResult, catalogue::typecheck};
+use cx_log::CXResult;
 use cx_namespace::module::QualifiedName;
 use cx_tokens::TokenRange;
 
 use crate::{
     body::BodyLowering,
     expr::{lower_expr, lower_initial_value, lower_scope_statements},
-    log::log_hir_error,
     plan::{DefSource, PlannedSymbol},
     ty::{lower_type, staged_signature},
     unit::{UnitContext, def_name},
@@ -120,13 +119,12 @@ fn lower_function<'a>(
     prototype: &'a HIRFunctionPrototype,
     body: Option<&'a HIRFunctionBody>,
 ) -> CXResult<HMIRDefKind> {
-    let (params, defaults, return_type, contract, root) =
+    let (defaults, default_exprs) = lower_defaults(&mut context, prototype)?;
+    let (params, return_type, contract, root) =
         context.with_stage(prototype.comptime, |this| -> CXResult<_> {
             let mut params = Vec::new();
-            let mut defaults = Vec::new();
             for param in declared_params(prototype) {
                 let ty = lower_type(this, &param.ty)?;
-                defaults.push(lower_default(this, prototype, param)?);
                 params.push(this.declare(
                     param.name.as_ref(),
                     ty,
@@ -141,7 +139,7 @@ fn lower_function<'a>(
                 .map(|body| lower_function_body(this, body))
                 .transpose()?;
 
-            Ok((params, defaults, return_type, contract, root))
+            Ok((params, return_type, contract, root))
         })?;
 
     let stage = if prototype.comptime {
@@ -157,8 +155,9 @@ fn lower_function<'a>(
         contract,
     );
     let symbol_name = context.unit().link_name(name, prototype.symbol_naming);
-    let decls = context.fn_param_decls(&params, defaults);
-    let prototype = HMIRFnPrototype::new(symbol_name, prototype.linkage, signature, decls);
+    let decls = context.fn_param_decls(&params, default_exprs);
+    let prototype =
+        HMIRFnPrototype::new(symbol_name, prototype.linkage, signature, decls, defaults);
     let def = root.map(|root| context.finish_definition(root));
 
     Ok(HMIRDefKind::Function(Box::new(HMIRFunction::new(
@@ -177,26 +176,22 @@ pub(crate) fn declared_params(prototype: &HIRFunctionPrototype) -> &[HIRParamete
     }
 }
 
-// The default declared for a parameter; a hole is the only default supported
-fn lower_default(
+// The defaults are lowered into a body of their own, which sees none of the parameters: a default means the
+// same wherever the function is called from
+fn lower_defaults(
     context: &mut BodyLowering<'_>,
     prototype: &HIRFunctionPrototype,
-    param: &HIRParameter,
-) -> CXResult<Option<HMIRExprID>> {
-    match &param.default {
-        None => Ok(None),
-        Some(default) if !param.comptime && !prototype.comptime => log_hir_error(
-            &default.range,
-            &typecheck::INVALID_CONTEXT,
-            ("a default".into(), "a runtime parameter".into()),
-        ),
-        Some(HIRExpression { kind: HIRExprKind::Hole, range }) => Ok(Some(context.hole(range))),
-        Some(default) => log_hir_error(
-            &default.range,
-            &typecheck::UNSUPPORTED_FEATURE,
-            "a parameter default other than '_'".into(),
-        ),
+) -> CXResult<(HMIRBodyContext, Vec<Option<HMIRExprID>>)> {
+    let mut defaults = context.detached(true);
+    let mut lowered = Vec::new();
+    for param in declared_params(prototype) {
+        lowered.push(match &param.default {
+            None => None,
+            Some(HIRExpression { kind: HIRExprKind::Hole, range }) => Some(defaults.hole(range)),
+            Some(default) => Some(lower_expr(&mut defaults, default)?),
+        });
     }
+    Ok((defaults.finish(), lowered))
 }
 
 fn is_void(ty: &HIRType) -> bool {

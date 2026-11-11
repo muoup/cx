@@ -91,9 +91,10 @@ fn write_function(
                 f.write_str(&printer.inline(*param.ty()))?;
             }
         }
-        let declared = function.prototype().params().get(index);
-        if declared.is_some_and(|param| param.default().is_some()) {
-            f.write_str(" = _")?;
+        let prototype = function.prototype();
+        if let Some(default) = prototype.params().get(index).and_then(|param| param.default()) {
+            let defaults = BodyPrinter::new(unit, prototype.defaults());
+            write!(f, " = {}", defaults.inline(default))?;
         }
     }
     if signature.is_variadic() {

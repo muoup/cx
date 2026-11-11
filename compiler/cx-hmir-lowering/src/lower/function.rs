@@ -1,5 +1,6 @@
 use cx_hmir::{HMIRDefID, HMIRFnSignature, HMIRFunction, ty::HMIRTypeID};
 use cx_log::CXResult;
+use cx_mir::MIRFunctionID;
 use cx_tokens::TokenRange;
 
 use crate::{
@@ -7,7 +8,6 @@ use crate::{
     env::{
         HMIREnvironment,
         function::{FnContext, LocalLoweringContext, RuntimeContext},
-        generation::Instance,
     },
     eval::{
         EvalResult,
@@ -15,6 +15,7 @@ use crate::{
         flow, types,
     },
     lower::types::lower_prototype,
+    symbol,
     value::HMIRValue,
 };
 
@@ -22,8 +23,7 @@ pub(crate) fn lower<'hmir>(
     env: &mut HMIREnvironment<'_, 'hmir>,
     id: HMIRDefID,
     function: &HMIRFunction,
-    signature: &HMIRFnSignature<HMIRTypeID>,
-    specialization: Option<&Instance>,
+    template: Option<(MIRFunctionID, &[HMIRValue])>,
 ) -> CXResult<()> {
     let body = function.body();
     let def = function
@@ -31,14 +31,17 @@ pub(crate) fn lower<'hmir>(
         .expect("Runtime function lowered without a definition");
     let span = body.expr(def.root()).span();
 
-    let prototype = match specialization {
-        Some(specialization) => env
-            .module()
-            .function(specialization.function())
-            .prototype()
-            .clone(),
-        None => lower_prototype(env, id, None, span)?,
+    let (prototype, signature) = match template {
+        Some((generated, comptime_bindings)) => (
+            env.module().function(generated).prototype().clone(),
+            call::dependent::signature(env, id, function, comptime_bindings, span)?,
+        ),
+        None => (
+            lower_prototype(env, id, None, span)?,
+            symbol::signature(env, id, None)?,
+        ),
     };
+    let comptime_bindings = template.map_or(&[][..], |(_, comptime_bindings)| comptime_bindings);
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
     let mut context = LocalLoweringContext::new(env, Some(function.signature()), runtime)
         .sourced(id.brand())
@@ -57,14 +60,14 @@ pub(crate) fn lower<'hmir>(
     scopes
         .control_mut(root)
         .set_return(id.brand(), body.visible_through());
-    let completion = definition(&mut context, function, signature, specialization, span);
+    let completion = definition(&mut context, function, &signature, comptime_bindings, span);
     emit::close_scope(&mut context, span);
     flow::top(flow::catch_diverged(completion))?;
 
     let lowered = context.into_runtime().finish();
     let module = env.module_mut();
-    let id = match specialization {
-        Some(specialization) => specialization.function(),
+    let id = match template {
+        Some((generated, _)) => generated,
         None => module.declare_function(lowered.prototype().clone()),
     };
     module.define_function(id, lowered);
@@ -75,13 +78,13 @@ fn definition(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
     signature: &HMIRFnSignature<HMIRTypeID>,
-    specialization: Option<&Instance>,
+    comptime_bindings: &[HMIRValue],
     span: &TokenRange,
 ) -> EvalResult<flow::Evaluation<HMIRValue>> {
     let body = function.body();
-    for (index, (param, local)) in signature.params().iter().zip(function.params()).enumerate() {
-        let bound =
-            specialization.and_then(|specialization| specialization.bindings()[index].as_ref());
+    let mut comptime_bindings = comptime_bindings.iter();
+    for (param, local) in signature.params().iter().zip(function.params()) {
+        let bound = param.comptime().then(|| comptime_bindings.next()).flatten();
         let value = match bound {
             Some(value) => value.clone(),
             None => {

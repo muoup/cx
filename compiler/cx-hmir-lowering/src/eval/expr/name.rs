@@ -19,7 +19,7 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    env::function::LocalLoweringContext,
+    env::{function::LocalLoweringContext, generation::Generation},
     eval::{EvalResult, aggregate::variant, deduce, eval_type, flow::Evaluation, types},
     log::hmir_error,
     lower::{global, types::lower_prototype},
@@ -96,7 +96,8 @@ fn request(
 ) -> CXResult<()> {
     let linkage = symbol::linkage(context.env_mut(), def, point)?;
     if def.brand() == context.env().symbols().local_unit().id() || linkage == LinkageMode::Static {
-        context.env_mut().generation_mut().request(def);
+        let generation = Generation::Definition(def);
+        context.env_mut().generation_mut().request(generation, None);
     }
     Ok(())
 }

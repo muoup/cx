@@ -31,82 +31,61 @@ use crate::{
     },
 };
 
-// Comptime type arguments whose evaluation waits on the type of a later argument, keyed by parameter index
+// The type arguments that a call leaves as holes, by parameter, and the type deduced for each
 pub(crate) struct Deduction<'a> {
     function: &'a HMIRFunction,
     name: String,
-    pending: BTreeMap<usize, Evaluation<HMIRValue>>,
+    holes: Vec<usize>,
     inferred: BTreeMap<usize, HMIRTypeID>,
 }
 
-pub(crate) struct Deduced {
-    pub index: usize,
-    pub argument: Evaluation<HMIRValue>,
-    pub ty: HMIRTypeID,
-}
-
 impl<'a> Deduction<'a> {
-    pub(crate) fn new(function: &'a HMIRFunction, name: String) -> Self {
-        Self {
-            function,
-            name,
-            pending: BTreeMap::new(),
-            inferred: BTreeMap::new(),
-        }
-    }
-
-    pub(crate) fn needs_actual(&self) -> bool {
-        !self.pending.is_empty() || !self.inferred.is_empty()
-    }
-
-    pub(crate) fn defer(&mut self, index: usize, argument: Evaluation<HMIRValue>) {
-        self.pending.insert(index, argument);
-    }
-
+    // Deduces each of 'holes' from the type of an argument in 'args' whose parameter's type names it.
+    //
+    // Every argument is unified before any is bound in 'frame'. Deduction used to run as the arguments were
+    // bound in order, which also covered:
+    //   - a parameter type that only evaluates once an earlier argument is bound, e.g. the callee of 'G(n)(T)'
+    //     where 'n' is a parameter;
+    //   - a type argument other than a lone '_' that is incomplete, e.g. '[_]int'.
     pub(crate) fn infer(
-        &mut self,
         context: &mut LocalLoweringContext,
         frame: &mut Frame,
-        index: usize,
-        actual: Option<HMIRTypeID>,
+        function: &'a HMIRFunction,
+        name: String,
+        holes: Vec<usize>,
+        body: &HMIRBodyContext,
+        args: &[Option<HMIRExprID>],
         span: &TokenRange,
-    ) -> CXResult<Vec<Deduced>> {
-        if !self.needs_actual() {
-            return Ok(Vec::new());
+    ) -> CXResult<Self> {
+        let mut deduction = Self {
+            function,
+            name,
+            holes,
+            inferred: BTreeMap::new(),
+        };
+        if deduction.holes.is_empty() {
+            return Ok(deduction);
         }
-        let form = *self.function.signature().params()[index].ty();
-        let actual = actual.map(|actual| self.argument(context, form, actual, span));
-        let mut unresolved = Vec::new();
-        self.unify(context, frame, form, actual, &mut unresolved, span)?;
-
-        let resolved = self
-            .pending
-            .keys()
-            .copied()
-            .filter(|index| self.inferred.contains_key(index))
-            .collect::<Vec<_>>();
-        let resolved = resolved
-            .into_iter()
-            .map(|index| Deduced {
-                index,
-                argument: self.pending.remove(&index).unwrap(),
-                ty: self.inferred[&index],
-            })
-            .collect();
-        match unresolved
-            .into_iter()
-            .find(|index| self.pending.contains_key(index))
-        {
-            Some(index) => Err(self.undeduced(index, span)),
-            None => Ok(resolved),
+        for (index, arg) in args.iter().enumerate() {
+            let Some(arg) = arg.filter(|_| !deduction.is_hole(index)) else {
+                continue;
+            };
+            let Some(actual) = actual_type(context, body, arg)? else {
+                continue;
+            };
+            let form = *function.signature().params()[index].ty();
+            let actual = deduction.argument(context, form, actual, span);
+            deduction.unify(context, frame, form, Some(actual), span)?;
         }
+        Ok(deduction)
     }
 
-    pub(crate) fn finish(&self, span: &TokenRange) -> CXResult<()> {
-        match self.pending.keys().next() {
-            Some(index) => Err(self.undeduced(*index, span)),
-            None => Ok(()),
-        }
+    pub(crate) fn is_hole(&self, index: usize) -> bool {
+        self.holes.contains(&index)
+    }
+
+    pub(crate) fn inferred(&self, index: usize) -> Option<HMIRTypeID> {
+        self.inferred.get(&index).copied()
     }
 
     fn argument(
@@ -130,14 +109,13 @@ impl<'a> Deduction<'a> {
         frame: &mut Frame,
         form: HMIRExprID,
         actual: Option<HMIRTypeID>,
-        unresolved: &mut Vec<usize>,
         span: &TokenRange,
     ) -> CXResult<()> {
         let function = self.function;
         match function.body().expr(form).kind() {
             HMIRExprKind::Local(local) => {
                 match function.params().iter().position(|param| param == local) {
-                    Some(index) => self.bind(context, index, actual, unresolved, span),
+                    Some(index) => self.bind(context, index, actual, span),
                     None => Ok(()),
                 }
             }
@@ -146,7 +124,6 @@ impl<'a> Deduction<'a> {
                 args,
                 named,
             } => {
-                self.unify(context, frame, *callee, None, unresolved, span)?;
                 let applied = actual.and_then(|actual| {
                     self.applied(context, frame, *callee, args.len(), named, actual, span)
                 });
@@ -157,11 +134,11 @@ impl<'a> Deduction<'a> {
                         .and_then(|values| values.get(index))
                         .and_then(Option::as_ref)
                         .and_then(value::as_type);
-                    self.unify(context, frame, *form, actual, unresolved, span)?;
+                    self.unify(context, frame, *form, actual, span)?;
                 }
                 Ok(())
             }
-            HMIRExprKind::Type(ty) => self.structure(context, frame, ty, actual, unresolved, span),
+            HMIRExprKind::Type(ty) => self.structure(context, frame, ty, actual, span),
             _ => Ok(()),
         }
     }
@@ -172,7 +149,6 @@ impl<'a> Deduction<'a> {
         frame: &mut Frame,
         ty: &'a HMIRExprType,
         actual: Option<HMIRTypeID>,
-        unresolved: &mut Vec<usize>,
         span: &TokenRange,
     ) -> CXResult<()> {
         let env = context.env();
@@ -184,18 +160,18 @@ impl<'a> Deduction<'a> {
                         .pointer_inner(actual)
                         .or_else(|| env.array_inner(actual)),
                 });
-                self.unify(context, frame, *inner, actual, unresolved, span)
+                self.unify(context, frame, *inner, actual, span)
             }
             HMIRExprTypeKind::ReferenceTo { inner, .. } => {
                 let actual = actual.map(|actual| env.referent(actual));
-                self.unify(context, frame, *inner, actual, unresolved, span)
+                self.unify(context, frame, *inner, actual, span)
             }
             HMIRExprTypeKind::Array { element, .. } => {
                 let actual = actual.and_then(|actual| {
                     env.array_inner(actual)
                         .or_else(|| env.pointer_inner(actual))
                 });
-                self.unify(context, frame, *element, actual, unresolved, span)
+                self.unify(context, frame, *element, actual, span)
             }
             HMIRExprTypeKind::Nominal(inner) => {
                 let declared = ty.semantics();
@@ -209,14 +185,14 @@ impl<'a> Deduction<'a> {
                 });
                 let actual =
                     actual.map(|actual| types::qualify::remove(context, actual, qualifiers, span));
-                self.unify(context, frame, *inner, actual, unresolved, span)
+                self.unify(context, frame, *inner, actual, span)
             }
             HMIRExprTypeKind::Staged(inner) => {
                 let actual = actual.map(|actual| match env.resolve_kind(actual) {
                     HMIRTypeKind::Staged(inner) => *inner,
                     _ => actual,
                 });
-                self.unify(context, frame, *inner, actual, unresolved, span)
+                self.unify(context, frame, *inner, actual, span)
             }
             HMIRExprTypeKind::Function(signature) => {
                 let actual = actual
@@ -232,17 +208,10 @@ impl<'a> Deduction<'a> {
                     });
                 for (index, param) in signature.params().iter().enumerate() {
                     let actual = actual.as_ref().map(|actual| *actual.params()[index].ty());
-                    self.unify(context, frame, *param.ty(), actual, unresolved, span)?;
+                    self.unify(context, frame, *param.ty(), actual, span)?;
                 }
                 let actual = actual.map(|actual| *actual.return_type());
-                self.unify(
-                    context,
-                    frame,
-                    *signature.return_type(),
-                    actual,
-                    unresolved,
-                    span,
-                )
+                self.unify(context, frame, *signature.return_type(), actual, span)
             }
             _ => Ok(()),
         }
@@ -273,10 +242,10 @@ impl<'a> Deduction<'a> {
         let def = value::as_function(callee)?;
         let instance = instance(context, def, actual)?;
         let source = context.env().symbols().resolve_definition(def);
-        let params = structure::parameters(source, None);
+        let params = structure::function(source).ok()?.prototype().params();
         let mut values = (0..params.len())
             .filter(|index| {
-                curried.get(*index).is_none_or(Option::is_none) && !params[*index].defaulted
+                curried.get(*index).is_none_or(Option::is_none) && params[*index].default().is_none()
             })
             .map(|index| instance.get(index).cloned())
             .take(args)
@@ -284,7 +253,7 @@ impl<'a> Deduction<'a> {
         values.resize(args, None);
         values.extend(named.iter().map(|(name, _)| {
             (0..params.len())
-                .find(|index| params[*index].name.as_ref() == Some(name))
+                .find(|index| params[*index].name() == Some(name))
                 .and_then(|index| instance.get(index).cloned())
         }));
         Some(values)
@@ -295,7 +264,6 @@ impl<'a> Deduction<'a> {
         context: &LocalLoweringContext,
         index: usize,
         actual: Option<HMIRTypeID>,
-        unresolved: &mut Vec<usize>,
         span: &TokenRange,
     ) -> CXResult<()> {
         let unreachable = |actual| {
@@ -307,7 +275,6 @@ impl<'a> Deduction<'a> {
         if actual.is_some_and(unreachable) {
             return Ok(());
         }
-        let pending = self.pending.contains_key(&index);
         match (actual, self.inferred.get(&index).copied()) {
             (Some(actual), Some(first)) if !alike(context.env(), first, actual, true) => {
                 Err(hmir_error(
@@ -320,12 +287,8 @@ impl<'a> Deduction<'a> {
                     ),
                 ))
             }
-            (Some(actual), None) if pending => {
+            (Some(actual), None) if self.is_hole(index) => {
                 self.inferred.insert(index, actual);
-                Ok(())
-            }
-            (None, None) if pending => {
-                unresolved.push(index);
                 Ok(())
             }
             _ => Ok(()),
@@ -340,7 +303,7 @@ impl<'a> Deduction<'a> {
         }
     }
 
-    fn undeduced(&self, index: usize, span: &TokenRange) -> CXError {
+    pub(crate) fn undeduced(&self, index: usize, span: &TokenRange) -> CXError {
         let subject = format!(
             "comptime argument '{}' of '{}'",
             self.parameter(index),

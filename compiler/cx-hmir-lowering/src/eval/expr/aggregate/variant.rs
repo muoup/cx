@@ -10,7 +10,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     emit,
-    env::{HMIREnvironment, function::LocalLoweringContext, generation::Generated},
+    env::{HMIREnvironment, function::LocalLoweringContext, generation::Generation},
     eval::{expr, types},
     lower,
     value::{HMIRValue, immediate::HMIRImmediate},
@@ -79,7 +79,7 @@ pub(crate) fn function(
     span: &TokenRange,
 ) -> CXResult<MIRFunctionID> {
     let signature = signature(env, ty, variant);
-    lower::declare(env, Generated::Constructor { ty, variant }, &signature, span)
+    lower::declare(env, Generation::Constructor { ty, variant }, &signature, span)
 }
 
 pub(crate) fn construct(

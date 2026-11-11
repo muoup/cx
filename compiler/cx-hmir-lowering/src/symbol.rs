@@ -14,6 +14,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 use crate::{
     env::{
         HMIREnvironment,
+        generation::Generation,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
         memo::{MemoContextID, MemoKey},
     },
@@ -92,7 +93,7 @@ pub(crate) fn validate(env: &mut HMIREnvironment, id: HMIRDefID) -> CXResult<()>
             _ => false,
         };
     if root {
-        env.generation_mut().request(id);
+        env.generation_mut().request(Generation::Definition(id), None);
     }
     let untagged_comptime = declaration.tag().is_none()
         && matches!(declaration.kind(), Some(HMIRDefKind::ComptimeGlobal(_)));
@@ -114,7 +115,7 @@ pub(crate) fn value_type(
     Ok(env.referent(value.ty()))
 }
 
-pub(crate) fn signaturecontexts(
+pub(crate) fn signature(
     env: &mut HMIREnvironment,
     id: HMIRDefID,
     point: Option<HMIRDeclarationPoint>,
