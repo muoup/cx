@@ -10,7 +10,9 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     emit,
-    env::{HMIREnvironment, function::LocalLoweringContext, generation::Generation},
+    env::{
+        HMIREnvironment, function::LocalLoweringContext, generation::Generation, resolver::demand,
+    },
     eval::{expr, types},
     lower,
     value::{HMIRValue, immediate::HMIRImmediate},
@@ -60,7 +62,7 @@ pub(crate) fn reference(
     name: &CXIdent,
     span: &TokenRange,
 ) -> CXResult<Option<HMIRValue>> {
-    context.prepare_type(ty, span)?;
+    demand::prepare(context.env_mut(), ty)?;
     let ty = context.env().underlying(ty);
     let Some(Variant { index, .. }) = lookup(context.env(), ty, name) else {
         return Ok(None);

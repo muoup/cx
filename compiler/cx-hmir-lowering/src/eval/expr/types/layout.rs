@@ -13,7 +13,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::comptime::int,
-    env::function::LocalLoweringContext,
+    env::{function::LocalLoweringContext, resolver::demand},
     eval::{EvalResult, aggregate, deduce, eval_comptime, flow::Evaluation, types},
     log::hmir_error,
     lower::types::lower_type,
@@ -57,7 +57,7 @@ fn layout(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeLayout> {
-    if !context.complete_object(ty) {
+    if !demand::complete(context.env_mut(), ty)? {
         return Err(incomplete_type(context, ty, span));
     }
     let ty = lower_type(context.env_mut(), ty, span)?;
@@ -72,7 +72,7 @@ fn offset(
     size_type: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<i128> {
-    if !context.complete_object(current) {
+    if !demand::complete(context.env_mut(), current)? {
         return Err(incomplete_type(context, current, span));
     }
     let mut offset = 0i128;

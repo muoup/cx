@@ -1,165 +1,211 @@
 use rustc_hash::FxHashMap;
 
-use cx_hir::ast::types::HIRTagKind;
-use cx_hmir::ty::{HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics};
+use cx_hmir::{
+    HMIRDefID,
+    ty::{
+        HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
+        aggregate::{HMIRMoveSemantics, HMIRTypeSemantics},
+    },
+};
 use cx_mir::MIRTypeID;
-use cx_tokens::TokenRange;
 use index_vec::IndexVec;
 
-use crate::value::{HMIRValue, immediate::HMIRImmediate};
+use crate::value::{self, HMIRValue};
 
-mod demand;
-mod identity;
-pub(crate) mod memo;
+pub(crate) mod demand;
+mod key;
 
-use memo::{MemoContext, MemoContextID, MemoEntry, MemoID, MemoKey};
+use key::TypeKey;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct TypeState {
-    realized: Option<HMIRType>,
+    ty: HMIRType,
+    pending: Option<HMIRDefID>,
     prepared: bool,
     lowered: Option<MIRTypeID>,
 }
 
-#[derive(Debug)]
-pub(crate) struct HMIRResolver {
-    universe: Option<HMIRTypeID>,
-    active: Vec<MemoID>,
+#[derive(Debug, Clone)]
+pub(crate) enum SymbolState {
+    Declared,
+    // A provisional value stands for the symbol while its own evaluation refers to it
+    Evaluating(Option<HMIRValue>),
+    Ready(HMIRValue),
+}
 
-    identities: FxHashMap<u64, Vec<HMIRTypeID>>,
+#[derive(Debug, Default)]
+pub(crate) struct HMIRResolver {
     types: IndexVec<HMIRTypeID, TypeState>,
-    memo: FxHashMap<MemoKey, MemoID>,
-    entries: IndexVec<MemoID, MemoEntry>,
-    contexts: IndexVec<MemoContextID, MemoContext>,
-    context_ids: FxHashMap<MemoContext, MemoContextID>,
+    interned: FxHashMap<TypeKey, HMIRTypeID>,
+    symbols: FxHashMap<HMIRDefID, SymbolState>,
+    active: Vec<HMIRDefID>,
+    generated: FxHashMap<(HMIRDefID, Vec<HMIRValue>), HMIRValue>,
+    origins: FxHashMap<HMIRTypeID, (HMIRDefID, Vec<HMIRValue>)>,
 }
 
 impl HMIRResolver {
     pub fn new() -> Self {
-        Self {
-            identities: FxHashMap::default(),
-            types: IndexVec::new(),
-            memo: FxHashMap::default(),
-            entries: IndexVec::new(),
-            contexts: IndexVec::new(),
-            context_ids: FxHashMap::default(),
-            active: Vec::new(),
-            universe: None,
-        }
+        Self::default()
     }
 
+    // A named aggregate is a type of its own; any other type is the one type of its structure
     pub fn realize_type(&mut self, ty: HMIRType) -> HMIRTypeID {
-        let universe = if matches!(ty.kind(), HMIRTypeKind::Type) {
-            if let Some(id) = self.universe {
-                return id;
-            }
-            None
-        } else {
-            Some(self.universe())
+        let semantics = *ty.semantics();
+        if let HMIRTypeKind::Nominal(inner) = *ty.kind() {
+            let full = semantics.apply(self.semantics(inner));
+            return self.qualified(self.underlying(inner), full, ty);
+        }
+        // REVIEW: Why is undefined tagged here? Do we need to intern incomplete types?
+        let aggregate = matches!(
+            ty.kind(),
+            HMIRTypeKind::Struct { .. }
+                | HMIRTypeKind::Union { .. }
+                | HMIRTypeKind::TaggedUnion { .. }
+                | HMIRTypeKind::Undefined(HMIRUndefined::Tagged(_))
+        );
+        // REVIEW: debug_name is not the correct proxy for strong identifiers, we need both a strong_identifier, and a debug_name,
+        // the former dictates equality, the latter just for prettied formats and need not be identifier-shaped (e.g. foo::type_name).
+        if aggregate && ty.debug_name().is_some() {
+            let id = self.reserve_type(ty.clone());
+            return self.qualified(id, semantics, ty);
+        }
+        let own = match aggregate {
+            true => HMIRTypeSemantics {
+                constant: false,
+                volatile: false,
+                ..semantics
+            },
+            false => HMIRTypeSemantics::default(),
         };
-        let id = MemoID::new(self.entries.len());
-        let ty_id = Self::type_id(id);
-        let value = HMIRValue::new(universe.unwrap_or(ty_id), HMIRImmediate::Type(ty_id));
-        self.entries.push(MemoEntry::ready(value));
-        self.state_mut(ty_id).realized = Some(ty);
-        if universe.is_none() {
-            self.universe = Some(ty_id);
-        }
-        ty_id
+        let bare = HMIRType::new(
+            ty.kind().clone(),
+            own,
+            ty.decl_span().clone(),
+            ty.debug_name().map(str::to_owned),
+        );
+        let base = self.intern(bare);
+        self.qualified(base, semantics, ty)
     }
 
-    pub fn universe(&mut self) -> HMIRTypeID {
-        if let Some(id) = self.universe {
-            return id;
-        }
-        self.realize_type(HMIRType::new(
-            HMIRTypeKind::Type,
-            HMIRTypeSemantics::default(),
-            TokenRange::internal(),
-            None,
-        ))
-    }
-
-    pub fn intern_context(&mut self, context: MemoContext) -> MemoContextID {
-        if let Some(id) = self.context_ids.get(&context) {
-            return *id;
-        }
-        let id = self.contexts.push(context.clone());
-        self.context_ids.insert(context, id);
-        id
-    }
-
-    pub fn reserve(&mut self, key: MemoKey) -> MemoID {
-        if let Some(id) = self.memo.get(&key) {
-            return *id;
-        }
-        let id = self.entries.push(MemoEntry::reserved(key.clone()));
-        self.memo.insert(key, id);
-        id
-    }
-
-    pub fn type_id(id: MemoID) -> HMIRTypeID {
-        HMIRTypeID::new(id.index())
-    }
-    pub fn type_memo(ty: HMIRTypeID) -> MemoID {
-        MemoID::new(ty.index())
-    }
-
-    fn state(&self, ty: HMIRTypeID) -> Option<&TypeState> {
-        self.types.get(ty)
-    }
-    fn state_mut(&mut self, ty: HMIRTypeID) -> &mut TypeState {
-        if self.types.len() <= ty.index() {
-            self.types.resize_with(ty.index() + 1, TypeState::default);
-        }
-        &mut self.types[ty]
-    }
-
-    pub fn realized_type(&self, ty: HMIRTypeID) -> Option<&HMIRType> {
-        self.state(ty)?.realized.as_ref()
-    }
-
-    pub fn settled(&self, ty: HMIRTypeID) -> bool {
-        match self.realized_type(ty).map(HMIRType::kind) {
-            Some(HMIRTypeKind::Nominal(inner)) => self.settled(*inner),
-            realized => realized.is_some(),
-        }
+    pub fn reserve_type(&mut self, ty: HMIRType) -> HMIRTypeID {
+        self.types.push(TypeState {
+            ty,
+            pending: None,
+            prepared: false,
+            lowered: None,
+        })
     }
 
     pub fn complete_type(&mut self, id: HMIRTypeID, ty: HMIRType) {
-        self.state_mut(id).realized = Some(ty);
+        self.types[id].ty = ty;
     }
 
-    pub fn alias_type(&mut self, id: HMIRTypeID, target: HMIRTypeID, span: &TokenRange) {
-        let kind = HMIRTypeKind::Nominal(target);
-        self.complete_type(
-            id,
-            HMIRType::new(kind, HMIRTypeSemantics::default(), span.clone(), None),
+    pub fn realized_type(&self, id: HMIRTypeID) -> &HMIRType {
+        &self.types[id].ty
+    }
+
+    pub fn pending(&self, id: HMIRTypeID) -> Option<HMIRDefID> {
+        self.types[id].pending
+    }
+    pub fn set_pending(&mut self, id: HMIRTypeID, def: Option<HMIRDefID>) {
+        self.types[id].pending = def;
+    }
+
+    pub fn prepared(&self, id: HMIRTypeID) -> bool {
+        self.types[id].prepared
+    }
+    pub fn mark_prepared(&mut self, id: HMIRTypeID) {
+        self.types[id].prepared = true;
+    }
+
+    pub fn lowered_type(&self, id: HMIRTypeID) -> Option<MIRTypeID> {
+        self.types[id].lowered
+    }
+    pub fn cache_lowered(&mut self, id: HMIRTypeID, mir: MIRTypeID) {
+        self.types[id].lowered = Some(mir);
+    }
+
+    pub fn symbol(&self, def: HMIRDefID) -> SymbolState {
+        self.symbols
+            .get(&def)
+            .cloned()
+            .unwrap_or(SymbolState::Declared)
+    }
+    pub fn set_symbol(&mut self, def: HMIRDefID, state: SymbolState) {
+        self.symbols.insert(def, state);
+    }
+
+    pub fn active(&self) -> &[HMIRDefID] {
+        &self.active
+    }
+    pub fn enter(&mut self, def: HMIRDefID) {
+        self.active.push(def);
+    }
+    pub fn leave(&mut self) {
+        self.active.pop();
+    }
+
+    pub fn generated(&self, def: HMIRDefID, args: &[HMIRValue]) -> Option<&HMIRValue> {
+        self.generated.get(&(def, args.to_vec()))
+    }
+    pub fn record_generated(&mut self, def: HMIRDefID, args: Vec<HMIRValue>, value: HMIRValue) {
+        if let Some(ty) = value::as_type(&value) {
+            let ty = self.underlying(ty);
+            self.origins.entry(ty).or_insert((def, args.clone()));
+        }
+        self.generated.insert((def, args), value);
+    }
+    pub fn origin(&self, ty: HMIRTypeID) -> Option<(HMIRDefID, &[HMIRValue])> {
+        let (def, args) = self.origins.get(&ty)?;
+        Some((*def, args.as_slice()))
+    }
+
+    fn intern(&mut self, ty: HMIRType) -> HMIRTypeID {
+        let key = key::key(&ty);
+        if let Some(id) = self.interned.get(&key) {
+            return *id;
+        }
+        let id = self.reserve_type(ty);
+        self.interned.insert(key, id);
+        id
+    }
+
+    // 'base' with only the specifiers of 'full' it does not carry itself
+    fn qualified(&mut self, base: HMIRTypeID, full: HMIRTypeSemantics, ty: HMIRType) -> HMIRTypeID {
+        let own = *self.types[base].ty.semantics();
+        let added = HMIRTypeSemantics {
+            constant: full.constant && !own.constant,
+            volatile: full.volatile && !own.volatile,
+            unsafe_move: full.unsafe_move && !own.unsafe_move,
+            move_semantics: match full.move_semantics > own.move_semantics {
+                true => full.move_semantics,
+                false => HMIRMoveSemantics::POD,
+            },
+        };
+        if added == HMIRTypeSemantics::default() {
+            return base;
+        }
+        let nominal = HMIRType::new(
+            HMIRTypeKind::Nominal(base),
+            added,
+            ty.decl_span().clone(),
+            None,
         );
+        self.intern(nominal)
     }
 
-    pub fn forward_type(
-        &mut self,
-        id: HMIRTypeID,
-        tag: HIRTagKind,
-        semantics: HMIRTypeSemantics,
-        span: &TokenRange,
-        name: Option<String>,
-    ) {
-        let kind = HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag));
-        self.complete_type(id, HMIRType::new(kind, semantics, span.clone(), name));
+    fn underlying(&self, id: HMIRTypeID) -> HMIRTypeID {
+        match self.types[id].ty.kind() {
+            HMIRTypeKind::Nominal(inner) => self.underlying(*inner),
+            _ => id,
+        }
     }
 
-    pub fn prepared(&self, ty: HMIRTypeID) -> bool {
-        self.state(ty).is_some_and(|state| state.prepared)
-    }
-    pub fn mark_prepared(&mut self, ty: HMIRTypeID) {
-        self.state_mut(ty).prepared = true;
-    }
-    pub fn lowered_type(&self, ty: HMIRTypeID) -> Option<MIRTypeID> {
-        self.state(ty)?.lowered
-    }
-    pub fn cache_lowered(&mut self, ty: HMIRTypeID, mir: MIRTypeID) {
-        self.state_mut(ty).lowered = Some(mir);
+    fn semantics(&self, id: HMIRTypeID) -> HMIRTypeSemantics {
+        let ty = &self.types[id].ty;
+        match ty.kind() {
+            HMIRTypeKind::Nominal(inner) => ty.semantics().apply(self.semantics(*inner)),
+            _ => *ty.semantics(),
+        }
     }
 }

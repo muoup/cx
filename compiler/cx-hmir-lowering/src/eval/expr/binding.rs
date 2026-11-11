@@ -12,7 +12,10 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::{FnContext, LocalLoweringContext},
+    env::{
+        function::{FnContext, LocalLoweringContext},
+        resolver::demand,
+    },
     eval::{
         EvalResult, coerce,
         control::{self, closing},
@@ -84,7 +87,7 @@ pub(crate) fn eval_let(
         return place::adopt(context, body, span, local_id, declared, operand, unsafe_);
     }
     let storage = match declared.known().copied() {
-        Some(ty) if context.complete_object(ty) => {
+        Some(ty) if demand::complete(context.env_mut(), ty)? => {
             Some(declare(context, body, local_id, ty, span)?)
         }
         _ => None,
@@ -197,7 +200,7 @@ fn declare(
         );
         return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
     }
-    if !context.complete_object(ty) {
+    if !demand::complete(context.env_mut(), ty)? {
         let subject = format!("variable of type '{}'", types::name(context.env(), ty));
         return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject));
     }

@@ -6,7 +6,7 @@ use std::{
 
 use cx_hmir::{
     HMIRFnSignature, HMIRFunctionStage, HMIRUnitID, body::HMIRLocalID, expr::HMIRExprID,
-    ty::HMIRTypeID, unit::def::HMIRDeclarationPoint,
+    ty::HMIRTypeID,
 };
 use cx_log::{CXResult, catalogue::mir};
 use cx_tokens::TokenRange;
@@ -53,8 +53,6 @@ pub struct LocalLoweringContext<'env, 'global, 'hmir> {
     source: HMIRUnitID,
     evaluation: EvaluationID,
 
-    // REVIEW: What is this?
-    visible_through: Option<HMIRDeclarationPoint>,
     signature: Option<&'env HMIRFnSignature<HMIRExprID>>,
     // REVIEW: Unclear why 'signature' uses the expr form here so we need to track this
     return_type: Option<HMIRTypeID>,
@@ -92,7 +90,6 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         Self {
             source,
             return_type: None,
-            visible_through: None,
             call_depth: 0,
             env,
             signature,
@@ -119,7 +116,6 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         }
         child.source = self.source;
         child.return_type = self.return_type;
-        child.visible_through = self.visible_through;
         child.call_depth = self.call_depth;
         child.memory = Rc::clone(&self.memory);
         child
@@ -143,27 +139,14 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         self.source
     }
 
-    pub fn at(mut self, point: Option<HMIRDeclarationPoint>) -> Self {
-        self.visible_through = point;
-        self
-    }
-
-    pub fn visible_through(&self) -> Option<HMIRDeclarationPoint> {
-        self.visible_through
-    }
-
     pub(crate) fn relocated<R>(
         &mut self,
         source: HMIRUnitID,
-        visible_through: Option<HMIRDeclarationPoint>,
         scoped: impl FnOnce(&mut Self) -> R,
     ) -> R {
-        let outer = (
-            mem::replace(&mut self.source, source),
-            mem::replace(&mut self.visible_through, visible_through),
-        );
+        let outer = mem::replace(&mut self.source, source);
         let result = scoped(self);
-        (self.source, self.visible_through) = outer;
+        self.source = outer;
         result
     }
 

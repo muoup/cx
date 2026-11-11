@@ -9,7 +9,6 @@ use cx_hmir::{
     body::HMIRBodyID,
     expr::HMIRExprID,
     ty::{HMIRExprType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext},
-    unit::def::HMIRDeclarationPoint,
 };
 use cx_log::{
     CXResult,
@@ -19,7 +18,10 @@ use cx_log::{
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::{EvaluationID, Expectations, FnContext, LocalLoweringContext},
+    env::{
+        function::{EvaluationID, Expectations, FnContext, LocalLoweringContext},
+        resolver::demand,
+    },
     eval::{
         EvalResult, coerce,
         flow::{self, Evaluation, finally},
@@ -136,22 +138,16 @@ impl<T: 'static> Incomplete<T> {
         matches!(self.reason, IncompleteReason::YieldType)
     }
 
-    pub(crate) fn in_source(
-        mut self,
-        source: HMIRUnitID,
-        point: Option<HMIRDeclarationPoint>,
-        body: HMIRBodyID,
-    ) -> Self {
+    pub(crate) fn in_source(mut self, source: HMIRUnitID, body: HMIRBodyID) -> Self {
         let partial = self.partial.take();
         self.wrap(partial, move |context, _, expected, resolve| {
             let unit = context.unit(source);
             let source_body = unit.body(body).expect("a suspended source body exists");
-            let result = context.relocated(source, point, |context| {
-                resolve(context, source_body, expected)
-            })?;
+            let result =
+                context.relocated(source, |context| resolve(context, source_body, expected))?;
             Ok(match result {
                 Evaluation::Incomplete(pending) => {
-                    Evaluation::Incomplete(pending.in_source(source, point, body))
+                    Evaluation::Incomplete(pending.in_source(source, body))
                 }
                 result => result,
             })
@@ -250,9 +246,6 @@ pub(crate) fn type_result(
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let value = type_value(context, ty, span)?;
-    if !context.env().resolver().settled(ty) {
-        context.force_type(ty, span)?;
-    }
     if !matches!(
         context.env().resolve_kind(ty),
         HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })
@@ -372,7 +365,7 @@ pub(crate) fn described_type(
             );
             return Err(hmir_error(&span, &typecheck::EXPECTED_TYPE, found).into());
         };
-        context.prepare_type(ty, &span)?;
+        demand::prepare(context.env_mut(), ty)?;
         Ok(match type_result(context, ty, &span)? {
             Evaluation::Ready(_) => Evaluation::Ready(ty),
             Evaluation::Incomplete(incomplete) => Evaluation::Incomplete(

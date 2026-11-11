@@ -37,15 +37,14 @@ pub(crate) fn lower<'hmir>(
             call::dependent::signature(env, id, function, comptime_bindings, span)?,
         ),
         None => (
-            lower_prototype(env, id, None, span)?,
-            symbol::signature(env, id, None)?,
+            lower_prototype(env, id, span)?,
+            symbol::signature(env, id)?,
         ),
     };
     let comptime_bindings = template.map_or(&[][..], |(_, comptime_bindings)| comptime_bindings);
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
     let mut context = LocalLoweringContext::new(env, Some(function.signature()), runtime)
         .sourced(id.brand())
-        .at(body.visible_through())
         .with_return_type(*signature.return_type());
 
     for name in def.address_labels() {
@@ -57,9 +56,7 @@ pub(crate) fn lower<'hmir>(
     }
     let root = emit::open_scope(&mut context, span);
     let scopes = context.runtime_mut().scopes_mut();
-    scopes
-        .control_mut(root)
-        .set_return(id.brand(), body.visible_through());
+    scopes.control_mut(root).set_return(id.brand());
     let completion = definition(&mut context, function, &signature, comptime_bindings, span);
     emit::close_scope(&mut context, span);
     flow::top(flow::catch_diverged(completion))?;

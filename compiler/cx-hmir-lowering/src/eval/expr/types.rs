@@ -3,7 +3,7 @@ mod layout;
 
 pub(crate) mod qualify;
 
-pub(crate) use construct::{construct_type, eval_declared_type, hole_bounded, undefined_array};
+pub(crate) use construct::{construct_type, hole_bounded, undefined_array};
 pub(crate) use layout::eval_type_op;
 
 use cx_hmir::{
@@ -124,7 +124,6 @@ pub(crate) fn parameter(
     comptime: bool,
     span: &TokenRange,
 ) -> CXResult<HMIRTypeID> {
-    context.force_type(ty, span)?;
     let pointee = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Type if !comptime => {
             let kind = (
@@ -271,6 +270,34 @@ pub(crate) fn is_complete(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
         HMIRTypeKind::Undefined(_) | HMIRTypeKind::Unreachable => false,
         _ => true,
     }
+}
+
+// Types are interned, so two are one type when they qualify one underlying type alike; constness is only
+// compared when 'qualified'
+pub(crate) fn alike(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID, qualified: bool) -> bool {
+    let (mut left, mut right) = (env.semantics(a), env.semantics(b));
+    if !qualified {
+        left.constant = false;
+        right.constant = false;
+    }
+    left == right && env.underlying(a) == env.underlying(b)
+}
+
+// Declarations of one function agree apart from the qualifiers of their parameters and result
+pub(crate) fn signatures_alike(
+    env: &HMIREnvironment,
+    a: &HMIRFnSignature<HMIRTypeID>,
+    b: &HMIRFnSignature<HMIRTypeID>,
+) -> bool {
+    a.stage() == b.stage()
+        && a.contract().is_safe() == b.contract().is_safe()
+        && a.is_variadic() == b.is_variadic()
+        && a.params().len() == b.params().len()
+        && a.params()
+            .iter()
+            .zip(b.params())
+            .all(|(a, b)| a.comptime() == b.comptime() && alike(env, *a.ty(), *b.ty(), false))
+        && alike(env, *a.return_type(), *b.return_type(), false)
 }
 
 // The bitfield behind a reference, or behind the reference an indirect place was reached through

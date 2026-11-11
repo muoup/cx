@@ -3,7 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use cx_hmir::{HMIRUnitID, body::HMIRLocalID, expr::HMIRExprID, unit::def::HMIRDeclarationPoint};
+use cx_hmir::{HMIRUnitID, body::HMIRLocalID, expr::HMIRExprID};
 use rustc_hash::FxHashMap;
 
 use crate::value::HMIRValue;
@@ -14,7 +14,6 @@ pub(crate) struct Quote {
     root: HMIRExprID,
     params: Vec<HMIRLocalID>,
     captures: FxHashMap<HMIRLocalID, HMIRValue>,
-    visible_through: Option<HMIRDeclarationPoint>,
 }
 
 impl Quote {
@@ -23,14 +22,12 @@ impl Quote {
         root: HMIRExprID,
         params: Vec<HMIRLocalID>,
         captures: FxHashMap<HMIRLocalID, HMIRValue>,
-        visible_through: Option<HMIRDeclarationPoint>,
     ) -> Self {
         Self {
             source,
             root,
             params,
             captures,
-            visible_through,
         }
     }
 
@@ -48,10 +45,6 @@ impl Quote {
 
     pub(crate) fn captures(&self) -> &FxHashMap<HMIRLocalID, HMIRValue> {
         &self.captures
-    }
-    
-    pub(crate) fn visible_through(&self) -> Option<HMIRDeclarationPoint> {
-        self.visible_through
     }
 }
 

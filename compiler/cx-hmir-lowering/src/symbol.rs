@@ -1,154 +1,171 @@
-pub(crate) mod composite;
-pub(crate) mod interface;
-pub(crate) mod structure;
+pub(crate) mod evaluate;
+
+use std::cmp::Reverse;
 
 use cx_hmir::{
-    HMIRDeclarationRole, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage,
+    HMIRDeclaration, HMIRDef, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunction,
+    HMIRFunctionStage,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
-    unit::def::HMIRDeclarationPoint,
 };
-use cx_log::{CXResult, catalogue::typecheck};
-use cx_tokens::TokenRange;
+use cx_log::{
+    CXResult,
+    catalogue::{mir, typecheck},
+    error::CXError,
+};
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     env::{
         HMIREnvironment,
-        generation::Generation,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
-        memo::{MemoContextID, MemoKey},
+        resolver::SymbolState,
     },
-    eval::flow,
     log::hmir_error,
     value::HMIRValue,
 };
 
-pub(crate) use interface::{definition, initialize};
-pub(crate) use structure::{needs_specialization, select, visible};
-
-pub(crate) fn resolve(
-    context: &mut LocalLoweringContext,
-    def: HMIRDefID,
-    scope: MemoContextID,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let id = context
-        .env_mut()
-        .resolver_mut()
-        .reserve(MemoKey::Definition(def, scope));
-    flow::top(context.evaluate(id, span))
+// The value 'def' names, evaluated the first time it is asked for
+pub(crate) fn value(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<HMIRValue> {
+    match env.resolver().symbol(def) {
+        SymbolState::Ready(value) | SymbolState::Evaluating(Some(value)) => return Ok(value),
+        SymbolState::Evaluating(None) => return Err(cycle(env, def)),
+        SymbolState::Declared => {}
+    }
+    env.resolver_mut()
+        .set_symbol(def, SymbolState::Evaluating(None));
+    let result = evaluating(env, def, |context| evaluate::value(context, def));
+    let state = match &result {
+        Ok(value) => SymbolState::Ready(value.clone()),
+        Err(_) => SymbolState::Declared,
+    };
+    env.resolver_mut().set_symbol(def, state);
+    result
 }
 
-pub(crate) fn binding(
+// Evaluates the body of the type 'def' reserved as 'ty'
+pub(crate) fn complete(env: &mut HMIREnvironment, def: HMIRDefID, ty: HMIRTypeID) -> CXResult<()> {
+    env.resolver_mut().set_pending(ty, None);
+    evaluating(env, def, |context| evaluate::body(context, def, ty))
+}
+
+fn evaluating<T>(
     env: &mut HMIREnvironment,
     def: HMIRDefID,
-    point: Option<HMIRDeclarationPoint>,
-) -> CXResult<HMIRValue> {
-    let mut context =
-        LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
-            .sourced(def.brand())
-            .at(point);
-    let scope = context.memo_context(point, None, false);
-    let unit = context
-        .env_mut()
-        .symbols_mut()
-        .owner(def.brand())
-        .expect("definition owner exists");
-    let span = unit.resolve_def(def).unwrap().declarations()[0].span();
-    resolve(&mut context, def, scope, span)
+    evaluate: impl FnOnce(&mut LocalLoweringContext) -> CXResult<T>,
+) -> CXResult<T> {
+    env.resolver_mut().enter(def);
+    let result = {
+        let mut context =
+            LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
+                .sourced(def.brand());
+        evaluate(&mut context)
+    };
+    env.resolver_mut().leave();
+    result
 }
 
-pub(crate) fn validate(env: &mut HMIREnvironment, id: HMIRDefID) -> CXResult<()> {
-    let unit = env
-        .symbols_mut()
-        .owner(id.brand())
-        .expect("definition owner exists");
-    let def = unit.resolve_def(id).unwrap();
-    let selected = select(def, None)?;
-    let declaration = &def.declarations()[selected];
-    let reconcile_global =
-        def.declarations().len() > 1 && matches!(declaration.kind(), Some(HMIRDefKind::Global(_)));
-    if let Some(HMIRDefKind::Function(function)) = declaration.kind()
-        && function.def().is_some()
-        && function.signature().is_variadic()
-        && function.signature().contract().is_safe()
-    {
-        return Err(hmir_error(
-            declaration.span(),
-            &typecheck::INVALID_CONTEXT,
-            ("Varargs".into(), "a safe function".into()),
-        ));
-    }
-    let linkage = structure::reconcile_linkage(def, None)?;
-    let root = linkage != LinkageMode::Static
-        && match declaration.kind() {
-            Some(HMIRDefKind::Function(function)) => {
-                function.signature().stage() == HMIRFunctionStage::Runtime
-                    && !needs_specialization(function)
-                    && function.def().is_some()
-            }
-            Some(HMIRDefKind::Global(global)) => {
-                global.initializer().is_some() || linkage != LinkageMode::Extern
-            }
-            _ => false,
-        };
-    if root {
-        env.generation_mut().request(Generation::Definition(id), None);
-    }
-    let untagged_comptime = declaration.tag().is_none()
-        && matches!(declaration.kind(), Some(HMIRDefKind::ComptimeGlobal(_)));
-    if untagged_comptime && declaration.role() == HMIRDeclarationRole::Definition {
-        binding(env, id, None)?;
-    }
-    if reconcile_global {
-        binding(env, id, None)?;
-    }
-    Ok(())
+fn cycle(env: &HMIREnvironment, def: HMIRDefID) -> CXError {
+    let active = env.resolver().active();
+    let start = active.iter().position(|active| *active == def).unwrap_or(0);
+    let path = active[start..]
+        .iter()
+        .chain(std::iter::once(&def))
+        .map(|id| env.symbols().resolve_definition(*id).name().to_string())
+        .collect::<Vec<_>>()
+        .join(" -> ")Tilde Codegen Backend;
+    let span = env.symbols().resolve_definition(def).declarations()[0].span();
+    hmir_error(span, &mir::DEPENDENCY_CYCLE, path)
 }
 
-pub(crate) fn value_type(
-    env: &mut HMIREnvironment,
-    def: HMIRDefID,
-    point: Option<HMIRDeclarationPoint>,
-) -> CXResult<HMIRTypeID> {
-    let value = binding(env, def, point)?;
-    Ok(env.referent(value.ty()))
+// The declaration that stands for 'def': its definition, or else its first declaration
+pub(crate) fn canonical(def: &HMIRDef) -> &HMIRDeclaration {
+    def.declarations()
+        .iter()
+        .enumerate()
+        .filter(|(_, declaration)| declaration.kind().is_some())
+        .max_by_key(|(index, declaration)| (declaration.role(), Reverse(*index)))
+        .map(|(_, declaration)| declaration)
+        .expect("a symbol has declaration content")
+}
+
+pub(crate) fn function(def: &HMIRDef) -> &HMIRFunction {
+    match canonical(def).kind() {
+        Some(HMIRDefKind::Function(function)) => function,
+        _ => unreachable!("'{}' does not name a function", def.name()),
+    }
+}
+
+pub(crate) fn needs_specialization(function: &HMIRFunction) -> bool {
+    function.signature().stage() == HMIRFunctionStage::Runtime
+        && function
+            .signature()
+            .params()
+            .iter()
+            .any(|param| param.comptime())
 }
 
 pub(crate) fn signature(
     env: &mut HMIREnvironment,
-    id: HMIRDefID,
-    point: Option<HMIRDeclarationPoint>,
+    def: HMIRDefID,
 ) -> CXResult<HMIRFnSignature<HMIRTypeID>> {
-    let value = binding(env, id, point)?;
+    let value = value(env, def)?;
     let HMIRTypeKind::Function(signature) = env.resolve_kind(value.ty()) else {
         unreachable!("a function binding has a function type")
     };
     Ok(signature.clone())
 }
 
-pub(crate) fn linkage(
-    env: &mut HMIREnvironment,
-    id: HMIRDefID,
-    point: Option<HMIRDeclarationPoint>,
-) -> CXResult<LinkageMode> {
-    let unit = env
-        .symbols_mut()
-        .owner(id.brand())
-        .expect("definition owner exists");
-    structure::reconcile_linkage(unit.resolve_def(id).unwrap(), point)
+pub(crate) fn value_type(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<HMIRTypeID> {
+    let value = value(env, def)?;
+    Ok(env.referent(value.ty()))
 }
 
-pub(crate) fn link_name(
-    env: &HMIREnvironment,
-    id: HMIRDefID,
-    point: Option<HMIRDeclarationPoint>,
-) -> CXResult<Option<CXIdent>> {
-    let definition = env.symbols().resolve_definition(id);
-    let selected = select(definition, point)?;
-    Ok(match definition.declarations()[selected].kind() {
+// The linkage of each declaration of a function or storage global, in order
+pub(crate) fn linkages(def: &HMIRDef) -> impl Iterator<Item = (&HMIRDeclaration, LinkageMode)> {
+    def.declarations()
+        .iter()
+        .filter_map(|declaration| match declaration.kind()? {
+            HMIRDefKind::Function(function) => Some((declaration, function.prototype().linkage())),
+            HMIRDefKind::Global(global) => Some((declaration, global.linkage())),
+            _ => None,
+        })
+}
+
+// A first internal declaration makes the symbol internal; otherwise the last one that is not 'extern' decides
+pub(crate) fn linkage(env: &mut HMIREnvironment, def: HMIRDefID) -> LinkageMode {
+    let unit = env
+        .symbols_mut()
+        .owner(def.brand())
+        .expect("definition owner exists");
+    let mut linkages = linkages(unit.resolve_def(def).unwrap()).map(|(_, linkage)| linkage);
+    let Some(first) = linkages.next() else {
+        return LinkageMode::Standard;
+    };
+    if first == LinkageMode::Static {
+        return first;
+    }
+    linkages
+        .filter(|linkage| *linkage != LinkageMode::Extern)
+        .last()
+        .unwrap_or(first)
+}
+
+pub(crate) fn link_name(env: &mut HMIREnvironment, def: HMIRDefID) -> Option<CXIdent> {
+    let unit = env
+        .symbols_mut()
+        .owner(def.brand())
+        .expect("definition owner exists");
+    match canonical(unit.resolve_def(def).unwrap()).kind() {
         Some(HMIRDefKind::Function(function)) => Some(function.prototype().symbol_name().clone()),
         Some(HMIRDefKind::Global(global)) => Some(global.symbol_name().clone()),
         _ => None,
-    })
+    }
+}
+
+pub(crate) fn incompatible(def: &HMIRDef, declaration: &HMIRDeclaration) -> CXError {
+    hmir_error(
+        declaration.span(),
+        &typecheck::INCOMPATIBLE_DECLARATION,
+        def.name().to_string(),
+    )
 }

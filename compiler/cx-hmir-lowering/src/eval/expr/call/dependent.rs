@@ -19,6 +19,7 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
         generation::Generation,
+        resolver::demand,
     },
     eval::{
         EvalResult, coerce, comptime, control,
@@ -101,7 +102,7 @@ impl<'a> Frame<'a> {
     ) -> CXResult<HMIRValue> {
         let ty = self.parameter(caller, index, span)?;
         if let Some(ty) = value::as_type(&value) {
-            caller.prepare_type(ty, span)?;
+            demand::prepare(caller.env_mut(), ty)?;
         }
         let value = coerce::implicit::standard(caller, value, ty, span)?;
         let frozen = self.function.signature().params()[index].comptime();
@@ -111,10 +112,6 @@ impl<'a> Frame<'a> {
         let value = match caller.is_runtime() {
             true => value,
             false => flow::top(comptime::export(caller, value, span))?,
-        };
-        let value = match frozen {
-            true => caller.env_mut().canonical_value(value),
-            false => value,
         };
         let function = self.function;
         self.enter(caller, span, |child| {
@@ -190,8 +187,7 @@ impl<'a> Frame<'a> {
         let state = FnContext::Comptime(mem::take(&mut self.state));
         let mut child = caller
             .child(Some(self.function.signature()), state, None)
-            .sourced(self.def.brand())
-            .at(self.function.body().visible_through());
+            .sourced(self.def.brand());
         child.enter_call(span)?;
         if let Some(ty) = self.return_type {
             child = child.with_return_type(ty);
@@ -317,7 +313,7 @@ pub(crate) fn apply(
         .symbols_mut()
         .owner(def.brand())
         .expect("function owner exists");
-    let function = symbol::structure::function(unit.resolve_def(def).expect("function exists"))?;
+    let function = symbol::function(unit.resolve_def(def).expect("function exists"));
     let runtime = context.is_runtime() && !is_spliced(context, function);
     let state = ComptimeContext::of(name(context, def));
     let mut frame = Frame::new(function, def, state, runtime);
@@ -339,7 +335,7 @@ fn finish(
     let open = declared.params().iter().zip(&values);
     let staged = declared.stage() == HMIRFunctionStage::Comptime;
     if open.clone().any(|(param, value)| value.is_none() && (staged || param.comptime())) {
-        let signature = symbol::signature(context.env_mut(), def, None)?;
+        let signature = symbol::signature(context.env_mut(), def)?;
         return Ok(Evaluation::Ready(curried(context, def, &signature, values, span)?));
     }
 
@@ -372,9 +368,19 @@ fn finish(
             super::finish(context, &callee, &runtime, return_type, span)
         });
     }
+    // A type generator yields one type for the same arguments, however often it is called
+    let generator =
+        !spliced && matches!(context.env().resolve_kind(*signature.return_type()), HMIRTypeKind::Type);
+    if generator && let Some(value) = context.env().resolver().generated(def, &args) {
+        return Ok(Evaluation::Ready(value.clone()));
+    }
     let value = frame.enter(context, span, |child| {
         execute(child, function, &signature, &args, &name, span)
     })?;
+    if generator {
+        let resolver = context.env_mut().resolver_mut();
+        resolver.record_generated(def, args, value.clone());
+    }
     match spliced {
         true => staged::splice(context, value, span),
         false => Ok(Evaluation::Ready(value)),
@@ -392,7 +398,7 @@ fn curried(
 ) -> CXResult<HMIRValue> {
     let residual = types::residual(signature, |index| values[index].is_some());
     let ty = types::realize(context.env_mut(), HMIRTypeKind::Function(residual), span);
-    let callee = symbol::binding(context.env_mut(), def, None)?;
+    let callee = symbol::value(context.env_mut(), def)?;
     Ok(value::curried(ty, callee, values))
 }
 

@@ -27,8 +27,8 @@ pub(crate) fn declare(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRGlobalID> {
-    let symbol_name = symbol::link_name(env, def, None)?.expect("a global has a symbol name");
-    let linkage = symbol::linkage(env, def, None)?;
+    let symbol_name = symbol::link_name(env, def).expect("a global has a symbol name");
+    let linkage = symbol::linkage(env, def);
     let mir_ty = lower_type(env, ty, span)?;
     let mutable = !env.semantics(ty).constant;
     let name = symbol_name.as_str();
@@ -54,17 +54,16 @@ pub(crate) fn declare(
 }
 
 pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
-    let ty = symbol::value_type(env, def, None)?;
+    let ty = symbol::value_type(env, def)?;
     let unit = env
         .symbols_mut()
         .owner(def.brand())
         .expect("global owner exists");
-    let source_def = unit.resolve_def(def).unwrap();
-    let selected = symbol::select(source_def, None)?;
-    let Some(HMIRDefKind::Global(source)) = source_def.declarations()[selected].kind() else {
-        unreachable!("global declaration selected");
+    let Some(HMIRDefKind::Global(source)) = symbol::canonical(unit.resolve_def(def).unwrap()).kind()
+    else {
+        unreachable!("a global is declared as one");
     };
-    let linkage = symbol::linkage(env, def, None)?;
+    let linkage = symbol::linkage(env, def);
     let span = source.body().expr(source.ty()).span().clone();
     let id = declare(env, def, ty, &span)?;
     if source.initializer().is_none() && linkage == LinkageMode::Extern {
@@ -87,7 +86,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
             let mut context =
                 LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
                     .sourced(def.brand());
-            let value = symbol::initialize(&mut context, def)?;
+            let value = symbol::evaluate::initialize(&mut context, def)?;
             let HMIRValueKind::Immediate(constant) = value.kind() else {
                 unreachable!("an exported comptime value is a constant")
             };
@@ -109,7 +108,7 @@ pub fn reference(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRGlobalRef> {
-    let object = symbol::value_type(env, def, None)?;
+    let object = symbol::value_type(env, def)?;
     let global = declare(env, def, object, span)?;
     Ok(MIRGlobalRef {
         global,

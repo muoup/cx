@@ -160,13 +160,7 @@ pub(crate) fn capture(
     root: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let captures = captures::collect(context, body, params, root)?;
-    let quote = Quote::new(
-        context.source(),
-        root,
-        params.to_vec(),
-        captures,
-        context.visible_through(),
-    );
+    let quote = Quote::new(context.source(), root, params.to_vec(), captures);
     let code = QuoteRef::new(quote);
     let span = body.expr(root).span().clone();
     let pending = Incomplete::new(
@@ -228,8 +222,7 @@ fn check_params(
     let comptime = FnContext::Comptime(ComptimeContext::new());
     let mut child = context
         .child(None, comptime, Some(evaluation))
-        .sourced(quote.source())
-        .at(quote.visible_through());
+        .sourced(quote.source());
     for (local, value) in captures {
         emit::bind_local(&mut child, local, value);
     }
@@ -324,13 +317,7 @@ pub(crate) fn apply(
     let source = node.get();
     let mut captures = source.captures().clone();
     captures.extend(source.params().iter().copied().zip(values));
-    let applied = Quote::new(
-        source.source(),
-        source.root(),
-        Vec::new(),
-        captures,
-        source.visible_through(),
-    );
+    let applied = Quote::new(source.source(), source.root(), Vec::new(), captures);
     let ty = signature(context, Vec::new(), result, span);
     Ok(Evaluation::Ready(HMIRValue::new(
         ty,
@@ -373,8 +360,8 @@ pub(crate) fn materialize(
         .scopes_mut()
         .push(scope, None, quote.captures().clone());
 
-    let (source, point) = (quote.source(), quote.visible_through());
-    let completion = context.relocated(source, point, |context| {
+    let source = quote.source();
+    let completion = context.relocated(source, |context| {
         for (local, (target, value)) in quote
             .params()
             .iter()
@@ -403,7 +390,7 @@ pub(crate) fn materialize(
     });
     Ok(match control::closing(context, body, completion, span)? {
         Evaluation::Incomplete(pending) => {
-            Evaluation::Incomplete(pending.in_source(source, point, quote.root().body()))
+            Evaluation::Incomplete(pending.in_source(source, quote.root().body()))
         }
         finished => finished,
     })

@@ -15,29 +15,20 @@ use cx_log::{
 
 use crate::{
     emit::comptime::int,
-    env::{function::LocalLoweringContext, memo::MemoID, resolver::HMIRResolver},
-    eval::{eval_comptime, eval_type, flow, name::type_value, types},
+    env::{function::LocalLoweringContext, resolver::demand},
+    eval::{eval_comptime, eval_type, flow, types},
     log::hmir_error,
     value,
 };
 
-pub(crate) fn eval_declared_type(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBodyContext,
-    expr: HMIRExprID,
-) -> CXResult<HMIRTypeID> {
-    let ty = context.deferred_type(expr);
-    context.force_type(ty, body.expr(expr).span())?;
-    Ok(ty)
-}
-
+// A named aggregate is reserved before its members are evaluated, so that they may refer to it; 'reserved' is
+// the type already reserved for it
 pub(crate) fn construct_type(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     ty: &HMIRExprType,
-    memo: MemoID,
+    reserved: Option<HMIRTypeID>,
 ) -> CXResult<HMIRTypeID> {
-    let id = HMIRResolver::type_id(memo);
     let semantics = ty.semantics().map(|declared| {
         CXResult::Ok(match declared {
             HMIRDeclaredMove::Explicit(semantics) => *semantics,
@@ -52,45 +43,39 @@ pub(crate) fn construct_type(
         }
         _ => None,
     };
-    if let Some(tag) = aggregate {
-        let name = ty.debug_name().map(str::to_owned);
-        context
-            .env_mut()
-            .resolver_mut()
-            .forward_type(id, tag, semantics, ty.decl_span(), name);
-        let value = type_value(context, id, ty.decl_span())?;
-        context.env_mut().resolver_mut().publish(memo, value);
-    }
+    let named = aggregate
+        .filter(|_| reserved.is_some() || ty.debug_name().is_some())
+        .map(|tag| {
+            let kind = HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag));
+            let name = ty.debug_name().map(str::to_owned);
+            let placeholder = HMIRType::new(kind, semantics, ty.decl_span().clone(), name);
+            let resolver = context.env_mut().resolver_mut();
+            match reserved {
+                Some(id) => {
+                    resolver.complete_type(id, placeholder);
+                    id
+                }
+                None => resolver.reserve_type(placeholder),
+            }
+        });
     let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
     let complete = match ty.kind() {
-        HMIRExprTypeKind::PointerTo(_)
-        | HMIRExprTypeKind::ReferenceTo { .. }
-        | HMIRExprTypeKind::Function(_) => {
-            let mut complete = ty.map(
-                context,
-                |context, expr| CXResult::Ok(context.deferred_type(*expr)),
-                |_, _| unreachable!(),
-                |_, _| Ok(move_semantics),
-            )?;
-            if let (HMIRExprTypeKind::Function(source), HMIRTypeKind::Function(signature)) =
-                (ty.kind(), complete.kind())
-            {
-                let signature = types::adjust_signature(context, body, source, signature)?;
-                complete = HMIRType::new(
-                    HMIRTypeKind::Function(signature),
-                    *complete.semantics(),
-                    complete.decl_span().clone(),
-                    complete.debug_name().map(str::to_owned),
-                );
-            }
-            context.env_mut().resolver_mut().complete_type(id, complete);
-            return Ok(id);
+        HMIRExprTypeKind::Function(source) => {
+            let complete = evaluate(context, body, ty, move_semantics)?;
+            let HMIRTypeKind::Function(signature) = complete.kind() else {
+                unreachable!("a function type evaluates to one")
+            };
+            let signature = types::adjust_signature(context, body, source, signature)?;
+            HMIRType::new(
+                HMIRTypeKind::Function(signature),
+                *complete.semantics(),
+                complete.decl_span().clone(),
+                complete.debug_name().map(str::to_owned),
+            )
         }
         HMIRExprTypeKind::Nominal(inner) => {
             let inner =
                 flow::top(eval_type(context, body, *inner).and_then(|ty| ty.description()))?;
-            let current = context.env().semantics(inner);
-            let semantics = current.apply(semantics);
             HMIRType::new(
                 HMIRTypeKind::Nominal(inner),
                 semantics,
@@ -108,9 +93,15 @@ pub(crate) fn construct_type(
         }
         _ => evaluate(context, body, ty, move_semantics)?,
     };
-    context.env_mut().resolver_mut().complete_type(id, complete);
-    types::validate(context.env(), context.env().resolve_type_id(id))?;
-    Ok(id)
+    types::validate(context.env(), &complete)?;
+    let resolver = context.env_mut().resolver_mut();
+    Ok(match named {
+        Some(id) => {
+            resolver.complete_type(id, complete);
+            id
+        }
+        None => resolver.realize_type(complete),
+    })
 }
 
 // An array bounded by '_' has no type of its own, only one an expected array type completes
@@ -196,7 +187,7 @@ fn member(
         | HMIRExprTypeKind::TaggedUnion { .. } => "member",
         _ => return Ok(ty),
     };
-    if types::is_complete(context.env(), ty) && context.type_visible(ty) {
+    if demand::complete(context.env_mut(), ty)? {
         return Ok(ty);
     }
     let subject = format!("{subject} of type '{}'", types::name(context.env(), ty));

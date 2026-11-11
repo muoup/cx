@@ -21,7 +21,7 @@ use crate::{
     eval::{
         EvalResult,
         aggregate::variant,
-        coerce, comptime, eval, expr,
+        coerce, comptime, eval, eval_comptime, expr,
         flow::{self, Evaluation},
         helpers, staged, types,
     },
@@ -93,7 +93,7 @@ fn apply(
     let declared = match (def, &unit) {
         (Some(def), Some(unit)) => {
             let source = unit.resolve_def(def).expect("function exists");
-            Some((def, symbol::structure::function(source)?))
+            Some((def, symbol::function(source)))
         }
         _ => None,
     };
@@ -223,7 +223,7 @@ fn default(
     let default = default.expect("a parameter left to its default has one");
     let comptime = FnContext::Comptime(ComptimeContext::new());
     let mut child = context.child(None, comptime, None).sourced(def.brand());
-    symbol::interface::initializer_value(&mut child, prototype.defaults(), default, Some(ty))
+    eval_comptime(&mut child, prototype.defaults(), default, Some(ty))
 }
 
 // Calls 'callee', which is not curried, with a value for each of its parameters

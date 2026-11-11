@@ -17,10 +17,7 @@ use cx_hmir::{
 use cx_log::{CXResult, catalogue::mir};
 
 use crate::{
-    env::{
-        function::{FnContext, LocalLoweringContext, runtime::Emission},
-        resolver::HMIRResolver,
-    },
+    env::function::{FnContext, LocalLoweringContext, runtime::Emission},
     eval::flow::Evaluation,
     log::hmir_error,
     value::HMIRValue,
@@ -45,8 +42,8 @@ pub(crate) fn eval(
         HMIRExprKind::Type(ty) if let Some(element) = types::hole_bounded(body, ty) => {
             deduce::hole_bound(context, body, ty, element, span)
         }
-        HMIRExprKind::Type(_) => {
-            let ty = types::eval_declared_type(context, body, id)?;
+        HMIRExprKind::Type(ty) => {
+            let ty = types::construct_type(context, body, ty, None)?;
             deduce::type_result(context, ty, span)
         }
         HMIRExprKind::Local(local) => binding::eval_local(context, body, span, *local),
@@ -162,8 +159,7 @@ pub(crate) fn eval_type(
     if context.is_runtime() {
         return comptime::frozen(context, span, |child| eval_type(child, body, id));
     }
-    let ty = context.deferred_type(id);
-    match context.evaluate(HMIRResolver::type_memo(ty), span) {
+    match eval(context, body, id) {
         Err(flow::EvalExit::Stop(_)) => {
             Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into())
         }

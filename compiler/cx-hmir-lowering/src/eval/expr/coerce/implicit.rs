@@ -11,9 +11,12 @@ use super::{Coercion, compatible, is_char, is_designator, promotion, qualified, 
 use crate::{
     emit,
     env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{coerce::applied, expr, types},
+    eval::{
+        coerce::applied,
+        expr,
+        types::{self, signatures_alike},
+    },
     log::hmir_error,
-    symbol::composite::signatures_alike,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 

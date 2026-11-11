@@ -84,7 +84,7 @@ pub(super) fn eval_label_address(
     name: &CXIdent,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let prototype = match (function, context.context()) {
-        (Some(def), _) => lower_prototype(context.env_mut(), def, None, span)?,
+        (Some(def), _) => lower_prototype(context.env_mut(), def, span)?,
         (None, FnContext::Runtime(runtime)) => runtime.builder().prototype().clone(),
         (None, FnContext::Comptime(_)) => {
             let required = ("label address".into(), "a function".into());

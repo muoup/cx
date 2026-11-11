@@ -5,7 +5,7 @@ use cx_hmir::{
     body::HMIRLocalID,
     expr::HMIRExprID,
     ty::{aggregate::HMIRTypeSemantics, context::HMIRTypeContext},
-    unit::{def::HMIRDeclarationPoint, function::HMIRContract},
+    unit::function::HMIRContract,
 };
 use cx_log::{
     CXResult,
@@ -52,8 +52,8 @@ pub(crate) fn check(
     if let (Some(result), Some((local, _))) = (result, contract.postcondition()) {
         bindings.extend(bind_result(context, local, Some(result), span)?);
     }
-    let (owner, point) = (context.source(), context.visible_through());
-    let value = condition(context, contract, owner, point, expression, span);
+    let owner = context.source();
+    let value = condition(context, contract, owner, expression, span);
     restore(context, bindings);
     if !matches!(value?.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(value)) if *value != 0) {
         return Err(hmir_error(
@@ -73,22 +73,21 @@ pub(crate) fn call(
     emit: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<HMIRValue>>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let unit = context.env_mut().symbols_mut().owner(def.brand()).expect("function owner exists");
-    let function = symbol::structure::function(unit.resolve_def(def).expect("function exists"))?;
+    let function = symbol::function(unit.resolve_def(def).expect("function exists"));
     let contract = function.signature().contract();
     if contract.precondition().is_none() && contract.postcondition().is_none() {
         return emit(context);
     }
-    let point = function.body().visible_through();
 
     let mut bindings = bind_params(context, contract, args, span)?;
     if let Some(expression) = contract.precondition() {
-        let value = condition(context, contract, def.brand(), point, expression, span)?;
+        let value = condition(context, contract, def.brand(), expression, span)?;
         emit::runtime::intrinsics::assert(context, &value, Some("precondition failed"), span)?;
     }
     let result = emit(context)?;
     if let (Evaluation::Ready(value), Some((local, expression))) = (&result, contract.postcondition()) {
         bindings.extend(bind_result(context, local, Some(value), span)?);
-        let value = condition(context, contract, def.brand(), point, expression, span)?;
+        let value = condition(context, contract, def.brand(), expression, span)?;
         emit::runtime::intrinsics::assert(context, &value, None, span)?;
     }
     restore(context, bindings);
@@ -114,8 +113,8 @@ pub(crate) fn enter(
         emit::bind_local(context, *local, value);
     }
     if let Some(expression) = contract.precondition() {
-        let (owner, point) = (context.source(), context.visible_through());
-        let value = condition(context, contract, owner, point, expression, span)?;
+        let owner = context.source();
+        let value = condition(context, contract, owner, expression, span)?;
         emit::runtime::intrinsics::assert(context, &value, None, span)?;
     }
     Ok(())
@@ -131,12 +130,12 @@ pub(crate) fn exit(
         .scopes()
         .controls()
         .find_map(|(index, scope)| Some((index, scope.returning()?)));
-    let Some((index, (source, point))) = origin else {
+    let Some((index, source)) = origin else {
         return exit_condition(context, result, span);
     };
     let view = RuntimeScope::default();
     context.runtime_mut().scopes_mut().push(view, Some(index), Default::default());
-    let checked = context.relocated(source, point, |context| exit_condition(context, result, span));
+    let checked = context.relocated(source, |context| exit_condition(context, result, span));
     context.runtime_mut().scopes_mut().pop();
     checked
 }
@@ -154,8 +153,8 @@ fn exit_condition(
         return Ok(());
     };
     let bindings = Vec::from_iter(bind_result(context, local, result, span)?);
-    let (owner, point) = (context.source(), context.visible_through());
-    let value = condition(context, contract, owner, point, expression, span);
+    let owner = context.source();
+    let value = condition(context, contract, owner, expression, span);
     restore(context, bindings);
     emit::runtime::intrinsics::assert(context, &value?, Some("postcondition failed"), span)
 }
@@ -164,13 +163,12 @@ fn condition(
     context: &mut LocalLoweringContext,
     contract: &HMIRContract,
     owner: HMIRUnitID,
-    point: Option<HMIRDeclarationPoint>,
     expression: HMIRExprID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let state = mem::replace(context.context_mut(), FnContext::Comptime(ComptimeContext::new()));
     let evaluation = context.evaluation();
-    let mut child = context.child(None, state, Some(evaluation)).sourced(owner).at(point);
+    let mut child = context.child(None, state, Some(evaluation)).sourced(owner);
     let permission = match contract.is_safe() {
         true => Permission::Safe,
         false => Permission::Nonsafe,

@@ -1,13 +1,13 @@
 pub(crate) mod constructor;
 pub(crate) mod function;
 pub(crate) mod global;
+pub(crate) mod symbol;
 pub(crate) mod types;
 
 use crate::{
     env::{HMIREnvironment, generation::Generation},
     eval::aggregate::variant,
     lower::types::lower_signature,
-    symbol,
     value::HMIRValue,
 };
 use cx_hmir::{
@@ -22,12 +22,7 @@ pub fn lower_unit<'hmir>(
     unit: &'hmir HMIRUnit,
     env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
-    let mut defs = unit.defs().map(|(id, _)| *id).collect::<Vec<_>>();
-    defs.sort();
-
-    for id in defs {
-        symbol::validate(env, id)?;
-    }
+    symbol::resolve(env, unit)?;
 
     while let Some(generation) = env.generation_mut().next() {
         let function = env.generation().function(&generation);
@@ -61,7 +56,7 @@ pub(crate) fn declare(
     let count = env.generation().requested_count();
     let (name, original) = match &generation {
         Generation::Template { def, .. } => {
-            let original = symbol::link_name(env, *def, None)?.expect("a template names a function");
+            let original = crate::symbol::link_name(env, *def).expect("a template names a function");
             (format!("{original}.__cx_specialize.{count}"), Some(original))
         }
         Generation::Constructor { ty, variant } => {
@@ -93,13 +88,10 @@ fn generate(
         .owner(id.brand())
         .expect("symbol owner is available");
     let source = unit.resolve_def(id).expect("symbol exists");
-    let selected = symbol::select(source, None)?;
-    let kind = source.declarations()[selected].kind();
-
-    match kind {
+    match crate::symbol::canonical(source).kind() {
         Some(HMIRDefKind::Function(function)) => {
             let standalone = function.signature().stage() == HMIRFunctionStage::Runtime
-                && !symbol::needs_specialization(function)
+                && !crate::symbol::needs_specialization(function)
                 && function.def().is_some();
             if template.is_none() && !standalone {
                 return Ok(());

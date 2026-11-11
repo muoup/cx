@@ -54,12 +54,7 @@ pub(super) fn eval_defer(
     }
     drop(child);
 
-    let defer = Defer::new(
-        operand,
-        context.expectations(),
-        context.source(),
-        context.visible_through(),
-    );
+    let defer = Defer::new(operand, context.expectations(), context.source());
     let runtime = context.runtime_mut();
     let top = runtime.scopes().top();
     runtime.scopes_mut().control_mut(top).defer(defer);
@@ -107,7 +102,7 @@ fn expand(context: &mut LocalLoweringContext, index: usize) -> CXResult<()> {
             Some(index),
             Bindings::default(),
         );
-        let result = context.relocated(defer.source(), defer.visible_through(), |context| {
+        let result = context.relocated(defer.source(), |context| {
             context.with_expectations(defer.expectations(), |context| {
                 deferred(context, body, defer.expr())
                     .and_then(|result| result.map(context, |_, _| Ok(())))

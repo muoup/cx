@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use cx_hmir::{
-    HMIRBodyContext, HMIRDefID, HMIRDefKind, HMIRFunction,
+    HMIRBodyContext, HMIRDefID, HMIRFunction,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRTypeID, HMIRTypeKind,
@@ -21,10 +21,10 @@ use crate::{
         deduce::{Incomplete, IncompleteReason, subject},
         eval,
         flow::{self, Evaluation},
-        types::{self},
+        types::{self, alike},
     },
     log::hmir_error,
-    symbol::{composite::alike, structure},
+    symbol,
     value::{
         self, HMIRValue, HMIRValueKind,
         immediate::HMIRImmediate,
@@ -242,7 +242,7 @@ impl<'a> Deduction<'a> {
         let def = value::as_function(callee)?;
         let instance = instance(context, def, actual)?;
         let source = context.env().symbols().resolve_definition(def);
-        let params = structure::function(source).ok()?.prototype().params();
+        let params = symbol::function(source).prototype().params();
         let mut values = (0..params.len())
             .filter(|index| {
                 curried.get(*index).is_none_or(Option::is_none) && params[*index].default().is_none()
@@ -313,36 +313,14 @@ impl<'a> Deduction<'a> {
     }
 }
 
-// The arguments 'def' was applied to when one of its type expressions produced 'ty'
-fn instance(
-    context: &mut LocalLoweringContext,
-    def: HMIRDefID,
-    ty: HMIRTypeID,
-) -> Option<Vec<HMIRValue>> {
+// The arguments 'def' was applied to when it generated 'ty'.
+//
+// Two generators that produce structurally equal anonymous types produce one type, whose origin is the call that
+// first produced it, so 'foo(_)' only deduces from a type that 'foo' was the first to generate.
+fn instance(context: &LocalLoweringContext, def: HMIRDefID, ty: HMIRTypeID) -> Option<Vec<HMIRValue>> {
     let ty = context.env().underlying(ty);
-    let (expr, bindings) = context.env().resolver().origin(ty)?;
-    let bindings = bindings.to_vec();
-    let unit = context.env_mut().symbols_mut().owner(def.brand())?;
-    let generator = unit
-        .resolve_def(def)?
-        .declarations()
-        .iter()
-        .find_map(|declaration| match declaration.kind() {
-            Some(HMIRDefKind::Function(function)) if function.body().id() == expr.body() => {
-                Some(function)
-            }
-            _ => None,
-        })?;
-    generator
-        .params()
-        .iter()
-        .map(|param| {
-            bindings
-                .iter()
-                .find(|(local, _)| local == param)
-                .map(|(_, value)| value.clone())
-        })
-        .collect()
+    let (origin, args) = context.env().resolver().origin(ty)?;
+    (origin == def).then(|| args.to_vec())
 }
 
 pub(crate) fn generates_type(function: &HMIRFunction) -> bool {

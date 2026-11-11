@@ -1,4 +1,4 @@
-use cx_hmir::{HMIRUnitID, body::HMIRBodyID, expr::HMIRExprID, unit::def::HMIRDeclarationPoint};
+use cx_hmir::{HMIRUnitID, body::HMIRBodyID, expr::HMIRExprID};
 use cx_mir::MIRBasicBlockID;
 
 use crate::{env::function::Expectations, value::HMIRValue};
@@ -43,21 +43,14 @@ pub(crate) struct Defer {
     expr: HMIRExprID,
     expectations: Expectations,
     source: HMIRUnitID,
-    visible_through: Option<HMIRDeclarationPoint>,
 }
 
 impl Defer {
-    pub(crate) fn new(
-        expr: HMIRExprID,
-        expectations: Expectations,
-        source: HMIRUnitID,
-        visible_through: Option<HMIRDeclarationPoint>,
-    ) -> Self {
+    pub(crate) fn new(expr: HMIRExprID, expectations: Expectations, source: HMIRUnitID) -> Self {
         Self {
             expr,
             expectations,
             source,
-            visible_through,
         }
     }
 
@@ -72,10 +65,6 @@ impl Defer {
     pub(crate) fn source(&self) -> HMIRUnitID {
         self.source
     }
-
-    pub(crate) fn visible_through(&self) -> Option<HMIRDeclarationPoint> {
-        self.visible_through
-    }
 }
 
 #[derive(Debug, Default)]
@@ -83,7 +72,7 @@ pub(crate) struct RuntimeScope {
     deferred: bool,
     defers: Vec<Defer>,
     exit: Option<Exit>,
-    returning: Option<(HMIRUnitID, Option<HMIRDeclarationPoint>)>,
+    returning: Option<HMIRUnitID>,
     yields: Option<Vec<(MIRBasicBlockID, HMIRValue)>>,
     quote: Option<HMIRBodyID>,
 }
@@ -127,11 +116,11 @@ impl RuntimeScope {
         self.exit = Some(exit);
     }
 
-    pub(crate) fn set_return(&mut self, source: HMIRUnitID, point: Option<HMIRDeclarationPoint>) {
-        self.returning = Some((source, point));
+    pub(crate) fn set_return(&mut self, source: HMIRUnitID) {
+        self.returning = Some(source);
     }
 
-    pub(crate) fn returning(&self) -> Option<(HMIRUnitID, Option<HMIRDeclarationPoint>)> {
+    pub(crate) fn returning(&self) -> Option<HMIRUnitID> {
         self.returning
     }
 

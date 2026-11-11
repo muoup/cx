@@ -1,6 +1,5 @@
 pub(crate) mod function;
 pub(crate) mod generation;
-pub(crate) use resolver::memo;
 pub(crate) mod module;
 pub(crate) mod resolver;
 pub mod settings;
@@ -61,17 +60,12 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
         }
 
         match (self.resolve_kind(a), self.resolve_kind(b)) {
-            (HMIRTypeKind::Void, HMIRTypeKind::Void)
-            | (HMIRTypeKind::Unreachable, HMIRTypeKind::Unreachable)
-            | (HMIRTypeKind::Type, HMIRTypeKind::Type)
-            | (HMIRTypeKind::Dependent, HMIRTypeKind::Dependent)
-            | (HMIRTypeKind::Str, HMIRTypeKind::Str) => true,
-
-            (HMIRTypeKind::Int(a), HMIRTypeKind::Int(b)) => a == b,
-            (HMIRTypeKind::Float(a), HMIRTypeKind::Float(b)) => a == b,
-
             (HMIRTypeKind::PointerTo(a), HMIRTypeKind::PointerTo(b))
-            | (HMIRTypeKind::Staged(a), HMIRTypeKind::Staged(b)) => self.same_type(*a, *b),
+            | (HMIRTypeKind::Staged(a), HMIRTypeKind::Staged(b))
+            | (
+                HMIRTypeKind::Undefined(HMIRUndefined::Array { element: a }),
+                HMIRTypeKind::Undefined(HMIRUndefined::Array { element: b }),
+            ) => self.same_type(*a, *b),
             (
                 HMIRTypeKind::ReferenceTo {
                     inner: a,
@@ -103,15 +97,6 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
                         .all(|(a, b)| self.same_type(*a.ty(), *b.ty()))
                     && self.same_type(*a.return_type(), *b.return_type())
             }
-
-            (
-                HMIRTypeKind::Undefined(HMIRUndefined::Array { element: a }),
-                HMIRTypeKind::Undefined(HMIRUndefined::Array { element: b }),
-            ) => self.same_type(*a, *b),
-            (
-                HMIRTypeKind::Builtin { name: a, size: a_size, alignment: a_alignment },
-                HMIRTypeKind::Builtin { name: b, size: b_size, alignment: b_alignment },
-            ) => (a, a_size, a_alignment) == (b, b_size, b_alignment),
 
             _ => false,
         }
@@ -162,9 +147,6 @@ impl HMIRTypeContext for HMIREnvironment<'_, '_> {
     }
 
     fn resolve_type_id(&self, id: HMIRTypeID) -> &HMIRType {
-        match self.resolver.realized_type(id) {
-            Some(ty) => ty,
-            None => panic!("semantic type {id} was used before its expression was evaluated"),
-        }
+        self.resolver.realized_type(id)
     }
 }

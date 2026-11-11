@@ -28,9 +28,8 @@ use crate::{
         binding::eval_scoped,
         coerce, eval, expr,
         flow::{self, ComptimeStop, Evaluation},
-        types,
+        types::{self, alike},
     },
-    symbol::composite::alike,
     value::{self, HMIRValue},
 };
 

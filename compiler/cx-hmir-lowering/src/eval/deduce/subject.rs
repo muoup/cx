@@ -10,10 +10,13 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     emit,
-    env::function::{
-        FnContext, LocalLoweringContext, RuntimeContext,
-        runtime::{Emission, RuntimeScope},
-        scope::Bindings,
+    env::{
+        function::{
+            FnContext, LocalLoweringContext, RuntimeContext,
+            runtime::{Emission, RuntimeScope},
+            scope::Bindings,
+        },
+        resolver::demand,
     },
     log::hmir_error,
     value::{
@@ -74,7 +77,7 @@ pub(crate) fn subject(
             }
             _ => referent,
         };
-        context.prepare_type(ty, &span)?;
+        demand::prepare(context.env_mut(), ty)?;
         Ok(ty)
     })?;
     Ok(match result {
@@ -154,13 +157,7 @@ fn shadow(
         for (local, captured) in quote.captures() {
             captures.insert(*local, shadow(context, captured.clone(), span)?);
         }
-        let code = Quote::new(
-            quote.source(),
-            quote.root(),
-            quote.params().to_vec(),
-            captures,
-            quote.visible_through(),
-        );
+        let code = Quote::new(quote.source(), quote.root(), quote.params().to_vec(), captures);
         return Ok(HMIRValue::new(
             value.ty(),
             HMIRImmediate::Quote(QuoteRef::new(code)),

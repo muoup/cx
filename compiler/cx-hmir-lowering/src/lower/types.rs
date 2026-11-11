@@ -2,7 +2,7 @@ use cx_hir::ast::types::HIRTagKind;
 use cx_hmir::{
     HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage, ty::{
         HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRFieldDef, context::HMIRTypeContext, intrinsic::{HMIRFloatWidth, HMIRIntWidth},
-    }, unit::def::HMIRDeclarationPoint,
+    },
 };
 use cx_log::{
     CXResult,
@@ -17,10 +17,7 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    env::{
-        HMIREnvironment,
-        function::{ComptimeContext, FnContext, LocalLoweringContext},
-    },
+    env::{HMIREnvironment, resolver::demand},
     eval::types::{comptime_only, name, validate},
     log::{hmir_error, log_hmir_error},
     symbol,
@@ -49,17 +46,15 @@ pub(crate) fn lower_signature(
 pub(crate) fn lower_prototype(
     env: &mut HMIREnvironment,
     def: HMIRDefID,
-    point: Option<HMIRDeclarationPoint>,
     span: &TokenRange,
 ) -> CXResult<MIRFnPrototype> {
-    let symbol_name = symbol::link_name(env, def, point)?.expect("a prototype names a function");
-    let linkage = symbol::linkage(env, def, point)?;
-    let value = symbol::binding(env, def, point)?;
-    
+    let symbol_name = symbol::link_name(env, def).expect("a prototype names a function");
+    let linkage = symbol::linkage(env, def);
+    let value = symbol::value(env, def)?;
+
     if comptime_only(env, value.ty()) {
         let source = env.symbols().resolve_definition(def);
-        let selected = symbol::select(source, point)?;
-        if let Some(HMIRDefKind::Function(function)) = source.declarations()[selected].kind()
+        if let Some(HMIRDefKind::Function(function)) = symbol::canonical(source).kind()
             && function.signature().stage() == HMIRFunctionStage::Runtime
         {
             return Err(hmir_error(
@@ -75,7 +70,7 @@ pub(crate) fn lower_prototype(
         ));
     }
     
-    let signature = symbol::signature(env, def, point)?;
+    let signature = symbol::signature(env, def)?;
     Ok(MIRFnPrototype::new(
         lower_signature(env, &signature, span)?,
         linkage,
@@ -89,7 +84,7 @@ pub(crate) fn lower_type(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRTypeID> {
-    let underlying = settle(env, ty, span)?;
+    let underlying = settle(env, ty)?;
     let metadata = lower_metadata(env, ty);
     let base = match env.resolver().lowered_type(underlying) {
         Some(id) => id,
@@ -99,11 +94,8 @@ pub(crate) fn lower_type(
     Ok(qualify(env, base, metadata))
 }
 
-// Evaluates a pending definition of 'ty', which may alias it to another type
-fn settle(env: &mut HMIREnvironment, ty: HMIRTypeID, span: &TokenRange) -> CXResult<HMIRTypeID> {
-    LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
-        .force_type(ty, span)?;
-
+fn settle(env: &mut HMIREnvironment, ty: HMIRTypeID) -> CXResult<HMIRTypeID> {
+    demand::force(env, ty)?;
     Ok(env.underlying(ty))
 }
 

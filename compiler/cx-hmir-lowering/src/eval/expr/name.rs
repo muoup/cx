@@ -11,7 +11,6 @@ use cx_hmir::{
         context::HMIRTypeContext,
         intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntType, HMIRIntWidth},
     },
-    unit::def::HMIRDeclarationPoint,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_namespace::module::{NamespacePath, QualifiedName};
@@ -58,8 +57,7 @@ pub(crate) fn eval_def(
     span: &TokenRange,
     id: HMIRDefID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let point = context.visible_through();
-    let value = symbol::binding(context.env_mut(), id, point)?;
+    let value = symbol::value(context.env_mut(), id)?;
     let emitting = context.is_runtime() && !context.is_unevaluated();
     match value.kind() {
         HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) => {
@@ -71,16 +69,16 @@ pub(crate) fn eval_def(
                 && emitting
                 && !types::comptime_only(context.env(), value.ty()) =>
         {
-            let prototype = lower_prototype(context.env_mut(), def, point, span)?;
+            let prototype = lower_prototype(context.env_mut(), def, span)?;
             context.env_mut().module_mut().declare_function(prototype);
-            request(context, def, point)?;
+            request(context, def);
         }
         HMIRValueKind::Immediate(HMIRImmediate::Address(address))
             if let Some(HMIRReference::Global(def)) = address.whole_place() =>
         {
-            request(context, def, point)?;
+            request(context, def);
             if emitting {
-                let ty = symbol::value_type(context.env_mut(), def, None)?;
+                let ty = symbol::value_type(context.env_mut(), def)?;
                 global::declare(context.env_mut(), def, ty, span)?;
             }
         }
@@ -89,17 +87,12 @@ pub(crate) fn eval_def(
     Ok(Evaluation::Ready(value))
 }
 
-fn request(
-    context: &mut LocalLoweringContext,
-    def: HMIRDefID,
-    point: Option<HMIRDeclarationPoint>,
-) -> CXResult<()> {
-    let linkage = symbol::linkage(context.env_mut(), def, point)?;
+fn request(context: &mut LocalLoweringContext, def: HMIRDefID) {
+    let linkage = symbol::linkage(context.env_mut(), def);
     if def.brand() == context.env().symbols().local_unit().id() || linkage == LinkageMode::Static {
         let generation = Generation::Definition(def);
         context.env_mut().generation_mut().request(generation, None);
     }
-    Ok(())
 }
 
 pub(crate) fn type_value(
@@ -159,12 +152,7 @@ pub(crate) fn resolve(
     tag: Option<HIRTagKind>,
 ) -> CXResult<Option<HMIRDefID>> {
     let source = context.source();
-    let point = context.visible_through();
-    let mut ids = context.env_mut().symbols_mut().lookup(source, name, tag);
-    ids.retain(|id| {
-        let definition = context.env().symbols().resolve_definition(*id);
-        symbol::visible(definition, point).next().is_some()
-    });
+    let ids = context.env_mut().symbols_mut().lookup(source, name, tag);
     if let Some((&first, rest)) = ids.split_first() {
         if let Some(tag) = tag {
             let def = context.env().symbols().resolve_definition(first);
@@ -215,21 +203,15 @@ pub(crate) fn resolve(
 }
 
 fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) -> CXResult<bool> {
-    let point = context.visible_through();
     let env = context.env_mut();
-    let (a_value, b_value) = (
-        symbol::binding(env, a, point)?,
-        symbol::binding(env, b, point)?,
-    );
-    let (Some(a_name), Some(b_name)) = (
-        symbol::link_name(env, a, point)?,
-        symbol::link_name(env, b, point)?,
-    ) else {
+    let (a_value, b_value) = (symbol::value(env, a)?, symbol::value(env, b)?);
+    let (Some(a_name), Some(b_name)) = (symbol::link_name(env, a), symbol::link_name(env, b))
+    else {
         return Ok(false);
     };
     if a_name != b_name
-        || symbol::linkage(env, a, point)? == LinkageMode::Static
-        || symbol::linkage(env, b, point)? == LinkageMode::Static
+        || symbol::linkage(env, a) == LinkageMode::Static
+        || symbol::linkage(env, b) == LinkageMode::Static
     {
         return Ok(false);
     }
@@ -240,10 +222,10 @@ fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) ->
             env.resolve_kind(b_value.ty()),
         ) {
             (HMIRTypeKind::Function(a), HMIRTypeKind::Function(b)) => {
-                symbol::composite::signatures_alike(env, a, b)
+                types::signatures_alike(env, a, b)
             }
             (HMIRTypeKind::ReferenceTo { .. }, HMIRTypeKind::ReferenceTo { .. }) => {
-                symbol::composite::alike(env, a_value.ty(), b_value.ty(), true)
+                types::alike(env, a_value.ty(), b_value.ty(), true)
             }
             _ => false,
         },
@@ -264,8 +246,7 @@ fn qualified_constructor(
         let Some(id) = resolve(context, span, &parent, tag)? else {
             continue;
         };
-        let point = context.visible_through();
-        let parent = symbol::binding(context.env_mut(), id, point)?;
+        let parent = symbol::value(context.env_mut(), id)?;
         let HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) = parent.kind() else {
             continue;
         };
