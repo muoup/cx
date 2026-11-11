@@ -10,20 +10,23 @@ use cx_hmir::{
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRFieldDef, context::HMIRTypeContext},
 };
-use cx_log::catalogue::typecheck;
+use cx_intrinsics::AggregateIntrinsic;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
     emit,
-    env::{HMIREnvironment, function::LocalLoweringContext},
+    env::{
+        HMIREnvironment,
+        function::{LocalLoweringContext, memory::placement},
+    },
     eval::{
-        EvalResult, coerce, eval, eval_type, expr,
+        EvalResult,
+        arithmetic::{binary_operands, eval_operand},
+        coerce, eval, expr,
         flow::{EvalExit, Evaluation},
-        helpers,
-        op::{binary_operands, eval_operand},
-        place::dereference_hmir,
-        types,
+        place, types,
     },
     log::hmir_error,
     value::{self, HMIRValue},
@@ -38,39 +41,46 @@ pub(crate) fn eval_aggregate(
     match op {
         HMIRAggregateOp::Member { base, name } => eval_member(context, body, span, *base, name),
         HMIRAggregateOp::Initialize { ty, fields } => {
-            let ty = eval_type(context, body, *ty)?.guide();
-            let fields = fields.clone();
-            let span = span.clone();
-            ty.and_then(context, body, move |context, body, ty| {
-                initializer::initialize(context, body, &span, ty, &fields)
-            })
+            initializer::eval_initializer(context, body, span, *ty, fields)
         }
-        HMIRAggregateOp::Index { base, index } => {
-            let base = (eval_operand(context, body, span, *base))?.ready()?;
-            let index = (eval_operand(context, body, span, *index))?.ready()?;
-            let pointer = match context.env().pointer_inner(base.ty()) {
-                Some(_) => base.clone(),
-                None => index.clone(),
-            };
-            let element = binary_operands(context, span, HMIRBinaryOp::Add, base, index)?;
-
-            Ok(Evaluation::Ready(dereference_hmir(
-                context,
-                element,
-                Some(&pointer),
-                span,
-            )?))
-        }
+        HMIRAggregateOp::Index { base, index } => eval_index(context, body, span, *base, *index),
         HMIRAggregateOp::Is { value, pattern } => {
             pattern::eval_is(context, body, span, *value, pattern)
         }
         HMIRAggregateOp::Unpack { value, bindings } => {
-            unpack(context, body, span, *value, bindings)
+            eval_unpack(context, body, span, *value, bindings)
         }
     }
 }
 
-fn eval_member(
+pub(crate) fn eval_index(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    span: &TokenRange,
+    base: HMIRExprID,
+    subscript: HMIRExprID,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let base = (eval_operand(context, body, span, base))?.ready()?;
+    let subscript = (eval_operand(context, body, span, subscript))?.ready()?;
+    Ok(Evaluation::Ready(index(context, base, subscript, span)?))
+}
+
+// The element 'base[subscript]' references, where either operand may be the pointer
+pub(crate) fn index(
+    context: &mut LocalLoweringContext,
+    base: HMIRValue,
+    subscript: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let pointer = match context.env().pointer_inner(base.ty()) {
+        Some(_) => base.clone(),
+        None => subscript.clone(),
+    };
+    let element = binary_operands(context, span, HMIRBinaryOp::Add, base, subscript)?;
+    place::dereference(context, element, Some(&pointer), span)
+}
+
+pub(crate) fn eval_member(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
@@ -92,10 +102,37 @@ fn eval_member(
     };
     let ty = *fields[index].ty();
 
-    Ok(Evaluation::Ready(helpers::field(context, &value, index, ty, span)?))
+    Ok(Evaluation::Ready(field(context, &value, index, ty, span)?))
 }
 
-fn unpack(
+// The member 'index' of the aggregate 'base' references, referenced as 'ty&'
+pub(crate) fn field(
+    context: &mut LocalLoweringContext,
+    base: &HMIRValue,
+    index: usize,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let owner = context.env().referent(base.ty());
+    let bitfield = placement(context.env_mut(), owner, index, span)?;
+    let reference = types::reference(context.env_mut(), ty, bitfield, span);
+    let base = base.clone();
+    let projection = match context.env().resolve_kind(owner) {
+        HMIRTypeKind::TaggedUnion { .. } => AggregateIntrinsic::SumVariant {
+            value: base,
+            variant: index,
+            sum: owner,
+        },
+        _ => AggregateIntrinsic::StructField {
+            base,
+            field: index,
+            aggregate: owner,
+        },
+    };
+    emit::intrinsics::aggregate(context, &projection, reference, span)
+}
+
+pub(crate) fn eval_unpack(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
@@ -172,7 +209,7 @@ fn unpack(
 
     let source = match value::as_place(&source) {
         Some(_) => source,
-        None => helpers::temporary(context, &source, span)?,
+        None => coerce::temporary(context, &source, span)?,
     };
     for Projection {
         index,
@@ -181,7 +218,7 @@ fn unpack(
         ty,
     } in projections
     {
-        let projected = helpers::field(context, &source, index, ty, span)?;
+        let projected = field(context, &source, index, ty, span)?;
         let value = match types::bitfield(context.env(), projected.ty()) {
             Some(_) => emit::storage::read(context, &projected, span)?,
             None => emit::storage::lift(context, &projected, span)?,
@@ -198,7 +235,7 @@ pub(crate) fn member_fields<'a>(
     ty: HMIRTypeID,
 ) -> &'a [HMIRFieldDef<HMIRTypeID>] {
     match env.resolve_kind(ty) {
-        HMIRTypeKind::Seval_operandtruct { fields } | HMIRTypeKind::Union { fields } => fields,
+        HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => fields,
         _ => &[],
     }
 }

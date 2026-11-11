@@ -153,7 +153,7 @@ pub(crate) fn splice(
     }
 }
 
-pub(crate) fn capture(
+pub(crate) fn eval_quote(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     params: &[HMIRLocalID],
@@ -267,7 +267,7 @@ pub(crate) fn argument(
         {
             eval(context, body, operand)?
         }
-        _ => capture(context, body, &[], operand)?,
+        _ => eval_quote(context, body, &[], operand)?,
     };
     let span = body.expr(operand).span().clone();
     value

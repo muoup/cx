@@ -5,8 +5,8 @@ use cx_tokens::TokenRange;
 use crate::{
     env::function::LocalLoweringContext,
     eval::{
-        coerce::{Coercion, applied, implicit, is_char, promotion},
-        expr, helpers,
+        coerce::{self, Coercion, applied, implicit, is_char, promotion},
+        expr,
     },
     value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
@@ -63,7 +63,7 @@ fn extension(
             if !matches!(value.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(0))) {
                 expr::require_nonsafe(context, span, "Unsafe type conversion")?;
             }
-            Coercion::Applied(helpers::cast(context, &value, target, span)?)
+            Coercion::Applied(coerce::cast(context, &value, target, span)?)
         }
         _ => Coercion::Unapplied(value),
     })

@@ -1,12 +1,11 @@
 pub(crate) mod deduce;
 pub(crate) mod flow;
-pub(crate) mod helpers;
 pub(crate) mod symbol;
 
 mod expr;
 
 pub(crate) use expr::{
-    aggregate, binding, call, coerce, comptime, control, name, op, place, staged, types,
+    aggregate, arithmetic, binding, call, coerce, comptime, control, name, place, staged, types,
 };
 pub(crate) use flow::EvalResult;
 
@@ -93,8 +92,12 @@ pub(crate) fn eval(
         } => control::eval_label(context, body, span, name, *statement),
 
         HMIRExprKind::Op(op) => match op {
-            HMIROp::BinOp { op, lhs, rhs } => op::eval_binary(context, body, span, *op, *lhs, *rhs),
-            HMIROp::UnOp { op, operand } => op::eval_unary(context, body, span, *op, *operand),
+            HMIROp::BinOp { op, lhs, rhs } => {
+                arithmetic::eval_binary(context, body, span, *op, *lhs, *rhs)
+            }
+            HMIROp::UnOp { op, operand } => {
+                arithmetic::eval_unary(context, body, span, *op, *operand)
+            }
             HMIROp::Coerce {
                 mode,
                 value,
@@ -104,8 +107,8 @@ pub(crate) fn eval(
             HMIROp::Assign { target, op, value } => {
                 place::eval_assign(context, body, span, *target, *op, *value)
             }
-            HMIROp::AddressOf(operand) => place::address_of(context, body, span, *operand),
-            HMIROp::Dereference(pointer) => place::dereference(context, body, span, *pointer),
+            HMIROp::AddressOf(operand) => place::eval_address_of(context, body, span, *operand),
+            HMIROp::Dereference(pointer) => place::eval_dereference(context, body, span, *pointer),
             HMIROp::OwnershipOp(op) => place::eval_ownership(context, body, span, op),
             HMIROp::Type(op) => types::eval_type_op(context, body, span, op),
             HMIROp::AggregateOp(aggregate) => {
@@ -125,11 +128,13 @@ pub(crate) fn eval(
             named,
         } => call::eval_call(context, body, span, *callee, args, named),
 
-        HMIRExprKind::Hole(_) => deduce::hole(context, span),
+        HMIRExprKind::Hole(_) => deduce::eval_hole(context, span),
         HMIRExprKind::Comptime(inner) => Ok(Evaluation::Ready(eval_comptime(
             context, body, *inner, None,
         )?)),
-        HMIRExprKind::Quote { params, body: root } => staged::capture(context, body, params, *root),
+        HMIRExprKind::Quote { params, body: root } => {
+            staged::eval_quote(context, body, params, *root)
+        }
         HMIRExprKind::Splice { quote, args } => {
             staged::eval_splice(context, body, span, *quote, args)
         }

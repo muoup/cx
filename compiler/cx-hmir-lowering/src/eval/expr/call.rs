@@ -22,7 +22,7 @@ use crate::{
         aggregate::variant,
         coerce, comptime, eval, eval_comptime, expr,
         flow::{self, Evaluation},
-        helpers, staged, types,
+        place, staged, types,
     },
     log::hmir_error,
     lower::declaration,
@@ -297,7 +297,7 @@ fn coerce_callee(
     let (subject, ty) = match *context.env().resolve_kind(ty) {
         HMIRTypeKind::ReferenceTo { inner, .. } => (inner, ty),
         HMIRTypeKind::PointerTo(base) => {
-            helpers::null_check(context, &callee, span)?;
+            place::null_check(context, &callee, span)?;
             (base, types::reference(context.env_mut(), base, None, span))
         }
         _ => (ty, types::reference(context.env_mut(), ty, None, span)),

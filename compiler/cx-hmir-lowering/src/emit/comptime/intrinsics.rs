@@ -1,17 +1,12 @@
 use std::cmp::Ordering;
 
-use cx_hmir::ty::{
-    HMIRTypeID, HMIRTypeKind,
-    context::HMIRTypeContext,
-    intrinsic::{HMIRFloatType, HMIRIntType},
-};
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_intrinsics::{
     AggregateIntrinsic, FloatIntrinsic, IntIntrinsic, InternalIntrinsic, PointerCompareOp,
     PointerIntrinsic, PointerOffsetOp, VAIntrinsic,
 };
 use cx_log::{CXResult, catalogue::mir, error::CXError};
 use cx_tokens::TokenRange;
-use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
     emit::{
@@ -26,35 +21,11 @@ use crate::{
     log::hmir_error,
     lower::declaration,
     value::{
-        HMIRValue, HMIRValueKind,
+        self, HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
         immediate::HMIRImmediate,
     },
 };
-
-fn int_type(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRIntType {
-    match context.env().resolve_kind(ty) {
-        HMIRTypeKind::Int(int) => *int,
-        _ => unreachable!("an integer intrinsic operates on integers"),
-    }
-}
-
-fn float_type(context: &LocalLoweringContext, ty: HMIRTypeID) -> HMIRFloatType {
-    match context.env().resolve_kind(ty) {
-        HMIRTypeKind::Float(float) => *float,
-        _ => unreachable!("a floating intrinsic operates on floats"),
-    }
-}
-
-fn integer(context: &LocalLoweringContext, value: i128, ty: HMIRTypeID) -> HMIRValue {
-    let value = int::normalize(value, int_type(context, ty));
-    HMIRValue::new(ty, HMIRImmediate::Int(value))
-}
-
-fn floating(context: &LocalLoweringContext, value: f64, ty: HMIRTypeID) -> HMIRValue {
-    let value = float::round(value, float_type(context, ty).width());
-    HMIRValue::new(ty, HMIRImmediate::Float(FloatWrapper::from(value)))
-}
 
 fn fault(span: &TokenRange, fault: ScalarFault, operation: &str) -> CXError {
     match fault {
@@ -81,7 +52,7 @@ fn int_value(context: &mut LocalLoweringContext, value: &HMIRValue, span: &Token
 }
 
 fn float_value(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<f64> {
-    let width = float_type(context, value.ty()).width();
+    let width = types::float_type(context.env(), value.ty()).width();
     match comptime::immediate(context, value, span)? {
         Some(HMIRImmediate::Float(value)) => Ok(float::round(f64::from(&value), width)),
         _ => unsupported(span, "floating arithmetic on this value"),
@@ -96,32 +67,33 @@ pub fn int(
 ) -> CXResult<HMIRValue> {
     match intrinsic {
         IntIntrinsic::Binary { op, lhs, rhs } => {
-            let ty = int_type(context, lhs.ty());
+            let ty = types::int_type(context.env(), lhs.ty());
             let (lhs, rhs) = (int_value(context, lhs, span)?, int_value(context, rhs, span)?);
             int::binary(*op, lhs, rhs, ty)
-                .map(|value| integer(context, value, result))
+                .map(|value| value::int(context.env(), value, result))
                 .map_err(|error| fault(span, error, op.path()))
         }
         IntIntrinsic::Unary { op, value } => {
-            let ty = int_type(context, value.ty());
+            let ty = types::int_type(context.env(), value.ty());
             let value = int_value(context, value, span)?;
-            Ok(integer(context, int::unary(*op, value, ty), result))
+            Ok(value::int(context.env(), int::unary(*op, value, ty), result))
         }
         IntIntrinsic::ToFloat {
             value,
             target,
             signed,
         } => {
-            let (ty, width) = (int_type(context, value.ty()), float_type(context, *target).width());
+            let ty = types::int_type(context.env(), value.ty());
+            let width = types::float_type(context.env(), *target).width();
             let value = int_value(context, value, span)?;
-            Ok(floating(context, int::to_float(value, ty, *signed, width), result))
+            Ok(value::float(context.env(), int::to_float(value, ty, *signed, width), result))
         }
         IntIntrinsic::Cast {
             value, sign_extend, ..
         } => {
-            let bits = int::bits(int_type(context, value.ty()));
+            let bits = int::bits(types::int_type(context.env(), value.ty()));
             let value = int_value(context, value, span)?;
-            Ok(integer(context, int::extend(value, bits, *sign_extend), result))
+            Ok(value::int(context.env(), int::extend(value, bits, *sign_extend), result))
         }
         IntIntrinsic::ToPtr { value, .. } => match int_value(context, value, span)? {
             0 => Ok(HMIRValue::new(result, HMIRImmediate::Int(0))),
@@ -138,27 +110,27 @@ pub fn float(
 ) -> CXResult<HMIRValue> {
     match intrinsic {
         FloatIntrinsic::Binary { op, lhs, rhs } => {
-            let width = float_type(context, lhs.ty()).width();
+            let width = types::float_type(context.env(), lhs.ty()).width();
             let (lhs, rhs) = (float_value(context, lhs, span)?, float_value(context, rhs, span)?);
             Ok(match float::compare(*op, lhs, rhs) {
-                Some(truth) => integer(context, truth as i128, result),
-                None => floating(context, float::arithmetic(*op, lhs, rhs, width), result),
+                Some(truth) => value::int(context.env(), truth as i128, result),
+                None => value::float(context.env(), float::arithmetic(*op, lhs, rhs, width), result),
             })
         }
         FloatIntrinsic::Neg { value } => {
             let value = float_value(context, value, span)?;
-            Ok(floating(context, -value, result))
+            Ok(value::float(context.env(), -value, result))
         }
         FloatIntrinsic::ToInt { value, target, signed } => {
-            let ty = int_type(context, *target);
+            let ty = types::int_type(context.env(), *target);
             let value = float_value(context, value, span)?;
             float::to_int(value, ty, *signed)
-                .map(|value| integer(context, value, result))
+                .map(|value| value::int(context.env(), value, result))
                 .map_err(|error| fault(span, error, "conversion"))
         }
         FloatIntrinsic::Cast { value, .. } => {
             let value = float_value(context, value, span)?;
-            Ok(floating(context, value, result))
+            Ok(value::float(context.env(), value, result))
         }
     }
 }
@@ -215,7 +187,7 @@ pub fn pointer(
 ) -> CXResult<HMIRValue> {
     match intrinsic {
         PointerIntrinsic::ToInt { ptr, .. } => match comptime::immediate(context, ptr, span)? {
-            Some(HMIRImmediate::Int(0)) => Ok(integer(context, 0, result)),
+            Some(HMIRImmediate::Int(0)) => Ok(value::int(context.env(), 0, result)),
             _ => unsupported(span, "converting this address to an integer"),
         },
         PointerIntrinsic::Offset { op, ptr, offset } => {
@@ -251,7 +223,7 @@ pub fn pointer(
             if size == 0 || bytes % size != 0 {
                 return Err(undefined(span, "pointer difference"));
             }
-            Ok(integer(context, bytes / size, result))
+            Ok(value::int(context.env(), bytes / size, result))
         }
         PointerIntrinsic::Compare { op, lhs, rhs } => {
             let (lhs, rhs) = (comptime::resolve(context, lhs, span)?, comptime::resolve(context, rhs, span)?);
@@ -262,7 +234,7 @@ pub fn pointer(
                 (None, PointerCompareOp::Neq) if null(&lhs) != null(&rhs) => true,
                 (None, _) => return unsupported(span, "comparison of these addresses"),
             };
-            Ok(integer(context, truth as i128, result))
+            Ok(value::int(context.env(), truth as i128, result))
         }
     }
 }
@@ -316,7 +288,7 @@ pub fn aggregate(
             let Some(HMIRImmediate::TaggedUnion { variant, .. }) = comptime::immediate(context, &value, span)? else {
                 unreachable!("a tagged union constant names its variant")
             };
-            Ok(integer(context, variant as i128, result))
+            Ok(value::int(context.env(), variant as i128, result))
         }
         AggregateIntrinsic::SumVariant { value, .. } => project(context, value, 0, result, span),
         AggregateIntrinsic::StructField {

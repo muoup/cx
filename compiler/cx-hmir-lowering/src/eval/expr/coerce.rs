@@ -10,15 +10,16 @@ use cx_hmir::{
         context::HMIRTypeContext, intrinsic::HMIRIntWidth,
     },
 };
+use cx_intrinsics::{FloatIntrinsic, IntIntrinsic, InternalIntrinsic, PointerIntrinsic};
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
-use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
+    emit::{self, intrinsics},
     env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{EvalResult, eval, eval_type, flow::Evaluation, helpers, place::dereference_hmir, types},
+    eval::{EvalResult, arithmetic, eval, eval_type, flow::Evaluation, place, types},
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) enum Coercion {
@@ -65,19 +66,6 @@ pub(crate) fn eval_coerce(
     }))
 }
 
-pub(crate) fn read(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let inner = context
-        .env()
-        .reference_inner(value.ty())
-        .expect("a read value is a reference");
-
-    promotion::reference_load(context, value, inner, span)
-}
-
 // Collapses a type T&...& to T&, any non-reference type remains unchanged
 pub(crate) fn collapse(
     context: &mut LocalLoweringContext,
@@ -92,7 +80,61 @@ pub(crate) fn collapse(
             return Ok(value);
         };
 
-        value = read(context, value, span)?;
+        value = promotion::reference_load(context, value, inner, span)?;
+    }
+}
+
+// Gives a value storage of its own, coercing T to T&
+pub(crate) fn temporary(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let storage = emit::storage::scratch(context, value.ty(), span)?;
+    emit::storage::initialize(context, &storage, Some(value), span)?;
+
+    Ok(storage)
+}
+
+// Converts between scalar types, which the caller has already checked are convertible
+pub(crate) fn cast(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    target: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let value = value.clone();
+    let env = context.env();
+    match (env.resolve_kind(value.ty()), env.resolve_kind(target)) {
+        (HMIRTypeKind::Int(from), HMIRTypeKind::Int(_)) => {
+            let sign_extend = from.signed() && from.width() != HMIRIntWidth::I1;
+            let cast = IntIntrinsic::Cast { value, target, sign_extend };
+            intrinsics::int(context, &cast, target, span)
+        }
+        (HMIRTypeKind::Int(from), HMIRTypeKind::Float(_)) => {
+            let cast = IntIntrinsic::ToFloat { value, target, signed: from.signed() };
+            intrinsics::int(context, &cast, target, span)
+        }
+        (HMIRTypeKind::Int(from), HMIRTypeKind::PointerTo(_)) => {
+            let cast = IntIntrinsic::ToPtr { value, sign_extend: from.signed() };
+            intrinsics::int(context, &cast, target, span)
+        }
+        (HMIRTypeKind::Float(_), HMIRTypeKind::Int(to)) => {
+            let cast = FloatIntrinsic::ToInt { value, target, signed: to.signed() };
+            intrinsics::float(context, &cast, target, span)
+        }
+        (HMIRTypeKind::Float(_), HMIRTypeKind::Float(_)) => {
+            intrinsics::float(context, &FloatIntrinsic::Cast { value, target }, target, span)
+        }
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)) => {
+            let cast = PointerIntrinsic::ToInt { ptr: value, target };
+            intrinsics::pointer(context, &cast, target, span)
+        }
+        (HMIRTypeKind::PointerTo(_), HMIRTypeKind::PointerTo(_)) => {
+            let cast = InternalIntrinsic::Bitcast { value, target };
+            intrinsics::internal(context, &cast, target, span)
+        }
+        _ => unreachable!("conversions are between scalar types"),
     }
 }
 
@@ -110,10 +152,10 @@ pub(crate) fn aggregate(
         },
 
         HMIRTypeKind::PointerTo(_) => {
-            dereference_hmir(context, value, None, span)?
+            place::dereference(context, value, None, span)?
         },
 
-        _ => helpers::temporary(context, &value, span)?
+        _ => temporary(context, &value, span)?
     };
 
     aggregate(context, coerced, span)
@@ -162,13 +204,14 @@ fn truth(
     span: &TokenRange,
 ) -> CXResult<Coercion> {
     let ty = value.ty();
-    let zero = match context.env().resolve_kind(ty) {
+    let env = context.env();
+    let zero = match env.resolve_kind(ty) {
         HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I1 => {
             return Ok(Coercion::Applied(value));
         }
-        HMIRTypeKind::Int(_) => HMIRImmediate::Int(0),
-        HMIRTypeKind::Float(_) => HMIRImmediate::Float(FloatWrapper::from(0.0)),
-        HMIRTypeKind::PointerTo(_) => HMIRImmediate::Int(0),
+        HMIRTypeKind::Int(_) => value::int(env, 0, ty),
+        HMIRTypeKind::Float(_) => value::float(env, 0.0, ty),
+        HMIRTypeKind::PointerTo(_) => HMIRValue::new(ty, HMIRImmediate::Int(0)),
         _ => return Ok(Coercion::Unapplied(value)),
     };
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
@@ -178,11 +221,8 @@ fn truth(
         _ => None,
     };
     Ok(Coercion::Applied(match known {
-        Some(known) => HMIRValue::new(boolean, HMIRImmediate::Int(i128::from(known))),
-        None => {
-            let zero = HMIRValue::new(ty, zero);
-            helpers::binary(context, HMIRBinaryOp::Neq, &value, &zero, boolean, span)?
-        }
+        Some(known) => value::int(context.env(), i128::from(known), boolean),
+        None => arithmetic::binary(context, HMIRBinaryOp::Neq, &value, &zero, boolean, span)?,
     }))
 }
 

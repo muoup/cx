@@ -17,7 +17,7 @@ use crate::{
     eval::{EvalResult, aggregate, deduce, eval_comptime, flow::Evaluation, types},
     log::hmir_error,
     lower::types::lower_type,
-    value::{self, HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue},
 };
 
 pub(crate) fn eval_type_op(
@@ -45,10 +45,7 @@ pub(crate) fn eval_type_op(
             }
             _ => unreachable!("only layout queries are evaluated here"),
         };
-        Ok(Evaluation::Ready(HMIRValue::new(
-            size_type,
-            HMIRImmediate::Int(value),
-        )))
+        Ok(Evaluation::Ready(value::int(context.env(), value, size_type)))
     })
 }
 

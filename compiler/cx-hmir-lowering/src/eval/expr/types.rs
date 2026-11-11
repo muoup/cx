@@ -13,7 +13,7 @@ use cx_hmir::{
         HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
         aggregate::{HMIRBitfield, HMIRTypeSemantics},
         context::HMIRTypeContext,
-        intrinsic::{HMIRIntType, HMIRIntWidth},
+        intrinsic::{HMIRFloatType, HMIRIntType, HMIRIntWidth},
     },
     unit::function::HMIRFnParam,
 };
@@ -186,6 +186,20 @@ pub(crate) fn int(
         HMIRTypeKind::Int(HMIRIntType::new(width, signed)),
         span,
     )
+}
+
+pub(crate) fn int_type(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRIntType {
+    match env.resolve_kind(ty) {
+        HMIRTypeKind::Int(int) => *int,
+        _ => unreachable!("'{}' is not an integer type", name(env, ty)),
+    }
+}
+
+pub(crate) fn float_type(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRFloatType {
+    match env.resolve_kind(ty) {
+        HMIRTypeKind::Float(float) => *float,
+        _ => unreachable!("'{}' is not a floating type", name(env, ty)),
+    }
 }
 
 pub(crate) fn universe(env: &mut HMIREnvironment, span: &TokenRange) -> HMIRTypeID {

@@ -4,17 +4,32 @@ pub mod staged;
 
 use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
 use cx_intrinsics::Intrinsic;
-use cx_util::dense_id;
+use cx_util::{dense_id, unsafe_float::FloatWrapper};
 
-use crate::value::{
-    address::{Addressable, HMIRAddress},
-    immediate::HMIRImmediate,
+use crate::{
+    emit::comptime,
+    env::HMIREnvironment,
+    eval::types,
+    value::{
+        address::{Addressable, HMIRAddress},
+        immediate::HMIRImmediate,
+    },
 };
 
 dense_id!(HMIRRegisterID, "$");
 dense_id!(HMIRPlaceID, "p");
 
 pub type HMIRValIntrinsic = Intrinsic<HMIRValue, HMIRTypeID>;
+
+pub fn int(env: &HMIREnvironment, value: i128, ty: HMIRTypeID) -> HMIRValue {
+    let value = comptime::int::normalize(value, types::int_type(env, ty));
+    HMIRValue::new(ty, HMIRImmediate::Int(value))
+}
+
+pub fn float(env: &HMIREnvironment, value: f64, ty: HMIRTypeID) -> HMIRValue {
+    let value = comptime::float::round(value, types::float_type(env, ty).width());
+    HMIRValue::new(ty, HMIRImmediate::Float(FloatWrapper::from(value)))
+}
 
 pub fn as_type(value: &HMIRValue) -> Option<HMIRTypeID> {
     match value.kind() {

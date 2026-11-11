@@ -18,10 +18,13 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult,
-        aggregate::{pattern, variant::Variant},
+        aggregate::{
+            pattern,
+            variant::{self, Variant},
+        },
         coerce, eval, eval_comptime,
         flow::{self, Evaluation},
-        helpers, types,
+        types,
     },
     log::hmir_error,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
@@ -75,7 +78,7 @@ pub(crate) fn eval_match(
         (subject.clone(), subject)
     };
     let dispatch = match variants {
-        Some(_) => helpers::tag(context, &dispatch, span)?,
+        Some(_) => variant::tag(context, &dispatch, span)?,
         None => dispatch,
     };
     let dispatch = coerce::arithmetic(context, dispatch, span)?;

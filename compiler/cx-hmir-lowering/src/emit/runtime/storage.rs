@@ -1,4 +1,4 @@
-use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRBitfield, context::HMIRTypeContext};
+use cx_hmir::ty::{HMIRTypeID, aggregate::HMIRBitfield, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::{
     MIRBindable, MIRBitfieldAccess, MIRInstructionKind, MIRInternalIntrinsic,
@@ -247,12 +247,9 @@ fn store(
 }
 
 fn access(context: &LocalLoweringContext, ty: HMIRTypeID, bitfield: HMIRBitfield) -> MIRBitfieldAccess {
-    let HMIRTypeKind::Int(int) = context.env().resolve_kind(ty) else {
-        unreachable!("a bitfield holds an integer")
-    };
     MIRBitfieldAccess {
         bit_offset: bitfield.offset,
         bit_width: bitfield.width,
-        signed: int.signed(),
+        signed: types::int_type(context.env(), ty).signed(),
     }
 }

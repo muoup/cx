@@ -2,8 +2,9 @@ use cx_hmir::{
     HMIRBinaryOp, HMIRBodyContext, HMIRControlOp, HMIROp, HMIROwnershipOp,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
+use cx_intrinsics::InternalIntrinsic;
 use cx_log::{
     CXResult,
     catalogue::{mir, typecheck},
@@ -16,16 +17,15 @@ use crate::{
     env::function::{LocalLoweringContext, Permission},
     eval::{
         EvalResult,
+        arithmetic::{self, binary_operands, eval_operand},
         coerce::{self, promotion},
         eval,
         expr::{self, require_impure, require_nonsafe},
         flow::{self, EvalExit, Evaluation},
-        helpers,
-        op::{binary_operands, eval_operand},
         types::{self, qualify},
     },
     log::{hmir_error, log_hmir_error},
-    value::{self, HMIRValue},
+    value::{self, HMIRValue, immediate::HMIRImmediate},
 };
 
 pub(crate) fn eval_assign(
@@ -88,9 +88,9 @@ fn eval_copy(
             hmir_error(span, &typecheck::UNCOPYABLE, types::name(context.env(), ty)).into(),
         );
     }
-    let value = match context.env().is_reference(value.ty()) {
-        true => coerce::read(context, value, span)?,
-        false => value,
+    let value = match context.env().reference_inner(value.ty()) {
+        Some(inner) => promotion::reference_load(context, value, inner, span)?,
+        None => value,
     };
     Ok(Evaluation::Ready(coerce::implicit::standard(
         context, value, ty, span,
@@ -252,7 +252,7 @@ fn require_local(
     }
 }
 
-pub(crate) fn address_of(
+pub(crate) fn eval_address_of(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
@@ -309,7 +309,7 @@ pub(crate) fn address_of(
     ))
 }
 
-pub(crate) fn dereference(
+pub(crate) fn eval_dereference(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
@@ -318,13 +318,13 @@ pub(crate) fn dereference(
     let span = span.clone();
 
     eval(context, body, pointer)?.and_then(context, body, move |context, _, value| {
-        dereference_hmir(context, value, None, &span)
+        dereference(context, value, None, &span)
             .map(Evaluation::Ready)
             .map_err(EvalExit::from)
     })
 }
 
-pub(crate) fn dereference_hmir(
+pub(crate) fn dereference(
     context: &mut LocalLoweringContext,
     pointer: HMIRValue,
     base: Option<&HMIRValue>,
@@ -337,8 +337,29 @@ pub(crate) fn dereference_hmir(
     };
 
     require_nonsafe(context, span, "dereferencing a pointer")?;
-    helpers::null_check(context, base.unwrap_or(&pointer), span)?;
+    null_check(context, base.unwrap_or(&pointer), span)?;
 
     let ref_ty = types::reference(context.env_mut(), inner, None, span);
     Ok(pointer.with_ty(ref_ty))
+}
+
+pub(crate) fn null_check(
+    context: &mut LocalLoweringContext,
+    pointer: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<()> {
+    if !context.env().settings().assertions() {
+        return Ok(());
+    }
+    let null = HMIRValue::new(pointer.ty(), HMIRImmediate::Int(0));
+    let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
+    let valid = arithmetic::binary(context, HMIRBinaryOp::Neq, pointer, &null, boolean, span)?;
+    let unit = expr::unit(context, span).ty();
+    let assert = InternalIntrinsic::Assert {
+        condition: valid,
+        message: Some("Attempted to dereference a null pointer".into()),
+    };
+    emit::intrinsics::internal(context, &assert, unit, span)?;
+
+    Ok(())
 }

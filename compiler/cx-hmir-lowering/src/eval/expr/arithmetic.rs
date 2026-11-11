@@ -3,20 +3,19 @@ use cx_hmir::{
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
 };
+use cx_intrinsics::{
+    FloatBinaryOp, FloatIntrinsic, IntBinaryOp, IntIntrinsic, IntUnaryOp, PointerCompareOp,
+    PointerIntrinsic, PointerOffsetOp,
+};
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
-use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
-    emit,
-    env::function::LocalLoweringContext,
-    eval::{
-        EvalResult, coerce, control, eval, expr,
-        flow::Evaluation,
-        helpers, types,
-    },
+    emit::{self, intrinsics},
+    env::function::{LocalLoweringContext, memory::layout},
+    eval::{EvalResult, coerce, control, eval, expr, flow::Evaluation, types},
     log::hmir_error,
-    value::{HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue},
 };
 
 pub(crate) fn eval_operand(
@@ -42,6 +41,66 @@ fn is_comparison(op: HMIRBinaryOp) -> bool {
             | HMIRBinaryOp::Gt
             | HMIRBinaryOp::Ge
     )
+}
+
+fn int_op(op: HMIRBinaryOp, signed: bool) -> IntBinaryOp {
+    match (op, signed) {
+        (HMIRBinaryOp::Add, _) => IntBinaryOp::Add,
+        (HMIRBinaryOp::Sub, _) => IntBinaryOp::Sub,
+        (HMIRBinaryOp::Mul, true) => IntBinaryOp::SMul,
+        (HMIRBinaryOp::Mul, false) => IntBinaryOp::UMul,
+        (HMIRBinaryOp::Div, true) => IntBinaryOp::SDiv,
+        (HMIRBinaryOp::Div, false) => IntBinaryOp::UDiv,
+        (HMIRBinaryOp::Mod, true) => IntBinaryOp::SMod,
+        (HMIRBinaryOp::Mod, false) => IntBinaryOp::UMod,
+        (HMIRBinaryOp::Eq, _) => IntBinaryOp::Eq,
+        (HMIRBinaryOp::Neq, _) => IntBinaryOp::Neq,
+        (HMIRBinaryOp::Lt, true) => IntBinaryOp::SLt,
+        (HMIRBinaryOp::Lt, false) => IntBinaryOp::ULt,
+        (HMIRBinaryOp::Le, true) => IntBinaryOp::SLe,
+        (HMIRBinaryOp::Le, false) => IntBinaryOp::ULe,
+        (HMIRBinaryOp::Gt, true) => IntBinaryOp::SGt,
+        (HMIRBinaryOp::Gt, false) => IntBinaryOp::UGt,
+        (HMIRBinaryOp::Ge, true) => IntBinaryOp::SGe,
+        (HMIRBinaryOp::Ge, false) => IntBinaryOp::UGe,
+        (HMIRBinaryOp::BAnd, _) => IntBinaryOp::BAnd,
+        (HMIRBinaryOp::BOr, _) => IntBinaryOp::BOr,
+        (HMIRBinaryOp::BXor, _) => IntBinaryOp::BXor,
+        (HMIRBinaryOp::LShift, _) => IntBinaryOp::LShift,
+        (HMIRBinaryOp::RShift, true) => IntBinaryOp::ARShift,
+        (HMIRBinaryOp::RShift, false) => IntBinaryOp::LRShift,
+        (HMIRBinaryOp::LAnd | HMIRBinaryOp::LOr, _) => {
+            unreachable!("logical operators evaluate as short circuits")
+        }
+    }
+}
+
+fn float_op(op: HMIRBinaryOp) -> FloatBinaryOp {
+    match op {
+        HMIRBinaryOp::Add => FloatBinaryOp::Add,
+        HMIRBinaryOp::Sub => FloatBinaryOp::Sub,
+        HMIRBinaryOp::Mul => FloatBinaryOp::Mul,
+        HMIRBinaryOp::Div => FloatBinaryOp::Div,
+        HMIRBinaryOp::Eq => FloatBinaryOp::Eq,
+        HMIRBinaryOp::Neq => FloatBinaryOp::Neq,
+        HMIRBinaryOp::Lt => FloatBinaryOp::Lt,
+        HMIRBinaryOp::Le => FloatBinaryOp::Le,
+        HMIRBinaryOp::Gt => FloatBinaryOp::Gt,
+        HMIRBinaryOp::Ge => FloatBinaryOp::Geq,
+        _ => unreachable!("'{}' has no floating form", op.path()),
+    }
+}
+
+fn pointer_op(op: HMIRBinaryOp) -> PointerCompareOp {
+    match op {
+        HMIRBinaryOp::Eq => PointerCompareOp::Eq,
+        HMIRBinaryOp::Neq => PointerCompareOp::Neq,
+        HMIRBinaryOp::Lt => PointerCompareOp::Lt,
+        HMIRBinaryOp::Le => PointerCompareOp::Leq,
+        HMIRBinaryOp::Gt => PointerCompareOp::Gt,
+        HMIRBinaryOp::Ge => PointerCompareOp::Geq,
+        _ => unreachable!("'{}' has no pointer form", op.path()),
+    }
 }
 
 pub(crate) fn eval_binary(
@@ -84,7 +143,7 @@ pub(crate) fn binary_operands(
         {
             let element = *element;
             let ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
-            helpers::difference(context, &lhs, &rhs, element, ty, span)
+            difference(context, &lhs, &rhs, element, ty, span)
         }
         (left, right)
             if is_comparison(op)
@@ -109,13 +168,13 @@ pub(crate) fn binary_operands(
                 }
             };
             let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-            helpers::binary(context, op, &lhs, &rhs, ty, span)
+            binary(context, op, &lhs, &rhs, ty, span)
         }
-        _ => arithmetic(context, span, op, lhs, rhs),
+        _ => promoted(context, span, op, lhs, rhs),
     }
 }
 
-fn arithmetic(
+fn promoted(
     context: &mut LocalLoweringContext,
     span: &TokenRange,
     op: HMIRBinaryOp,
@@ -160,7 +219,7 @@ fn arithmetic(
         true => types::int(context.env_mut(), HMIRIntWidth::I1, false, span),
         false => common,
     };
-    helpers::binary(context, op, &lhs, &rhs, result, span)
+    binary(context, op, &lhs, &rhs, result, span)
 }
 
 fn pointer_offset(
@@ -175,7 +234,90 @@ fn pointer_offset(
         matches!(context.env().resolve_kind(index.ty()), HMIRTypeKind::Int(int) if int.signed());
     let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, signed, span);
     let index = coerce::implicit::standard(context, index, offset_ty, span)?;
-    helpers::offset(context, &pointer, &index, element, subtract, span)
+    offset(context, &pointer, &index, element, subtract, span)
+}
+
+pub(crate) fn binary(
+    context: &mut LocalLoweringContext,
+    op: HMIRBinaryOp,
+    lhs: &HMIRValue,
+    rhs: &HMIRValue,
+    result: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let (lhs, rhs) = (lhs.clone(), rhs.clone());
+    match context.env().resolve_kind(lhs.ty()) {
+        HMIRTypeKind::Int(int) => {
+            let op = int_op(op, int.signed());
+            intrinsics::int(context, &IntIntrinsic::Binary { op, lhs, rhs }, result, span)
+        }
+        HMIRTypeKind::Float(_) => {
+            let op = float_op(op);
+            intrinsics::float(context, &FloatIntrinsic::Binary { op, lhs, rhs }, result, span)
+        }
+        HMIRTypeKind::PointerTo(_) => {
+            let op = pointer_op(op);
+            intrinsics::pointer(context, &PointerIntrinsic::Compare { op, lhs, rhs }, result, span)
+        }
+        _ => unreachable!("'{}' applies to scalar operands", op.path()),
+    }
+}
+
+pub(crate) fn unary(
+    context: &mut LocalLoweringContext,
+    op: HMIRUnaryOp,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let (ty, value) = (value.ty(), value.clone());
+    if op == HMIRUnaryOp::Neg && context.env().is_float(ty) {
+        return intrinsics::float(context, &FloatIntrinsic::Neg { value }, ty, span);
+    }
+    let op = match op {
+        HMIRUnaryOp::Neg => IntUnaryOp::Neg,
+        HMIRUnaryOp::LNot => IntUnaryOp::LNot,
+        HMIRUnaryOp::BNot => IntUnaryOp::BNot,
+        _ => unreachable!("'{}' is not a value operator", op.path()),
+    };
+    intrinsics::int(context, &IntIntrinsic::Unary { op, value }, ty, span)
+}
+
+// Offsets 'pointer' by 'index' elements of 'element', scaled to bytes
+pub(crate) fn offset(
+    context: &mut LocalLoweringContext,
+    pointer: &HMIRValue,
+    index: &HMIRValue,
+    element: HMIRTypeID,
+    subtract: bool,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let ty = index.ty();
+    let size = layout(context.env_mut(), element, span)?.size() as i128;
+    let offset = match value::as_int(index) {
+        Some(index) => value::int(context.env(), index * size, ty),
+        None => {
+            let size = value::int(context.env(), size, ty);
+            binary(context, HMIRBinaryOp::Mul, index, &size, ty, span)?
+        }
+    };
+    let op = match subtract {
+        true => PointerOffsetOp::Sub,
+        false => PointerOffsetOp::Add,
+    };
+    let ptr = pointer.clone();
+    intrinsics::pointer(context, &PointerIntrinsic::Offset { op, ptr, offset }, pointer.ty(), span)
+}
+
+pub(crate) fn difference(
+    context: &mut LocalLoweringContext,
+    lhs: &HMIRValue,
+    rhs: &HMIRValue,
+    element: HMIRTypeID,
+    result: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let (lhs, rhs) = (lhs.clone(), rhs.clone());
+    intrinsics::pointer(context, &PointerIntrinsic::Diff { lhs, rhs, element }, result, span)
 }
 
 pub(crate) fn eval_unary(
@@ -189,7 +331,7 @@ pub(crate) fn eval_unary(
         HMIRUnaryOp::LNot => {
             let value = (eval(context, body, operand))?.ready()?;
             let value = coerce::condition(context, value, span)?;
-            Ok(Evaluation::Ready(helpers::unary(context, op, &value, span)?))
+            Ok(Evaluation::Ready(unary(context, op, &value, span)?))
         }
         HMIRUnaryOp::PreIncrement
         | HMIRUnaryOp::PreDecrement
@@ -205,7 +347,7 @@ pub(crate) fn eval_unary(
             match (op, context.env().resolve_kind(value.ty())) {
                 (HMIRUnaryOp::Neg, HMIRTypeKind::Float(_) | HMIRTypeKind::Int(_))
                 | (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => {
-                    Ok(Evaluation::Ready(helpers::unary(context, op, &value, span)?))
+                    Ok(Evaluation::Ready(unary(context, op, &value, span)?))
                 }
                 (_, HMIRTypeKind::Float(_)) => {
                     Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()).into())
@@ -249,25 +391,18 @@ fn increment(
     let current = coerce::promotion::std_rvalue(context, target.clone(), span)?;
     let updated = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Int(_) => {
-            let one = HMIRValue::new(ty, HMIRImmediate::Int(1));
-            helpers::binary(context, op, &current, &one, ty, span)?
+            let one = value::int(context.env(), 1, ty);
+            binary(context, op, &current, &one, ty, span)?
         }
         HMIRTypeKind::Float(_) => {
-            let one = HMIRValue::new(ty, HMIRImmediate::Float(FloatWrapper::from(1.0)));
-            helpers::binary(context, op, &current, &one, ty, span)?
+            let one = value::float(context.env(), 1.0, ty);
+            binary(context, op, &current, &one, ty, span)?
         }
         HMIRTypeKind::PointerTo(element) => {
             let element = *element;
             let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
-            let one = HMIRValue::new(offset_ty, HMIRImmediate::Int(1));
-            helpers::offset(
-                context,
-                &current,
-                &one,
-                element,
-                op == HMIRBinaryOp::Sub,
-                span,
-            )?
+            let one = value::int(context.env(), 1, offset_ty);
+            offset(context, &current, &one, element, op == HMIRBinaryOp::Sub, span)?
         }
         _ => {
             let operand = ("increment".into(), "type name".into());

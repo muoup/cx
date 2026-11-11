@@ -1,11 +1,11 @@
 pub(crate) mod aggregate;
+pub(crate) mod arithmetic;
 pub(crate) mod binding;
 pub(crate) mod call;
 pub(crate) mod coerce;
 pub(crate) mod comptime;
 pub(crate) mod control;
 pub(crate) mod name;
-pub(crate) mod op;
 pub(crate) mod place;
 pub(crate) mod staged;
 pub(crate) mod types;
@@ -25,7 +25,7 @@ use crate::{
     eval::{EvalResult, eval, eval_type, flow::Evaluation, types::alike},
     log::hmir_error,
     value::{
-        HMIRValue,
+        self, HMIRValue,
         address::{Addressable, HMIRAddress},
         immediate::HMIRImmediate,
     },
@@ -45,11 +45,11 @@ pub(crate) fn eval_literal(
         }
         HMIRLiteral::Int { value, ty } => {
             let ty = types::int(context.env_mut(), ty.width(), ty.signed(), span);
-            HMIRValue::new(ty, HMIRImmediate::Int(*value))
+            value::int(context.env(), *value, ty)
         }
         HMIRLiteral::Float { value, ty } => {
             let ty = types::realize(context.env_mut(), HMIRTypeKind::Float(*ty), span);
-            HMIRValue::new(ty, HMIRImmediate::Float(*value))
+            value::float(context.env(), f64::from(value), ty)
         }
     }
 }

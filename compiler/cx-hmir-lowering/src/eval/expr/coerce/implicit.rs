@@ -12,8 +12,8 @@ use crate::{
     emit,
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
-        coerce::applied,
-        expr, helpers,
+        coerce::{self, applied},
+        expr,
         types::{self, signatures_alike},
     },
     log::hmir_error,
@@ -182,11 +182,11 @@ fn step(
         }
         (HMIRTypeKind::Int(_), HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_))
         | (HMIRTypeKind::Float(_), HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_)) => {
-            Coercion::Applied(helpers::cast(context, &value, target, span)?)
+            Coercion::Applied(coerce::cast(context, &value, target, span)?)
         }
         (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)) => {
             expr::require_nonsafe(context, span, "Unsafe type conversion")?;
-            Coercion::Applied(helpers::cast(context, &value, target, span)?)
+            Coercion::Applied(coerce::cast(context, &value, target, span)?)
         }
         (HMIRTypeKind::PointerTo(from), HMIRTypeKind::PointerTo(to))
             if (env.is_void(from) || env.is_void(to)) && qualified(env, source, target) =>
@@ -213,7 +213,7 @@ fn bind(
     }
     let storage = match is_designator(env, value.ty()) {
         true => value,
-        false => helpers::temporary(context, &value, span)?,
+        false => coerce::temporary(context, &value, span)?,
     };
     Ok(Coercion::Applied(storage.with_ty(target)))
 }

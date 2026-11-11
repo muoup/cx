@@ -15,12 +15,12 @@ use crate::{
     emit,
     env::function::LocalLoweringContext,
     eval::{
-        EvalResult, coerce, eval, eval_type,
+        EvalResult, arithmetic, coerce, eval, eval_type,
         flow::{self, Evaluation},
-        helpers, types,
+        types,
     },
     log::hmir_error,
-    value::{HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue},
 };
 
 pub(crate) fn variant(
@@ -82,7 +82,7 @@ pub(crate) fn payload(
         ..Default::default()
     };
     let ty = types::qualify::specify(context, ty, qualifiers, span);
-    helpers::field(context, source, index, ty, span)
+    super::field(context, source, index, ty, span)
 }
 
 pub(crate) fn bind(
@@ -157,14 +157,14 @@ pub(crate) fn eval_is(
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
     }
     let Variant { index, payload } = self::variant(context, body, ty, pattern, span)?;
-    let tag = helpers::tag(context, &subject, span)?;
-    let expected = HMIRValue::new(tag.ty(), HMIRImmediate::Int(index as i128));
+    let tag = variant::tag(context, &subject, span)?;
+    let expected = value::int(context.env(), index as i128, tag.ty());
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    let result = helpers::binary(context, HMIRBinaryOp::Eq, &tag, &expected, boolean, span)?;
+    let result = arithmetic::binary(context, HMIRBinaryOp::Eq, &tag, &expected, boolean, span)?;
     if let Some(HMIRPattern::Binding(local)) = inner.as_deref() {
         let owned = !context.env().is_reference(subject.ty());
         let subject = match owned {
-            true => helpers::temporary(context, &subject, span)?,
+            true => coerce::temporary(context, &subject, span)?,
             false => subject,
         };
         let value = self::payload(context, &subject, index, payload, span)?;

@@ -1,4 +1,4 @@
-use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
+use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
 use cx_intrinsics::{
     AggregateIntrinsic, FloatBinaryOp, FloatIntrinsic, IntBinaryOp, IntIntrinsic, IntUnaryOp,
     InternalIntrinsic, PointerCompareOp, PointerIntrinsic, PointerOffsetOp, VAIntrinsic,
@@ -13,6 +13,7 @@ use cx_tokens::TokenRange;
 use crate::{
     emit::runtime::{self, storage},
     env::function::LocalLoweringContext,
+    eval::types,
     lower::types::{lower_type, mir_float, mir_int},
     value::{HMIRValue, immediate::HMIRImmediate},
 };
@@ -20,17 +21,11 @@ use crate::{
 type Operands = (MIRTarget, MIRValue, MIRValue);
 
 fn int_type(context: &LocalLoweringContext, ty: HMIRTypeID) -> MIRIntType {
-    let HMIRTypeKind::Int(int) = context.env().resolve_kind(ty) else {
-        unreachable!("an integer intrinsic targets an integer type")
-    };
-    mir_int(int.width())
+    mir_int(types::int_type(context.env(), ty).width())
 }
 
 fn float_type(context: &LocalLoweringContext, ty: HMIRTypeID) -> MIRFloatType {
-    let HMIRTypeKind::Float(float) = context.env().resolve_kind(ty) else {
-        unreachable!("a floating intrinsic targets a floating type")
-    };
-    mir_float(float.width())
+    mir_float(types::float_type(context.env(), ty).width())
 }
 
 // An aggregate operand is its storage, so one held behind a reference is read where it is used

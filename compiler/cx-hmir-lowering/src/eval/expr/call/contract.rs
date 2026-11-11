@@ -7,6 +7,7 @@ use cx_hmir::{
     ty::{aggregate::HMIRTypeSemantics, context::HMIRTypeContext},
     unit::function::HMIRContract,
 };
+use cx_intrinsics::InternalIntrinsic;
 use cx_log::{
     CXResult,
     catalogue::{self, typecheck},
@@ -19,7 +20,7 @@ use crate::{
         ComptimeContext, Expectations, FnContext, LocalLoweringContext, Permission,
         runtime::RuntimeScope,
     },
-    eval::{EvalResult, coerce, eval, flow::{EvalExit, Evaluation}, helpers, types},
+    eval::{EvalResult, coerce, eval, expr, flow::{EvalExit, Evaluation}, types},
     log::hmir_error,
     lower::declaration,
     value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
@@ -82,13 +83,13 @@ pub(crate) fn call(
     let mut bindings = bind_params(context, contract, args, span)?;
     if let Some(expression) = contract.precondition() {
         let value = condition(context, contract, def.brand(), expression, span)?;
-        helpers::assert(context, &value, Some("precondition failed"), span)?;
+        assert(context, &value, Some("precondition failed"), span)?;
     }
     let result = emit(context)?;
     if let (Evaluation::Ready(value), Some((local, expression))) = (&result, contract.postcondition()) {
         bindings.extend(bind_result(context, local, Some(value), span)?);
         let value = condition(context, contract, def.brand(), expression, span)?;
-        helpers::assert(context, &value, None, span)?;
+        assert(context, &value, None, span)?;
     }
     restore(context, bindings);
     Ok(result)
@@ -115,7 +116,7 @@ pub(crate) fn enter(
     if let Some(expression) = contract.precondition() {
         let owner = context.source();
         let value = condition(context, contract, owner, expression, span)?;
-        helpers::assert(context, &value, None, span)?;
+        assert(context, &value, None, span)?;
     }
     Ok(())
 }
@@ -156,7 +157,7 @@ fn exit_condition(
     let owner = context.source();
     let value = condition(context, contract, owner, expression, span);
     restore(context, bindings);
-    helpers::assert(context, &value?, Some("postcondition failed"), span)
+    assert(context, &value?, Some("postcondition failed"), span)
 }
 
 fn condition(
@@ -197,7 +198,7 @@ fn observe(
     if let HMIRValueKind::Immediate(_) = value.kind() {
         return Ok(value);
     }
-    let storage = helpers::temporary(context, &value, span)?;
+    let storage = coerce::temporary(context, &value, span)?;
     let constant = HMIRTypeSemantics { constant: true, ..Default::default() };
     let inner = context.env().referent(storage.ty());
     let ty = types::qualify::specify(context, inner, constant, span);
@@ -239,6 +240,30 @@ fn bind(context: &mut LocalLoweringContext, local: HMIRLocalID, value: HMIRValue
     let previous = context.get_local(&local).cloned();
     emit::storage::bind_local(context, local, value);
     Shadowed { local, previous }
+}
+
+// A message makes a checked assertion, elided without assertions enabled; without one the condition is assumed
+fn assert(
+    context: &mut LocalLoweringContext,
+    condition: &HMIRValue,
+    message: Option<&str>,
+    span: &TokenRange,
+) -> CXResult<()> {
+    if message.is_some() && !context.env().settings().assertions() {
+        return Ok(());
+    }
+    let condition = condition.clone();
+    let intrinsic = match message {
+        Some(message) => InternalIntrinsic::Assert {
+            condition,
+            message: Some(message.into()),
+        },
+        None => InternalIntrinsic::Assume { condition },
+    };
+    let unit = expr::unit(context, span).ty();
+    emit::intrinsics::internal(context, &intrinsic, unit, span)?;
+
+    Ok(())
 }
 
 fn restore(context: &mut LocalLoweringContext, bindings: Vec<Shadowed>) {

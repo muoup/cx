@@ -115,9 +115,7 @@ pub(super) fn extract(
     bitfield: HMIRBitfield,
     span: &TokenRange,
 ) -> CXResult<HMIRValueKind> {
-    let HMIRTypeKind::Int(int) = *env.resolve_kind(ty) else {
-        unreachable!("a bitfield holds an integer")
-    };
+    let int = types::int_type(env, ty);
     let word = unit
         .bytes(0..unit.len())
         .map_err(|fault| fault.error(span))?;
@@ -343,9 +341,7 @@ fn immediate(
                     )?);
                     continue;
                 };
-                let HMIRTypeKind::Int(int) = *env.resolve_kind(*field.ty()) else {
-                    unreachable!("a bitfield holds an integer")
-                };
+                let int = types::int_type(env, *field.ty());
                 let range = offset + unit..offset + unit + int.width().bytes();
                 let bitfield = HMIRBitfield {
                     offset: bit_offset,

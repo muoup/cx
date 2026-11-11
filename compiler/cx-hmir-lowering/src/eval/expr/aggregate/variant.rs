@@ -1,20 +1,26 @@
 use cx_hmir::{
     HMIRContract, HMIRFnSignature, HMIRFunctionStage,
-    ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRFieldDef, context::HMIRTypeContext},
+    ty::{
+        HMIRTypeID, HMIRTypeKind, aggregate::HMIRFieldDef, context::HMIRTypeContext,
+        intrinsic::HMIRIntWidth,
+    },
     unit::function::HMIRFnParam,
 };
+use cx_intrinsics::AggregateIntrinsic;
 use cx_log::CXResult;
 use cx_mir::MIRFunctionID;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
+use super::initializer;
 use crate::{
+    emit,
     env::{
         HMIREnvironment, function::LocalLoweringContext, generation::Generation, resolver::demand,
     },
-    eval::{expr, helpers, types},
+    eval::{expr, types},
     lower,
-    value::{HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) struct Variant {
@@ -91,5 +97,20 @@ pub(crate) fn construct(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let payload = payload.unwrap_or_else(|| expr::unit(context, span));
-    helpers::aggregate(context, ty, &[(variant, payload)], span)
+    initializer::initialize(context, ty, &[(variant, payload)], span)
+}
+
+// The index of the variant a tagged union holds
+pub(crate) fn tag(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let ty = types::int(context.env_mut(), HMIRIntWidth::I8, false, span);
+    if let HMIRValueKind::Immediate(HMIRImmediate::TaggedUnion { variant, .. }) = value.kind() {
+        return Ok(value::int(context.env(), *variant as i128, ty));
+    }
+    let sum = context.env().referent(value.ty());
+    let index = AggregateIntrinsic::SumIndex { value: value.clone(), sum };
+    emit::intrinsics::aggregate(context, &index, ty, span)
 }

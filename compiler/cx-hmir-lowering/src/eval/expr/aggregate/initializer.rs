@@ -1,42 +1,71 @@
 use cx_hmir::{
     HMIRBodyContext,
     expr::HMIRExprID,
-    ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{
+        HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRFieldDef,
+        context::HMIRTypeContext, intrinsic::HMIRIntWidth,
+    },
 };
-use cx_log::catalogue::typecheck;
+use cx_intrinsics::AggregateIntrinsic;
+use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use super::variant;
 use crate::{
+    emit,
     env::function::LocalLoweringContext,
-    eval::{
-        EvalResult, coerce, eval,
-        flow::Evaluation,
-        helpers, types,
-    },
+    eval::{EvalResult, coerce, eval, eval_type, flow::Evaluation, types},
     log::hmir_error,
     value::HMIRValue,
 };
 
+pub(crate) fn eval_initializer(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    span: &TokenRange,
+    ty: HMIRExprID,
+    fields: &[(Option<CXIdent>, HMIRExprID)],
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let ty = eval_type(context, body, ty)?.guide();
+    let (span, fields) = (span.clone(), fields.to_vec());
+    ty.and_then(context, body, move |context, body, ty| {
+        let (span, fields) = (&span, fields.as_slice());
+        match context.env().resolve_kind(ty) {
+            HMIRTypeKind::Struct { fields: declared } | HMIRTypeKind::Union { fields: declared } => {
+                let declared = declared.clone();
+                structure(context, body, span, ty, &declared, fields)
+            }
+            HMIRTypeKind::Array { element, length } => {
+                array(context, body, span, ty, *element, Some(*length), fields)
+            }
+            HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
+                array(context, body, span, ty, *element, None, fields)
+            }
+            HMIRTypeKind::TaggedUnion { .. } => tagged(context, body, span, ty, fields),
+            _ => scalar(context, body, span, ty, fields),
+        }
+    })
+}
+
 pub(crate) fn initialize(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
+    fields: &[(usize, HMIRValue)],
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let init = AggregateIntrinsic::Init { ty, fields: fields.to_vec() };
+    emit::intrinsics::aggregate(context, &init, ty, span)
+}
+
+fn structure(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
     ty: HMIRTypeID,
+    declared: &[HMIRFieldDef<HMIRTypeID>],
     fields: &[(Option<CXIdent>, HMIRExprID)],
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let declared = match context.env().resolve_kind(ty) {
-        HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => fields.clone(),
-        HMIRTypeKind::Array { element, length } => {
-            return array(context, body, span, ty, *element, Some(*length), fields);
-        }
-        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
-            return array(context, body, span, ty, *element, None, fields);
-        }
-        HMIRTypeKind::TaggedUnion { .. } => return tagged(context, body, span, ty, fields),
-        _ => return initialize_scalar(context, body, span, ty, fields),
-    };
     let mut values = Vec::with_capacity(fields.len());
     let mut next = 0;
     for (name, value) in fields {
@@ -57,7 +86,7 @@ pub(crate) fn initialize(
         next = index + 1;
         values.push((index, (field_value(context, body, *value, *field.ty()))?.ready()?));
     }
-    Ok(Evaluation::Ready(helpers::aggregate(context, ty, &values, span)?))
+    Ok(Evaluation::Ready(initialize(context, ty, &values, span)?))
 }
 
 fn array(
@@ -96,7 +125,7 @@ fn array(
         Some(_) => ty,
         None => types::array(context.env_mut(), ty, fields.len() as u64, span),
     };
-    Ok(Evaluation::Ready(helpers::aggregate(context, ty, &values, span)?))
+    Ok(Evaluation::Ready(initialize(context, ty, &values, span)?))
 }
 
 fn tagged(
@@ -118,7 +147,7 @@ fn tagged(
     Ok(Evaluation::Ready(variant::construct(context, ty, found.index, Some(payload), span)?))
 }
 
-fn initialize_scalar(
+fn scalar(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,

@@ -13,7 +13,7 @@ use super::Coercion;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{expr, flow, helpers, staged, types},
+    eval::{expr, flow, staged, types},
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind},
 };
@@ -58,7 +58,7 @@ pub(crate) fn step(
                 types::element(context, subject, span).expect("an array has an element type");
             let value = match context.env().is_reference(value.ty()) {
                 true => value,
-                false => helpers::temporary(context, &value, span)?,
+                false => super::temporary(context, &value, span)?,
             };
             address(context, value, element, span)
         }

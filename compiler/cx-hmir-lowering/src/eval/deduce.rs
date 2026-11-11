@@ -308,7 +308,7 @@ pub(crate) fn hole_bound(
     }
 }
 
-pub(crate) fn hole(
+pub(crate) fn eval_hole(
     context: &mut LocalLoweringContext,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
