@@ -41,7 +41,6 @@ pub enum MIRConstant {
     Nullptr {
         ty: MIRTypeID,
     },
-    Function(MIRFunctionID),
     /// The address of the block that a label of `function` starts at.
     BlockAddress {
         function: MIRFunctionID,

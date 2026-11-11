@@ -160,8 +160,7 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
                 }
                 MIRInternalIntrinsic::ArrayAddress { array, .. } => visit_value(array, visit),
                 MIRInternalIntrinsic::StringAddress { .. }
-                | MIRInternalIntrinsic::GlobalAddress { .. }
-                | MIRInternalIntrinsic::GetFnPtr { .. } => {}
+                | MIRInternalIntrinsic::GlobalAddress { .. } => {}
                 MIRInternalIntrinsic::Bitcast { value: input, .. } => visit_value(input, visit),
                 MIRInternalIntrinsic::Assert { condition, .. }
                 | MIRInternalIntrinsic::Assume { condition } => visit_value(condition, visit),

@@ -166,7 +166,7 @@ pub(crate) fn arithmetic(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let value = promotion::std_rvalue(context, value, span)?;
+    let value = promotion::operand(context, value, span)?;
     let target = promotion::integer(context, value.ty(), span);
     implicit::standard(context, value, target, span)
 }
@@ -176,7 +176,7 @@ pub(crate) fn default_argument(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let value = promotion::std_rvalue(context, value, span)?;
+    let value = promotion::operand(context, value, span)?;
     let target = promotion::argument(context, value.ty(), span);
     implicit::standard(context, value, target, span)
 }
@@ -186,7 +186,7 @@ pub(crate) fn condition(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let value = promotion::std_rvalue(context, value, span)?;
+    let value = promotion::operand(context, value, span)?;
     let source = value.ty();
     match truth(context, value, span)? {
         Coercion::Applied(value) => Ok(value),
@@ -299,11 +299,7 @@ fn qualified(env: &HMIREnvironment, from: HMIRTypeID, to: HMIRTypeID) -> bool {
 }
 
 fn is_designator(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
-    match env.resolve_kind(ty) {
-        HMIRTypeKind::Str => true,
-        HMIRTypeKind::Function(_) => !types::comptime_only(env, ty),
-        _ => false,
-    }
+    matches!(env.resolve_kind(ty), HMIRTypeKind::Str)
 }
 
 fn is_char(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {

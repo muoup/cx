@@ -56,7 +56,7 @@ pub(crate) fn lower_prototype(
     let linkage = declaration::linkage(source);
     let value = symbol::value(env, def)?;
 
-    if comptime_only(env, value.ty()) {
+    if comptime_only(env, env.referent(value.ty())) {
         let source = env.symbols().resolve_definition(def);
         if let Some(HMIRDefKind::Function(function)) = declaration::canonical(source).kind()
             && function.signature().stage() == HMIRFunctionStage::Runtime

@@ -358,8 +358,6 @@ fn finish(
         let bound = declared.params().iter().zip(&args);
         let bindings = bound.clone().map(|(param, value)| param.comptime().then(|| value.clone()));
         let callee = curried(context, def, &signature, bindings.collect(), span)?;
-        let reference = types::reference(context.env_mut(), callee.ty(), None, span);
-        let callee = callee.with_ty(reference);
         let runtime = bound.filter(|(param, _)| !param.comptime());
         let runtime = runtime.map(|(_, value)| value.clone()).collect::<Vec<_>>();
         let return_type = *signature.return_type();
@@ -396,7 +394,7 @@ fn curried(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let residual = types::residual(signature, |index| values[index].is_some());
-    let ty = types::realize(context.env_mut(), HMIRTypeKind::Function(residual), span);
+    let ty = types::callable(context.env_mut(), residual, span);
     let callee = symbol::value(context.env_mut(), def)?;
     Ok(value::curried(ty, callee, values))
 }

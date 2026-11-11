@@ -110,14 +110,6 @@ impl<'a> FunctionState<'a, '_> {
                 Ok(CodegenValue::Value(float_val))
             }
 
-            LMIRValue::FunctionRef(function) => Err(LLVMError::new(
-                &catalogue::ENTITY_REQUIREMENT,
-                (
-                    format!("function reference '{function}'"),
-                    "a generated value".into(),
-                    None,
-                ),
-            )),
 
             LMIRValue::BlockAddress { function, block } => {
                 let address = (function == &self.current_function)

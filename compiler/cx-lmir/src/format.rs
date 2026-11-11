@@ -194,7 +194,6 @@ impl Display for LMIRValue {
             LMIRValue::ParameterRef(index) => write!(f, "@param.{index}"),
             LMIRValue::IntImmediate { val, ty } => write!(f, "{ty} {val}"),
             LMIRValue::FloatImmediate { val, ty } => write!(f, "{ty} {val}"),
-            LMIRValue::FunctionRef(name) => write!(f, "{name}"),
             LMIRValue::BlockAddress { function, block } => write!(f, "{function}::{block}"),
             LMIRValue::Global(id) => write!(f, "g{id}"),
             LMIRValue::Register { register, ty } => write!(f, "{ty} {register}"),

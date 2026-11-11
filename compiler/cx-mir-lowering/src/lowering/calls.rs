@@ -5,7 +5,10 @@ use cx_lmir::{
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::calculate_type_layout;
-use cx_mir::{MIRConstant, MIRFnSignature, MIRRegister, MIRTypeID, MIRTypeKind, MIRValue};
+use cx_mir::constant::MIRAddressable;
+use cx_mir::{
+    MIRConstant, MIRFnSignature, MIRFunctionID, MIRRegister, MIRTypeID, MIRTypeKind, MIRValue,
+};
 
 use crate::context::FunctionContext;
 
@@ -61,12 +64,12 @@ pub(super) fn lower_call(
             lowered.push(values::read(context, argument));
         }
     }
-    let kind = if let MIRValue::Constant(MIRConstant::Function(id)) = callee {
+    let kind = if let Some(id) = direct(callee) {
         LMIRInstructionKind::DirectCall {
             func: context
                 .global
                 .unit
-                .function(*id)
+                .function(id)
                 .unwrap()
                 .prototype()
                 .symbol_name
@@ -139,12 +142,23 @@ pub(super) fn lower_return(context: &mut FunctionContext<'_, '_>, value: Option<
     }
 }
 
+// The function a callee names outright, which is called directly rather than through its address
+fn direct(callee: &MIRValue) -> Option<MIRFunctionID> {
+    match callee {
+        MIRValue::Constant(MIRConstant::Address {
+            base: MIRAddressable::Function(id),
+            offset: 0,
+        }) => Some(*id),
+        _ => None,
+    }
+}
+
 fn signature(context: &FunctionContext<'_, '_>, callee: &MIRValue) -> LMIRFunctionSignature {
-    if let MIRValue::Constant(MIRConstant::Function(id)) = callee {
+    if let Some(id) = direct(callee) {
         let name = context
             .global
             .unit
-            .function(*id)
+            .function(id)
             .unwrap()
             .prototype()
             .symbol_name
@@ -156,11 +170,11 @@ fn signature(context: &FunctionContext<'_, '_>, callee: &MIRValue) -> LMIRFuncti
 }
 
 fn parameter_type(context: &FunctionContext<'_, '_>, callee: &MIRValue, index: usize) -> MIRTypeID {
-    if let MIRValue::Constant(MIRConstant::Function(id)) = callee {
+    if let Some(id) = direct(callee) {
         return context
             .global
             .unit
-            .function(*id)
+            .function(id)
             .unwrap()
             .prototype()
             .signature

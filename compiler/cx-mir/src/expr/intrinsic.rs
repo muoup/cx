@@ -1,7 +1,6 @@
 use crate::{
     MIRIntType,
     ty::{MIRFloatType, MIRTypeID},
-    unit::function::MIRFunctionID,
     value::{MIRGlobalRef, MIRPlaceID, MIRTarget, MIRValue},
 };
 
@@ -373,10 +372,6 @@ pub enum MIRInternalIntrinsic {
         out: MIRTarget,
         string: String,
     },
-    GetFnPtr {
-        out: MIRTarget,
-        fn_id: MIRFunctionID,
-    },
     Bitcast {
         out: MIRTarget,
         value: MIRValue,
@@ -522,7 +517,6 @@ impl MIRIntrinsic {
                 | MIRInternalIntrinsic::ReferenceAddress { out, .. }
                 | MIRInternalIntrinsic::ArrayAddress { out, .. }
                 | MIRInternalIntrinsic::StringAddress { out, .. }
-                | MIRInternalIntrinsic::GetFnPtr { out, .. }
                 | MIRInternalIntrinsic::Bitcast { out, .. } => Some(out),
                 MIRInternalIntrinsic::Assert { .. } | MIRInternalIntrinsic::Assume { .. } => None,
             },

@@ -227,6 +227,16 @@ pub(crate) fn reference(
     realize(env, HMIRTypeKind::ReferenceTo { inner, bitfield }, span)
 }
 
+// The type of a function value: a reference to the function, which only a pointer conversion takes the address of
+pub(crate) fn callable(
+    env: &mut HMIREnvironment,
+    signature: HMIRFnSignature<HMIRTypeID>,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    let function = realize(env, HMIRTypeKind::Function(signature), span);
+    reference(env, function, None, span)
+}
+
 pub(crate) fn array(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
@@ -324,6 +334,7 @@ pub(crate) fn bitfield(env: &HMIREnvironment, reference: HMIRTypeID) -> Option<H
 pub(crate) fn comptime_only(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     match env.resolve_kind(ty) {
         HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => true,
+        HMIRTypeKind::ReferenceTo { inner, .. } => comptime_only(env, *inner),
 
         HMIRTypeKind::Function(signature) => {
             signature.stage() == HMIRFunctionStage::Comptime

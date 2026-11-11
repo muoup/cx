@@ -84,10 +84,14 @@ fn step(
         env.resolve_kind(source).clone(),
         env.resolve_kind(target).clone(),
     );
-    if let (HMIRTypeKind::Str | HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) =
-        (env.resolve_kind(env.referent(source)), &to)
-    {
-        return promotion::step(context, value, span);
+    match (env.resolve_kind(env.referent(source)), &to) {
+        (HMIRTypeKind::Str, HMIRTypeKind::PointerTo(_)) => {
+            return promotion::step(context, value, span);
+        }
+        (HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) => {
+            return promotion::function_pointer(context, value, span);
+        }
+        _ => {}
     }
 
     match (&from, &to) {

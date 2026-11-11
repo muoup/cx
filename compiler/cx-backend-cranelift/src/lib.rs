@@ -100,20 +100,6 @@ impl FunctionState<'_> {
                 .map(CodegenValue::Value)
                 .ok_or_else(|| raw(&INDEX_BOUNDS, ("function parameter".into(), i.to_string()))),
 
-            LMIRValue::FunctionRef(name) => {
-                let (_func_id, func_ref) = self
-                    .get_function(name.as_str())
-                    .ok_or_else(|| {
-                        raw(
-                            &MISSING_ENTITY,
-                            (format!("function '{name}'"), "Cranelift function map".into()),
-                        )
-                    })?;
-                let as_value = self.builder.ins().func_addr(self.pointer_type, func_ref);
-
-                Ok(CodegenValue::Value(as_value))
-            }
-
             LMIRValue::IntImmediate { val, ty } => {
                 let int_type = get_cranelift_type(ty);
                 let value = self.builder.ins().iconst(int_type?, *val);

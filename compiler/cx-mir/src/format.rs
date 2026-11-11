@@ -3,6 +3,7 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
+    constant::MIRAddressable,
     expr::{
         instruction::{
             MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRInvalidationKind,
@@ -59,7 +60,6 @@ impl Display for MIRConstant {
                 }
                 Ok(())
             }
-            Self::Function(function) => write!(f, "fn {function}"),
             Self::BlockAddress { function, label } => write!(f, "label {function}::{label}"),
             Self::Undefined => f.write_str("undefined"),
         }
@@ -1004,14 +1004,6 @@ fn write_internal_intrinsic<T: MTRegistry>(
             "internal.string_address",
             |f, _, _, _| write!(f, "{string:?}"),
         ),
-        MIRInternalIntrinsic::GetFnPtr { fn_id, .. } => write_intrinsic_call(
-            f,
-            unit,
-            function,
-            types,
-            "internal.get_fn_ptr",
-            |f, _, _, _| Display::fmt(fn_id, f),
-        ),
         MIRInternalIntrinsic::Bitcast {
             value, target_ty, ..
         } => write_intrinsic_value_type(
@@ -1221,7 +1213,10 @@ fn write_value(
 
 fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant) -> fmt::Result {
     match constant {
-        MIRConstant::Function(function_id) => {
+        MIRConstant::Address {
+            base: MIRAddressable::Function(function_id),
+            offset: 0,
+        } => {
             if let Some(function) = unit.function(*function_id) {
                 write!(f, "@{}", function.prototype().display_name())
             } else {

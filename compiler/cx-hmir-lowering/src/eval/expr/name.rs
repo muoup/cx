@@ -63,13 +63,14 @@ pub(crate) fn eval_def(
         }
         HMIRValueKind::Immediate(HMIRImmediate::Address(_))
             if let Some(def) = value::as_function(&value)
-                && context.env().is_function(value.ty())
-                && emitting
-                && !types::comptime_only(context.env(), value.ty()) =>
+                && context.env().is_function(context.env().referent(value.ty())) =>
         {
-            let prototype = lower_prototype(context.env_mut(), def, span)?;
-            context.env_mut().module_mut().declare_function(prototype);
-            request(context, def);
+            let function = context.env().referent(value.ty());
+            if emitting && !types::comptime_only(context.env(), function) {
+                let prototype = lower_prototype(context.env_mut(), def, span)?;
+                context.env_mut().module_mut().declare_function(prototype);
+                request(context, def);
+            }
         }
         HMIRValueKind::Immediate(HMIRImmediate::Address(address))
             if let Addressable::Def(def) = *address.base()
@@ -216,17 +217,13 @@ fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) ->
         return Ok(false);
     }
 
+    let (a, b) = (a_value.ty(), b_value.ty());
     Ok(
-        match (
-            env.resolve_kind(a_value.ty()),
-            env.resolve_kind(b_value.ty()),
-        ) {
+        match (env.resolve_kind(env.referent(a)), env.resolve_kind(env.referent(b))) {
             (HMIRTypeKind::Function(a), HMIRTypeKind::Function(b)) => {
                 types::signatures_alike(env, a, b)
             }
-            (HMIRTypeKind::ReferenceTo { .. }, HMIRTypeKind::ReferenceTo { .. }) => {
-                types::alike(env, a_value.ty(), b_value.ty(), true)
-            }
+            _ if env.is_reference(a) && env.is_reference(b) => types::alike(env, a, b, true),
             _ => false,
         },
     )

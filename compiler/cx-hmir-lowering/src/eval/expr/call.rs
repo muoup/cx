@@ -112,7 +112,7 @@ fn apply(
     let values = arguments(context, body, &signature, declared, applied, &args, partial)?;
     if partial {
         let residual = types::residual(&signature, |index| values[index].is_some());
-        let ty = types::realize(context.env_mut(), HMIRTypeKind::Function(residual), span);
+        let ty = types::callable(context.env_mut(), residual, span);
         return Ok(Evaluation::Ready(value::curried(ty, callee, values)));
     }
     hmir_call(context, span, callee, values.into_iter().flatten().collect())
@@ -294,6 +294,11 @@ fn coerce_callee(
     callee: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<(HMIRValue, HMIRFnSignature<HMIRTypeID>)> {
+    let env = context.env();
+    let callee = match env.is_function(env.referent(callee.ty())) {
+        true => callee,
+        false => coerce::promotion::std_rvalue(context, callee, span)?,
+    };
     let ty = callee.ty();
     let (subject, ty) = match *context.env().resolve_kind(ty) {
         HMIRTypeKind::ReferenceTo { inner, .. } => (inner, ty),

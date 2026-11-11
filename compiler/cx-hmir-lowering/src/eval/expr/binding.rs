@@ -137,10 +137,9 @@ pub(crate) fn eval_let(
             context.env().resolve_kind(subject),
             HMIRTypeKind::Function(_)
         );
-        let inferred = if function && !types::comptime_only(context.env(), subject) {
-            types::pointer(context.env_mut(), subject, &span)
-        } else {
-            inferred
+        let inferred = match function && referent.is_none() {
+            true => types::reference(context.env_mut(), subject, None, &span),
+            false => inferred,
         };
         declared
             .try_complete(context, body, Some(inferred))?
@@ -150,8 +149,11 @@ pub(crate) fn eval_let(
                     None => ty,
                 };
                 let value = coerce::implicit::standard(context, value, ty, &span)?;
-                let function = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_));
-                if is_runtime && function && types::comptime_only(context.env(), ty) {
+                let function = context.env().referent(ty);
+                if is_runtime
+                    && context.env().is_function(function)
+                    && types::comptime_only(context.env(), function)
+                {
                     emit::storage::bind_local(context, local_id, value);
                     return Ok(Evaluation::Ready(value::unit(context.env())));
                 }

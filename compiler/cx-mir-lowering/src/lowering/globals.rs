@@ -183,15 +183,6 @@ fn lower_initializer(
             }
             _ => panic!("string initializer has an invalid destination type"),
         },
-        MIRConstant::Function(id) => LMIRGlobalInitializer::Function(
-            context
-                .unit
-                .function(*id)
-                .expect("missing function in global initializer")
-                .prototype()
-                .symbol_name
-                .to_string(),
-        ),
         MIRConstant::BlockAddress { function, label } => {
             let (function, block) = context.block_address(*function, label);
             LMIRGlobalInitializer::BlockAddress {

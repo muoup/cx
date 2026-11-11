@@ -90,7 +90,7 @@ pub(crate) fn reference(
         return Ok(None);
     };
     let signature = signature(context.env(), ty, index);
-    let callable = types::realize(context.env_mut(), HMIRTypeKind::Function(signature), span);
+    let callable = types::callable(context.env_mut(), signature, span);
     let constructor = HMIRImmediate::Constructor { ty, variant: index };
     Ok(Some(HMIRValue::new(callable, constructor)))
 }

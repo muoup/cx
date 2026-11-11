@@ -99,7 +99,6 @@ pub enum LMIRValue {
         val: FloatWrapper,
     },
     Global(ElementID),
-    FunctionRef(CXIdent),
     BlockAddress {
         function: CXIdent,
         block: LMIRBlockID,

@@ -113,16 +113,6 @@ pub(super) fn lower_constant(
             let base = LMIRValue::Global(context.global.string(value));
             memory::offset(context, base, *offset)
         }
-        MIRConstant::Function(id) => LMIRValue::FunctionRef(
-            context
-                .global
-                .unit
-                .function(*id)
-                .expect("unknown MIR function")
-                .prototype()
-                .symbol_name
-                .clone(),
-        ),
         MIRConstant::BlockAddress { function, label } => {
             let (function, block) = context.global.block_address(*function, label);
             LMIRValue::BlockAddress { function, block }

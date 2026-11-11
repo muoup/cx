@@ -5,7 +5,8 @@ pub mod storage;
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRConstant, MIRInstructionKind, MIRPlaceDecl, MIRRegisterDecl, MIRTarget, MIRValue,
+    MIRConstant, MIRFunctionID, MIRInstructionKind, MIRPlaceDecl, MIRRegisterDecl, MIRTarget,
+    MIRValue,
     constant::MIRAddressable, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
@@ -101,7 +102,7 @@ pub fn constant(
             value: *value,
             ty: mir_float(float.width()),
         },
-        (HMIRImmediate::Address(address), kind) => self::address(context, address, kind, span)?,
+        (HMIRImmediate::Address(address), _) => self::address(context, address, span)?,
         (HMIRImmediate::Aggregate { fields: items }, kind) => {
             let mut fields = Vec::with_capacity(items.len());
             for (index, item) in items.iter().enumerate() {
@@ -125,20 +126,25 @@ pub fn constant(
             }
         }
         (HMIRImmediate::Constructor { ty, variant }, _) => {
-            MIRConstant::Function(variant::function(context.env_mut(), *ty, *variant, span)?)
+            function(variant::function(context.env_mut(), *ty, *variant, span)?)
         }
         (HMIRImmediate::Curried { callee, args }, _) => {
-            MIRConstant::Function(call::dependent::template(context, callee, args, ty, span)?)
+            function(call::dependent::template(context, callee, args, ty, span)?)
         }
         (constant, _) => unreachable!("{constant:?} has no runtime form"),
     })
 }
 
-// A function designator is the function itself; any other address is a constant pointer into what it names
+fn function(function: MIRFunctionID) -> MIRConstant {
+    MIRConstant::Address {
+        base: MIRAddressable::Function(function),
+        offset: 0,
+    }
+}
+
 fn address(
     context: &mut LocalLoweringContext,
     address: &HMIRAddress<Addressable>,
-    kind: HMIRTypeKind,
     span: &TokenRange,
 ) -> CXResult<MIRConstant> {
     let offset = address.offset();
@@ -146,11 +152,7 @@ fn address(
         Addressable::Def(def) => {
             if declaration::is_function(context.env().symbols().resolve_definition(*def)) {
                 let prototype = lower_prototype(context.env_mut(), *def, span)?;
-                let function = context.env_mut().module_mut().declare_function(prototype);
-                if matches!(kind, HMIRTypeKind::Function(_)) {
-                    return Ok(MIRConstant::Function(function));
-                }
-                MIRAddressable::Function(function)
+                MIRAddressable::Function(context.env_mut().module_mut().declare_function(prototype))
             } else {
                 let object = symbol::value_type(context.env_mut(), *def)?;
                 MIRAddressable::Global(global::declare(context.env_mut(), *def, object, span)?)

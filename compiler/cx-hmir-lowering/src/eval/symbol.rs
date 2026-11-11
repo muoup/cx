@@ -61,7 +61,7 @@ pub(crate) fn signature(
     def: HMIRDefID,
 ) -> CXResult<HMIRFnSignature<HMIRTypeID>> {
     let value = value(env, def)?;
-    let HMIRTypeKind::Function(signature) = env.resolve_kind(value.ty()) else {
+    let HMIRTypeKind::Function(signature) = env.resolve_kind(env.referent(value.ty())) else {
         unreachable!("a function binding has a function type")
     };
     Ok(signature.clone())
@@ -174,7 +174,7 @@ fn function_value(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let signature = flow::top(types::eval_signature(context, function))?;
-    let ty = types::realize(context.env_mut(), HMIRTypeKind::Function(signature), span);
+    let ty = types::callable(context.env_mut(), signature, span);
     let address = HMIRAddress::new(Addressable::Def(id), 0);
     Ok(HMIRValue::new(ty, HMIRImmediate::Address(address)))
 }

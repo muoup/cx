@@ -31,6 +31,33 @@ pub(crate) fn std_rvalue(
     }
 }
 
+// The rvalue a C operator or a variadic argument takes, where a function decays to a pointer to it
+pub(crate) fn operand(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let value = std_rvalue(context, value, span)?;
+    match function_pointer(context, value, span)? {
+        Coercion::Applied(value) | Coercion::Unapplied(value) => Ok(value),
+    }
+}
+
+// A reference to a runtime function converts to a pointer to it without an address-of
+pub(crate) fn function_pointer(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<Coercion> {
+    let env = context.env();
+    match env.reference_inner(value.ty()) {
+        Some(function) if env.is_function(function) && !types::comptime_only(env, function) => {
+            address(context, value, function, span)
+        }
+        _ => Ok(Coercion::Unapplied(value)),
+    }
+}
+
 pub(crate) fn step(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
@@ -73,9 +100,7 @@ pub(crate) fn step(
             let char = types::qualify::specify(context, char, qualifiers, span);
             address(context, value, char, span)
         }
-        HMIRTypeKind::Function(_) if !types::comptime_only(env, subject) => {
-            address(context, value, subject, span)
-        }
+        HMIRTypeKind::Function(_) => Ok(Coercion::Unapplied(value)),
         _ if subject != value.ty() => {
             reference_load(context, value, subject, span).map(Coercion::Applied)
         }

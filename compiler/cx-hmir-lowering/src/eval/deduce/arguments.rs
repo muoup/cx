@@ -153,8 +153,8 @@ impl<'a> Deduction<'a> {
         let env = context.env();
         match ty.kind() {
             HMIRExprTypeKind::PointerTo(inner) => {
-                let actual = actual.and_then(|actual| match env.resolve_kind(actual) {
-                    HMIRTypeKind::Function(_) => Some(actual),
+                let actual = actual.and_then(|actual| match env.resolve_kind(env.referent(actual)) {
+                    HMIRTypeKind::Function(_) => Some(env.referent(actual)),
                     _ => env
                         .pointer_inner(actual)
                         .or_else(|| env.array_inner(actual)),
@@ -195,7 +195,7 @@ impl<'a> Deduction<'a> {
             }
             HMIRExprTypeKind::Function(signature) => {
                 let actual = actual
-                    .map(|actual| env.pointer_inner(actual).unwrap_or(actual))
+                    .map(|actual| env.pointer_inner(actual).unwrap_or_else(|| env.referent(actual)))
                     .and_then(|actual| match env.resolve_kind(actual) {
                         HMIRTypeKind::Function(actual)
                             if actual.is_variadic() == signature.is_variadic()

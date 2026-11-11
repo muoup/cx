@@ -268,18 +268,16 @@ pub(crate) fn eval_address_of(
 
     Ok(Evaluation::Ready(
         match context.env().resolve_kind(value.ty()) {
-            HMIRTypeKind::Function(_) => {
-                if types::comptime_only(context.env(), value.ty()) {
-                    return Err(hmir_error(
-                        span,
-                        &typecheck::COMPTIME_ONLY_TYPE,
-                        "take the address of".into(),
-                    )
-                    .into());
-                }
-
-                let ty = types::pointer(context.env_mut(), value.ty(), span);
-                value.with_ty(ty)
+            HMIRTypeKind::ReferenceTo { inner, .. }
+                if context.env().is_function(*inner)
+                    && types::comptime_only(context.env(), *inner) =>
+            {
+                return Err(hmir_error(
+                    span,
+                    &typecheck::COMPTIME_ONLY_TYPE,
+                    "take the address of".into(),
+                )
+                .into());
             }
 
             HMIRTypeKind::ReferenceTo { inner, bitfield } => {
@@ -330,7 +328,7 @@ pub(crate) fn dereference(
     base: Option<&HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let pointer = promotion::std_rvalue(context, pointer, span)?;
+    let pointer = promotion::operand(context, pointer, span)?;
     let Some(inner) = context.env().pointer_inner(pointer.ty()) else {
         let kind = (types::name(context.env(), pointer.ty()), "a pointer".into());
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));

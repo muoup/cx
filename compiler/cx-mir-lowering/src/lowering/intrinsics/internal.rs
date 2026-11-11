@@ -41,21 +41,6 @@ pub(super) fn lower(context: &mut FunctionContext<'_, '_>, op: &MIRInternalIntri
             let address = LMIRValue::Global(context.global.string(string));
             write_target(context, out, address, None);
         }
-        I::GetFnPtr { out, fn_id } => {
-            let name = context
-                .global
-                .unit
-                .function(*fn_id)
-                .unwrap()
-                .prototype()
-                .symbol_name
-                .to_string();
-            output(
-                context,
-                out,
-                LMIRInstructionKind::GetFunctionAddr { func: name },
-            );
-        }
         I::Bitcast { out, value, .. } => {
             let value = read(context, value);
             output(
