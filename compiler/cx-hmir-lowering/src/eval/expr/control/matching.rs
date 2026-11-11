@@ -21,7 +21,7 @@ use crate::{
         aggregate::{pattern, variant::Variant},
         coerce, eval, eval_comptime,
         flow::{self, Evaluation},
-        types,
+        helpers, types,
     },
     log::hmir_error,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
@@ -63,19 +63,19 @@ pub(crate) fn eval_match(
         }
     };
 
-    emit::open_scope(context, span);
+    emit::open_scope(context);
     let (subject, dispatch) = if owned {
-        let storage = emit::allocate(context, ty, body.local(local).name().cloned(), span)?;
-        emit::initialize(context, &storage, Some(&subject), span)?;
-        let reference = types::reference(context.env_mut(), ty, None, span);
-        emit::bind_local(context, local, storage.clone().with_ty(reference));
-        (storage, subject)
+        let name = body.local(local).name().cloned();
+        let storage = emit::storage::allocate(context, ty, name, span)?;
+        emit::storage::initialize(context, &storage, Some(&subject), span)?;
+        emit::storage::bind_local(context, local, storage.clone());
+        (storage.with_ty(ty), subject)
     } else {
-        emit::bind_local(context, local, subject.clone());
+        emit::storage::bind_local(context, local, subject.clone());
         (subject.clone(), subject)
     };
     let dispatch = match variants {
-        Some(_) => emit::tag(context, &dispatch, span)?,
+        Some(_) => helpers::tag(context, &dispatch, span)?,
         None => dispatch,
     };
     let dispatch = coerce::arithmetic(context, dispatch, span)?;
@@ -208,10 +208,9 @@ fn bind_arm(
 ) -> CXResult<()> {
     let owned = !context.env().is_reference(subject.ty());
     let ty = context.env().referent(subject.ty());
-    let source = if owned {
-        emit::reference(context, subject, span)?
-    } else {
-        subject.clone()
+    let source = match owned {
+        true => subject.clone().with_ty(types::reference(context.env_mut(), ty, None, span)),
+        false => subject.clone(),
     };
     let consumes = match pattern {
         HMIRPattern::Binding(local) => pattern::bind(context, body, *local, source, owned, span)?,
@@ -228,7 +227,7 @@ fn bind_arm(
         _ => false,
     };
     if owned && consumes {
-        emit::invalidate(context, subject, MIRInvalidationKind::Move, span);
+        emit::storage::invalidate(context, subject, MIRInvalidationKind::Move, span);
     }
     Ok(())
 }
@@ -263,8 +262,8 @@ fn lower_arms(
     let declared = context
         .env()
         .is_reference(state.subject.ty())
-        .then(|| emit::runtime::storage::scoped_places(context));
-    emit::open_scope(context, body.expr(arm).span());
+        .then(|| context.runtime().declared_places());
+    emit::open_scope(context);
     bind_arm(context, body, &state.subject, &pattern, &state.span)?;
     let result = arm_value(context, body, arm, &state.span, declared);
     let result = closing(context, body, result, &state.span);
@@ -272,7 +271,7 @@ fn lower_arms(
     let span = state.span.clone();
     let result = flow::finally(context, body, result, move |context, _, _| {
         if let Some(source) = source {
-            emit::invalidate(context, &source, MIRInvalidationKind::Drop, &span);
+            emit::storage::invalidate(context, &source, MIRInvalidationKind::Drop, &span);
         }
         Ok(())
     });
@@ -303,7 +302,7 @@ fn arm_value(
     let span = span.clone();
     eval(context, body, arm)?.map(context, move |context, value| {
         let outlives = declared
-            .is_some_and(|declared| emit::runtime::storage::scoped_places(context) == declared);
+            .is_some_and(|declared| context.runtime().declared_places() == declared);
         if outlives && context.env().is_reference(value.ty()) {
             return Ok(value);
         }

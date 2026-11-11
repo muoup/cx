@@ -245,6 +245,10 @@ pub(crate) fn canonical(def: &HMIRDef) -> &HMIRDeclaration {
         .expect("a symbol has declaration content")
 }
 
+pub(crate) fn is_function(def: &HMIRDef) -> bool {
+    matches!(canonical(def).kind(), Some(HMIRDefKind::Function(_)))
+}
+
 pub(crate) fn function(def: &HMIRDef) -> &HMIRFunction {
     match canonical(def).kind() {
         Some(HMIRDefKind::Function(function)) => function,

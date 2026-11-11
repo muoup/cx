@@ -13,7 +13,7 @@ use crate::{
     eval::{
         EvalResult, coerce, control, eval, expr,
         flow::Evaluation,
-        types,
+        helpers, types,
     },
     log::hmir_error,
     value::{HMIRValue, immediate::HMIRImmediate},
@@ -84,7 +84,7 @@ pub(crate) fn binary_operands(
         {
             let element = *element;
             let ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
-            emit::difference(context, &lhs, &rhs, element, ty, span)
+            helpers::difference(context, &lhs, &rhs, element, ty, span)
         }
         (left, right)
             if is_comparison(op)
@@ -109,32 +109,10 @@ pub(crate) fn binary_operands(
                 }
             };
             let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-            emit::binary(context, op, &lhs, &rhs, ty, span)
+            helpers::binary(context, op, &lhs, &rhs, ty, span)
         }
         _ => arithmetic(context, span, op, lhs, rhs),
     }
-}
-
-pub fn dereference(
-    context: &mut LocalLoweringContext,
-    pointer: HMIRValue,
-    base: Option<&HMIRValue>,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let Some(inner) = context.env().pointer_inner(pointer.ty()) else {
-        let subject = "dereferencing";
-        let expected = "a pointer type";
-        let found = types::name(context.env(), pointer.ty());
-
-        return Err(hmir_error(
-            span,
-            &typecheck::TYPE_REQUIREMENT,
-            (subject.into(), expected.into(), found.into()),
-        ));
-    };
-
-    emit::null_check(context, base.unwrap_or(&pointer), span)?;
-    Ok(pointer.with_ty(types::reference(context.env_mut(), inner, None, span)))
 }
 
 fn arithmetic(
@@ -148,7 +126,7 @@ fn arithmetic(
         HMIRBinaryOp::LShift | HMIRBinaryOp::RShift => lhs.ty(),
         _ => rhs.ty(),
     };
-    let Some(common) = coerce::common(context, lhs.ty(), operand, span) else {
+    let Some(common) = coerce::promotion::common(context, lhs.ty(), operand, span) else {
         let operands = (
             op.path().into(),
             types::name(context.env(), lhs.ty()),
@@ -182,7 +160,7 @@ fn arithmetic(
         true => types::int(context.env_mut(), HMIRIntWidth::I1, false, span),
         false => common,
     };
-    emit::binary(context, op, &lhs, &rhs, result, span)
+    helpers::binary(context, op, &lhs, &rhs, result, span)
 }
 
 fn pointer_offset(
@@ -197,7 +175,7 @@ fn pointer_offset(
         matches!(context.env().resolve_kind(index.ty()), HMIRTypeKind::Int(int) if int.signed());
     let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, signed, span);
     let index = coerce::implicit::standard(context, index, offset_ty, span)?;
-    emit::offset(context, &pointer, &index, element, subtract, span)
+    helpers::offset(context, &pointer, &index, element, subtract, span)
 }
 
 pub(crate) fn eval_unary(
@@ -211,7 +189,7 @@ pub(crate) fn eval_unary(
         HMIRUnaryOp::LNot => {
             let value = (eval(context, body, operand))?.ready()?;
             let value = coerce::condition(context, value, span)?;
-            Ok(Evaluation::Ready(emit::unary(context, op, &value, span)?))
+            Ok(Evaluation::Ready(helpers::unary(context, op, &value, span)?))
         }
         HMIRUnaryOp::PreIncrement
         | HMIRUnaryOp::PreDecrement
@@ -227,7 +205,7 @@ pub(crate) fn eval_unary(
             match (op, context.env().resolve_kind(value.ty())) {
                 (HMIRUnaryOp::Neg, HMIRTypeKind::Float(_) | HMIRTypeKind::Int(_))
                 | (HMIRUnaryOp::BNot, HMIRTypeKind::Int(_)) => {
-                    Ok(Evaluation::Ready(emit::unary(context, op, &value, span)?))
+                    Ok(Evaluation::Ready(helpers::unary(context, op, &value, span)?))
                 }
                 (_, HMIRTypeKind::Float(_)) => {
                     Err(hmir_error(span, &typecheck::FLOATING_OPERAND, op.path().into()).into())
@@ -272,17 +250,17 @@ fn increment(
     let updated = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Int(_) => {
             let one = HMIRValue::new(ty, HMIRImmediate::Int(1));
-            emit::binary(context, op, &current, &one, ty, span)?
+            helpers::binary(context, op, &current, &one, ty, span)?
         }
         HMIRTypeKind::Float(_) => {
             let one = HMIRValue::new(ty, HMIRImmediate::Float(FloatWrapper::from(1.0)));
-            emit::binary(context, op, &current, &one, ty, span)?
+            helpers::binary(context, op, &current, &one, ty, span)?
         }
         HMIRTypeKind::PointerTo(element) => {
             let element = *element;
             let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
             let one = HMIRValue::new(offset_ty, HMIRImmediate::Int(1));
-            emit::offset(
+            helpers::offset(
                 context,
                 &current,
                 &one,
@@ -296,6 +274,6 @@ fn increment(
             return Err(hmir_error(span, &typecheck::INVALID_OPERAND, operand));
         }
     };
-    emit::write(context, &target, &updated, span)?;
+    emit::storage::write(context, &target, &updated, span)?;
     Ok(if prefix { target } else { current })
 }

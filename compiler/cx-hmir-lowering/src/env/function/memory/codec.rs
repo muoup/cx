@@ -13,8 +13,12 @@ use cx_util::unsafe_float::FloatWrapper;
 
 use super::{Fault, Image};
 use crate::{
-    emit::comptime::int, env::HMIREnvironment, eval::types, log::hmir_error,
-    lower::types::lower_type, value::immediate::HMIRImmediate,
+    emit::comptime::int,
+    env::HMIREnvironment,
+    eval::types,
+    log::hmir_error,
+    lower::types::lower_type,
+    value::{HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) fn layout(
@@ -110,18 +114,18 @@ pub(super) fn extract(
     unit: &Image,
     bitfield: HMIRBitfield,
     span: &TokenRange,
-) -> CXResult<HMIRImmediate> {
+) -> CXResult<HMIRValueKind> {
     let HMIRTypeKind::Int(int) = *env.resolve_kind(ty) else {
         unreachable!("a bitfield holds an integer")
     };
     let word = unit
         .bytes(0..unit.len())
         .map_err(|fault| fault.error(span))?;
-    Ok(HMIRImmediate::Int(bits(word, int::signed(int), bitfield)))
+    Ok(HMIRImmediate::Int(bits(word, int::signed(int), bitfield)).into())
 }
 
-pub(super) fn insert(unit: &Image, value: &HMIRImmediate, bitfield: HMIRBitfield) -> Image {
-    let HMIRImmediate::Int(value) = value else {
+pub(super) fn insert(unit: &Image, value: &HMIRValueKind, bitfield: HMIRBitfield) -> Image {
+    let HMIRValueKind::Immediate(HMIRImmediate::Int(value)) = value else {
         unreachable!("a bitfield holds an integer")
     };
     let mut image = Image::zeroed(unit.len());
@@ -168,14 +172,19 @@ fn set_bits(bytes: &mut [u8], value: i128, bitfield: HMIRBitfield) {
     bytes.copy_from_slice(&word.to_le_bytes()[..length]);
 }
 
+// An address of comptime storage is held as an opaque cell, like any value without a byte representation
 pub(super) fn encode(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
-    value: &HMIRImmediate,
+    value: &HMIRValueKind,
     span: &TokenRange,
 ) -> CXResult<Image> {
-    let mut image = Image::zeroed(layout(env, ty, span)?.size());
-    write(env, ty, value, &mut image, 0, span)?;
+    let size = layout(env, ty, span)?.size();
+    let mut image = Image::zeroed(size);
+    match value {
+        HMIRValueKind::Immediate(value) => write(env, ty, value, &mut image, 0, span)?,
+        value => image.put_cell(0, size, value.clone()),
+    }
     Ok(image)
 }
 
@@ -245,13 +254,47 @@ fn write(
         }
         (_, value) => {
             let size = layout(env, ty, span)?.size();
-            image.put_cell(offset, size, value.clone());
+            image.put_cell(offset, size, value.clone().into());
         }
     }
     Ok(())
 }
 
 pub(super) fn decode(
+    env: &mut HMIREnvironment,
+    ty: HMIRTypeID,
+    image: &Image,
+    span: &TokenRange,
+) -> CXResult<HMIRValueKind> {
+    let size = layout(env, ty, span)?.size();
+    if let Some(value) = image.cell(0, size).filter(|_| opaque(env, ty)) {
+        return Ok(value.clone());
+    }
+    immediate(env, ty, image, 0, span).map(HMIRValueKind::Immediate)
+}
+
+// A type whose values may be held as cells rather than bytes
+fn opaque(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
+    !matches!(
+        env.resolve_kind(ty),
+        HMIRTypeKind::Int(_)
+            | HMIRTypeKind::Float(_)
+            | HMIRTypeKind::Void
+            | HMIRTypeKind::Unreachable
+            | HMIRTypeKind::Array { .. }
+            | HMIRTypeKind::Struct { .. }
+            | HMIRTypeKind::TaggedUnion { .. }
+    )
+}
+
+fn cell(image: &Image, offset: usize, size: usize) -> Option<Result<HMIRImmediate, Fault>> {
+    image.cell(offset, size).map(|value| match value {
+        HMIRValueKind::Immediate(value) => Ok(value.clone()),
+        _ => Err(Fault::Nested),
+    })
+}
+
+fn immediate(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
     image: &Image,
@@ -276,7 +319,7 @@ pub(super) fn decode(
             let stride = layout(env, element, span)?.size();
             HMIRImmediate::Aggregate {
                 fields: (0..length as usize)
-                    .map(|index| decode(env, element, image, offset + index * stride, span))
+                    .map(|index| immediate(env, element, image, offset + index * stride, span))
                     .collect::<CXResult<_>>()?,
             }
         }
@@ -291,7 +334,7 @@ pub(super) fn decode(
                     ..
                 } = layout
                 else {
-                    items.push(decode(
+                    items.push(immediate(
                         env,
                         *field.ty(),
                         image,
@@ -314,8 +357,8 @@ pub(super) fn decode(
             HMIRImmediate::Aggregate { fields: items }
         }
         HMIRTypeKind::Union { fields } => {
-            if let Some(value) = image.cell(offset, layout(env, ty, span)?.size()) {
-                return Ok(value.clone());
+            if let Some(value) = cell(image, offset, layout(env, ty, span)?.size()) {
+                return value.map_err(fault);
             }
             let mut members = Vec::with_capacity(fields.len());
             for (member, field) in fields.iter().enumerate() {
@@ -324,7 +367,7 @@ pub(super) fn decode(
             members.sort_by_key(|(size, _)| std::cmp::Reverse(*size));
             let mut failure = None;
             for (_, member) in members {
-                match decode(env, *fields[member].ty(), image, offset, span) {
+                match immediate(env, *fields[member].ty(), image, offset, span) {
                     Ok(value) => return Ok(value),
                     Err(error) => {
                         failure.get_or_insert(error);
@@ -339,13 +382,13 @@ pub(super) fn decode(
             let Some(field) = fields.get(variant) else {
                 return Err(fault(Fault::Discriminant));
             };
-            let payload = Box::new(decode(env, *field.ty(), image, offset, span)?);
+            let payload = Box::new(immediate(env, *field.ty(), image, offset, span)?);
             HMIRImmediate::TaggedUnion { variant, payload }
         }
         kind => {
             let size = layout(env, ty, span)?.size();
-            if let Some(value) = image.cell(offset, size) {
-                return Ok(value.clone());
+            if let Some(value) = cell(image, offset, size) {
+                return value.map_err(fault);
             }
             let bytes = image.bytes(offset..offset + size).map_err(fault)?;
             match kind {

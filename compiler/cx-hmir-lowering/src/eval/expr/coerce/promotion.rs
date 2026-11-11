@@ -13,7 +13,7 @@ use super::Coercion;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{expr, flow, staged, types},
+    eval::{expr, flow, helpers, staged, types},
     log::hmir_error,
     value::{HMIRValue, HMIRValueKind},
 };
@@ -58,7 +58,7 @@ pub(crate) fn step(
                 types::element(context, subject, span).expect("an array has an element type");
             let value = match context.env().is_reference(value.ty()) {
                 true => value,
-                false => emit::temporary(context, value, span)?,
+                false => helpers::temporary(context, &value, span)?,
             };
             address(context, value, element, span)
         }
@@ -89,14 +89,8 @@ fn address(
     pointee: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<Coercion> {
-    let storage = match context.env().reference_inner(value.ty()) {
-        Some(inner) => HMIRValue::indirect(inner, value),
-        None => value,
-    };
     let pointer = types::pointer(context.env_mut(), pointee, span);
-    Ok(Coercion::Applied(emit::address(
-        context, &storage, pointer, span,
-    )?))
+    Ok(Coercion::Applied(value.with_ty(pointer)))
 }
 
 pub fn reference_load(
@@ -121,7 +115,7 @@ pub fn reference_load(
         expr::require_impure(context, span, "reading a mutable pointer")?;
     }
 
-    emit::copy(context, value, span)
+    emit::storage::read(context, &value, span)
 }
 
 pub(super) fn integer(
@@ -152,7 +146,7 @@ pub(super) fn argument(
     }
 }
 
-pub(super) fn common(
+pub(crate) fn common(
     context: &mut LocalLoweringContext,
     lhs: HMIRTypeID,
     rhs: HMIRTypeID,

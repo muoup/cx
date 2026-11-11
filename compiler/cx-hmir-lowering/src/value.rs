@@ -1,3 +1,4 @@
+pub mod address;
 pub mod immediate;
 pub mod staged;
 
@@ -5,7 +6,10 @@ use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
 use cx_intrinsics::Intrinsic;
 use cx_util::dense_id;
 
-use crate::value::immediate::{Addressable, HMIRImmediate};
+use crate::value::{
+    address::{Addressable, HMIRAddress},
+    immediate::HMIRImmediate,
+};
 
 dense_id!(HMIRRegisterID, "$");
 dense_id!(HMIRPlaceID, "p");
@@ -26,33 +30,32 @@ pub fn as_int(value: &HMIRValue) -> Option<i128> {
     }
 }
 
-pub fn as_function(value: &HMIRValue) -> Option<HMIRDefID> {
+fn as_addressable(value: &HMIRValue) -> Option<&Addressable> {
     match value.kind() {
         HMIRValueKind::Immediate(HMIRImmediate::Address(address)) if address.offset() == 0 => {
-            match address.base() {
-                Addressable::Def(function) => Some(*function),
-                _ => None,
-            }
+            Some(address.base())
         }
         _ => None,
     }
 }
 
+pub fn as_function(value: &HMIRValue) -> Option<HMIRDefID> {
+    match as_addressable(value)? {
+        Addressable::Def(function) => Some(*function),
+        _ => None,
+    }
+}
+
 pub fn as_literal(value: &HMIRValue) -> Option<&str> {
-    match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Address(address)) if address.offset() == 0 => {
-            match address.base() {
-                Addressable::Literal(string) => Some(string),
-                _ => None,
-            }
-        }
+    match as_addressable(value)? {
+        Addressable::Literal(string) => Some(string),
         _ => None,
     }
 }
 
 pub fn as_place(value: &HMIRValue) -> Option<HMIRPlaceID> {
     match value.kind() {
-        HMIRValueKind::Place(place) => Some(*place),
+        HMIRValueKind::Reference(reference) if reference.offset() == 0 => Some(*reference.base()),
         _ => None,
     }
 }
@@ -79,15 +82,13 @@ pub struct HMIRValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HMIRValueKind {
-    /// Well-formed representation of a full value, all comptime contexts must return values in this form
+    /// Well-formed representation of a full value in any context, which is the form a comptime evaluation
+    /// converges to when it hands its value back to runtime
     Immediate(HMIRImmediate),
 
-    /// Addressable storage local to a function
-    /// 
-    /// Note that this shape was intentionally separated from HMIRImmediate::Address, while it is in essence addressable,
-    /// and offset-addresses are well-defined here, they are not valid for a comptime context to return, and there is no
-    /// issue of C backcompatibility as local pointers are not representable in comptime contexts like global initializers 
-    Place(HMIRPlaceID),
+    /// An address into storage local to the function evaluating it, whether runtime or comptime; it is never
+    /// well-formed outside of that function, so a comptime value holding one cannot converge
+    Reference(HMIRAddress<HMIRPlaceID>),
 
     /// Intermediate computed values of a function, non-addressable
     Register(HMIRRegisterID),
@@ -106,7 +107,7 @@ impl HMIRValue {
         self.ty = ty;
         self
     }
-    
+
     pub fn ty(&self) -> HMIRTypeID {
         self.ty
     }
@@ -132,8 +133,8 @@ impl From<HMIRRegisterID> for HMIRValueKind {
     }
 }
 
-impl From<HMIRPlaceID> for HMIRValueKind {
-    fn from(value: HMIRPlaceID) -> Self {
-        HMIRValueKind::Place(value)
+impl From<HMIRAddress<HMIRPlaceID>> for HMIRValueKind {
+    fn from(value: HMIRAddress<HMIRPlaceID>) -> Self {
+        HMIRValueKind::Reference(value)
     }
 }

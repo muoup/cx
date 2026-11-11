@@ -11,8 +11,7 @@ use crate::{
         HMIREnvironment,
         function::{FnContext, LocalLoweringContext, RuntimeContext},
     },
-    eval::{aggregate::variant, types},
-    value,
+    eval::aggregate::variant,
 };
 
 pub(crate) fn lower(
@@ -26,14 +25,11 @@ pub(crate) fn lower(
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
     let mut context = LocalLoweringContext::new(env, None, runtime);
 
-    let scope = emit::open_scope(&mut context, &span);
+    let scope = emit::open_scope(&mut context);
     let payload = match variant::payload(context.env(), ty, index) {
         Some(payload) => {
-            let reference = types::reference(context.env_mut(), payload, None, &span);
-            let param =
-                runtime::storage::parameter(&mut context, payload, None, &span)?.with_ty(reference);
-            let origin = value::as_place(&param).expect("a parameter names its own storage");
-            let moved = emit::storage::lift(&mut context, &param, origin, &span)?;
+            let param = runtime::storage::parameter(&mut context, payload, None, &span)?;
+            let moved = emit::storage::lift(&mut context, &param, &span)?;
             emit::storage::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span);
             Some(moved)
         }

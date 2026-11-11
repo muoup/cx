@@ -9,12 +9,11 @@ use cx_util::identifier::CXIdent;
 
 use super::variant;
 use crate::{
-    emit,
     env::function::LocalLoweringContext,
     eval::{
         EvalResult, coerce, eval,
         flow::Evaluation,
-        types,
+        helpers, types,
     },
     log::hmir_error,
     value::HMIRValue,
@@ -58,7 +57,7 @@ pub(crate) fn initialize(
         next = index + 1;
         values.push((index, (field_value(context, body, *value, *field.ty()))?.ready()?));
     }
-    Ok(Evaluation::Ready(emit::aggregate(context, ty, &values, span)?))
+    Ok(Evaluation::Ready(helpers::aggregate(context, ty, &values, span)?))
 }
 
 fn array(
@@ -97,7 +96,7 @@ fn array(
         Some(_) => ty,
         None => types::array(context.env_mut(), ty, fields.len() as u64, span),
     };
-    Ok(Evaluation::Ready(emit::aggregate(context, ty, &values, span)?))
+    Ok(Evaluation::Ready(helpers::aggregate(context, ty, &values, span)?))
 }
 
 fn tagged(

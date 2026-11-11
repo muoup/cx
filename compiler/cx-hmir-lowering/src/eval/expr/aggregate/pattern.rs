@@ -17,7 +17,7 @@ use crate::{
     eval::{
         EvalResult, coerce, eval, eval_type,
         flow::{self, Evaluation},
-        types,
+        helpers, types,
     },
     log::hmir_error,
     value::{HMIRValue, immediate::HMIRImmediate},
@@ -82,8 +82,7 @@ pub(crate) fn payload(
         ..Default::default()
     };
     let ty = types::qualify::specify(context, ty, qualifiers, span);
-    let value = emit::field(context, source, index, ty, span)?;
-    emit::reference(context, &value, span)
+    helpers::field(context, source, index, ty, span)
 }
 
 pub(crate) fn bind(
@@ -123,17 +122,16 @@ pub(crate) fn bind(
         None => {
             let ty = types::qualify::unqualified(context, ty, span);
             let value = if owned {
-                emit::copy(context, source, span)?
+                emit::storage::read(context, &source, span)?
             } else {
                 coerce::implicit::standard(context, source, ty, span)?
             };
             (coerce::implicit::standard(context, value, ty, span)?, ty)
         }
     };
-    let binding = types::reference(context.env_mut(), binding_ty, None, span);
-    let destination = emit::allocate(context, binding_ty, local_info.name().cloned(), span)?.with_ty(binding);
-    emit::initialize(context, &destination, Some(&value), span)?;
-    emit::bind_local(context, local, destination);
+    let destination = emit::storage::allocate(context, binding_ty, local_info.name().cloned(), span)?;
+    emit::storage::initialize(context, &destination, Some(&value), span)?;
+    emit::storage::bind_local(context, local, destination);
     Ok(reference.is_none())
 }
 
@@ -159,14 +157,14 @@ pub(crate) fn eval_is(
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind).into());
     }
     let Variant { index, payload } = self::variant(context, body, ty, pattern, span)?;
-    let tag = emit::tag(context, &subject, span)?;
+    let tag = helpers::tag(context, &subject, span)?;
     let expected = HMIRValue::new(tag.ty(), HMIRImmediate::Int(index as i128));
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    let result = emit::binary(context, HMIRBinaryOp::Eq, &tag, &expected, boolean, span)?;
+    let result = helpers::binary(context, HMIRBinaryOp::Eq, &tag, &expected, boolean, span)?;
     if let Some(HMIRPattern::Binding(local)) = inner.as_deref() {
         let owned = !context.env().is_reference(subject.ty());
         let subject = match owned {
-            true => emit::temporary(context, subject, span)?,
+            true => helpers::temporary(context, &subject, span)?,
             false => subject,
         };
         let value = self::payload(context, &subject, index, payload, span)?;

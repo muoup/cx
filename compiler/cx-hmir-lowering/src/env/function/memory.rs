@@ -1,7 +1,7 @@
 mod codec;
 
 use rustc_hash::FxHashMap;
-use std::{cell::Cell as Counter, collections::BTreeMap, ops::Range};
+use std::{collections::BTreeMap, ops::Range};
 
 use cx_hmir::{
     HMIRDefID,
@@ -14,23 +14,23 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::symbol,
     log::hmir_error,
+    lower::declaration,
     value::{
-        HMIRValueKind,
-        immediate::{Addressable, HMIRAddress, HMIRImmediate},
+        HMIRPlaceID, HMIRValueKind,
+        address::{Addressable, HMIRAddress},
+        immediate::HMIRImmediate,
     },
 };
 
 pub(crate) use codec::{field_offset, layout, placement};
 
-thread_local! {
-    static NEXT_REGION: Counter<usize> = const { Counter::new(0) };
-}
-
+// Regions are places of the comptime evaluation; globals and literals read at comptime are regions of their own
 #[derive(Debug, Default)]
 pub(crate) struct Memory {
-    regions: FxHashMap<HMIRRegionID, Image>,
-    globals: FxHashMap<HMIRDefID, HMIRRegionID>,
-    literals: FxHashMap<String, HMIRRegionID>,
+    regions: FxHashMap<HMIRPlaceID, Image>,
+    globals: FxHashMap<HMIRDefID, HMIRPlaceID>,
+    literals: FxHashMap<String, HMIRPlaceID>,
+    next: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -43,7 +43,7 @@ struct Image {
 #[derive(Debug, Clone)]
 struct Cell {
     size: usize,
-    value: HMIRImmediate,
+    value: HMIRValueKind,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,6 +59,7 @@ enum Fault {
     Opaque,
     Forged,
     Discriminant,
+    Nested,
 }
 
 impl Fault {
@@ -77,6 +78,7 @@ impl Fault {
             Self::Opaque => "reading a stored address as plain bytes".into(),
             Self::Forged => "reading plain bytes as an address".into(),
             Self::Discriminant => "reading an invalid tagged union discriminant".into(),
+            Self::Nested => "reading an address of comptime storage as part of a value".into(),
         };
         hmir_error(span, &mir::COMPTIME_INVALID_ACCESS, reason)
     }
@@ -125,14 +127,14 @@ impl Image {
         self.bytes[offset..offset + bytes.len()].copy_from_slice(bytes);
     }
 
-    fn cell(&self, offset: usize, size: usize) -> Option<&HMIRImmediate> {
+    fn cell(&self, offset: usize, size: usize) -> Option<&HMIRValueKind> {
         self.cells
             .get(&offset)
             .filter(|cell| cell.size == size)
             .map(|cell| &cell.value)
     }
 
-    fn put_cell(&mut self, offset: usize, size: usize, value: HMIRImmediate) {
+    fn put_cell(&mut self, offset: usize, size: usize, value: HMIRValueKind) {
         self.cells.insert(offset, Cell { size, value });
     }
 
@@ -172,17 +174,14 @@ impl Image {
 }
 
 impl Memory {
-    fn allocate(&mut self, image: Image) -> HMIRRegionID {
-        let region = NEXT_REGION.with(|next| {
-            let id = next.get();
-            next.set(id + 1);
-            HMIRRegionID::new(id)
-        });
+    fn allocate(&mut self, image: Image) -> HMIRPlaceID {
+        let region = HMIRPlaceID::new(self.next);
+        self.next += 1;
         self.regions.insert(region, image);
         region
     }
 
-    fn literal(&mut self, text: &str) -> HMIRRegionID {
+    fn literal(&mut self, text: &str) -> HMIRPlaceID {
         if let Some(region) = self.literals.get(text) {
             return *region;
         }
@@ -193,7 +192,7 @@ impl Memory {
         region
     }
 
-    fn range(&self, region: HMIRRegionID, offset: i64, size: usize) -> Result<Range<usize>, Fault> {
+    fn range(&self, region: HMIRPlaceID, offset: i64, size: usize) -> Result<Range<usize>, Fault> {
         let capacity = self.regions.get(&region).ok_or(Fault::Dangling)?.len();
         usize::try_from(offset)
             .ok()
@@ -206,15 +205,15 @@ impl Memory {
             })
     }
 
-    fn load(&self, region: HMIRRegionID, offset: i64, size: usize) -> Result<Image, Fault> {
-        let range = self.range(region, offset, size)?;
-        self.regions[&region].slice(range)
+    fn load(&self, location: &HMIRAddress<HMIRPlaceID>, size: usize) -> Result<Image, Fault> {
+        let range = self.range(*location.base(), location.offset(), size)?;
+        self.regions[location.base()].slice(range)
     }
 
-    fn store(&mut self, region: HMIRRegionID, offset: i64, image: &Image) -> Result<(), Fault> {
-        let range = self.range(region, offset, image.len())?;
+    fn store(&mut self, location: &HMIRAddress<HMIRPlaceID>, image: &Image) -> Result<(), Fault> {
+        let range = self.range(*location.base(), location.offset(), image.len())?;
         self.regions
-            .get_mut(&region)
+            .get_mut(location.base())
             .ok_or(Fault::Dangling)?
             .overwrite(range.start, image);
         Ok(())
@@ -222,48 +221,84 @@ impl Memory {
 }
 
 impl LocalLoweringContext<'_, '_, '_> {
-    pub(crate) fn allocate(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CXResult<HMIRRegionID> {
+    pub(crate) fn allocate(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CXResult<HMIRPlaceID> {
         let size = layout(self.env_mut(), ty, span)?.size();
         let image = Image::uninitialized(size);
         Ok(self.memory.borrow_mut().allocate(image))
     }
 
+    // The region and offset an address designates; a static address is only read through
+    pub(crate) fn locate(
+        &mut self,
+        address: &HMIRValueKind,
+        write: bool,
+        span: &TokenRange,
+    ) -> CXResult<HMIRAddress<HMIRPlaceID>> {
+        let invalid = |operation: &str| {
+            Err(hmir_error(
+                span,
+                &mir::COMPTIME_INVALID_OPERATION,
+                operation.into(),
+            ))
+        };
+        let address = match address {
+            HMIRValueKind::Reference(local) => return Ok(local.clone()),
+            HMIRValueKind::Immediate(HMIRImmediate::Int(0)) => {
+                let operation = "dereference".into();
+                return Err(hmir_error(span, &mir::COMPTIME_UNDEFINED_ARITHMETIC, operation));
+            }
+            HMIRValueKind::Immediate(HMIRImmediate::Address(address)) => address,
+            _ => return invalid("accessing storage through this address"),
+        };
+        let region = match address.base() {
+            Addressable::Def(_) | Addressable::Literal(_) if write => {
+                return invalid("writing to storage outside of this evaluation");
+            }
+            Addressable::Def(def)
+                if !declaration::is_function(self.env().symbols().resolve_definition(*def)) =>
+            {
+                self.global(*def, span)?
+            }
+            Addressable::Literal(text) => self.memory.borrow_mut().literal(text),
+            _ => return invalid("accessing storage through this address"),
+        };
+        Ok(HMIRAddress::new(region, address.offset()))
+    }
+
     pub(crate) fn load(
         &mut self,
-        address: &HMIRAddress,
+        location: &HMIRAddress<HMIRPlaceID>,
         ty: HMIRTypeID,
         bitfield: Option<HMIRBitfield>,
         span: &TokenRange,
-    ) -> CXResult<HMIRImmediate> {
-        let region = self.region(address, false, span)?;
+    ) -> CXResult<HMIRValueKind> {
         let size = layout(self.env_mut(), ty, span)?.size();
         let image = self
             .memory
             .borrow()
-            .load(region, address.offset(), size)
+            .load(location, size)
             .map_err(|fault| fault.error(span))?;
         match bitfield {
             Some(bitfield) => codec::extract(self.env(), ty, &image, bitfield, span),
-            None => codec::decode(self.env_mut(), ty, &image, 0, span),
+            None => codec::decode(self.env_mut(), ty, &image, span),
         }
     }
 
     pub(crate) fn store(
         &mut self,
-        address: &HMIRAddress,
+        location: &HMIRAddress<HMIRPlaceID>,
         ty: HMIRTypeID,
-        value: &HMIRImmediate,
+        value: &HMIRValueKind,
         bitfield: Option<HMIRBitfield>,
         span: &TokenRange,
     ) -> CXResult<()> {
-        let region = self.region(address, true, span)?;
         let image = match bitfield {
             Some(bitfield) => {
                 let size = layout(self.env_mut(), ty, span)?.size();
                 let unit = self
                     .memory
                     .borrow()
-                    .load(region, address.offset(), size)
+                    .load(location, size)
                     .map_err(|fault| fault.error(span))?;
                 codec::insert(&unit, value, bitfield)
             }
@@ -271,64 +306,31 @@ impl LocalLoweringContext<'_, '_, '_> {
         };
         self.memory
             .borrow_mut()
-            .store(region, address.offset(), &image)
+            .store(location, &image)
             .map_err(|fault| fault.error(span))
     }
 
     pub(crate) fn copy(
         &mut self,
-        target: &HMIRAddress,
-        source: &HMIRAddress,
+        target: &HMIRAddress<HMIRPlaceID>,
+        source: &HMIRAddress<HMIRPlaceID>,
         ty: HMIRTypeID,
         span: &TokenRange,
     ) -> CXResult<()> {
         let size = layout(self.env_mut(), ty, span)?.size();
-        let from = self.region(source, false, span)?;
-        let to = self.region(target, true, span)?;
         let mut memory = self.memory.borrow_mut();
         memory
-            .load(from, source.offset(), size)
-            .and_then(|image| memory.store(to, target.offset(), &image))
+            .load(source, size)
+            .and_then(|image| memory.store(target, &image))
             .map_err(|fault| fault.error(span))
     }
 
-    fn region(
-        &mut self,
-        address: &HMIRAddress,
-        write: bool,
-        span: &TokenRange,
-    ) -> CXResult<HMIRRegionID> {
-        match address.base() {
-            Addressable::Place(HMIRReference::Region(region)) => Ok(*region),
-            Addressable::Place(HMIRReference::Global(_)) if write => Err(hmir_error(
-                span,
-                &mir::COMPTIME_INVALID_OPERATION,
-                "writing to a runtime global".into(),
-            )),
-            Addressable::Place(HMIRReference::Global(def)) => self.global(*def, span),
-            Addressable::Literal(_) if write => Err(hmir_error(
-                span,
-                &mir::COMPTIME_INVALID_OPERATION,
-                "writing to a string literal".into(),
-            )),
-            Addressable::Literal(text) => Ok(self.memory.borrow_mut().literal(text)),
-            _ => Err(hmir_error(
-                span,
-                &mir::COMPTIME_INVALID_OPERATION,
-                "accessing storage through this address".into(),
-            )),
-        }
-    }
-
-    fn global(&mut self, def: HMIRDefID, span: &TokenRange) -> CXResult<HMIRRegionID> {
+    fn global(&mut self, def: HMIRDefID, span: &TokenRange) -> CXResult<HMIRPlaceID> {
         if let Some(region) = self.memory.borrow().globals.get(&def) {
             return Ok(*region);
         }
         let value = symbol::initialize(self, def)?;
-        let HMIRValueKind::Immediate(constant) = value.kind() else {
-            unreachable!("a global initializer is frozen");
-        };
-        let image = codec::encode(self.env_mut(), value.ty(), constant, span)?;
+        let image = codec::encode(self.env_mut(), value.ty(), value.kind(), span)?;
         let mut memory = self.memory.borrow_mut();
         let region = memory.allocate(image);
         memory.globals.insert(def, region);

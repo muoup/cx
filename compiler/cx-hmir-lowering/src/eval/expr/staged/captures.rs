@@ -14,7 +14,7 @@ use cx_log::{CXResult, catalogue::mir};
 
 use crate::{
     env::function::{FnContext, LocalLoweringContext, scope::Bindings},
-    eval::{coerce, comptime, flow},
+    eval::{coerce, comptime},
     log::hmir_error,
 };
 
@@ -48,7 +48,7 @@ pub(super) fn collect(
             FnContext::Comptime(_) => {
                 let span = body.local(*local).span();
                 let value = coerce::promotion::std_rvalue(context, value, span)?;
-                flow::top(comptime::export(context, value, span))?
+                comptime::converge(context, value, span)?
             }
         };
         captures.insert(*local, value);

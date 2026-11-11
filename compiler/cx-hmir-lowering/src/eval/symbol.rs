@@ -27,7 +27,8 @@ use crate::{
     lower::declaration,
     value::{
         HMIRValue,
-        immediate::{Addressable, HMIRAddress, HMIRImmediate},
+        address::{Addressable, HMIRAddress},
+        immediate::HMIRImmediate,
     },
 };
 
@@ -258,7 +259,7 @@ fn address(
     let reference = types::reference(context.env_mut(), ty, None, span);
     HMIRValue::new(
         reference,
-        HMIRImmediate::Address(HMIRAddress::place(HMIRReference::Global(id))),
+        HMIRImmediate::Address(HMIRAddress::new(Addressable::Def(id), 0)),
     )
 }
 

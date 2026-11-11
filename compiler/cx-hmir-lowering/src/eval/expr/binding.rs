@@ -79,7 +79,7 @@ pub(crate) fn eval_let(
         let value = staged::argument(context, body, initializer, ty)?;
         let span = span.clone();
         return value.map(context, move |context, value| {
-            emit::bind_local(context, local_id, value);
+            emit::storage::bind_local(context, local_id, value);
             Ok(expr::unit(context, &span))
         });
     }
@@ -98,7 +98,7 @@ pub(crate) fn eval_let(
             .is_some_and(|ty| !context.env().is_nocopy(*ty))
         && context.is_runtime();
     if initialized && let Some(storage) = &storage {
-        emit::initialize(context, storage, None, span)?;
+        emit::storage::initialize(context, storage, None, span)?;
     }
 
     let Some(initializer) = initializer else {
@@ -108,7 +108,7 @@ pub(crate) fn eval_let(
             None => declare(context, body, local_id, ty, span)?,
         };
         if !initialized && !context.env().is_nocopy(ty) {
-            emit::initialize(context, &storage, None, span)?;
+            emit::storage::initialize(context, &storage, None, span)?;
         }
         return Ok(Evaluation::Ready(expr::unit(context, span)));
     };
@@ -130,7 +130,7 @@ pub(crate) fn eval_let(
         let inferred = match (as_is, referent) {
             (true, Some(_)) => context.env().referent(value.ty()),
             (true, None) => value.ty(),
-            (false, _) => coerce::value_type(context, value.ty(), &span),
+            (false, _) => types::qualify::value(context, value.ty(), &span),
         };
         let subject = context.env().referent(inferred);
         let function = matches!(
@@ -152,7 +152,7 @@ pub(crate) fn eval_let(
                 let value = coerce::implicit::standard(context, value, ty, &span)?;
                 let function = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_));
                 if is_runtime && function && types::comptime_only(context.env(), ty) {
-                    emit::bind_local(context, local_id, value);
+                    emit::storage::bind_local(context, local_id, value);
                     return Ok(Evaluation::Ready(expr::unit(context, &span)));
                 }
                 let storage = match storage {
@@ -160,9 +160,9 @@ pub(crate) fn eval_let(
                     None => declare(context, body, local_id, ty, &span)?,
                 };
                 if initialized {
-                    emit::write(context, &storage, &value, &span)?;
+                    emit::storage::write(context, &storage, &value, &span)?;
                 } else {
-                    emit::initialize(context, &storage, Some(&value), &span)?;
+                    emit::storage::initialize(context, &storage, Some(&value), &span)?;
                 }
                 Ok(Evaluation::Ready(expr::unit(context, &span)))
             })
@@ -205,9 +205,8 @@ fn declare(
         return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject));
     }
 
-    let reference_type = types::reference(context.env_mut(), ty, None, local.span());
-    let storage = emit::allocate(context, ty, local.name().cloned(), span)?.with_ty(reference_type);
-    emit::bind_local(context, local_id, storage.clone());
+    let storage = emit::storage::allocate(context, ty, local.name().cloned(), span)?;
+    emit::storage::bind_local(context, local_id, storage.clone());
 
     Ok(storage)
 }
@@ -224,7 +223,7 @@ pub(crate) fn eval_block(
         return eval_statements(context, body, span, statements, true, true);
     }
 
-    let scope = emit::open_scope(context, span);
+    let scope = emit::open_scope(context);
     if yields {
         match context.context_mut() {
             FnContext::Runtime(runtime) => runtime.scopes_mut().control_mut(scope).begin_yield(),
@@ -370,7 +369,7 @@ pub(crate) fn eval_scoped(
     }
 
     let span = node.span();
-    emit::open_scope(context, span);
+    emit::open_scope(context);
     let result = eval_statements(context, body, span, &[expr], true, place);
     closing(context, body, result, span)
 }

@@ -26,7 +26,8 @@ use crate::{
     log::hmir_error,
     value::{
         HMIRValue,
-        immediate::{Addressable, HMIRAddress, HMIRImmediate},
+        address::{Addressable, HMIRAddress},
+        immediate::HMIRImmediate,
     },
 };
 
@@ -62,8 +63,11 @@ pub(crate) fn eval_intrinsic(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
-    intrinsic: &VAIntrinsic<HMIRExprID, HMIRExprID>,
+    intrinsic: &HMIRExprIntrinsic,
 ) -> EvalResult<Evaluation<HMIRValue>> {
+    let Intrinsic::VA(intrinsic) = intrinsic else {
+        unreachable!("only variadic intrinsics are lowered to HMIR")
+    };
     let intrinsic = match intrinsic {
         VAIntrinsic::Start { list, last } => {
             let list = (va_list(context, body, *list))?.ready()?;
@@ -79,11 +83,11 @@ pub(crate) fn eval_intrinsic(
             ty: (eval_type(context, body, *ty))?.ready()?,
         },
     };
-    let value = match emit::variadic(context, &intrinsic, span)? {
-        Some(value) => value,
-        None => unit(context, span),
+    let result = match &intrinsic {
+        VAIntrinsic::Arg { ty, .. } => *ty,
+        VAIntrinsic::Start { .. } | VAIntrinsic::End { .. } => unit(context, span).ty(),
     };
-    Ok(Evaluation::Ready(value))
+    Ok(Evaluation::Ready(emit::intrinsics::va(context, &intrinsic, result, span)?))
 }
 
 fn va_list(
@@ -105,7 +109,7 @@ fn va_list(
         return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch).into());
     }
     let ty = types::pointer(context.env_mut(), expected, span);
-    Ok(Evaluation::Ready(emit::address(context, &value, ty, span)?))
+    Ok(Evaluation::Ready(value.with_ty(ty)))
 }
 
 pub(crate) fn require_nonsafe(

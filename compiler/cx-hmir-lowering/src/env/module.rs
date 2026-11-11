@@ -330,10 +330,6 @@ impl MIRFunctionBuilder {
         &self.address_labels
     }
 
-    pub fn places(&self) -> &[MIRPlaceDecl] {
-        self.places.as_raw_slice()
-    }
-
     pub fn allocate_place(&mut self, place: MIRPlaceDecl) -> MIRPlaceID {
         self.places.push(place)
     }

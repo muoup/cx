@@ -20,6 +20,7 @@ use crate::{
         eval,
         expr::{self, require_impure, require_nonsafe},
         flow::{self, EvalExit, Evaluation},
+        helpers,
         op::{binary_operands, eval_operand},
         types::{self, qualify},
     },
@@ -55,8 +56,8 @@ pub(crate) fn eval_assign(
         None => eval(context, body, value)?.complete(context, body, Some(inner))?,
     };
     let value = coerce::implicit::standard(context, value, inner, span)?;
-    emit::invalidate(context, &target, MIRInvalidationKind::Drop, span);
-    emit::initialize(context, &target, Some(&value), span)?;
+    emit::storage::invalidate(context, &target, MIRInvalidationKind::Drop, span);
+    emit::storage::initialize(context, &target, Some(&value), span)?;
     Ok(Evaluation::Ready(target))
 }
 
@@ -81,7 +82,7 @@ fn eval_copy(
     operand: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let value = (eval(context, body, operand))?.ready()?;
-    let ty = coerce::value_type(context, value.ty(), span);
+    let ty = qualify::value(context, value.ty(), span);
     if context.env().is_nocopy(ty) || context.env().is_nodrop(ty) {
         return Err(
             hmir_error(span, &typecheck::UNCOPYABLE, types::name(context.env(), ty)).into(),
@@ -108,7 +109,7 @@ fn eval_move(
         .get_local(&local)
         .cloned()
         .expect("an evaluated local has a binding");
-    let (Some(place), Some(inner)) = (
+    let (Some(_), Some(inner)) = (
         value::as_place(&binding),
         context.env().reference_inner(binding.ty()),
     ) else {
@@ -122,8 +123,8 @@ fn eval_move(
     if context.env().semantics(inner).unsafe_move {
         require_nonsafe(context, span, "move of a type declared as @unsafe_move")?;
     }
-    let moved = emit::lift(context, &binding, place, span)?;
-    emit::invalidate(context, &binding, MIRInvalidationKind::Move, span);
+    let moved = emit::storage::lift(context, &binding, span)?;
+    emit::storage::invalidate(context, &binding, MIRInvalidationKind::Move, span);
     Ok(Evaluation::Ready(moved))
 }
 
@@ -143,7 +144,7 @@ fn eval_leak(
         return Ok(Evaluation::Ready(value));
     }
 
-    emit::invalidate(context, &value, MIRInvalidationKind::Leak, span);
+    emit::storage::invalidate(context, &value, MIRInvalidationKind::Leak, span);
     Ok(Evaluation::Ready(expr::unit(context, span)))
 }
 
@@ -213,9 +214,8 @@ pub(crate) fn adopt(
             return Err(hmir_error(span, &typecheck::TYPE_MISMATCH, mismatch).into());
         }
         let name = body.local(local).name().cloned();
-        let storage = emit::adopt(context, ty, name, &source, span)?;
-        let reference = types::reference(context.env_mut(), ty, None, span);
-        emit::bind_local(context, local, storage.with_ty(reference));
+        let storage = emit::storage::adopt(context, ty, name, &source, span)?;
+        emit::storage::bind_local(context, local, storage);
         Ok(Evaluation::Ready(expr::unit(context, span)))
     })
 }
@@ -261,7 +261,7 @@ pub(crate) fn address_of(
     let value = eval(context, body, operand)?
         .ready()
         .and_then(|value| coerce::collapse(context, value, span).map_err(EvalExit::from))?;
-    if types::bitfield(context.env(), &value).is_some() {
+    if types::bitfield(context.env(), value.ty()).is_some() {
         let usage = "take the address of".into();
         return Err(hmir_error(span, &typecheck::BITFIELD_REFERENCE, usage).into());
     }
@@ -279,7 +279,7 @@ pub(crate) fn address_of(
                 }
 
                 let ty = types::pointer(context.env_mut(), value.ty(), span);
-                emit::address(context, &value, ty, span)?
+                value.with_ty(ty)
             }
 
             HMIRTypeKind::ReferenceTo { inner, bitfield } => {
@@ -294,7 +294,7 @@ pub(crate) fn address_of(
 
                 let inner = *inner;
                 let ty = types::pointer(context.env_mut(), inner, span);
-                emit::address(context, &value, ty, span)?
+                value.with_ty(ty)
             }
 
             _ => {
@@ -337,8 +337,8 @@ pub(crate) fn dereference_hmir(
     };
 
     require_nonsafe(context, span, "dereferencing a pointer")?;
-    emit::null_check(context, base.unwrap_or(&pointer), span);
-    
+    helpers::null_check(context, base.unwrap_or(&pointer), span)?;
+
     let ref_ty = types::reference(context.env_mut(), inner, None, span);
     Ok(pointer.with_ty(ref_ty))
 }

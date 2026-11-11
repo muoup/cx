@@ -18,6 +18,12 @@ pub fn unqualified(
     remove(context, ty, qualifiers, span)
 }
 
+// The type a value of 'ty' reads as: its referent without qualifiers
+pub fn value(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+    let ty = context.env().referent(ty);
+    unqualified(context, ty, span)
+}
+
 // Specifiers only accumulate, so a type that already carries them stands for itself
 pub(crate) fn specify(
     context: &mut LocalLoweringContext,

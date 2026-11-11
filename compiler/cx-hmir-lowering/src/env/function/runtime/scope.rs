@@ -1,7 +1,10 @@
 use cx_hmir::{HMIRUnitID, body::HMIRBodyID, expr::HMIRExprID};
 use cx_mir::MIRBasicBlockID;
 
-use crate::{env::function::Expectations, value::HMIRValue};
+use crate::{
+    env::function::Expectations,
+    value::{HMIRPlaceID, HMIRValue},
+};
 
 #[derive(Debug)]
 pub(crate) struct Exit {
@@ -75,6 +78,7 @@ pub(crate) struct RuntimeScope {
     returning: Option<HMIRUnitID>,
     yields: Option<Vec<(MIRBasicBlockID, HMIRValue)>>,
     quote: Option<HMIRBodyID>,
+    places: Vec<HMIRPlaceID>,
 }
 
 impl RuntimeScope {
@@ -98,6 +102,14 @@ impl RuntimeScope {
 
     pub(crate) fn deferred(&self) -> bool {
         self.deferred
+    }
+
+    pub(crate) fn places(&self) -> &[HMIRPlaceID] {
+        &self.places
+    }
+
+    pub(crate) fn declare(&mut self, place: HMIRPlaceID) {
+        self.places.push(place);
     }
 
     pub(crate) fn defers(&self) -> &[Defer] {

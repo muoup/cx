@@ -17,7 +17,6 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         call::dependent::Frame,
-        coerce,
         deduce::{Incomplete, IncompleteReason, subject},
         eval,
         flow::{self, Evaluation},
@@ -99,7 +98,7 @@ impl<'a> Deduction<'a> {
             HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::ReferenceTo { .. }) => {
                 actual
             }
-            _ => coerce::value_type(context, actual, span),
+            _ => types::qualify::value(context, actual, span),
         }
     }
 

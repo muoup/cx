@@ -12,16 +12,14 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit,
-    env::function::{
-        ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeSlotState,
-    },
+    env::function::{ComptimeContext, FnContext, LocalLoweringContext},
     eval::{
         EvalResult, coerce, deduce, eval,
         flow::{EvalExit, Evaluation, StopReason},
         name::type_value,
     },
     log::hmir_error,
-    value::{self, HMIRReference, HMIRValue, HMIRValueKind, address::HMIRAddress},
+    value::{self, HMIRValue, HMIRValueKind},
 };
 
 // Evaluates an expression in a comptime child that sees only the known values of the visible locals
@@ -66,7 +64,7 @@ pub(crate) fn child<'a, 'global, 'hmir>(
     let comptime = FnContext::Comptime(ComptimeContext::new());
     let mut child = context.child(None, comptime, Some(evaluation));
     for (local, value) in inputs {
-        emit::bind_local(&mut child, local, value);
+        emit::storage::bind_local(&mut child, local, value);
     }
     child
 }
@@ -93,48 +91,54 @@ fn evaluate(
             Some(expected) => coerce::implicit::standard(context, value, expected, &span)?,
             None => coerce::promotion::std_rvalue(context, value, &span)?,
         };
-        export(context, value, &span)
+        Ok(Evaluation::Ready(converge(context, value, &span)?))
     })
 }
 
-pub(crate) fn export(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> EvalResult<Evaluation<HMIRValue>> {
-    let value = settle(context, value, span)?;
-    match value.kind() {
-        HMIRValueKind::Immediate(constant) if !constant.holds_local_address() => {
-            Ok(Evaluation::Ready(value))
-        }
-        _ => {
-            let subject = (
-                "the address of compile-time storage".into(),
-                "the result of a compile-time expression".into(),
-            );
-            Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject).into())
-        }
-    }
-}
-
-fn settle(
+// Brings a compile-time result into its independently well-formed form, which is valid in any context
+pub(crate) fn converge(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    match value.kind() {
-        HMIRValueKind::Immediate(_) => Ok(value),
-        _ if context.env().is_reference(value.ty()) => Err(hmir_error(
-            span,
-            &typecheck::INVALID_CONTEXT,
-            (
-                "a reference to compile-time storage".into(),
-                "an exported value".into(),
-            ),
-        )),
-        HMIRValueKind::Reference(_) | HMIRValueKind::Indirect(_) => {
-            let reference = emit::reference(context, &value, span)?;
-            emit::copy(context, reference, span)
-        }
+    let env = context.env();
+    let contents = matches!(value.kind(), HMIRValueKind::Reference(_))
+        && !context.is_runtime()
+        && !env.is_reference(value.ty())
+        && !env.is_pointer(value.ty());
+    let value = match contents {
+        true => emit::storage::read(context, &value, span)?,
+        false => value,
+    };
+    if let HMIRValueKind::Immediate(_) = value.kind() {
+        return Ok(value);
     }
+    let subject = match context.env().is_reference(value.ty()) {
+        true => ("a reference to compile-time storage", "an exported value"),
+        false => (
+            "the address of compile-time storage",
+            "the result of a compile-time expression",
+        ),
+    };
+    let subject = (subject.0.into(), subject.1.into());
+    Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject))
+}
+
+pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<HMIRValue> {
+    let span = TokenRange::internal();
+    let value = match value.kind() {
+        HMIRValueKind::Reference(_) if !context.is_runtime() => {
+            emit::storage::read(context, value, &span).ok()?
+        }
+        _ => value.clone(),
+    };
+    converge(context, value, &span).ok()
+}
+
+pub(crate) fn inputs(context: &mut LocalLoweringContext) -> Vec<(HMIRLocalID, HMIRValue)> {
+    context
+        .visible_locals()
+        .into_iter()
+        .filter_map(|(local, value)| Some((local, known(context, &value)?)))
+        .collect()
 }

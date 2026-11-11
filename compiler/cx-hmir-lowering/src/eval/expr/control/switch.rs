@@ -222,7 +222,7 @@ fn runtime_switch(
     context.runtime_mut().emit(branch, span.clone());
 
     emit::runtime::flow::switch_to(context, entry);
-    let scope = emit::open_scope(context, span);
+    let scope = emit::open_scope(context);
     context
         .runtime_mut()
         .scopes_mut()
@@ -264,7 +264,7 @@ fn comptime_switch(
     let Some(selected) = selected else {
         return Ok(Evaluation::Ready(unit));
     };
-    let scope = emit::open_scope(context, span);
+    let scope = emit::open_scope(context);
     context
         .comptime_mut()
         .scopes_mut()

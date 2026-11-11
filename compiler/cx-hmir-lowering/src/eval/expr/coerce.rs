@@ -15,7 +15,10 @@ use cx_tokens::TokenRange;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
-    emit, env::{HMIREnvironment, function::LocalLoweringContext}, eval::{EvalResult, eval, eval_type, flow::Evaluation, place::dereference_hmir, types}, log::hmir_error, value::{HMIRValue, immediate::HMIRImmediate},
+    env::{HMIREnvironment, function::LocalLoweringContext},
+    eval::{EvalResult, eval, eval_type, flow::Evaluation, helpers, place::dereference_hmir, types},
+    log::hmir_error,
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) enum Coercion {
@@ -110,7 +113,7 @@ pub(crate) fn aggregate(
             dereference_hmir(context, value, None, span)?
         },
 
-        _ => emit::storage::materialize(context, value, span)?
+        _ => helpers::temporary(context, &value, span)?
     };
 
     aggregate(context, coerced, span)
@@ -169,11 +172,16 @@ fn truth(
         _ => return Ok(Coercion::Unapplied(value)),
     };
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
+    let known = match value.kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Int(value)) => Some(*value != 0),
+        HMIRValueKind::Immediate(HMIRImmediate::Float(value)) => Some(f64::from(value) != 0.0),
+        _ => None,
+    };
     Ok(Coercion::Applied(match known {
         Some(known) => HMIRValue::new(boolean, HMIRImmediate::Int(i128::from(known))),
         None => {
             let zero = HMIRValue::new(ty, zero);
-            emit::binary(context, HMIRBinaryOp::Neq, &value, &zero, boolean, span)?
+            helpers::binary(context, HMIRBinaryOp::Neq, &value, &zero, boolean, span)?
         }
     }))
 }

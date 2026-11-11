@@ -4,14 +4,14 @@ use cx_mir::expr::instruction::MIRInvalidationKind;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use super::{comptime, runtime, unsupported};
 use crate::{
+    emit::{comptime, runtime, unsupported},
     env::function::{FnContext, LocalLoweringContext},
-    value::{HMIRReference, HMIRValue},
+    value::HMIRValue,
 };
 
-// Fresh, uninitialized storage of type 'ty' declared in the current scope, which carries the drop obligations of
-// its type once initialized; binds no local and writes nothing
+// Fresh, uninitialized storage of type 'ty' declared in the current scope, referenced as 'ty&'; it carries the drop
+// obligations of its type once initialized, and binds no local
 pub fn allocate(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
@@ -20,12 +20,12 @@ pub fn allocate(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::storage::allocate(context, ty, name, span),
-        FnContext::Comptime(_) => comptime::allocate(context, ty, name, span),
+        FnContext::Comptime(_) => comptime::storage::allocate(context, ty, name, span),
     }
 }
 
 // Fresh, uninitialized storage of type 'ty' that only carries an expression value, such as a merged result or a
-// temporary that needs an address. Its scope is never opened, so it carries no obligations and is never dropped
+// temporary that needs an address; it belongs to no scope, so it carries no obligations and is never dropped
 pub fn scratch(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
@@ -33,7 +33,7 @@ pub fn scratch(
 ) -> CXResult<HMIRValue> {
     match context.context() {
         FnContext::Runtime(_) => runtime::storage::scratch(context, ty, span),
-        FnContext::Comptime(_) => comptime::allocate(context, ty, None, span),
+        FnContext::Comptime(_) => comptime::storage::allocate(context, ty, None, span),
     }
 }
 
@@ -60,53 +60,34 @@ pub fn bind_local(context: &mut LocalLoweringContext, local: HMIRLocalID, value:
     }
 }
 
-// The contents of a value, copied into a value of their own; the source is not checked for being copyable, so
-// the caller authorizes the copy
-pub fn copy(
+// The contents of the storage a reference designates, copied out as they are now; the source is not checked for
+// being copyable, so the caller authorizes the copy
+pub fn read(
     context: &mut LocalLoweringContext,
-    value: HMIRValue,
+    source: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => runtime::storage::load(context, value, span),
-        FnContext::Comptime(_) => comptime::copy(context, value, span),
+        FnContext::Runtime(_) => runtime::storage::read(context, source, span),
+        FnContext::Comptime(_) => comptime::storage::read(context, source, span),
     }
 }
 
-// The current contents of the place a reference names, captured without copying them; the place stays live, so a
-// move out of it is a separate invalidation
+// The current contents of the place a reference names, taken without copying them; the place stays live, so a move
+// out of it is a separate invalidation
 pub fn lift(
     context: &mut LocalLoweringContext,
     source: &HMIRValue,
-    origin: HMIRReference,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match context.context() {
-        FnContext::Runtime(_) => { 
-            let HMIRReference::Local(local) = origin else {
-                unreachable!("lifting a non-local in runtime")
-            };
-
-            runtime::storage::lift(context, source, local, span)
-        },
-        FnContext::Comptime(_) => comptime::copy(context, source.clone(), span),
+        FnContext::Runtime(_) => runtime::storage::lift(context, source, span),
+        FnContext::Comptime(_) => comptime::storage::read(context, source, span),
     }
 }
 
-// A value held in fresh storage of its own, so that what is derived from it has an origin that is not a constant
-pub fn materialize(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    match context.context() {
-        FnContext::Runtime(_) => runtime::storage::materialize(context, &value, span),
-        FnContext::Comptime(_) => Ok(value),
-    }
-}
-
-// Stores the payload of 'value' into the storage of 'target' and does nothing else: the old contents are not
-// dropped, the target is not marked initialized and the source is not invalidated
+// Stores 'value' into the storage 'target' references and does nothing else: the old contents are not dropped, the
+// target is not marked initialized and the source is not invalidated
 pub fn write(
     context: &mut LocalLoweringContext,
     target: &HMIRValue,
@@ -115,13 +96,13 @@ pub fn write(
 ) -> CXResult<()> {
     match context.context() {
         FnContext::Runtime(_) => runtime::storage::write(context, target, value, span),
-        FnContext::Comptime(_) => comptime::write(context, target, value, span),
+        FnContext::Comptime(_) => comptime::storage::write(context, target, value, span),
     }
 }
 
 // Writes 'value', when given, into 'target' and marks the storage as holding a live value. Storage behind a
-// pointer is untracked and a register is live once written, so neither is marked; a comptime slot tracks byte
-// initialization separately, so bytes that were never written stay unreadable
+// pointer is untracked, so it is not marked; a comptime slot tracks byte initialization separately, so bytes that
+// were never written stay unreadable
 pub fn initialize(
     context: &mut LocalLoweringContext,
     target: &HMIRValue,
@@ -133,34 +114,22 @@ pub fn initialize(
     }
     match context.context() {
         FnContext::Runtime(_) => runtime::storage::initialize(context, target, span),
-        FnContext::Comptime(_) => comptime::initialize(context, target, span),
+        FnContext::Comptime(_) => comptime::storage::initialize(context, target, span),
     }
     Ok(())
 }
 
-// Scratch storage holding a value, for a value that needs an address
-pub fn temporary(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let storage = scratch(context, value.ty(), span)?;
-    initialize(context, &storage, Some(&value), span)?;
-
-    super::reference(context, &storage, span)
-}
-
-// Ends the liveness of the place a value names as a move, drop or leak; registers and storage behind a pointer
-// are untracked. Comptime records this on the concrete slot only: there is no flow analysis over it and a dropped
-// nodrop value is not reported
+// Ends the liveness of the place a reference names as a move, drop or leak; storage behind a pointer is untracked.
+// Comptime records this on the concrete slot only: there is no flow analysis over it and a dropped nodrop value is
+// not reported
 pub fn invalidate(
     context: &mut LocalLoweringContext,
-    value: &HMIRValue,
+    target: &HMIRValue,
     kind: MIRInvalidationKind,
     span: &TokenRange,
 ) {
     match context.context() {
-        FnContext::Runtime(_) => runtime::storage::invalidate(context, value, kind, span),
-        FnContext::Comptime(_) => comptime::invalidate(context, value, kind, span),
+        FnContext::Runtime(_) => runtime::storage::invalidate(context, target, kind, span),
+        FnContext::Comptime(_) => comptime::storage::invalidate(context, target, kind, span),
     }
 }

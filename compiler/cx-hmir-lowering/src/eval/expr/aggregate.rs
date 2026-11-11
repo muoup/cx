@@ -20,12 +20,13 @@ use crate::{
     eval::{
         EvalResult, coerce, eval, eval_type, expr,
         flow::{EvalExit, Evaluation},
+        helpers,
         op::{binary_operands, eval_operand},
         place::dereference_hmir,
         types,
     },
     log::hmir_error,
-    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue},
 };
 
 pub(crate) fn eval_aggregate(
@@ -84,21 +85,14 @@ fn eval_member(
         unreachable!("coerce::aggregate did not return a reference type")
     };
 
-    let index = match context.env().resolve_kind(aggregate_type) {
-        HMIRTypeKind::Struct { fields } => fields.iter().position(|f| f.name() == Some(name)),
-        HMIRTypeKind::Union { fields } => fields.iter().position(|f| f.name() == Some(name)),
+    let fields = member_fields(context.env(), aggregate_type);
+    let Some(index) = fields.iter().position(|field| field.name() == Some(name)) else {
+        let member = (types::name(context.env(), aggregate_type), name.to_string());
+        return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
+    };
+    let ty = *fields[index].ty();
 
-        _ => None,
-    }
-    .ok_or_else(|| hmir_error(span, todo!(), todo!()))?;
-
-    Ok(Evaluation::Ready(emit::field(
-        context,
-        &value,
-        index,
-        aggregate_type,
-        &span,
-    )?))
+    Ok(Evaluation::Ready(helpers::field(context, &value, index, ty, span)?))
 }
 
 fn unpack(
@@ -176,14 +170,9 @@ fn unpack(
         return Err(hmir_error(span, &typecheck::MISSING_ENTITY, entity).into());
     }
 
-    let constant = matches!(
-        source.kind(),
-        HMIRValueKind::Immediate(HMIRImmediate::Aggregate { .. })
-    );
-    let comptime = !context.is_runtime();
-    let source = match constant {
-        true => emit::materialize(context, source, span)?,
-        false => source,
+    let source = match value::as_place(&source) {
+        Some(_) => source,
+        None => helpers::temporary(context, &source, span)?,
     };
     for Projection {
         index,
@@ -192,24 +181,14 @@ fn unpack(
         ty,
     } in projections
     {
-        let projected = emit::field(context, &source, index, ty, span)?;
-        let value = if constant && comptime {
-            projected
-        } else {
-            let reference = emit::reference(context, &projected, span)?;
-            match types::bitfield(context.env(), &reference) {
-                Some(_) => emit::copy(context, reference, span)?,
-                None => {
-                    let origin =
-                        value::as_place(&source).expect("an unpacked value is held in storage");
-                    emit::lift(context, &reference, origin, span)?
-                }
-            }
+        let projected = helpers::field(context, &source, index, ty, span)?;
+        let value = match types::bitfield(context.env(), projected.ty()) {
+            Some(_) => emit::storage::read(context, &projected, span)?,
+            None => emit::storage::lift(context, &projected, span)?,
         };
-        let reference = types::reference(context.env_mut(), ty, None, body.local(local).span());
-        let target = emit::allocate(context, ty, Some(name), span)?.with_ty(reference);
-        emit::initialize(context, &target, Some(&value), span)?;
-        emit::bind_local(context, local, target);
+        let target = emit::storage::allocate(context, ty, Some(name), span)?;
+        emit::storage::initialize(context, &target, Some(&value), span)?;
+        emit::storage::bind_local(context, local, target);
     }
     Ok(Evaluation::Ready(expr::unit(context, span)))
 }
@@ -219,7 +198,7 @@ pub(crate) fn member_fields<'a>(
     ty: HMIRTypeID,
 ) -> &'a [HMIRFieldDef<HMIRTypeID>] {
     match env.resolve_kind(ty) {
-        HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => fields,
+        HMIRTypeKind::Seval_operandtruct { fields } | HMIRTypeKind::Union { fields } => fields,
         _ => &[],
     }
 }

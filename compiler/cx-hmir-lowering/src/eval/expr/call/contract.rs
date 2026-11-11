@@ -19,7 +19,7 @@ use crate::{
         ComptimeContext, Expectations, FnContext, LocalLoweringContext, Permission,
         runtime::RuntimeScope,
     },
-    eval::{EvalResult, coerce, eval, flow::{EvalExit, Evaluation}, types},
+    eval::{EvalResult, coerce, eval, flow::{EvalExit, Evaluation}, helpers, types},
     log::hmir_error,
     lower::declaration,
     value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
@@ -82,13 +82,13 @@ pub(crate) fn call(
     let mut bindings = bind_params(context, contract, args, span)?;
     if let Some(expression) = contract.precondition() {
         let value = condition(context, contract, def.brand(), expression, span)?;
-        emit::runtime::intrinsics::assert(context, &value, Some("precondition failed"), span)?;
+        helpers::assert(context, &value, Some("precondition failed"), span)?;
     }
     let result = emit(context)?;
     if let (Evaluation::Ready(value), Some((local, expression))) = (&result, contract.postcondition()) {
         bindings.extend(bind_result(context, local, Some(value), span)?);
         let value = condition(context, contract, def.brand(), expression, span)?;
-        emit::runtime::intrinsics::assert(context, &value, None, span)?;
+        helpers::assert(context, &value, None, span)?;
     }
     restore(context, bindings);
     Ok(result)
@@ -107,15 +107,15 @@ pub(crate) fn enter(
         let value = context.get_local(param).cloned().expect("parameters are bound before the contract");
         let value = match value.kind() {
             HMIRValueKind::Immediate(_) => value,
-            _ => emit::copy(context, value, span)?,
+            _ => emit::storage::read(context, &value, span)?,
         };
         let value = observe(context, value, span)?;
-        emit::bind_local(context, *local, value);
+        emit::storage::bind_local(context, *local, value);
     }
     if let Some(expression) = contract.precondition() {
         let owner = context.source();
         let value = condition(context, contract, owner, expression, span)?;
-        emit::runtime::intrinsics::assert(context, &value, None, span)?;
+        helpers::assert(context, &value, None, span)?;
     }
     Ok(())
 }
@@ -156,7 +156,7 @@ fn exit_condition(
     let owner = context.source();
     let value = condition(context, contract, owner, expression, span);
     restore(context, bindings);
-    emit::runtime::intrinsics::assert(context, &value?, Some("postcondition failed"), span)
+    helpers::assert(context, &value?, Some("postcondition failed"), span)
 }
 
 fn condition(
@@ -197,7 +197,7 @@ fn observe(
     if let HMIRValueKind::Immediate(_) = value.kind() {
         return Ok(value);
     }
-    let storage = emit::temporary(context, value, span)?;
+    let storage = helpers::temporary(context, &value, span)?;
     let constant = HMIRTypeSemantics { constant: true, ..Default::default() };
     let inner = context.env().referent(storage.ty());
     let ty = types::qualify::specify(context, inner, constant, span);
@@ -237,14 +237,14 @@ fn bind_result(
 
 fn bind(context: &mut LocalLoweringContext, local: HMIRLocalID, value: HMIRValue) -> Shadowed {
     let previous = context.get_local(&local).cloned();
-    emit::bind_local(context, local, value);
+    emit::storage::bind_local(context, local, value);
     Shadowed { local, previous }
 }
 
 fn restore(context: &mut LocalLoweringContext, bindings: Vec<Shadowed>) {
     for Shadowed { local, previous } in bindings.into_iter().rev() {
         match previous {
-            Some(value) => emit::bind_local(context, local, value),
+            Some(value) => emit::storage::bind_local(context, local, value),
             None => context.remove_local(local),
         }
     }

@@ -28,7 +28,8 @@ use crate::{
     lower::declaration,
     value::{
         self, HMIRValue, HMIRValueKind,
-        immediate::{Addressable, HMIRImmediate},
+        address::Addressable,
+        immediate::HMIRImmediate,
     },
 };
 
@@ -296,7 +297,7 @@ fn coerce_callee(
     let (subject, ty) = match *context.env().resolve_kind(ty) {
         HMIRTypeKind::ReferenceTo { inner, .. } => (inner, ty),
         HMIRTypeKind::PointerTo(base) => {
-            helpers::null_check(context, callee.clone(), span)?;
+            helpers::null_check(context, &callee, span)?;
             (base, types::reference(context.env_mut(), base, None, span))
         }
         _ => (ty, types::reference(context.env_mut(), ty, None, span)),

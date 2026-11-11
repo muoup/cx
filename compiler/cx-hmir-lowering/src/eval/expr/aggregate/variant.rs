@@ -9,11 +9,10 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    emit,
     env::{
         HMIREnvironment, function::LocalLoweringContext, generation::Generation, resolver::demand,
     },
-    eval::{expr, types},
+    eval::{expr, helpers, types},
     lower,
     value::{HMIRValue, immediate::HMIRImmediate},
 };
@@ -92,5 +91,5 @@ pub(crate) fn construct(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let payload = payload.unwrap_or_else(|| expr::unit(context, span));
-    emit::aggregate(context, ty, &[(variant, payload)], span)
+    helpers::aggregate(context, ty, &[(variant, payload)], span)
 }

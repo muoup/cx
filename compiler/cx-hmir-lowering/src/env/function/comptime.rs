@@ -3,12 +3,12 @@ use rustc_hash::FxHashMap;
 use cx_hmir::{expr::HMIRExprID, ty::HMIRTypeID};
 use cx_util::identifier::CXIdent;
 
-use crate::env::function::scope::Scopes;
+use crate::{env::function::scope::Scopes, value::HMIRPlaceID};
 
 #[derive(Debug, Default)]
 pub struct ComptimeContext {
     scopes: Scopes<ComptimeScope>,
-    slots: FxHashMap<HMIRRegionID, ComptimeSlot>,
+    slots: FxHashMap<HMIRPlaceID, ComptimeSlot>,
     function: String,
 }
 
@@ -86,17 +86,17 @@ impl ComptimeContext {
         self.scopes.control_mut(index).switch = Some(Switch::Active);
     }
 
-    pub fn slot(&self, region: HMIRRegionID) -> Option<&ComptimeSlot> {
-        self.slots.get(&region)
+    pub fn slot(&self, place: HMIRPlaceID) -> Option<&ComptimeSlot> {
+        self.slots.get(&place)
     }
 
-    pub fn slot_mut(&mut self, region: HMIRRegionID) -> Option<&mut ComptimeSlot> {
-        self.slots.get_mut(&region)
+    pub fn slot_mut(&mut self, place: HMIRPlaceID) -> Option<&mut ComptimeSlot> {
+        self.slots.get_mut(&place)
     }
 
-    pub fn declare_slot(&mut self, region: HMIRRegionID, ty: HMIRTypeID, name: Option<CXIdent>) {
+    pub fn declare_slot(&mut self, place: HMIRPlaceID, ty: HMIRTypeID, name: Option<CXIdent>) {
         let state = ComptimeSlotState::Uninitialized;
-        self.slots.insert(region, ComptimeSlot { ty, name, state });
+        self.slots.insert(place, ComptimeSlot { ty, name, state });
     }
 }
 

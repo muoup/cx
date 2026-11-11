@@ -28,7 +28,7 @@ use crate::{
         staged,
     },
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::immediate::HMIRImmediate,
 };
 
 // A slot naming a parameter is only fixed by the arguments of a call, so the shape leaves it dependent
@@ -224,10 +224,6 @@ pub(crate) fn array(
         .realize_type(HMIRType::new(kind, semantics, span.clone(), None))
 }
 
-pub(crate) fn referent(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRTypeID {
-    env.reference_inner(ty).unwrap_or(ty)
-}
-
 pub(crate) fn owned_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRTypeSemantics {
     match env.resolve_kind(ty) {
         HMIRTypeKind::Array { element, .. }
@@ -300,12 +296,7 @@ pub(crate) fn signatures_alike(
         && alike(env, *a.return_type(), *b.return_type(), false)
 }
 
-// The bitfield behind a reference, or behind the reference an indirect place was reached through
-pub(crate) fn bitfield(env: &HMIREnvironment, value: &HMIRValue) -> Option<HMIRBitfield> {
-    let reference = match value.kind() {
-        HMIRValueKind::Indirect(pointer) => pointer.ty(),
-        _ => value.ty(),
-    };
+pub(crate) fn bitfield(env: &HMIREnvironment, reference: HMIRTypeID) -> Option<HMIRBitfield> {
     match env.resolve_kind(reference) {
         HMIRTypeKind::ReferenceTo { bitfield, .. } => *bitfield,
         _ => None,

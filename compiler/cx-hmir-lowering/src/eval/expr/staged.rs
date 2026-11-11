@@ -125,7 +125,7 @@ pub(crate) fn eval_splice(
             let mut params = Vec::new();
             for arg in &args {
                 let value = (eval(context, body, *arg))?.ready()?;
-                params.push(coerce::value_type(context, value.ty(), &span));
+                params.push(types::qualify::value(context, value.ty(), &span));
             }
             let ty = signature(context, params, expected, &span);
             let code = eval(context, body, literal)?.complete(context, body, Some(ty))?;
@@ -140,7 +140,7 @@ pub(crate) fn splice(
     value: HMIRValue,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let value = (comptime::export(context, value, span))?.ready()?;
+    let value = comptime::converge(context, value, span)?;
     let staged = matches!(
         context.env().resolve_kind(value.ty()),
         HMIRTypeKind::Staged(_)
@@ -224,7 +224,7 @@ fn check_params(
         .child(None, comptime, Some(evaluation))
         .sourced(quote.source());
     for (local, value) in captures {
-        emit::bind_local(&mut child, local, value);
+        emit::storage::bind_local(&mut child, local, value);
     }
     for (local, expected) in quote.params().iter().zip(expected) {
         let declared = body.local(*local).ty();
@@ -372,13 +372,12 @@ pub(crate) fn materialize(
                 true => value,
                 false => {
                     let name = body.local(*local).name().cloned();
-                    let reference = types::reference(context.env_mut(), target, None, span);
-                    let storage = emit::allocate(context, target, name, span)?;
-                    emit::initialize(context, &storage, Some(&value), span)?;
-                    storage.with_ty(reference)
+                    let storage = emit::storage::allocate(context, target, name, span)?;
+                    emit::storage::initialize(context, &storage, Some(&value), span)?;
+                    storage
                 }
             };
-            emit::bind_local(context, *local, value);
+            emit::storage::bind_local(context, *local, value);
         }
         let span = span.clone();
         eval(context, body, quote.root())?

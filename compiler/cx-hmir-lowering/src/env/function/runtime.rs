@@ -7,7 +7,6 @@ use cx_mir::{
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
-use index_vec::IndexVec;
 
 use crate::{
     env::{function::scope::Scopes, module::MIRFunctionBuilder},
@@ -31,6 +30,7 @@ pub struct RuntimeContext {
     emission: Emission,
 
     scopes: Scopes<RuntimeScope>,
+    declared: usize,
     labels: FxHashMap<String, MIRBasicBlockID>,
 }
 
@@ -41,6 +41,7 @@ impl RuntimeContext {
             emission: Emission::Enabled,
 
             scopes: Scopes::default(),
+            declared: 0,
             labels: FxHashMap::default(),
         }
     }
@@ -62,7 +63,14 @@ impl RuntimeContext {
     }
 
     pub fn emit(&mut self, kind: MIRInstructionKind, span: TokenRange) {
-        todo!()
+        if self.emission != Emission::Enabled {
+            return;
+        }
+        let terminator = kind.is_terminator();
+        self.builder.emit(kind, span);
+        if terminator {
+            self.emission = Emission::Suppressed;
+        }
     }
 
     pub fn emit_intrinsic(&mut self, intrinsic: impl Into<MIRIntrinsic>, span: TokenRange) {
@@ -83,6 +91,17 @@ impl RuntimeContext {
 
     pub(crate) fn scopes_mut(&mut self) -> &mut Scopes<RuntimeScope> {
         &mut self.scopes
+    }
+
+    // Places declared here are dropped when the innermost open scope closes
+    pub(crate) fn declare(&mut self, place: HMIRPlaceID) {
+        let top = self.scopes.top();
+        self.scopes.control_mut(top).declare(place);
+        self.declared += 1;
+    }
+
+    pub(crate) fn declared_places(&self) -> usize {
+        self.declared
     }
 
     pub(crate) fn deferred(&self) -> bool {

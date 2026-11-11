@@ -70,7 +70,7 @@ pub(crate) fn eval_if(
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    emit::open_scope(context, span);
+    emit::open_scope(context);
     let result = branch(context, body, span, condition, then_branch, else_branch);
     closing(context, body, result, span)
 }
@@ -106,7 +106,7 @@ fn branch(
                 None => merge_block,
             };
 
-            let declared = emit::runtime::storage::scoped_places(context);
+            let declared = context.runtime().declared_places();
             let condition = eval_condition(context, body, condition)?.ready()?;
             emit::runtime::flow::branch(context, condition, then_block, else_block, span);
 
@@ -128,7 +128,7 @@ fn branch(
                             arms.extend(
                                 otherwise.map(|value| (emit::runtime::flow::current_block(context), value)),
                             );
-                            let place = emit::runtime::storage::scoped_places(context) == declared;
+                            let place = context.runtime().declared_places() == declared;
                             merge(context, arms, place, &span)
                         })
                 } else {
@@ -174,20 +174,20 @@ pub(crate) fn merge(
         false => merged_type(context, &arms, span),
     };
     let result = match ty {
-        Some(ty) => Some(emit::scratch(context, ty, span)?),
+        Some(ty) => Some(emit::storage::scratch(context, ty, span)?),
         None => None,
     };
     for (block, value) in arms {
         emit::runtime::flow::switch_to(context, block);
         if let Some((ty, result)) = ty.zip(result.as_ref()) {
             let value = coerce::implicit::standard(context, value, ty, span)?;
-            emit::initialize(context, result, Some(&value), span)?;
+            emit::storage::initialize(context, result, Some(&value), span)?;
         }
         emit::runtime::flow::jump(context, merge, span);
     }
     emit::runtime::flow::switch_to(context, merge);
     let result = match result {
-        Some(result) => emit::runtime::storage::capture(context, result, span)?,
+        Some(result) => emit::storage::read(context, &result, span)?,
         None => eval::expr::unit(context, span),
     };
     Ok(Evaluation::Ready(result))
@@ -208,12 +208,12 @@ fn merged_type(
             None => ty,
             Some(current) if alike(context.env(), current, ty, true) => current,
             Some(current) => {
-                let left = coerce::value_type(context, current, span);
-                let right = coerce::value_type(context, ty, span);
+                let left = types::qualify::value(context, current, span);
+                let right = types::qualify::value(context, ty, span);
                 let env = context.env();
                 match (env.pointer_inner(left), env.pointer_inner(right)) {
                     (Some(left), Some(right)) => coerce::pointer(context, left, right, span),
-                    _ => coerce::common(context, current, ty, span).unwrap_or(current),
+                    _ => coerce::promotion::common(context, current, ty, span).unwrap_or(current),
                 }
             }
         });
@@ -277,17 +277,15 @@ pub(crate) fn eval_short_circuit(
     emit::runtime::flow::switch_to(context, rhs_block);
     let right = flow::catch_diverged(logical_operand(context, body, span, rhs))?.ready()?;
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
-    let result = emit::scratch(context, ty, span)?;
+    let result = emit::storage::scratch(context, ty, span)?;
     if let Some(right) = right {
-        emit::initialize(context, &result, Some(&right), span)?;
+        emit::storage::initialize(context, &result, Some(&right), span)?;
         emit::runtime::flow::jump(context, merge, span);
     }
 
     emit::runtime::flow::switch_to(context, short_block);
-    emit::initialize(context, &result, Some(&left), span)?;
+    emit::storage::initialize(context, &result, Some(&left), span)?;
     emit::runtime::flow::jump(context, merge, span);
     emit::runtime::flow::switch_to(context, merge);
-    Ok(Evaluation::Ready(emit::runtime::storage::capture(
-        context, result, span,
-    )?))
+    Ok(Evaluation::Ready(emit::storage::read(context, &result, span)?))
 }

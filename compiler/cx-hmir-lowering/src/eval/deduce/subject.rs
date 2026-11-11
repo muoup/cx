@@ -20,7 +20,7 @@ use crate::{
     },
     log::hmir_error,
     value::{
-        self, HMIRReference, HMIRValue, HMIRValueKind,
+        self, HMIRValue, HMIRValueKind,
         immediate::HMIRImmediate,
         staged::{Quote, QuoteRef},
     },
@@ -118,22 +118,9 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
             Some(known) if value::as_type(known).is_some() || known == &value => {
                 shadow(&mut child, known.clone(), span)?
             }
-            _ => {
-                let ty = child.env().referent(value.ty());
-                let storage = match child.env().is_reference(value.ty()) {
-                    true => emit::scratch(&mut child, ty, span)?.with_ty(value.ty()),
-                    false => emit::runtime::placeholder(&mut child, value.ty(), span)?,
-                };
-                if let HMIRValueKind::Reference(HMIRReference::Local(slot)) = storage.kind() {
-                    child
-                        .runtime_mut()
-                        .slot_mut(*slot)
-                        .set_known(known.cloned());
-                }
-                storage.with_ty(value.ty())
-            }
+            _ => placeholder(&mut child, &value, span)?,
         };
-        emit::bind_local(&mut child, local, value);
+        emit::storage::bind_local(&mut child, local, value);
     }
     let scopes = child.runtime_mut().scopes_mut();
     let parent = scopes.top();
@@ -163,15 +150,23 @@ fn shadow(
             HMIRImmediate::Quote(QuoteRef::new(code)),
         ));
     }
-    let frozen = matches!(
-        value.kind(),
-        HMIRValueKind::Immediate(constant) if !constant.holds_local_address()
-    );
-    if frozen {
-        return Ok(value);
+    match value.kind() {
+        HMIRValueKind::Immediate(_) => Ok(value),
+        _ => placeholder(context, &value, span),
     }
+}
+
+// Unevaluated storage standing in for a local whose contents are unknown
+fn placeholder(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
     match context.env().reference_inner(value.ty()) {
-        Some(ty) => Ok(emit::scratch(context, ty, span)?.with_ty(value.ty())),
-        None => emit::runtime::placeholder(context, value.ty(), span),
+        Some(ty) => emit::storage::scratch(context, ty, span),
+        None => Ok(HMIRValue::new(
+            value.ty(),
+            emit::runtime::register(context, value.ty(), span)?,
+        )),
     }
 }

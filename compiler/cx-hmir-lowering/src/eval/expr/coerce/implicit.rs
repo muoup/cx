@@ -13,7 +13,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
         coerce::applied,
-        expr,
+        expr, helpers,
         types::{self, signatures_alike},
     },
     log::hmir_error,
@@ -29,32 +29,6 @@ pub(crate) fn standard(
     let source = value.ty();
     let coercion = convert(context, value, target, span, false)?;
     applied(context, coercion, source, target, span)
-}
-
-// Collapses various indirections to a goal state of a T&. If provided an owned T, it will be materialized
-// such that a reference is produced.
-pub(crate) fn aggregate(
-    context: &mut LocalLoweringContext,
-    value: HMIRValue,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    let step = match context.env().resolve_kind(value.ty()) {
-        HMIRTypeKind::ReferenceTo { inner, .. } => {
-            if !context.env().is_reference(*inner) {
-                return Ok(value);
-            }
-
-            promotion::reference_load(context, value, *inner, span)?
-        }
-
-        HMIRTypeKind::PointerTo(inner) => {
-            todo!()
-        }
-
-        _ => emit::materialize(context, value, span)?,
-    };
-
-    aggregate(context, step, span)
 }
 
 pub(super) fn convert(
@@ -145,7 +119,7 @@ fn step(
                 None => types::array(context.env_mut(), target, length, span),
             };
             return Ok(Coercion::Applied(
-                emit::copy(context, value, span)?.with_ty(ty),
+                emit::storage::read(context, &value, span)?.with_ty(ty),
             ));
         }
         (HMIRTypeKind::ReferenceTo { inner, .. }, HMIRTypeKind::ReferenceTo { .. })
@@ -208,11 +182,11 @@ fn step(
         }
         (HMIRTypeKind::Int(_), HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_))
         | (HMIRTypeKind::Float(_), HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_)) => {
-            Coercion::Applied(emit::cast(context, &value, target, span)?)
+            Coercion::Applied(helpers::cast(context, &value, target, span)?)
         }
         (HMIRTypeKind::PointerTo(_), HMIRTypeKind::Int(_)) => {
             expr::require_nonsafe(context, span, "Unsafe type conversion")?;
-            Coercion::Applied(emit::cast(context, &value, target, span)?)
+            Coercion::Applied(helpers::cast(context, &value, target, span)?)
         }
         (HMIRTypeKind::PointerTo(from), HMIRTypeKind::PointerTo(to))
             if (env.is_void(from) || env.is_void(to)) && qualified(env, source, target) =>
@@ -237,15 +211,11 @@ fn bind(
     if !compatible(env, value.ty(), inner) {
         return Ok(Coercion::Unapplied(value));
     }
-    
     let storage = match is_designator(env, value.ty()) {
         true => value,
-        false => emit::temporary(context, value, span)?,
+        false => helpers::temporary(context, &value, span)?,
     };
-    
-    Ok(Coercion::Applied(emit::address(
-        context, &storage, target, span,
-    )?))
+    Ok(Coercion::Applied(storage.with_ty(target)))
 }
 
 fn string(

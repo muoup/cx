@@ -53,7 +53,7 @@ pub(crate) fn lower<'hmir>(
             .builder_mut()
             .add_address_label(name.to_string(), block);
     }
-    let root = emit::open_scope(&mut context, span);
+    let root = emit::open_scope(&mut context);
     let scopes = context.runtime_mut().scopes_mut();
     scopes.control_mut(root).set_return(id.brand());
     let completion = definition(&mut context, function, &signature, comptime_bindings, span);

@@ -21,7 +21,7 @@ pub(crate) fn eval_for(
     increment: HMIRExprID,
     loop_body: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    emit::open_scope(context, span);
+    emit::open_scope(context);
     let result = match eval(context, body, init) {
         Ok(Evaluation::Ready(_)) => eval_while(
             context,
@@ -69,7 +69,7 @@ pub(crate) fn eval_while(
     );
 
     emit::runtime::flow::switch_to(context, condition_block);
-    let scope = emit::open_scope(context, span);
+    let scope = emit::open_scope(context);
     let Some(condition) =
         flow::catch_diverged(eval_condition(context, body, condition))?.ready()?
     else {

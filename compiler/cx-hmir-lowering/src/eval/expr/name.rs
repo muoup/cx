@@ -23,8 +23,7 @@ use crate::{
     log::hmir_error,
     lower::{declaration, global, types::lower_prototype},
     value::{
-        self, HMIRReference, HMIRValue, HMIRValueKind,
-        immediate::HMIRImmediate,
+        self, HMIRValue, HMIRValueKind, address::Addressable, immediate::HMIRImmediate,
     },
 };
 
@@ -73,7 +72,8 @@ pub(crate) fn eval_def(
             request(context, def);
         }
         HMIRValueKind::Immediate(HMIRImmediate::Address(address))
-            if let Some(HMIRReference::Global(def)) = address.whole_place() =>
+            if let Addressable::Def(def) = *address.base()
+                && address.offset() == 0 =>
         {
             request(context, def);
             if emitting {

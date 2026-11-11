@@ -111,7 +111,7 @@ impl<'a> Frame<'a> {
         }
         let value = match caller.is_runtime() {
             true => value,
-            false => flow::top(comptime::export(caller, value, span))?,
+            false => comptime::converge(caller, value, span)?,
         };
         let function = self.function;
         self.enter(caller, span, |child| {
@@ -120,8 +120,7 @@ impl<'a> Frame<'a> {
             let span = declaration.span();
             let target = emit::storage::allocate(child, ty, declaration.name().cloned(), span)?;
             emit::storage::initialize(child, &target, Some(&value), span)?;
-            let reference = types::reference(child.env_mut(), ty, None, span);
-            emit::storage::bind_local(child, local, target.with_ty(reference));
+            emit::storage::bind_local(child, local, target);
             Ok(())
         })?;
         Ok(value)
@@ -470,7 +469,7 @@ fn execute(
             unreachable!("a function body returns or diagnoses fallthrough")
         }
     };
-    let value = flow::top(comptime::export(context, value, span))?;
+    let value = comptime::converge(context, value, span)?;
     let env = context.env();
     if let Some(slot) = context.comptime().unconsumed(|ty| env.is_nodrop(ty)) {
         let place = slot
