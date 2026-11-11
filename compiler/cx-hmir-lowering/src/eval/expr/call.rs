@@ -77,7 +77,7 @@ fn apply(
         return staged::apply(context, body, callee, args, span);
     }
 
-    let (callee, applied) = value::uncurried(callee);
+    let (callee, applied) = value::uncurried(callable(context, callee, span)?);
     let (callee, signature) = coerce_callee(context, callee, span)?;
     let def = value::as_function(&callee);
     if context.is_unevaluated() && signature.stage() == HMIRFunctionStage::Comptime && def.is_some() {
@@ -289,16 +289,21 @@ pub(crate) fn hmir_call(
 
 // To simplify semantics, all function callees are unified into a @fn& types. Whether a direct or indirect
 // call is generated at runtime depends on the underlying MIRValue produced, not on the type.
+// A callee read out of the storage holding it, unless it names a function itself
+fn callable(context: &mut LocalLoweringContext, callee: HMIRValue, span: &TokenRange) -> CXResult<HMIRValue> {
+    let env = context.env();
+    match env.is_function(env.referent(callee.ty())) {
+        true => Ok(callee),
+        false => coerce::promotion::std_rvalue(context, callee, span),
+    }
+}
+
 fn coerce_callee(
     context: &mut LocalLoweringContext,
     callee: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<(HMIRValue, HMIRFnSignature<HMIRTypeID>)> {
-    let env = context.env();
-    let callee = match env.is_function(env.referent(callee.ty())) {
-        true => callee,
-        false => coerce::promotion::std_rvalue(context, callee, span)?,
-    };
+    let callee = callable(context, callee, span)?;
     let ty = callee.ty();
     let (subject, ty) = match *context.env().resolve_kind(ty) {
         HMIRTypeKind::ReferenceTo { inner, .. } => (inner, ty),

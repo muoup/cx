@@ -8,7 +8,6 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    emit::comptime,
     env::function::{LocalLoweringContext, comptime::ComptimeSlotState, memory::layout},
     eval::types,
     log::hmir_error,
@@ -128,19 +127,7 @@ pub fn write(
     };
     let ty = context.env().referent(target.ty());
     let bitfield = types::bitfield(context.env(), target.ty());
-    let storage = matches!(value.kind(), HMIRValueKind::Reference(_))
-        && !context.env().is_reference(value.ty())
-        && !context.env().is_pointer(value.ty());
-    match storage && bitfield.is_none() {
-        true => {
-            let source = locate(context, value, false, span)?;
-            context.copy(&location, &source, ty, span)?;
-        }
-        false => {
-            let value = comptime::resolve(context, value, span)?;
-            context.store(&location, ty, &value, bitfield, span)?;
-        }
-    }
+    context.store(&location, ty, value.kind(), bitfield, span)?;
     if let Some(slot) = context.comptime_mut().slot_mut(*location.base()) {
         slot.set_state(ComptimeSlotState::Live);
     }

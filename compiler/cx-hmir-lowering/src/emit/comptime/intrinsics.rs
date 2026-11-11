@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 
 use crate::{
     emit::{
-        comptime::{self, ScalarFault, float, int, storage},
+        comptime::{ScalarFault, float, int, storage},
         unsupported,
     },
     env::function::{
@@ -44,17 +44,17 @@ fn overflow(span: &TokenRange) -> CXError {
     hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ())
 }
 
-fn int_value(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<i128> {
-    match comptime::immediate(context, value, span)? {
-        Some(HMIRImmediate::Int(value)) => Ok(value),
-        _ => unsupported(span, "integer arithmetic on this value"),
+fn int_value(value: &HMIRValue, span: &TokenRange) -> CXResult<i128> {
+    match value::as_int(value) {
+        Some(value) => Ok(value),
+        None => unsupported(span, "integer arithmetic on this value"),
     }
 }
 
-fn float_value(context: &mut LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<f64> {
+fn float_value(context: &LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<f64> {
     let width = types::float_type(context.env(), value.ty()).width();
-    match comptime::immediate(context, value, span)? {
-        Some(HMIRImmediate::Float(value)) => Ok(float::round(f64::from(&value), width)),
+    match value.kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Float(value)) => Ok(float::round(f64::from(value), width)),
         _ => unsupported(span, "floating arithmetic on this value"),
     }
 }
@@ -68,14 +68,14 @@ pub fn int(
     match intrinsic {
         IntIntrinsic::Binary { op, lhs, rhs } => {
             let ty = types::int_type(context.env(), lhs.ty());
-            let (lhs, rhs) = (int_value(context, lhs, span)?, int_value(context, rhs, span)?);
+            let (lhs, rhs) = (int_value(lhs, span)?, int_value(rhs, span)?);
             int::binary(*op, lhs, rhs, ty)
                 .map(|value| value::int(context.env(), value, result))
                 .map_err(|error| fault(span, error, op.path()))
         }
         IntIntrinsic::Unary { op, value } => {
             let ty = types::int_type(context.env(), value.ty());
-            let value = int_value(context, value, span)?;
+            let value = int_value(value, span)?;
             Ok(value::int(context.env(), int::unary(*op, value, ty), result))
         }
         IntIntrinsic::ToFloat {
@@ -85,17 +85,17 @@ pub fn int(
         } => {
             let ty = types::int_type(context.env(), value.ty());
             let width = types::float_type(context.env(), *target).width();
-            let value = int_value(context, value, span)?;
+            let value = int_value(value, span)?;
             Ok(value::float(context.env(), int::to_float(value, ty, *signed, width), result))
         }
         IntIntrinsic::Cast {
             value, sign_extend, ..
         } => {
             let bits = int::bits(types::int_type(context.env(), value.ty()));
-            let value = int_value(context, value, span)?;
+            let value = int_value(value, span)?;
             Ok(value::int(context.env(), int::extend(value, bits, *sign_extend), result))
         }
-        IntIntrinsic::ToPtr { value, .. } => match int_value(context, value, span)? {
+        IntIntrinsic::ToPtr { value, .. } => match int_value(value, span)? {
             0 => Ok(HMIRValue::new(result, HMIRImmediate::Int(0))),
             _ => unsupported(span, "converting this integer to an address"),
         },
@@ -186,24 +186,24 @@ pub fn pointer(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     match intrinsic {
-        PointerIntrinsic::ToInt { ptr, .. } => match comptime::immediate(context, ptr, span)? {
-            Some(HMIRImmediate::Int(0)) => Ok(value::int(context.env(), 0, result)),
+        PointerIntrinsic::ToInt { ptr, .. } => match value::as_int(ptr) {
+            Some(0) => Ok(value::int(context.env(), 0, result)),
             _ => unsupported(span, "converting this address to an integer"),
         },
         PointerIntrinsic::Offset { op, ptr, offset } => {
-            let bytes = int_value(context, offset, span)?;
+            let bytes = int_value(offset, span)?;
             let bytes = match op {
                 PointerOffsetOp::Add => Some(bytes),
                 PointerOffsetOp::Sub => bytes.checked_neg(),
             };
             let bytes = bytes.and_then(|bytes| i64::try_from(bytes).ok()).ok_or_else(|| overflow(span))?;
-            let address = comptime::resolve(context, ptr, span)?;
+            let address = ptr.kind();
             let kind = match address {
-                HMIRValueKind::Immediate(HMIRImmediate::Int(0)) if bytes == 0 => address,
+                HMIRValueKind::Immediate(HMIRImmediate::Int(0)) if bytes == 0 => address.clone(),
                 HMIRValueKind::Immediate(HMIRImmediate::Int(0)) => {
                     return Err(undefined(span, "pointer arithmetic"));
                 }
-                ref address if arithmetic(context, address) => {
+                address if arithmetic(context, address) => {
                     shifted(address, bytes).ok_or_else(|| overflow(span))?
                 }
                 _ => return unsupported(span, "arithmetic on this address"),
@@ -212,10 +212,10 @@ pub fn pointer(
         }
         PointerIntrinsic::Diff { lhs, rhs, element } => {
             let size = layout(context.env_mut(), *element, span)?.size() as i128;
-            let (lhs, rhs) = (comptime::resolve(context, lhs, span)?, comptime::resolve(context, rhs, span)?);
-            let bytes = match distance(&lhs, &rhs) {
+            let (lhs, rhs) = (lhs.kind(), rhs.kind());
+            let bytes = match distance(lhs, rhs) {
                 Some(bytes) => bytes as i128,
-                None if arithmetic(context, &lhs) && arithmetic(context, &rhs) => {
+                None if arithmetic(context, lhs) && arithmetic(context, rhs) => {
                     return Err(undefined(span, "pointer difference across allocations"));
                 }
                 None => return unsupported(span, "the difference of these addresses"),
@@ -226,13 +226,12 @@ pub fn pointer(
             Ok(value::int(context.env(), bytes / size, result))
         }
         PointerIntrinsic::Compare { op, lhs, rhs } => {
-            let (lhs, rhs) = (comptime::resolve(context, lhs, span)?, comptime::resolve(context, rhs, span)?);
-            let null = |kind: &HMIRValueKind| matches!(kind, HMIRValueKind::Immediate(HMIRImmediate::Int(0)));
-            let truth = match (distance(&lhs, &rhs).map(|bytes| bytes.cmp(&0)), op) {
-                (Some(ordering), op) => compare(*op, ordering),
-                (None, PointerCompareOp::Eq) if null(&lhs) != null(&rhs) => false,
-                (None, PointerCompareOp::Neq) if null(&lhs) != null(&rhs) => true,
-                (None, _) => return unsupported(span, "comparison of these addresses"),
+            let (lhs, rhs) = (lhs.kind(), rhs.kind());
+            let truth = match (op, distance(lhs, rhs)) {
+                (PointerCompareOp::Eq, _) => lhs == rhs,
+                (PointerCompareOp::Neq, _) => lhs != rhs,
+                (op, Some(bytes)) => compare(*op, bytes.cmp(&0)),
+                (_, None) => return Err(undefined(span, "ordering addresses across allocations")),
             };
             Ok(value::int(context.env(), truth as i128, result))
         }
@@ -285,10 +284,10 @@ pub fn aggregate(
                 true => storage::read(context, value, span)?,
                 false => value.clone(),
             };
-            let Some(HMIRImmediate::TaggedUnion { variant, .. }) = comptime::immediate(context, &value, span)? else {
+            let HMIRValueKind::Immediate(HMIRImmediate::TaggedUnion { variant, .. }) = value.kind() else {
                 unreachable!("a tagged union constant names its variant")
             };
-            Ok(value::int(context.env(), variant as i128, result))
+            Ok(value::int(context.env(), *variant as i128, result))
         }
         AggregateIntrinsic::SumVariant { value, .. } => project(context, value, 0, result, span),
         AggregateIntrinsic::StructField {
@@ -305,7 +304,7 @@ pub fn aggregate(
             element,
         } => {
             let size = layout(context.env_mut(), *element, span)?.size() as i128;
-            let offset = int_value(context, index, span)?
+            let offset = int_value(index, span)?
                 .checked_mul(size)
                 .and_then(|offset| usize::try_from(offset).ok())
                 .ok_or_else(|| overflow(span))?;
@@ -326,7 +325,7 @@ fn init(
     };
     let union = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Union { .. });
     for (index, value) in fields {
-        let Some(value) = comptime::immediate(context, value, span)? else {
+        let HMIRValueKind::Immediate(value) = value.kind().clone() else {
             return unsupported(span, "an address of comptime storage inside an aggregate");
         };
         if union {
@@ -356,11 +355,11 @@ pub fn internal(
         InternalIntrinsic::Bitcast { value, target } => {
             let pointers = context.env().is_pointer(value.ty()) && context.env().is_pointer(*target);
             match pointers {
-                true => Ok(HMIRValue::new(result, comptime::resolve(context, value, span)?)),
+                true => Ok(value.clone().with_ty(result)),
                 false => unsupported(span, "this conversion"),
             }
         }
-        InternalIntrinsic::Assert { condition, message } => match int_value(context, condition, span)? {
+        InternalIntrinsic::Assert { condition, message } => match int_value(condition, span)? {
             0 => Err(hmir_error(span, &mir::COMPTIME_ASSERTION, message.clone())),
             _ => Ok(HMIRValue::new(result, HMIRImmediate::Unit)),
         },

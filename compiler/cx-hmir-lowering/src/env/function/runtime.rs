@@ -1,6 +1,6 @@
 use rustc_hash::FxHashMap;
 
-use cx_hmir::body::HMIRBodyID;
+use cx_hmir::body::{HMIRBodyID, HMIRLocalID};
 use cx_mir::{
     MIRBasicBlockID, MIRFnPrototype, MIRFunction, MIRInstructionKind, MIRIntrinsic, MIRPlaceID,
     MIRRegister,
@@ -9,7 +9,10 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    env::{function::scope::Scopes, module::MIRFunctionBuilder},
+    env::{
+        function::scope::{Bindings, Scopes},
+        module::MIRFunctionBuilder,
+    },
     value::{HMIRPlaceID, HMIRRegisterID, HMIRValue},
 };
 
@@ -28,6 +31,8 @@ pub enum Emission {
 pub struct RuntimeContext {
     builder: MIRFunctionBuilder,
     emission: Emission,
+    // The values known of the locals a detached context binds placeholders for
+    frozen: Bindings,
 
     scopes: Scopes<RuntimeScope>,
     declared: usize,
@@ -39,11 +44,20 @@ impl RuntimeContext {
         Self {
             builder: MIRFunctionBuilder::new(prototype),
             emission: Emission::Enabled,
+            frozen: Bindings::default(),
 
             scopes: Scopes::default(),
             declared: 0,
             labels: FxHashMap::default(),
         }
+    }
+
+    pub(crate) fn frozen(&self, local: HMIRLocalID) -> Option<&HMIRValue> {
+        self.frozen.get(&local)
+    }
+
+    pub(crate) fn freeze(&mut self, frozen: Bindings) {
+        self.frozen = frozen;
     }
 
     pub fn builder(&self) -> &MIRFunctionBuilder {

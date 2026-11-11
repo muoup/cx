@@ -310,21 +310,6 @@ impl LocalLoweringContext<'_, '_, '_> {
             .map_err(|fault| fault.error(span))
     }
 
-    pub(crate) fn copy(
-        &mut self,
-        target: &HMIRAddress<HMIRPlaceID>,
-        source: &HMIRAddress<HMIRPlaceID>,
-        ty: HMIRTypeID,
-        span: &TokenRange,
-    ) -> CXResult<()> {
-        let size = layout(self.env_mut(), ty, span)?.size();
-        let mut memory = self.memory.borrow_mut();
-        memory
-            .load(source, size)
-            .and_then(|image| memory.store(target, &image))
-            .map_err(|fault| fault.error(span))
-    }
-
     fn global(&mut self, def: HMIRDefID, span: &TokenRange) -> CXResult<HMIRPlaceID> {
         if let Some(region) = self.memory.borrow().globals.get(&def) {
             return Ok(*region);

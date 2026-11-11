@@ -1,7 +1,0 @@
-T zero(comptime @type T = int) {
-    return 0;
-}
-
-int main() {
-    return zero();
-}

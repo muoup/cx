@@ -95,7 +95,7 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
     span: &TokenRange,
 ) -> CXResult<LocalLoweringContext<'parent, 'global, 'hmir>> {
     let locals = context.visible_locals();
-    let frozen = comptime::inputs(context);
+    let frozen = comptime::inputs(context).into_iter().collect::<Bindings>();
     let void = context
         .env_mut()
         .module_mut()
@@ -108,13 +108,11 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
     );
     let mut runtime = RuntimeContext::new(prototype);
     runtime.set_emission(emission);
+    runtime.freeze(frozen.clone());
     let evaluation = context.evaluation();
     let mut child = context.child(None, FnContext::Runtime(runtime), Some(evaluation));
     for (local, value) in locals {
-        let known = frozen
-            .iter()
-            .find_map(|(id, known)| (*id == local).then_some(known));
-        let value = match known {
+        let value = match frozen.get(&local) {
             Some(known) if value::as_type(known).is_some() || known == &value => {
                 shadow(&mut child, known.clone(), span)?
             }

@@ -6,7 +6,6 @@ extern int printf(const char*, ...);
 private:
 
 auto global : int = 4;
-auto identity(comptime @type T, T value) -> T;
 auto identity(comptime @type T, T value) -> T { return value; }
 auto increment(int value) -> int { return value + 1; }
 auto callback() -> @fn(int) -> int { return increment; }

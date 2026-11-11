@@ -136,10 +136,17 @@ pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Op
     converge(context, value, &span).ok()
 }
 
+// The known values of the visible locals, including those a detached context only binds placeholders for
 pub(crate) fn inputs(context: &mut LocalLoweringContext) -> Vec<(HMIRLocalID, HMIRValue)> {
     context
         .visible_locals()
         .into_iter()
-        .filter_map(|(local, value)| Some((local, known(context, &value)?)))
+        .filter_map(|(local, value)| {
+            let frozen = match context.context() {
+                FnContext::Runtime(runtime) => runtime.frozen(local).cloned(),
+                FnContext::Comptime(_) => None,
+            };
+            Some((local, known(context, &value).or(frozen)?))
+        })
         .collect()
 }

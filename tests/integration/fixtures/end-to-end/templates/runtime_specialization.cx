@@ -3,7 +3,6 @@
 typedef int Integer;
 typedef @type Type;
 
-T identity(comptime @type T, T value);
 U identity(comptime @type U, U input) => input;
 T alias_identity(comptime Type T, T value) => value;
 T forward(comptime @type T, T value) => identity(T, value);
@@ -11,7 +10,6 @@ T factorial(comptime @type T, T value) {
     if (value <= 1) return 1;
     return value * factorial(T, value - 1);
 }
-T even(comptime @type T, T value);
 T odd(comptime @type T, T value) {
     if (value == 0) return 0;
     return even(T, value - 1);

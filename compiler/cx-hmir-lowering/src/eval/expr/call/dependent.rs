@@ -400,7 +400,7 @@ fn curried(
 }
 
 // The function generated for 'callee' curried with the arguments of its comptime parameters, where 'ty' is the
-// type of the curried function
+// type of the curried function or of a pointer to it
 pub(crate) fn template(
     context: &mut LocalLoweringContext,
     callee: &HMIRValue,
@@ -408,14 +408,19 @@ pub(crate) fn template(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRFunctionID> {
-    let referent = context.env().referent(ty);
-    let (def, signature) = match (value::as_function(callee), context.env().resolve_kind(referent)) {
+    let env = context.env();
+    let function = env.pointer_inner(ty).unwrap_or_else(|| env.referent(ty));
+    let (def, signature) = match (value::as_function(callee), env.resolve_kind(function)) {
         (Some(def), HMIRTypeKind::Function(signature)) => (def, signature.clone()),
         _ => {
             let unavailable = "this function".into();
             return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, unavailable));
         }
     };
+    if signature.params().iter().any(|param| param.comptime()) {
+        let name = types::name(context.env(), function);
+        return Err(hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, name));
+    }
     let comptime_bindings = comptime_bindings.iter().flatten().cloned().collect();
     let generation = Generation::Template { def, comptime_bindings };
     lower::declare(context.env_mut(), generation, &signature, span)

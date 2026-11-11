@@ -1,7 +1,6 @@
 #include <stdio.h>
 
 comptime @type Box(comptime @type T) => struct { T value; };
-comptime U identity(comptime @type U, U input);
 comptime T identity(comptime @type T, T value) => value;
 comptime Box(T) box(comptime @type T, T value) => { .value = value };
 
