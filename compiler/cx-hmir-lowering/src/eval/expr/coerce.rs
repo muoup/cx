@@ -146,9 +146,12 @@ pub(crate) fn aggregate(
 ) -> CXResult<HMIRValue> {
     let coerced = match context.env().resolve_kind(value.ty()) {
         HMIRTypeKind::ReferenceTo { inner, bitfield: _ } => {
-            if !context.env().is_reference(*inner) { return Ok(value); }
-
-            promotion::reference_load(context, value, *inner, span)?
+            let env = context.env();
+            match *inner {
+                inner if env.is_reference(inner) => promotion::reference_load(context, value, inner, span)?,
+                inner if env.is_pointer(inner) || env.is_array(inner) => promotion::std_rvalue(context, value, span)?,
+                _ => return Ok(value),
+            }
         },
 
         HMIRTypeKind::PointerTo(_) => {

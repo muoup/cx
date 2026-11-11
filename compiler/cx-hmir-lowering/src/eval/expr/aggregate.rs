@@ -8,7 +8,11 @@ use cx_hmir::{
     HMIRAggregateOp, HMIRBinaryOp, HMIRBodyContext,
     body::HMIRLocalID,
     expr::HMIRExprID,
-    ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRFieldDef, context::HMIRTypeContext},
+    ty::{
+        HMIRTypeID, HMIRTypeKind,
+        aggregate::{HMIRFieldDef, HMIRTypeSemantics},
+        context::HMIRTypeContext,
+    },
 };
 use cx_intrinsics::AggregateIntrinsic;
 use cx_log::{CXResult, catalogue::typecheck};
@@ -87,7 +91,7 @@ pub(crate) fn eval_member(
     base: HMIRExprID,
     name: &CXIdent,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let value = eval(context, body, base)?
+    let mut value = eval(context, body, base)?
         .ready()
         .and_then(|value| coerce::aggregate(context, value, &span).map_err(EvalExit::from))?;
 
@@ -95,17 +99,19 @@ pub(crate) fn eval_member(
         unreachable!("coerce::aggregate did not return a reference type")
     };
 
-    let fields = member_fields(context.env(), aggregate_type);
-    let Some(index) = fields.iter().position(|field| field.name() == Some(name)) else {
+    let Some(path) = member_path(context.env(), aggregate_type, name) else {
         let member = (types::name(context.env(), aggregate_type), name.to_string());
         return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
     };
-    let ty = *fields[index].ty();
-
-    Ok(Evaluation::Ready(field(context, &value, index, ty, span)?))
+    for index in path {
+        let owner = context.env().referent(value.ty());
+        let ty = *member_fields(context.env(), owner)[index].ty();
+        value = field(context, &value, index, ty, span)?;
+    }
+    Ok(Evaluation::Ready(value))
 }
 
-// The member 'index' of the aggregate 'base' references, referenced as 'ty&'
+// The member 'index' of the aggregate 'base' references, referenced as 'ty&' with the owner's qualifiers
 pub(crate) fn field(
     context: &mut LocalLoweringContext,
     base: &HMIRValue,
@@ -114,6 +120,13 @@ pub(crate) fn field(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let owner = context.env().referent(base.ty());
+    let semantics = context.env().semantics(owner);
+    let qualifiers = HMIRTypeSemantics {
+        constant: semantics.constant,
+        volatile: semantics.volatile,
+        ..Default::default()
+    };
+    let ty = types::qualify::specify(context, ty, qualifiers, span);
     let bitfield = placement(context.env_mut(), owner, index, span)?;
     let reference = types::reference(context.env_mut(), ty, bitfield, span);
     let base = base.clone();
