@@ -115,7 +115,7 @@ pub(crate) fn eval_let(
     let value = deduce::complete(context, body, value, declared.known().copied())?;
     let span = span.clone();
     let as_is = matches!(body.expr(local.ty()).kind(), HMIRExprKind::Hole(_)) || referent.is_some();
-    value.and_then(context, body, None, move |context, body, value, _| {
+    value.and_then(context, body, move |context, body, value| {
         let value = match declared.known() {
             Some(ty) => coerce::implicit::standard(context, value, *ty, &span)?,
             None => value,
@@ -141,7 +141,7 @@ pub(crate) fn eval_let(
         };
         declared
             .try_complete(context, body, Some(inferred))?
-            .and_then(context, body, None, move |context, body, ty, _| {
+            .and_then(context, body, move |context, body, ty| {
                 let ty = match referent {
                     Some(_) => types::reference(context.env_mut(), ty, None, &span),
                     None => ty,
@@ -251,7 +251,7 @@ fn yielded(
         });
     }
     let span = span.clone();
-    flow::catch_diverged(result)?.and_then(context, body, None, move |context, _, value, _| {
+    flow::catch_diverged(result)?.and_then(context, body, move |context, _, value| {
         let block = emit::runtime::flow::current_block(context);
         let mut exits = context
             .runtime_mut()
@@ -310,7 +310,7 @@ fn eval_statements(
                 .filter(|value| value::as_type(value).is_some())
                 .cloned();
             let span = span.clone();
-            return result.and_then(context, body, partial, move |context, _, value, _| {
+            return result.chain(context, body, None, partial, move |context, _, value, _| {
                 Ok(Evaluation::Ready(coerce::promotion::std_rvalue(
                     context, value, &span,
                 )?))
@@ -321,7 +321,7 @@ fn eval_statements(
                 let remaining = statements[index + 1..].to_vec();
                 let span = span.clone();
                 let pending = Evaluation::Incomplete(pending);
-                return pending.and_then(context, body, None, move |context, body, _, _| {
+                return pending.and_then(context, body, move |context, body, _| {
                     eval_statements(context, body, &span, &remaining, yields, place)
                 });
             }

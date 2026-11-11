@@ -139,9 +139,10 @@ pub(crate) fn eval(
     }?;
 
     let partial = result.known().cloned();
-    result.and_then(
+    result.chain(
         context,
         body,
+        None,
         partial,
         |context, _, value, _| match context.context() {
             FnContext::Runtime(runtime) if runtime.emission() == Emission::Suppressed => {

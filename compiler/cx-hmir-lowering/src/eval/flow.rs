@@ -97,24 +97,14 @@ impl<T: 'static> Evaluation<T> {
         self,
         context: &mut LocalLoweringContext,
         body: &HMIRBodyContext,
-        partial: Option<U>,
-        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, T, Option<HMIRTypeID>) -> EvalResult<Evaluation<U>> + 'static,
+        then: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, T) -> EvalResult<Evaluation<U>> + 'static,
     ) -> EvalResult<Evaluation<U>> {
-        self.chain(context, body, None, partial, then)
+        self.chain(context, body, None, None, move |context, body, value, _| then(context, body, value))
     }
 
-    pub(crate) fn and_then_2<U: 'static>(
-        self,
-        then: impl FnOnce(T) -> EvalResult<Evaluation<U>>
-    ) -> EvalResult<Evaluation<U>> {
-        match self {
-            Self::Ready(value) => then(value),
-            Self::Incomplete(incomplete) => Ok(Evaluation::Incomplete(
-            ))
-        }
-    }
-
-    fn chain<U: 'static>(
+    // 'and_then' in full: 'partial' is what the suspended result is known to be, and 'then' also receives the
+    // type this evaluation was completed from
+    pub(crate) fn chain<U: 'static>(
         self,
         context: &mut LocalLoweringContext,
         body: &HMIRBodyContext,

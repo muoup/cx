@@ -363,7 +363,7 @@ pub(crate) fn described_type(
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     let partial = value.known().and_then(value::as_type);
     let span = span.clone();
-    value.and_then(context, body, partial, move |context, _, value, _| {
+    value.chain(context, body, None, partial, move |context, _, value, _| {
         let value = coerce::promotion::std_rvalue(context, value, &span)?;
         let Some(ty) = value::as_type(&value) else {
             let found = format!(

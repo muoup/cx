@@ -244,7 +244,7 @@ fn expression(
         .filter(|value| value::as_type(value).is_some())
         .cloned();
     let span = span.clone();
-    result.and_then(context, body, partial, move |context, _, value, _| {
+    result.chain(context, body, None, partial, move |context, _, value, _| {
         let value = match expected {
             Some(expected) => coerce::implicit::standard(context, value, expected, &span)?,
             None if initializer && value::as_type(&value).is_none() => {

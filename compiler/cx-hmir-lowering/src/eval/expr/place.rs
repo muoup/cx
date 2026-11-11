@@ -317,7 +317,7 @@ pub(crate) fn dereference(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = span.clone();
 
-    eval(context, body, pointer)?.and_then(context, body, None, move |context, _, value, _| {
+    eval(context, body, pointer)?.and_then(context, body, move |context, _, value| {
         dereference_hmir(context, value, None, &span)
             .map(Evaluation::Ready)
             .map_err(EvalExit::from)

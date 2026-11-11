@@ -15,7 +15,7 @@ use cx_hmir::{
         aggregate::{HMIRDeclaredMove, HMIRTypeSemantics},
         intrinsic::HMIRIntType,
     },
-    unit::function::{HMIRFnDefinition, HMIRFnParam, HMIRFnPrototype},
+    unit::function::{HMIRFnDefinition, HMIRFnParam, HMIRFnParamDecl, HMIRFnPrototype},
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_namespace::module::{NamespacePath, QualifiedName};
@@ -152,18 +152,27 @@ impl<'a> BodyLowering<'a> {
     }
 
     // The signature parameters that the locals of a definition were declared from
-    pub(crate) fn fn_params(
-        &self,
-        locals: &[HMIRLocalID],
-        defaults: Option<&[bool]>,
-    ) -> Vec<HMIRFnParam<HMIRExprID>> {
+    pub(crate) fn fn_params(&self, locals: &[HMIRLocalID]) -> Vec<HMIRFnParam<HMIRExprID>> {
         locals
             .iter()
-            .enumerate()
-            .map(|(index, local)| {
+            .map(|local| {
                 let local = self.body.local(*local);
-                let defaulted = defaults.is_some_and(|defaults| defaults[index]);
-                HMIRFnParam::new(local.comptime(), local.ty(), defaulted)
+                HMIRFnParam::new(local.comptime(), local.ty())
+            })
+            .collect()
+    }
+
+    // What the locals of a definition declare of its parameters, each with the default lowered for it
+    pub(crate) fn fn_param_decls(
+        &self,
+        locals: &[HMIRLocalID],
+        defaults: Vec<Option<HMIRExprID>>,
+    ) -> Vec<HMIRFnParamDecl> {
+        locals
+            .iter()
+            .zip(defaults)
+            .map(|(local, default)| {
+                HMIRFnParamDecl::new(self.body.local(*local).name().cloned(), default)
             })
             .collect()
     }
@@ -452,12 +461,13 @@ pub(crate) fn lower_reify(
     let name = CXIdent::from(format!("reify.{}", id.index()).as_str());
     let signature = HMIRFnSignature::new(
         HMIRFunctionStage::Runtime,
-        anon.fn_params(&params, None),
+        anon.fn_params(&params),
         return_type,
         prototype.var_args,
         HMIRContract::default(),
     );
-    let prototype = HMIRFnPrototype::new(name.clone(), LinkageMode::Static, signature);
+    let decls = anon.fn_param_decls(&params, vec![None; params.len()]);
+    let prototype = HMIRFnPrototype::new(name.clone(), LinkageMode::Static, signature, decls);
     let def = anon.finish_definition(root);
     let function = HMIRFunction::new(anon.finish(), prototype, params.into(), Some(def));
 

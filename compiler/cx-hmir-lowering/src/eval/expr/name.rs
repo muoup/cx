@@ -26,7 +26,7 @@ use crate::{
     symbol,
     value::{
         self, HMIRReference, HMIRValue, HMIRValueKind,
-        immediate::{HMIRFunctionRef, HMIRImmediate},
+        immediate::HMIRImmediate,
     },
 };
 
@@ -66,7 +66,8 @@ pub(crate) fn eval_def(
             return deduce::type_result(context, *ty, span);
         }
         HMIRValueKind::Immediate(HMIRImmediate::Address(_))
-            if let Some(HMIRFunctionRef::Def(def)) = value::as_function(&value)
+            if let Some(def) = value::as_function(&value)
+                && context.env().is_function(value.ty())
                 && emitting
                 && !types::comptime_only(context.env(), value.ty()) =>
         {
@@ -283,7 +284,7 @@ pub(crate) fn eval_scope_access(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let evaluated = eval_type(context, body, base)?;
     let (span, member) = (span.clone(), member.clone());
-    evaluated.and_then(context, body, None, move |context, _, ty, _| {
+    evaluated.and_then(context, body, move |context, _, ty| {
         if !matches!(
             context.env().resolve_kind(ty),
             HMIRTypeKind::TaggedUnion { .. }

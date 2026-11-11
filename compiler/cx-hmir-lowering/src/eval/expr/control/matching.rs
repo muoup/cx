@@ -277,9 +277,10 @@ fn lower_arms(
         Ok(())
     });
     let result = flow::catch_diverged(result)?.try_complete(context, body, expected)?;
-    result.and_then(
+    result.chain(
         context,
         body,
+        None,
         None,
         move |context, body, value, expected| {
             if let Some(value) = value {

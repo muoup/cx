@@ -34,7 +34,7 @@ pub(crate) fn eval_type_op(
     };
     let subject = deduce::subject(context, body, *subject)?;
     let (span, op) = (span.clone(), op.clone());
-    subject.and_then(context, body, None, move |context, body, ty, _| {
+    subject.and_then(context, body, move |context, body, ty| {
         let width = HMIRIntWidth::pointer_width(context.env().architecture());
         let size_type = types::int(context.env_mut(), width, false, &span);
         let value = match &op {

@@ -5,7 +5,7 @@ use cx_hmir::{
     expr::HMIRExprKind, ty::HMIRExprTypeKind, unit::def::HMIRDeclarationPoint,
 };
 use cx_log::{CXResult, catalogue::typecheck, error::CXError};
-use cx_util::linkage::LinkageMode;
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::log::hmir_error;
 
@@ -115,6 +115,52 @@ pub(crate) fn select(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> CXRe
     }
     reconcile_linkage(def, point)?;
     Ok(selected)
+}
+
+// What a call that names a function may bind of one of its parameters
+pub(crate) struct Parameter {
+    pub name: Option<CXIdent>,
+    pub comptime: bool,
+    pub defaulted: bool,
+}
+
+// The parameters of the function 'def' as its visible declarations declare them together. A name is makeshift:
+// the first declaration to name a parameter names it, unless a later one names it differently, which leaves it
+// unnamed
+pub(crate) fn parameters(def: &HMIRDef, point: Option<HMIRDeclarationPoint>) -> Vec<Parameter> {
+    let mut parameters: Vec<Parameter> = Vec::new();
+    for (_, declaration) in visible(def, point) {
+        let Some(HMIRDefKind::Function(function)) = declaration.kind() else {
+            continue;
+        };
+        let signature = function.signature();
+        let staged = signature.stage() == HMIRFunctionStage::Comptime;
+        let declared = function.prototype().params().iter().zip(signature.params());
+        if parameters.is_empty() {
+            parameters.extend(declared.map(|(declared, param)| Parameter {
+                name: declared.name().cloned(),
+                comptime: staged || param.comptime(),
+                defaulted: declared.default().is_some(),
+            }));
+            continue;
+        }
+        for (parameter, (declared, _)) in parameters.iter_mut().zip(declared) {
+            parameter.name = match (parameter.name.take(), declared.name()) {
+                (Some(name), Some(other)) => (name == *other).then_some(name),
+                (name, other) => name.or_else(|| other.cloned()),
+            };
+        }
+    }
+    parameters
+}
+
+// Whether two declarations of a function give the same parameters a default
+pub(crate) fn defaults_alike(a: &HMIRFunction, b: &HMIRFunction) -> bool {
+    let defaulted = |function: &HMIRFunction| {
+        let params = function.prototype().params().iter();
+        params.map(|param| param.default().is_some()).collect::<Vec<_>>()
+    };
+    defaulted(a) == defaulted(b)
 }
 
 pub(crate) fn needs_specialization(function: &HMIRFunction) -> bool {

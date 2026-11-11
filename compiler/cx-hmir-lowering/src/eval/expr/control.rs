@@ -116,7 +116,7 @@ fn branch(
             let then_expr = flow::catch_diverged(eval_scoped(context, body, then_branch, place))?;
             let span = span.clone();
 
-            then_expr.and_then(context, body, None, move |context, body, then, expected| {
+            then_expr.chain(context, body, None, None, move |context, body, then, expected| {
                 if let Some(else_branch) = else_branch {
                     let mut arms = Vec::from_iter(
                         then.map(|value| (emit::runtime::flow::current_block(context), value)),
@@ -125,7 +125,7 @@ fn branch(
                     emit::runtime::flow::switch_to(context, else_block);
                     flow::catch_diverged(eval_scoped(context, body, else_branch, true))?
                         .try_complete(context, body, expected)?
-                        .and_then(context, body, None, move |context, _, otherwise, _| {
+                        .and_then(context, body, move |context, _, otherwise| {
                             arms.extend(
                                 otherwise.map(|value| (emit::runtime::flow::current_block(context), value)),
                             );

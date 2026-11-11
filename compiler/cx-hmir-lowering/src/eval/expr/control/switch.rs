@@ -44,8 +44,7 @@ pub(crate) fn eval_switch(
     eval(context, body, condition)?.and_then(
         context,
         body,
-        None,
-        move |context, body, condition, _| {
+        move |context, body, condition| {
             let condition = coerce::promotion::std_rvalue(context, condition, &span)?;
             if !context.env().is_int(condition.ty()) {
                 let found = types::name(context.env(), condition.ty());

@@ -4,17 +4,16 @@ use cx_hmir::{
     unit::function::HMIRFnParam,
 };
 use cx_log::CXResult;
+use cx_mir::MIRFunctionID;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
     emit,
-    env::{HMIREnvironment, function::LocalLoweringContext},
+    env::{HMIREnvironment, function::LocalLoweringContext, generation::Generated},
     eval::{expr, types},
-    value::{
-        HMIRValue,
-        immediate::{Addressable, HMIRAddress, HMIRFunctionRef, HMIRImmediate},
-    },
+    lower,
+    value::{HMIRValue, immediate::HMIRImmediate},
 };
 
 pub(crate) struct Variant {
@@ -30,7 +29,7 @@ pub(crate) fn lookup(env: &HMIREnvironment, ty: HMIRTypeID, name: &CXIdent) -> O
     Some(Variant { index, payload: *fields[index].ty() })
 }
 
-fn field<'env>(env: &'env HMIREnvironment, ty: HMIRTypeID, variant: usize) -> &'env HMIRFieldDef<HMIRTypeID> {
+pub(crate) fn field<'env>(env: &'env HMIREnvironment, ty: HMIRTypeID, variant: usize) -> &'env HMIRFieldDef<HMIRTypeID> {
     let HMIRTypeKind::TaggedUnion { fields } = env.resolve_kind(ty) else {
         unreachable!("a constructor builds a tagged union")
     };
@@ -49,7 +48,7 @@ pub(crate) fn payload(env: &HMIREnvironment, ty: HMIRTypeID, variant: usize) -> 
 
 pub(crate) fn signature(env: &HMIREnvironment, ty: HMIRTypeID, variant: usize) -> HMIRFnSignature<HMIRTypeID> {
     let params = payload(env, ty, variant)
-        .map(|payload| HMIRFnParam::new(false, payload, false))
+        .map(|payload| HMIRFnParam::new(false, payload))
         .into_iter()
         .collect();
     HMIRFnSignature::new(HMIRFunctionStage::Runtime, params, ty, false, HMIRContract::default())
@@ -68,9 +67,19 @@ pub(crate) fn reference(
     };
     let signature = signature(context.env(), ty, index);
     let callable = types::realize(context.env_mut(), HMIRTypeKind::Function(signature), span);
-    let function = Addressable::Def(HMIRFunctionRef::Constructor { ty, variant: index });
-    let address = HMIRAddress::new(function, 0);
-    Ok(Some(HMIRValue::new(callable, HMIRImmediate::Address(address))))
+    let constructor = HMIRImmediate::Constructor { ty, variant: index };
+    Ok(Some(HMIRValue::new(callable, constructor)))
+}
+
+// The generated function that constructs the variant, for a constructor lowered as a runtime operand
+pub(crate) fn function(
+    env: &mut HMIREnvironment,
+    ty: HMIRTypeID,
+    variant: usize,
+    span: &TokenRange,
+) -> CXResult<MIRFunctionID> {
+    let signature = signature(env, ty, variant);
+    lower::declare(env, Generated::Constructor { ty, variant }, &signature, span)
 }
 
 pub(crate) fn construct(

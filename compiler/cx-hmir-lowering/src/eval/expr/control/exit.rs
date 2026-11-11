@@ -61,7 +61,7 @@ pub(super) fn eval_yield(
         None => Evaluation::Ready(expr::unit(context, span)),
     };
     let (span, origin) = (span.clone(), body.id());
-    value.and_then(context, body, None, move |context, _, value, _| {
+    value.and_then(context, body, move |context, _, value| {
         let value = coerce::promotion::std_rvalue(context, value, &span)?;
         if !context.is_runtime() {
             return Err(EvalExit::Stop(ComptimeStop::Yield(value).into()));

@@ -40,7 +40,7 @@ pub(crate) fn eval_aggregate(
             let ty = eval_type(context, body, *ty)?.guide();
             let fields = fields.clone();
             let span = span.clone();
-            ty.and_then(context, body, None, move |context, body, ty, _| {
+            ty.and_then(context, body, move |context, body, ty| {
                 initializer::initialize(context, body, &span, ty, &fields)
             })
         }

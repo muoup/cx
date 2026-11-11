@@ -24,6 +24,15 @@ pub struct HMIRFnPrototype {
     symbol_name: CXIdent,
     linkage: LinkageMode,
     signature: HMIRFnSignature<HMIRExprID>,
+    params: Vec<HMIRFnParamDecl>,
+}
+
+// What a declaration says of a parameter beyond its type, which a function type does not carry: only a call that
+// names the function can bind an argument by name or leave a default to stand
+#[derive(Debug, Clone)]
+pub struct HMIRFnParamDecl {
+    name: Option<CXIdent>,
+    default: Option<HMIRExprID>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +47,6 @@ pub struct HMIRFnSignature<T> {
 #[derive(Debug, Clone)]
 pub struct HMIRFnParam<T> {
     comptime: bool,
-    defaulted: bool,
     ty: T,
 }
 
@@ -100,11 +108,13 @@ impl HMIRFnPrototype {
         symbol_name: CXIdent,
         linkage: LinkageMode,
         signature: HMIRFnSignature<HMIRExprID>,
+        params: Vec<HMIRFnParamDecl>,
     ) -> Self {
         Self {
             symbol_name,
             linkage,
             signature,
+            params,
         }
     }
 
@@ -118,6 +128,25 @@ impl HMIRFnPrototype {
 
     pub fn signature(&self) -> &HMIRFnSignature<HMIRExprID> {
         &self.signature
+    }
+
+    pub fn params(&self) -> &[HMIRFnParamDecl] {
+        &self.params
+    }
+}
+
+impl HMIRFnParamDecl {
+    pub fn new(name: Option<CXIdent>, default: Option<HMIRExprID>) -> Self {
+        Self { name, default }
+    }
+
+    pub fn name(&self) -> Option<&CXIdent> {
+        self.name.as_ref()
+    }
+
+    // Only a named argument binds a parameter with a default; left unbound, it takes the default
+    pub fn default(&self) -> Option<HMIRExprID> {
+        self.default
     }
 }
 
@@ -165,7 +194,7 @@ impl<T> HMIRFnSignature<T> {
         let params = self
             .params
             .iter()
-            .map(|param| Ok(HMIRFnParam::new(param.comptime, ty(&param.ty)?, param.defaulted)))
+            .map(|param| Ok(HMIRFnParam::new(param.comptime, ty(&param.ty)?)))
             .collect::<Result<_, E>>()?;
 
         Ok(HMIRFnSignature {
@@ -244,17 +273,12 @@ impl HMIRFnDefinition {
 }
 
 impl<T> HMIRFnParam<T> {
-    pub fn new(comptime: bool, ty: T, defaulted: bool) -> Self {
-        Self { comptime, defaulted, ty }
+    pub fn new(comptime: bool, ty: T) -> Self {
+        Self { comptime, ty }
     }
 
     pub fn comptime(&self) -> bool {
         self.comptime
-    }
-
-    // Only a named argument binds a defaulted parameter; left unbound, it is a hole
-    pub fn defaulted(&self) -> bool {
-        self.defaulted
     }
 
     pub fn ty(&self) -> &T {

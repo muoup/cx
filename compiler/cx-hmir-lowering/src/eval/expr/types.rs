@@ -58,7 +58,7 @@ pub(crate) fn eval_signature(
         .map(|param| {
             let ty = slot(context, *param.ty())?;
             let ty = parameter(context, ty, param.comptime(), body.expr(*param.ty()).span())?;
-            Ok(HMIRFnParam::new(param.comptime(), ty, param.defaulted()))
+            Ok(HMIRFnParam::new(param.comptime(), ty))
         })
         .collect::<CXResult<_>>()?;
     let return_type = slot(context, *signature.return_type())?;
@@ -84,7 +84,7 @@ pub(crate) fn adjust_signature(
         .map(|(source, param)| {
             let span = body.expr(*source.ty()).span();
             let ty = parameter(context, *param.ty(), param.comptime(), span)?;
-            Ok(HMIRFnParam::new(param.comptime(), ty, param.defaulted()))
+            Ok(HMIRFnParam::new(param.comptime(), ty))
         })
         .collect::<CXResult<_>>()?;
 
@@ -95,6 +95,27 @@ pub(crate) fn adjust_signature(
         evaluated.is_variadic(),
         evaluated.contract().clone(),
     ))
+}
+
+// 'signature' without the parameters that 'bound' holds of, by index
+pub(crate) fn residual(
+    signature: &HMIRFnSignature<HMIRTypeID>,
+    bound: impl Fn(usize) -> bool,
+) -> HMIRFnSignature<HMIRTypeID> {
+    let params = signature
+        .params()
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !bound(*index))
+        .map(|(_, param)| param.clone())
+        .collect();
+    HMIRFnSignature::new(
+        signature.stage(),
+        params,
+        *signature.return_type(),
+        signature.is_variadic(),
+        signature.contract().clone(),
+    )
 }
 
 pub(crate) fn parameter(

@@ -21,6 +21,13 @@ pub enum HMIRImmediate {
     },
 
     Quote(QuoteRef),
+
+    /// The function constructing a variant of a tagged union. It is generated only where it is lowered as a
+    /// runtime operand; a comptime call constructs the variant in place
+    Constructor {
+        ty: HMIRTypeID,
+        variant: usize,
+    },
     Curried {
         callee: Box<HMIRValue>,
         args: Vec<Option<HMIRValue>>,

@@ -16,7 +16,7 @@ use cx_util::identifier::CXIdent;
 use crate::{
     env::function::LocalLoweringContext,
     eval::{
-        call::{self, Frame},
+        call::dependent::Frame,
         coerce,
         deduce::{Incomplete, IncompleteReason, subject},
         eval,
@@ -24,10 +24,10 @@ use crate::{
         types::{self},
     },
     log::hmir_error,
-    symbol::{self, composite::alike},
+    symbol::{composite::alike, structure},
     value::{
         self, HMIRValue, HMIRValueKind,
-        immediate::{HMIRFunctionRef, HMIRImmediate},
+        immediate::HMIRImmediate,
     },
 };
 
@@ -270,20 +270,13 @@ impl<'a> Deduction<'a> {
             }
             _ => (&value, [].as_slice()),
         };
-        let Some(HMIRFunctionRef::Def(def)) = value::as_function(callee) else {
-            return None;
-        };
+        let def = value::as_function(callee)?;
         let instance = instance(context, def, actual)?;
         let source = context.env().symbols().resolve_definition(def);
-        let Some(HMIRDefKind::Function(generator)) =
-            source.declarations()[symbol::select(source, None).ok()?].kind()
-        else {
-            return None;
-        };
-        let params = generator.signature().params();
+        let params = structure::parameters(source, None);
         let mut values = (0..params.len())
             .filter(|index| {
-                curried.get(*index).is_none_or(Option::is_none) && !params[*index].defaulted()
+                curried.get(*index).is_none_or(Option::is_none) && !params[*index].defaulted
             })
             .map(|index| instance.get(index).cloned())
             .take(args)
@@ -291,7 +284,7 @@ impl<'a> Deduction<'a> {
         values.resize(args, None);
         values.extend(named.iter().map(|(name, _)| {
             (0..params.len())
-                .find(|index| call::parameter_name(generator, *index) == Some(name))
+                .find(|index| params[*index].name.as_ref() == Some(name))
                 .and_then(|index| instance.get(index).cloned())
         }));
         Some(values)
@@ -398,34 +391,29 @@ pub(crate) fn generates_type(function: &HMIRFunction) -> bool {
         )
 }
 
-// A type left with holes is the type expected of it, when this generator produced that type
+// The arguments of a type generator that a call left as holes are those the type expected of the call was
+// generated from, when 'def' generated that type
 pub(crate) fn generated(
     context: &LocalLoweringContext,
-    callee: &HMIRValue,
+    def: HMIRDefID,
     values: Vec<Option<HMIRValue>>,
     undeduced: CXError,
     span: &TokenRange,
-) -> Evaluation<HMIRValue> {
-    let Some(HMIRFunctionRef::Def(def)) = value::as_function(callee) else {
-        unreachable!("a generated type has a generator")
-    };
-    let (callee, call_span) = (callee.clone(), span.clone());
+) -> Evaluation<Vec<Option<HMIRValue>>> {
     Evaluation::Incomplete(Incomplete::new(
         context,
         span,
         IncompleteReason::ExpectedType,
         None,
-        move |context, body, expected| {
+        move |context, _, expected| {
             let expected = context.env().referent(expected);
             let Some(instance) = instance(context, def, expected) else {
                 return Err(undeduced.into());
             };
-            let applied = values
-                .into_iter()
-                .zip(instance)
-                .map(|(value, bound)| Some(value.unwrap_or(bound)))
-                .collect::<Vec<_>>();
-            call::dependent(context, &callee, body, &[], &[], &applied, &call_span)
+            let applied = values.into_iter().zip(instance);
+            Ok(Evaluation::Ready(
+                applied.map(|(value, bound)| Some(value.unwrap_or(bound))).collect(),
+            ))
         },
     ))
 }

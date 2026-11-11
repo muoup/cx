@@ -177,7 +177,7 @@ fn lower_staged_type<'a>(
     }
     let params = params
         .into_iter()
-        .map(|param| Ok(HMIRFnParam::new(false, staged(context, param)?, false)))
+        .map(|param| Ok(HMIRFnParam::new(false, staged(context, param)?)))
         .collect::<CXResult<_>>()?;
     let stage = HMIRFunctionStage::Comptime;
     let signature = HMIRFnSignature::new(stage, params, result, false, HMIRContract::default());
@@ -201,7 +201,7 @@ fn lower_function_type<'a>(
                 );
             }
             let ty = lower_type(context, &param.ty)?;
-            Ok(HMIRFnParam::new(param.comptime, ty, false))
+            Ok(HMIRFnParam::new(param.comptime, ty))
         })
         .collect::<CXResult<_>>()?;
     let return_type = lower_type(context, &prototype.return_type)?;

@@ -7,7 +7,7 @@ use crate::{
     env::{
         HMIREnvironment,
         function::{FnContext, LocalLoweringContext, RuntimeContext},
-        generation::Specialization,
+        generation::Instance,
     },
     eval::{
         EvalResult,
@@ -23,7 +23,7 @@ pub(crate) fn lower<'hmir>(
     id: HMIRDefID,
     function: &HMIRFunction,
     signature: &HMIRFnSignature<HMIRTypeID>,
-    specialization: Option<&Specialization>,
+    specialization: Option<&Instance>,
 ) -> CXResult<()> {
     let body = function.body();
     let def = function
@@ -75,7 +75,7 @@ fn definition(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
     signature: &HMIRFnSignature<HMIRTypeID>,
-    specialization: Option<&Specialization>,
+    specialization: Option<&Instance>,
     span: &TokenRange,
 ) -> EvalResult<flow::Evaluation<HMIRValue>> {
     let body = function.body();
@@ -95,5 +95,5 @@ fn definition(
     }
     contract::enter(context, function.params(), span)?;
 
-    call::body(context, function)
+    call::dependent::body(context, function)
 }

@@ -1,58 +1,28 @@
-use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
+use cx_hmir::ty::HMIRTypeID;
 use cx_log::CXResult;
 use cx_mir::{
-    MIRFnPrototype, MIRFunction, MIRFunctionID, MIRInstructionKind,
-    expr::instruction::MIRInvalidationKind,
+    MIRFunction, MIRFunctionID, MIRInstructionKind, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
-use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     emit::{self, runtime},
     env::{
         HMIREnvironment,
         function::{FnContext, LocalLoweringContext, RuntimeContext},
-        generation::Constructor,
     },
     eval::{aggregate::variant, types},
-    lower::types::lower_signature,
-    value::{self, immediate::HMIRFunctionRef},
+    value,
 };
 
-pub(crate) fn declare(
+pub(crate) fn lower(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
     index: usize,
-    span: &TokenRange,
-) -> CXResult<MIRFunctionID> {
-    let function = HMIRFunctionRef::Constructor { ty, variant: index };
-    if let Some(id) = env.generation().generated(function, &[]) {
-        return Ok(id);
-    }
-    let HMIRTypeKind::TaggedUnion { fields } = env.resolve_kind(ty) else {
-        unreachable!("a constructor builds a tagged union")
-    };
-    let name = fields[index].name().expect("a variant is named");
-    let name = CXIdent::new(format!(
-        "{name}.__cx_variant.{}",
-        env.generation().generated_count()
-    ));
-    let signature = lower_signature(env, &variant::signature(env, ty, index), span)?;
-    let prototype = MIRFnPrototype::new(signature, LinkageMode::Static, name, None);
-    let id = env.module_mut().declare_function(prototype);
-    env.generation_mut()
-        .construct(Constructor::new(ty, index, id));
-    Ok(id)
-}
-
-pub(crate) fn lower(env: &mut HMIREnvironment, constructor: &Constructor) -> CXResult<MIRFunction> {
-    let (ty, index) = (constructor.ty(), constructor.variant());
+    function: MIRFunctionID,
+) -> CXResult<MIRFunction> {
     let span = TokenRange::internal();
-    let prototype = env
-        .module()
-        .function(constructor.function())
-        .prototype()
-        .clone();
+    let prototype = env.module().function(function).prototype().clone();
     let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
     let mut context = LocalLoweringContext::new(env, None, runtime);
 

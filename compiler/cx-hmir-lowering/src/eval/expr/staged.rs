@@ -83,7 +83,6 @@ fn signature(
             HMIRFnParam::new(
                 false,
                 types::realize(context.env_mut(), HMIRTypeKind::Staged(param), span),
-                false,
             )
         })
         .collect();
@@ -289,7 +288,7 @@ pub(crate) fn apply(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     code: HMIRValue,
-    args: &[Evaluation<HMIRValue>],
+    args: &[HMIRExprID],
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let Some(Shape { params, result }) = shape(context.env(), code.ty()) else {

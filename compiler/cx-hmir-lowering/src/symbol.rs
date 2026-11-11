@@ -1,6 +1,6 @@
 pub(crate) mod composite;
-mod interface;
-mod structure;
+pub(crate) mod interface;
+pub(crate) mod structure;
 
 use cx_hmir::{
     HMIRDeclarationRole, HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunctionStage,

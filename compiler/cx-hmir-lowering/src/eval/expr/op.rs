@@ -12,7 +12,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{
         EvalResult, coerce, control, eval, expr,
-        flow::{EvalExit, Evaluation},
+        flow::Evaluation,
         types,
     },
     log::hmir_error,
@@ -27,10 +27,8 @@ pub(crate) fn eval_operand(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = span.clone();
 
-    eval(context, body, expr)?.and_then_2(move |value| {
+    eval(context, body, expr)?.map(context, move |context, value| {
         coerce::arithmetic(context, value, &span)
-            .map(Evaluation::Ready)
-            .map_err(EvalExit::from)
     })
 }
 

@@ -19,7 +19,7 @@ use cx_tokens::TokenRange;
 use crate::{
     emit::runtime,
     env::function::{LocalLoweringContext, runtime::RuntimeScope, scope::Bindings},
-    eval::types,
+    eval::{aggregate::variant, types},
     lower::types::{lower_type, mir_float, mir_int},
     value::{
         HMIRPlaceID, HMIRRegisterID, HMIRValIntrinsic, HMIRValue, HMIRValueKind,
@@ -95,6 +95,10 @@ pub fn constant(
                 value: *value,
                 ty: mir_float(float.width()),
             },
+            (HMIRImmediate::Constructor { ty, variant }, _) => {
+                let function = variant::function(context.env_mut(), *ty, *variant, span)?;
+                MIRConstant::Function(function)
+            }
             _ => todo!(),
         },
     )

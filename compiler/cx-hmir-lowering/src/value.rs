@@ -1,11 +1,11 @@
 pub mod immediate;
 pub mod staged;
 
-use cx_hmir::ty::HMIRTypeID;
+use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
 use cx_intrinsics::Intrinsic;
 use cx_util::dense_id;
 
-use crate::value::immediate::{Addressable, HMIRFunctionRef, HMIRImmediate};
+use crate::value::immediate::{Addressable, HMIRImmediate};
 
 dense_id!(HMIRRegisterID, "$");
 dense_id!(HMIRPlaceID, "p");
@@ -26,7 +26,7 @@ pub fn as_int(value: &HMIRValue) -> Option<i128> {
     }
 }
 
-pub fn as_function(value: &HMIRValue) -> Option<HMIRFunctionRef> {
+pub fn as_function(value: &HMIRValue) -> Option<HMIRDefID> {
     match value.kind() {
         HMIRValueKind::Immediate(HMIRImmediate::Address(address)) if address.offset() == 0 => {
             match address.base() {
@@ -60,6 +60,15 @@ pub fn as_place(value: &HMIRValue) -> Option<HMIRPlaceID> {
 pub fn curried(ty: HMIRTypeID, callee: HMIRValue, args: Vec<Option<HMIRValue>>) -> HMIRValue {
     let callee = Box::new(callee);
     HMIRValue::new(ty, HMIRImmediate::Curried { callee, args })
+}
+
+// A callee apart from the values a curried call has bound to its parameters
+pub fn uncurried(value: HMIRValue) -> (HMIRValue, Vec<Option<HMIRValue>>) {
+    let ty = value.ty();
+    match value.take_kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Curried { callee, args }) => (*callee, args),
+        kind => (HMIRValue::new(ty, kind), Vec::new()),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

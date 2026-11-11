@@ -88,7 +88,7 @@ fn evaluate(
         None => deduce::complete(context, body, value, expected)?,
     };
     let span = span.clone();
-    value.and_then(context, body, None, move |context, _, value, _| {
+    value.and_then(context, body, move |context, _, value| {
         let value = match expected {
             Some(expected) => coerce::implicit::standard(context, value, expected, &span)?,
             None => coerce::promotion::std_rvalue(context, value, &span)?,

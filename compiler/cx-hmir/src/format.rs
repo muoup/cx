@@ -91,7 +91,8 @@ fn write_function(
                 f.write_str(&printer.inline(*param.ty()))?;
             }
         }
-        if param.defaulted() {
+        let declared = function.prototype().params().get(index);
+        if declared.is_some_and(|param| param.default().is_some()) {
             f.write_str(" = _")?;
         }
     }
