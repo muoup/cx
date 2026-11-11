@@ -12,10 +12,9 @@ use crate::{
     eval::{
         EvalResult,
         call::{self, contract},
-        flow, types,
+        flow, symbol, types,
     },
     lower::types::lower_prototype,
-    symbol,
     value::HMIRValue,
 };
 
@@ -91,7 +90,7 @@ fn definition(
                     .with_ty(reference)
             }
         };
-        emit::bind_local(context, *local, value);
+        emit::storage::bind_local(context, *local, value);
     }
     contract::enter(context, function.params(), span)?;
 

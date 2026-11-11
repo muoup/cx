@@ -1,7 +1,7 @@
 pub(crate) mod constructor;
+pub(crate) mod declaration;
 pub(crate) mod function;
 pub(crate) mod global;
-pub(crate) mod symbol;
 pub(crate) mod types;
 
 use crate::{
@@ -22,7 +22,7 @@ pub fn lower_unit<'hmir>(
     unit: &'hmir HMIRUnit,
     env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
-    symbol::resolve(env, unit)?;
+    declaration::resolve(env, unit)?;
 
     while let Some(generation) = env.generation_mut().next() {
         let function = env.generation().function(&generation);
@@ -56,7 +56,8 @@ pub(crate) fn declare(
     let count = env.generation().requested_count();
     let (name, original) = match &generation {
         Generation::Template { def, .. } => {
-            let original = crate::symbol::link_name(env, *def).expect("a template names a function");
+            let source = env.symbols().resolve_definition(*def);
+            let original = declaration::link_name(source).expect("a template names a function");
             (format!("{original}.__cx_specialize.{count}"), Some(original))
         }
         Generation::Constructor { ty, variant } => {
@@ -88,10 +89,10 @@ fn generate(
         .owner(id.brand())
         .expect("symbol owner is available");
     let source = unit.resolve_def(id).expect("symbol exists");
-    match crate::symbol::canonical(source).kind() {
+    match declaration::canonical(source).kind() {
         Some(HMIRDefKind::Function(function)) => {
             let standalone = function.signature().stage() == HMIRFunctionStage::Runtime
-                && !crate::symbol::needs_specialization(function)
+                && !declaration::needs_specialization(function)
                 && function.def().is_some();
             if template.is_none() && !standalone {
                 return Ok(());

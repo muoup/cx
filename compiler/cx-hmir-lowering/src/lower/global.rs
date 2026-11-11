@@ -15,9 +15,9 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
+    eval::symbol,
     log::hmir_error,
-    lower::types::lower_type,
-    symbol,
+    lower::{declaration, types::lower_type},
     value::HMIRValueKind,
 };
 
@@ -27,8 +27,9 @@ pub(crate) fn declare(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRGlobalID> {
-    let symbol_name = symbol::link_name(env, def).expect("a global has a symbol name");
-    let linkage = symbol::linkage(env, def);
+    let source = env.symbols().resolve_definition(def);
+    let symbol_name = declaration::link_name(source).expect("a global has a symbol name");
+    let linkage = declaration::linkage(source);
     let mir_ty = lower_type(env, ty, span)?;
     let mutable = !env.semantics(ty).constant;
     let name = symbol_name.as_str();
@@ -59,11 +60,11 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
         .symbols_mut()
         .owner(def.brand())
         .expect("global owner exists");
-    let Some(HMIRDefKind::Global(source)) = symbol::canonical(unit.resolve_def(def).unwrap()).kind()
-    else {
+    let declared = unit.resolve_def(def).unwrap();
+    let Some(HMIRDefKind::Global(source)) = declaration::canonical(declared).kind() else {
         unreachable!("a global is declared as one");
     };
-    let linkage = symbol::linkage(env, def);
+    let linkage = declaration::linkage(declared);
     let span = source.body().expr(source.ty()).span().clone();
     let id = declare(env, def, ty, &span)?;
     if source.initializer().is_none() && linkage == LinkageMode::Extern {
@@ -86,7 +87,7 @@ pub(crate) fn lower(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<()> {
             let mut context =
                 LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
                     .sourced(def.brand());
-            let value = symbol::evaluate::initialize(&mut context, def)?;
+            let value = symbol::initialize(&mut context, def)?;
             let HMIRValueKind::Immediate(constant) = value.kind() else {
                 unreachable!("an exported comptime value is a constant")
             };

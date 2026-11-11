@@ -21,7 +21,7 @@ use crate::{
     },
     eval::{EvalResult, coerce, eval, flow::{EvalExit, Evaluation}, types},
     log::hmir_error,
-    symbol,
+    lower::declaration,
     value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
@@ -73,7 +73,7 @@ pub(crate) fn call(
     emit: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<HMIRValue>>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let unit = context.env_mut().symbols_mut().owner(def.brand()).expect("function owner exists");
-    let function = symbol::function(unit.resolve_def(def).expect("function exists"));
+    let function = declaration::function(unit.resolve_def(def).expect("function exists"));
     let contract = function.signature().contract();
     if contract.precondition().is_none() && contract.postcondition().is_none() {
         return emit(context);

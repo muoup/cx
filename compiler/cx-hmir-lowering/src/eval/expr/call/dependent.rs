@@ -26,10 +26,10 @@ use crate::{
         deduce::{self, Deduction},
         eval, eval_type,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
-        staged, types,
+        staged, symbol, types,
     },
     log::hmir_error,
-    lower, symbol,
+    lower::{self, declaration},
     value::{self, HMIRValue, immediate::HMIRImmediate},
 };
 
@@ -313,7 +313,7 @@ pub(crate) fn apply(
         .symbols_mut()
         .owner(def.brand())
         .expect("function owner exists");
-    let function = symbol::function(unit.resolve_def(def).expect("function exists"));
+    let function = declaration::function(unit.resolve_def(def).expect("function exists"));
     let runtime = context.is_runtime() && !is_spliced(context, function);
     let state = ComptimeContext::of(name(context, def));
     let mut frame = Frame::new(function, def, state, runtime);

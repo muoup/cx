@@ -12,8 +12,8 @@ use cx_tokens::TokenRange;
 
 use crate::{
     env::function::LocalLoweringContext,
+    eval::symbol,
     log::hmir_error,
-    symbol,
     value::{
         HMIRValueKind,
         immediate::{Addressable, HMIRAddress, HMIRImmediate},
@@ -324,7 +324,7 @@ impl LocalLoweringContext<'_, '_, '_> {
         if let Some(region) = self.memory.borrow().globals.get(&def) {
             return Ok(*region);
         }
-        let value = symbol::evaluate::initialize(self, def)?;
+        let value = symbol::initialize(self, def)?;
         let HMIRValueKind::Immediate(constant) = value.kind() else {
             unreachable!("a global initializer is frozen");
         };

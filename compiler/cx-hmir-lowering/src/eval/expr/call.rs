@@ -17,7 +17,6 @@ use cx_util::identifier::CXIdent;
 use crate::{
     emit,
     env::function::{ComptimeContext, FnContext, LocalLoweringContext},
-    symbol,
     eval::{
         EvalResult,
         aggregate::variant,
@@ -26,6 +25,7 @@ use crate::{
         helpers, staged, types,
     },
     log::hmir_error,
+    lower::declaration,
     value::{
         self, HMIRValue, HMIRValueKind,
         immediate::{Addressable, HMIRImmediate},
@@ -93,7 +93,7 @@ fn apply(
     let declared = match (def, &unit) {
         (Some(def), Some(unit)) => {
             let source = unit.resolve_def(def).expect("function exists");
-            Some((def, symbol::function(source)))
+            Some((def, declaration::function(source)))
         }
         _ => None,
     };

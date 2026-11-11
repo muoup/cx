@@ -33,8 +33,8 @@ pub(crate) fn lower(
             let param =
                 runtime::storage::parameter(&mut context, payload, None, &span)?.with_ty(reference);
             let origin = value::as_place(&param).expect("a parameter names its own storage");
-            let moved = emit::lift(&mut context, &param, origin, &span)?;
-            emit::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span);
+            let moved = emit::storage::lift(&mut context, &param, origin, &span)?;
+            emit::storage::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span);
             Some(moved)
         }
         None => None,

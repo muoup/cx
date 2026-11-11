@@ -1,11 +1,11 @@
-use std::{mem::discriminant, ptr};
+use std::{cmp::Reverse, mem::discriminant, ptr};
 
 use cx_hmir::{
     HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind, HMIRFunction,
     HMIRFunctionStage, HMIRUnit, expr::HMIRExprKind, ty::HMIRExprTypeKind,
 };
-use cx_log::{CXResult, catalogue::typecheck};
-use cx_util::linkage::LinkageMode;
+use cx_log::{CXResult, catalogue::typecheck, error::CXError};
+use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     env::{
@@ -14,9 +14,8 @@ use crate::{
         generation::Generation,
         resolver::demand,
     },
-    eval::{eval_type, flow, types},
+    eval::{eval_type, flow, symbol, types},
     log::hmir_error,
-    symbol::{self, canonical, incompatible},
     value::{self, HMIRValue},
 };
 
@@ -111,7 +110,7 @@ fn agreement(def: &HMIRDef) -> CXResult<()> {
 
 // An internal symbol is declared internal first; a function redeclared without 'static' stays internal
 fn linkage_agreement(def: &HMIRDef) -> CXResult<()> {
-    let mut linkages = symbol::linkages(def);
+    let mut linkages = linkages(def);
     let Some((first, mode)) = linkages.next() else {
         return Ok(());
     };
@@ -193,12 +192,12 @@ fn comptime_agreement(
 }
 
 fn request(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) {
-    let linkage = symbol::linkage(env, id);
+    let linkage = linkage(def);
     let root = linkage != LinkageMode::Static
         && match canonical(def).kind() {
             Some(HMIRDefKind::Function(function)) => {
                 function.signature().stage() == HMIRFunctionStage::Runtime
-                    && !symbol::needs_specialization(function)
+                    && !needs_specialization(function)
                     && function.def().is_some()
             }
             Some(HMIRDefKind::Global(global)) => {
@@ -233,4 +232,73 @@ fn is_redeclarable(function: &HMIRFunction) -> bool {
         && !generator
         && signature.params().iter().all(|param| !param.comptime())
         && function.prototype().params().iter().all(|param| param.default().is_none())
+}
+
+// The declaration that stands for 'def': its definition, or else its first declaration
+pub(crate) fn canonical(def: &HMIRDef) -> &HMIRDeclaration {
+    def.declarations()
+        .iter()
+        .enumerate()
+        .filter(|(_, declaration)| declaration.kind().is_some())
+        .max_by_key(|(index, declaration)| (declaration.role(), Reverse(*index)))
+        .map(|(_, declaration)| declaration)
+        .expect("a symbol has declaration content")
+}
+
+pub(crate) fn function(def: &HMIRDef) -> &HMIRFunction {
+    match canonical(def).kind() {
+        Some(HMIRDefKind::Function(function)) => function,
+        _ => unreachable!("'{}' does not name a function", def.name()),
+    }
+}
+
+pub(crate) fn needs_specialization(function: &HMIRFunction) -> bool {
+    function.signature().stage() == HMIRFunctionStage::Runtime
+        && function
+            .signature()
+            .params()
+            .iter()
+            .any(|param| param.comptime())
+}
+
+// The linkage of each declaration of a function or storage global, in order
+fn linkages(def: &HMIRDef) -> impl Iterator<Item = (&HMIRDeclaration, LinkageMode)> {
+    def.declarations()
+        .iter()
+        .filter_map(|declaration| match declaration.kind()? {
+            HMIRDefKind::Function(function) => Some((declaration, function.prototype().linkage())),
+            HMIRDefKind::Global(global) => Some((declaration, global.linkage())),
+            _ => None,
+        })
+}
+
+// A first internal declaration makes the symbol internal; otherwise the last one that is not 'extern' decides
+pub(crate) fn linkage(def: &HMIRDef) -> LinkageMode {
+    let mut linkages = linkages(def).map(|(_, linkage)| linkage);
+    let Some(first) = linkages.next() else {
+        return LinkageMode::Standard;
+    };
+    if first == LinkageMode::Static {
+        return first;
+    }
+    linkages
+        .filter(|linkage| *linkage != LinkageMode::Extern)
+        .last()
+        .unwrap_or(first)
+}
+
+pub(crate) fn link_name(def: &HMIRDef) -> Option<CXIdent> {
+    match canonical(def).kind() {
+        Some(HMIRDefKind::Function(function)) => Some(function.prototype().symbol_name().clone()),
+        Some(HMIRDefKind::Global(global)) => Some(global.symbol_name().clone()),
+        _ => None,
+    }
+}
+
+pub(crate) fn incompatible(def: &HMIRDef, declaration: &HMIRDeclaration) -> CXError {
+    hmir_error(
+        declaration.span(),
+        &typecheck::INCOMPATIBLE_DECLARATION,
+        def.name().to_string(),
+    )
 }

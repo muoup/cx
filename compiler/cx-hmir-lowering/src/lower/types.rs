@@ -18,9 +18,12 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     env::{HMIREnvironment, resolver::demand},
-    eval::types::{comptime_only, name, validate},
+    eval::{
+        symbol,
+        types::{comptime_only, name, validate},
+    },
     log::{hmir_error, log_hmir_error},
-    symbol,
+    lower::declaration,
 };
 
 pub(crate) fn lower_signature(
@@ -48,13 +51,14 @@ pub(crate) fn lower_prototype(
     def: HMIRDefID,
     span: &TokenRange,
 ) -> CXResult<MIRFnPrototype> {
-    let symbol_name = symbol::link_name(env, def).expect("a prototype names a function");
-    let linkage = symbol::linkage(env, def);
+    let source = env.symbols().resolve_definition(def);
+    let symbol_name = declaration::link_name(source).expect("a prototype names a function");
+    let linkage = declaration::linkage(source);
     let value = symbol::value(env, def)?;
 
     if comptime_only(env, value.ty()) {
         let source = env.symbols().resolve_definition(def);
-        if let Some(HMIRDefKind::Function(function)) = symbol::canonical(source).kind()
+        if let Some(HMIRDefKind::Function(function)) = declaration::canonical(source).kind()
             && function.signature().stage() == HMIRFunctionStage::Runtime
         {
             return Err(hmir_error(

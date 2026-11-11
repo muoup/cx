@@ -19,10 +19,9 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
     env::{function::LocalLoweringContext, generation::Generation},
-    eval::{EvalResult, aggregate::variant, deduce, eval_type, flow::Evaluation, types},
+    eval::{EvalResult, aggregate::variant, deduce, eval_type, flow::Evaluation, symbol, types},
     log::hmir_error,
-    lower::{global, types::lower_prototype},
-    symbol,
+    lower::{declaration, global, types::lower_prototype},
     value::{
         self, HMIRReference, HMIRValue, HMIRValueKind,
         immediate::HMIRImmediate,
@@ -88,7 +87,7 @@ pub(crate) fn eval_def(
 }
 
 fn request(context: &mut LocalLoweringContext, def: HMIRDefID) {
-    let linkage = symbol::linkage(context.env_mut(), def);
+    let linkage = declaration::linkage(context.env().symbols().resolve_definition(def));
     if def.brand() == context.env().symbols().local_unit().id() || linkage == LinkageMode::Static {
         let generation = Generation::Definition(def);
         context.env_mut().generation_mut().request(generation, None);
@@ -205,13 +204,14 @@ pub(crate) fn resolve(
 fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) -> CXResult<bool> {
     let env = context.env_mut();
     let (a_value, b_value) = (symbol::value(env, a)?, symbol::value(env, b)?);
-    let (Some(a_name), Some(b_name)) = (symbol::link_name(env, a), symbol::link_name(env, b))
+    let (a_def, b_def) = (env.symbols().resolve_definition(a), env.symbols().resolve_definition(b));
+    let (Some(a_name), Some(b_name)) = (declaration::link_name(a_def), declaration::link_name(b_def))
     else {
         return Ok(false);
     };
     if a_name != b_name
-        || symbol::linkage(env, a) == LinkageMode::Static
-        || symbol::linkage(env, b) == LinkageMode::Static
+        || declaration::linkage(a_def) == LinkageMode::Static
+        || declaration::linkage(b_def) == LinkageMode::Static
     {
         return Ok(false);
     }

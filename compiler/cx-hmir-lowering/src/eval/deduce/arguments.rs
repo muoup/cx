@@ -24,7 +24,7 @@ use crate::{
         types::{self, alike},
     },
     log::hmir_error,
-    symbol,
+    lower::declaration,
     value::{
         self, HMIRValue, HMIRValueKind,
         immediate::HMIRImmediate,
@@ -242,7 +242,7 @@ impl<'a> Deduction<'a> {
         let def = value::as_function(callee)?;
         let instance = instance(context, def, actual)?;
         let source = context.env().symbols().resolve_definition(def);
-        let params = symbol::function(source).prototype().params();
+        let params = declaration::function(source).prototype().params();
         let mut values = (0..params.len())
             .filter(|index| {
                 curried.get(*index).is_none_or(Option::is_none) && params[*index].default().is_none()

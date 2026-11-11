@@ -1,6 +1,7 @@
 pub(crate) mod deduce;
 pub(crate) mod flow;
 pub(crate) mod helpers;
+pub(crate) mod symbol;
 
 mod expr;
 

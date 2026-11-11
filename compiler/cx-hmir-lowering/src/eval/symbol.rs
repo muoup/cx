@@ -1,7 +1,7 @@
 use cx_hir::ast::types::HIRTagKind;
 use cx_hmir::{
     HMIRComptimeGlobal, HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind,
-    HMIRFunction, HMIRGlobal,
+    HMIRFnSignature, HMIRFunction, HMIRGlobal,
     expr::HMIRExprKind,
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
@@ -11,6 +11,7 @@ use cx_hmir::{
 use cx_log::{
     CXResult,
     catalogue::{mir, typecheck},
+    error::CXError,
 };
 use cx_tokens::TokenRange;
 use cx_util::linkage::LinkageMode;
@@ -23,17 +24,86 @@ use crate::{
     },
     eval::{self, coerce, eval_type, flow, name::type_value, types},
     log::hmir_error,
-    symbol,
+    lower::declaration,
     value::{
         HMIRValue,
         immediate::{Addressable, HMIRAddress, HMIRImmediate},
     },
 };
 
-pub(crate) fn value(context: &mut LocalLoweringContext, id: HMIRDefID) -> CXResult<HMIRValue> {
+// The value 'def' names, evaluated the first time it is asked for
+pub(crate) fn value(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<HMIRValue> {
+    match env.resolver().symbol(def) {
+        SymbolState::Ready(value) | SymbolState::Evaluating(Some(value)) => return Ok(value),
+        SymbolState::Evaluating(None) => return Err(cycle(env, def)),
+        SymbolState::Declared => {}
+    }
+    env.resolver_mut()
+        .set_symbol(def, SymbolState::Evaluating(None));
+    let result = evaluating(env, def, |context| evaluate(context, def));
+    let state = match &result {
+        Ok(value) => SymbolState::Ready(value.clone()),
+        Err(_) => SymbolState::Declared,
+    };
+    env.resolver_mut().set_symbol(def, state);
+    result
+}
+
+// Evaluates the body of the type 'def' reserved as 'ty'
+pub(crate) fn complete(env: &mut HMIREnvironment, def: HMIRDefID, ty: HMIRTypeID) -> CXResult<()> {
+    env.resolver_mut().set_pending(ty, None);
+    evaluating(env, def, |context| body(context, def, ty))
+}
+
+pub(crate) fn signature(
+    env: &mut HMIREnvironment,
+    def: HMIRDefID,
+) -> CXResult<HMIRFnSignature<HMIRTypeID>> {
+    let value = value(env, def)?;
+    let HMIRTypeKind::Function(signature) = env.resolve_kind(value.ty()) else {
+        unreachable!("a function binding has a function type")
+    };
+    Ok(signature.clone())
+}
+
+pub(crate) fn value_type(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<HMIRTypeID> {
+    let value = value(env, def)?;
+    Ok(env.referent(value.ty()))
+}
+
+fn evaluating<T>(
+    env: &mut HMIREnvironment,
+    def: HMIRDefID,
+    evaluate: impl FnOnce(&mut LocalLoweringContext) -> CXResult<T>,
+) -> CXResult<T> {
+    env.resolver_mut().enter(def);
+    let result = {
+        let mut context =
+            LocalLoweringContext::new(env, None, FnContext::Comptime(ComptimeContext::new()))
+                .sourced(def.brand());
+        evaluate(&mut context)
+    };
+    env.resolver_mut().leave();
+    result
+}
+
+fn cycle(env: &HMIREnvironment, def: HMIRDefID) -> CXError {
+    let active = env.resolver().active();
+    let start = active.iter().position(|active| *active == def).unwrap_or(0);
+    let path = active[start..]
+        .iter()
+        .chain(std::iter::once(&def))
+        .map(|id| env.symbols().resolve_definition(*id).name().to_string())
+        .collect::<Vec<_>>()
+        .join(" -> ");
+    let span = env.symbols().resolve_definition(def).declarations()[0].span();
+    hmir_error(span, &mir::DEPENDENCY_CYCLE, path)
+}
+
+fn evaluate(context: &mut LocalLoweringContext, id: HMIRDefID) -> CXResult<HMIRValue> {
     let unit = context.unit(id.brand());
     let def = unit.resolve_def(id).unwrap();
-    let declaration = symbol::canonical(def);
+    let declaration = declaration::canonical(def);
     let span = declaration.span();
     match declaration.kind().expect("a canonical declaration has content") {
         HMIRDefKind::ComptimeGlobal(global)
@@ -49,10 +119,10 @@ pub(crate) fn value(context: &mut LocalLoweringContext, id: HMIRDefID) -> CXResu
 }
 
 // The body of the aggregate 'id' declares, completing the type reserved for it
-pub(crate) fn body(context: &mut LocalLoweringContext, id: HMIRDefID, ty: HMIRTypeID) -> CXResult<()> {
+fn body(context: &mut LocalLoweringContext, id: HMIRDefID, ty: HMIRTypeID) -> CXResult<()> {
     let unit = context.unit(id.brand());
     let def = unit.resolve_def(id).unwrap();
-    let Some(HMIRDefKind::ComptimeGlobal(global)) = symbol::canonical(def).kind() else {
+    let Some(HMIRDefKind::ComptimeGlobal(global)) = declaration::canonical(def).kind() else {
         unreachable!("an aggregate is declared by a type")
     };
     let declared = aggregate(global).expect("a pending type declares an aggregate");
@@ -124,11 +194,11 @@ fn global_value(
         merged = Some(match merged {
             None => ty,
             Some(previous) => composite(context.env(), previous, ty)
-                .ok_or_else(|| symbol::incompatible(def, other))?,
+                .ok_or_else(|| declaration::incompatible(def, other))?,
         });
     }
     let mut ty = merged.expect("a global has a type");
-    let linkage = symbol::linkage(context.env_mut(), id);
+    let linkage = declaration::linkage(def);
     let unbounded = matches!(
         context.env().resolve_kind(ty),
         HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })
@@ -235,7 +305,7 @@ fn composite(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID) -> Option<HMIR
 pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> CXResult<HMIRValue> {
     let unit = context.unit(id.brand());
     let def = unit.resolve_def(id).unwrap();
-    let declaration = symbol::canonical(def);
+    let declaration = declaration::canonical(def);
     let Some(HMIRDefKind::Global(global)) = declaration.kind() else {
         unreachable!("only storage globals have initial values");
     };

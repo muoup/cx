@@ -2,7 +2,10 @@ use rustc_hash::FxHashSet;
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext};
 use cx_log::CXResult;
 
-use crate::{env::HMIREnvironment, eval::types, symbol};
+use crate::{
+    env::HMIREnvironment,
+    eval::{symbol, types},
+};
 
 // Evaluates the pending definition 'ty' names, and those of the elements it is an array of
 pub(crate) fn force(env: &mut HMIREnvironment, ty: HMIRTypeID) -> CXResult<()> {
