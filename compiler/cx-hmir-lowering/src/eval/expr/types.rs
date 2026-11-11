@@ -265,6 +265,16 @@ pub(crate) fn owned_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRType
     }
 }
 
+pub(crate) fn is_aggregate(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
+    matches!(
+        env.resolve_kind(ty),
+        HMIRTypeKind::Array { .. }
+            | HMIRTypeKind::Struct { .. }
+            | HMIRTypeKind::Union { .. }
+            | HMIRTypeKind::TaggedUnion { .. }
+    )
+}
+
 pub(crate) fn zero(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<HMIRImmediate> {
     Some(match env.resolve_kind(ty) {
         HMIRTypeKind::Int(_) | HMIRTypeKind::PointerTo(_) => HMIRImmediate::Int(0),
@@ -279,8 +289,7 @@ pub(crate) fn zero(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<HMIRImmediat
                 .map(|field| zero(env, *field.ty()))
                 .collect::<Option<_>>()?,
         },
-        HMIRTypeKind::Union { fields } => zero(env, *fields.first()?.ty())?,
-        HMIRTypeKind::TaggedUnion { fields } => HMIRImmediate::TaggedUnion {
+        HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields } => HMIRImmediate::Union {
             variant: 0,
             payload: Box::new(zero(env, *fields.first()?.ty())?),
         },

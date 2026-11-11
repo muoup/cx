@@ -3,7 +3,7 @@ use cx_mir::MIRBasicBlockID;
 
 use crate::{
     env::function::Expectations,
-    value::{HMIRPlaceID, HMIRValue},
+    value::{HMIRValue, place::HMIRPlaceID},
 };
 
 #[derive(Debug)]

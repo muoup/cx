@@ -12,6 +12,7 @@ use crate::{
         function::{FnContext, LocalLoweringContext, RuntimeContext},
     },
     eval::aggregate::variant,
+    value::place::HMIRPlaceBrand,
 };
 
 pub(crate) fn lower(
@@ -22,7 +23,8 @@ pub(crate) fn lower(
 ) -> CXResult<MIRFunction> {
     let span = TokenRange::internal();
     let prototype = env.module().function(function).prototype().clone();
-    let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
+    let brand = HMIRPlaceBrand::runtime(function);
+    let runtime = FnContext::Runtime(RuntimeContext::new(prototype, brand));
     let mut context = LocalLoweringContext::new(env, None, runtime);
 
     let scope = emit::open_scope(&mut context);

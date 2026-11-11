@@ -1,5 +1,6 @@
 pub mod address;
 pub mod immediate;
+pub mod place;
 pub mod staged;
 
 use cx_hmir::{HMIRDefID, ty::HMIRTypeID};
@@ -13,11 +14,11 @@ use crate::{
     value::{
         address::{Addressable, HMIRAddress},
         immediate::HMIRImmediate,
+        place::HMIRPlaceID,
     },
 };
 
 dense_id!(HMIRRegisterID, "$");
-dense_id!(HMIRPlaceID, "p");
 
 pub type HMIRValIntrinsic = Intrinsic<HMIRValue, HMIRTypeID>;
 

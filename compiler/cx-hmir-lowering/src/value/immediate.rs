@@ -18,7 +18,8 @@ pub enum HMIRImmediate {
     Aggregate {
         fields: Vec<HMIRImmediate>,
     },
-    TaggedUnion {
+    /// A union holding one of its members, tagged or not; the layout of its type is constructed where it is stored
+    Union {
         variant: usize,
         payload: Box<HMIRImmediate>,
     },

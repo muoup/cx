@@ -22,6 +22,7 @@ use crate::{
     value::{
         self, HMIRValue, HMIRValueKind,
         immediate::HMIRImmediate,
+        place::HMIRPlaceBrand,
         staged::{Quote, QuoteRef},
     },
 };
@@ -106,7 +107,7 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
         CXIdent::new("__cx_unevaluated"),
         None,
     );
-    let mut runtime = RuntimeContext::new(prototype);
+    let mut runtime = RuntimeContext::new(prototype, HMIRPlaceBrand::DETACHED);
     runtime.set_emission(emission);
     runtime.freeze(frozen.clone());
     let evaluation = context.evaluation();

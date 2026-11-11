@@ -14,9 +14,10 @@ use crate::{
     eval::types,
     lower::{global, types::lower_type},
     value::{
-        HMIRPlaceID, HMIRValue, HMIRValueKind,
+        HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
         immediate::HMIRImmediate,
+        place::HMIRPlaceID,
     },
 };
 

@@ -13,7 +13,10 @@ use crate::{
         function::scope::{Bindings, Scopes},
         module::MIRFunctionBuilder,
     },
-    value::{HMIRPlaceID, HMIRRegisterID, HMIRValue},
+    value::{
+        HMIRRegisterID, HMIRValue,
+        place::{HMIRPlaceBrand, HMIRPlaceID},
+    },
 };
 
 mod scope;
@@ -30,6 +33,7 @@ pub enum Emission {
 #[derive(Debug)]
 pub struct RuntimeContext {
     builder: MIRFunctionBuilder,
+    brand: HMIRPlaceBrand,
     emission: Emission,
     // The values known of the locals a detached context binds placeholders for
     frozen: Bindings,
@@ -40,9 +44,10 @@ pub struct RuntimeContext {
 }
 
 impl RuntimeContext {
-    pub fn new(prototype: MIRFnPrototype) -> Self {
+    pub fn new(prototype: MIRFnPrototype, brand: HMIRPlaceBrand) -> Self {
         Self {
             builder: MIRFunctionBuilder::new(prototype),
+            brand,
             emission: Emission::Enabled,
             frozen: Bindings::default(),
 
@@ -95,8 +100,13 @@ impl RuntimeContext {
         MIRRegister::new(id.0)
     }
 
+    pub(crate) fn brand(&self) -> HMIRPlaceBrand {
+        self.brand
+    }
+
     pub(crate) fn place(&self, id: HMIRPlaceID) -> MIRPlaceID {
-        MIRPlaceID::new(id.0)
+        debug_assert_eq!(id.brand(), self.brand, "a place of another function");
+        MIRPlaceID::new(id.index())
     }
 
     pub(crate) fn scopes(&self) -> &Scopes<RuntimeScope> {

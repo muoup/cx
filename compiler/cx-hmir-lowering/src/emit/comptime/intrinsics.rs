@@ -15,7 +15,7 @@ use crate::{
     },
     env::function::{
         LocalLoweringContext,
-        memory::{field_offset, layout},
+        memory::{field_offset, layout, placement},
     },
     eval::types,
     log::hmir_error,
@@ -280,14 +280,8 @@ pub fn aggregate(
 ) -> CXResult<HMIRValue> {
     match intrinsic {
         AggregateIntrinsic::SumIndex { value, .. } => {
-            let value = match context.env().is_reference(value.ty()) {
-                true => storage::read(context, value, span)?,
-                false => value.clone(),
-            };
-            let HMIRValueKind::Immediate(HMIRImmediate::TaggedUnion { variant, .. }) = value.kind() else {
-                unreachable!("a tagged union constant names its variant")
-            };
-            Ok(value::int(context.env(), *variant as i128, result))
+            let variant = storage::variant(context, value, span)?;
+            Ok(value::int(context.env(), variant as i128, result))
         }
         AggregateIntrinsic::SumVariant { value, .. } => project(context, value, 0, result, span),
         AggregateIntrinsic::StructField {
@@ -314,35 +308,44 @@ pub fn aggregate(
     }
 }
 
+// An initialized aggregate is constructed in storage of its own, untracked as it binds nothing: its zero value with
+// the variant of a union selected, then each member written over it
 fn init(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     fields: &[(usize, HMIRValue)],
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let Some(mut constant) = types::zero(context.env(), ty) else {
-        unreachable!("an initialized aggregate has a zero value")
+    let zero = |context: &LocalLoweringContext, ty| {
+        types::zero(context.env(), ty).expect("an initialized aggregate has a zero value")
     };
-    let union = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Union { .. });
+    let mut constant = zero(context, ty);
+    if let (HMIRImmediate::Union { variant, payload }, Some((index, _))) = (&mut constant, fields.last()) {
+        (*variant, **payload) = (*index, zero(context, member(context, ty, *index)));
+    }
+    let storage = HMIRAddress::new(context.allocate(ty, span)?, 0);
+    context.store(&storage, ty, &constant.into(), None, span)?;
     for (index, value) in fields {
-        let HMIRValueKind::Immediate(value) = value.kind().clone() else {
-            return unsupported(span, "an address of comptime storage inside an aggregate");
-        };
-        if union {
-            constant = value;
-            continue;
-        }
-        match &mut constant {
-            HMIRImmediate::Aggregate { fields: items } => items[*index] = value,
-            HMIRImmediate::TaggedUnion {
-                variant: member,
-                payload: slot,
-            } => (*member, **slot) = (*index, value),
-            _ => unreachable!("an initialized aggregate has an aggregate zero value"),
-        }
+        let offset = field_offset(context.env_mut(), ty, *index, span)?;
+        let offset = i64::try_from(offset).map_err(|_| overflow(span))?;
+        let bitfield = placement(context.env_mut(), ty, *index, span)?;
+        let member = member(context, ty, *index);
+        let reference = types::reference(context.env_mut(), member, bitfield, span);
+        let address = storage.offset_by(offset).ok_or_else(|| overflow(span))?;
+        storage::write(context, &HMIRValue::new(reference, address), value, span)?;
     }
 
-    Ok(HMIRValue::new(ty, constant))
+    Ok(HMIRValue::new(ty, storage))
+}
+
+fn member(context: &LocalLoweringContext, ty: HMIRTypeID, index: usize) -> HMIRTypeID {
+    match context.env().resolve_kind(ty) {
+        HMIRTypeKind::Array { element, .. } => *element,
+        HMIRTypeKind::Struct { fields }
+        | HMIRTypeKind::Union { fields }
+        | HMIRTypeKind::TaggedUnion { fields } => *fields[index].ty(),
+        _ => unreachable!("an initialized aggregate has members"),
+    }
 }
 
 pub fn internal(

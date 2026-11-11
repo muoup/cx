@@ -146,6 +146,22 @@ fn tag_offset(
     Ok(size.div_ceil(alignment) * alignment)
 }
 
+// The variant a tagged union at 'offset' holds
+pub(super) fn discriminant(
+    env: &mut HMIREnvironment,
+    variants: &[HMIRFieldDef<HMIRTypeID>],
+    image: &Image,
+    offset: usize,
+    span: &TokenRange,
+) -> CXResult<usize> {
+    let tag = offset + tag_offset(env, variants, span)?;
+    let variant = image.bytes(tag..tag + 1).map_err(|fault| fault.error(span))?[0] as usize;
+    match variant < variants.len() {
+        true => Ok(variant),
+        false => Err(Fault::Discriminant.error(span)),
+    }
+}
+
 fn word(bytes: &[u8], bitfield: HMIRBitfield) -> (u128, u128) {
     let mut buffer = [0; 16];
     buffer[..bytes.len()].copy_from_slice(bytes);
@@ -245,7 +261,10 @@ fn write(
                 set_bits(&mut image.bytes[range], *value, bitfield);
             }
         }
-        (HMIRTypeKind::TaggedUnion { fields }, HMIRImmediate::TaggedUnion { variant, payload }) => {
+        (HMIRTypeKind::Union { fields }, HMIRImmediate::Union { variant, payload }) => {
+            write(env, *fields[*variant].ty(), payload, image, offset, span)?;
+        }
+        (HMIRTypeKind::TaggedUnion { fields }, HMIRImmediate::Union { variant, payload }) => {
             write(env, *fields[*variant].ty(), payload, image, offset, span)?;
             let tag = offset + tag_offset(env, &fields, span)?;
             image.put(tag, &[*variant as u8]);
@@ -281,6 +300,7 @@ fn opaque(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
             | HMIRTypeKind::Unreachable
             | HMIRTypeKind::Array { .. }
             | HMIRTypeKind::Struct { .. }
+            | HMIRTypeKind::Union { .. }
             | HMIRTypeKind::TaggedUnion { .. }
     )
 }
@@ -353,18 +373,18 @@ fn immediate(
             HMIRImmediate::Aggregate { fields: items }
         }
         HMIRTypeKind::Union { fields } => {
-            if let Some(value) = cell(image, offset, layout(env, ty, span)?.size()) {
-                return value.map_err(fault);
-            }
             let mut members = Vec::with_capacity(fields.len());
             for (member, field) in fields.iter().enumerate() {
                 members.push((layout(env, *field.ty(), span)?.size(), member));
             }
             members.sort_by_key(|(size, _)| std::cmp::Reverse(*size));
             let mut failure = None;
-            for (_, member) in members {
-                match immediate(env, *fields[member].ty(), image, offset, span) {
-                    Ok(value) => return Ok(value),
+            for (_, variant) in members {
+                match immediate(env, *fields[variant].ty(), image, offset, span) {
+                    Ok(payload) => {
+                        let payload = Box::new(payload);
+                        return Ok(HMIRImmediate::Union { variant, payload });
+                    }
                     Err(error) => {
                         failure.get_or_insert(error);
                     }
@@ -373,13 +393,9 @@ fn immediate(
             return Err(failure.unwrap_or_else(|| fault(Fault::Uninitialized)));
         }
         HMIRTypeKind::TaggedUnion { fields } => {
-            let tag = offset + tag_offset(env, &fields, span)?;
-            let variant = image.bytes(tag..tag + 1).map_err(fault)?[0] as usize;
-            let Some(field) = fields.get(variant) else {
-                return Err(fault(Fault::Discriminant));
-            };
-            let payload = Box::new(immediate(env, *field.ty(), image, offset, span)?);
-            HMIRImmediate::TaggedUnion { variant, payload }
+            let variant = discriminant(env, &fields, image, offset, span)?;
+            let payload = Box::new(immediate(env, *fields[variant].ty(), image, offset, span)?);
+            HMIRImmediate::Union { variant, payload }
         }
         kind => {
             let size = layout(env, ty, span)?.size();

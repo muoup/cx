@@ -15,7 +15,7 @@ use crate::{
         flow, symbol, types,
     },
     lower::types::lower_prototype,
-    value::HMIRValue,
+    value::{HMIRValue, place::HMIRPlaceBrand},
 };
 
 pub(crate) fn lower<'hmir>(
@@ -41,7 +41,12 @@ pub(crate) fn lower<'hmir>(
         ),
     };
     let comptime_bindings = template.map_or(&[][..], |(_, comptime_bindings)| comptime_bindings);
-    let runtime = FnContext::Runtime(RuntimeContext::new(prototype));
+    let generated = match template {
+        Some((generated, _)) => generated,
+        None => env.module_mut().declare_function(prototype.clone()),
+    };
+    let brand = HMIRPlaceBrand::runtime(generated);
+    let runtime = FnContext::Runtime(RuntimeContext::new(prototype, brand));
     let mut context = LocalLoweringContext::new(env, Some(function.signature()), runtime)
         .sourced(id.brand())
         .with_return_type(*signature.return_type());
@@ -61,12 +66,7 @@ pub(crate) fn lower<'hmir>(
     flow::top(flow::catch_diverged(completion))?;
 
     let lowered = context.into_runtime().finish();
-    let module = env.module_mut();
-    let id = match template {
-        Some((generated, _)) => generated,
-        None => module.declare_function(lowered.prototype().clone()),
-    };
-    module.define_function(id, lowered);
+    env.module_mut().define_function(generated, lowered);
     Ok(())
 }
 

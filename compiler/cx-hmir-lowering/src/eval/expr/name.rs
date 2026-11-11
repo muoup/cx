@@ -18,11 +18,11 @@ use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 
 use crate::{
-    env::{function::LocalLoweringContext, generation::Generation},
+    env::function::LocalLoweringContext,
     eval::{EvalResult, aggregate::variant, deduce, eval_type, flow::Evaluation, symbol, types},
     log::hmir_error,
-    lower::{declaration, global, types::lower_prototype},
-    value::{HMIRValue, HMIRValueKind, address::Addressable, immediate::HMIRImmediate},
+    lower::declaration,
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) fn eval_name(
@@ -54,44 +54,9 @@ pub(crate) fn eval_def(
     id: HMIRDefID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let value = symbol::value(context.env_mut(), id)?;
-    let emitting = context.is_runtime() && !context.is_unevaluated();
-    
-    match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) => {
-            return deduce::type_result(context, *ty, span);
-        }
-        // The value may address another symbol than 'id', as a comptime global holding a pointer to one does
-        HMIRValueKind::Immediate(HMIRImmediate::Address(address))
-            if let Addressable::Def(def) = *address.base()
-                && address.offset() == 0 =>
-        {
-            let ty = symbol::value_type(context.env_mut(), def)?;
-            match context.env().is_function(ty) {
-                true if emitting && !types::comptime_only(context.env(), ty) => {
-                    let prototype = lower_prototype(context.env_mut(), def, span)?;
-                    context.env_mut().module_mut().declare_function(prototype);
-                    request(context, def);
-                }
-                true => {}
-                false => {
-                    request(context, def);
-                    if emitting {
-                        global::declare(context.env_mut(), def, ty, span)?;
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-    
-    Ok(Evaluation::Ready(value))
-}
-
-fn request(context: &mut LocalLoweringContext, def: HMIRDefID) {
-    let linkage = declaration::linkage(context.env().symbols().resolve_definition(def));
-    if def.brand() == context.env().symbols().local_unit().id() || linkage == LinkageMode::Static {
-        let generation = Generation::Definition(def);
-        context.env_mut().generation_mut().request(generation, None);
+    match value::as_type(&value) {
+        Some(ty) => deduce::type_result(context, ty, span),
+        None => Ok(Evaluation::Ready(value)),
     }
 }
 

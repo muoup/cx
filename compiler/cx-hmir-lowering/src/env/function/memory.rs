@@ -1,11 +1,11 @@
 mod codec;
 
 use rustc_hash::FxHashMap;
-use std::{collections::BTreeMap, ops::Range};
+use std::{cell::RefCell, collections::BTreeMap, fmt, ops::Range, rc::Rc};
 
 use cx_hmir::{
     HMIRDefID,
-    ty::{HMIRTypeID, aggregate::HMIRBitfield},
+    ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRBitfield, context::HMIRTypeContext},
 };
 use cx_log::{CXResult, catalogue::mir, error::CXError};
 use cx_tokens::TokenRange;
@@ -16,21 +16,31 @@ use crate::{
     log::hmir_error,
     lower::declaration,
     value::{
-        HMIRPlaceID, HMIRValueKind,
+        HMIRValueKind,
         address::{Addressable, HMIRAddress},
         immediate::HMIRImmediate,
+        place::{HMIRPageID, HMIRPlaceBrand, HMIRPlaceID},
     },
 };
 
 pub(crate) use codec::{field_offset, layout, placement};
 
-// Regions are places of the comptime evaluation; globals and literals read at comptime are regions of their own
-#[derive(Debug, Default)]
+// Comptime storage is kept in pages, each place a region of one. Globals and literals read at comptime live in the
+// static page, which is never released
+#[derive(Debug)]
 pub(crate) struct Memory {
-    regions: FxHashMap<HMIRPlaceID, Image>,
+    pages: FxHashMap<HMIRPageID, Vec<Image>>,
     globals: FxHashMap<HMIRDefID, HMIRPlaceID>,
     literals: FxHashMap<String, HMIRPlaceID>,
     next: usize,
+}
+
+const STATICS: HMIRPageID = HMIRPageID::new(0);
+
+// A page of comptime memory, released once its owner drops it
+pub(crate) struct Page {
+    id: HMIRPageID,
+    memory: Rc<RefCell<Memory>>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,12 +183,42 @@ impl Image {
     }
 }
 
+impl Default for Memory {
+    fn default() -> Self {
+        Self {
+            pages: FxHashMap::from_iter([(STATICS, Vec::new())]),
+            globals: FxHashMap::default(),
+            literals: FxHashMap::default(),
+            next: STATICS.index() + 1,
+        }
+    }
+}
+
 impl Memory {
-    fn allocate(&mut self, image: Image) -> HMIRPlaceID {
-        let region = HMIRPlaceID::new(self.next);
+    // Page ids are never reused, so a place that outlives its page cannot reach a later one
+    fn page(&mut self) -> HMIRPageID {
+        let page = HMIRPageID::new(self.next);
         self.next += 1;
-        self.regions.insert(region, image);
-        region
+        self.pages.insert(page, Vec::new());
+        page
+    }
+
+    fn allocate(&mut self, page: HMIRPageID, image: Image) -> HMIRPlaceID {
+        let regions = self.pages.get_mut(&page).expect("allocating in a released page");
+        regions.push(image);
+        HMIRPlaceID::new(HMIRPlaceBrand::comptime(page), regions.len() - 1)
+    }
+
+    fn region(&self, place: HMIRPlaceID) -> Result<&Image, Fault> {
+        let page = place.brand().page().ok_or(Fault::Dangling)?;
+        let regions = self.pages.get(&page).ok_or(Fault::Dangling)?;
+        regions.get(place.index()).ok_or(Fault::Dangling)
+    }
+
+    fn region_mut(&mut self, place: HMIRPlaceID) -> Result<&mut Image, Fault> {
+        let page = place.brand().page().ok_or(Fault::Dangling)?;
+        let regions = self.pages.get_mut(&page).ok_or(Fault::Dangling)?;
+        regions.get_mut(place.index()).ok_or(Fault::Dangling)
     }
 
     fn literal(&mut self, text: &str) -> HMIRPlaceID {
@@ -187,13 +227,13 @@ impl Memory {
         }
         let mut image = Image::zeroed(text.len() + 1);
         image.put(0, text.as_bytes());
-        let region = self.allocate(image);
+        let region = self.allocate(STATICS, image);
         self.literals.insert(text.to_string(), region);
         region
     }
 
     fn range(&self, region: HMIRPlaceID, offset: i64, size: usize) -> Result<Range<usize>, Fault> {
-        let capacity = self.regions.get(&region).ok_or(Fault::Dangling)?.len();
+        let capacity = self.region(region)?.len();
         usize::try_from(offset)
             .ok()
             .filter(|start| start.checked_add(size).is_some_and(|end| end <= capacity))
@@ -207,16 +247,39 @@ impl Memory {
 
     fn load(&self, location: &HMIRAddress<HMIRPlaceID>, size: usize) -> Result<Image, Fault> {
         let range = self.range(*location.base(), location.offset(), size)?;
-        self.regions[location.base()].slice(range)
+        self.region(*location.base())?.slice(range)
     }
 
     fn store(&mut self, location: &HMIRAddress<HMIRPlaceID>, image: &Image) -> Result<(), Fault> {
         let range = self.range(*location.base(), location.offset(), image.len())?;
-        self.regions
-            .get_mut(location.base())
-            .ok_or(Fault::Dangling)?
-            .overwrite(range.start, image);
+        self.region_mut(*location.base())?.overwrite(range.start, image);
         Ok(())
+    }
+}
+
+impl Page {
+    pub(crate) fn new(memory: &Rc<RefCell<Memory>>) -> Self {
+        let id = memory.borrow_mut().page();
+        Self {
+            id,
+            memory: Rc::clone(memory),
+        }
+    }
+
+    pub(crate) fn id(&self) -> HMIRPageID {
+        self.id
+    }
+}
+
+impl Drop for Page {
+    fn drop(&mut self) {
+        self.memory.borrow_mut().pages.remove(&self.id);
+    }
+}
+
+impl fmt::Debug for Page {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.id)
     }
 }
 
@@ -224,7 +287,8 @@ impl LocalLoweringContext<'_, '_, '_> {
     pub(crate) fn allocate(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CXResult<HMIRPlaceID> {
         let size = layout(self.env_mut(), ty, span)?.size();
         let image = Image::uninitialized(size);
-        Ok(self.memory.borrow_mut().allocate(image))
+        let page = self.comptime().page();
+        Ok(self.memory.borrow_mut().allocate(page, image))
     }
 
     // The region and offset an address designates; a static address is only read through
@@ -310,6 +374,40 @@ impl LocalLoweringContext<'_, '_, '_> {
             .map_err(|fault| fault.error(span))
     }
 
+    pub(crate) fn copy(
+        &mut self,
+        target: &HMIRAddress<HMIRPlaceID>,
+        source: &HMIRAddress<HMIRPlaceID>,
+        ty: HMIRTypeID,
+        span: &TokenRange,
+    ) -> CXResult<()> {
+        let size = layout(self.env_mut(), ty, span)?.size();
+        let mut memory = self.memory.borrow_mut();
+        memory
+            .load(source, size)
+            .and_then(|image| memory.store(target, &image))
+            .map_err(|fault| fault.error(span))
+    }
+
+    // The variant the tagged union of type 'ty' at 'location' holds
+    pub(crate) fn variant(
+        &mut self,
+        location: &HMIRAddress<HMIRPlaceID>,
+        ty: HMIRTypeID,
+        span: &TokenRange,
+    ) -> CXResult<usize> {
+        let HMIRTypeKind::TaggedUnion { fields } = self.env().resolve_kind(ty).clone() else {
+            unreachable!("only a tagged union holds a variant")
+        };
+        let size = layout(self.env_mut(), ty, span)?.size();
+        let image = self
+            .memory
+            .borrow()
+            .load(location, size)
+            .map_err(|fault| fault.error(span))?;
+        codec::discriminant(self.env_mut(), &fields, &image, 0, span)
+    }
+
     fn global(&mut self, def: HMIRDefID, span: &TokenRange) -> CXResult<HMIRPlaceID> {
         if let Some(region) = self.memory.borrow().globals.get(&def) {
             return Ok(*region);
@@ -317,7 +415,7 @@ impl LocalLoweringContext<'_, '_, '_> {
         let value = symbol::initialize(self, def)?;
         let image = codec::encode(self.env_mut(), value.ty(), value.kind(), span)?;
         let mut memory = self.memory.borrow_mut();
-        let region = memory.allocate(image);
+        let region = memory.allocate(STATICS, image);
         memory.globals.insert(def, region);
         Ok(region)
     }

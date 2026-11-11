@@ -108,7 +108,7 @@ pub(crate) fn converge(
         && !env.is_pointer(value.ty())
         && (!env.is_reference(value.ty()) || env.is_function(env.referent(value.ty())));
     let value = match contents {
-        true => emit::storage::read(context, &value, span)?,
+        true => emit::comptime::storage::contents(context, &value, span)?,
         false => value,
     };
     if let HMIRValueKind::Immediate(_) = value.kind() {

@@ -1,15 +1,24 @@
 use rustc_hash::FxHashMap;
+use std::{cell::RefCell, rc::Rc};
 
 use cx_hmir::{expr::HMIRExprID, ty::HMIRTypeID};
 use cx_util::identifier::CXIdent;
 
-use crate::{env::function::scope::Scopes, value::HMIRPlaceID};
+use crate::{
+    env::function::{
+        memory::{Memory, Page},
+        scope::Scopes,
+    },
+    value::place::{HMIRPageID, HMIRPlaceID},
+};
 
 #[derive(Debug, Default)]
 pub struct ComptimeContext {
     scopes: Scopes<ComptimeScope>,
     slots: FxHashMap<HMIRPlaceID, ComptimeSlot>,
     function: String,
+    // The page the places of this frame are allocated in, from the memory of the context it is installed in
+    page: Option<Page>,
 }
 
 #[derive(Debug)]
@@ -40,6 +49,14 @@ impl ComptimeContext {
 
     pub(crate) fn function(&self) -> &str {
         &self.function
+    }
+
+    pub(crate) fn install(&mut self, memory: &Rc<RefCell<Memory>>) {
+        self.page.get_or_insert_with(|| Page::new(memory));
+    }
+
+    pub(crate) fn page(&self) -> HMIRPageID {
+        self.page.as_ref().expect("an installed comptime context has a page").id()
     }
 
     pub(crate) fn unconsumed(&self, nodrop: impl Fn(HMIRTypeID) -> bool) -> Option<&ComptimeSlot> {

@@ -27,6 +27,7 @@ pub(crate) fn declare(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRGlobalID> {
+    declaration::referenced(env, def);
     let source = env.symbols().resolve_definition(def);
     let symbol_name = declaration::link_name(source).expect("a global has a symbol name");
     let linkage = declaration::linkage(source);

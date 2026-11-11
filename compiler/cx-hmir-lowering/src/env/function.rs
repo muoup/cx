@@ -77,6 +77,15 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         signature: Option<&'env HMIRFnSignature<HMIRExprID>>,
         context: FnContext,
     ) -> Self {
+        Self::within(env, signature, context, Rc::default())
+    }
+
+    fn within(
+        env: &'env mut HMIREnvironment<'global, 'hmir>,
+        signature: Option<&'env HMIRFnSignature<HMIRExprID>>,
+        mut context: FnContext,
+        memory: Rc<RefCell<Memory>>,
+    ) -> Self {
         // A comptime context may stage a runtime signature, as prototype resolution does
         if let Some(signature) = signature {
             assert!(
@@ -86,6 +95,9 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             );
         }
 
+        if let FnContext::Comptime(comptime) = &mut context {
+            comptime.install(&memory);
+        }
         let source = env.symbols().local_unit().id();
         Self {
             source,
@@ -95,7 +107,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             signature,
             context,
             evaluation: EvaluationID::fresh(),
-            memory: Rc::default(),
+            memory,
             expectations: Expectations::new(match signature {
                 Some(signature) if signature.contract().is_safe() => Permission::Safe,
                 _ => Permission::Nonsafe,
@@ -109,7 +121,8 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         context: FnContext,
         evaluation: Option<EvaluationID>,
     ) -> LocalLoweringContext<'parent, 'global, 'hmir> {
-        let mut child = LocalLoweringContext::new(&mut *self.env, signature, context);
+        let memory = Rc::clone(&self.memory);
+        let mut child = LocalLoweringContext::within(&mut *self.env, signature, context, memory);
         if let Some(evaluation) = evaluation {
             child.evaluation = evaluation;
             child.expectations = self.expectations;
@@ -117,7 +130,6 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         child.source = self.source;
         child.return_type = self.return_type;
         child.call_depth = self.call_depth;
-        child.memory = Rc::clone(&self.memory);
         child
     }
 

@@ -210,6 +210,15 @@ fn request(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) {
     }
 }
 
+// Requests the definition of a symbol that is referenced; one of the local unit or a static one is only generated
+// where it is referenced, while the others are requested as roots of their own unit
+pub(crate) fn referenced(env: &mut HMIREnvironment, id: HMIRDefID) {
+    let linkage = linkage(env.symbols().resolve_definition(id));
+    if id.brand() == env.symbols().local_unit().id() || linkage == LinkageMode::Static {
+        env.generation_mut().request(Generation::Definition(id), None);
+    }
+}
+
 fn is_type(declaration: &HMIRDeclaration) -> bool {
     let Some(HMIRDefKind::ComptimeGlobal(global)) = declaration.kind() else {
         return false;

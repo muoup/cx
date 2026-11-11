@@ -129,7 +129,7 @@ pub(crate) fn tag(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let ty = types::int(context.env_mut(), HMIRIntWidth::I8, false, span);
-    if let HMIRValueKind::Immediate(HMIRImmediate::TaggedUnion { variant, .. }) = value.kind() {
+    if let HMIRValueKind::Immediate(HMIRImmediate::Union { variant, .. }) = value.kind() {
         return Ok(value::int(context.env(), *variant as i128, ty));
     }
     let sum = context.env().referent(value.ty());

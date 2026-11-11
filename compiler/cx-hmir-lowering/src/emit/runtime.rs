@@ -20,9 +20,10 @@ use crate::{
         types::{lower_prototype, lower_type, mir_float, mir_int},
     },
     value::{
-        HMIRPlaceID, HMIRRegisterID, HMIRValue, HMIRValueKind,
+        HMIRRegisterID, HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
         immediate::HMIRImmediate,
+        place::HMIRPlaceID,
     },
 };
 
@@ -118,7 +119,10 @@ pub fn constant(
                 fields,
             }
         }
-        (HMIRImmediate::TaggedUnion { variant, payload }, HMIRTypeKind::TaggedUnion { fields }) => {
+        (
+            HMIRImmediate::Union { variant, payload },
+            HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields },
+        ) => {
             let payload = self::constant(context, payload, *fields[*variant].ty(), span)?;
             MIRConstant::Aggregate {
                 ty: lower_type(context.env_mut(), ty, span)?,
@@ -151,6 +155,7 @@ fn address(
     let base = match address.base() {
         Addressable::Def(def) => {
             if declaration::is_function(context.env().symbols().resolve_definition(*def)) {
+                declaration::referenced(context.env_mut(), *def);
                 let prototype = lower_prototype(context.env_mut(), *def, span)?;
                 MIRAddressable::Function(context.env_mut().module_mut().declare_function(prototype))
             } else {
@@ -214,5 +219,5 @@ pub(crate) fn place(
         .builder_mut()
         .allocate_place(MIRPlaceDecl::new(ty, name, nodrop, adopted));
 
-    Ok(HMIRPlaceID::new(place.0))
+    Ok(HMIRPlaceID::new(context.runtime().brand(), place.0))
 }
