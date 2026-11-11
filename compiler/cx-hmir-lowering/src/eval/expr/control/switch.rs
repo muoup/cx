@@ -41,44 +41,40 @@ pub(crate) fn eval_switch(
     switch_body: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = span.clone();
-    eval(context, body, condition)?.and_then(
-        context,
-        body,
-        move |context, body, condition| {
-            let condition = coerce::promotion::std_rvalue(context, condition, &span)?;
-            if !context.env().is_int(condition.ty()) {
-                let found = types::name(context.env(), condition.ty());
-                let mismatch = ("switch condition".into(), "integer type".into(), found);
-                return Err(hmir_error(&span, &typecheck::TYPE_MISMATCH, mismatch).into());
-            }
-            let condition = coerce::arithmetic(context, condition, &span)?;
-            let HMIRTypeKind::Int(integer) = *context.env().resolve_kind(condition.ty()) else {
-                unreachable!("an integer switch condition has an integer promotion")
-            };
-            let mut labels = Vec::new();
-            collect(context, body, switch_body, integer, &mut labels)?;
-            match context.is_runtime() {
-                true => runtime_switch(
-                    context,
-                    body,
-                    &span,
-                    switch_body,
-                    condition,
-                    integer,
-                    labels,
-                ),
-                false => comptime_switch(
-                    context,
-                    body,
-                    &span,
-                    switch_body,
-                    condition,
-                    integer,
-                    labels,
-                ),
-            }
-        },
-    )
+    eval(context, body, condition)?.and_then(context, body, move |context, body, condition| {
+        let condition = coerce::promotion::std_rvalue(context, condition, &span)?;
+        if !context.env().is_int(condition.ty()) {
+            let found = types::name(context.env(), condition.ty());
+            let mismatch = ("switch condition".into(), "integer type".into(), found);
+            return Err(hmir_error(&span, &typecheck::TYPE_MISMATCH, mismatch).into());
+        }
+        let condition = coerce::arithmetic(context, condition, &span)?;
+        let HMIRTypeKind::Int(integer) = *context.env().resolve_kind(condition.ty()) else {
+            unreachable!("an integer switch condition has an integer promotion")
+        };
+        let mut labels = Vec::new();
+        collect(context, body, switch_body, integer, &mut labels)?;
+        match context.is_runtime() {
+            true => runtime_switch(
+                context,
+                body,
+                &span,
+                switch_body,
+                condition,
+                integer,
+                labels,
+            ),
+            false => comptime_switch(
+                context,
+                body,
+                &span,
+                switch_body,
+                condition,
+                integer,
+                labels,
+            ),
+        }
+    })
 }
 
 pub(crate) fn eval_case(
@@ -113,7 +109,7 @@ pub(crate) fn eval_case(
     }
     emit::runtime::flow::switch_to(context, target);
     let span = span.clone();
-    eval(context, body, statement)?.map(context, move |context, _| Ok(expr::unit(context, &span)))
+    eval(context, body, statement)?.map(context, move |context, _| Ok(value::unit(context.env())))
 }
 
 fn collect(
@@ -239,7 +235,7 @@ fn runtime_switch(
         Ok(())
     });
     let span = span.clone();
-    flow::catch_diverged(completion)?.map(context, move |context, _| Ok(expr::unit(context, &span)))
+    flow::catch_diverged(completion)?.map(context, move |context, _| Ok(value::unit(context.env())))
 }
 
 fn comptime_switch(
@@ -252,15 +248,14 @@ fn comptime_switch(
     labels: Vec<CaseLabel>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let value = int::normalize(
-        value::as_int(&condition)
-            .expect("a comptime integer condition is constant"),
+        value::as_int(&condition).expect("a comptime integer condition is constant"),
         integer,
     );
     let selected = labels
         .iter()
         .find(|label| label.value == Some(value))
         .or_else(|| labels.iter().find(|label| label.value.is_none()));
-    let unit = expr::unit(context, span);
+    let unit = value::unit(context.env());
     let Some(selected) = selected else {
         return Ok(Evaluation::Ready(unit));
     };
@@ -313,7 +308,7 @@ pub(crate) fn seek(
             match else_branch {
                 _ if context.comptime().selected_case().is_none() => Ok(Evaluation::Ready(value)),
                 Some(otherwise) => eval_scoped(context, body, *otherwise, false),
-                None => Ok(Evaluation::Ready(expr::unit(context, span))),
+                None => Ok(Evaluation::Ready(value::unit(context.env()))),
             }
         }
         HMIRExprKind::While {
@@ -334,7 +329,7 @@ pub(crate) fn seek(
             Some(*increment),
             span,
         ),
-        _ => Ok(Evaluation::Ready(expr::unit(context, span))),
+        _ => Ok(Evaluation::Ready(value::unit(context.env()))),
     }
 }
 
@@ -348,11 +343,11 @@ fn seek_loop(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     match eval_scoped(context, body, loop_body, false) {
         Ok(Evaluation::Ready(_)) if context.comptime().selected_case().is_some() => {
-            return Ok(Evaluation::Ready(expr::unit(context, span)));
+            return Ok(Evaluation::Ready(value::unit(context.env())));
         }
         Ok(Evaluation::Incomplete(incomplete)) => return Ok(Evaluation::Incomplete(incomplete)),
         Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Break))) => {
-            return Ok(Evaluation::Ready(expr::unit(context, span)));
+            return Ok(Evaluation::Ready(value::unit(context.env())));
         }
         Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Continue)))
         | Ok(Evaluation::Ready(_)) => {}

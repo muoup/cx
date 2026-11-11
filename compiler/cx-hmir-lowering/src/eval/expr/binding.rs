@@ -80,7 +80,7 @@ pub(crate) fn eval_let(
         let span = span.clone();
         return value.map(context, move |context, value| {
             emit::storage::bind_local(context, local_id, value);
-            Ok(expr::unit(context, &span))
+            Ok(value::unit(context.env()))
         });
     }
     if let Some((operand, unsafe_)) = adoption {
@@ -110,7 +110,7 @@ pub(crate) fn eval_let(
         if !initialized && !context.env().is_nocopy(ty) {
             emit::storage::initialize(context, &storage, None, span)?;
         }
-        return Ok(Evaluation::Ready(expr::unit(context, span)));
+        return Ok(Evaluation::Ready(value::unit(context.env())));
     };
 
     let is_runtime = context.is_runtime();
@@ -153,7 +153,7 @@ pub(crate) fn eval_let(
                 let function = matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_));
                 if is_runtime && function && types::comptime_only(context.env(), ty) {
                     emit::storage::bind_local(context, local_id, value);
-                    return Ok(Evaluation::Ready(expr::unit(context, &span)));
+                    return Ok(Evaluation::Ready(value::unit(context.env())));
                 }
                 let storage = match storage {
                     Some(storage) => storage,
@@ -164,7 +164,7 @@ pub(crate) fn eval_let(
                 } else {
                     emit::storage::initialize(context, &storage, Some(&value), &span)?;
                 }
-                Ok(Evaluation::Ready(expr::unit(context, &span)))
+                Ok(Evaluation::Ready(value::unit(context.env())))
             })
     })
 }
@@ -340,7 +340,7 @@ fn eval_statements(
     if dead && !reachable(context) {
         return flow::diverged();
     }
-    Ok(Evaluation::Ready(expr::unit(context, span)))
+    Ok(Evaluation::Ready(value::unit(context.env())))
 }
 
 // Code after a divergence is still checked, in a block nothing jumps to unless a label or case inside it is entered

@@ -15,7 +15,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::{expr, flow, staged, types},
     log::hmir_error,
-    value::{HMIRValue, HMIRValueKind},
+    value::{self, HMIRValue, HMIRValueKind},
 };
 
 pub(crate) fn std_rvalue(
@@ -48,7 +48,7 @@ pub(crate) fn step(
                 Some(value) => value,
                 None => {
                     let ty = types::realize(context.env_mut(), HMIRTypeKind::Unreachable, span);
-                    expr::unit(context, span).with_ty(ty)
+                    value::unit(context.env()).with_ty(ty)
                 }
             };
             Ok(Coercion::Applied(value))

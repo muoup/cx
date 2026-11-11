@@ -18,11 +18,11 @@ use crate::{
     eval::{
         EvalResult,
         binding::{eval_block, eval_scoped},
-        deduce, expr,
+        deduce,
         flow::{self, Evaluation},
     },
     log::hmir_error,
-    value::HMIRValue,
+    value::{self, HMIRValue},
 };
 
 pub(super) fn eval_defer(
@@ -58,7 +58,7 @@ pub(super) fn eval_defer(
     let runtime = context.runtime_mut();
     let top = runtime.scopes().top();
     runtime.scopes_mut().control_mut(top).defer(defer);
-    Ok(Evaluation::Ready(expr::unit(context, span)))
+    Ok(Evaluation::Ready(value::unit(context.env())))
 }
 
 pub(crate) fn closing<T: 'static>(
@@ -97,11 +97,7 @@ fn expand(context: &mut LocalLoweringContext, index: usize) -> CXResult<()> {
             .body(defer.expr().body())
             .expect("a deferred expression belongs to its source");
         let scopes = context.runtime_mut().scopes_mut();
-        scopes.push(
-            RuntimeScope::new(true),
-            Some(index),
-            Bindings::default(),
-        );
+        scopes.push(RuntimeScope::new(true), Some(index), Bindings::default());
         let result = context.relocated(defer.source(), |context| {
             context.with_expectations(defer.expectations(), |context| {
                 deferred(context, body, defer.expr())

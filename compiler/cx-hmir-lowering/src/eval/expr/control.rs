@@ -92,9 +92,9 @@ fn branch(
                 (false, Some(else_branch)) => eval_scoped(context, body, else_branch, false),
                 (true, None) => {
                     eval_scoped(context, body, then_branch, false)?.ready()?;
-                    Ok(Evaluation::Ready(expr::unit(context, span)))
+                    Ok(Evaluation::Ready(value::unit(context.env())))
                 }
-                (false, None) => Ok(Evaluation::Ready(expr::unit(context, span))),
+                (false, None) => Ok(Evaluation::Ready(value::unit(context.env()))),
             }
         }
         FnContext::Runtime(_) => {
@@ -115,28 +115,34 @@ fn branch(
             let then_expr = flow::catch_diverged(eval_scoped(context, body, then_branch, place))?;
             let span = span.clone();
 
-            then_expr.chain(context, body, None, None, move |context, body, then, expected| {
-                if let Some(else_branch) = else_branch {
-                    let mut arms = Vec::from_iter(
-                        then.map(|value| (emit::runtime::flow::current_block(context), value)),
-                    );
+            then_expr.chain(
+                context,
+                body,
+                None,
+                None,
+                move |context, body, then, expected| {
+                    if let Some(else_branch) = else_branch {
+                        let mut arms = Vec::from_iter(
+                            then.map(|value| (emit::runtime::flow::current_block(context), value)),
+                        );
 
-                    emit::runtime::flow::switch_to(context, else_block);
-                    flow::catch_diverged(eval_scoped(context, body, else_branch, true))?
-                        .try_complete(context, body, expected)?
-                        .and_then(context, body, move |context, _, otherwise| {
-                            arms.extend(
-                                otherwise.map(|value| (emit::runtime::flow::current_block(context), value)),
-                            );
-                            let place = context.runtime().declared_places() == declared;
-                            merge(context, arms, place, &span)
-                        })
-                } else {
-                    emit::runtime::flow::jump(context, merge_block, &span);
-                    emit::runtime::flow::switch_to(context, merge_block);
-                    Ok(Evaluation::Ready(eval::expr::unit(context, &span)))
-                }
-            })
+                        emit::runtime::flow::switch_to(context, else_block);
+                        flow::catch_diverged(eval_scoped(context, body, else_branch, true))?
+                            .try_complete(context, body, expected)?
+                            .and_then(context, body, move |context, _, otherwise| {
+                                arms.extend(otherwise.map(|value| {
+                                    (emit::runtime::flow::current_block(context), value)
+                                }));
+                                let place = context.runtime().declared_places() == declared;
+                                merge(context, arms, place, &span)
+                            })
+                    } else {
+                        emit::runtime::flow::jump(context, merge_block, &span);
+                        emit::runtime::flow::switch_to(context, merge_block);
+                        Ok(Evaluation::Ready(value::unit(context.env())))
+                    }
+                },
+            )
         }
     }
 }
@@ -188,7 +194,7 @@ pub(crate) fn merge(
     emit::runtime::flow::switch_to(context, merge);
     let result = match result {
         Some(result) => emit::storage::read(context, &result, span)?,
-        None => eval::expr::unit(context, span),
+        None => value::unit(context.env()),
     };
     Ok(Evaluation::Ready(result))
 }
@@ -287,5 +293,7 @@ pub(crate) fn eval_short_circuit(
     emit::storage::initialize(context, &result, Some(&left), span)?;
     emit::runtime::flow::jump(context, merge, span);
     emit::runtime::flow::switch_to(context, merge);
-    Ok(Evaluation::Ready(emit::storage::read(context, &result, span)?))
+    Ok(Evaluation::Ready(emit::storage::read(
+        context, &result, span,
+    )?))
 }

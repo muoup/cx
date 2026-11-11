@@ -227,7 +227,7 @@ pub(crate) fn eval_unpack(
         emit::storage::initialize(context, &target, Some(&value), span)?;
         emit::storage::bind_local(context, local, target);
     }
-    Ok(Evaluation::Ready(expr::unit(context, span)))
+    Ok(Evaluation::Ready(value::unit(context.env())))
 }
 
 pub(crate) fn member_fields<'a>(

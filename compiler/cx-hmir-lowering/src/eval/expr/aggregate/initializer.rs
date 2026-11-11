@@ -115,6 +115,7 @@ fn array(
         let value = eval(context, body, *value)?.complete(context, body, Some(element))?;
         if fields.len() == 1
             && matches!(context.env().resolve_kind(element), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8)
+            // REVIEW: str is unsound as the base type of a string literal, need to revisit
             && matches!(context.env().resolve_kind(value.ty()), HMIRTypeKind::Str)
         {
             return Ok(Evaluation::Ready(coerce::implicit::standard(context, value, ty, span)?));

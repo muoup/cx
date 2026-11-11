@@ -20,7 +20,11 @@ use crate::{
         ComptimeContext, Expectations, FnContext, LocalLoweringContext, Permission,
         runtime::RuntimeScope,
     },
-    eval::{EvalResult, coerce, eval, expr, flow::{EvalExit, Evaluation}, types},
+    eval::{
+        EvalResult, coerce, eval, expr,
+        flow::{EvalExit, Evaluation},
+        types,
+    },
     log::hmir_error,
     lower::declaration,
     value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
@@ -56,7 +60,8 @@ pub(crate) fn check(
     let owner = context.source();
     let value = condition(context, contract, owner, expression, span);
     restore(context, bindings);
-    if !matches!(value?.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(value)) if *value != 0) {
+    if !matches!(value?.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(value)) if *value != 0)
+    {
         return Err(hmir_error(
             span,
             &catalogue::mir::COMPTIME_ASSERTION,
@@ -73,7 +78,11 @@ pub(crate) fn call(
     span: &TokenRange,
     emit: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<HMIRValue>>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let unit = context.env_mut().symbols_mut().owner(def.brand()).expect("function owner exists");
+    let unit = context
+        .env_mut()
+        .symbols_mut()
+        .owner(def.brand())
+        .expect("function owner exists");
     let function = declaration::function(unit.resolve_def(def).expect("function exists"));
     let contract = function.signature().contract();
     if contract.precondition().is_none() && contract.postcondition().is_none() {
@@ -86,7 +95,9 @@ pub(crate) fn call(
         assert(context, &value, Some("precondition failed"), span)?;
     }
     let result = emit(context)?;
-    if let (Evaluation::Ready(value), Some((local, expression))) = (&result, contract.postcondition()) {
+    if let (Evaluation::Ready(value), Some((local, expression))) =
+        (&result, contract.postcondition())
+    {
         bindings.extend(bind_result(context, local, Some(value), span)?);
         let value = condition(context, contract, def.brand(), expression, span)?;
         assert(context, &value, None, span)?;
@@ -100,12 +111,18 @@ pub(crate) fn enter(
     params: &[HMIRLocalID],
     span: &TokenRange,
 ) -> CXResult<()> {
-    let contract = context.signature().expect("a lowered function has a signature").contract();
+    let contract = context
+        .signature()
+        .expect("a lowered function has a signature")
+        .contract();
     if contract.precondition().is_none() && contract.postcondition().is_none() {
         return Ok(());
     }
     for (local, param) in contract.params().iter().zip(params) {
-        let value = context.get_local(param).cloned().expect("parameters are bound before the contract");
+        let value = context
+            .get_local(param)
+            .cloned()
+            .expect("parameters are bound before the contract");
         let value = match value.kind() {
             HMIRValueKind::Immediate(_) => value,
             _ => emit::storage::read(context, &value, span)?,
@@ -135,7 +152,10 @@ pub(crate) fn exit(
         return exit_condition(context, result, span);
     };
     let view = RuntimeScope::default();
-    context.runtime_mut().scopes_mut().push(view, Some(index), Default::default());
+    context
+        .runtime_mut()
+        .scopes_mut()
+        .push(view, Some(index), Default::default());
     let checked = context.relocated(source, |context| exit_condition(context, result, span));
     context.runtime_mut().scopes_mut().pop();
     checked
@@ -167,7 +187,10 @@ fn condition(
     expression: HMIRExprID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let state = mem::replace(context.context_mut(), FnContext::Comptime(ComptimeContext::new()));
+    let state = mem::replace(
+        context.context_mut(),
+        FnContext::Comptime(ComptimeContext::new()),
+    );
     let evaluation = context.evaluation();
     let mut child = context.child(None, state, Some(evaluation)).sourced(owner);
     let permission = match contract.is_safe() {
@@ -199,7 +222,10 @@ fn observe(
         return Ok(value);
     }
     let storage = coerce::temporary(context, &value, span)?;
-    let constant = HMIRTypeSemantics { constant: true, ..Default::default() };
+    let constant = HMIRTypeSemantics {
+        constant: true,
+        ..Default::default()
+    };
     let inner = context.env().referent(storage.ty());
     let ty = types::qualify::specify(context, inner, constant, span);
     let reference = types::reference(context.env_mut(), ty, None, span);
@@ -260,7 +286,7 @@ fn assert(
         },
         None => InternalIntrinsic::Assume { condition },
     };
-    let unit = expr::unit(context, span).ty();
+    let unit = types::unit(context.env_mut());
     emit::intrinsics::internal(context, &intrinsic, unit, span)?;
 
     Ok(())

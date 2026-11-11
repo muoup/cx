@@ -145,7 +145,7 @@ fn eval_leak(
     }
 
     emit::storage::invalidate(context, &value, MIRInvalidationKind::Leak, span);
-    Ok(Evaluation::Ready(expr::unit(context, span)))
+    Ok(Evaluation::Ready(value::unit(context.env())))
 }
 
 fn eval_adopt(
@@ -216,7 +216,7 @@ pub(crate) fn adopt(
         let name = body.local(local).name().cloned();
         let storage = emit::storage::adopt(context, ty, name, &source, span)?;
         emit::storage::bind_local(context, local, storage);
-        Ok(Evaluation::Ready(expr::unit(context, span)))
+        Ok(Evaluation::Ready(value::unit(context.env())))
     })
 }
 
@@ -354,7 +354,7 @@ pub(crate) fn null_check(
     let null = HMIRValue::new(pointer.ty(), HMIRImmediate::Int(0));
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let valid = arithmetic::binary(context, HMIRBinaryOp::Neq, pointer, &null, boolean, span)?;
-    let unit = expr::unit(context, span).ty();
+    let unit = value::unit(context.env()).ty();
     let assert = InternalIntrinsic::Assert {
         condition: valid,
         message: Some("Attempted to dereference a null pointer".into()),

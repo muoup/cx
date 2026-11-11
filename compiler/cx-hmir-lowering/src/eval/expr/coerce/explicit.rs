@@ -3,12 +3,10 @@ use cx_log::CXResult;
 use cx_tokens::TokenRange;
 
 use crate::{
-    env::function::LocalLoweringContext,
-    eval::{
+    env::function::LocalLoweringContext, eval::{
         coerce::{self, Coercion, applied, implicit, is_char, promotion},
         expr,
-    },
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    }, value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 pub(crate) fn standard(
@@ -19,7 +17,7 @@ pub(crate) fn standard(
 ) -> CXResult<HMIRValue> {
     let source = value.ty();
     let coercion = match context.env().is_void(target) {
-        true => Coercion::Applied(expr::unit(context, span).with_ty(target)),
+        true => Coercion::Applied(value::unit(context.env()).with_ty(target)),
         false => implicit::convert(context, value, target, span, true)?
             .or_else(|value| extension(context, value, target, span))?,
     };
@@ -60,7 +58,10 @@ fn extension(
             Coercion::Applied(value.with_ty(target))
         }
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_)) => {
-            if !matches!(value.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(0))) {
+            if !matches!(
+                value.kind(),
+                HMIRValueKind::Immediate(HMIRImmediate::Int(0))
+            ) {
                 expr::require_nonsafe(context, span, "Unsafe type conversion")?;
             }
             Coercion::Applied(coerce::cast(context, &value, target, span)?)

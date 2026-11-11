@@ -17,7 +17,7 @@ use crate::{
     eval::{
         EvalResult,
         call::contract,
-        coerce, eval, eval_type, expr,
+        coerce, eval, eval_type,
         flow::{self, ComptimeStop, EvalExit, Evaluation},
     },
     log::hmir_error,
@@ -58,7 +58,7 @@ pub(super) fn eval_yield(
             Evaluation::Incomplete(pending) => Evaluation::Incomplete(pending.yielding()),
             value => value,
         },
-        None => Evaluation::Ready(expr::unit(context, span)),
+        None => Evaluation::Ready(value::unit(context.env())),
     };
     let (span, origin) = (span.clone(), body.id());
     value.and_then(context, body, move |context, _, value| {
@@ -168,7 +168,7 @@ pub(crate) fn return_value(
     };
 
     if !context.is_runtime() {
-        let value = value.unwrap_or_else(|| expr::unit(context, span).with_ty(ty));
+        let value = value.unwrap_or_else(|| value::unit(context.env()).with_ty(ty));
         return Err(EvalExit::Stop(ComptimeStop::Return(value).into()));
     }
     contract::exit(context, value.as_ref(), span)?;

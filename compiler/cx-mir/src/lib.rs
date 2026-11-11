@@ -22,7 +22,7 @@ pub use ty::{
     MIRTypeKind, MIRTypeLayout, MIRTypeMetadata,
 };
 pub use unit::function::{MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID};
-pub use unit::body::{MIRBody, MIRPlaceDecl, MIRRegisterDecl, MIRScopeDecl};
+pub use unit::body::{MIRBody, MIRPlaceDecl, MIRRegisterDecl};
 pub use unit::{MIRBasicBlockID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit};
 pub use value::MIRRegisterID as MIRRegister;
 pub use value::{

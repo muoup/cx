@@ -10,7 +10,7 @@ use cx_tokens::TokenRange;
 use crate::{
     env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope, scope::Bindings},
     log::hmir_error,
-    value::{HMIRValIntrinsic, HMIRValue},
+    value::HMIRValue,
 };
 
 pub(crate) fn unsupported<T>(span: &TokenRange, operation: &str) -> CXResult<T> {
@@ -38,23 +38,6 @@ pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
         FnContext::Comptime(comptime) => {
             comptime.scopes_mut().pop();
         }
-    }
-}
-
-// An intrinsic without a result produces a value of the unit type 'result'
-pub fn intrinsic(
-    context: &mut LocalLoweringContext,
-    intrinsic: &HMIRValIntrinsic,
-    result: HMIRTypeID,
-    span: &TokenRange,
-) -> CXResult<HMIRValue> {
-    match intrinsic {
-        HMIRValIntrinsic::Int(op) => intrinsics::int(context, op, result, span),
-        HMIRValIntrinsic::Float(op) => intrinsics::float(context, op, result, span),
-        HMIRValIntrinsic::Pointer(op) => intrinsics::pointer(context, op, result, span),
-        HMIRValIntrinsic::Aggregate(op) => intrinsics::aggregate(context, op, result, span),
-        HMIRValIntrinsic::Internal(op) => intrinsics::internal(context, op, result, span),
-        HMIRValIntrinsic::VA(op) => intrinsics::va(context, op, result, span),
     }
 }
 

@@ -9,8 +9,25 @@ use cx_tokens::TokenRange;
 use crate::{
     emit::{comptime, runtime},
     env::function::{FnContext, LocalLoweringContext},
-    value::HMIRValue,
+    value::{HMIRValIntrinsic, HMIRValue},
 };
+
+// An intrinsic without a result produces a value of the unit type 'result'
+pub fn intrinsic(
+    context: &mut LocalLoweringContext,
+    intrinsic: &HMIRValIntrinsic,
+    result: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    match intrinsic {
+        HMIRValIntrinsic::Int(op) => int(context, op, result, span),
+        HMIRValIntrinsic::Float(op) => float(context, op, result, span),
+        HMIRValIntrinsic::Pointer(op) => pointer(context, op, result, span),
+        HMIRValIntrinsic::Aggregate(op) => aggregate(context, op, result, span),
+        HMIRValIntrinsic::Internal(op) => internal(context, op, result, span),
+        HMIRValIntrinsic::VA(op) => va(context, op, result, span),
+    }
+}
 
 pub fn int(
     context: &mut LocalLoweringContext,

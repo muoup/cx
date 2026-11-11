@@ -188,6 +188,10 @@ pub(crate) fn int(
     )
 }
 
+pub(crate) fn unit(_: &mut HMIREnvironment) -> HMIRTypeID {
+    HMIRTypeID::new(0)
+}
+
 pub(crate) fn int_type(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRIntType {
     match env.resolve_kind(ty) {
         HMIRTypeKind::Int(int) => *int,

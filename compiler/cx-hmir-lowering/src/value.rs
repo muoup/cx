@@ -21,6 +21,10 @@ dense_id!(HMIRPlaceID, "p");
 
 pub type HMIRValIntrinsic = Intrinsic<HMIRValue, HMIRTypeID>;
 
+pub fn unit(_: &HMIREnvironment) -> HMIRValue {
+    HMIRValue::new(HMIRTypeID::new(0), HMIRImmediate::Unit)
+}
+
 pub fn int(env: &HMIREnvironment, value: i128, ty: HMIRTypeID) -> HMIRValue {
     let value = comptime::int::normalize(value, types::int_type(env, ty));
     HMIRValue::new(ty, HMIRImmediate::Int(value))
@@ -111,11 +115,10 @@ pub enum HMIRValueKind {
 
 impl HMIRValue {
     pub fn new(ty: HMIRTypeID, kind: impl Into<HMIRValueKind>) -> Self {
-        Self { ty, kind: kind.into() }
-    }
-
-    pub fn unit() -> Self {
-        Self::new(HMIRTypeID::new(0), HMIRImmediate::Unit)
+        Self {
+            ty,
+            kind: kind.into(),
+        }
     }
 
     pub fn with_ty(mut self, ty: HMIRTypeID) -> Self {

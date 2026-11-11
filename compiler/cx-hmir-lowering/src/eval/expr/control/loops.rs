@@ -4,12 +4,15 @@ use cx_tokens::TokenRange;
 
 use super::{closing, comptime_truth, eval_condition};
 use crate::{
-    emit, env::function::{LocalLoweringContext, runtime::Exit}, eval::{
+    emit,
+    env::function::{LocalLoweringContext, runtime::Exit},
+    eval::{
         EvalResult,
         binding::eval_scoped,
-        eval, expr,
+        eval,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
-    }, value::HMIRValue,
+    },
+    value::{self, HMIRValue},
 };
 
 pub(crate) fn eval_for(
@@ -108,7 +111,7 @@ pub(crate) fn eval_while(
     }
 
     emit::runtime::flow::switch_to(context, exit);
-    Ok(Evaluation::Ready(expr::unit(context, span)))
+    Ok(Evaluation::Ready(value::unit(context.env())))
 }
 
 fn comptime_while(
@@ -138,5 +141,5 @@ fn comptime_while(
             eval(context, body, increment)?.ready()?;
         }
     }
-    Ok(Evaluation::Ready(expr::unit(context, span)))
+    Ok(Evaluation::Ready(value::unit(context.env())))
 }

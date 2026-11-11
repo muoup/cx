@@ -32,15 +32,16 @@ pub(crate) fn eval_operand(
 }
 
 fn is_comparison(op: HMIRBinaryOp) -> bool {
-    matches!(
-        op,
+    match op {
         HMIRBinaryOp::Eq
-            | HMIRBinaryOp::Neq
-            | HMIRBinaryOp::Lt
-            | HMIRBinaryOp::Le
-            | HMIRBinaryOp::Gt
-            | HMIRBinaryOp::Ge
-    )
+        | HMIRBinaryOp::Neq
+        | HMIRBinaryOp::Lt
+        | HMIRBinaryOp::Le
+        | HMIRBinaryOp::Gt
+        | HMIRBinaryOp::Ge => true,
+
+        _ => false,
+    }
 }
 
 fn int_op(op: HMIRBinaryOp, signed: bool) -> IntBinaryOp {
@@ -249,15 +250,30 @@ pub(crate) fn binary(
     match context.env().resolve_kind(lhs.ty()) {
         HMIRTypeKind::Int(int) => {
             let op = int_op(op, int.signed());
-            intrinsics::int(context, &IntIntrinsic::Binary { op, lhs, rhs }, result, span)
+            intrinsics::int(
+                context,
+                &IntIntrinsic::Binary { op, lhs, rhs },
+                result,
+                span,
+            )
         }
         HMIRTypeKind::Float(_) => {
             let op = float_op(op);
-            intrinsics::float(context, &FloatIntrinsic::Binary { op, lhs, rhs }, result, span)
+            intrinsics::float(
+                context,
+                &FloatIntrinsic::Binary { op, lhs, rhs },
+                result,
+                span,
+            )
         }
         HMIRTypeKind::PointerTo(_) => {
             let op = pointer_op(op);
-            intrinsics::pointer(context, &PointerIntrinsic::Compare { op, lhs, rhs }, result, span)
+            intrinsics::pointer(
+                context,
+                &PointerIntrinsic::Compare { op, lhs, rhs },
+                result,
+                span,
+            )
         }
         _ => unreachable!("'{}' applies to scalar operands", op.path()),
     }
@@ -305,7 +321,12 @@ pub(crate) fn offset(
         false => PointerOffsetOp::Add,
     };
     let ptr = pointer.clone();
-    intrinsics::pointer(context, &PointerIntrinsic::Offset { op, ptr, offset }, pointer.ty(), span)
+    intrinsics::pointer(
+        context,
+        &PointerIntrinsic::Offset { op, ptr, offset },
+        pointer.ty(),
+        span,
+    )
 }
 
 pub(crate) fn difference(
@@ -317,7 +338,12 @@ pub(crate) fn difference(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let (lhs, rhs) = (lhs.clone(), rhs.clone());
-    intrinsics::pointer(context, &PointerIntrinsic::Diff { lhs, rhs, element }, result, span)
+    intrinsics::pointer(
+        context,
+        &PointerIntrinsic::Diff { lhs, rhs, element },
+        result,
+        span,
+    )
 }
 
 pub(crate) fn eval_unary(
@@ -402,7 +428,14 @@ fn increment(
             let element = *element;
             let offset_ty = types::int(context.env_mut(), HMIRIntWidth::I64, true, span);
             let one = value::int(context.env(), 1, offset_ty);
-            offset(context, &current, &one, element, op == HMIRBinaryOp::Sub, span)?
+            offset(
+                context,
+                &current,
+                &one,
+                element,
+                op == HMIRBinaryOp::Sub,
+                span,
+            )?
         }
         _ => {
             let operand = ("increment".into(), "type name".into());

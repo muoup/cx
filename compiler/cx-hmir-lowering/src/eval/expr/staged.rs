@@ -30,7 +30,7 @@ use crate::{
     },
     log::hmir_error,
     value::{
-        HMIRValue, HMIRValueKind,
+        self, HMIRValue, HMIRValueKind,
         immediate::HMIRImmediate,
         staged::{Quote, QuoteRef},
     },
@@ -292,7 +292,7 @@ pub(crate) fn apply(
         let count = ("staged expression".into(), params.len(), args.len(), false);
         return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, count).into());
     }
-    
+
     let runtime = context.is_runtime();
     let mut values = Vec::new();
     for (arg, param) in args.iter().zip(params) {
@@ -384,7 +384,7 @@ pub(crate) fn materialize(
             .try_complete(context, body, result)?
             .map(context, move |context, value| match result {
                 Some(result) => coerce::implicit::standard(context, value, result, &span),
-                None => Ok(expr::unit(context, &span)),
+                None => Ok(value::unit(context.env())),
             })
     });
     Ok(match control::closing(context, body, completion, span)? {

@@ -18,7 +18,7 @@ use crate::{
     env::{
         HMIREnvironment, function::LocalLoweringContext, generation::Generation, resolver::demand,
     },
-    eval::{expr, types},
+    eval::types,
     lower,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
@@ -33,10 +33,17 @@ pub(crate) fn lookup(env: &HMIREnvironment, ty: HMIRTypeID, name: &CXIdent) -> O
         return None;
     };
     let index = fields.iter().position(|field| field.name() == Some(name))?;
-    Some(Variant { index, payload: *fields[index].ty() })
+    Some(Variant {
+        index,
+        payload: *fields[index].ty(),
+    })
 }
 
-pub(crate) fn field<'env>(env: &'env HMIREnvironment, ty: HMIRTypeID, variant: usize) -> &'env HMIRFieldDef<HMIRTypeID> {
+pub(crate) fn field<'env>(
+    env: &'env HMIREnvironment,
+    ty: HMIRTypeID,
+    variant: usize,
+) -> &'env HMIRFieldDef<HMIRTypeID> {
     let HMIRTypeKind::TaggedUnion { fields } = env.resolve_kind(ty) else {
         unreachable!("a constructor builds a tagged union")
     };
@@ -53,12 +60,22 @@ pub(crate) fn payload(env: &HMIREnvironment, ty: HMIRTypeID, variant: usize) -> 
     (!env.is_void(payload)).then_some(payload)
 }
 
-pub(crate) fn signature(env: &HMIREnvironment, ty: HMIRTypeID, variant: usize) -> HMIRFnSignature<HMIRTypeID> {
+pub(crate) fn signature(
+    env: &HMIREnvironment,
+    ty: HMIRTypeID,
+    variant: usize,
+) -> HMIRFnSignature<HMIRTypeID> {
     let params = payload(env, ty, variant)
         .map(|payload| HMIRFnParam::new(false, payload))
         .into_iter()
         .collect();
-    HMIRFnSignature::new(HMIRFunctionStage::Runtime, params, ty, false, HMIRContract::default())
+    HMIRFnSignature::new(
+        HMIRFunctionStage::Runtime,
+        params,
+        ty,
+        false,
+        HMIRContract::default(),
+    )
 }
 
 pub(crate) fn reference(
@@ -86,7 +103,12 @@ pub(crate) fn function(
     span: &TokenRange,
 ) -> CXResult<MIRFunctionID> {
     let signature = signature(env, ty, variant);
-    lower::declare(env, Generation::Constructor { ty, variant }, &signature, span)
+    lower::declare(
+        env,
+        Generation::Constructor { ty, variant },
+        &signature,
+        span,
+    )
 }
 
 pub(crate) fn construct(
@@ -96,7 +118,7 @@ pub(crate) fn construct(
     payload: Option<HMIRValue>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let payload = payload.unwrap_or_else(|| expr::unit(context, span));
+    let payload = payload.unwrap_or_else(|| value::unit(context.env()));
     initializer::initialize(context, ty, &[(variant, payload)], span)
 }
 
@@ -111,6 +133,9 @@ pub(crate) fn tag(
         return Ok(value::int(context.env(), *variant as i128, ty));
     }
     let sum = context.env().referent(value.ty());
-    let index = AggregateIntrinsic::SumIndex { value: value.clone(), sum };
+    let index = AggregateIntrinsic::SumIndex {
+        value: value.clone(),
+        sum,
+    };
     emit::intrinsics::aggregate(context, &index, ty, span)
 }

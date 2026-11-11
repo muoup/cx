@@ -22,7 +22,7 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::{LocalLoweringContext, Permission},
-    eval::{EvalResult, eval, eval_type, flow::Evaluation, types::alike},
+    eval::{EvalResult, eval, eval_type, expr, flow::Evaluation, types::alike},
     log::hmir_error,
     value::{
         self, HMIRValue,
@@ -37,7 +37,7 @@ pub(crate) fn eval_literal(
     literal: &HMIRLiteral,
 ) -> HMIRValue {
     match literal {
-        HMIRLiteral::Unit => unit(context, span),
+        HMIRLiteral::Unit => value::unit(context.env()),
         HMIRLiteral::Str(value) => {
             let ty = types::realize(context.env_mut(), HMIRTypeKind::Str, span);
             let literal = HMIRAddress::new(Addressable::Literal(value.clone()), 0);
@@ -52,11 +52,6 @@ pub(crate) fn eval_literal(
             value::float(context.env(), f64::from(value), ty)
         }
     }
-}
-
-pub(crate) fn unit(context: &mut LocalLoweringContext, span: &TokenRange) -> HMIRValue {
-    let ty = types::realize(context.env_mut(), HMIRTypeKind::Void, span);
-    HMIRValue::new(ty, HMIRImmediate::Unit)
 }
 
 pub(crate) fn eval_intrinsic(
@@ -85,9 +80,11 @@ pub(crate) fn eval_intrinsic(
     };
     let result = match &intrinsic {
         VAIntrinsic::Arg { ty, .. } => *ty,
-        VAIntrinsic::Start { .. } | VAIntrinsic::End { .. } => unit(context, span).ty(),
+        VAIntrinsic::Start { .. } | VAIntrinsic::End { .. } => types::unit(context.env_mut()),
     };
-    Ok(Evaluation::Ready(emit::intrinsics::va(context, &intrinsic, result, span)?))
+    Ok(Evaluation::Ready(emit::intrinsics::va(
+        context, &intrinsic, result, span,
+    )?))
 }
 
 fn va_list(

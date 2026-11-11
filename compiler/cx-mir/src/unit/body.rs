@@ -1,4 +1,3 @@
-use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{MIRBasicBlock, MIRBasicBlockID, MIRPlaceID, MIRRegister, MIRTypeID};
@@ -96,11 +95,6 @@ pub struct MIRPlaceDecl {
 
     nodrop: bool,
     adopted: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct MIRScopeDecl {
-    token_range: TokenRange,
 }
 
 #[derive(Debug, Clone)]
