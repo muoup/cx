@@ -101,11 +101,12 @@ pub(crate) fn converge(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
+    // A function in compile-time storage cannot change, so a reference to it converges to the function itself
     let env = context.env();
     let contents = matches!(value.kind(), HMIRValueKind::Reference(_))
         && !context.is_runtime()
-        && !env.is_reference(value.ty())
-        && !env.is_pointer(value.ty());
+        && !env.is_pointer(value.ty())
+        && (!env.is_reference(value.ty()) || env.is_function(env.referent(value.ty())));
     let value = match contents {
         true => emit::storage::read(context, &value, span)?,
         false => value,
