@@ -19,7 +19,13 @@ pub enum SymbolClass {
 pub struct DeclarationSite {
     pub location: Location,
     pub role: HMIRDeclarationRole,
-    pub declaration: String,
+    pub declaration: Declaration,
+}
+
+#[derive(Debug, Clone)]
+pub struct Declaration {
+    pub text: String,
+    pub name_end: usize,
 }
 
 #[derive(Debug, Clone)]

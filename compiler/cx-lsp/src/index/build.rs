@@ -1,4 +1,6 @@
-use crate::index::{DeclarationSite, FileIndex, IndexedSymbol, Reference, SymbolClass, TypedSpan};
+use crate::index::{
+    Declaration, DeclarationSite, FileIndex, IndexedSymbol, Reference, SymbolClass, TypedSpan,
+};
 use crate::position::SourceCache;
 use cx_hmir::body::{HMIRBodyContext, HMIRLocalID};
 use cx_hmir::expr::HMIRExprKind;
@@ -175,7 +177,7 @@ impl Indexer<'_> {
             let Some(site) = self.name_site(local.span(), name.as_str(), occurrence) else {
                 continue;
             };
-            let declaration = self.declaration_text(local.span(), Some(site.name_end));
+            let declaration = self.declaration_text(local.span(), site.name_end, Some(site.name_end));
             let Some(target) = declaration_site(&site, HMIRDeclarationRole::Definition, declaration)
             else {
                 continue;
@@ -290,7 +292,7 @@ impl Indexer<'_> {
             .iter()
             .filter_map(|declaration| {
                 let site = self.name_site(declaration.span(), name, Occurrence::Last)?;
-                let text = self.declaration_text(declaration.span(), None);
+                let text = self.declaration_text(declaration.span(), site.name_end, None);
                 declaration_site(&site, declaration.role(), text)
             })
             .collect::<Vec<_>>();
@@ -298,18 +300,21 @@ impl Indexer<'_> {
         sites
     }
 
-    fn declaration_text(&mut self, span: &TokenRange, until: Option<usize>) -> String {
-        let Some((file, start, end)) = span.source_bounds() else {
-            return String::new();
+    fn declaration_text(&mut self, span: &TokenRange, name_end: usize, until: Option<usize>) -> Declaration {
+        let collapse = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+        let Some((source, start, end)) = span
+            .source_bounds()
+            .and_then(|(file, start, end)| Some((self.sources.get(file)?, start, end)))
+        else {
+            return Declaration {
+                text: String::new(),
+                name_end: 0,
+            };
         };
-        let Some(source) = self.sources.get(file) else {
-            return String::new();
-        };
-        source
-            .slice(start, until.unwrap_or(end))
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
+        Declaration {
+            text: collapse(source.slice(start, until.unwrap_or(end))),
+            name_end: collapse(source.slice(start, name_end)).len(),
+        }
     }
 
     fn name_site(&mut self, span: &TokenRange, name: &str, occurrence: Occurrence) -> Option<Site> {
@@ -351,7 +356,7 @@ impl Indexer<'_> {
 fn declaration_site(
     site: &Site,
     role: HMIRDeclarationRole,
-    declaration: String,
+    declaration: Declaration,
 ) -> Option<DeclarationSite> {
     Some(DeclarationSite {
         location: Location {

@@ -2,7 +2,7 @@ use dashmap::DashMap;
 use std::any::Any;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tower_lsp::jsonrpc::Result;
@@ -33,6 +33,7 @@ struct Backend {
     index: ProjectIndex,
     next_generation: AtomicU64,
     check_semaphore: Semaphore,
+    semantic_tokens_refresh: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -53,7 +54,15 @@ fn panic_message(payload: Box<dyn Any + Send>) -> String {
 
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        let refresh = params
+            .capabilities
+            .workspace
+            .and_then(|workspace| workspace.semantic_tokens)
+            .and_then(|semantic_tokens| semantic_tokens.refresh_support)
+            .unwrap_or(false);
+        self.semantic_tokens_refresh.store(refresh, Ordering::Relaxed);
+
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "cx-lsp".to_string(),
@@ -109,12 +118,13 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let document = params.text_document;
         self.documents.insert(
-            document.uri,
+            document.uri.clone(),
             DocumentState {
                 text: document.text,
                 version: document.version,
             },
         );
+        self.typecheck(document.uri).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -141,70 +151,7 @@ impl LanguageServer for Backend {
                 document.text = text;
             }
         }
-        let saved_version = self.documents.get(&uri).map(|document| document.version);
-
-        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
-        self.latest_checks.insert(uri.clone(), generation);
-
-        let Ok(file_path) = uri.to_file_path() else {
-            self.client
-                .log_message(MessageType::ERROR, format!("Invalid file path: {uri}"))
-                .await;
-            self.client.publish_diagnostics(uri, vec![], None).await;
-            return;
-        };
-
-        let root = find_project_root(&file_path);
-        self.client
-            .log_message(
-                MessageType::INFO,
-                format!(
-                    "Typechecking {} from project root {}",
-                    file_path.display(),
-                    root.display()
-                ),
-            )
-            .await;
-
-        let Ok(permit) = self.check_semaphore.acquire().await else {
-            return;
-        };
-        if !self.check_is_current(&uri, generation) {
-            return;
-        }
-
-        let task = tokio::task::spawn_blocking(move || {
-            catch_unwind(AssertUnwindSafe(|| {
-                let project = load_project_settings(&root)?;
-                let report = check::check(&file_path, &project);
-                Ok::<_, String>((project, report))
-            }))
-        })
-        .await;
-
-        let (project, report) = match task {
-            Ok(Ok(Ok(result))) => result,
-            Ok(Ok(Err(message))) => return self.log_check_failure(&uri, &message).await,
-            Ok(Err(payload)) => return self.log_check_failure(&uri, &panic_message(payload)).await,
-            Err(error) => return self.log_check_failure(&uri, &error.to_string()).await,
-        };
-        self.projects.insert(project.root.clone(), Arc::new(project));
-
-        if !self.check_is_current(&uri, generation) {
-            return;
-        }
-
-        self.index.update(report.index);
-        let publications =
-            self.diagnostics
-                .apply(&uri, saved_version, report.diagnostics, report.checked_files);
-        for publication in publications {
-            self.client
-                .publish_diagnostics(publication.uri, publication.diagnostics, publication.version)
-                .await;
-        }
-
-        drop(permit);
+        self.typecheck(uri).await;
     }
 
     async fn goto_definition(
@@ -265,6 +212,76 @@ impl LanguageServer for Backend {
 }
 
 impl Backend {
+    async fn typecheck(&self, uri: Url) {
+        let checked_version = self.documents.get(&uri).map(|document| document.version);
+
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+        self.latest_checks.insert(uri.clone(), generation);
+
+        let Ok(file_path) = uri.to_file_path() else {
+            self.client
+                .log_message(MessageType::ERROR, format!("Invalid file path: {uri}"))
+                .await;
+            self.client.publish_diagnostics(uri, vec![], None).await;
+            return;
+        };
+
+        let root = find_project_root(&file_path);
+        self.client
+            .log_message(
+                MessageType::INFO,
+                format!(
+                    "Typechecking {} from project root {}",
+                    file_path.display(),
+                    root.display()
+                ),
+            )
+            .await;
+
+        let Ok(permit) = self.check_semaphore.acquire().await else {
+            return;
+        };
+        if !self.check_is_current(&uri, generation) {
+            return;
+        }
+
+        let task = tokio::task::spawn_blocking(move || {
+            catch_unwind(AssertUnwindSafe(|| {
+                let project = load_project_settings(&root)?;
+                let report = check::check(&file_path, &project);
+                Ok::<_, String>((project, report))
+            }))
+        })
+        .await;
+
+        let (project, report) = match task {
+            Ok(Ok(Ok(result))) => result,
+            Ok(Ok(Err(message))) => return self.log_check_failure(&uri, &message).await,
+            Ok(Err(payload)) => return self.log_check_failure(&uri, &panic_message(payload)).await,
+            Err(error) => return self.log_check_failure(&uri, &error.to_string()).await,
+        };
+        self.projects.insert(project.root.clone(), Arc::new(project));
+
+        if !self.check_is_current(&uri, generation) {
+            return;
+        }
+
+        self.index.update(report.index);
+        let publications =
+            self.diagnostics
+                .apply(&uri, checked_version, report.diagnostics, report.checked_files);
+        for publication in publications {
+            self.client
+                .publish_diagnostics(publication.uri, publication.diagnostics, publication.version)
+                .await;
+        }
+        drop(permit);
+
+        if self.semantic_tokens_refresh.load(Ordering::Relaxed) {
+            let _ = self.client.semantic_tokens_refresh().await;
+        }
+    }
+
     fn check_is_current(&self, uri: &Url, generation: u64) -> bool {
         self.latest_checks
             .get(uri)
@@ -311,6 +328,7 @@ async fn main() {
         index: ProjectIndex::default(),
         next_generation: AtomicU64::new(1),
         check_semaphore: Semaphore::new(1),
+        semantic_tokens_refresh: AtomicBool::new(false),
     });
     Server::new(stdin, stdout, socket).serve(service).await;
 }
