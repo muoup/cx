@@ -159,11 +159,8 @@ fn bind(
         bound[*index] = Some(*expr);
     }
     let partial = args.len() < positional.len();
-    let comptime = |index: usize| {
-        signature.stage() == HMIRFunctionStage::Comptime || params[index].comptime()
-    };
     let curries = (!args.is_empty() || !named.is_empty())
-        && (0..params.len()).all(|index| bound[index].is_none() || comptime(index));
+        && (0..params.len()).all(|index| bound[index].is_none() || signature.is_comptime_param(index));
     if (partial && !curries) || (args.len() > positional.len() && !signature.is_variadic()) {
         let counts = (format!("'{name}'"), positional.len(), args.len(), signature.is_variadic());
         return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts));

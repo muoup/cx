@@ -21,21 +21,21 @@ int read_and_return(std::rcell(int)& cell) {
 int main() {
     std::rcell(int) cell = std::rcell::new(8);
 
-    std::rcell::borrow_const(emit cell) <| |value| emit .{
+    std::rcell::borrow_const(emit cell) <| |value| {
         std::printf("initial %d\n", value);
     };
 
-    std::rcell::borrow(emit cell) <| |value| emit .{
+    std::rcell::borrow(emit cell) <| |value| {
         value += 5;
     };
-    std::rcell::borrow_const(emit cell) <| |value| emit .{
+    std::rcell::borrow_const(emit cell) <| |value| {
         std::printf("mutated %d\n", value);
     };
 
-    std::rcell::borrow_const(emit cell) <| |outer| emit .{
+    std::rcell::borrow_const(emit cell) <| |outer| {
         std::printf("outer %d sema %d\n", outer, cell.sema);
 
-        std::rcell::borrow_const(emit cell) <| |inner| emit .{
+        std::rcell::borrow_const(emit cell) <| |inner| {
             std::printf("inner %d sema %d\n", inner, cell.sema);
         };
 
@@ -45,10 +45,10 @@ int main() {
     std::printf("reads released %d\n", cell.sema);
     std::printf("returned %d\n", read_and_return(cell));
 
-    std::rcell::borrow(emit cell) <| |value| emit .{
+    std::rcell::borrow(emit cell) <| |value| {
         value += 1;
     };
-    std::rcell::borrow_const(emit cell) <| |value| emit .{
+    std::rcell::borrow_const(emit cell) <| |value| {
         std::printf("after return %d\n", value);
     };
 

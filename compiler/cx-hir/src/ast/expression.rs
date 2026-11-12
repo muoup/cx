@@ -154,7 +154,7 @@ pub enum HIRExprKind {
     Defer {
         expr: Box<HIRExpression>,
     },
-    // An anonymous comptime function, '|value| emit ...'
+    // An anonymous comptime function whose body is emitted, '|value| => ...' or '|value| { ... }'
     Closure {
         params: Vec<HIRClosureParam>,
         body: Box<HIRExpression>,

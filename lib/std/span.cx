@@ -16,6 +16,9 @@ comptime type span(comptime type T) =>
         usize length;
     };
 
+span(T) span::new(comptime type T = _, T* data, usize length)
+    => (span(T)) { .data = data, .length = length };
+    
 usize span::size(comptime type T = _, span(T)& this) {
     return this.length;
 }

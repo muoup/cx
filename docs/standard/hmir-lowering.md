@@ -535,7 +535,7 @@ x's place lifted, x invalidated as moved; yields lifted value.
 
 ### Type expression
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Type node: declared type forced, yields its [type result](#type-result). `T[_]`: undefined array of T as partial; incomplete, no fallback.
 
@@ -546,6 +546,7 @@ Construction:
 - member and element types must be complete and visible: T0009.
 - array bound frozen: `void` is unbounded `T[]`; int, non-negative, within `u64` (T0011); otherwise M0001. `_` bound while constructing: T0052.
 - function type parameters adjusted as [Parameter type](#parameter-type).
+- `rule/staged-squash` staged over a staged type is that type: `^^T` and `^T` with `T = ^U` are `^U`; staged shapes formed by quotes squash likewise.
 - `rule/field-traits` owned field nodrop, nocopy or `@unsafe_move` without the container declaring it: T0029.
 - `rule/unreachable-pointee` pointer to `unreachable`: T0011.
 - copy-traits declaration takes move semantics of the named type.
@@ -731,14 +732,16 @@ Runtime call to a def with pre or postcondition: params bound to const observed 
 
 Captures: free locals of the quoted expression, quote params and inner declarations excluded. Runtime: bindings as-is. Comptime: rvalue-decayed, exported. Missing binding: M0029.
 
-Incomplete until expected. Expected staged shape (`^T`, or comptime function from staged params to staged result): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
+`rule/emit-squash` in a runtime context, a quote without parameters is its quoted expression evaluated in place: emitting code being emitted changes nothing. A [staged argument](#staged-argument) or a spliced quote literal stays a quote.
+
+Otherwise incomplete until expected. Expected staged shape (`^T`, or comptime function from staged params to staged result): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
 - `rule/quote-materializes` non-staged expectation: quote materialized in place.
 
 ### Splice
 
-*verified 425c5ff1*
+*verified uncommitted*
 
-Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments evaluated for their value types, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, then [applied](#apply).
+Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments evaluated for their value types, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, converged (a comptime local holding code yields the code, not its place), then [applied](#apply).
 
 ### Intrinsic
 
@@ -837,7 +840,7 @@ Operand evaluated in an unevaluated detached runtime child seeing frozen known v
 
 #### Parameter type
 
-Forced. `type` without `comptime`: T0017. Array or `T[]`: element pointer. Non-comptime function: decaying, its function pointer; `rule/explicit-fn-indirection` non-decaying (`fn`): T0011.
+Forced. `type` in a parameter that is neither marked `comptime` nor of a comptime-stage signature: T0017. Array or `T[]`: element pointer. Non-comptime function: decaying, its function pointer; `rule/explicit-fn-indirection` non-decaying (`fn`): T0011.
 
 #### Staged argument
 

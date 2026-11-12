@@ -28,7 +28,7 @@ comptime ^void with_trace(^int& value, fn proc(^int&) -> ^void) {
 
 void single_expression() {
     int source = 4;
-    with_trace(emit source) <| |value| emit .{
+    with_trace(emit source) <| |value| {
         value += 1;
     };
     printf("single complete\n");
@@ -45,7 +45,7 @@ int return_from_continuation() {
 int nested_continuations() {
     int left_source = 20;
     int right_source = 22;
-    with_trace(emit left_source) <| |left| emit
+    with_trace(emit left_source) <| |left| =>
     with_trace(emit right_source) <| |right| then
 
     printf("nested sum %d\n", left + right);

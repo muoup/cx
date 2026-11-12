@@ -94,6 +94,7 @@ condition = "precondition" ":" "(" expr ")"
 #### Type start
 
 Yields whether a type begins at the current token. True for: builtin type keyword, any specifier, `struct`, `union`, `enum`, `register`, `type`, `fn`, and `^` outside C mode. A qualified identifier: if a generator, only when `(` follows the name; else when a temporary type name or a registry symbol (in C mode, tag symbols excluded).
+- `rule/unimported-generator` outside C mode, a name no registry symbol or temporary type declares is a type start when parenthesized arguments follow it and then an identifier, since no value applies a name and then names another: `std::span(int) s` without the import. Its lookup then fails where the type is resolved.
 - `rule/quirk-value-use-lookahead` an identifier type (builtin type names included) is not a type start when the token right after its *first segment* is `=`, `.` or `->`.
 - registry ambiguity among equally ranked candidates of differing kinds: P0007. Rank: lexical namespace first, then type kind.
 
@@ -108,7 +109,7 @@ type-base  = ( qualified-name [ "(" args ")" ] | "auto" | "type" | "fn"
 ```
 
 - `inline`, `thread_local` ignored. `public`/`private` stop the list.
-- args only for a generator. `auto` and `^` only outside C mode; in C mode `type` and `fn` are identifiers.
+- args only for a generator, or a name taken by `rule/unimported-generator`. `auto` and `^` only outside C mode; in C mode `type` and `fn` are identifiers.
 - `rule/staged-binds-type` `^` takes a whole abstract type: `^const T&` stages `const T&`.
 - builtin words (`unsigned long int`) sorted: sign and `_Complex`, then `short`/`long`, then the rest; joined with spaces.
 
@@ -181,7 +182,7 @@ Specifiers, base, then declarators separated by `,` (comma mode off). Several yi
 
 ### Expressions
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Shunting-yard over values and operators; an operator pops those of precedence at most its own (assignment: strictly less, right-associative). Leftover stack state: PX001.
 
@@ -216,7 +217,7 @@ value = {prefix-op} ( type | literal | "true" | "false" | "&&" name | "." block
       | closure | builtin-words | "@" intrinsic | qualified-name | "_" ["::" qualified-name]
       | keyword-expr | "(" ")" | "(" expr ")" | initializer | "[" "]" | "[" expr "]" )
       { "::" name } {postfix-op} ;
-closure = "|" [ cparam { "," cparam } ] "|" ( "then" | expr ) ;
+closure = "|" [ cparam { "," cparam } ] "|" ( "then" | "=>" expr | block ) ;
 cparam  = name | specifiers type-base declarator ;
 initializer = "{" [ ["." name "="] expr { "," ["." name "="] expr } [","] ] "}" ;
 ```
@@ -230,8 +231,8 @@ initializer = "{" [ ["." name "="] expr { "," ["." name "="] expr } [","] ] "}" 
 - `()` and `[]` are void; `rule/quirk-bracket-value` `[e]` is just e.
 - `A::b` where A is a temporary type name: scope access on type A. `_::a::b`: scope access chain on a hole.
 - `rule/unresolved-type` identifier directly followed by an identifier: P0018.
-- closure body parsed in comma mode off.
-- `comptime`, `expr` in value position: P0012. Other keyword: P0002.
+- closure body: `=> e` in comma mode off; a `{ ... }` body is an expression block (yields); anything else: P0001.
+- `comptime` in value position: P0012. Other keyword: P0002.
 - `rule/quirk-va-arg` `va_arg(list, T)` and `__builtin_va_arg` parse their second argument as a type.
 
 #### Keyword expressions
@@ -356,7 +357,7 @@ Staged signature: `^T`, or a function type (either form) returning `^T`. Paramet
 
 ### Expression lowering
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 #### Literals
 
@@ -401,7 +402,7 @@ Call, pipe and backward pipe lower in an arguments scope.
 
 #### Closures and quotes
 
-- `rule/closure-body` body must be `emit e` or `then`, else T0011.
+- closure: a quote with its parameters over its body; `then` quotes the rest of the enclosing block.
 - quote: parameter types lowered in the enclosing stage, staged types as their carried type, untyped as holes; body lowered in runtime stage in a staged scope with the parameters as locals.
 - `emit e`: quote without parameters.
 

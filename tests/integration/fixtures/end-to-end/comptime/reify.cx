@@ -19,13 +19,13 @@ int main() {
     fn* hello() -> int = @reify(fn() -> int, emit printf("hi\n"));
     hello();
 
-    auto difference = @reify(fn(int, int) -> int, |a, b| emit a - b);
+    auto difference = @reify(fn(int, int) -> int, |a, b| => a - b);
     int xs[4] = { 3, 1, 4, 2 };
     sort(xs, 4, @reify(
         fn(const void* lhs, const void* rhs) -> int,
-        |a, b| emit .{ return *(const int*)a - *(const int*)b; }
+        |a, b| { return *(const int*)a - *(const int*)b; }
     ));
-    auto triple = @reify(fn(int) -> int, |^int v| emit scaled(emit v));
+    auto triple = @reify(fn(int) -> int, |^int v| => scaled(emit v));
     printf("%d %d %d %d %d %d\n", difference(8, 3), xs[0], xs[1], xs[2], xs[3], triple(3));
     return 0;
 }

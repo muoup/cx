@@ -15,7 +15,7 @@ impl HMIRUnitAllocator {
     pub fn allocate(&self) -> HMIRUnitID {
         let id = self
             .next
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
                 next.checked_add(1)
             })
             .expect("HMIR unit IDs exhausted");

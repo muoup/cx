@@ -67,23 +67,28 @@ fn shape(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<Shape> {
     })
 }
 
+// There is no stage above comptime, so staging staged code leaves it as it is
+pub(crate) fn lift(env: &mut HMIREnvironment, inner: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+    match env.resolve_kind(inner) {
+        HMIRTypeKind::Staged(_) => inner,
+        _ => types::realize(env, HMIRTypeKind::Staged(inner), span),
+    }
+}
+
 fn signature(
     context: &mut LocalLoweringContext,
     params: Vec<HMIRTypeID>,
     result: HMIRTypeID,
     span: &TokenRange,
 ) -> HMIRTypeID {
-    let result = types::realize(context.env_mut(), HMIRTypeKind::Staged(result), span);
+    let result = lift(context.env_mut(), result, span);
     if params.is_empty() {
         return result;
     }
     let params = params
         .into_iter()
         .map(|param| {
-            HMIRFnParam::new(
-                false,
-                types::realize(context.env_mut(), HMIRTypeKind::Staged(param), span),
-            )
+            HMIRFnParam::new(false, lift(context.env_mut(), param, span))
         })
         .collect();
     let signature = HMIRFnSignature::new(
@@ -111,10 +116,12 @@ pub(crate) fn eval_splice(
         HMIRExprKind::Comptime(inner) => *inner,
         _ => quote,
     };
-    if !matches!(body.expr(literal).kind(), HMIRExprKind::Quote { .. }) {
+    let HMIRExprKind::Quote { params: quoted, body: root } = body.expr(literal).kind() else {
         let code = (eval(context, body, quote))?.ready()?;
+        let code = comptime::converge(context, code, span)?;
         return apply(context, body, code, args, span);
-    }
+    };
+    let (quoted, root) = (quoted.clone(), *root);
     let (args, span) = (args.to_vec(), span.clone());
     let pending = Incomplete::new(
         context,
@@ -128,7 +135,7 @@ pub(crate) fn eval_splice(
                 params.push(types::qualify::value(context, value.ty(), &span));
             }
             let ty = signature(context, params, expected, &span);
-            let code = eval(context, body, literal)?.complete(context, body, Some(ty))?;
+            let code = self::quote(context, body, &quoted, root)?.complete(context, body, Some(ty))?;
             apply(context, body, code, &args, &span)
         },
     );
@@ -153,7 +160,20 @@ pub(crate) fn splice(
     }
 }
 
+// Emitting code that is already being emitted changes nothing, so it stands as the code itself
 pub(crate) fn eval_quote(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    params: &[HMIRLocalID],
+    root: HMIRExprID,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    match context.is_runtime() && params.is_empty() {
+        true => eval(context, body, root),
+        false => quote(context, body, params, root),
+    }
+}
+
+fn quote(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     params: &[HMIRLocalID],
@@ -259,7 +279,7 @@ pub(crate) fn argument(
         operand = *inner;
     }
     let value = match body.expr(operand).kind() {
-        HMIRExprKind::Quote { .. } => eval(context, body, operand)?,
+        HMIRExprKind::Quote { params, body: root } => quote(context, body, params, *root)?,
         HMIRExprKind::Local(local)
             if context
                 .get_local(local)
@@ -267,7 +287,7 @@ pub(crate) fn argument(
         {
             eval(context, body, operand)?
         }
-        _ => eval_quote(context, body, &[], operand)?,
+        _ => quote(context, body, &[], operand)?,
     };
     let span = body.expr(operand).span().clone();
     value

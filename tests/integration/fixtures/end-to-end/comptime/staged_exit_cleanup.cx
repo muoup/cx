@@ -18,7 +18,7 @@ comptime ^void around(fn proc(^int) -> ^void) {
 
 int returning() {
     defer trace("caller cleanup");
-    around() <| |unused| emit .{
+    around() <| |unused| {
         defer trace("callback cleanup");
         return 7;
     };
@@ -36,15 +36,15 @@ int main() {
     while (count < 2) {
         count += 1;
         defer trace_count(count);
-        around() <| |unused| emit .{ continue; };
+        around() <| |unused| { continue; };
         printf("loop suffix\n");
     }
-    ignore() <| |unused| emit .{ return 1; };
+    ignore() <| |unused| { return 1; };
     printf("dropped return\n");
     int yielded = match (1) {
         0 => 0,
         _ => .{
-            around() <| |unused| emit yield 9;
+            around() <| |unused| => yield 9;
             yield 0;
         }
     };

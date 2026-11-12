@@ -16,7 +16,7 @@ use cx_log::{
 use crate::{
     emit::comptime::int,
     env::{function::LocalLoweringContext, resolver::demand},
-    eval::{eval_comptime, eval_type, flow, types},
+    eval::{eval_comptime, eval_type, flow, staged, types},
     log::hmir_error,
     value,
 };
@@ -82,6 +82,11 @@ pub(crate) fn construct_type(
                 ty.decl_span().clone(),
                 None,
             )
+        }
+        HMIRExprTypeKind::Staged(inner) => {
+            let inner =
+                flow::top(eval_type(context, body, *inner).and_then(|ty| ty.description()))?;
+            return Ok(staged::lift(context.env_mut(), inner, ty.decl_span()));
         }
         HMIRExprTypeKind::Array { element, length } => {
             let element = member(context, body, *element, ty.kind())?;

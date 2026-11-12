@@ -183,6 +183,10 @@ impl<T> HMIRFnSignature<T> {
         &self.params
     }
 
+    pub fn is_comptime_param(&self, index: usize) -> bool {
+        self.stage == HMIRFunctionStage::Comptime || self.params[index].comptime
+    }
+
     pub fn return_type(&self) -> &T {
         &self.return_type
     }

@@ -191,7 +191,7 @@ pub(crate) fn lower_expr<'a>(
             let inner = lower_expr(context, inner)?;
             context.control(HMIRControlOp::Unsafe(inner), span)
         }
-        HIRExprKind::Closure { params, body } => lower_closure(context, params, body, span)?,
+        HIRExprKind::Closure { params, body } => lower_quote(context, params, body, span)?,
         HIRExprKind::Emit { expr: inner } => lower_quote(context, &[], inner, span)?,
 
         HIRExprKind::Break => context.control(HMIRControlOp::Break, span),
@@ -406,29 +406,6 @@ fn lower_unpack<'a>(
         .collect();
 
     Ok(context.aggregate_op(HMIRAggregateOp::Unpack { value, bindings }, span))
-}
-
-// A closure is an anonymous comptime function; the code it produces is its 'emit'
-fn lower_closure<'a>(
-    context: &mut BodyLowering<'a>,
-    params: &'a [HIRClosureParam],
-    body: &'a HIRExpression,
-    span: &TokenRange,
-) -> CXResult<HMIRExprID> {
-    match &body.kind {
-        HIRExprKind::Emit { expr } => lower_quote(context, params, expr, span),
-        // 'then' emits the rest of the enclosing block
-        HIRExprKind::Then => lower_quote(context, params, body, span),
-        _ => log_hir_error(
-            span,
-            &typecheck::TYPE_REQUIREMENT,
-            (
-                "closure body".into(),
-                "an emit expression or a block".into(),
-                None,
-            ),
-        ),
-    }
 }
 
 pub(crate) fn lower_quote<'a>(

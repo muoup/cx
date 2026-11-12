@@ -1405,3 +1405,153 @@ void jump(int* target) {
                           (number_literal))))))))))
         (labeled_statement
           (identifier))))))
+
+==================
+closure bodies
+==================
+
+void f() {
+    invoke(|value| => consume(value));
+    invoke(|^int value| { consume(value); });
+    with_trace(source) <| |value| then
+    consume(value);
+    with_trace(left) <| |a| => with_trace(right) <| |b| then
+    consume(b);
+}
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (expression_statement
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (argument_list
+                (expression
+                  (primary_expression
+                    (staged_lambda
+                      (identifier)
+                      (operator)
+                      (expression
+                        (postfix_expression
+                          (primary_expression
+                            (qualified_name
+                              (identifier)))
+                          (argument_list
+                            (expression
+                              (primary_expression
+                                (qualified_name
+                                  (identifier))))))))))))))
+        (expression_statement
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (argument_list
+                (expression
+                  (primary_expression
+                    (staged_lambda
+                      (type
+                        (staged_type
+                          (operator)
+                          (type
+                            (builtin_type_sequence
+                              (builtin_type)))))
+                      (identifier)
+                      (compound_statement
+                        (expression_statement
+                          (expression
+                            (postfix_expression
+                              (primary_expression
+                                (qualified_name
+                                  (identifier)))
+                              (argument_list
+                                (expression
+                                  (primary_expression
+                                    (qualified_name
+                                      (identifier))))))))))))))))
+        (staged_continuation_statement
+          (staged_continuation_expression
+            (expression
+              (postfix_expression
+                (primary_expression
+                  (qualified_name
+                    (identifier)))
+                (argument_list
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))))))
+            (operator)
+            (staged_continuation_lambda
+              (identifier)
+              (staged_then
+                (keyword)))))
+        (expression_statement
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (argument_list
+                (expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier))))))))
+        (staged_continuation_statement
+          (staged_continuation_expression
+            (expression
+              (postfix_expression
+                (primary_expression
+                  (qualified_name
+                    (identifier)))
+                (argument_list
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))))))
+            (operator)
+            (staged_continuation_lambda
+              (identifier)
+              (operator)
+              (staged_continuation_expression
+                (expression
+                  (postfix_expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))
+                    (argument_list
+                      (expression
+                        (primary_expression
+                          (qualified_name
+                            (identifier)))))))
+                (operator)
+                (staged_continuation_lambda
+                  (identifier)
+                  (staged_then
+                    (keyword)))))))
+        (expression_statement
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (argument_list
+                (expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier))))))))))))

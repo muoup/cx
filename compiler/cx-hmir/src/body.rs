@@ -1,11 +1,13 @@
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::cell::Cell;
 
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::expr::{HMIRExpr, HMIRExprID};
 
-static NEXT_BODY: AtomicU32 = AtomicU32::new(0);
+thread_local! {
+    static NEXT_BODY: Cell<u32> = Cell::new(0);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct HMIRBodyID(u32);
@@ -109,14 +111,11 @@ impl Default for HMIRBodyContext {
 
 impl HMIRBodyContext {
     pub fn new() -> Self {
+        let id = NEXT_BODY.get();
+        NEXT_BODY.replace(id + 1);
+        
         Self {
-            id: HMIRBodyID(
-                NEXT_BODY
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
-                        next.checked_add(1)
-                    })
-                    .expect("HMIR body ID space exhausted"),
-            ),
+            id: HMIRBodyID(id),
             visible_through: None,
             exprs: Vec::new(),
             locals: Vec::new(),

@@ -1,3 +1,0 @@
-comptime T identity(type T, T value) => value;
-comptime int value = identity(int, 1);
-int main() { return value; }

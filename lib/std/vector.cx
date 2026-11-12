@@ -1,6 +1,8 @@
-import std::optional;
+import std::optional as std;
+import std::span as std;
 
 extern "C":
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -76,3 +78,6 @@ std::optional::opt(T&) vector::at(comptime type T = _, vector(T)& this, usize in
 
     return std::optional::opt(T&)::some(this.data[index]);
 }
+
+std::span(T) vector::span(comptime type T = _, vector(T)& this)
+    => std::span::new(this.data, this.length);

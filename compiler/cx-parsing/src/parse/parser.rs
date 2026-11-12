@@ -159,6 +159,10 @@ impl<'a> ParserData<'a> {
             && self.symbol_kind(name)? == Some(PreparseSymbolKind::Generator))
     }
 
+    pub fn is_undeclared(&self, name: &QualifiedName) -> CXResult<bool> {
+        Ok(!self.is_temporary_type(name) && self.symbol_kind(name)?.is_none())
+    }
+
     pub fn note_type_name(&mut self, name: CXIdent) {
         *self.temporary_type_names.entry(name).or_insert(0) += 1;
     }

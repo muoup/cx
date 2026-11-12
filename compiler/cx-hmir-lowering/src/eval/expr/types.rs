@@ -56,9 +56,11 @@ pub(crate) fn eval_signature(
     let params = signature
         .params()
         .iter()
-        .map(|param| {
+        .enumerate()
+        .map(|(index, param)| {
             let ty = slot(context, *param.ty())?;
-            let ty = parameter(context, ty, param.comptime(), body.expr(*param.ty()).span())?;
+            let comptime = signature.is_comptime_param(index);
+            let ty = parameter(context, ty, comptime, body.expr(*param.ty()).span())?;
             Ok(HMIRFnParam::new(param.comptime(), ty))
         })
         .collect::<CXResult<_>>()?;
@@ -82,9 +84,11 @@ pub(crate) fn adjust_signature(
         .params()
         .iter()
         .zip(evaluated.params())
-        .map(|(source, param)| {
+        .enumerate()
+        .map(|(index, (source, param))| {
             let span = body.expr(*source.ty()).span();
-            let ty = parameter(context, *param.ty(), param.comptime(), span)?;
+            let comptime = evaluated.is_comptime_param(index);
+            let ty = parameter(context, *param.ty(), comptime, span)?;
             Ok(HMIRFnParam::new(param.comptime(), ty))
         })
         .collect::<CXResult<_>>()?;

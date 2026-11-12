@@ -9,7 +9,7 @@ int main() {
     std::rcell::borrow(emit cell) <| |mutable| then
 
     std::printf("mutable active %d\n", mutable);
-    std::rcell::borrow_const(emit cell) <| |value| emit .{
+    std::rcell::borrow_const(emit cell) <| |value| {
         std::printf("unreachable const %d\n", value);
     };
     std::printf("unreachable end\n");

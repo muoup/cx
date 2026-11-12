@@ -72,12 +72,47 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
                     Some(punctuator!(OpenParen))
                 )
             } else {
-                data.is_type_ident(&ident)? && !is_used_as_value(data)
+                is_unimported_generator(data, &ident, end_idx)?
+                    || (data.is_type_ident(&ident)? && !is_used_as_value(data))
             }
         }
 
         _ => false,
     })
+}
+
+// No expression applies a name and then names another, so an undeclared name applied before a
+// name is a generator from a module that was not imported
+fn is_unimported_generator(data: &ParserData, name: &QualifiedName, end: usize) -> CXResult<bool> {
+    Ok(!data.c_mode
+        && data.is_undeclared(name)?
+        && application_end(data, end).is_some_and(|after| {
+            matches!(
+                data.tokens.slice.get(after).map(|token| &token.kind),
+                Some(TokenKind::Identifier(_))
+            )
+        }))
+}
+
+// The index past the parenthesized arguments opening at 'open'
+pub(crate) fn application_end(data: &ParserData, open: usize) -> Option<usize> {
+    if !matches!(data.tokens.slice.get(open).map(|token| &token.kind), Some(punctuator!(OpenParen))) {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (index, token) in data.tokens.slice.iter().enumerate().skip(open) {
+        match &token.kind {
+            punctuator!(OpenParen) => depth += 1,
+            punctuator!(CloseParen) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(index + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn token_range(data: &ParserData, start: usize, end: usize) -> TokenRange {
@@ -829,8 +864,9 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
                 unreachable!();
             };
 
+            let end = data.tokens.index;
             let args = if peek_kind!(data.tokens, punctuator!(OpenParen))
-                && data.is_generator(&name)?
+                && (data.is_generator(&name)? || is_unimported_generator(data, &name, end)?)
             {
                 Some(parse_args(data)?)
             } else {

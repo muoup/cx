@@ -81,7 +81,8 @@ impl<'a> Frame<'a> {
             let ty = flow::top(
                 eval_type(child, function.body(), *param.ty()).and_then(|ty| ty.description()),
             )?;
-            let ty = types::parameter(child, ty, param.comptime(), span)?;
+            let comptime = function.signature().is_comptime_param(index);
+            let ty = types::parameter(child, ty, comptime, span)?;
             if runtime && staged::is_code(child, ty) {
                 let operation = "a reference or staged-expression parameter".into();
                 return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation));

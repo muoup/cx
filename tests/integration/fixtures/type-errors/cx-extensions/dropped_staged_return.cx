@@ -3,5 +3,5 @@ comptime ^void discard(fn body(^int) -> ^void) {
 }
 
 int missing_return() {
-    discard() <| |unused| emit .{ return 1; };
+    discard() <| |unused| { return 1; };
 }

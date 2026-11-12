@@ -7,6 +7,6 @@ void consume(int& value) {
 }
 
 int main() {
-    invoke(|value| emit consume(value));
+    invoke(|value| => consume(value));
     return 0;
 }

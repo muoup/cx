@@ -18,7 +18,7 @@ use crate::{
         parse_block,
         parser::ParserData,
         try_parse_qualified_name, try_parse_simple_identifier,
-        types::{is_type_decl, parse_named_declarator, parse_type_base},
+        types::{application_end, is_type_decl, parse_named_declarator, parse_type_base},
     },
     peek_kind, try_next,
 };
@@ -139,33 +139,19 @@ fn is_scoped_type_expression(data: &mut ParserData) -> CXResult<bool> {
     let Some(name) = try_parse_qualified_name(&mut data.tokens)? else {
         return Ok(false);
     };
-    let mut index = data.tokens.index;
+    let end = data.tokens.index;
     data.tokens.index = start;
 
     if !data.is_generator(&name)? {
         return Ok(false);
     }
 
-    let mut depth = 0usize;
-    while let Some(token) = data.tokens.slice.get(index) {
-        match &token.kind {
-            punctuator!(OpenParen) => depth += 1,
-            punctuator!(CloseParen) => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    break;
-                }
-            }
-            _ if depth == 0 => break,
-            _ => {}
-        }
-        index += 1;
-    }
-
-    Ok(matches!(
-        data.tokens.slice.get(index + 1).map(|token| &token.kind),
-        Some(TokenKind::Operator(OperatorType::ScopeRes))
-    ))
+    Ok(application_end(data, end).is_some_and(|after| {
+        matches!(
+            data.tokens.slice.get(after).map(|token| &token.kind),
+            Some(TokenKind::Operator(OperatorType::ScopeRes))
+        )
+    }))
 }
 
 fn parse_condition(data: &mut ParserData) -> CXResult<Box<HIRExpression>> {

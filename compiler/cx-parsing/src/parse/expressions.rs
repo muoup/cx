@@ -669,11 +669,19 @@ pub(crate) fn parse_expr_val(
 
             let body = if try_next!(data.tokens, keyword!(Then)) {
                 data.expr_from(data.tokens.index - 1, HIRExprKind::Then)
-            } else {
+            } else if peek_kind!(data.tokens, punctuator!(OpenBrace)) {
+                parse_expression_block(data)?
+            } else if try_next!(data.tokens, punctuator!(ThickArrow)) {
                 data.change_comma_mode(false);
                 let body = parse_expr(data);
                 data.pop_comma_mode();
                 body?
+            } else {
+                return parse_point_error(
+                    &data.tokens,
+                    &EXPECTED_SYNTAX,
+                    ("'=>', '{' or 'then'".into(), Some("after closure parameters".into())),
+                );
             };
 
             HIRExprKind::Closure {

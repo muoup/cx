@@ -10,7 +10,7 @@ comptime 'a type iter(lifetime a, type index)
     };
 
 comptime ^iter(a, index) span::iter(lifetime a, type index, ^std::span(a, index) this)
-    =>  std::splice_tap(this, |auto& this|
+    =>  std::splice_tap(this, |auto& this| =>
             span_iter(index) {
                 .data = this.data,
                 .remaining = this.length
@@ -42,7 +42,7 @@ comptime ^iter(a, out) iter::map(
     => iter(a, out)() {
         .next = @reify(_, |auto& iter| {
             iter.next()
-            |>(1) std::optional::map(_, |auto value| callback(value))
+            |>(1) std::optional::map(_, |auto value| => callback(value))
         }),
     };
 
@@ -69,7 +69,7 @@ int main() {
 
     move vec 
         |>(2) std::vector::iter(_, _)
-        |>(2) std::iter::for_each(_, _, |val| std::printf("%d ", val));
+        |>(2) std::iter::for_each(_, _, |val| => std::printf("%d ", val));
 };
 
 void routine(std::vector(std::string) strs)

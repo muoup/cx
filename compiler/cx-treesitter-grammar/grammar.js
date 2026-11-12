@@ -189,14 +189,12 @@ module.exports = grammar({
         [$.anonymous_union_body, $.union_definition],
         [$.template_argument, $.literal],
         [$.template_argument, $.type, $.primary_expression],
-        [$.staged_lambda, $.then_expression],
-        [$.staged_continuation_lambda, $.staged_lambda, $.then_expression],
+        [$.staged_continuation_lambda, $.staged_lambda],
         [$.match_statement, $.match_expression],
         [$.compound_statement, $.initializer_list],
         [$.primary_expression, $.compound_initializer],
         [$.defer_statement, $.primary_expression],
         [$.primary_expression, $.emit_expression],
-        [$.primary_expression, $.staged_lambda],
         [$.expression, $.conditional_condition],
         [$.templated_name, $.primary_expression],
     ],
@@ -984,8 +982,7 @@ module.exports = grammar({
                 $._lambda_parameters,
                 choice(
                     $.staged_then,
-                    $.staged_continuation_expression,
-                    seq(keyword($, "emit"), $.staged_continuation_expression),
+                    seq(op($, "=>"), $.staged_continuation_expression),
                 ),
             ),
 
@@ -1166,8 +1163,15 @@ module.exports = grammar({
                 $._lambda_parameters,
                 choice(
                     $.staged_then,
-                    $.staged_block,
-                    $.expression,
+                    $.compound_statement,
+                    seq(
+                        op($, "=>"),
+                        choice(
+                            $.expression,
+                            alias($._arm_return, $.return_statement),
+                            alias($._arm_yield, $.yield_statement),
+                        ),
+                    ),
                 ),
             ),
 
