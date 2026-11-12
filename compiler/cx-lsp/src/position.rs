@@ -1,65 +1,85 @@
+use rustc_hash::FxHashMap;
+use std::path::{Path, PathBuf};
 use tower_lsp::lsp_types::{Position, Range};
 
-fn floor_char_boundary(text: &str, index: usize) -> usize {
-    let mut index = index.min(text.len());
-    while !text.is_char_boundary(index) {
-        index -= 1;
-    }
-    index
+pub struct SourceText {
+    text: String,
+    line_starts: Vec<usize>,
 }
 
-pub fn byte_index_to_position(text: &str, index: usize) -> Position {
-    let index = floor_char_boundary(text, index);
-    let prefix = &text[..index];
-    let line_start = prefix.rfind('\n').map_or(0, |newline| newline + 1);
-    let line_prefix = prefix[line_start..]
-        .strip_suffix('\r')
-        .unwrap_or(&prefix[line_start..]);
-
-    Position {
-        line: prefix.bytes().filter(|byte| *byte == b'\n').count() as u32,
-        character: line_prefix.encode_utf16().count() as u32,
+impl SourceText {
+    pub fn new(text: String) -> Self {
+        let line_starts = std::iter::once(0)
+            .chain(text.match_indices('\n').map(|(index, _)| index + 1))
+            .collect();
+        Self { text, line_starts }
     }
-}
 
-pub fn byte_range(text: &str, start: usize, end: usize) -> Range {
-    let start = floor_char_boundary(text, start);
-    let end = if end <= start {
-        text[start..]
-            .chars()
-            .next()
-            .map_or(start, |character| start + character.len_utf8())
-    } else {
-        floor_char_boundary(text, end)
-    };
+    pub fn position(&self, index: usize) -> Position {
+        let index = self.floor_char_boundary(index);
+        let line = self.line_starts.partition_point(|start| *start <= index) - 1;
+        let prefix = &self.text[self.line_starts[line]..index];
+        let prefix = prefix.strip_suffix('\r').unwrap_or(prefix);
 
-    Range {
-        start: byte_index_to_position(text, start),
-        end: byte_index_to_position(text, end),
-    }
-}
-
-pub fn line_range(text: &str, one_based_line: Option<usize>) -> Range {
-    let lines = text.split('\n').collect::<Vec<_>>();
-    let line = one_based_line
-        .unwrap_or(1)
-        .saturating_sub(1)
-        .min(lines.len().saturating_sub(1));
-    let content = lines
-        .get(line)
-        .copied()
-        .unwrap_or_default()
-        .strip_suffix('\r')
-        .unwrap_or_else(|| lines.get(line).copied().unwrap_or_default());
-
-    Range {
-        start: Position {
+        Position {
             line: line as u32,
-            character: 0,
-        },
-        end: Position {
-            line: line as u32,
-            character: content.encode_utf16().count() as u32,
-        },
+            character: prefix.encode_utf16().count() as u32,
+        }
+    }
+
+    pub fn range(&self, start: usize, end: usize) -> Range {
+        let start = self.floor_char_boundary(start);
+        let end = if end <= start {
+            self.text[start..]
+                .chars()
+                .next()
+                .map_or(start, |character| start + character.len_utf8())
+        } else {
+            self.floor_char_boundary(end)
+        };
+
+        Range {
+            start: self.position(start),
+            end: self.position(end),
+        }
+    }
+
+    pub fn line(&self, one_based_line: Option<usize>) -> Range {
+        let line = one_based_line
+            .unwrap_or(1)
+            .saturating_sub(1)
+            .min(self.line_starts.len() - 1);
+        let start = self.line_starts[line];
+        let end = self
+            .line_starts
+            .get(line + 1)
+            .map_or(self.text.len(), |next| next - 1);
+
+        Range {
+            start: self.position(start),
+            end: self.position(end),
+        }
+    }
+
+    fn floor_char_boundary(&self, index: usize) -> usize {
+        let mut index = index.min(self.text.len());
+        while !self.text.is_char_boundary(index) {
+            index -= 1;
+        }
+        index
+    }
+}
+
+#[derive(Default)]
+pub struct SourceCache {
+    files: FxHashMap<PathBuf, Option<SourceText>>,
+}
+
+impl SourceCache {
+    pub fn get(&mut self, path: &Path) -> Option<&SourceText> {
+        self.files
+            .entry(path.to_path_buf())
+            .or_insert_with(|| std::fs::read_to_string(path).ok().map(SourceText::new))
+            .as_ref()
     }
 }

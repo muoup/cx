@@ -445,6 +445,8 @@ dependencies = [
 name = "cx-lsp"
 version = "0.0.0"
 dependencies = [
+ "cx-hmir",
+ "cx-hmir-lowering",
  "cx-lexer",
  "cx-log",
  "cx-namespace",
@@ -452,6 +454,7 @@ dependencies = [
  "cx-pipeline",
  "cx-pipeline-data",
  "cx-tokens",
+ "cx-util",
  "dashmap",
  "rustc-hash",
  "tokio",

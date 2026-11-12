@@ -36,9 +36,10 @@ pub fn try_function_parse(
     symbol_naming: HIRSymbolNameScheme,
 ) -> CXResult<Option<HIRFunctionPrototype>> {
     let range_start = data.tokens.index;
+    let name_start = range_start - 1;
 
     let name = if try_next!(data.tokens, operator!(ScopeRes)) {
-        data.tokens.index = range_start - 1;
+        data.tokens.index = name_start;
 
         try_parse_qualified_name(&mut data.tokens)?.unwrap()
     } else {
@@ -86,7 +87,7 @@ pub fn try_function_parse(
         params: args.params,
         var_args: args.var_args,
 
-        range: data.token_range(range_start, data.tokens.index),
+        range: data.token_range(name_start, data.tokens.index),
     }))
 }
 

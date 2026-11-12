@@ -175,4 +175,18 @@ impl HMIRBodyContext {
         debug_assert_eq!(id.body(), self.id, "hole used outside of its body");
         &self.holes[id.index()]
     }
+
+    pub fn exprs(&self) -> impl Iterator<Item = (HMIRExprID, &HMIRExpr)> {
+        self.exprs
+            .iter()
+            .enumerate()
+            .map(|(index, expr)| (HMIRExprID::new(self.id, index), expr))
+    }
+
+    pub fn locals(&self) -> impl Iterator<Item = (HMIRLocalID, &HMIRLocal)> {
+        self.locals
+            .iter()
+            .enumerate()
+            .map(|(index, local)| (HMIRLocalID::new(self.id, index), local))
+    }
 }

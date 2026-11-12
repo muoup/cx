@@ -1,4 +1,5 @@
 use crate::backends::{cranelift_compile, llvm_compile};
+use crate::pipeline::{FailurePolicy, PipelineFailure};
 use crate::{COMPILER_STACK_SIZE, pipeline_error};
 use cx_hir::intrinsic_types::INTRINSIC_IMPORTS;
 use cx_hir_lowering::generate_hmir;
@@ -7,7 +8,7 @@ use cx_hmir_lowering::{
     generate_mir,
 };
 use cx_log::catalogue::driver as catalogue;
-use cx_log::{CXResult, error::CXError};
+use cx_log::CXResult;
 use cx_mir_analysis::{MIRAnalysisOptions, analyze};
 
 use cx_mir_lowering::generate_lmir;
@@ -33,14 +34,13 @@ use std::num::NonZeroUsize;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::mpsc;
 
-pub(crate) type JobFailure = (CompilationJob, CXError);
-
 pub(crate) fn scheduling_loop(
     context: &GlobalCompilationContext,
     initial_jobs: impl IntoIterator<Item = CompilationJob>,
     final_step: CompilationStep,
+    policy: FailurePolicy,
     mut on_start: impl FnMut(&CompilationJob),
-) -> Result<(), JobFailure> {
+) -> Result<(), Vec<PipelineFailure>> {
     let mut queue = JobQueue::new();
     for initial_job in initial_jobs {
         queue.push_job(initial_job);
@@ -55,7 +55,8 @@ pub(crate) fn scheduling_loop(
         let mut failures = Vec::new();
 
         loop {
-            while failures.is_empty() && running < workers {
+            let dispatching = failures.is_empty() || policy == FailurePolicy::Continue;
+            while dispatching && running < workers {
                 let Some(job) = queue.pop_ready(|unit| import_units_for_unit(context, unit)) else {
                     break;
                 };
@@ -95,13 +96,13 @@ pub(crate) fn scheduling_loop(
                         queue.push_new_job(next_job);
                     }
                 }
-                Ok(Err(error)) => failures.push((job, error)),
+                Ok(Err(error)) => failures.push(PipelineFailure { job, error }),
                 Err(payload) => resume_unwind(payload),
             }
         }
 
-        if let Some(failure) = failures.into_iter().min_by_key(|(job, _)| job.step) {
-            return Err(failure);
+        if !failures.is_empty() {
+            return Err(failures);
         }
         let stalled = std::iter::from_fn(|| queue.pop_job()).collect::<Vec<_>>();
         if let Some(job) = stalled.first() {
@@ -110,7 +111,10 @@ pub(crate) fn scheduling_loop(
                 .map(|job| format!("{} ({:?})", job.unit, job.step))
                 .collect::<Vec<_>>()
                 .join(", ");
-            return Err((job.clone(), pipeline_error(&catalogue::SCHEDULER_STALL, jobs)));
+            return Err(vec![PipelineFailure {
+                job: job.clone(),
+                error: pipeline_error(&catalogue::SCHEDULER_STALL, jobs),
+            }]);
         }
         Ok(())
     })
@@ -585,43 +589,4 @@ fn library_symbols(lmir: &LMIRUnit) -> impl Iterator<Item = String> + '_ {
         })
         .map(|global| global.name.to_string());
     functions.chain(globals)
-}
-
-#[derive(Debug, Clone)]
-pub enum LSPErrors {
-    SpannedError {
-        compilation_unit: PathBuf,
-        code: String,
-        message: String,
-        byte_start: usize,
-        byte_end: usize,
-        notes: Vec<String>,
-    },
-    FatalError {
-        compilation_unit: PathBuf,
-        code: String,
-        message: String,
-        line: Option<usize>,
-    },
-}
-
-impl LSPErrors {
-    pub(crate) fn new((job, error): JobFailure) -> Self {
-        match error.source_span() {
-            Some(span) => LSPErrors::SpannedError {
-                compilation_unit: span.file,
-                code: error.code(),
-                message: error.message(),
-                byte_start: span.byte_start,
-                byte_end: span.byte_end,
-                notes: error.notes().to_vec(),
-            },
-            None => LSPErrors::FatalError {
-                compilation_unit: job.unit.module().as_path().to_path_buf(),
-                code: error.code(),
-                message: error.message(),
-                line: None,
-            },
-        }
-    }
 }

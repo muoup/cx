@@ -3,7 +3,7 @@ pub(crate) mod generation;
 pub(crate) mod module;
 pub(crate) mod resolver;
 pub mod settings;
-pub(crate) mod symbols;
+pub mod symbols;
 
 use cx_hmir::{
     HMIRUnit,
