@@ -1,0 +1,11 @@
+/* CX-STDOUT: 1 */
+#include <stdio.h>
+
+comptime ^T id(type T = _, ^T v) => v;
+comptime ^void show(type T = _, ^T v) => emit printf("%d\n", v);
+
+int main() {
+    int x = 1;
+    show(id(x));
+    return 0;
+}

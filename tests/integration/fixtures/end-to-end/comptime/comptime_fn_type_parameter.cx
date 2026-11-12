@@ -1,0 +1,15 @@
+/* CX-STDOUT: 1 2 3 */
+#include <stdio.h>
+
+comptime T identity(type T, T value) => value;
+comptime int value = identity(int, 1);
+
+comptime ^void each(type T = _, ^T first, ^T second, fn callback(^T) -> ^void)
+    => emit .{ callback(first); callback(second); };
+
+int main() {
+    printf("%d", value);
+    each(emit 2, emit 3, |item| => printf(" %d", item));
+    printf("\n");
+    return 0;
+}

@@ -1,0 +1,18 @@
+/* CX-STDOUT: 2 2 3 4 5 */
+#include <stdio.h>
+
+comptime type lifted(type T) => ^T;
+
+comptime ^^int succ(^int v) { return emit v + 1; }
+comptime lifted(^int) twice(^int v) { return emit v * 2; }
+
+comptime ^void invoke(^int v, fn proc(^int) -> ^void) { return proc(v); }
+
+int main() {
+    int one = 1;
+    printf("%d %d", succ(emit one), twice(emit one));
+    emit printf(" %d", 3);
+    invoke(emit 4, |value| => emit printf(" %d", value));
+    invoke(emit 5, |value| { emit printf(" %d\n", value); });
+    return 0;
+}

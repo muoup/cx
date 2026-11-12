@@ -642,7 +642,7 @@ Inner expression evaluated unchanged.
 
 ### Call
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 `f(args)`, `f(.p = a)`. Callee evaluated, then call evaluated, then result completed expecting the call's expectation.
 
@@ -652,7 +652,6 @@ Callee prepared:
 - curried value unwrapped, its arguments applied first.
 
 Routed to [Dependent call](#dependent-call):
-- unevaluated context, comptime-stage function: in a frozen comptime child.
 - comptime context, not a variant constructor.
 - comptime-only callee type.
 

@@ -1,0 +1,4 @@
+int main() {
+    std::span(int) values;
+    return 0;
+}

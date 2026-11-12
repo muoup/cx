@@ -2,7 +2,7 @@ pub(crate) mod contract;
 pub(crate) mod dependent;
 
 use cx_hmir::{
-    HMIRBodyContext, HMIRDefID, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
+    HMIRBodyContext, HMIRDefID, HMIRFnSignature, HMIRFunction,
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
@@ -20,7 +20,7 @@ use crate::{
     eval::{
         EvalResult,
         aggregate::variant,
-        coerce, comptime, eval, eval_comptime, expr,
+        coerce, eval, eval_comptime, expr,
         flow::{self, Evaluation},
         place, staged, types,
     },
@@ -80,11 +80,6 @@ fn apply(
     let (callee, applied) = value::uncurried(callable(context, callee, span)?);
     let (callee, signature) = coerce_callee(context, callee, span)?;
     let def = value::as_function(&callee);
-    if context.is_unevaluated() && signature.stage() == HMIRFunctionStage::Comptime && def.is_some() {
-        let mut child = comptime::child(context);
-        let callee = value::curried(callee.ty(), callee, applied);
-        return apply(&mut child, body, span, callee, args, named);
-    }
 
     // Only a callee that names a function knows the names and the defaults of its parameters
     let unit = def.map(|def| {
