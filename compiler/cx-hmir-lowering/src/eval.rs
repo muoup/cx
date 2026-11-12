@@ -141,12 +141,11 @@ pub(crate) fn eval(
         HMIRExprKind::Intrinsic(op) => expr::eval_intrinsic(context, body, span, op),
     }?;
 
-    let partial = result.known().cloned();
     result.chain(
         context,
         body,
         None,
-        partial,
+        |value| Some(value.clone()),
         |context, _, value, _| match context.context() {
             FnContext::Runtime(runtime) if runtime.emission() == Emission::Suppressed => {
                 flow::diverged()

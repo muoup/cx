@@ -119,7 +119,7 @@ fn branch(
                 context,
                 body,
                 None,
-                None,
+                |_| None,
                 move |context, body, then, expected| {
                     if let Some(else_branch) = else_branch {
                         let mut arms = Vec::from_iter(

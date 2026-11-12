@@ -41,7 +41,7 @@ pub(crate) struct HMIRResolver {
     symbols: FxHashMap<HMIRDefID, SymbolState>,
     active: Vec<HMIRDefID>,
     deferred: Vec<HMIRTypeID>,
-    generated: FxHashMap<(HMIRDefID, Vec<HMIRValue>), HMIRValue>,
+    generated: FxHashMap<HMIRDefID, FxHashMap<Vec<HMIRValue>, HMIRValue>>,
     origins: FxHashMap<HMIRTypeID, (HMIRDefID, Vec<HMIRValue>)>,
 }
 
@@ -55,7 +55,7 @@ impl HMIRResolver {
             TokenRange::Internal,
             None,
         );
-        resolver.intern(void);
+        resolver.realize_type(void);
         resolver
     }
 
@@ -64,7 +64,7 @@ impl HMIRResolver {
         let semantics = *ty.semantics();
         if let HMIRTypeKind::Nominal(inner) = *ty.kind() {
             let full = semantics.apply(self.semantics(inner));
-            return self.qualified(self.underlying(inner), full, ty);
+            return self.qualified(self.underlying(inner), full, ty.decl_span());
         }
         // REVIEW: Why is undefined tagged here? Do we need to intern incomplete types?
         let aggregate = matches!(
@@ -77,8 +77,7 @@ impl HMIRResolver {
         // REVIEW: debug_name is not the correct proxy for strong identifiers, we need both a strong_identifier, and a debug_name,
         // the former dictates equality, the latter just for prettied formats and need not be identifier-shaped (e.g. foo::type_name).
         if aggregate && ty.debug_name().is_some() {
-            let id = self.reserve_type(ty.clone());
-            return self.qualified(id, semantics, ty);
+            return self.reserve_type(ty);
         }
         let own = match aggregate {
             true => HMIRTypeSemantics {
@@ -88,14 +87,15 @@ impl HMIRResolver {
             },
             false => HMIRTypeSemantics::default(),
         };
-        let bare = HMIRType::new(
-            ty.kind().clone(),
-            own,
-            ty.decl_span().clone(),
-            ty.debug_name().map(str::to_owned),
-        );
-        let base = self.intern(bare);
-        self.qualified(base, semantics, ty)
+        let base = self.intern(key::key(ty.kind(), own), || {
+            HMIRType::new(
+                ty.kind().clone(),
+                own,
+                ty.decl_span().clone(),
+                ty.debug_name().map(str::to_owned),
+            )
+        });
+        self.qualified(base, semantics, ty.decl_span())
     }
 
     pub fn reserve_type(&mut self, ty: HMIRType) -> HMIRTypeID {
@@ -136,11 +136,8 @@ impl HMIRResolver {
         self.types[id].lowered = Some(mir);
     }
 
-    pub fn symbol(&self, def: HMIRDefID) -> SymbolState {
-        self.symbols
-            .get(&def)
-            .cloned()
-            .unwrap_or(SymbolState::Declared)
+    pub fn symbol(&self, def: HMIRDefID) -> &SymbolState {
+        self.symbols.get(&def).unwrap_or(&SymbolState::Declared)
     }
     pub fn set_symbol(&mut self, def: HMIRDefID, state: SymbolState) {
         self.symbols.insert(def, state);
@@ -164,35 +161,36 @@ impl HMIRResolver {
     }
 
     pub fn generated(&self, def: HMIRDefID, args: &[HMIRValue]) -> Option<&HMIRValue> {
-        self.generated.get(&(def, args.to_vec()))
+        self.generated.get(&def)?.get(args)
     }
     pub fn record_generated(&mut self, def: HMIRDefID, args: Vec<HMIRValue>, value: HMIRValue) {
         if let Some(ty) = value::as_type(&value) {
             let ty = self.underlying(ty);
             self.origins.entry(ty).or_insert((def, args.clone()));
         }
-        self.generated.insert((def, args), value);
+        self.generated.entry(def).or_default().insert(args, value);
     }
     pub fn forget_generated(&mut self, def: HMIRDefID, args: &[HMIRValue]) {
-        self.generated.remove(&(def, args.to_vec()));
+        if let Some(generated) = self.generated.get_mut(&def) {
+            generated.remove(args);
+        }
     }
     pub fn origin(&self, ty: HMIRTypeID) -> Option<(HMIRDefID, &[HMIRValue])> {
         let (def, args) = self.origins.get(&ty)?;
         Some((*def, args.as_slice()))
     }
 
-    fn intern(&mut self, ty: HMIRType) -> HMIRTypeID {
-        let key = key::key(&ty);
+    fn intern(&mut self, key: TypeKey, ty: impl FnOnce() -> HMIRType) -> HMIRTypeID {
         if let Some(id) = self.interned.get(&key) {
             return *id;
         }
-        let id = self.reserve_type(ty);
+        let id = self.reserve_type(ty());
         self.interned.insert(key, id);
         id
     }
 
     // 'base' with only the specifiers of 'full' it does not carry itself
-    fn qualified(&mut self, base: HMIRTypeID, full: HMIRTypeSemantics, ty: HMIRType) -> HMIRTypeID {
+    fn qualified(&mut self, base: HMIRTypeID, full: HMIRTypeSemantics, span: &TokenRange) -> HMIRTypeID {
         let own = *self.types[base].ty.semantics();
         let added = HMIRTypeSemantics {
             constant: full.constant && !own.constant,
@@ -206,13 +204,10 @@ impl HMIRResolver {
         if added == HMIRTypeSemantics::default() {
             return base;
         }
-        let nominal = HMIRType::new(
-            HMIRTypeKind::Nominal(base),
-            added,
-            ty.decl_span().clone(),
-            None,
-        );
-        self.intern(nominal)
+        let kind = HMIRTypeKind::Nominal(base);
+        self.intern(key::key(&kind, added), || {
+            HMIRType::new(kind, added, span.clone(), None)
+        })
     }
 
     fn underlying(&self, id: HMIRTypeID) -> HMIRTypeID {

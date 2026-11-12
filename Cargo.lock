@@ -405,6 +405,7 @@ dependencies = [
  "cx-util",
  "index_vec",
  "rustc-hash",
+ "smallvec",
  "speedy",
 ]
 

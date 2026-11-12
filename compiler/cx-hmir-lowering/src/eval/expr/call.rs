@@ -46,7 +46,7 @@ pub(crate) fn eval_call(
         context,
         body,
         None,
-        None,
+        |_| None,
         move |context, body, callee, expected| {
             let callee = coerce::collapse(context, callee, &span)?;
             apply(context, body, &span, callee, &args, &named)?

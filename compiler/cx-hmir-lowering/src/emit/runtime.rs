@@ -15,7 +15,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     env::function::{LocalLoweringContext, runtime::RuntimeScope, scope::Bindings},
-    eval::{aggregate::variant, call, symbol},
+    eval::{aggregate::variant, call, symbol, types},
     lower::{
         declaration, global,
         types::{lower_prototype, lower_type, mir_float, mir_int},
@@ -108,29 +108,24 @@ pub fn immediate(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRImmediate> {
-    let kind = context.env_mut().resolve_kind(ty).clone();
-    Ok(match (immediate, kind) {
+    Ok(match (immediate, context.env().resolve_kind(ty)) {
         (HMIRImmediate::Unit, _) => MIRImmediate::Unit,
         (HMIRImmediate::Int(0), HMIRTypeKind::PointerTo(_)) => MIRImmediate::Nullptr {
             ty: lower_type(context.env_mut(), ty, span)?,
         },
-        (HMIRImmediate::Int(value), HMIRTypeKind::Int(int)) => MIRImmediate::Integer {
+        (HMIRImmediate::Int(value), &HMIRTypeKind::Int(int)) => MIRImmediate::Integer {
             ty: mir_int(int.width()),
             value: *value,
         },
-        (HMIRImmediate::Float(value), HMIRTypeKind::Float(float)) => MIRImmediate::Float {
+        (HMIRImmediate::Float(value), &HMIRTypeKind::Float(float)) => MIRImmediate::Float {
             value: *value,
             ty: mir_float(float.width()),
         },
         (HMIRImmediate::Address(address), _) => self::address(context, address, span)?,
-        (HMIRImmediate::Aggregate { fields: items }, kind) => {
+        (HMIRImmediate::Aggregate { fields: items }, HMIRTypeKind::Array { .. } | HMIRTypeKind::Struct { .. }) => {
             let mut fields = Vec::with_capacity(items.len());
             for (index, item) in items.iter().enumerate() {
-                let field = match &kind {
-                    HMIRTypeKind::Array { element, .. } => *element,
-                    HMIRTypeKind::Struct { fields } => *fields[index].ty(),
-                    _ => unreachable!("an aggregate constant is an array or structure"),
-                };
+                let field = types::member(context.env(), ty, index);
                 fields.push((index, self::immediate(context, item, field, span)?));
             }
             MIRImmediate::Aggregate {
@@ -140,9 +135,10 @@ pub fn immediate(
         }
         (
             HMIRImmediate::Union { variant, payload },
-            HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields },
+            HMIRTypeKind::Union { .. } | HMIRTypeKind::TaggedUnion { .. },
         ) => {
-            let payload = self::immediate(context, payload, *fields[*variant].ty(), span)?;
+            let field = types::member(context.env(), ty, *variant);
+            let payload = self::immediate(context, payload, field, span)?;
             MIRImmediate::Aggregate {
                 ty: lower_type(context.env_mut(), ty, span)?,
                 fields: vec![(*variant, payload)],

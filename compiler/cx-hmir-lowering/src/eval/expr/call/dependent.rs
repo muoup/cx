@@ -225,10 +225,9 @@ pub(crate) fn call(
         let operation = "a variadic dependent function call".into();
         return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
     }
-    let name = name(context, def);
     let spliced = is_spliced(context, function);
     let runtime = context.is_runtime() && !spliced;
-    let mut frame = Frame::new(function, def, ComptimeContext::of(name.clone()), runtime);
+    let mut frame = Frame::new(function, def, ComptimeContext::of(def), runtime);
 
     let prototype = function.prototype();
     let default = |index: usize| prototype.params()[index].default().filter(|_| !partial);
@@ -242,7 +241,7 @@ pub(crate) fn call(
         }
     };
     let holes = (0..params.len()).filter(is_hole).collect();
-    let deduction = Deduction::infer(context, &mut frame, function, name, holes, body, args, span)?;
+    let deduction = Deduction::infer(context, &mut frame, function, def, holes, body, args, span)?;
 
     let mut values = vec![None; params.len()];
     let mut undeduced = None;
@@ -271,7 +270,7 @@ pub(crate) fn call(
                     undeduced.get_or_insert(index);
                     continue;
                 }
-                None => return Err(deduction.undeduced(index, span).into()),
+                None => return Err(deduction.undeduced(context, index, span).into()),
             },
             Some(arg) if staged::is_code(context, ty) => {
                 staged::argument(context, body, arg, ty)?.ready()?
@@ -292,7 +291,7 @@ pub(crate) fn call(
         return finish(context, frame, values, span);
     };
     let span = span.clone();
-    let undeduced = deduction.undeduced(index, &span);
+    let undeduced = deduction.undeduced(context, index, &span);
     deduce::generated(context, def, values, undeduced, &span).and_then(
         context,
         body,
@@ -314,7 +313,7 @@ pub(crate) fn apply(
         .expect("function owner exists");
     let function = declaration::function(unit.resolve_def(def).expect("function exists"));
     let runtime = context.is_runtime() && !is_spliced(context, function);
-    let state = ComptimeContext::of(name(context, def));
+    let state = ComptimeContext::of(def);
     let mut frame = Frame::new(function, def, state, runtime);
     let values = frame.instantiate(context, values, span)?;
     finish(context, frame, values, span)
@@ -338,7 +337,6 @@ fn finish(
         return Ok(Evaluation::Ready(curried(context, def, &signature, values, span)?));
     }
 
-    let name = name(context, def);
     let spliced = is_spliced(context, function);
     if function.def().is_none() {
         return Err(match frame.runtime {
@@ -346,7 +344,7 @@ fn finish(
                 let feature = "specializing a function without a definition".into();
                 hmir_error(span, &typecheck::UNSUPPORTED_FEATURE, feature)
             }
-            false => hmir_error(span, &mir::COMPTIME_NO_BODY, name),
+            false => hmir_error(span, &mir::COMPTIME_NO_BODY, symbol::name(context.env(), def)),
         }
         .into());
     }
@@ -373,7 +371,7 @@ fn finish(
     }
     let mut run = |context: &mut LocalLoweringContext, defining| {
         frame.enter(context, span, |child| {
-            execute(child, function, &signature, &args, &name, defining, span)
+            execute(child, function, &signature, &args, def, defining, span)
         })
     };
     let value = match generator {
@@ -463,11 +461,6 @@ pub(crate) fn signature(
     frame.signature(&mut context, span)
 }
 
-fn name(context: &LocalLoweringContext, def: HMIRDefID) -> String {
-    let source = context.env().symbols().resolve_definition(def);
-    source.name().to_string()
-}
-
 // A generated type is named by the call that generated it
 fn generated_name(context: &LocalLoweringContext, def: HMIRDefID, args: &[HMIRValue]) -> String {
     let source = context.env().symbols().resolve_definition(def);
@@ -483,11 +476,11 @@ fn execute(
     function: &HMIRFunction,
     signature: &HMIRFnSignature<HMIRTypeID>,
     args: &[HMIRValue],
-    name: &str,
+    def: HMIRDefID,
     defining: Option<HMIRTypeID>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    contract::check(context, signature.contract(), args, None, name, span)?;
+    contract::check(context, signature.contract(), args, None, def, span)?;
     let value = match body(context, function, defining) {
         Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Return(value)))) => value,
         Err(EvalExit::Stop(StopReason::Comptime(_))) => {
@@ -510,7 +503,7 @@ fn execute(
             .map_or_else(|| "temporary".into(), |place| place.to_string());
         let discarded = place == "_";
         let args = (
-            name.to_string(),
+            symbol::name(context.env(), def),
             "variable".into(),
             place,
             "function".into(),
@@ -523,7 +516,7 @@ fn execute(
         signature.contract(),
         args,
         Some(&value),
-        name,
+        def,
         span,
     )?;
     Ok(value)

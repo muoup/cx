@@ -1,7 +1,7 @@
 use rustc_hash::FxHashMap;
 use std::{cell::RefCell, rc::Rc};
 
-use cx_hmir::{expr::HMIRExprID, ty::HMIRTypeID};
+use cx_hmir::{HMIRDefID, expr::HMIRExprID, ty::HMIRTypeID};
 use cx_util::identifier::CXIdent;
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 pub struct ComptimeContext {
     scopes: Scopes<ComptimeScope>,
     slots: FxHashMap<HMIRPlaceID, ComptimeSlot>,
-    function: String,
+    function: Option<HMIRDefID>,
     // The page the places of this frame are allocated in, from the memory of the context it is installed in
     page: Option<Page>,
 }
@@ -40,15 +40,15 @@ impl ComptimeContext {
         Self::default()
     }
 
-    pub(crate) fn of(function: String) -> Self {
+    pub(crate) fn of(function: HMIRDefID) -> Self {
         Self {
-            function,
+            function: Some(function),
             ..Self::default()
         }
     }
 
-    pub(crate) fn function(&self) -> &str {
-        &self.function
+    pub(crate) fn function(&self) -> Option<HMIRDefID> {
+        self.function
     }
 
     pub(crate) fn install(&mut self, memory: &Rc<RefCell<Memory>>) {

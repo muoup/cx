@@ -19,6 +19,7 @@ exclude = [
 [workspace.dependencies]
 index_vec = "0.1.4"
 rustc-hash = "2.1.3"
+smallvec = "1.16.1"
 
 [profile.release-with-debug]
 inherits = "release"

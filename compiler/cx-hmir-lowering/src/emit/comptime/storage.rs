@@ -9,7 +9,7 @@ use cx_util::identifier::CXIdent;
 
 use crate::{
     env::function::{LocalLoweringContext, comptime::ComptimeSlotState, memory::layout},
-    eval::types,
+    eval::{symbol, types},
     log::hmir_error,
     value::{
         HMIRValue, HMIRValueKind, address::HMIRAddress, immediate::HMIRImmediate,
@@ -82,7 +82,10 @@ fn live(
         ComptimeSlotState::Uninitialized if writing => Ok(()),
         ComptimeSlotState::Uninitialized => Err(hmir_error(span, &mir::COMPTIME_UNSET, subject)),
         ComptimeSlotState::Invalidated => {
-            let function = context.comptime().function().to_string();
+            let function = context
+                .comptime()
+                .function()
+                .map_or_else(String::new, |def| symbol::name(context.env(), def));
             let place = slot
                 .name()
                 .map_or_else(|| "temporary".into(), |name| name.to_string());

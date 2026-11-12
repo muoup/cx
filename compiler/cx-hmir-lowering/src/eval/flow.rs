@@ -47,6 +47,10 @@ pub(crate) fn diverged<T>() -> EvalResult<Evaluation<T>> {
     Err(EvalExit::Stop(RuntimeStop::Diverged.into()))
 }
 
+fn unknown<T, U>(_: &T) -> Option<U> {
+    None
+}
+
 impl<T> Evaluation<T> {
     pub(crate) fn ready(self) -> EvalResult<T> {
         match self {
@@ -99,27 +103,30 @@ impl<T: 'static> Evaluation<T> {
         body: &HMIRBodyContext,
         then: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, T) -> EvalResult<Evaluation<U>> + 'static,
     ) -> EvalResult<Evaluation<U>> {
-        self.chain(context, body, None, None, move |context, body, value, _| then(context, body, value))
+        self.chain(context, body, None, unknown, move |context, body, value, _| then(context, body, value))
     }
 
-    // 'and_then' in full: 'partial' is what the suspended result is known to be, and 'then' also receives the
-    // type this evaluation was completed from
+    // 'and_then' in full: 'partial' maps what this result is known to be to what the suspended result is, and
+    // 'then' also receives the type this evaluation was completed from
     pub(crate) fn chain<U: 'static>(
         self,
         context: &mut LocalLoweringContext,
         body: &HMIRBodyContext,
         expected: Option<HMIRTypeID>,
-        partial: Option<U>,
+        partial: impl FnOnce(&T) -> Option<U>,
         then: impl FnOnce(&mut LocalLoweringContext, &HMIRBodyContext, T, Option<HMIRTypeID>) -> EvalResult<Evaluation<U>> + 'static,
     ) -> EvalResult<Evaluation<U>> {
         match self {
             Self::Ready(value) => then(context, body, value, expected),
-            Self::Incomplete(incomplete) => Ok(Evaluation::Incomplete(incomplete.wrap(
-                partial,
-                move |context, body, expected, resolve| {
-                    resolve(context, body, expected)?.chain(context, body, Some(expected), None, then)
-                },
-            ))),
+            Self::Incomplete(incomplete) => {
+                let partial = incomplete.partial().and_then(partial);
+                Ok(Evaluation::Incomplete(incomplete.wrap(
+                    partial,
+                    move |context, body, expected, resolve| {
+                        resolve(context, body, expected)?.chain(context, body, Some(expected), unknown, then)
+                    },
+                )))
+            }
         }
     }
 

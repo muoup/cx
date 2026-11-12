@@ -1,29 +1,21 @@
 use rustc_hash::FxHashMap;
-use std::cell::Cell;
 
 use cx_target::ArchitectureConfig;
 use index_vec::IndexVec;
 
 use crate::ty::{
     interface::MTRegistry,
-    layout::{MIRTypeLayout, compute_layout},
+    layout::{MIRTypeLayout, cache::MIRLayoutCache},
 };
 
 use super::{MIRType, MIRTypeID};
-
-#[derive(Debug, Clone, Copy)]
-enum LayoutState {
-    Pending,
-    Active,
-    Ready(MIRTypeLayout),
-}
 
 #[derive(Debug, Clone)]
 pub struct MIRTypeRegistry {
     architecture: ArchitectureConfig,
     definitions: IndexVec<MIRTypeID, MIRType>,
     debug_names: FxHashMap<MIRTypeID, String>,
-    layouts: IndexVec<MIRTypeID, Cell<LayoutState>>,
+    layouts: MIRLayoutCache,
 }
 
 impl MIRTypeRegistry {
@@ -32,10 +24,7 @@ impl MIRTypeRegistry {
         definitions: IndexVec<MIRTypeID, MIRType>,
         debug_names: FxHashMap<MIRTypeID, String>,
     ) -> Self {
-        let layouts = definitions
-            .iter()
-            .map(|_| Cell::new(LayoutState::Pending))
-            .collect();
+        let layouts = MIRLayoutCache::new(definitions.len());
         Self {
             architecture,
             definitions,
@@ -67,15 +56,7 @@ impl MTRegistry for MIRTypeRegistry {
     }
 
     fn layout(&self, ty: MIRTypeID) -> MIRTypeLayout {
-        match self.layouts[ty].get() {
-            LayoutState::Ready(layout) => return layout,
-            LayoutState::Active => panic!("recursive value type {ty}"),
-            LayoutState::Pending => {}
-        }
-        self.layouts[ty].set(LayoutState::Active);
-        let layout = compute_layout(self, ty, &mut |child| self.layout(child));
-        self.layouts[ty].set(LayoutState::Ready(layout));
-        layout
+        self.layouts.layout(self, ty)
     }
 
     fn debug_name(&self, id: MIRTypeID) -> Option<&str> {

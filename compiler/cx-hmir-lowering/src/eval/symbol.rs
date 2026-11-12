@@ -34,7 +34,7 @@ use crate::{
 // The value 'def' names, evaluated the first time it is asked for
 pub(crate) fn value(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<HMIRValue> {
     match env.resolver().symbol(def) {
-        SymbolState::Ready(value) | SymbolState::Evaluating(Some(value)) => return Ok(value),
+        SymbolState::Ready(value) | SymbolState::Evaluating(Some(value)) => return Ok(value.clone()),
         SymbolState::Evaluating(None) => return Err(cycle(env, def)),
         SymbolState::Declared => {}
     }
@@ -90,13 +90,17 @@ fn evaluating<T>(
     result
 }
 
+pub(crate) fn name(env: &HMIREnvironment, def: HMIRDefID) -> String {
+    env.symbols().resolve_definition(def).name().to_string()
+}
+
 fn cycle(env: &HMIREnvironment, def: HMIRDefID) -> CXError {
     let active = env.resolver().active();
     let start = active.iter().position(|active| *active == def).unwrap_or(0);
     let path = active[start..]
         .iter()
         .chain(std::iter::once(&def))
-        .map(|id| env.symbols().resolve_definition(*id).name().to_string())
+        .map(|id| name(env, *id))
         .collect::<Vec<_>>()
         .join(" -> ");
     let span = env.symbols().resolve_definition(def).declarations()[0].span();

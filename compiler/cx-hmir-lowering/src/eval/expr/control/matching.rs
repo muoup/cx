@@ -283,7 +283,7 @@ fn lower_arms(
         context,
         body,
         None,
-        None,
+        |_| None,
         move |context, body, value, expected| {
             if let Some(value) = value {
                 state.exits.push((emit::runtime::flow::current_block(context), value));

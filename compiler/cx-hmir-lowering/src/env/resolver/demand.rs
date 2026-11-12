@@ -64,14 +64,14 @@ fn walk(
     if forcing {
         force(env, ty)?;
     }
-    let children = match env.resolve_kind(ty).clone() {
+    let children = match env.resolve_kind(ty) {
         HMIRTypeKind::Undefined(HMIRUndefined::Forward(_)) => return Ok(false),
         HMIRTypeKind::PointerTo(inner)
         | HMIRTypeKind::ReferenceTo { inner, .. }
         | HMIRTypeKind::Nominal(inner)
         | HMIRTypeKind::Staged(inner)
         | HMIRTypeKind::Array { element: inner, .. }
-        | HMIRTypeKind::Undefined(HMIRUndefined::Array { element: inner }) => vec![inner],
+        | HMIRTypeKind::Undefined(HMIRUndefined::Array { element: inner }) => vec![*inner],
         HMIRTypeKind::Function(signature) => signature
             .params()
             .iter()

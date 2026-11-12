@@ -20,6 +20,7 @@ use crate::{
         deduce::{Incomplete, IncompleteReason, subject},
         eval,
         flow::{self, Evaluation},
+        symbol,
         types::{self, alike},
     },
     log::hmir_error,
@@ -33,7 +34,7 @@ use crate::{
 // The type arguments that a call leaves as holes, by parameter, and the type deduced for each
 pub(crate) struct Deduction<'a> {
     function: &'a HMIRFunction,
-    name: String,
+    def: HMIRDefID,
     holes: Vec<usize>,
     inferred: BTreeMap<usize, HMIRTypeID>,
 }
@@ -50,7 +51,7 @@ impl<'a> Deduction<'a> {
         context: &mut LocalLoweringContext,
         frame: &mut Frame,
         function: &'a HMIRFunction,
-        name: String,
+        def: HMIRDefID,
         holes: Vec<usize>,
         body: &HMIRBodyContext,
         args: &[Option<HMIRExprID>],
@@ -58,7 +59,7 @@ impl<'a> Deduction<'a> {
     ) -> CXResult<Self> {
         let mut deduction = Self {
             function,
-            name,
+            def,
             holes,
             inferred: BTreeMap::new(),
         };
@@ -302,11 +303,11 @@ impl<'a> Deduction<'a> {
         }
     }
 
-    pub(crate) fn undeduced(&self, index: usize, span: &TokenRange) -> CXError {
+    pub(crate) fn undeduced(&self, context: &LocalLoweringContext, index: usize, span: &TokenRange) -> CXError {
         let subject = format!(
             "comptime argument '{}' of '{}'",
             self.parameter(index),
-            self.name
+            symbol::name(context.env(), self.def)
         );
         hmir_error(span, &typecheck::TEMPLATE_DEDUCTION, subject)
     }

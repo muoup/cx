@@ -309,11 +309,8 @@ fn eval_statements(
         }
         if yielded {
             let result = result?;
-            let partial = result
-                .known()
-                .filter(|value| value::as_type(value).is_some())
-                .cloned();
             let span = span.clone();
+            let partial = |value: &HMIRValue| value::as_type(value).map(|_| value.clone());
             return result.chain(context, body, None, partial, move |context, _, value, _| {
                 Ok(Evaluation::Ready(coerce::promotion::std_rvalue(
                     context, value, &span,

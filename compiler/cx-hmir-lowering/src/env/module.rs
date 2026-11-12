@@ -6,7 +6,11 @@ use cx_mir::{
     MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRInstruction, MIRInstructionKind,
     MIRPlaceDecl, MIRPlaceID, MIRRegister, MIRRegisterDecl, MIRType, MIRTypeID, MIRTypeKind,
     MIRTypeMetadata, MIRUnit,
-    ty::{interface::MTRegistry, registry::MIRTypeRegistry},
+    ty::{
+        interface::MTRegistry,
+        layout::{MIRTypeLayout, cache::MIRLayoutCache},
+        registry::MIRTypeRegistry,
+    },
 };
 use cx_mir::{MIRValue, expr::visit::successors, immediate::MIRImmediate};
 use cx_target::ArchitectureConfig;
@@ -25,6 +29,7 @@ pub struct MIRModuleBuilder {
     architecture: ArchitectureConfig,
 
     types: IndexVec<MIRTypeID, MIRType>,
+    layouts: MIRLayoutCache,
     interned: FxHashMap<MIRType, MIRTypeID>,
     debug_names: FxHashMap<MIRTypeID, String>,
     qualified: FxHashMap<MIRTypeID, Vec<(MIRTypeMetadata, MIRTypeID)>>,
@@ -42,6 +47,7 @@ impl MIRModuleBuilder {
             architecture,
 
             types: IndexVec::new(),
+            layouts: MIRLayoutCache::default(),
             interned: FxHashMap::default(),
             debug_names: FxHashMap::default(),
             qualified: FxHashMap::default(),
@@ -64,6 +70,7 @@ impl MIRModuleBuilder {
         }
 
         let id = self.types.push(ty.clone());
+        self.layouts.track();
         self.interned.insert(ty, id);
         id
     }
@@ -71,6 +78,7 @@ impl MIRModuleBuilder {
     // A distinct type, which may be incomplete until it is defined
     pub fn add_type(&mut self, ty: MIRType, debug_name: Option<String>) -> MIRTypeID {
         let id = self.types.push(ty);
+        self.layouts.track();
         if let Some(name) = debug_name {
             self.debug_names.insert(id, name);
         }
@@ -79,6 +87,7 @@ impl MIRModuleBuilder {
 
     pub fn define_type(&mut self, id: MIRTypeID, ty: MIRType) {
         self.types[id] = ty.clone();
+        self.layouts.reset(id);
         self.interned.entry(ty).or_insert(id);
     }
 
@@ -188,6 +197,10 @@ impl MTRegistry for MIRModuleBuilder {
 
     fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
         self.debug_names.get(&id).map(String::as_str)
+    }
+
+    fn layout(&self, ty: MIRTypeID) -> MIRTypeLayout {
+        self.layouts.layout(self, ty)
     }
 }
 

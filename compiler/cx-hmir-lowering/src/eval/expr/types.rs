@@ -276,6 +276,16 @@ pub(crate) fn is_aggregate(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     )
 }
 
+pub(crate) fn member(env: &HMIREnvironment, ty: HMIRTypeID, index: usize) -> HMIRTypeID {
+    match env.resolve_kind(ty) {
+        HMIRTypeKind::Array { element, .. } => *element,
+        HMIRTypeKind::Struct { fields }
+        | HMIRTypeKind::Union { fields }
+        | HMIRTypeKind::TaggedUnion { fields } => *fields[index].ty(),
+        _ => unreachable!("only an aggregate has members"),
+    }
+}
+
 pub(crate) fn zero(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<HMIRImmediate> {
     Some(match env.resolve_kind(ty) {
         HMIRTypeKind::Int(_) | HMIRTypeKind::PointerTo(_) => HMIRImmediate::Int(0),

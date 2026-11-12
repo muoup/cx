@@ -23,7 +23,7 @@ use crate::{
     eval::{
         EvalResult, coerce, eval, expr,
         flow::{EvalExit, Evaluation},
-        types,
+        symbol, types,
     },
     log::hmir_error,
     lower::declaration,
@@ -40,7 +40,7 @@ pub(crate) fn check(
     contract: &HMIRContract,
     args: &[HMIRValue],
     result: Option<&HMIRValue>,
-    name: &str,
+    def: HMIRDefID,
     span: &TokenRange,
 ) -> CXResult<()> {
     let (expression, label) = match result {
@@ -62,6 +62,7 @@ pub(crate) fn check(
     restore(context, bindings);
     if !matches!(value?.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(value)) if *value != 0)
     {
+        let name = symbol::name(context.env(), def);
         return Err(hmir_error(
             span,
             &catalogue::mir::COMPTIME_ASSERTION,

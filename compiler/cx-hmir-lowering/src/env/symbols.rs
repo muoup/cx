@@ -17,6 +17,7 @@ pub struct HMIRSymbolEnv<'global, 'hmir> {
     local_unit: &'hmir HMIRUnit,
 
     units: FxHashMap<HMIRUnitID, Arc<HMIRUnit>>,
+    lookups: FxHashMap<(HMIRUnitID, Option<HIRTagKind>), FxHashMap<QualifiedName, Vec<HMIRDefID>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +33,7 @@ impl<'global, 'hmir> HMIRSymbolEnv<'global, 'hmir> {
             local_unit,
 
             units: FxHashMap::default(),
+            lookups: FxHashMap::default(),
         }
     }
 
@@ -79,8 +81,28 @@ impl<'global, 'hmir> HMIRSymbolEnv<'global, 'hmir> {
             .get(&def_id.brand())
             .expect("Definition's owning unit was never loaded")
     }
- 
+
+    // Every unit a lookup can see has finished HMIR before this unit is lowered, so a found result never changes
     pub fn lookup(
+        &mut self,
+        source: HMIRUnitID,
+        name: &QualifiedName,
+        tag: Option<HIRTagKind>,
+    ) -> Vec<HMIRDefID> {
+        if let Some(ids) = self.lookups.get(&(source, tag)).and_then(|names| names.get(name)) {
+            return ids.clone();
+        }
+        let ids = self.search(source, name, tag);
+        if !ids.is_empty() {
+            self.lookups
+                .entry((source, tag))
+                .or_default()
+                .insert(name.clone(), ids.clone());
+        }
+        ids
+    }
+
+    fn search(
         &mut self,
         source: HMIRUnitID,
         name: &QualifiedName,

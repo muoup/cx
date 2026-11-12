@@ -1,28 +1,27 @@
 use std::mem::{Discriminant, discriminant};
 
-use cx_hmir::ty::{
-    HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics,
-};
+use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics};
+use smallvec::SmallVec;
 
 // The structure of a type, laid out by position so that each kind fills its lists in a fixed shape
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(super) struct TypeKey {
     kind: Discriminant<HMIRTypeKind>,
     semantics: HMIRTypeSemantics,
-    types: Vec<HMIRTypeID>,
-    scalars: Vec<u64>,
+    types: SmallVec<[HMIRTypeID; 4]>,
+    scalars: SmallVec<[u64; 4]>,
     names: Vec<Option<String>>,
 }
 
-pub(super) fn key(ty: &HMIRType) -> TypeKey {
+pub(super) fn key(kind: &HMIRTypeKind, semantics: HMIRTypeSemantics) -> TypeKey {
     let mut key = TypeKey {
-        kind: discriminant(ty.kind()),
-        semantics: *ty.semantics(),
-        types: Vec::new(),
-        scalars: Vec::new(),
+        kind: discriminant(kind),
+        semantics,
+        types: SmallVec::new(),
+        scalars: SmallVec::new(),
         names: Vec::new(),
     };
-    match ty.kind() {
+    match kind {
         HMIRTypeKind::Int(int) => {
             key.scalars.push(int.width() as u64);
             key.scalars.push(int.signed() as u64);

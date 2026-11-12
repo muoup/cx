@@ -1,3 +1,5 @@
+pub mod cache;
+
 use rustc_hash::FxHashSet;
 
 use crate::ty::{MIRField, MIRTypeKind, interface::MTRegistry};

@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
+use cx_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
 use cx_intrinsics::{
     AggregateIntrinsic, FloatIntrinsic, IntIntrinsic, InternalIntrinsic, PointerCompareOp,
     PointerIntrinsic, PointerOffsetOp, VAIntrinsic,
@@ -321,7 +321,7 @@ fn init(
     };
     let mut constant = zero(context, ty);
     if let (HMIRImmediate::Union { variant, payload }, Some((index, _))) = (&mut constant, fields.last()) {
-        (*variant, **payload) = (*index, zero(context, member(context, ty, *index)));
+        (*variant, **payload) = (*index, zero(context, types::member(context.env(), ty, *index)));
     }
     let storage = HMIRAddress::new(context.allocate(ty, span)?, 0);
     context.store(&storage, ty, &constant.into(), None, span)?;
@@ -329,23 +329,13 @@ fn init(
         let offset = field_offset(context.env_mut(), ty, *index, span)?;
         let offset = i64::try_from(offset).map_err(|_| overflow(span))?;
         let bitfield = placement(context.env_mut(), ty, *index, span)?;
-        let member = member(context, ty, *index);
+        let member = types::member(context.env(), ty, *index);
         let reference = types::reference(context.env_mut(), member, bitfield, span);
         let address = storage.offset_by(offset).ok_or_else(|| overflow(span))?;
         storage::write(context, &HMIRValue::new(reference, address), value, span)?;
     }
 
     Ok(HMIRValue::new(ty, storage))
-}
-
-fn member(context: &LocalLoweringContext, ty: HMIRTypeID, index: usize) -> HMIRTypeID {
-    match context.env().resolve_kind(ty) {
-        HMIRTypeKind::Array { element, .. } => *element,
-        HMIRTypeKind::Struct { fields }
-        | HMIRTypeKind::Union { fields }
-        | HMIRTypeKind::TaggedUnion { fields } => *fields[index].ty(),
-        _ => unreachable!("an initialized aggregate has members"),
-    }
 }
 
 pub fn internal(
