@@ -190,7 +190,10 @@ fn lower_underlying(
             let kind = |variants| MIRTypeKind::TaggedUnion { variants };
             return lower_aggregate(env, ty, &fields, MIRUndefined::TaggedUnion, kind, span);
         }
-        HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag)) => {
+        HMIRTypeKind::Undefined(HMIRUndefined::Forward(None)) => {
+            unreachable!("a type definition is complete once evaluated")
+        }
+        HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag))) => {
             let undefined = MIRType::new(MIRTypeKind::Undefined(mir_tag(tag)));
             let debug_name = env.resolve_type_id(ty).debug_name().map(str::to_string);
             return Ok(lower_named(env, ty, undefined, debug_name));

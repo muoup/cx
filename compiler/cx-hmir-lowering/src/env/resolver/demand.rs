@@ -65,7 +65,7 @@ fn walk(
         force(env, ty)?;
     }
     let children = match env.resolve_kind(ty).clone() {
-        HMIRTypeKind::Undefined(HMIRUndefined::Tagged(_)) => return Ok(false),
+        HMIRTypeKind::Undefined(HMIRUndefined::Forward(_)) => return Ok(false),
         HMIRTypeKind::PointerTo(inner)
         | HMIRTypeKind::ReferenceTo { inner, .. }
         | HMIRTypeKind::Nominal(inner)

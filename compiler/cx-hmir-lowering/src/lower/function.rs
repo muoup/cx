@@ -94,5 +94,5 @@ fn definition(
     }
     contract::enter(context, function.params(), span)?;
 
-    call::dependent::body(context, function)
+    call::dependent::body(context, function, None)
 }

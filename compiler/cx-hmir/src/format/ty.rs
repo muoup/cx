@@ -82,7 +82,8 @@ pub(super) fn write_generic_type<T, L, M>(
             write_inner(f, element)?;
             f.write_str("[]")
         }
-        HMIRGenericTypeKind::Undefined(HMIRUndefined::Tagged(tag)) => write!(f, "undefined {}", tag.prefix()),
+        HMIRGenericTypeKind::Undefined(HMIRUndefined::Forward(Some(tag))) => write!(f, "undefined {}", tag.prefix()),
+        HMIRGenericTypeKind::Undefined(HMIRUndefined::Forward(None)) => f.write_str("undefined"),
         HMIRGenericTypeKind::Function(signature) => {
             f.write_str("fn(")?;
             for (index, param) in signature.params().iter().enumerate() {

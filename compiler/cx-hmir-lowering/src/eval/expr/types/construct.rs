@@ -46,7 +46,7 @@ pub(crate) fn construct_type(
     let named = aggregate
         .filter(|_| reserved.is_some() || ty.debug_name().is_some())
         .map(|tag| {
-            let kind = HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag));
+            let kind = HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag)));
             let name = ty.debug_name().map(str::to_owned);
             let placeholder = HMIRType::new(kind, semantics, ty.decl_span().clone(), name);
             let resolver = context.env_mut().resolver_mut();
@@ -102,6 +102,21 @@ pub(crate) fn construct_type(
         }
         None => resolver.realize_type(complete),
     })
+}
+
+// The aggregate 'expr' declares, when it is one
+pub(crate) fn aggregate(body: &HMIRBodyContext, expr: HMIRExprID) -> Option<&HMIRExprType> {
+    let HMIRExprKind::Type(declared) = body.expr(expr).kind() else {
+        return None;
+    };
+    matches!(
+        declared.kind(),
+        HMIRExprTypeKind::Struct { .. }
+            | HMIRExprTypeKind::Union { .. }
+            | HMIRExprTypeKind::TaggedUnion { .. }
+            | HMIRExprTypeKind::Undefined(HMIRUndefined::Forward(_))
+    )
+    .then_some(declared)
 }
 
 // An array bounded by '_' has no type of its own, only one an expected array type completes

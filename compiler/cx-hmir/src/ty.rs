@@ -61,10 +61,11 @@ pub enum HMIRGenericTypeKind<T, L> {
     Dependent, // A signature slot whose type is fixed by an earlier comptime argument
 }
 
-// A declared type that was never defined; it is only usable through a pointer, or as an array through its element
+// A declared type that was never defined; it is only usable through a pointer, or as an array through its element.
+// A forward type without a tag stands for a type definition while it is evaluated, and never outlives it
 #[derive(Debug, Clone, Copy)]
 pub enum HMIRUndefined<T> {
-    Tagged(HIRTagKind),
+    Forward(Option<HIRTagKind>),
     Array { element: T },
 }
 
@@ -169,7 +170,7 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
                 size: *size,
                 alignment: *alignment,
             },
-            Self::Undefined(HMIRUndefined::Tagged(tag)) => HMIRGenericTypeKind::Undefined(HMIRUndefined::Tagged(*tag)),
+            Self::Undefined(HMIRUndefined::Forward(tag)) => HMIRGenericTypeKind::Undefined(HMIRUndefined::Forward(*tag)),
             Self::Undefined(HMIRUndefined::Array { element }) => {
                 HMIRGenericTypeKind::Undefined(HMIRUndefined::Array { element: ty(state, element)? })
             }

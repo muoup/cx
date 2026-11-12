@@ -72,7 +72,7 @@ impl HMIRResolver {
             HMIRTypeKind::Struct { .. }
                 | HMIRTypeKind::Union { .. }
                 | HMIRTypeKind::TaggedUnion { .. }
-                | HMIRTypeKind::Undefined(HMIRUndefined::Tagged(_))
+                | HMIRTypeKind::Undefined(HMIRUndefined::Forward(_))
         );
         // REVIEW: debug_name is not the correct proxy for strong identifiers, we need both a strong_identifier, and a debug_name,
         // the former dictates equality, the latter just for prettied formats and need not be identifier-shaped (e.g. foo::type_name).
@@ -172,6 +172,9 @@ impl HMIRResolver {
             self.origins.entry(ty).or_insert((def, args.clone()));
         }
         self.generated.insert((def, args), value);
+    }
+    pub fn forget_generated(&mut self, def: HMIRDefID, args: &[HMIRValue]) {
+        self.generated.remove(&(def, args.to_vec()));
     }
     pub fn origin(&self, ty: HMIRTypeID) -> Option<(HMIRDefID, &[HMIRValue])> {
         let (def, args) = self.origins.get(&ty)?;

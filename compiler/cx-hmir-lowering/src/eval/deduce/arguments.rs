@@ -314,8 +314,8 @@ impl<'a> Deduction<'a> {
 
 // The arguments 'def' was applied to when it generated 'ty'.
 //
-// Two generators that produce structurally equal anonymous types produce one type, whose origin is the call that
-// first produced it, so 'foo(_)' only deduces from a type that 'foo' was the first to generate.
+// A generator that yields a type it did not define, such as one another generator defined, is not its origin, so
+// 'foo(_)' only deduces from a type that 'foo' was the first to generate.
 fn instance(context: &LocalLoweringContext, def: HMIRDefID, ty: HMIRTypeID) -> Option<Vec<HMIRValue>> {
     let ty = context.env().underlying(ty);
     let (origin, args) = context.env().resolver().origin(ty)?;

@@ -371,13 +371,32 @@ fn finish(
     if generator && let Some(value) = context.env().resolver().generated(def, &args) {
         return Ok(Evaluation::Ready(value.clone()));
     }
-    let value = frame.enter(context, span, |child| {
-        execute(child, function, &signature, &args, &name, span)
-    })?;
-    if generator {
-        let resolver = context.env_mut().resolver_mut();
-        resolver.record_generated(def, args, value.clone());
-    }
+    let mut run = |context: &mut LocalLoweringContext, defining| {
+        frame.enter(context, span, |child| {
+            execute(child, function, &signature, &args, &name, defining, span)
+        })
+    };
+    let value = match generator {
+        false => run(context, None)?,
+        true => {
+            let generated = generated_name(context, def, &args);
+            let provisional = args.clone();
+            let publish = |env: &mut HMIREnvironment, value| {
+                env.resolver_mut().record_generated(def, provisional, value)
+            };
+            let result = types::alias::define(context, generated, span, publish, |context, reserved| {
+                let value = run(context, Some(reserved))?;
+                Ok(value::as_type(&value).expect("a type generator yields a type"))
+            });
+            if result.is_err() {
+                context.env_mut().resolver_mut().forget_generated(def, &args);
+            }
+            let value = result?;
+            let resolver = context.env_mut().resolver_mut();
+            resolver.record_generated(def, args.clone(), value.clone());
+            value
+        }
+    };
     match spliced {
         true => staged::splice(context, value, span),
         false => Ok(Evaluation::Ready(value)),
@@ -449,16 +468,27 @@ fn name(context: &LocalLoweringContext, def: HMIRDefID) -> String {
     source.name().to_string()
 }
 
+// A generated type is named by the call that generated it
+fn generated_name(context: &LocalLoweringContext, def: HMIRDefID, args: &[HMIRValue]) -> String {
+    let source = context.env().symbols().resolve_definition(def);
+    let args = args.iter().map(|arg| match value::as_type(arg) {
+        Some(ty) => types::name(context.env(), ty),
+        None => value::as_int(arg).map_or_else(|| "..".into(), |int| int.to_string()),
+    });
+    format!("{}({})", source.name().name, args.collect::<Vec<_>>().join(", "))
+}
+
 fn execute(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
     signature: &HMIRFnSignature<HMIRTypeID>,
     args: &[HMIRValue],
     name: &str,
+    defining: Option<HMIRTypeID>,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     contract::check(context, signature.contract(), args, None, name, span)?;
-    let value = match body(context, function) {
+    let value = match body(context, function, defining) {
         Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Return(value)))) => value,
         Err(EvalExit::Stop(StopReason::Comptime(_))) => {
             return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()));
@@ -499,15 +529,23 @@ fn execute(
     Ok(value)
 }
 
+// 'defining' is the type reserved for the type a generator defines, which an aggregate it yields is built into
 pub(crate) fn body(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
+    defining: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let definition = function.def().expect("an executed function has a body");
     let body = function.body();
     let root = body.expr(definition.root());
     if !matches!(root.kind(), HMIRExprKind::Block { yields: false, .. }) {
-        let value = eval(context, body, definition.root())?;
+        let value = match defining.zip(types::aggregate(body, definition.root())) {
+            Some((reserved, declared)) => {
+                let ty = types::construct_type(context, body, declared, Some(reserved))?;
+                deduce::type_result(context, ty, root.span())?
+            }
+            None => eval(context, body, definition.root())?,
+        };
         return control::return_value(context, body, Some(value), false, root.span());
     }
     (eval(context, body, definition.root()))?.ready()?;

@@ -50,7 +50,7 @@ pub(crate) fn lower_symbol(
                 let tag = declaration.tag().expect("a declaration without a source is a forward tag");
                 let ty = context.type_of_types(declaration.span());
                 let initializer = context.expr_type(
-                    HMIRExprTypeKind::Undefined(HMIRUndefined::Tagged(tag)),
+                    HMIRExprTypeKind::Undefined(HMIRUndefined::Forward(Some(tag))),
                     HMIRTypeSemantics::default(),
                     Some(&symbol.name().name),
                     declaration.span(),

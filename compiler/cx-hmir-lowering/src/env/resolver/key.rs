@@ -62,7 +62,9 @@ pub(super) fn key(ty: &HMIRType) -> TypeKey {
             }
         }
         HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => key.types.push(*element),
-        HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag)) => key.scalars.push(*tag as u64 + 1),
+        HMIRTypeKind::Undefined(HMIRUndefined::Forward(tag)) => {
+            key.scalars.push(tag.map_or(0, |tag| tag as u64 + 1))
+        }
         HMIRTypeKind::Builtin {
             name,
             size,

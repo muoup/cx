@@ -1,9 +1,10 @@
 mod construct;
 mod layout;
 
+pub(crate) mod alias;
 pub(crate) mod qualify;
 
-pub(crate) use construct::{construct_type, hole_bounded, undefined_array};
+pub(crate) use construct::{aggregate, construct_type, hole_bounded, undefined_array};
 pub(crate) use layout::eval_type_op;
 
 use cx_hmir::{
@@ -393,7 +394,8 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
             format!("{}[]", name(env, *element))
         }
-        HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag)) => tag.prefix().into(),
+        HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag))) => tag.prefix().into(),
+        HMIRTypeKind::Undefined(HMIRUndefined::Forward(None)) => "undefined".into(),
         HMIRTypeKind::Builtin { name, .. } => name.clone(),
         HMIRTypeKind::Struct { .. } => "struct".into(),
         HMIRTypeKind::Union { .. } => "union".into(),

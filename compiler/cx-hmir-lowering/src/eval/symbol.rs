@@ -2,9 +2,8 @@ use cx_hir::ast::types::HIRTagKind;
 use cx_hmir::{
     HMIRComptimeGlobal, HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind,
     HMIRFnSignature, HMIRFunction, HMIRGlobal,
-    expr::HMIRExprKind,
     ty::{
-        HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
+        HMIRExprType, HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
         aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
     },
 };
@@ -112,13 +111,13 @@ fn evaluate(context: &mut LocalLoweringContext, id: HMIRDefID) -> CXResult<HMIRV
     match declaration.kind().expect("a canonical declaration has content") {
         HMIRDefKind::ComptimeGlobal(global)
             if let Some(tag) = declaration.tag()
-                && let Some(declared) = aggregate(global) =>
+                && let Some(declared) = types::aggregate(global.body(), global.initializer()) =>
         {
             tagged(context, id, declaration, tag, declared)
         }
         HMIRDefKind::Function(function) => function_value(context, id, function, span),
         HMIRDefKind::Global(_) => global_value(context, id, def, declaration),
-        HMIRDefKind::ComptimeGlobal(global) => comptime_value(context, global, span),
+        HMIRDefKind::ComptimeGlobal(global) => comptime_value(context, id, global, span),
     }
 }
 
@@ -129,23 +128,10 @@ fn body(context: &mut LocalLoweringContext, id: HMIRDefID, ty: HMIRTypeID) -> CX
     let Some(HMIRDefKind::ComptimeGlobal(global)) = declaration::canonical(def).kind() else {
         unreachable!("an aggregate is declared by a type")
     };
-    let declared = aggregate(global).expect("a pending type declares an aggregate");
+    let declared = types::aggregate(global.body(), global.initializer())
+        .expect("a pending type declares an aggregate");
     types::construct_type(context, global.body(), declared, Some(ty))?;
     Ok(())
-}
-
-fn aggregate(global: &HMIRComptimeGlobal) -> Option<&HMIRExprType> {
-    let HMIRExprKind::Type(declared) = global.body().expr(global.initializer()).kind() else {
-        return None;
-    };
-    matches!(
-        declared.kind(),
-        HMIRExprTypeKind::Struct { .. }
-            | HMIRExprTypeKind::Union { .. }
-            | HMIRExprTypeKind::TaggedUnion { .. }
-            | HMIRExprTypeKind::Undefined(HMIRUndefined::Tagged(_))
-    )
-    .then_some(declared)
 }
 
 // A tagged aggregate is named before its body is evaluated, so that the body may refer to it
@@ -157,7 +143,7 @@ fn tagged(
     declared: &HMIRExprType,
 ) -> CXResult<HMIRValue> {
     let placeholder = HMIRType::new(
-        HMIRTypeKind::Undefined(HMIRUndefined::Tagged(tag)),
+        HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag))),
         HMIRTypeSemantics::default(),
         declaration.span().clone(),
         declared.debug_name().map(str::to_owned),
@@ -269,6 +255,7 @@ fn address(
 // A type definition names the type it evaluates to; any other comptime global is its frozen initializer
 fn comptime_value(
     context: &mut LocalLoweringContext,
+    id: HMIRDefID,
     global: &HMIRComptimeGlobal,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
@@ -278,10 +265,20 @@ fn comptime_value(
     if !matches!(context.env().resolve_kind(declared), HMIRTypeKind::Type) {
         return eval::eval_comptime(context, global.body(), global.initializer(), Some(declared));
     }
-    let ty = flow::top(
-        flow::boundary(eval_type(context, global.body(), global.initializer()))?.description(),
-    )?;
-    type_value(context, ty, span)
+    let name = context.env().symbols().resolve_definition(id).name().name.to_string();
+    let publish = |env: &mut HMIREnvironment, value| {
+        env.resolver_mut()
+            .set_symbol(id, SymbolState::Evaluating(Some(value)))
+    };
+    let body = global.body();
+    types::alias::define(context, name, span, publish, |context, reserved| {
+        match types::aggregate(body, global.initializer()) {
+            Some(declared) => types::construct_type(context, body, declared, Some(reserved)),
+            None => flow::top(
+                flow::boundary(eval_type(context, body, global.initializer()))?.description(),
+            ),
+        }
+    })
 }
 
 // Two declarations of a global agree on its type, though one may bound an array the other leaves unbounded
