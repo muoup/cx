@@ -7,7 +7,7 @@ public:
 comptime type stream(type T)
     => fn(fn(^T) -> ^void) -> ^void;
 
-comptime stream(T) stream::map(
+comptime stream(U) stream::map(
     type T = _, type U = _, 
     stream(T) this, 
     fn callback(^T) -> ^U
@@ -20,8 +20,8 @@ comptime stream(T) stream::map(
 };
 
 comptime stream(T) stream::filter(
-    type T = _, 
-    stream(T) this, fn sink(^U) -> ^void,
+    type T = _,
+    stream(T) this,
     fn predicate(^T) -> ^bool
 ) => |fn(^T) -> ^void sink| {
     this(|^T value| {
