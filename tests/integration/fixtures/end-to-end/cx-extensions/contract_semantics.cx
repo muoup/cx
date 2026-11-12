@@ -43,7 +43,7 @@ int factorial(int n) where pre: (n >= 0), post(r): (r >= n) {
     return n * factorial(n - 1);
 }
 
-T scaled(comptime @type T, comptime int k, T v) where pre: (k > 0), post(r): (r == v * k) => v * k;
+T scaled(comptime type T, comptime int k, T v) where pre: (k > 0), post(r): (r == v * k) => v * k;
 
 int main() {
     int a = 3;

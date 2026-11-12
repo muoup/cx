@@ -70,7 +70,7 @@ pub trait HMIRTypeContext {
     }
 
     fn is_function(&self, ty: HMIRTypeID) -> bool {
-        matches!(self.resolve_kind(ty), HMIRTypeKind::Function(_))
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Function { .. })
     }
 
     // The qualifiers of 'ty' itself; those of a type it references or points to are not its own

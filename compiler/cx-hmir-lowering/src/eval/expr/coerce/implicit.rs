@@ -88,7 +88,7 @@ fn step(
         (HMIRTypeKind::Str, HMIRTypeKind::PointerTo(_)) => {
             return promotion::step(context, value, span);
         }
-        (HMIRTypeKind::Function(_), HMIRTypeKind::PointerTo(_)) => {
+        (HMIRTypeKind::Function { .. }, HMIRTypeKind::PointerTo(_)) => {
             return promotion::function_pointer(context, value, span);
         }
         _ => {}
@@ -267,7 +267,7 @@ fn discard(
         ty: HMIRTypeID,
     ) -> Option<&'a HMIRFnSignature<HMIRTypeID>> {
         match env.resolve_kind(env.pointer_inner(ty)?) {
-            HMIRTypeKind::Function(signature) => Some(signature),
+            HMIRTypeKind::Function { signature, .. } => Some(signature),
             _ => None,
         }
     }

@@ -2,10 +2,10 @@
 
 #include <stdio.h>
 
-comptime expr(void) invoke_pair(
-    expr(int&) lhs,
-    expr(int&) rhs,
-    @fn proc(expr(int&), expr(int&)) -> expr(void)
+comptime ^void invoke_pair(
+    ^int& lhs,
+    ^int& rhs,
+    fn proc(^int&, ^int&) -> ^void
 ) {
     return emit .{
         proc(lhs, rhs);

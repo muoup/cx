@@ -228,7 +228,7 @@ fn lower_underlying(
             name,
             layout: MIRTypeLayout::new(size, alignment),
         },
-        HMIRTypeKind::Function(signature) => MIRTypeKind::Function {
+        HMIRTypeKind::Function { signature, .. } => MIRTypeKind::Function {
             signature: lower_signature(env, &signature, span)?,
         },
     };

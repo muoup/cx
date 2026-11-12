@@ -75,11 +75,11 @@ pub enum HIRTypeKind {
         // Comptime arguments applied to a type generator, 'opt(int)'
         args: Option<Vec<HIRExpression>>,
     },
-    // '@type', the type of types
+    // 'type', the type of types
     Universe,
     Auto,
-    // 'expr(T)', code producing a 'T'
-    Expr(Box<HIRType>),
+    // '^T', code producing a 'T'
+    Staged(Box<HIRType>),
 
     ExplicitSizedArray(Box<HIRType>, Box<HIRExpression>),
     ImplicitSizedArray(Box<HIRType>),
@@ -107,8 +107,10 @@ pub enum HIRTypeKind {
         variants: Vec<HIRField>,
     },
 
-    FunctionPointer {
+    // 'c_form' is set for C declarator syntax, whose parameters adjust to pointers; 'fn' types do not
+    Function {
         prototype: Box<HIRFunctionPrototype>,
+        c_form: bool,
     },
 }
 

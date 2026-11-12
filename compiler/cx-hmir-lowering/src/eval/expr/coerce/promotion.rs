@@ -100,7 +100,7 @@ pub(crate) fn step(
             let char = types::qualify::specify(context, char, qualifiers, span);
             address(context, value, char, span)
         }
-        HMIRTypeKind::Function(_) => Ok(Coercion::Unapplied(value)),
+        HMIRTypeKind::Function { .. } => Ok(Coercion::Unapplied(value)),
         _ if subject != value.ty() => {
             reference_load(context, value, subject, span).map(Coercion::Applied)
         }

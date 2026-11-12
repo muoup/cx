@@ -20,7 +20,7 @@ void trace_leave(int value) {
     printf("leave %d\n", value);
 }
 
-comptime expr(void) with_trace(expr(int&) value, @fn proc(expr(int&)) -> expr(void)) {
+comptime ^void with_trace(^int& value, fn proc(^int&) -> ^void) {
     return emit .{
         printf("enter %d\n", value);
         defer trace_leave(value);

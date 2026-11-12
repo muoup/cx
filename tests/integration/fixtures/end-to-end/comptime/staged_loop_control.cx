@@ -18,7 +18,7 @@ void trace_cleanup(int value) {
     printf("cleanup %d\n", value);
 }
 
-comptime expr(void) with_cleanup(expr(int&) value, @fn proc(expr(int&)) -> expr(void)) {
+comptime ^void with_cleanup(^int& value, fn proc(^int&) -> ^void) {
     return emit .{
         defer trace_cleanup(20);
         proc(value);

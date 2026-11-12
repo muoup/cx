@@ -423,10 +423,7 @@ pub(crate) fn lower_reify(
 ) -> CXResult<HMIRExprID> {
     let prototype = match &signature.kind {
         HIRExprKind::Type(ty) => match &ty.kind {
-            HIRTypeKind::PointerTo { inner_type } => match &inner_type.kind {
-                HIRTypeKind::FunctionPointer { prototype } => Some(prototype),
-                _ => None,
-            },
+            HIRTypeKind::Function { prototype, .. } => Some(prototype),
             _ => None,
         },
         _ => None,
@@ -435,7 +432,7 @@ pub(crate) fn lower_reify(
         return log_hir_error(
             &signature.range,
             &typecheck::TYPE_REQUIREMENT,
-            ("@reify".into(), "a function pointer type".into(), None),
+            ("@reify".into(), "a function type".into(), None),
         );
     };
 

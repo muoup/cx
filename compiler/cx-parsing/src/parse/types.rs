@@ -52,14 +52,8 @@ pub fn is_type_decl(data: &mut ParserData) -> CXResult<bool> {
     Ok(match &tok.unwrap() {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum, Register) => true,
 
-        TokenKind::CompilerIdentifier(name) => matches!(name.as_str(), "type" | "fn"),
-        keyword!(Expr) => matches!(
-            data.tokens
-                .slice
-                .get(data.tokens.index + 1)
-                .map(|token| &token.kind),
-            Some(punctuator!(OpenParen))
-        ),
+        keyword!(Type, Fn) => true,
+        operator!(Caret) => !data.c_mode,
 
         identifier!(name) if is_intrinsic_type(name) => !is_used_as_value(data),
 
@@ -756,8 +750,9 @@ fn parse_declarator_mods(
                 range: TokenRange::internal(),
             };
 
-            let fn_ptr_type = HIRTypeKind::FunctionPointer {
+            let fn_ptr_type = HIRTypeKind::Function {
                 prototype: Box::new(prototype),
+                c_form: true,
             }
             .to_type()
             .pointer_to(0);
@@ -855,28 +850,20 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CXResult<HIRType> {
             Ok(HIRTypeKind::Auto.to_type())
         }
 
-        TokenKind::CompilerIdentifier(name) if name == "type" => {
+        keyword!(Type) => {
             data.tokens.next();
             Ok(HIRTypeKind::Universe.to_type())
         }
 
-        TokenKind::CompilerIdentifier(name) if name == "fn" => {
+        keyword!(Fn) => {
             data.tokens.next();
             Ok(fn_declarator_marker())
         }
 
-        keyword!(Expr) => {
+        // '^' takes the whole abstract type after it, so '^const T&' stages a 'const T&'
+        operator!(Caret) if !data.c_mode => {
             data.tokens.next();
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'(' after 'expr'");
-            let (None, result, _) = parse_initializer(data)? else {
-                return parse_point_error(
-                    &data.tokens,
-                    &EXPECTED_SYNTAX,
-                    ("an unnamed type".into(), Some("in 'expr(...)'".into())),
-                );
-            };
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            Ok(HIRTypeKind::Expr(Box::new(result)).to_type())
+            Ok(HIRTypeKind::Staged(Box::new(parse_abstract_type(data)?)).to_type())
         }
 
         intrinsic!() => Ok(HIRTypeKind::Identifier {
@@ -930,8 +917,8 @@ pub(crate) fn parse_args(data: &mut ParserData) -> CXResult<Vec<HIRExpression>> 
     args
 }
 
-// '@fn' is parsed as a base type whose declarator carries the signature, the name sitting
-// where C puts it: '@fn table[4](int) -> int'
+// 'fn' is parsed as a base type whose declarator carries the signature, its indirections and
+// name sitting where C puts them: 'fn* table[4](int) -> int'. Bare 'fn' is the function type itself
 fn fn_declarator_marker() -> HIRType {
     HIRTypeKind::Identifier {
         name: QualifiedName::new_raw(CXIdent::new("@fn")),
@@ -957,7 +944,7 @@ fn parse_fn_signature(data: &mut ParserData) -> CXResult<HIRType> {
         contract,
         ..
     } = parse_params(data)?;
-    assert_token_matches!(data.tokens, operator!(Arrow), "'->' after '@fn' parameters");
+    assert_token_matches!(data.tokens, operator!(Arrow), "'->' after 'fn' parameters");
     let return_type = parse_abstract_type(data)?;
 
     let prototype = HIRFunctionPrototype {
@@ -972,20 +959,51 @@ fn parse_fn_signature(data: &mut ParserData) -> CXResult<HIRType> {
         range: TokenRange::internal(),
     };
 
-    Ok(HIRTypeKind::FunctionPointer {
+    Ok(HIRTypeKind::Function {
         prototype: Box::new(prototype),
+        c_form: false,
     }
     .to_type()
-    .pointer_to(0)
     .with_range(token_range(data, start_index, data.tokens.index)))
 }
 
-fn parse_fn_declarator(data: &mut ParserData) -> CXResult<(Option<CXIdent>, HIRType)> {
-    let mut pointers = Vec::new();
-    while try_next!(data.tokens, operator!(Asterisk)) {
-        pointers.push(parse_specifier(&mut data.tokens));
-    }
+enum FnIndirection {
+    Pointer(HIRTypeQualifiers),
+    Reference,
+}
 
+fn parse_fn_indirections(data: &mut ParserData) -> Vec<FnIndirection> {
+    let mut indirections = Vec::new();
+    loop {
+        if try_next!(data.tokens, operator!(Asterisk)) {
+            indirections.push(FnIndirection::Pointer(parse_specifier(&mut data.tokens)));
+        } else if try_next!(data.tokens, operator!(Ampersand)) {
+            indirections.push(FnIndirection::Reference);
+        } else {
+            return indirections;
+        }
+    }
+}
+
+// Indirections apply innermost first, as in a C declarator: 'fn*& f' is a reference to a pointer
+fn parse_fn_type(data: &mut ParserData, indirections: Vec<FnIndirection>) -> CXResult<HIRType> {
+    let function = parse_fn_signature(data)?;
+    let range = function.range.clone();
+    Ok(indirections
+        .into_iter()
+        .fold(function, |inner, indirection| match indirection {
+            FnIndirection::Pointer(specifiers) => inner.pointer_to(specifiers),
+            FnIndirection::Reference => HIRTypeKind::MemoryReference {
+                inner_type: Box::new(inner),
+                lifetime: None,
+            }
+            .to_type(),
+        })
+        .with_range(range))
+}
+
+fn parse_fn_declarator(data: &mut ParserData) -> CXResult<(Option<CXIdent>, HIRType)> {
+    let indirections = parse_fn_indirections(data);
     let name = try_parse_simple_identifier(&mut data.tokens);
 
     let mut array_suffixes: Vec<Option<HIRExpression>> = Vec::new();
@@ -1003,24 +1021,21 @@ fn parse_fn_declarator(data: &mut ParserData) -> CXResult<(Option<CXIdent>, HIRT
         return parse_point_error(
             &data.tokens,
             &EXPECTED_SYNTAX,
-            ("a parameter list".into(), Some("after '@fn'".into())),
+            ("a parameter list".into(), Some("after 'fn'".into())),
         );
     }
 
-    let signature = parse_fn_signature(data)?;
+    let function = parse_fn_type(data, indirections)?;
 
     // The anonymous form is an ordinary base type
-    if name.is_none() && pointers.is_empty() && array_suffixes.is_empty() {
-        return parse_base_mods(data, signature);
+    if name.is_none() && array_suffixes.is_empty() {
+        return parse_base_mods(data, function);
     }
 
-    let pointed = pointers
-        .into_iter()
-        .fold(signature, |inner, specifiers| inner.pointer_to(specifiers));
     let ty = array_suffixes
         .into_iter()
         .rev()
-        .fold(pointed, |inner, size| match size {
+        .fold(function, |inner, size| match size {
             Some(size) => {
                 HIRTypeKind::ExplicitSizedArray(Box::new(inner), Box::new(size)).to_type()
             }
@@ -1036,7 +1051,8 @@ pub(crate) fn parse_abstract_type(data: &mut ParserData) -> CXResult<HIRType> {
     let base = parse_type_base(data)?.add_specifier(specifiers.qualifiers);
 
     if is_fn_declarator_marker(&base) {
-        return parse_fn_signature(data);
+        let indirections = parse_fn_indirections(data);
+        return parse_fn_type(data, indirections);
     }
 
     let ty = parse_declarator_mods(data, base, false)?.1;
@@ -1115,8 +1131,9 @@ pub(crate) fn parse_typedef_initializer(
 
     Ok((
         name,
-        HIRTypeKind::FunctionPointer {
+        HIRTypeKind::Function {
             prototype: Box::new(prototype),
+            c_form: true,
         }
         .to_type(),
     ))

@@ -1,13 +1,13 @@
 public:
 
-comptime expr(T) tap(comptime @type T = _, expr(T) value, @fn func(expr(T&)) -> expr(void)) =>
+comptime ^T tap(comptime type T = _, ^T value, fn func(^T&) -> ^void) =>
     emit .{
         T val = value;
         func(val);
         yield move val;
     };
 
-comptime expr(T) inspect(comptime @type T = _, expr(T) value, @fn func(expr(const T&)) -> expr(void)) =>
+comptime ^T inspect(comptime type T = _, ^T value, fn func(^const T&) -> ^void) =>
     emit .{
         T val = value;
         func(val);

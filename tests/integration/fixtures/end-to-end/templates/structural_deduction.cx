@@ -2,14 +2,14 @@
 
 #include <stdio.h>
 
-T identity(comptime @type T, T value) { return value; }
-T first(comptime @type T, const T& a, const T& b) { return a; }
-T read(comptime @type T, T& value) { return value; }
-T load(comptime @type T, T* value) { return *value; }
-T head(comptime @type T, T values[]) { return values[0]; }
-T apply(comptime @type T, T (*f)(T), T value) { return f(value); }
-U convert(comptime @type T, comptime @type U, T value, U (*f)(T)) { return f(value); }
-comptime T twice(comptime @type T, T value) => value + value;
+T identity(comptime type T, T value) { return value; }
+T first(comptime type T, const T& a, const T& b) { return a; }
+T read(comptime type T, T& value) { return value; }
+T load(comptime type T, T* value) { return *value; }
+T head(comptime type T, T values[]) { return values[0]; }
+T apply(comptime type T, T (*f)(T), T value) { return f(value); }
+U convert(comptime type T, comptime type U, T value, U (*f)(T)) { return f(value); }
+comptime T twice(comptime type T, T value) => value + value;
 
 int doubled(int x) { return x * 2; }
 float bumped(int x) { return (float)(x + 1); }

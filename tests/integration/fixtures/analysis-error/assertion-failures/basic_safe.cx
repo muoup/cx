@@ -1,4 +1,4 @@
-int fn() safe
+int function() safe
 where
     post(ret): (ret == 1)
 {

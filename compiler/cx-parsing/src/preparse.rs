@@ -193,7 +193,7 @@ fn scan_comptime_type(tokens: &TokenIter) -> Option<(CXIdent, ComptimeType)> {
     let mut tokens = tokens.clone();
     let trailing = match &tokens.next()?.kind {
         intrinsic!(Auto) => true,
-        TokenKind::CompilerIdentifier(name) if name == "type" => false,
+        keyword!(Type) => false,
         _ => return None,
     };
     let identifier!(name) = &tokens.next()?.kind else {
@@ -229,7 +229,7 @@ fn scan_comptime_type(tokens: &TokenIter) -> Option<(CXIdent, ComptimeType)> {
             }
         }
     }
-    if !matches!(&tokens.next()?.kind, TokenKind::CompilerIdentifier(universe) if universe == "type") {
+    if !matches!(&tokens.next()?.kind, keyword!(Type)) {
         return None;
     }
     if matches!(kind, ComptimeType::Alias)

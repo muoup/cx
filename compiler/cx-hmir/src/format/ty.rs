@@ -54,7 +54,7 @@ pub(super) fn write_generic_type<T, L, M>(
     match ty.kind() {
         HMIRGenericTypeKind::Void => f.write_str("void"),
         HMIRGenericTypeKind::Unreachable => f.write_str("never"),
-        HMIRGenericTypeKind::Type => f.write_str("@type"),
+        HMIRGenericTypeKind::Type => f.write_str("type"),
         HMIRGenericTypeKind::Dependent => f.write_str("_"),
         HMIRGenericTypeKind::Str => f.write_str("str"),
         HMIRGenericTypeKind::Int(ty) => write_int_type(f, ty),
@@ -84,7 +84,7 @@ pub(super) fn write_generic_type<T, L, M>(
         }
         HMIRGenericTypeKind::Undefined(HMIRUndefined::Forward(Some(tag))) => write!(f, "undefined {}", tag.prefix()),
         HMIRGenericTypeKind::Undefined(HMIRUndefined::Forward(None)) => f.write_str("undefined"),
-        HMIRGenericTypeKind::Function(signature) => {
+        HMIRGenericTypeKind::Function { signature, .. } => {
             f.write_str("fn(")?;
             for (index, param) in signature.params().iter().enumerate() {
                 if index != 0 {
@@ -111,9 +111,8 @@ pub(super) fn write_generic_type<T, L, M>(
             write_fields(f, "enum union", fields, write_inner)
         }
         HMIRGenericTypeKind::Staged(inner) => {
-            f.write_str("expr(")?;
-            write_inner(f, inner)?;
-            f.write_str(")")
+            f.write_str("^")?;
+            write_inner(f, inner)
         }
         HMIRGenericTypeKind::Builtin { name, .. } => f.write_str(name),
         HMIRGenericTypeKind::Nominal(inner) => {

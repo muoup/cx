@@ -91,7 +91,7 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
                 },
             ) => a_length == b_length && self.same_type(*a, *b),
 
-            (HMIRTypeKind::Function(a), HMIRTypeKind::Function(b)) => {
+            (HMIRTypeKind::Function { signature: a, .. }, HMIRTypeKind::Function { signature: b, .. }) => {
                 a.is_variadic() == b.is_variadic()
                     && a.params().len() == b.params().len()
                     && a.params()

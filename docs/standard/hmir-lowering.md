@@ -4,7 +4,7 @@ HMIR unit to MIR unit. Evaluation interprets comptime code, elaborates types, an
 
 ## Terms
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 - **context**: runtime (emits MIR into a function) or comptime (interprets). Runtime emission is *enabled*, *unevaluated* (dry run: types only, nothing kept), or *suppressed* (after a `yield`, until its target).
 - **evaluation**: ready value, or *incomplete*: suspended until the type expected of it is known; may carry a partial value, which may stand as fallback.
@@ -20,7 +20,7 @@ HMIR unit to MIR unit. Evaluation interprets comptime code, elaborates types, an
 - **collapse**: `T& ... &` read until a single `T&`.
 - **value type** of T: referent of T, unqualified.
 - **integer promotion**: int narrower than 32 bits, `bool` included, to `i32`.
-- **comptime-only type**: `@type`, staged `expr(T)`, dependent `_`, or a function that is comptime-stage, has a comptime parameter, or a comptime-only parameter or return type.
+- **comptime-only type**: `type`, staged `^T`, dependent `_`, or a function that is comptime-stage, has a comptime parameter, or a comptime-only parameter or return type.
 - **declaration point**: position of a declaration in its unit. A context *at* a point sees declarations of its own unit up to it, and all of other units.
 - **def**: one symbol; holds every redeclaration of it, each a *declaration* (role declaration, tentative, or definition) with optional content and tag.
 
@@ -90,7 +90,7 @@ Reconciled over visible function and global declarations. None: standard.
 
 ### Binding
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Value of a def at a point, memoized (see [Memo](#memo)).
 
@@ -99,7 +99,7 @@ Value of a def at a point, memoized (see [Memo](#memo)).
 - global: declared type of every visible declaration evaluated; incomplete one completed from initializer value. Combined by [composite](#sameness), else T0006. Yields `T&` address of the global.
   - `rule/tentative-array` unit end, `T[]`, not extern, no initializer: `T[1]`.
   - `rule/incomplete-global` incomplete object type, not extern: T0009. Exempt: while initializing, tentative `T[]`.
-- comptime global: declared type evaluated. `@type`: alias published before its target is evaluated, so the target may refer to it; yields target type. Otherwise initializer value expecting declared type.
+- comptime global: declared type evaluated. `type`: alias published before its target is evaluated, so the target may refer to it; yields target type. Otherwise initializer value expecting declared type.
   - `rule/comptime-redeclaration` other visible declarations must evaluate to alike types, else T0006; a non-type value with others: T0006.
 
 Initializer value: memoized in a comptime child at the body's point, then exported.
@@ -110,11 +110,11 @@ Initializer value: memoized in a comptime child at the body's point, then export
 
 ### Function lowering
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Runtime function, or specialization with bound comptime parameters. Yields MIR function definition.
 
-*Needs specialization*: runtime-stage, and a comptime param, or a param type written as `expr(T)` or comptime-stage function type.
+*Needs specialization*: runtime-stage, and a comptime param, or a param type written as `^T` or comptime-stage function type.
 - `rule/quirk-specialization-by-syntax` decided by the param's type expression form; aliases to such types not seen.
 
 Runtime context at the body's point, return type from signature, permission per contract safety. Address-taken labels registered. Root scope targets returns.
@@ -186,10 +186,10 @@ Visible: not declared after the current point in the same unit. Complete: not un
 
 ### Sameness
 
-*verified 425c5ff1*
+*verified uncommitted*
 
-- *same*: equal move semantics; underlying types structurally equal, qualifiers ignored at any depth. Functions: variadic, params, return; stage and safety ignored.
-- *alike*: equal semantics, qualifiers included at depth. Functions: stage, safety, variadic, comptime params, params and return alike ignoring top qualifiers.
+- *same*: equal move semantics; underlying types structurally equal, qualifiers ignored at any depth. Functions: variadic, params, return; stage, safety and decaying ignored.
+- *alike*: equal semantics, qualifiers included at depth. Functions: stage, safety, variadic, comptime params, params and return alike ignoring top qualifiers. `rule/quirk-decaying-not-alike` a `fn` and a C function type of one signature are same but not alike, as decaying is part of the id.
 - *composite* of two: alike, the first; `T[]` and `T[n]` with alike elements, the bounded; else none.
 - `inv/canonical-types` settled types fingerprinted; alike types share one id. Named aggregates, tags, builtins, staged by underlying identity plus added semantics. Constants canonicalized with them; ints wrapped to width.
 
@@ -667,7 +667,7 @@ Otherwise:
 
 ### Dependent call
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Call needing comptime evaluation: comptime parameters, comptime-stage functions, or comptime context.
 
@@ -686,7 +686,7 @@ Per param in order, in a callee frame whose comptime state persists across param
 - `rule/specialized-code-param` runtime, code-typed param: M0021. Comptime, reference param: M0021.
 - staged param: [staged argument](#staged-argument). Runtime comptime param or spliced: argument frozen expecting param. Otherwise evaluated, completed expecting param, then converted implicitly; comptime call: exported. Default: hole.
 - comptime param bound in frame, later param types see it; canonicalized.
-- incomplete `@type` argument deferred to [deduction](#deduction); other incomplete: T0052.
+- incomplete `type` argument deferred to [deduction](#deduction); other incomplete: T0052.
 
 After binding:
 - partial, and comptime-stage or an unbound comptime param: yields curried value.
@@ -700,9 +700,9 @@ After binding:
 
 #### Deduction
 
-Deferred `@type` arguments inferred from later arguments' actual types, typed by dry run. Param type expression unified against actual: through pointers, references, arrays, nominal qualifiers, staged, function signatures, and generator calls (arguments recovered from the memo origin of the actual type). Value types used unless the param is declared as reference.
+Deferred `type` arguments inferred from later arguments' actual types, typed by dry run. Param type expression unified against actual: through pointers, references, arrays, nominal qualifiers, staged, function signatures, and generator calls (arguments recovered from the memo origin of the actual type). Value types used unless the param is declared as reference.
 - `rule/conflicting-deductions` two inferences not alike: T0024.
-- `rule/undeduced` left undeduced: T0023, unless the function generates a type (all params comptime, returns `@type`) and the call is not partial: yields incomplete, completed from the expected type's memo origin.
+- `rule/undeduced` left undeduced: T0023, unless the function generates a type (all params comptime, returns `type`) and the call is not partial: yields incomplete, completed from the expected type's memo origin.
 
 ### Contracts
 
@@ -727,11 +727,11 @@ Runtime call to a def with pre or postcondition: params bound to const observed 
 
 ### Quote
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Captures: free locals of the quoted expression, quote params and inner declarations excluded. Runtime: bindings as-is. Comptime: rvalue-decayed, exported. Missing binding: M0029.
 
-Incomplete until expected. Expected staged shape (`expr(T)`, or comptime function from staged params to staged result): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
+Incomplete until expected. Expected staged shape (`^T`, or comptime function from staged params to staged result): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
 - `rule/quote-materializes` non-staged expectation: quote materialized in place.
 
 ### Splice
@@ -833,11 +833,11 @@ Type as a value; in runtime emitting context: T0017. Unsettled type forced. `T[]
 
 #### Subject type
 
-Operand evaluated in an unevaluated detached runtime child seeing frozen known values, placeholders for the rest. Diverging: `unreachable`. `@type` value: that type. `rule/quirk-sizeof-string-literal` `str` constant: `char[len + 1]`. Otherwise referent type.
+Operand evaluated in an unevaluated detached runtime child seeing frozen known values, placeholders for the rest. Diverging: `unreachable`. `type` value: that type. `rule/quirk-sizeof-string-literal` `str` constant: `char[len + 1]`. Otherwise referent type.
 
 #### Parameter type
 
-Forced. `@type` without `comptime`: T0017. Array or `T[]`: element pointer. Non-comptime function: function pointer.
+Forced. `type` without `comptime`: T0017. Array or `T[]`: element pointer. Non-comptime function: decaying, its function pointer; `rule/explicit-fn-indirection` non-decaying (`fn`): T0011.
 
 #### Staged argument
 

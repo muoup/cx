@@ -10,21 +10,21 @@
 #include <stdio.h>
 import _staged_capture_source as lib;
 
-comptime expr(int) freeze_value() {
+comptime ^int freeze_value() {
     int captured = 7;
-    expr(int) code = emit captured;
+    ^int code = emit captured;
     captured = 99;
     return code;
 }
-comptime expr(int) saved = freeze_value();
-comptime expr(int) fresh() => emit .{
+comptime ^int saved = freeze_value();
+comptime ^int fresh() => emit .{
     int local = 0;
     local += 1;
     yield local;
 };
-comptime expr(int) repeat(expr(int) value) => emit value + value;
-comptime expr(void) change(expr(int&) value) => emit .{ value += 5; };
-comptime expr(void) leave() => emit return 7;
+comptime ^int repeat(^int value) => emit value + value;
+comptime ^void change(^int& value) => emit .{ value += 5; };
+comptime ^void leave() => emit return 7;
 
 int with_cleanup() {
     int marker = 9;
@@ -60,7 +60,7 @@ int main() {
     int left = take(move a, value ? rewrite(&a) : 0);
     int right = take(move b, value && rewrite(&b));
     printf("snapshot %d %d\n", left, right);
-    expr(int) code = emit lib::value();
+    ^int code = emit lib::value();
     int imported = code;
     printf("imported %d %d\n", imported, imported_exit(11));
     return 0;

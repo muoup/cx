@@ -2,7 +2,7 @@ struct Plain {
     int x;
 };
 
-comptime @type Same(comptime @type T) => T;
+comptime type Same(comptime type T) => T;
 
 int main() {
     Plain value = Same(Plain)::x(1);

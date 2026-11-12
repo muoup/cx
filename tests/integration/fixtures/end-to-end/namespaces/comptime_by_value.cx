@@ -2,7 +2,7 @@
 
 import _comptime_by_value as lib;
 
-comptime @type ImportedInteger = lib::integer_type();
+comptime type ImportedInteger = lib::integer_type();
 comptime int imported_result = lib::add_module_bias(38);
 typedef lib::Box(int) ImportedBox;
 comptime ImportedBox imported_box = lib::make_box(int, 38);

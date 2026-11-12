@@ -60,14 +60,14 @@ pub(crate) fn construct_type(
         });
     let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
     let complete = match ty.kind() {
-        HMIRExprTypeKind::Function(source) => {
+        HMIRExprTypeKind::Function { signature: source, decays } => {
             let complete = evaluate(context, body, ty, move_semantics)?;
-            let HMIRTypeKind::Function(signature) = complete.kind() else {
+            let HMIRTypeKind::Function { signature, .. } = complete.kind() else {
                 unreachable!("a function type evaluates to one")
             };
             let signature = types::adjust_signature(context, body, source, signature)?;
             HMIRType::new(
-                HMIRTypeKind::Function(signature),
+                HMIRTypeKind::Function { signature, decays: *decays },
                 *complete.semantics(),
                 complete.decl_span().clone(),
                 complete.debug_name().map(str::to_owned),

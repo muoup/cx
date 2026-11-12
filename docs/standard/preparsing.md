@@ -50,14 +50,14 @@ From `typedef` to the first `;` outside brackets: the name is the last identifie
 
 ### Comptime types
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 After `comptime`:
-- `@type n =` : type n.
-- `@type n (` : generator n.
-- `auto n : @type =` : type n.
-- `auto n ( ... ) ... -> @type` : generator n; the `->` must come at depth zero before any `;`, `{` or `=>`.
-- other shapes: nothing. `rule/quirk-comptime-type-shapes` a type-valued comptime name declared any other way (`comptime @type n;`, a typedef of a generator) is not a type to the parser.
+- `type n =` : type n.
+- `type n (` : generator n.
+- `auto n : type =` : type n.
+- `auto n ( ... ) ... -> type` : generator n; the `->` must come at depth zero before any `;`, `{` or `=>`.
+- other shapes: nothing. `rule/quirk-comptime-type-shapes` a type-valued comptime name declared any other way (`comptime type n;`, a typedef of a generator) is not a type to the parser.
 
 ### Imports
 

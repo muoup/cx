@@ -1,0 +1,18 @@
+/* CX-STDOUT: 6 4 12 4 7 */
+
+#include <stdio.h>
+
+int add_one(int x) { return x + 1; }
+int triple(int x) { return x * 3; }
+
+int through_reference(fn& f(int) -> int, int x) { return f(x); }
+
+int main() {
+    fn* const fixed(int) -> int = add_one;
+    fn* cb(int) -> int = triple;
+    fn** pp(int) -> int = &cb;
+    fn*& alias(int) -> int = cb;
+    alias = add_one;
+    printf("%d %d %d %d %d\n", fixed(5), (*pp)(3), through_reference(triple, 4), cb(3), (fn*(int) -> int)add_one(6));
+    return 0;
+}

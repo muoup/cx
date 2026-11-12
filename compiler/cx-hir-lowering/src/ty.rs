@@ -63,8 +63,7 @@ fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -
         }
         HIRTypeKind::Universe => return Ok(context.type_of_types(span)),
         HIRTypeKind::Auto => return Ok(context.hole(span)),
-        // Handled as a staged signature above
-        HIRTypeKind::Expr(result) => return lower_staged_type(context, Vec::new(), result, span),
+        HIRTypeKind::Staged(_) => unreachable!("handled as a staged signature above"),
         HIRTypeKind::ExplicitSizedArray(element, length) => {
             let element = lower_type(context, element)?;
             let length = lower_expr(context, length)?;
@@ -106,9 +105,10 @@ fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -
             let kind = HMIRExprTypeKind::TaggedUnion { fields };
             return lower_aggregate_type(context, name.as_ref(), kind, attributes, span);
         }
-        HIRTypeKind::FunctionPointer { prototype } => {
-            HMIRExprTypeKind::Function(lower_function_type(context, prototype)?)
-        }
+        HIRTypeKind::Function { prototype, c_form } => HMIRExprTypeKind::Function {
+            signature: lower_function_type(context, prototype)?,
+            decays: *c_form,
+        },
     };
 
     Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
@@ -133,32 +133,19 @@ fn lower_type_name(
     })
 }
 
-// The shape of a staged value: 'expr(T)', or a comptime function over code such as
-// '@fn(expr(A)) -> expr(T)'. Code parameters are listed by the type of code they carry.
+// The shape of a staged value: '^T', or a comptime function over code such as 'fn(^A) -> ^T'.
+// The result is listed by the type of code it carries; parameters are as declared.
 pub(crate) fn staged_signature(ty: &HIRType) -> Option<(Vec<&HIRType>, &HIRType)> {
-    if let HIRTypeKind::Expr(result) = &ty.kind {
-        return Some((Vec::new(), result));
+    match &ty.kind {
+        HIRTypeKind::Staged(result) => Some((Vec::new(), result)),
+        HIRTypeKind::Function { prototype, .. } => {
+            let HIRTypeKind::Staged(result) = &prototype.return_type.kind else {
+                return None;
+            };
+            Some((prototype.params.iter().map(|param| &param.ty).collect(), result))
+        }
+        _ => None,
     }
-
-    let HIRTypeKind::PointerTo { inner_type } = &ty.kind else {
-        return None;
-    };
-    let HIRTypeKind::FunctionPointer { prototype } = &inner_type.kind else {
-        return None;
-    };
-    let result = match &prototype.return_type.kind {
-        HIRTypeKind::Expr(result) => result.as_ref(),
-        _ => return None,
-    };
-    let params = prototype
-        .params
-        .iter()
-        .map(|param| match &param.ty.kind {
-            HIRTypeKind::Expr(carried) => carried.as_ref(),
-            _ => &param.ty,
-        })
-        .collect();
-    Some((params, result))
 }
 
 fn lower_staged_type<'a>(
@@ -167,22 +154,19 @@ fn lower_staged_type<'a>(
     result: &'a HIRType,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
-    let staged = |context: &mut BodyLowering<'a>, carried: &'a HIRType| {
-        let kind = HMIRExprTypeKind::Staged(lower_type(context, carried)?);
-        Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
-    };
-    let result = staged(context, result)?;
+    let kind = HMIRExprTypeKind::Staged(lower_type(context, result)?);
+    let result = context.expr_type(kind, HMIRTypeSemantics::default(), None, span);
     if params.is_empty() {
         return Ok(result);
     }
     let params = params
         .into_iter()
-        .map(|param| Ok(HMIRFnParam::new(false, staged(context, param)?)))
+        .map(|param| Ok(HMIRFnParam::new(false, lower_type(context, param)?)))
         .collect::<CXResult<_>>()?;
     let stage = HMIRFunctionStage::Comptime;
     let signature = HMIRFnSignature::new(stage, params, result, false, HMIRContract::default());
 
-    let kind = HMIRExprTypeKind::Function(signature);
+    let kind = HMIRExprTypeKind::Function { signature, decays: false };
     Ok(context.expr_type(kind, HMIRTypeSemantics::default(), None, span))
 }
 

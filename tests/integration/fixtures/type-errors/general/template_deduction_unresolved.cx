@@ -1,4 +1,4 @@
-T zero(comptime @type T) {
+T zero(comptime type T) {
     return (T)0;
 }
 

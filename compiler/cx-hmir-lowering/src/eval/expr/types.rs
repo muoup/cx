@@ -128,7 +128,7 @@ pub(crate) fn parameter(
     let pointee = match context.env().resolve_kind(ty) {
         HMIRTypeKind::Type if !comptime => {
             let kind = (
-                "an '@type' parameter".into(),
+                "a 'type' parameter".into(),
                 "a function signature unless explicitly marked 'comptime'".into(),
             );
             return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind));
@@ -136,7 +136,15 @@ pub(crate) fn parameter(
         HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) => {
             element(context, ty, span).unwrap()
         }
-        HMIRTypeKind::Function(_) if !comptime_only(context.env(), ty) => ty,
+        HMIRTypeKind::Function { decays: false, .. } if !comptime_only(context.env(), ty) => {
+            let requirement = (
+                "a function parameter".into(),
+                "an explicit 'fn*' or 'fn&'".into(),
+                Some(name(context.env(), ty)),
+            );
+            return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
+        }
+        HMIRTypeKind::Function { .. } if !comptime_only(context.env(), ty) => ty,
         _ => return Ok(ty),
     };
 
@@ -234,7 +242,7 @@ pub(crate) fn callable(
     signature: HMIRFnSignature<HMIRTypeID>,
     span: &TokenRange,
 ) -> HMIRTypeID {
-    let function = realize(env, HMIRTypeKind::Function(signature), span);
+    let function = realize(env, HMIRTypeKind::Function { signature, decays: true }, span);
     reference(env, function, None, span)
 }
 
@@ -356,7 +364,7 @@ pub(crate) fn comptime_only(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
         HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => true,
         HMIRTypeKind::ReferenceTo { inner, .. } => comptime_only(env, *inner),
 
-        HMIRTypeKind::Function(signature) => {
+        HMIRTypeKind::Function { signature, .. } => {
             signature.stage() == HMIRFunctionStage::Comptime
                 || signature
                     .params()
@@ -376,7 +384,7 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         _ if let Some(name) = ty.debug_name() => name.to_owned(),
         HMIRTypeKind::Void => "void".into(),
         HMIRTypeKind::Unreachable => "unreachable".into(),
-        HMIRTypeKind::Type => "@type".into(),
+        HMIRTypeKind::Type => "type".into(),
         HMIRTypeKind::Str => "str".into(),
         HMIRTypeKind::Int(int) => format!(
             "{}{}",
@@ -410,8 +418,8 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         HMIRTypeKind::Struct { .. } => "struct".into(),
         HMIRTypeKind::Union { .. } => "union".into(),
         HMIRTypeKind::TaggedUnion { .. } => "enum union".into(),
-        HMIRTypeKind::Function(_) => "function".into(),
-        HMIRTypeKind::Staged(_) => "expr".into(),
+        HMIRTypeKind::Function { .. } => "function".into(),
+        HMIRTypeKind::Staged(_) => "staged".into(),
         HMIRTypeKind::Dependent => "_".into(),
     };
     match constant {

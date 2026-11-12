@@ -72,7 +72,7 @@ fn walk(
         | HMIRTypeKind::Staged(inner)
         | HMIRTypeKind::Array { element: inner, .. }
         | HMIRTypeKind::Undefined(HMIRUndefined::Array { element: inner }) => vec![*inner],
-        HMIRTypeKind::Function(signature) => signature
+        HMIRTypeKind::Function { signature, .. } => signature
             .params()
             .iter()
             .map(|param| *param.ty())

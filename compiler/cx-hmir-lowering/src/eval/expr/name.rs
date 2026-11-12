@@ -185,7 +185,7 @@ fn equivalent(context: &mut LocalLoweringContext, a: HMIRDefID, b: HMIRDefID) ->
     let (a, b) = (a_value.ty(), b_value.ty());
     Ok(
         match (env.resolve_kind(env.referent(a)), env.resolve_kind(env.referent(b))) {
-            (HMIRTypeKind::Function(a), HMIRTypeKind::Function(b)) => {
+            (HMIRTypeKind::Function { signature: a, .. }, HMIRTypeKind::Function { signature: b, .. }) => {
                 types::signatures_alike(env, a, b)
             }
             _ if env.is_reference(a) && env.is_reference(b) => types::alike(env, a, b, true),

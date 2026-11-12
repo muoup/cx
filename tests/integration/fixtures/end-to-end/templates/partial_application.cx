@@ -6,7 +6,7 @@ where pre: (value > 0), post(result): (result == value + amount)
     return value + amount;
 }
 
-A combine(comptime @type A, comptime @type B, A first, B second) {
+A combine(comptime type A, comptime type B, A first, B second) {
     return first + second;
 }
 
@@ -22,7 +22,7 @@ comptime int once() {
 
 comptime int counted = once();
 
-comptime expr(T) identity(comptime @type T, expr(T) value) => emit value;
+comptime ^T identity(comptime type T, ^T value) => emit value;
 
 typedef int (*Callback)(int);
 comptime Callback make_callback() => add(2);

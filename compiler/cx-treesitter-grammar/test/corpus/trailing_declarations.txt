@@ -5,16 +5,16 @@ trailing declarations
 extern int printf(const char*, ...);
 
 auto global : int = 4;
-auto identity(comptime @type T, T value) -> T;
-auto identity(comptime @type T, T value) -> T { return value; }
+auto identity(comptime type T, T value) -> T;
+auto identity(comptime type T, T value) -> T { return value; }
 auto increment(int value) -> int { return value + 1; }
-auto callback() -> @fn(int) -> int { return increment; }
-comptime auto Number : @type = int;
-comptime auto Box(comptime @type T) where pre: (1 == 1) -> @type => struct { T value; };
+auto callback() -> fn*(int) -> int { return increment; }
+comptime auto Number : type = int;
+comptime auto Box(comptime type T) where pre: (1 == 1) -> type => struct { T value; };
 
 int main() {
     auto value : int = identity(int, global);
-    auto function : @fn(int) -> int = callback();
+    auto function : fn*(int) -> int = callback();
     for (auto index : int = 0; index < 3; index++) {
         value = function(value);
     }
@@ -71,7 +71,7 @@ int main() {
         (parameter
           (keyword)
           (type
-            (compiler_identifier))
+            (keyword))
           (declarator
             (identifier)))
         (parameter
@@ -94,7 +94,7 @@ int main() {
         (parameter
           (keyword)
           (type
-            (compiler_identifier))
+            (keyword))
           (declarator
             (identifier)))
         (parameter
@@ -157,7 +157,9 @@ int main() {
     (operator)
     (type
       (function_type
-        (compiler_identifier)
+        (keyword)
+        (pointer_modifier
+          (operator))
         (parameter_list
           (parameter
             (type
@@ -181,7 +183,7 @@ int main() {
       (builtin_type)
       (identifier)
       (type
-        (compiler_identifier))
+        (keyword))
       (operator)
       (expression
         (primary_expression
@@ -197,7 +199,7 @@ int main() {
       (parameter
         (keyword)
         (type
-          (compiler_identifier))
+          (keyword))
         (declarator
           (identifier))))
     (function_contract
@@ -217,7 +219,7 @@ int main() {
                   (number_literal))))))))
     (operator)
     (type
-      (compiler_identifier))
+      (keyword))
     (function_body
       (operator)
       (type
@@ -269,7 +271,9 @@ int main() {
             (identifier)
             (type
               (function_type
-                (compiler_identifier)
+                (keyword)
+                (pointer_modifier
+                  (operator))
                 (parameter_list
                   (parameter
                     (type

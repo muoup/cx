@@ -1066,7 +1066,6 @@ pub(crate) fn parse_keyword_expr(
         }
 
         KeywordType::Comptime => parse_point_error(&data.tokens, &RESERVED_KEYWORD, "comptime".into()),
-        KeywordType::Expr => parse_point_error(&data.tokens, &RESERVED_KEYWORD, "expr".into()),
         KeywordType::Emit => {
             // 'f(emit a, b)' passes two arguments
             data.change_comma_mode(false);

@@ -4,7 +4,7 @@ Token stream to HIR, then HIR unit to HMIR unit. The parser consults the [prepar
 
 ## Terms
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 - **mode**: file extension decides. `.c` is *C mode*; `.cxc` defaults to unmangled naming; anything else is CX with namespaced naming.
 - **include region**: tokens between include markers the lexer inserts for `#include`d text.
@@ -12,7 +12,7 @@ Token stream to HIR, then HIR unit to HMIR unit. The parser consults the [prepar
 - **comma mode**: whether `,` is an operator at the current nesting; a stack, outermost true.
 - **type start**: tokens at which a declaration or type is parsed instead of a value; see [Type start](#type-start).
 - **generator**: registry symbol of generator kind (a comptime function returning a type); names a type only once applied, `opt(int)`.
-- **temporary type name**: name bound by a `@type` parameter, treated as a type for the declaration that binds it.
+- **temporary type name**: name bound by a `type` parameter, treated as a type for the declaration that binds it.
 - **class**: ordinary, or tag (`struct`, `union`, `enum` names).
 - **stage** (desugaring): runtime or comptime body being lowered; decides whether a quoted local splices.
 
@@ -39,7 +39,7 @@ global   = include-begin | include-end | import-stmt | typedef | ";"
 
 ### Typedef
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 `typedef T name;` adds an untagged type definition of `name` as T at current visibility. No name: P0001.
 - `typedef R name(params)` makes T a function type (not a pointer); `noreturn` attributes make its return `unreachable`.
@@ -47,9 +47,9 @@ global   = include-begin | include-end | import-stmt | typedef | ";"
 
 ### Global declaration
 
-*verified 425c5ff1*
+*verified uncommitted*
 
-Names bound by `@type x` inside parentheses ahead of the declaration (up to `;`, `{`, `=>`, top-level `=`) are temporary type names for its duration, so a return type may use them before the parameter list.
+Names bound by `type x` inside parentheses ahead of the declaration (up to `;`, `{`, `=>`, top-level `=`) are temporary type names for its duration, so a return type may use them before the parameter list.
 
 ```ebnf
 declaration = specifiers type-base declarator
@@ -89,11 +89,11 @@ condition = "precondition" ":" "(" expr ")"
 
 ### Types
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 #### Type start
 
-Yields whether a type begins at the current token. True for: builtin type keyword, any specifier, `struct`, `union`, `enum`, `register`, `@type`, `@fn`, `expr` followed by `(`. A qualified identifier: if a generator, only when `(` follows the name; else when a temporary type name or a registry symbol (in C mode, tag symbols excluded).
+Yields whether a type begins at the current token. True for: builtin type keyword, any specifier, `struct`, `union`, `enum`, `register`, `type`, `fn`, and `^` outside C mode. A qualified identifier: if a generator, only when `(` follows the name; else when a temporary type name or a registry symbol (in C mode, tag symbols excluded).
 - `rule/quirk-value-use-lookahead` an identifier type (builtin type names included) is not a type start when the token right after its *first segment* is `=`, `.` or `->`.
 - registry ambiguity among equally ranked candidates of differing kinds: P0007. Rank: lexical namespace first, then type kind.
 
@@ -102,13 +102,14 @@ Yields whether a type begins at the current token. True for: builtin type keywor
 ```ebnf
 specifiers = { "const" | "volatile" | "restrict" | "extern" | "static"
              | "inline" | "thread_local" | attribute } ;
-type-base  = ( qualified-name [ "(" args ")" ] | "auto" | "@type" | "@fn"
-             | "expr" "(" abstract-type ")" | builtin-words
+type-base  = ( qualified-name [ "(" args ")" ] | "auto" | "type" | "fn"
+             | "^" abstract-type | builtin-words
              | struct | union | enum ) { qualifier } ;
 ```
 
 - `inline`, `thread_local` ignored. `public`/`private` stop the list.
-- args only for a generator. `auto` only outside C mode.
+- args only for a generator. `auto` and `^` only outside C mode; in C mode `type` and `fn` are identifiers.
+- `rule/staged-binds-type` `^` takes a whole abstract type: `^const T&` stages `const T&`.
 - builtin words (`unsigned long int`) sorted: sign and `_Complex`, then `short`/`long`, then the rest; joined with spaces.
 
 #### Declarator
@@ -124,8 +125,9 @@ array      = "[" [expr] "]" ;
 - `(*f[4])(int)` is array 4 of pointer to function.
 - `rule/quirk-weak-pointer` `weak *` is a plain pointer.
 - `: T` after a name replaces an `auto` type (not C mode).
-- `@fn [*...] [name] {array} (params) -> R`: pointer to function R; the anonymous form takes further declarator suffixes. No `(`: P0001.
-- abstract type: specifiers, base, pointer and reference suffixes, arrays; no name.
+- `fn {"*" {qualifier} | "&"} [name] {array} (params) -> R`: function type R, wrapped by each `*` (pointer) and `&` (reference) innermost first; `fn* f(int) -> int` is a pointer. Without a name or array the result is a base type taking further declarator suffixes. No `(`: P0001.
+- `fn` function types are marked not decaying; C declarators (`R (*f)(params)`, `typedef R f(params)`) make decaying ones. See [Type lowering](#type-lowering).
+- abstract type: specifiers, base, pointer and reference suffixes, arrays; no name. A `fn` base reads its indirections and signature.
 
 #### Aggregates
 
@@ -295,10 +297,10 @@ Unmangled naming, root namespace, or name `main`: the plain name. Else `_N` foll
 
 ### Defs
 
-*verified 425c5ff1*
+*verified uncommitted*
 
-- forward tag: comptime global of type `@type`, initialized to the undefined tagged type.
-- type: comptime global of type `@type`, initialized to the lowered type.
+- forward tag: comptime global of type `type`, initialized to the undefined tagged type.
+- type: comptime global of type `type`, initialized to the lowered type.
 - `rule/comptime-global-initializer` comptime global without initializer: T0052.
 - global: type, initial value (see [Declarations](#declarations)), linkage, link name.
 - enum variant: comptime global `i32`. Explicit value: its expression. Else with no explicit value before: its index. Else nearest earlier explicit variant `v` plus the distance, `v + (i - j)`.
@@ -331,25 +333,25 @@ Runtime-stage `static` or `extern` local declarations; yield unit.
 
 #### Reify
 
-`@reify(fn-pointer type, value)`: new static runtime function `reify.<def index>` at file scope; parameters from the signature; body returns a splice of the comptime value with the parameters. Signature not a function pointer type: T0011.
+`@reify(function type, value)`: new static runtime function `reify.<def index>` at file scope; parameters from the signature; body returns a splice of the comptime value with the parameters. Signature not a function type (`fn(params) -> R`, no indirection): T0011.
 
 ### Staged type
 
-*verified 425c5ff1*
+*verified uncommitted*
 
-Staged signature: `expr(T)`, or pointer to a function returning `expr(T)`. Parameters of the latter listed by carried type, `expr(A)` as A.
-- `expr(T)` lowers to staged T; the function form to a comptime function type over staged parameters returning staged T.
+Staged signature: `^T`, or a function type (either form) returning `^T`. Parameters of the latter as declared; none is implicitly staged.
+- `^T` lowers to staged T; the function form to a non-decaying comptime function type over its lowered parameters returning staged T. `fn f(int) -> ^T` keeps an `int` parameter, which is then no [staged shape](hmir-lowering.md#quote).
 
 ### Type lowering
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 - `rule/qualifier-wrapper` `const`/`volatile` wrap in a nominal with those semantics. `restrict` dropped.
 - `rule/quirk-auto-drops-qualifiers` `auto` lowers to a hole; qualifiers on it dropped.
 - identifier: local, static, or name with its tag; with args a call.
-- `@type`: type of types. `T[n]`: array; `T[]`: array with unit length.
+- `type`: type of types. `T[n]`: array; `T[]`: array with unit length.
 - `T&` and `'a T&`: reference; lifetime dropped.
-- function type: signature in the written stage; defaults: T0017.
+- function type: signature in the written stage, decaying when written as a C declarator; defaults: T0017.
 - struct, union, tagged union: fields in order, anonymous members unnamed; move semantics `@copy_traits(P)` (P looked up as a name) else explicit POD, nocopy, nodrop; `@unsafe_move`. `inv/aggregate-per-lowering` each lowering is a distinct type.
 
 ### Expression lowering

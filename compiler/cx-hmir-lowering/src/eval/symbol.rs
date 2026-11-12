@@ -63,7 +63,7 @@ pub(crate) fn signature(
     def: HMIRDefID,
 ) -> CXResult<HMIRFnSignature<HMIRTypeID>> {
     let value = value(env, def)?;
-    let HMIRTypeKind::Function(signature) = env.resolve_kind(env.referent(value.ty())) else {
+    let HMIRTypeKind::Function { signature, .. } = env.resolve_kind(env.referent(value.ty())) else {
         unreachable!("a function binding has a function type")
     };
     Ok(signature.clone())

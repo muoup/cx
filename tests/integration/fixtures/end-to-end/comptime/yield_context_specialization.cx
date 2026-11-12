@@ -1,11 +1,11 @@
 #include <stdio.h>
 import std::optional as std;
 
-comptime expr(void) yield_none() {
+comptime ^void yield_none() {
     return emit yield _::none();
 }
 
-comptime expr(void) forward_yield() {
+comptime ^void forward_yield() {
     return yield_none();
 }
 

@@ -1,4 +1,4 @@
-comptime @type Pair(comptime @type T) =>
+comptime type Pair(comptime type T) =>
     enum union {
         first :: T,
         second :: T

@@ -112,11 +112,11 @@ comptime int globals(int which) {
     return self_holder.target == &self_holder.extra;
 }
 
-comptime @type chosen(int which) {
-    @type types[2];
+comptime type chosen(int which) {
+    type types[2];
     types[0] = int;
     types[1] = long;
-    @type copy = types[which];
+    type copy = types[which];
     return copy;
 }
 
@@ -140,8 +140,8 @@ comptime int layout_2 = layout(2);
 comptime int globals_0 = globals(0);
 comptime int globals_1 = globals(1);
 comptime int globals_2 = globals(2);
-comptime @type chosen_0 = chosen(0);
-comptime @type chosen_1 = chosen(1);
+comptime type chosen_0 = chosen(0);
+comptime type chosen_1 = chosen(1);
 
 int main() {
     printf("offsets %d %d %d\n", offsets_0, offsets_1, offsets_2);

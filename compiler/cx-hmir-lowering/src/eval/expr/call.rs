@@ -287,7 +287,7 @@ pub(crate) fn hmir_call(
     }
 }
 
-// To simplify semantics, all function callees are unified into a @fn& types. Whether a direct or indirect
+// To simplify semantics, all function callees are unified into fn& types. Whether a direct or indirect
 // call is generated at runtime depends on the underlying MIRValue produced, not on the type.
 // A callee read out of the storage holding it, unless it names a function itself
 fn callable(context: &mut LocalLoweringContext, callee: HMIRValue, span: &TokenRange) -> CXResult<HMIRValue> {
@@ -313,7 +313,7 @@ fn coerce_callee(
         }
         _ => (ty, types::reference(context.env_mut(), ty, None, span)),
     };
-    let HMIRTypeKind::Function(signature) = context.env().resolve_kind(subject) else {
+    let HMIRTypeKind::Function { signature, .. } = context.env().resolve_kind(subject) else {
         let kind = (types::name(context.env(), callee.ty()), "callable".into());
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
     };

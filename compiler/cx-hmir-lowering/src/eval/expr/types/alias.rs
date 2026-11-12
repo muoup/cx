@@ -74,7 +74,7 @@ fn reaches(
         | HMIRTypeKind::Undefined(HMIRUndefined::Array { element: inner }) => {
             reaches(env, *inner, target, seen)
         }
-        HMIRTypeKind::Function(signature) => signature
+        HMIRTypeKind::Function { signature, .. } => signature
             .params()
             .iter()
             .map(|param| *param.ty())

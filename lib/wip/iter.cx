@@ -4,12 +4,12 @@ import std::optional as std;
 
 public:
 
-comptime 'a @type iter(@lifetime a, @type index)
-    => 'a typeclass(@type this) {
+comptime 'a type iter(lifetime a, type index)
+    => 'a typeclass(type this) {
         std::opt(index) next(this);
     };
 
-comptime ^iter(a, index) span::iter(@lifetime a, @type index, ^std::span(a, index) this)
+comptime ^iter(a, index) span::iter(lifetime a, type index, ^std::span(a, index) this)
     =>  std::splice_tap(this, |auto& this|
             span_iter(index) {
                 .data = this.data,
@@ -24,7 +24,7 @@ comptime ^iter(a, index) span::iter(@lifetime a, @type index, ^std::span(a, inde
             }),
         };
 
-comptime ^void iter::for_each(@lifetime a, @type index, ^iter(a, index) this, ^fn callback(index) -> void)
+comptime ^void iter::for_each(lifetime a, type index, ^iter(a, index) this, fn callback(^index) -> ^void)
     => emit {
         while (true) {
             match (this.next()) {
@@ -35,9 +35,9 @@ comptime ^void iter::for_each(@lifetime a, @type index, ^iter(a, index) this, ^f
     };
 
 comptime ^iter(a, out) iter::map(
-    @lifetime a, @type in, @type out, 
+    lifetime a, type in, type out, 
     ^iter(a, index) this, 
-    ^fn callback(index) -> out
+    fn callback(^index) -> ^out
 )
     => iter(a, out)() {
         .next = @reify(_, |auto& iter| {
@@ -46,14 +46,14 @@ comptime ^iter(a, out) iter::map(
         }),
     };
 
-comptime ^iter(a, index) vector::iter(@lifetime a, @type index, ^std::vector('a, index) this)
+comptime ^iter(a, index) vector::iter(lifetime a, type index, ^std::vector('a, index) this)
     => this
         |>(2) std::vector::as_span(a, _)
         |>(2) span::iter(_, _);
 
 private:
 
-comptime @type span_iter(@type index)
+comptime type span_iter(type index)
     => struct {
         T* data;
         usize remaining;

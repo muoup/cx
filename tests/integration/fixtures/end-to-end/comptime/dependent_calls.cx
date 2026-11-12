@@ -1,19 +1,19 @@
 #include <stdio.h>
 
-comptime @type Box(comptime @type T) => struct { T value; };
-comptime T identity(comptime @type T, T value) => value;
-comptime Box(T) box(comptime @type T, T value) => { .value = value };
+comptime type Box(comptime type T) => struct { T value; };
+comptime T identity(comptime type T, T value) => value;
+comptime Box(T) box(comptime type T, T value) => { .value = value };
 
 typedef Box(int) IntBox;
 typedef int Integer;
-typedef @type Type;
+typedef type Type;
 comptime T alias_identity(comptime Type T, T value) => value;
-comptime @type Buffer(comptime @type T, int length) => struct { T data[length]; };
-comptime @type Node(comptime @type T) => struct { T value; Node(T)* next; };
+comptime type Buffer(comptime type T, int length) => struct { T data[length]; };
+comptime type Node(comptime type T) => struct { T value; Node(T)* next; };
 typedef Buffer(int, 3) Three;
 typedef Box(Integer*) PointerBox;
 struct Dimensions { int unused; int length; };
-comptime @type Sized(Dimensions dimensions) => struct { int data[dimensions.length]; };
+comptime type Sized(Dimensions dimensions) => struct { int data[dimensions.length]; };
 typedef Sized({ .unused = 0, .length = 3 }) SizedThree;
 
 comptime int single_evaluation() {
@@ -23,8 +23,8 @@ comptime int single_evaluation() {
     return first * 100 + second * 10 + calls;
 }
 
-comptime @type forwarded(comptime @type T) => Box(T);
-comptime int recursive(comptime @type T, T value) {
+comptime type forwarded(comptime type T) => Box(T);
+comptime int recursive(comptime type T, T value) {
     if (value == 0) return 0;
     return identity(int, 1) + recursive(T, value - 1);
 }

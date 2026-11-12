@@ -1,4 +1,4 @@
-U convert(comptime @type T = _, comptime @type U, T value) {
+U convert(comptime type T = _, comptime type U, T value) {
     return (U) value;
 }
 

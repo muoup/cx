@@ -8,7 +8,7 @@
 
 import std::optional as std;
 
-comptime @type Either(comptime @type L, comptime @type R) =>
+comptime type Either(comptime type L, comptime type R) =>
     enum union {
         left :: L,
         right :: R

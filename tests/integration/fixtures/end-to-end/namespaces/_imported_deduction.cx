@@ -2,4 +2,4 @@ comptime int floor = 2;
 
 public:
 
-T scale(comptime @type T, comptime int factor, const T& value) where pre: (factor > floor) => value * factor;
+T scale(comptime type T, comptime int factor, const T& value) where pre: (factor > floor) => value * factor;

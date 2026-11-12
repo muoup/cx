@@ -7,7 +7,7 @@ int report(int value) {
     return value;
 }
 
-void run(@fn callback(int) -> void, int value) {
+void run(fn* callback(int) -> void, int value) {
     callback(value);
 }
 

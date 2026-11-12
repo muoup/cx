@@ -5,7 +5,7 @@ import std::net::address as std::net;
 
 extern "C":
 
-i32 socket(int domain, int type, int protocol);
+i32 socket(int domain, int kind, int protocol);
 i32 setsockopt(int socket, int level, int option_name, const void* option_value, u32 option_len);
 i32 bind(int sockfd, const void* addr, u32 addrlen);
 i32 listen(int sockfd, int backlog);

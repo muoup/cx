@@ -2,7 +2,7 @@
 
 comptime unsigned char narrow() => 300;
 comptime int truncate() => 3.75;
-comptime expr(unsigned char) staged_narrow() => emit 300;
+comptime ^unsigned char staged_narrow() => emit 300;
 
 void noop() {}
 void implicit_void() => noop();

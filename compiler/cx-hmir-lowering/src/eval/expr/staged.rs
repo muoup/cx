@@ -36,7 +36,7 @@ use crate::{
     },
 };
 
-// The parameters and result carried by a staged type, 'expr(T)' or a comptime function from code to code
+// The parameters and result carried by a staged type, '^T' or a comptime function from code to code
 struct Shape {
     params: Vec<HMIRTypeID>,
     result: HMIRTypeID,
@@ -47,7 +47,7 @@ fn shape(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<Shape> {
         HMIRTypeKind::Staged(inner) => Some(*inner),
         _ => None,
     };
-    let HMIRTypeKind::Function(signature) = env.resolve_kind(ty) else {
+    let HMIRTypeKind::Function { signature, .. } = env.resolve_kind(ty) else {
         return Some(Shape {
             params: Vec::new(),
             result: carried(ty)?,
@@ -93,7 +93,7 @@ fn signature(
         false,
         HMIRContract::default(),
     );
-    types::realize(context.env_mut(), HMIRTypeKind::Function(signature), span)
+    types::realize(context.env_mut(), HMIRTypeKind::Function { signature, decays: false }, span)
 }
 
 pub(crate) fn is_code(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {

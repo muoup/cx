@@ -10,7 +10,7 @@ use crate::VisibilityMode;
 pub enum PreparseSymbolKind {
     Type,
     Tag,
-    // A comptime function returning '@type'; applying it to arguments names a type
+    // A comptime function returning 'type'; applying it to arguments names a type
     Generator,
 }
 

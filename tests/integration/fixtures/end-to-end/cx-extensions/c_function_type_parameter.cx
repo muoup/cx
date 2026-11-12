@@ -1,0 +1,17 @@
+/* CX-STDOUT: 6 12 */
+
+#include <stdio.h>
+
+typedef int handler(int);
+
+int add_one(int x) { return x + 1; }
+int triple(int x) { return x * 3; }
+
+int apply(handler h, int x) { return h(x); }
+int apply_c(int (*h)(int), int x) { return h(x); }
+
+int main() {
+    fn* cx_pointer(int) -> int = triple;
+    printf("%d %d\n", apply(add_one, 5), apply_c(cx_pointer, 4));
+    return 0;
+}

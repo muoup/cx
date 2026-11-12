@@ -521,9 +521,9 @@ impl Display for HIRTypeKind {
                 }
                 Ok(())
             }
-            HIRTypeKind::Universe => write!(f, "@type"),
+            HIRTypeKind::Universe => write!(f, "type"),
             HIRTypeKind::Auto => write!(f, "auto"),
-            HIRTypeKind::Expr(inner) => write!(f, "expr({inner})"),
+            HIRTypeKind::Staged(inner) => write!(f, "^{inner}"),
             HIRTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             HIRTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
             HIRTypeKind::MemoryReference {
@@ -652,9 +652,8 @@ impl Display for HIRTypeKind {
                     }
                 )
             }
-            HIRTypeKind::FunctionPointer { prototype } => {
-                write!(f, "FunctionPointer({prototype})")
-            }
+            HIRTypeKind::Function { prototype, c_form: true } => write!(f, "Function({prototype})"),
+            HIRTypeKind::Function { prototype, c_form: false } => write!(f, "fn({prototype})"),
         }
     }
 }

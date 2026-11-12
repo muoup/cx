@@ -2,13 +2,13 @@
 
 import std::optional as std;
 
-comptime expr(void) make_none() {
+comptime ^void make_none() {
     return emit .{
         return _::none();
     };
 }
 
-comptime expr(void) forward_none() {
+comptime ^void forward_none() {
     return make_none();
 }
 

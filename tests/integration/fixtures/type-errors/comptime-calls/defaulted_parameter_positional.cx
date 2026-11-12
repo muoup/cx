@@ -1,6 +1,6 @@
-comptime @type cell(comptime @type T) => struct { T value; };
+comptime type cell(comptime type T) => struct { T value; };
 
-T cell::get(comptime @type T = _, const cell(T)& this) {
+T cell::get(comptime type T = _, const cell(T)& this) {
     return this.value;
 }
 

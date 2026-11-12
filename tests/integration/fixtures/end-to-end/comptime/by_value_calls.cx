@@ -43,8 +43,8 @@ int sum_to(int value) {
     return value + sum_to(value - 1);
 }
 
-comptime @type integer_type() => int;
-comptime @type IntegerAlias = integer_type();
+comptime type integer_type() => int;
+comptime type IntegerAlias = integer_type();
 
 comptime int nested_result = nested_comptime(40);
 comptime int isolation_result = isolation_check();

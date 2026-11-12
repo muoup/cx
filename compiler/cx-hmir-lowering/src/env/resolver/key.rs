@@ -41,7 +41,8 @@ pub(super) fn key(kind: &HMIRTypeKind, semantics: HMIRTypeSemantics) -> TypeKey 
             key.types.push(*element);
             key.scalars.push(*length);
         }
-        HMIRTypeKind::Function(signature) => {
+        HMIRTypeKind::Function { signature, decays } => {
+            key.scalars.push(*decays as u64);
             key.scalars.push(signature.stage() as u64);
             key.scalars.push(signature.contract().is_safe() as u64);
             key.scalars.push(signature.is_variadic() as u64);

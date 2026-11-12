@@ -9,7 +9,7 @@ private:
 
 int x;
 
-T increment(comptime @type T) {
+T increment(comptime type T) {
     x++;
     return x;
 }

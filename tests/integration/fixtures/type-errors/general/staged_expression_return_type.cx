@@ -1,4 +1,4 @@
-comptime expr(void) invoke(@fn proc(expr(int&)) -> expr(int)) {
+comptime ^void invoke(fn proc(^int&) -> ^int) {
     return emit .{
         int value = 1;
         proc(value);

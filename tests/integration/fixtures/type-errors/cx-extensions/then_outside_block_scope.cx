@@ -1,4 +1,4 @@
-comptime expr(void) with_value(expr(int&) value, @fn proc(expr(int&)) -> expr(void)) {
+comptime ^void with_value(^int& value, fn proc(^int&) -> ^void) {
     return emit .{
         proc(value);
     };

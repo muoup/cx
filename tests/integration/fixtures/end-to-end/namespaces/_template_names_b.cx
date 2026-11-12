@@ -1,9 +1,9 @@
 public:
 
-T value(comptime @type T, T input) {
+T value(comptime type T, T input) {
     return input + 2;
 }
 
-comptime expr(T) staged(comptime @type T, expr(T) input) {
+comptime ^T staged(comptime type T, ^T input) {
     return emit input;
 }

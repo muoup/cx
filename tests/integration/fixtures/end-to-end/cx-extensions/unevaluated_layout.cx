@@ -4,12 +4,12 @@ struct Pair { int left; int right; };
 struct Resource : @nodrop { int value; };
 int calls;
 Pair runtime_value() { calls++; return (Pair){ 1, 2 }; }
-comptime @type selected_type() => long long;
+comptime type selected_type() => long long;
 comptime int selected_value() => 7;
-comptime @type dependent_type(int wide) => wide ? long long : int;
-usize bytes(comptime @type T) => sizeof(T);
-usize alignment(comptime @type T) => alignof(T);
-comptime usize folded_bytes(comptime @type T) => sizeof(T);
+comptime type dependent_type(int wide) => wide ? long long : int;
+usize bytes(comptime type T) => sizeof(T);
+usize alignment(comptime type T) => alignof(T);
+comptime usize folded_bytes(comptime type T) => sizeof(T);
 comptime usize folded = folded_bytes(int);
 
 comptime int untouched() {
@@ -33,12 +33,12 @@ int main() {
     usize null = sizeof(*(int*)0);
     usize zero = sizeof(1 / 0);
     usize ownership = sizeof(move resource);
-    usize type = sizeof(selected_type());
+    usize kind = sizeof(selected_type());
     usize constant = sizeof(selected_value());
     usize inferred = sizeof(array);
     usize text = sizeof("abc");
     @leak(resource);
     printf("%d %d %d %zu %zu %zu %zu %zu %zu\n", value, calls, unchanged, increment, call, branch, null, zero, ownership);
-    printf("%zu %zu %zu %zu %zu %zu %zu %d\n", type, constant, inferred, text, bytes(int), alignment(int), folded, checked(0));
+    printf("%zu %zu %zu %zu %zu %zu %zu %d\n", kind, constant, inferred, text, bytes(int), alignment(int), folded, checked(0));
     return 0;
 }

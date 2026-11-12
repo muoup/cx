@@ -6,15 +6,15 @@ extern int printf(const char*, ...);
 private:
 
 auto global : int = 4;
-auto identity(comptime @type T, T value) -> T { return value; }
+auto identity(comptime type T, T value) -> T { return value; }
 auto increment(int value) -> int { return value + 1; }
-auto callback() -> @fn(int) -> int { return increment; }
-comptime auto Number : @type = int;
-comptime auto Box(comptime @type T) where pre: (1 == 1) -> @type => struct { T value; };
+auto callback() -> fn*(int) -> int { return increment; }
+comptime auto Number : type = int;
+comptime auto Box(comptime type T) where pre: (1 == 1) -> type => struct { T value; };
 
 int main() {
     auto value : int = identity(int, global);
-    auto function : @fn(int) -> int = callback();
+    auto function : fn*(int) -> int = callback();
     for (auto index : int = 0; index < 3; index++) {
         value = function(value);
     }

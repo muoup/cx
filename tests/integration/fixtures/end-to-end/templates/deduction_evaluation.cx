@@ -11,9 +11,9 @@ int bump() {
     return count;
 }
 
-T add(comptime @type T, T a, T b) { return a + b; }
+T add(comptime type T, T a, T b) { return a + b; }
 
-int tick(comptime @type T, const T& value) {
+int tick(comptime type T, const T& value) {
     static int calls = 0;
     calls = calls + 1;
     return calls;

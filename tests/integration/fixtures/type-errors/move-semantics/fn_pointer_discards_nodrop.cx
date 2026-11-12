@@ -7,7 +7,7 @@ Resource make(int data) {
 }
 
 int main() {
-    @fn discard(int) -> void = make;
+    fn* discard(int) -> void = make;
     discard(3);
     return 0;
 }

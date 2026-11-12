@@ -18,7 +18,7 @@ enum union Shape {
 
 typedef Shape Figure;
 
-comptime @type maybe(comptime @type T) => enum union { nothing :: void, just :: T };
+comptime type maybe(comptime type T) => enum union { nothing :: void, just :: T };
 typedef maybe(int) IntMaybe;
 typedef std::optional::opt(int) OptInt;
 

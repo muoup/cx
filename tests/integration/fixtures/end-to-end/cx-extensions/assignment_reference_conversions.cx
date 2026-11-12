@@ -16,9 +16,9 @@ int main() {
     int* empty = p;
     int*& null_ref = empty;
     null_ref = 0;
-    Function fn = value;
-    Function& fn_ref = fn;
+    Function function = value;
+    Function& fn_ref = function;
     fn_ref = value;
-    printf("%d %d %d\n", *restored, fn(), empty == 0);
+    printf("%d %d %d\n", *restored, function(), empty == 0);
     return 0;
 }

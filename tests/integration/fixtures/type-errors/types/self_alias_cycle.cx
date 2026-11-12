@@ -1,4 +1,4 @@
-comptime @type T = T;
+comptime type T = T;
 
 int main() {
     return 0;

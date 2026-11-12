@@ -1,4 +1,4 @@
-comptime expr(void) discard(@fn body(expr(int)) -> expr(void)) {
+comptime ^void discard(fn body(^int) -> ^void) {
     return emit .{};
 }
 

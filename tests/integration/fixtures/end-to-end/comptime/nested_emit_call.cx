@@ -1,10 +1,10 @@
 #include <stdio.h>
 
-comptime expr(int) add_one(expr(int) value) {
+comptime ^int add_one(^int value) {
     return emit value + 1;
 }
 
-comptime expr(int) add_two(expr(int) value) {
+comptime ^int add_two(^int value) {
     return emit add_one(emit value) + 1;
 }
 

@@ -1,31 +1,31 @@
 #include <stdio.h>
 
 typedef int Integer;
-typedef @type Type;
+typedef type Type;
 
-U identity(comptime @type U, U input) => input;
+U identity(comptime type U, U input) => input;
 T alias_identity(comptime Type T, T value) => value;
-T forward(comptime @type T, T value) => identity(T, value);
-T factorial(comptime @type T, T value) {
+T forward(comptime type T, T value) => identity(T, value);
+T factorial(comptime type T, T value) {
     if (value <= 1) return 1;
     return value * factorial(T, value - 1);
 }
-T odd(comptime @type T, T value) {
+T odd(comptime type T, T value) {
     if (value == 0) return 0;
     return even(T, value - 1);
 }
-T even(comptime @type T, T value) {
+T even(comptime type T, T value) {
     if (value == 0) return 1;
     return odd(T, value - 1);
 }
 int offset(comptime int amount, int value) => value + amount;
-void update(comptime @type T, T& target, T value) { target = value; }
+void update(comptime type T, T& target, T value) { target = value; }
 
 static int increment(int value) => value + 1;
 int apply(comptime int (*function)(int), int value) => function(value);
 
 int counter;
-T tick(comptime @type T, T value) {
+T tick(comptime type T, T value) {
     counter++;
     return value;
 }

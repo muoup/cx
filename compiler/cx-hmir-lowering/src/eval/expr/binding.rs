@@ -135,7 +135,7 @@ pub(crate) fn eval_let(
         let subject = context.env().referent(inferred);
         let function = matches!(
             context.env().resolve_kind(subject),
-            HMIRTypeKind::Function(_)
+            HMIRTypeKind::Function { .. }
         );
         let inferred = match function && referent.is_none() {
             true => types::reference(context.env_mut(), subject, None, &span),
@@ -194,7 +194,7 @@ fn declare(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let local = body.local(local_id);
-    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function(_)) {
+    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function { .. }) {
         let requirement = (
             "local variable".into(),
             "an object type".into(),

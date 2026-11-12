@@ -247,7 +247,7 @@ fn parse_fn_merge(
     Ok(())
 }
 
-// The names bound by '@type' parameters of the declaration ahead. They are types from the
+// The names bound by 'type' parameters of the declaration ahead. They are types from the
 // return type onwards, which is written before the parameter list that binds them.
 fn scan_type_binders(data: &ParserData) -> Vec<CXIdent> {
     let mut names = Vec::new();
@@ -263,7 +263,7 @@ fn scan_type_binders(data: &ParserData) -> Vec<CXIdent> {
                 break;
             }
             TokenKind::Assignment(_) if depth == 0 => break,
-            TokenKind::CompilerIdentifier(name) if depth > 0 && name == "type" => {
+            keyword!(Type) if depth > 0 => {
                 if let Some(TokenKind::Identifier(binder)) = data
                     .tokens
                     .slice

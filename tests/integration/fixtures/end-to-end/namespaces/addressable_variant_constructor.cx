@@ -5,7 +5,7 @@ import std::optional;
 #include <stdio.h>
 
 int main() {
-    @fn make_some(int) -> std::optional::opt(int) = std::optional::opt(int)::some;
+    fn* make_some(int) -> std::optional::opt(int) = std::optional::opt(int)::some;
     std::optional::opt(int) value = make_some(11);
     if (value is some(auto inner)) {
         printf("%d\n", inner);

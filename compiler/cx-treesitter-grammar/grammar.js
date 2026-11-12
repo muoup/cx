@@ -21,9 +21,9 @@ const KEYWORDS = [
     "else",
     "emit",
     "enum",
-    "expr",
     "extern",
     "false",
+    "fn",
     "for",
     "goto",
     "if",
@@ -263,9 +263,9 @@ module.exports = grammar({
                 repeat($.type_qualifier),
                 choice(
                     $.builtin_type_sequence,
-                    alias("@type", $.compiler_identifier),
+                    keyword($, "type"),
                     $.function_type,
-                    $.expr_type,
+                    $.staged_type,
                     $.type_application,
                     $.templated_name,
                     $.qualified_name,
@@ -285,7 +285,8 @@ module.exports = grammar({
 
         function_type: ($) =>
             seq(
-                alias("@fn", $.compiler_identifier),
+                keyword($, "fn"),
+                repeat($._function_indirection),
                 $.parameter_list,
                 op($, "->"),
                 $.type,
@@ -293,8 +294,8 @@ module.exports = grammar({
 
         function_type_declarator: ($) =>
             seq(
-                alias("@fn", $.compiler_identifier),
-                repeat($.pointer_modifier),
+                keyword($, "fn"),
+                repeat($._function_indirection),
                 field("name", $.identifier),
                 repeat($.array_modifier),
                 $.parameter_list,
@@ -302,7 +303,9 @@ module.exports = grammar({
                 $.type,
             ),
 
-        expr_type: ($) => seq(keyword($, "expr"), "(", $.type, ")"),
+        _function_indirection: ($) => choice($.pointer_modifier, $.reference_modifier),
+
+        staged_type: ($) => prec.right(seq(op($, "^"), $.type)),
 
         type_application: ($) =>
             seq($.qualified_name, "(", commaSep1(choice($.type, $.expression)), ")"),

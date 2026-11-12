@@ -428,7 +428,7 @@ pub(crate) fn template(
     let env = context.env();
     let function = env.pointer_inner(ty).unwrap_or_else(|| env.referent(ty));
     let (def, signature) = match (value::as_function(callee), env.resolve_kind(function)) {
-        (Some(def), HMIRTypeKind::Function(signature)) => (def, signature.clone()),
+        (Some(def), HMIRTypeKind::Function { signature, .. }) => (def, signature.clone()),
         _ => {
             let unavailable = "this function".into();
             return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, unavailable));
