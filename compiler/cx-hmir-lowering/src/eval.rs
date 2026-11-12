@@ -15,6 +15,7 @@ use cx_hmir::{
     ty::HMIRTypeID,
 };
 use cx_log::{CXResult, catalogue::mir};
+use cx_pipeline_data::hmir::facts::HMIRTypeSubject;
 
 use crate::{
     env::function::{FnContext, LocalLoweringContext, runtime::Emission},
@@ -146,11 +147,15 @@ pub(crate) fn eval(
         body,
         None,
         |value| Some(value.clone()),
-        |context, _, value, _| match context.context() {
+        move |context, _, value, _| match context.context() {
             FnContext::Runtime(runtime) if runtime.emission() == Emission::Suppressed => {
                 flow::diverged()
             }
-            _ => Ok(Evaluation::Ready(value)),
+            FnContext::Runtime(_) => {
+                context.env_mut().record_type(HMIRTypeSubject::Expr(id), &value);
+                Ok(Evaluation::Ready(value))
+            }
+            FnContext::Comptime(_) => Ok(Evaluation::Ready(value)),
         },
     )
 }

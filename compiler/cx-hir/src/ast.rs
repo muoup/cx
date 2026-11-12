@@ -2,6 +2,7 @@
 use cx_namespace::module::{ModulePath, NamespacePath};
 pub use cx_preparse_data::Import as HIRImport;
 use cx_preparse_data::NamespaceAliases;
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent};
 
 use crate::ast::{
@@ -40,6 +41,7 @@ pub enum HIRStmt {
         visibility: VisibilityMode,
         ty: HIRType,
         tag: Option<HIRTagKind>,
+        range: TokenRange,
     },
 
     FunctionDefinition {

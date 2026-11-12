@@ -29,6 +29,7 @@ pub(crate) mod linkage;
 
 pub fn try_function_parse(
     data: &mut ParserData,
+    declaration_start: usize,
     return_type: HIRType,
     name: CXIdent,
     comptime: bool,
@@ -87,7 +88,7 @@ pub fn try_function_parse(
         params: args.params,
         var_args: args.var_args,
 
-        range: data.token_range(name_start, data.tokens.index),
+        range: data.token_range(declaration_start, data.tokens.index),
     }))
 }
 
@@ -240,8 +241,10 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             });
         }
 
+        let start = data.tokens.index;
         let comptime = try_next!(data.tokens, keyword!(Comptime));
         let (name, ty, _) = parse_initializer(data)?;
+        let range = data.token_range(start, data.tokens.index);
         let default = match try_next!(data.tokens, TokenKind::Assignment(None)) {
             true => {
                 data.change_comma_mode(false);
@@ -252,7 +255,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CXResult<ParseParamsResult>
             false => None,
         };
 
-        params.push(HIRParameter { name, ty, comptime, default });
+        params.push(HIRParameter { name, ty, comptime, default, range });
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");

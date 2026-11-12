@@ -171,6 +171,7 @@ pub(crate) fn plan_symbols<'h>(
                 name: Some(name),
                 ty,
                 tag,
+                range,
                 ..
             } => {
                 let (role, source) = if is_forward_declaration(name, *tag, ty) {
@@ -185,7 +186,7 @@ pub(crate) fn plan_symbols<'h>(
                     QualifiedName::new(base.clone(), name.clone()),
                     *tag,
                     None,
-                    &ty.range,
+                    range,
                     role,
                     source,
                 )
@@ -217,12 +218,13 @@ pub(crate) fn plan_symbols<'h>(
                     initializer,
                     linkage,
                     symbol_name_scheme,
+                    range,
                     ..
                 } => declare(
                     QualifiedName::new(base.clone(), name.clone()),
                     None,
                     Some(*symbol_name_scheme),
-                    &ty.range,
+                    range,
                     match (initializer, linkage) {
                         (Some(_), _) => HMIRDeclarationRole::Definition,
                         (None, LinkageMode::Extern) => HMIRDeclarationRole::Declaration,
@@ -242,7 +244,7 @@ pub(crate) fn plan_symbols<'h>(
                             QualifiedName::new(base.clone(), variant.name.clone()),
                             None,
                             None,
-                            &TokenRange::internal(),
+                            &variant.range,
                             HMIRDeclarationRole::Definition,
                             Some(DefSource::EnumVariant {
                                 variants: &enumeration.variants,

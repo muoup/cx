@@ -445,7 +445,7 @@ pub(crate) fn lower_reify(
     let mut params = Vec::new();
     for param in declared_params(prototype) {
         let ty = lower_type(&mut anon, &param.ty)?;
-        params.push(anon.declare(param.name.as_ref(), ty, false, false, &param.ty.range));
+        params.push(anon.declare(param.name.as_ref(), ty, false, false, &param.range));
     }
     let return_type = lower_type(&mut anon, &prototype.return_type)?;
 

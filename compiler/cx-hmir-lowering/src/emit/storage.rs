@@ -1,6 +1,7 @@
 use cx_hmir::{body::HMIRLocalID, ty::HMIRTypeID};
 use cx_log::CXResult;
 use cx_mir::expr::instruction::MIRInvalidationKind;
+use cx_pipeline_data::hmir::facts::HMIRTypeSubject;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
@@ -54,6 +55,9 @@ pub fn adopt(
 
 // Binds a local to an existing value; the value is not copied, moved or consumed, and the local is not marked
 pub fn bind_local(context: &mut LocalLoweringContext, local: HMIRLocalID, value: HMIRValue) {
+    if context.is_runtime() {
+        context.env_mut().record_type(HMIRTypeSubject::Local(local), &value);
+    }
     match context.context_mut() {
         FnContext::Runtime(context) => context.scopes_mut().bind(local, value),
         FnContext::Comptime(context) => context.scopes_mut().bind(local, value),

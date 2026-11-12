@@ -87,6 +87,7 @@ pub struct CompilerConfig {
     pub verbose: bool,
     pub dump: bool,
     pub module_mode: bool,
+    pub record_types: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy)]

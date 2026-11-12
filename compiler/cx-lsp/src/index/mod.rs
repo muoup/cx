@@ -19,6 +19,7 @@ pub enum SymbolClass {
 pub struct DeclarationSite {
     pub location: Location,
     pub role: HMIRDeclarationRole,
+    pub declaration: String,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +27,13 @@ pub struct Reference {
     pub range: Range,
     pub class: SymbolClass,
     pub targets: Vec<DeclarationSite>,
+    pub ty: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedSpan {
+    pub range: Range,
+    pub ty: String,
 }
 
 #[derive(Debug, Clone)]
@@ -40,18 +48,30 @@ pub struct IndexedSymbol {
 pub struct FileIndex {
     pub symbols: Vec<IndexedSymbol>,
     pub references: Vec<Reference>,
+    pub types: Vec<TypedSpan>,
 }
 
 impl FileIndex {
     pub fn reference_at(&self, position: Position) -> Option<&Reference> {
-        self.references
-            .iter()
-            .filter(|reference| reference.range.start <= position && position <= reference.range.end)
-            .min_by_key(|reference| {
-                let Range { start, end } = reference.range;
-                (end.line - start.line, end.character.saturating_sub(start.character))
-            })
+        innermost(&self.references, position, |reference| reference.range)
     }
+
+    pub fn type_at(&self, position: Position) -> Option<&TypedSpan> {
+        innermost(&self.types, position, |span| span.range)
+    }
+}
+
+fn innermost<T>(items: &[T], position: Position, range: impl Fn(&T) -> Range) -> Option<&T> {
+    items
+        .iter()
+        .filter(|item| {
+            let range = range(item);
+            range.start <= position && position <= range.end
+        })
+        .min_by_key(|item| {
+            let Range { start, end } = range(item);
+            (end.line - start.line, end.character.saturating_sub(start.character))
+        })
 }
 
 #[derive(Default)]

@@ -12,7 +12,7 @@ use cx_preparse_data::VisibilityMode;
 use cx_tokens::{
     keyword, operator, punctuator, specifier,
     token::{OperatorType, PunctuatorType, SpecifierType, TokenKind},
-    TokenIter,
+    TokenIter, TokenRange,
 };
 use cx_util::identifier::CXIdent;
 
@@ -167,6 +167,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     let start_index = data.tokens.index;
 
     let (name, ty) = parse_typedef_initializer(data)?;
+    let range = data.token_range(start_index - 1, data.tokens.index);
 
     let Some(name) = name else {
         return parse_point_error(
@@ -200,6 +201,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
                 visibility: data.visibility,
                 ty: ty.clone(),
                 tag: None,
+                range,
             });
             return Ok(());
         }
@@ -210,6 +212,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
         visibility: data.visibility,
         ty: ty.clone(),
         tag: None,
+        range,
     });
 
     Ok(())
@@ -293,7 +296,9 @@ fn parse_global_expr(data: &mut ParserData, comptime: bool) -> CXResult<()> {
 }
 
 fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<()> {
+    let start = data.tokens.index;
     let (name, return_type, specifiers) = parse_initializer(data)?;
+    let range = data.token_range(start, data.tokens.index);
     let linkage = specifiers.linkage;
     let symbol_naming = if data.c_mode {
         if linkage == LinkageMode::Static {
@@ -327,6 +332,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
 
     if let Some(prototype) = try_function_parse(
         data,
+        start,
         return_type.clone(),
         name.clone(),
         comptime,
@@ -351,6 +357,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                     linkage,
                     symbol_name_scheme: symbol_naming,
                     initializer: Some(initial_value.clone()),
+                    range,
                 },
             });
         }
@@ -365,6 +372,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                 inherited_external,
                 comptime,
                 None,
+                range,
             );
         }
 
@@ -378,10 +386,13 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                 inherited_external,
                 comptime,
                 None,
+                range,
             );
 
             loop {
+                let next_start = data.tokens.index;
                 let (next_name, next_type) = parse_base_mods(data, return_type.clone())?;
+                let next_range = data.token_range(next_start, data.tokens.index);
                 let Some(next_name) = next_name else {
                     return parse_point_error(
                         &data.tokens,
@@ -407,6 +418,7 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
                     inherited_external,
                     comptime,
                     initializer,
+                    next_range,
                 );
 
                 match next_kind!(data.tokens)? {
@@ -447,6 +459,7 @@ fn add_global_variable(
     inherited_external: bool,
     comptime: bool,
     initializer: Option<HIRExpression>,
+    range: TokenRange,
 ) {
     data.add_stmt(HIRStmt::GlobalVariableDefinition {
         visibility: data.visibility,
@@ -462,6 +475,7 @@ fn add_global_variable(
             },
             symbol_name_scheme: symbol_naming,
             initializer,
+            range,
         },
     });
 }

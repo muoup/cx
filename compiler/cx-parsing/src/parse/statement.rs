@@ -317,6 +317,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CXResult<HIRExpre
                 };
                 if let Some(mut prototype) = try_function_parse(
                     data,
+                    start_index,
                     ty.clone(),
                     name.clone(),
                     false,

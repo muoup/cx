@@ -1,13 +1,14 @@
-use crate::index::{DeclarationSite, FileIndex, IndexedSymbol, Reference, SymbolClass};
+use crate::index::{DeclarationSite, FileIndex, IndexedSymbol, Reference, SymbolClass, TypedSpan};
 use crate::position::SourceCache;
 use cx_hmir::body::{HMIRBodyContext, HMIRLocalID};
 use cx_hmir::expr::HMIRExprKind;
 use cx_hmir::ty::HMIRGenericTypeKind;
-use cx_hmir::unit::def::{HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefKind};
+use cx_hmir::unit::def::{HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind};
 use cx_hmir::unit::global::HMIRComptimeGlobal;
 use cx_hmir::unit::HMIRUnit;
 use cx_hmir_lowering::env::symbols::HMIRSymbolEnv;
 use cx_pipeline_data::db::ModuleData;
+use cx_pipeline_data::hmir::facts::HMIRTypeFacts;
 use cx_pipeline_data::hmir::HMIRUnitRegistry;
 use cx_pipeline_data::GlobalCompilationContext;
 use cx_tokens::token::TokenKind;
@@ -23,6 +24,8 @@ struct Identifier {
     name: String,
 }
 
+// Declarations read from their start through the name they declare, so the name is the last mention in them; the
+// spans of statement locals also cover their initializer, so there it is the first
 #[derive(Clone, Copy)]
 enum Occurrence {
     First,
@@ -32,11 +35,14 @@ enum Occurrence {
 struct Site {
     file: PathBuf,
     range: Range,
+    name_end: usize,
 }
 
 struct Indexer<'a> {
     identifiers: FxHashMap<PathBuf, Vec<Identifier>>,
     sources: &'a mut SourceCache,
+    facts: HMIRTypeFacts,
+    sites: FxHashMap<HMIRDefID, Vec<DeclarationSite>>,
     files: FxHashMap<PathBuf, FileIndex>,
 }
 
@@ -46,9 +52,19 @@ pub fn from_context(
 ) -> FxHashMap<Url, FileIndex> {
     let db = &context.module_db;
     let namespaces = db.lex_tokens.lock().keys().cloned().collect::<Vec<_>>();
+    let mut facts = HMIRTypeFacts::default();
+    for namespace in &namespaces {
+        if let Some(unit) = db.type_facts.remove(namespace) {
+            facts.exprs.extend(unit.exprs);
+            facts.locals.extend(unit.locals);
+        }
+    }
+
     let mut indexer = Indexer {
         identifiers: identifiers(db),
         sources,
+        facts,
+        sites: FxHashMap::default(),
         files: FxHashMap::default(),
     };
 
@@ -88,10 +104,10 @@ impl Indexer<'_> {
     fn unit(&mut self, registry: &HMIRUnitRegistry, unit: &HMIRUnit) {
         let mut env = HMIRSymbolEnv::new(registry, unit);
 
-        for (_, def) in unit.defs() {
+        for (id, def) in unit.defs() {
             let class = def_class(def);
             let name = source_name(&def.name().name);
-            let targets = self.declaration_sites(def);
+            let targets = self.declaration_sites(*id, def);
 
             for declaration in def.declarations() {
                 self.declaration(declaration, name, class, &targets);
@@ -109,7 +125,7 @@ impl Indexer<'_> {
         class: SymbolClass,
         targets: &[DeclarationSite],
     ) {
-        let Some(site) = self.name_site(declaration.span(), name, Occurrence::First) else {
+        let Some(site) = self.name_site(declaration.span(), name, Occurrence::Last) else {
             return;
         };
         let Some((_, start, end)) = declaration.span().source_bounds() else {
@@ -131,6 +147,7 @@ impl Indexer<'_> {
             range: site.range,
             class,
             targets: targets.to_vec(),
+            ty: None,
         });
     }
 
@@ -151,62 +168,85 @@ impl Indexer<'_> {
             let Some(name) = local.name() else {
                 continue;
             };
-            let Some(site) = self.name_site(local.span(), name.as_str(), Occurrence::First) else {
+            let occurrence = match params.contains(&id) {
+                true => Occurrence::Last,
+                false => Occurrence::First,
+            };
+            let Some(site) = self.name_site(local.span(), name.as_str(), occurrence) else {
                 continue;
             };
-            let Some(target) = declaration_site(&site, HMIRDeclarationRole::Definition) else {
+            let declaration = self.declaration_text(local.span(), Some(site.name_end));
+            let Some(target) = declaration_site(&site, HMIRDeclarationRole::Definition, declaration)
+            else {
                 continue;
             };
-            self.reference(site, local_class(id), vec![target.clone()]);
+            let ty = self.facts.locals.get(&id).cloned();
+            self.reference(site, local_class(id), vec![target.clone()], ty);
             locals.insert(id, target);
         }
 
-        for (_, expr) in body.exprs() {
-            let (name, class, targets) = match expr.kind() {
-                HMIRExprKind::Local(id) if id.body() == body.id() => {
-                    let (Some(name), Some(target)) = (body.local(*id).name(), locals.get(id)) else {
+        for (id, expr) in body.exprs() {
+            let ty = self.facts.exprs.get(&id).cloned();
+            let (name, class, targets, ty) = match expr.kind() {
+                HMIRExprKind::Local(local) if local.body() == body.id() => {
+                    let (Some(name), Some(target)) = (body.local(*local).name(), locals.get(local))
+                    else {
                         continue;
                     };
-                    (name.as_str().to_string(), local_class(*id), vec![target.clone()])
+                    let ty = self.facts.locals.get(local).cloned().or(ty);
+                    (name.as_str().to_string(), local_class(*local), vec![target.clone()], ty)
                 }
-                HMIRExprKind::Def(id) => {
-                    let Some(owner) = env.owner(id.brand()) else {
+                HMIRExprKind::Def(def_id) => {
+                    let Some(owner) = env.owner(def_id.brand()) else {
                         continue;
                     };
-                    let Some(def) = owner.resolve_def(*id) else {
+                    let Some(def) = owner.resolve_def(*def_id) else {
                         continue;
                     };
                     let name = source_name(&def.name().name).to_string();
-                    (name, def_class(def), self.declaration_sites(def))
+                    let class = def_class(def);
+                    (name, class, self.declaration_sites(*def_id, def), value_type(class, ty))
                 }
                 HMIRExprKind::Name { name, tag } => {
                     let mut class = None;
                     let mut targets = Vec::new();
-                    for id in env.lookup(unit.id(), name, *tag) {
-                        let Some(owner) = env.owner(id.brand()) else {
+                    for def_id in env.lookup(unit.id(), name, *tag) {
+                        let Some(owner) = env.owner(def_id.brand()) else {
                             continue;
                         };
-                        let Some(def) = owner.resolve_def(id) else {
+                        let Some(def) = owner.resolve_def(def_id) else {
                             continue;
                         };
                         class.get_or_insert(def_class(def));
-                        targets.extend(self.declaration_sites(def));
+                        targets.extend(self.declaration_sites(def_id, def));
                     }
                     let Some(class) = class else {
                         continue;
                     };
-                    (name.name.as_str().to_string(), class, targets)
+                    let name = name.name.as_str().to_string();
+                    (name, class, targets, value_type(class, ty))
                 }
-                _ => continue,
+                _ => {
+                    if let Some(ty) = &ty {
+                        self.typed_span(expr.span(), ty);
+                    }
+                    continue;
+                }
             };
 
             if let Some(site) = self.name_site(expr.span(), &name, Occurrence::Last) {
-                self.reference(site, class, targets);
+                self.reference(site, class, targets, ty);
             }
         }
     }
 
-    fn reference(&mut self, site: Site, class: SymbolClass, targets: Vec<DeclarationSite>) {
+    fn reference(
+        &mut self,
+        site: Site,
+        class: SymbolClass,
+        targets: Vec<DeclarationSite>,
+        ty: Option<String>,
+    ) {
         self.files
             .entry(site.file)
             .or_default()
@@ -215,18 +255,61 @@ impl Indexer<'_> {
                 range: site.range,
                 class,
                 targets,
+                ty,
             });
     }
 
-    fn declaration_sites(&mut self, def: &HMIRDef) -> Vec<DeclarationSite> {
+    fn typed_span(&mut self, span: &TokenRange, ty: &str) {
+        if matches!(ty, "void" | "unreachable") {
+            return;
+        }
+        let Some((file, start, end)) = span.source_bounds() else {
+            return;
+        };
+        let Some(source) = self.sources.get(file) else {
+            return;
+        };
+        let range = source.range(start, end);
+        self.files
+            .entry(file.to_path_buf())
+            .or_default()
+            .types
+            .push(TypedSpan {
+                range,
+                ty: ty.to_string(),
+            });
+    }
+
+    fn declaration_sites(&mut self, id: HMIRDefID, def: &HMIRDef) -> Vec<DeclarationSite> {
+        if let Some(sites) = self.sites.get(&id) {
+            return sites.clone();
+        }
         let name = source_name(&def.name().name);
-        def.declarations()
+        let sites = def
+            .declarations()
             .iter()
             .filter_map(|declaration| {
-                let site = self.name_site(declaration.span(), name, Occurrence::First)?;
-                declaration_site(&site, declaration.role())
+                let site = self.name_site(declaration.span(), name, Occurrence::Last)?;
+                let text = self.declaration_text(declaration.span(), None);
+                declaration_site(&site, declaration.role(), text)
             })
-            .collect()
+            .collect::<Vec<_>>();
+        self.sites.insert(id, sites.clone());
+        sites
+    }
+
+    fn declaration_text(&mut self, span: &TokenRange, until: Option<usize>) -> String {
+        let Some((file, start, end)) = span.source_bounds() else {
+            return String::new();
+        };
+        let Some(source) = self.sources.get(file) else {
+            return String::new();
+        };
+        source
+            .slice(start, until.unwrap_or(end))
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 
     fn name_site(&mut self, span: &TokenRange, name: &str, occurrence: Occurrence) -> Option<Site> {
@@ -241,10 +324,12 @@ impl Indexer<'_> {
             Occurrence::First => matches.next(),
             Occurrence::Last => matches.last(),
         }?;
+        let name_end = found.end;
         let range = self.sources.get(file)?.range(found.start, found.end);
         Some(Site {
             file: file.to_path_buf(),
             range,
+            name_end,
         })
     }
 
@@ -263,14 +348,26 @@ impl Indexer<'_> {
     }
 }
 
-fn declaration_site(site: &Site, role: HMIRDeclarationRole) -> Option<DeclarationSite> {
+fn declaration_site(
+    site: &Site,
+    role: HMIRDeclarationRole,
+    declaration: String,
+) -> Option<DeclarationSite> {
     Some(DeclarationSite {
         location: Location {
             uri: Url::from_file_path(&site.file).ok()?,
             range: site.range,
         },
         role,
+        declaration,
     })
+}
+
+fn value_type(class: SymbolClass, ty: Option<String>) -> Option<String> {
+    match class {
+        SymbolClass::Global | SymbolClass::Local | SymbolClass::Parameter => ty,
+        SymbolClass::Function | SymbolClass::Type => None,
+    }
 }
 
 fn declaration_bodies(

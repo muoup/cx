@@ -76,6 +76,7 @@ impl ProjectBinary {
             source_root: self.project.source_root.clone(),
             internal_directory: temp_dir.internal_directory(),
             module_mode: true,
+            record_types: false,
             link_entries: self.link_entries.clone(),
             native_objects: self.native_objects.clone(),
             include_dirs: self.include_dirs.clone(),

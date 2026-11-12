@@ -154,6 +154,7 @@ fn build(project: &ProjectConfig, args: BuildArgs, selected: &[usize]) -> CXResu
         verbose: args.verbose,
         dump: args.dump,
         module_mode: true,
+        record_types: false,
     };
 
     project::build(&base, project, profile, selected)

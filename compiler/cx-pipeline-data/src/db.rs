@@ -1,5 +1,6 @@
 use crate::CompilationUnit;
 use crate::hmir::HMIRUnitRegistry;
+use crate::hmir::facts::HMIRTypeFacts;
 use cx_hir::ast::HIR;
 use cx_lmir::LMIRUnit;
 use cx_mir::MIRUnit;
@@ -25,6 +26,7 @@ pub struct ModuleData {
     pub base_mappings: ModuleMap<NamespacePath>,
 
     pub hmir: HMIRUnitRegistry,
+    pub type_facts: HandoffMap<HMIRTypeFacts>,
     pub mir: HandoffMap<MIRUnit>,
     pub lmir: ModuleMap<LMIRUnit>,
 }
@@ -47,6 +49,7 @@ impl ModuleData {
 
             hir: ModuleMap::new(".cx-hir"),
             hmir: HMIRUnitRegistry::new(),
+            type_facts: HandoffMap::new(),
             mir: HandoffMap::new(),
             lmir: ModuleMap::new(".cx-lmir"),
         }
@@ -205,5 +208,12 @@ impl<Data> HandoffMap<Data> {
             .expect("Failed to acquire lock on handoff data")
             .remove(key)
             .expect("Data not found in the handoff map")
+    }
+
+    pub fn remove(&self, key: &NamespacePath) -> Option<Data> {
+        self.data
+            .lock()
+            .expect("Failed to acquire lock on handoff data")
+            .remove(key)
     }
 }

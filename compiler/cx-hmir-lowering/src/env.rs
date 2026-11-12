@@ -1,3 +1,4 @@
+pub(crate) mod facts;
 pub(crate) mod function;
 pub(crate) mod generation;
 pub(crate) mod module;
@@ -14,8 +15,8 @@ use cx_pipeline_data::db::ModuleData;
 use cx_target::ArchitectureConfig;
 
 use crate::env::{
-    generation::GenerationQueue, module::MIRModuleBuilder, resolver::HMIRResolver,
-    settings::HMIRSettings, symbols::HMIRSymbolEnv,
+    facts::TypeRecorder, generation::GenerationQueue, module::MIRModuleBuilder,
+    resolver::HMIRResolver, settings::HMIRSettings, symbols::HMIRSymbolEnv,
 };
 
 #[derive(Debug)]
@@ -25,6 +26,7 @@ pub struct HMIREnvironment<'global, 'hmir> {
     symbols: HMIRSymbolEnv<'global, 'hmir>,
     resolver: HMIRResolver,
     generation: GenerationQueue,
+    recorder: Option<TypeRecorder>,
 }
 
 impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
@@ -40,6 +42,7 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
             symbols: HMIRSymbolEnv::new(&global.hmir, unit),
             resolver: HMIRResolver::new(),
             generation: GenerationQueue::new(),
+            recorder: settings.record_types().then(TypeRecorder::default),
         }
     }
 

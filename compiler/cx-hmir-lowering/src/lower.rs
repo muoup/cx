@@ -97,7 +97,14 @@ fn generate(
             if template.is_none() && !standalone {
                 return Ok(());
             }
-            function::lower(env, id, function, template)
+            let recorded = match template {
+                None => vec![function.body().id(), function.signature().contract().body().id()],
+                Some(_) => Vec::new(),
+            };
+            env.record_bodies(recorded);
+            let lowered = function::lower(env, id, function, template);
+            env.record_bodies(Vec::new());
+            lowered
         }
         Some(HMIRDefKind::Global(_)) => global::lower(env, id),
         Some(HMIRDefKind::ComptimeGlobal(_)) | None => Ok(()),

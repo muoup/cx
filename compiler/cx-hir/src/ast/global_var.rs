@@ -1,3 +1,4 @@
+use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::ast::{
@@ -19,6 +20,7 @@ pub enum HIRGlobalVariable {
 
         linkage: LinkageMode,
         symbol_name_scheme: HIRSymbolNameScheme,
+        range: TokenRange,
     },
 }
 
@@ -32,4 +34,5 @@ pub struct HIREnumDefinition {
 pub struct HIREnumVariant {
     pub name: CXIdent,
     pub value: Option<HIRExpression>,
+    pub range: TokenRange,
 }

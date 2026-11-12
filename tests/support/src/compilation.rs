@@ -87,6 +87,7 @@ pub fn compiler_config(
         source_root: source_root.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
         module_mode: true,
+        record_types: false,
         link_entries: vec![],
         native_objects: vec![],
         include_dirs: vec![],

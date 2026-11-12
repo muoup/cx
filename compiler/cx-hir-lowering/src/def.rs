@@ -130,7 +130,7 @@ fn lower_function<'a>(
                     ty,
                     param.comptime,
                     staged_signature(&param.ty).is_some(),
-                    &param.ty.range,
+                    &param.range,
                 ));
             }
             let return_type = lower_type(this, &prototype.return_type)?;
@@ -256,10 +256,9 @@ fn lower_contract(
     let params = declared
         .iter()
         .map(|param| {
-            let span = &param.ty.range;
-            let ty = conditions.hole(span);
+            let ty = conditions.hole(&param.ty.range);
             let quoted = staged_signature(&param.ty).is_some();
-            conditions.declare(param.name.as_ref(), ty, param.comptime, quoted, span)
+            conditions.declare(param.name.as_ref(), ty, param.comptime, quoted, &param.range)
         })
         .collect();
 

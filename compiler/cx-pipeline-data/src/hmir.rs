@@ -1,3 +1,5 @@
+pub mod facts;
+
 use rustc_hash::FxHashMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 

@@ -199,6 +199,7 @@ fn predeclaration_type(
     data: &mut ParserData,
     name: Option<QualifiedName>,
     predeclaration: HIRTagKind,
+    header: TokenRange,
 ) -> CXResult<HIRType> {
     let Some(name) = name else {
         return parse_point_error(
@@ -241,6 +242,7 @@ fn predeclaration_type(
             visibility: data.visibility,
             ty: ty.clone(),
             tag: Some(predeclaration),
+            range: header,
         });
     }
 
@@ -252,6 +254,7 @@ fn defined_type(
     name: Option<CXIdent>,
     ty: HIRType,
     predeclaration: HIRTagKind,
+    header: TokenRange,
 ) -> CXResult<HIRType> {
     if let Some(name) = name {
         // If structure definition has a name, add it to the type map and return
@@ -262,6 +265,7 @@ fn defined_type(
             visibility: data.visibility,
             ty,
             tag: Some(predeclaration),
+            range: header,
         });
 
         Ok(HIRTypeKind::Identifier {
@@ -279,13 +283,15 @@ fn defined_type(
 }
 
 pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<HIRType> {
+    let start = data.tokens.index;
     assert_token_matches!(data.tokens, keyword!(Struct), "'struct'");
 
     let name = try_parse_qualified_name(&mut data.tokens)?;
+    let header = data.token_range(start, data.tokens.index);
     let attributes = parse_type_attributes(data, "struct")?;
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, HIRTagKind::Struct);
+        return predeclaration_type(data, name, HIRTagKind::Struct, header);
     }
 
     let mut fields = Vec::new();
@@ -319,10 +325,12 @@ pub(crate) fn parse_struct_def(data: &mut ParserData) -> CXResult<HIRType> {
         }
         .to_type(),
         HIRTagKind::Struct,
+        header,
     )
 }
 
 pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
+    let start = data.tokens.index;
     assert_token_matches!(data.tokens, keyword!(Enum), "'enum'");
 
     if peek_kind!(data.tokens, keyword!(Union)) {
@@ -331,14 +339,16 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
     }
 
     let name = try_parse_qualified_name(&mut data.tokens)?;
+    let header = data.token_range(start, data.tokens.index);
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, HIRTagKind::Enum);
+        return predeclaration_type(data, name, HIRTagKind::Enum, header);
     }
 
     let mut variants = Vec::new();
 
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+        let variant_start = data.tokens.index;
         let Some(variant_name) = try_parse_simple_identifier(&mut data.tokens) else {
             return parse_point_error(
                 &data.tokens,
@@ -359,6 +369,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
         variants.push(HIREnumVariant {
             name: variant_name,
             value,
+            range: data.token_range(variant_start, data.tokens.index),
         });
 
         if !try_next!(data.tokens, operator!(Comma)) {
@@ -402,14 +413,17 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
         }
         .to_type(),
         HIRTagKind::Enum,
+        header,
     )
 }
 
 pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType> {
+    let start = data.tokens.index;
     assert_token_matches!(data.tokens, keyword!(Enum), "'enum'");
     assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
     let union_name = try_parse_simple_identifier(&mut data.tokens);
+    let header = data.token_range(start, data.tokens.index);
     let attributes = parse_type_attributes(data, "enum union")?;
 
     assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
@@ -467,16 +481,19 @@ pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CXResult<HIRType>
         }
         .to_type(),
         HIRTagKind::Union,
+        header,
     )
 }
 
 pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<HIRType> {
+    let start = data.tokens.index;
     assert_token_matches!(data.tokens, keyword!(Union), "'union'");
 
     let name = try_parse_qualified_name(&mut data.tokens)?;
+    let header = data.token_range(start, data.tokens.index);
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, HIRTagKind::Union);
+        return predeclaration_type(data, name, HIRTagKind::Union, header);
     }
 
     let mut fields = Vec::new();
@@ -505,6 +522,7 @@ pub(crate) fn parse_union_def(data: &mut ParserData) -> CXResult<HIRType> {
         name.clone(),
         HIRTypeKind::Union { name, fields }.to_type(),
         HIRTagKind::Union,
+        header,
     )
 }
 

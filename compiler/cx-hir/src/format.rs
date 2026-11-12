@@ -126,7 +126,7 @@ impl Display for HIRStmt {
                 name,
                 visibility,
                 ty,
-                tag: _,
+                ..
             } => {
                 write!(f, "{visibility:?} ")?;
 

@@ -473,10 +473,19 @@ pub(crate) fn perform_job(
                 .expect("HMIR unit not found for its compilation unit");
             let settings = HMIRSettings::new(context.config.architecture)
                 .with_explicit_return(require_explicit_return(context, &job.unit))
-                .with_assertions(!context.config.unsafe_flags.no_assert);
+                .with_assertions(!context.config.unsafe_flags.no_assert)
+                .with_type_recording(context.config.record_types);
 
-            let env = HMIREnvironment::new(&context.module_db, hmir.as_ref(), settings);
-            let mir = generate_mir(hmir.as_ref(), env)?;
+            let mut env = HMIREnvironment::new(&context.module_db, hmir.as_ref(), settings);
+            let lowered = generate_mir(hmir.as_ref(), &mut env);
+            if let Some(facts) = env.take_type_facts() {
+                context
+                    .module_db
+                    .type_facts
+                    .insert(job.unit.namespace().clone(), facts);
+            }
+            lowered?;
+            let mir = env.finish();
 
             if !job.unit.is_std_lib() || context.config.verbose {
                 dump_data(&mir);

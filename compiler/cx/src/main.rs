@@ -98,6 +98,7 @@ fn compiler_config_with_dirs(
         require_explicit_return: args.require_explicit_return,
 
         module_mode: false,
+        record_types: false,
         link_entries: vec![],
         native_objects: vec![],
         external_modules: Default::default(),

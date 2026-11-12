@@ -55,6 +55,7 @@ pub struct HIRParameter {
     pub ty: HIRType,
     pub comptime: bool,
     pub default: Option<HIRExpression>,
+    pub range: TokenRange,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]

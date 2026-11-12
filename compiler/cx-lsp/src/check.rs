@@ -29,6 +29,7 @@ pub fn check(file_path: &Path, project: &ProjectSettings) -> CheckReport {
         source_root: project.source_root.clone(),
 
         module_mode: true,
+        record_types: true,
         unsafe_flags: UnsafeFlags::default(),
         verbose: false,
         dump: false,

@@ -44,6 +44,12 @@ impl SourceText {
         }
     }
 
+    pub fn slice(&self, start: usize, end: usize) -> &str {
+        let start = self.floor_char_boundary(start);
+        let end = self.floor_char_boundary(end).max(start);
+        &self.text[start..end]
+    }
+
     pub fn line(&self, one_based_line: Option<usize>) -> Range {
         let line = one_based_line
             .unwrap_or(1)

@@ -12,6 +12,7 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 mod check;
 mod definition;
 mod diagnostics;
+mod hover;
 mod index;
 mod position;
 mod project;
@@ -74,6 +75,7 @@ impl LanguageServer for Backend {
                 definition_provider: Some(OneOf::Left(true)),
                 declaration_provider: Some(DeclarationCapability::Simple(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
+                hover_provider: Some(HoverProviderCapability::Simple(true)),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         SemanticTokensOptions {
@@ -217,6 +219,14 @@ impl LanguageServer for Backend {
         params: request::GotoDeclarationParams,
     ) -> Result<Option<request::GotoDeclarationResponse>> {
         Ok(self.goto(params.text_document_position_params, Goto::Declaration))
+    }
+
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let position = params.text_document_position_params;
+        let Some(index) = self.index.file(&position.text_document.uri) else {
+            return Ok(None);
+        };
+        Ok(hover::hover(&index, position.position))
     }
 
     async fn document_symbol(

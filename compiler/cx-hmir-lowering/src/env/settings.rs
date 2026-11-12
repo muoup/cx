@@ -5,6 +5,7 @@ pub struct HMIRSettings {
     architecture: ArchitectureConfig,
     require_explicit_return: bool,
     assertions: bool,
+    record_types: bool,
 }
 
 impl HMIRSettings {
@@ -13,7 +14,17 @@ impl HMIRSettings {
             architecture,
             require_explicit_return: true,
             assertions: true,
+            record_types: false,
         }
+    }
+
+    pub fn with_type_recording(mut self, enabled: bool) -> Self {
+        self.record_types = enabled;
+        self
+    }
+
+    pub fn record_types(&self) -> bool {
+        self.record_types
     }
 
     pub fn with_explicit_return(mut self, required: bool) -> Self {
