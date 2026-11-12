@@ -84,6 +84,7 @@ pub(crate) fn reference(
     name: &CXIdent,
     span: &TokenRange,
 ) -> CXResult<Option<HMIRValue>> {
+    demand::force(context.env_mut(), ty)?;
     demand::prepare(context.env_mut(), ty)?;
     let ty = context.env().underlying(ty);
     let Some(Variant { index, .. }) = lookup(context.env(), ty, name) else {

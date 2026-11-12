@@ -40,6 +40,7 @@ pub(crate) struct HMIRResolver {
     interned: FxHashMap<TypeKey, HMIRTypeID>,
     symbols: FxHashMap<HMIRDefID, SymbolState>,
     active: Vec<HMIRDefID>,
+    deferred: Vec<HMIRTypeID>,
     generated: FxHashMap<(HMIRDefID, Vec<HMIRValue>), HMIRValue>,
     origins: FxHashMap<HMIRTypeID, (HMIRDefID, Vec<HMIRValue>)>,
 }
@@ -153,6 +154,13 @@ impl HMIRResolver {
     }
     pub fn leave(&mut self) {
         self.active.pop();
+    }
+
+    pub fn defer(&mut self, ty: HMIRTypeID) {
+        self.deferred.push(ty);
+    }
+    pub fn take_deferred(&mut self) -> Option<HMIRTypeID> {
+        self.deferred.pop()
     }
 
     pub fn generated(&self, def: HMIRDefID, args: &[HMIRValue]) -> Option<&HMIRValue> {

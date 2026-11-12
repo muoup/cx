@@ -168,6 +168,7 @@ fn declared_move(
         HMIRDeclaredMove::CopyTraits(source) => {
             let source =
                 flow::top(eval_type(context, body, *source).and_then(|ty| ty.description()))?;
+            demand::force(context.env_mut(), source)?;
             Ok(types::owned_semantics(context.env(), source).move_semantics)
         }
     }

@@ -47,13 +47,16 @@ pub(crate) fn value(env: &mut HMIREnvironment, def: HMIRDefID) -> CXResult<HMIRV
         Err(_) => SymbolState::Declared,
     };
     env.resolver_mut().set_symbol(def, state);
-    result
+    let value = result?;
+    demand::drain(env)?;
+    Ok(value)
 }
 
 // Evaluates the body of the type 'def' reserved as 'ty'
 pub(crate) fn complete(env: &mut HMIREnvironment, def: HMIRDefID, ty: HMIRTypeID) -> CXResult<()> {
     env.resolver_mut().set_pending(ty, None);
-    evaluating(env, def, |context| body(context, def, ty))
+    evaluating(env, def, |context| body(context, def, ty))?;
+    demand::drain(env)
 }
 
 pub(crate) fn signature(
