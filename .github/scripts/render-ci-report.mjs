@@ -79,9 +79,9 @@ if (artifactIssue) {
       const referenceResult = result.reference ? null : referenceCases.get(subjectKey(result));
       const cells = timings.flatMap((timing) => {
         const current = result[timing];
-        const timingCells = [formatTiming(current), formatDelta(current?.mean_ms, baseline?.[timing]?.mean_ms)];
+        const timingCells = [formatTiming(current), formatDelta(medianOf(current), medianOf(baseline?.[timing]))];
         if (reference) {
-          timingCells.push(formatRatio(current?.mean_ms, referenceResult?.[timing]?.mean_ms));
+          timingCells.push(formatRatio(medianOf(current), medianOf(referenceResult?.[timing])));
         }
         return timingCells;
       });
@@ -208,19 +208,18 @@ function formatTiming(timing) {
   if (!timing) {
     return "—";
   }
-  if (!Number.isFinite(timing.mean_ms)) {
+  const median = medianOf(timing);
+  if (!Number.isFinite(median)) {
     return "n/a";
   }
 
-  const margin = Number.isFinite(timing.margin_of_error_ms)
-    ? timing.margin_of_error_ms
-    : marginOfError(timing.samples_ms);
-  const useSeconds = timing.mean_ms >= 1000;
+  const useSeconds = median >= 1000;
   const divisor = useSeconds ? 1000 : 1;
   const unit = useSeconds ? "s" : "ms";
-  const formattedMargin = Number.isFinite(margin) ? (margin / divisor).toFixed(2) : "n/a";
+  const spread = spreadOf(timing);
+  const formattedSpread = Number.isFinite(spread) ? ` ± ${(spread / divisor).toFixed(2)}` : "";
 
-  return `${(timing.mean_ms / divisor).toFixed(2)} ± ${formattedMargin} ${unit}`;
+  return `${(median / divisor).toFixed(2)}${formattedSpread} ${unit}`;
 }
 
 function formatDelta(current, baseline) {
@@ -231,23 +230,33 @@ function formatDelta(current, baseline) {
   return `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
 }
 
-function marginOfError(samples) {
-  if (!Array.isArray(samples) || samples.length < 2) {
-    return null;
+// Reports from before the median ± MAD summary carry no `mad_ms`, so it is recomputed from their samples
+function medianOf(timing) {
+  if (Number.isFinite(timing?.median_ms)) {
+    return timing.median_ms;
   }
-  const mean = samples.reduce((sum, sample) => sum + sample, 0) / samples.length;
-  const variance = samples.reduce((sum, sample) => sum + (sample - mean) ** 2, 0) / (samples.length - 1);
-  const standardError = Math.sqrt(variance / samples.length);
-  return tCritical95(samples.length - 1) * standardError;
+  return Array.isArray(timing?.samples_ms) ? median(timing.samples_ms) : null;
 }
 
-function tCritical95(degreesOfFreedom) {
-  const values = [
-    12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228,
-    2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086,
-    2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042,
-  ];
-  return values[degreesOfFreedom - 1] || 1.96;
+function spreadOf(timing) {
+  const samples = Array.isArray(timing?.samples_ms) ? timing.samples_ms : [];
+  if (samples.length < 2) {
+    return null;
+  }
+  if (Number.isFinite(timing.mad_ms)) {
+    return timing.mad_ms;
+  }
+  const center = median(samples);
+  return median(samples.map((sample) => Math.abs(sample - center)));
+}
+
+function median(samples) {
+  if (samples.length === 0) {
+    return null;
+  }
+  const sorted = [...samples].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
 function status(conclusion) {

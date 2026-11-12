@@ -1,5 +1,6 @@
+use crate::stats::TimingStats;
 use cx_test_support::ReferenceCompiler;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tabled::{
     builder::Builder,
     settings::{object::Columns, Alignment, Style},
@@ -18,56 +19,33 @@ pub struct BenchmarkReport {
 /// One row of the report. A case that is only compiled has no `execute`. The workloads of a
 /// project have no `compile`: it is reported once on the row of the project itself, whose
 /// `execute` is the total of its workloads.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct BenchmarkResult {
     pub case: String,
     /// Set on the rows of the individual workloads of a case, which are rendered apart from
     /// the rows of the cases themselves.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workload: Option<String>,
     /// The cx backend, or the command of the reference compiler.
     pub backend: String,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reference: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compile: Option<TimingStats>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execute: Option<TimingStats>,
 }
 
-#[derive(Serialize)]
-pub struct TimingStats {
-    pub samples_ms: Vec<f64>,
-    pub mean_ms: f64,
-    pub median_ms: f64,
-    pub min_ms: f64,
-    pub max_ms: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub margin_of_error_ms: Option<f64>,
-}
-
-impl TimingStats {
-    pub fn new(mut samples_ms: Vec<f64>) -> Self {
-        samples_ms.sort_by(|left, right| left.partial_cmp(right).unwrap());
-        let mean_ms = samples_ms.iter().sum::<f64>() / samples_ms.len() as f64;
-
-        Self {
-            mean_ms,
-            median_ms: samples_ms[samples_ms.len() / 2],
-            min_ms: samples_ms[0],
-            max_ms: samples_ms[samples_ms.len() - 1],
-            margin_of_error_ms: margin_of_error_ms(&samples_ms, mean_ms),
-            samples_ms,
-        }
-    }
-}
-
 pub fn render_pretty_table(report: &BenchmarkReport) -> String {
+    render_pretty(&tables(report))
+}
+
+pub fn render_pretty(tables: &[Table]) -> String {
     let mut output = String::from("\n");
-    for table in tables(report) {
+    for table in tables {
         let mut builder = Builder::default();
-        builder.push_record(table.header);
-        for row in table.rows {
+        builder.push_record(table.header.clone());
+        for row in table.rows.iter().cloned() {
             builder.push_record(row);
         }
 
@@ -103,7 +81,7 @@ pub fn render_github_table(report: &BenchmarkReport) -> String {
     output
 }
 
-fn markdown_table(table: &Table) -> String {
+pub fn markdown_table(table: &Table) -> String {
     let mut output = format!("| {} |\n", table.header.join(" | "));
     output.push_str("| --- | --- |");
     output.push_str(&" ---: |".repeat(table.header.len() - 2));
@@ -119,27 +97,27 @@ fn markdown_table(table: &Table) -> String {
     output
 }
 
-struct Table {
-    title: String,
-    header: Vec<String>,
-    rows: Vec<Vec<String>>,
+pub struct Table {
+    pub title: String,
+    pub header: Vec<String>,
+    pub rows: Vec<Vec<String>>,
 }
 
 #[derive(Clone, Copy)]
-enum Timing {
+pub enum Timing {
     Compile,
     Execute,
 }
 
 impl Timing {
-    fn title(self) -> &'static str {
+    pub fn title(self) -> &'static str {
         match self {
             Timing::Compile => "Compile",
             Timing::Execute => "Execute",
         }
     }
 
-    fn of(self, result: &BenchmarkResult) -> Option<&TimingStats> {
+    pub fn of(self, result: &BenchmarkResult) -> Option<&TimingStats> {
         match self {
             Timing::Compile => result.compile.as_ref(),
             Timing::Execute => result.execute.as_ref(),
@@ -220,18 +198,19 @@ fn table(
     }
 }
 
-const ABSENT: &str = "—";
+pub const ABSENT: &str = "—";
 
-fn format_stats(stats: Option<&TimingStats>) -> String {
+pub fn format_stats(stats: Option<&TimingStats>) -> String {
     stats.map_or(ABSENT.to_string(), |stats| {
-        format_timing(stats.mean_ms, stats.margin_of_error_ms)
+        let spread = (stats.samples_ms.len() > 1).then_some(stats.mad_ms);
+        format_timing(stats.median_ms, spread)
     })
 }
 
 fn format_ratio(stats: Option<&TimingStats>, reference: Option<&TimingStats>) -> String {
     match (stats, reference) {
-        (Some(stats), Some(reference)) if stats.mean_ms > 0.0 && reference.mean_ms > 0.0 => {
-            let ratio = stats.mean_ms / reference.mean_ms;
+        (Some(stats), Some(reference)) if stats.median_ms > 0.0 && reference.median_ms > 0.0 => {
+            let ratio = stats.median_ms / reference.median_ms;
             let factor = format!("{:.2}", ratio.max(ratio.recip()));
             match factor.as_str() {
                 "1.00" => "same".to_string(),
@@ -243,48 +222,11 @@ fn format_ratio(stats: Option<&TimingStats>, reference: Option<&TimingStats>) ->
     }
 }
 
-fn format_timing(mean_ms: f64, margin_ms: Option<f64>) -> String {
-    let (mean, margin, unit) = if mean_ms >= 1000.0 {
-        (
-            mean_ms / 1000.0,
-            margin_ms.map(|margin| margin / 1000.0),
-            "s",
-        )
-    } else {
-        (mean_ms, margin_ms, "ms")
+fn format_timing(median_ms: f64, spread_ms: Option<f64>) -> String {
+    let (scale, unit) = match median_ms >= 1000.0 {
+        true => (1000.0, "s"),
+        false => (1.0, "ms"),
     };
-    let margin = margin
-        .map(|margin| format!("{margin:.2}"))
-        .unwrap_or_else(|| "n/a".to_string());
-
-    format!("{mean:.2} ± {margin} {unit}")
-}
-
-fn margin_of_error_ms(samples_ms: &[f64], mean_ms: f64) -> Option<f64> {
-    let sample_count = samples_ms.len();
-    if sample_count < 2 {
-        return None;
-    }
-
-    let variance = samples_ms
-        .iter()
-        .map(|sample| (sample - mean_ms).powi(2))
-        .sum::<f64>()
-        / (sample_count - 1) as f64;
-    let standard_error = (variance / sample_count as f64).sqrt();
-
-    Some(t_critical_95(sample_count - 1) * standard_error)
-}
-
-fn t_critical_95(degrees_of_freedom: usize) -> f64 {
-    const VALUES: [f64; 30] = [
-        12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160,
-        2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056,
-        2.052, 2.048, 2.045, 2.042,
-    ];
-
-    VALUES
-        .get(degrees_of_freedom.saturating_sub(1))
-        .copied()
-        .unwrap_or(1.96)
+    let spread = spread_ms.map_or(String::new(), |spread| format!(" ± {:.2}", spread / scale));
+    format!("{:.2}{spread} {unit}", median_ms / scale)
 }

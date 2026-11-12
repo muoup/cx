@@ -1,14 +1,15 @@
 mod case;
+mod compare;
 mod report;
+mod stats;
 mod toolchain;
 
 use case::{all_cases, project_names, selected_case, Case, Workload};
 use cx_test_support::{
     assert_stdout, run_command, CompilerBackend, ReferenceCompiler, TestTempDir,
 };
-use report::{
-    render_github_table, render_pretty_table, BenchmarkReport, BenchmarkResult, TimingStats,
-};
+use report::{render_github_table, render_pretty_table, BenchmarkReport, BenchmarkResult};
+use stats::TimingStats;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,8 +17,9 @@ use std::process::Command;
 use std::time::Duration;
 use toolchain::Toolchain;
 
-const DEFAULT_ITERATIONS: usize = 3;
+const DEFAULT_ITERATIONS: usize = 5;
 const DEFAULT_WARMUPS: usize = 1;
+const DEFAULT_ROUNDS: usize = 3;
 
 #[derive(Clone, Copy)]
 enum OutputFormat {
@@ -34,6 +36,16 @@ struct Options {
     format: OutputFormat,
     json_output: Option<PathBuf>,
     cases: Vec<String>,
+    /// Another build of this benchmark, which runs alternately with this one for `rounds`.
+    baseline: Option<PathBuf>,
+    rounds: usize,
+}
+
+/// A report in each of the formats it is printed in.
+struct Rendered {
+    json: String,
+    pretty: String,
+    github: String,
 }
 
 fn main() {
@@ -54,13 +66,39 @@ fn main() {
 
 fn run(options: Options) -> Result<(), String> {
     let invocation_directory = env::current_dir().map_err(|error| error.to_string())?;
+    let rendered = match &options.baseline {
+        Some(baseline) => compare::run(&options, baseline)?,
+        None => measure(&options, &invocation_directory)?,
+    };
+
+    if let Some(path) = &options.json_output {
+        let path = invocation_directory.join(path);
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        fs::write(path, &rendered.json).map_err(|error| error.to_string())?;
+    }
+
+    match options.format {
+        OutputFormat::Json => println!("{}", rendered.json),
+        OutputFormat::Pretty => print!("{}", rendered.pretty),
+        OutputFormat::Github => print!("{}", rendered.github),
+    }
+
+    Ok(())
+}
+
+fn measure(options: &Options, invocation_directory: &Path) -> Result<Rendered, String> {
     let cases = if options.cases.is_empty() {
         all_cases()?
     } else {
         options
             .cases
             .iter()
-            .map(|selection| selected_case(selection, &invocation_directory))
+            .map(|selection| selected_case(selection, invocation_directory))
             .collect::<Result<Vec<_>, _>>()?
     };
 
@@ -106,31 +144,15 @@ fn run(options: Options) -> Result<(), String> {
         reference,
         cases: results,
     };
-    let serialized_report =
-        serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?;
-
-    if let Some(path) = options.json_output {
-        let path = invocation_directory.join(path);
-        if let Some(parent) = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-        {
-            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-        }
-        fs::write(path, &serialized_report).map_err(|error| error.to_string())?;
-    }
-
-    match options.format {
-        OutputFormat::Json => println!("{serialized_report}"),
-        OutputFormat::Pretty => print!("{}", render_pretty_table(&report)),
-        OutputFormat::Github => print!("{}", render_github_table(&report)),
-    }
-
-    Ok(())
+    Ok(Rendered {
+        json: serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?,
+        pretty: render_pretty_table(&report),
+        github: render_github_table(&report),
+    })
 }
 
-/// Times `iterations` builds of the case, each in a fresh directory, then the workloads of the
-/// case against the last of those builds.
+/// Times `iterations` builds of the case after `warmups` untimed ones, each in a fresh directory,
+/// then the workloads of the case against the last of those builds.
 fn benchmark_case(
     case: &Case,
     toolchain: Toolchain,
@@ -142,12 +164,14 @@ fn benchmark_case(
     let mut compile_samples = Vec::with_capacity(iterations);
     let mut built = None;
 
-    for iteration in 0..iterations {
+    for iteration in 0..warmups + iterations {
         let temp = TestTempDir::new(&format!("benchmark-{name}-{iteration}"));
         let build = toolchain
             .build(case, &temp)
             .map_err(|error| format!("{name} compilation failed:\n{error}"))?;
-        compile_samples.push(duration_ms(build.elapsed));
+        if iteration >= warmups {
+            compile_samples.push(duration_ms(build.elapsed));
+        }
         built = Some((temp, build.output));
     }
 
@@ -263,6 +287,8 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
         format: OutputFormat::Pretty,
         json_output: None,
         cases: Vec::new(),
+        baseline: None,
+        rounds: DEFAULT_ROUNDS,
     };
     let mut args = args.into_iter();
 
@@ -284,6 +310,10 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
                 options.json_output = Some(PathBuf::from(next_value(&mut args, "json-output")?))
             }
             "--case" => options.cases.push(next_value(&mut args, "case")?),
+            "--baseline" => {
+                options.baseline = Some(PathBuf::from(next_value(&mut args, "baseline")?))
+            }
+            "--rounds" => options.rounds = parse_count(&mut args, "rounds")?,
             "--help" | "-h" => return Err(help_text()),
             other => return Err(format!("unknown option: {other}")),
         }
@@ -291,6 +321,12 @@ fn parse_options(args: impl IntoIterator<Item = String>) -> Result<Options, Stri
 
     if options.iterations == 0 {
         return Err("iterations must be greater than zero".to_string());
+    }
+    if options.rounds == 0 {
+        return Err("rounds must be greater than zero".to_string());
+    }
+    if options.baseline.is_some() && options.reference.is_some() {
+        return Err("--reference cannot be combined with --baseline".to_string());
     }
 
     Ok(options)
@@ -309,7 +345,7 @@ fn next_value(args: &mut impl Iterator<Item = String>, name: &str) -> Result<Str
 
 fn help_text() -> String {
     format!(
-        "options: --iterations N --warmups N --backend available|cranelift|llvm|both --reference COMMAND --format pretty|json|github --json-output PATH --case PATH|{}",
+        "options: --iterations N --warmups N --backend available|cranelift|llvm|both --reference COMMAND --baseline BINARY --rounds N --format pretty|json|github --json-output PATH --case PATH|{}",
         project_names().collect::<Vec<_>>().join("|")
     )
 }
