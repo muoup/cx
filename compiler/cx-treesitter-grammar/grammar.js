@@ -1176,7 +1176,7 @@ module.exports = grammar({
             ),
 
         _lambda_parameters: ($) =>
-            seq("|", optional(commaSep1(seq(optional($.type), $.identifier))), "|"),
+            seq("|", optional(commaSep1(choice(seq(optional($.type), $.identifier), $.function_type_declarator))), "|"),
 
         staged_then: ($) => prec(20, keyword($, "then")),
 

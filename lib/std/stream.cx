@@ -1,0 +1,44 @@
+// NOTE: This is currently a sketch, this module will not compile
+
+import std::span as std;
+
+public:
+
+comptime type stream(type T)
+    => fn(fn(^T) -> ^void) -> ^void;
+
+comptime stream(T) stream::map(
+    type T = _, type U = _, 
+    stream(T) this, 
+    fn callback(^T) -> ^U
+) => |fn sink(^U) -> ^void| {
+    this(|^T value| {
+        value
+            |> callback()
+            |> sink();
+    });
+};
+
+comptime stream(T) stream::filter(
+    type T = _, 
+    stream(T) this, fn sink(^U) -> ^void,
+    fn predicate(^T) -> ^bool
+) => |fn(^T) -> ^void sink| {
+    this(|^T value| {
+        if (predicate(value)) {
+            sink(value);
+        }
+    });
+};
+
+comptime ^void stream::for_each(type T = _, stream(T) this, fn callback(^T) -> ^void)
+    => this(|^T value| {
+        callback(value);
+    });
+
+comptime stream(T) span::stream(type T = _, ^std::span(T) this)
+    => |fn(^T) -> ^void sink| {
+        for (usize i = 0; i < this.length; i++) {
+            sink(this.data[i]);
+        }
+    };

@@ -403,7 +403,7 @@ Call, pipe and backward pipe lower in an arguments scope.
 #### Closures and quotes
 
 - closure: a quote with its parameters over its body; `then` quotes the rest of the enclosing block.
-- quote: parameter types lowered in the enclosing stage, staged types as their carried type, untyped as holes; body lowered in runtime stage in a staged scope with the parameters as locals.
+- quote: parameter types lowered in the enclosing stage as written, untyped as holes; body lowered in runtime stage in a staged scope with the parameters as locals, quoted when untyped or of a staged signature.
 - `emit e`: quote without parameters.
 
 #### Patterns

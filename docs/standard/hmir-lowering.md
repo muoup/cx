@@ -647,7 +647,7 @@ Inner expression evaluated unchanged.
 `f(args)`, `f(.p = a)`. Callee evaluated, then call evaluated, then result completed expecting the call's expectation.
 
 Callee prepared:
-- staged reference read. Quote callee: named arguments T0017; else [Apply](#apply).
+- staged reference read; a code-typed callee is its known value (a comptime local holding a quote yields the quote). Quote callee: named arguments T0017; else [Apply](#apply).
 - `fn&` kept; function value made a `fn&` constant; otherwise rvalue-decayed, function pointer dereferenced to `fn&`.
 - curried value unwrapped, its arguments applied first.
 
@@ -733,14 +733,14 @@ Captures: free locals of the quoted expression, quote params and inner declarati
 
 `rule/emit-squash` in a runtime context, a quote without parameters is its quoted expression evaluated in place: emitting code being emitted changes nothing. A [staged argument](#staged-argument) or a spliced quote literal stays a quote.
 
-Otherwise incomplete until expected. Expected staged shape (`^T`, or comptime function from staged params to staged result): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
+Otherwise incomplete until expected. Expected staged shape (`^T`, or comptime function to a staged result, any param types): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
 - `rule/quote-materializes` non-staged expectation: quote materialized in place.
 
 ### Splice
 
 *verified uncommitted*
 
-Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments evaluated for their value types, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, converged (a comptime local holding code yields the code, not its place), then [applied](#apply).
+Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments evaluated for their value types, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, converged (a comptime local holding code yields the code, not its place), then [applied](#apply); with no arguments, a value that is not `^T` (a closure or frozen param) yields itself.
 
 ### Intrinsic
 
@@ -843,15 +843,15 @@ Forced. `type` in a parameter that is neither marked `comptime` nor of a comptim
 
 #### Staged argument
 
-Quote literal, or local already holding code: used as-is. Otherwise operand captured as a parameterless quote. Completed expecting target, converted implicitly.
+Quote literal: used as-is. Target a function to code (not `^T`): operand evaluated. Local already holding code: used as-is. Otherwise operand captured as a parameterless quote. Completed expecting target, converted implicitly.
 
 #### Apply
 
-Code applied to arguments; needs staged shape (T0002), argument count (T0015). Runtime: arguments evaluated, converted, quote materialized. Comptime: arguments taken as staged arguments, new quote with params bound as captures.
+Code applied to arguments; needs staged shape (T0002), argument count (T0015). `rule/closure-params` code params (`^T`, or a function to code) take [staged arguments](#staged-argument), so `^T` code is spliced at each use; others are frozen expecting the param, evaluated once. Runtime: quote materialized with them. Comptime: new quote with params bound as captures.
 
 #### Materialize
 
-Quote inserted at runtime. Quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; non-reference params get storage; result completed expecting result type, converted; `void` result yields unit.
+Quote inserted at runtime. Quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
 
 ## Comptime execution
 

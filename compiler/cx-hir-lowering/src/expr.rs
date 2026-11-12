@@ -414,15 +414,11 @@ pub(crate) fn lower_quote<'a>(
     body: &'a HIRExpression,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
-    // Parameter types are written in the stage the closure appears in
     let types = params
         .iter()
         .map(|param| match &param.ty {
-            Some(ty) => match staged_signature(ty) {
-                Some((_, carried)) => lower_type(context, carried),
-                None => lower_type(context, ty),
-            },
-            None => Ok(context.hole(span)),
+            Some(ty) => Ok((lower_type(context, ty)?, staged_signature(ty).is_some())),
+            None => Ok((context.hole(span), true)),
         })
         .collect::<CXResult<Vec<_>>>()?;
 
@@ -431,7 +427,7 @@ pub(crate) fn lower_quote<'a>(
             let params = params
                 .iter()
                 .zip(types)
-                .map(|(param, ty)| this.declare_local(Some(&param.name), ty, span))
+                .map(|(param, (ty, quoted))| this.declare(Some(&param.name), ty, false, quoted, span))
                 .collect();
             let body = lower_expr(this, body)?;
 

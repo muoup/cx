@@ -20,7 +20,7 @@ use crate::{
     eval::{
         EvalResult,
         aggregate::variant,
-        coerce, eval, eval_comptime, expr,
+        coerce, comptime, eval, eval_comptime, expr,
         flow::{self, Evaluation},
         place, staged, types,
     },
@@ -65,6 +65,10 @@ fn apply(
     args: &[HMIRExprID],
     named: &[(CXIdent, HMIRExprID)],
 ) -> EvalResult<Evaluation<HMIRValue>> {
+    let callee = match staged::is_code(context, callee.ty()) {
+        true => comptime::known(context, &callee).unwrap_or(callee),
+        false => callee,
+    };
     if matches!(
         callee.kind(),
         HMIRValueKind::Immediate(HMIRImmediate::Quote(_))

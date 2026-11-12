@@ -1,0 +1,39 @@
+/* CX-STDOUT: 0 */
+/* CX-STDOUT-NEXT: 2 */
+/* CX-STDOUT-NEXT: 4 */
+/* CX-STDOUT-NEXT: named 0 */
+/* CX-STDOUT-NEXT: frozen 3 */
+/* CX-STDOUT-NEXT: comptime apply 1 2 */
+/* CX-STDOUT-NEXT: runtime apply 3 4 */
+#include <stdio.h>
+
+comptime type source(type T) => fn(fn(^T) -> ^void) -> ^void;
+
+comptime source(int) upto(^int count) => |fn(^int) -> ^void sink| {
+    for (int i = 0; i < count; i++) {
+        sink(i * 2);
+    }
+};
+
+comptime source(int) first(^int value) => |fn sink(^int) -> ^void| => sink(value);
+
+comptime ^void each(source(int) this, fn callback(^int) -> ^void)
+    => this(|^int value| { callback(value); });
+
+comptime ^void with_three(fn callback(int) -> ^void) => callback(3);
+
+int counter = 0;
+int next() { counter++; return counter; }
+
+comptime ^void at_comptime(fn f(^int) -> ^void) { return f(emit next()); }
+comptime ^void at_runtime(fn f(^int) -> ^void) => emit .{ f(next()); };
+
+int main() {
+    int count = 3;
+    each(upto(count), |value| => printf("%d\n", value));
+    each(first(emit 0), |value| => printf("named %d\n", value));
+    with_three(|int n| => printf("frozen %d\n", n));
+    at_comptime(|value| => printf("comptime apply %d %d\n", value, value));
+    at_runtime(|value| => printf("runtime apply %d %d\n", value, value));
+    return 0;
+}

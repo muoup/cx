@@ -36,7 +36,7 @@ use crate::{
     },
 };
 
-// The parameters and result carried by a staged type, '^T' or a comptime function from code to code
+// The parameters and result carried by a staged type, '^T' or a comptime function to code
 struct Shape {
     params: Vec<HMIRTypeID>,
     result: HMIRTypeID,
@@ -56,13 +56,8 @@ fn shape(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<Shape> {
     if signature.stage() != HMIRFunctionStage::Comptime || signature.is_variadic() {
         return None;
     }
-    let params = signature
-        .params()
-        .iter()
-        .map(|param| carried(*param.ty()).filter(|_| !param.comptime()))
-        .collect::<Option<_>>()?;
     Some(Shape {
-        params,
+        params: signature.params().iter().map(|param| *param.ty()).collect(),
         result: carried(*signature.return_type())?,
     })
 }
@@ -85,12 +80,7 @@ fn signature(
     if params.is_empty() {
         return result;
     }
-    let params = params
-        .into_iter()
-        .map(|param| {
-            HMIRFnParam::new(false, lift(context.env_mut(), param, span))
-        })
-        .collect();
+    let params = params.into_iter().map(|param| HMIRFnParam::new(false, param)).collect();
     let signature = HMIRFnSignature::new(
         HMIRFunctionStage::Comptime,
         params,
@@ -119,6 +109,10 @@ pub(crate) fn eval_splice(
     let HMIRExprKind::Quote { params: quoted, body: root } = body.expr(literal).kind() else {
         let code = (eval(context, body, quote))?.ready()?;
         let code = comptime::converge(context, code, span)?;
+        let staged = matches!(context.env().resolve_kind(code.ty()), HMIRTypeKind::Staged(_));
+        if args.is_empty() && !staged {
+            return Ok(Evaluation::Ready(code));
+        }
         return apply(context, body, code, args, span);
     };
     let (quoted, root) = (quoted.clone(), *root);
@@ -132,7 +126,8 @@ pub(crate) fn eval_splice(
             let mut params = Vec::new();
             for arg in &args {
                 let value = (eval(context, body, *arg))?.ready()?;
-                params.push(types::qualify::value(context, value.ty(), &span));
+                let ty = types::qualify::value(context, value.ty(), &span);
+                params.push(lift(context.env_mut(), ty, &span));
             }
             let ty = signature(context, params, expected, &span);
             let code = self::quote(context, body, &quoted, root)?.complete(context, body, Some(ty))?;
@@ -280,6 +275,9 @@ pub(crate) fn argument(
     }
     let value = match body.expr(operand).kind() {
         HMIRExprKind::Quote { params, body: root } => quote(context, body, params, *root)?,
+        _ if !matches!(context.env().resolve_kind(target), HMIRTypeKind::Staged(_)) => {
+            eval(context, body, operand)?
+        }
         HMIRExprKind::Local(local)
             if context
                 .get_local(local)
@@ -313,22 +311,16 @@ pub(crate) fn apply(
         return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, count).into());
     }
 
-    let runtime = context.is_runtime();
+    // Code is spliced where it is used; any other argument is evaluated once, at compile time
     let mut values = Vec::new();
     for (arg, param) in args.iter().zip(params) {
-        let value = match runtime {
-            true => {
-                let value = (eval(context, body, *arg))?.ready()?;
-                coerce::implicit::standard(context, value, param, body.expr(*arg).span())?
-            }
-            false => {
-                let target = signature(context, Vec::new(), param, span);
-                (argument(context, body, *arg, target))?.ready()?
-            }
+        let value = match is_code(context, param) {
+            true => argument(context, body, *arg, param)?,
+            false => comptime::freeze(context, body, *arg, Some(param))?,
         };
-        values.push(value);
+        values.push(value.ready()?);
     }
-    if runtime {
+    if context.is_runtime() {
         return materialize(context, &code, &values);
     }
     let HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) = code.kind() else {
@@ -382,21 +374,7 @@ pub(crate) fn materialize(
 
     let source = quote.source();
     let completion = context.relocated(source, |context| {
-        for (local, (target, value)) in quote
-            .params()
-            .iter()
-            .zip(params.into_iter().zip(args.iter().cloned()))
-        {
-            let value = coerce::implicit::standard(context, value, target, span)?;
-            let value = match context.env().is_reference(target) {
-                true => value,
-                false => {
-                    let name = body.local(*local).name().cloned();
-                    let storage = emit::storage::allocate(context, target, name, span)?;
-                    emit::storage::initialize(context, &storage, Some(&value), span)?;
-                    storage
-                }
-            };
+        for (local, value) in quote.params().iter().zip(args.iter().cloned()) {
             emit::storage::bind_local(context, *local, value);
         }
         let span = span.clone();
