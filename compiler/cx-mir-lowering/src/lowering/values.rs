@@ -3,9 +3,9 @@ use cx_lmir::types::{LMIRIntegerType, LMIRType, LMIRTypeKind};
 use cx_lmir::{LMIRCoercionType, LMIRInstructionKind, LMIRIntBinOp, LMIRIntUnOp, LMIRValue};
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::{calculate_field_layout, calculate_type_layout};
+use cx_mir::immediate::{MIRAddressable, MIRImmediate};
 use cx_mir::{
-    MIRBitfieldAccess, MIRConstant, MIRFieldLayout, MIRGlobalRef, MIRTarget,
-    MIRTypeID, MIRTypeKind, MIRValue,
+    MIRBitfieldAccess, MIRFieldLayout, MIRGlobalRef, MIRTarget, MIRTypeID, MIRTypeKind, MIRValue,
 };
 
 use crate::context::FunctionContext;
@@ -24,7 +24,7 @@ pub(crate) fn read(context: &mut FunctionContext<'_, '_>, value: &MIRValue) -> L
             let address = read(context, value);
             contents(context, address, *ty)
         }
-        MIRValue::Constant(value) => lower_constant(context, value),
+        MIRValue::Immediate(value) => lower_immediate(context, value),
     }
 }
 
@@ -41,7 +41,7 @@ pub(super) fn value_type(context: &FunctionContext<'_, '_>, value: &MIRValue) ->
         MIRValue::PlaceRef { ty, .. } => Some(*ty),
         MIRValue::GlobalRef(reference) => Some(reference.ty),
         MIRValue::Indirect { ty, .. } => Some(*ty),
-        MIRValue::Constant(_) => None,
+        MIRValue::Immediate(_) => None,
     }
 }
 
@@ -53,21 +53,21 @@ pub(super) fn global_address(
     memory::offset(context, base, reference.offset)
 }
 
-pub(super) fn lower_constant(
+pub(super) fn lower_immediate(
     context: &mut FunctionContext<'_, '_>,
-    value: &MIRConstant,
+    value: &MIRImmediate,
 ) -> LMIRValue {
     match value {
-        MIRConstant::Unit => LMIRValue::NULL,
-        MIRConstant::Integer { ty, value } => context.integer(*value, convert_integer_type(*ty)),
-        MIRConstant::Float { ty, value } => LMIRValue::FloatImmediate {
+        MIRImmediate::Unit => LMIRValue::NULL,
+        MIRImmediate::Integer { ty, value } => context.integer(*value, convert_integer_type(*ty)),
+        MIRImmediate::Float { ty, value } => LMIRValue::FloatImmediate {
             val: *value,
             ty: LMIRType::with_implicit_abi(
                 context.types().architecture(),
                 LMIRTypeKind::Float(convert_float_type(*ty)),
             ),
         },
-        MIRConstant::Nullptr { ty } => {
+        MIRImmediate::Nullptr { ty } => {
             let from = LMIRIntegerType::I64;
             memory::temp(
                 context,
@@ -81,11 +81,9 @@ pub(super) fn lower_constant(
                 context.ty(*ty),
             )
         }
-        MIRConstant::Address { base, offset } => {
-            use cx_mir::constant::MIRAddressable;
+        MIRImmediate::Address { base, offset } => {
             let base = match base {
                 MIRAddressable::Global(id) => LMIRValue::Global(context.global.global_indices[id]),
-                MIRAddressable::Local(place) => context.places[place].clone(),
                 MIRAddressable::Function(id) => {
                     assert_eq!(*offset, 0, "function addresses cannot have an offset");
                     let name = context
@@ -109,15 +107,11 @@ pub(super) fn lower_constant(
             };
             memory::offset(context, base, *offset)
         }
-        MIRConstant::String { value, offset } => {
+        MIRImmediate::String { value, offset } => {
             let base = LMIRValue::Global(context.global.string(value));
             memory::offset(context, base, *offset)
         }
-        MIRConstant::BlockAddress { function, label } => {
-            let (function, block) = context.global.block_address(*function, label);
-            LMIRValue::BlockAddress { function, block }
-        }
-        MIRConstant::Aggregate { ty, fields } => {
+        MIRImmediate::Aggregate { ty, fields } => {
             let address = memory::allocate(context, *ty);
             memory::void(
                 context,
@@ -147,12 +141,12 @@ pub(super) fn lower_constant(
                     );
                 }
                 let location = member_location(context, *ty, *index);
-                let source = lower_constant(context, field);
+                let source = lower_immediate(context, field);
                 store_member(context, address.clone(), location, source);
             }
             address
         }
-        MIRConstant::Undefined => panic!("undefined MIR value reached LMIR lowering"),
+        MIRImmediate::Undefined => panic!("undefined MIR value reached LMIR lowering"),
     }
 }
 

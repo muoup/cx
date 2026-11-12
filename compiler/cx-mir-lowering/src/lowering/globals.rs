@@ -3,8 +3,9 @@ use cx_lmir::{
     LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue, LinkageType,
 };
 use cx_mir::ty::interface::MTRegistry;
+use cx_mir::immediate::{MIRAddressable, MIRImmediate};
 use cx_mir::{
-    MIRConstant, MIRField, MIRGlobalState, MIRGlobalVariable, MIRIntType, MIRTypeID, MIRTypeKind,
+    MIRField, MIRGlobalState, MIRGlobalVariable, MIRIntType, MIRTypeID, MIRTypeKind,
 };
 
 use crate::context::GlobalContext;
@@ -41,7 +42,7 @@ fn lower_global(context: &mut GlobalContext<'_>, global: &MIRGlobalVariable) -> 
     };
     let state = match global.state() {
         MIRGlobalState::External => LMIRGlobalState::External,
-        MIRGlobalState::ZeroInitialized | MIRGlobalState::Initialized(MIRConstant::Unit) => {
+        MIRGlobalState::ZeroInitialized | MIRGlobalState::Initialized(MIRImmediate::Unit) => {
             LMIRGlobalState::ZeroInitialized
         }
         MIRGlobalState::Initialized(value) => {
@@ -60,7 +61,7 @@ fn lower_global(context: &mut GlobalContext<'_>, global: &MIRGlobalVariable) -> 
 
 fn lower_initializer(
     context: &mut GlobalContext<'_>,
-    value: &MIRConstant,
+    value: &MIRImmediate,
     destination_ty: MIRTypeID,
 ) -> LMIRGlobalInitializer {
     let destination_kind = context
@@ -72,15 +73,15 @@ fn lower_initializer(
         .clone();
 
     match value {
-        MIRConstant::Integer { value, ty } => LMIRGlobalInitializer::Integer {
+        MIRImmediate::Integer { value, ty } => LMIRGlobalInitializer::Integer {
             value: *value,
             ty: convert_integer_type(*ty),
         },
-        MIRConstant::Float { value, ty } => LMIRGlobalInitializer::Float {
+        MIRImmediate::Float { value, ty } => LMIRGlobalInitializer::Float {
             value: *value,
             ty: convert_float_type(*ty),
         },
-        MIRConstant::Aggregate { fields, .. } => {
+        MIRImmediate::Aggregate { fields, .. } => {
             if matches!(destination_kind, MIRTypeKind::Union { .. }) {
                 let Some((index, value)) = fields.iter().rev().find(|(_, value)| !zero(value))
                 else {
@@ -126,8 +127,7 @@ fn lower_initializer(
                     .collect(),
             }
         }
-        MIRConstant::Address { base, offset } => {
-            use cx_mir::constant::MIRAddressable;
+        MIRImmediate::Address { base, offset } => {
             match base {
                 MIRAddressable::Global(id) => LMIRGlobalInitializer::Global {
                     global: context.global_indices[id],
@@ -152,7 +152,7 @@ fn lower_initializer(
                 _ => panic!("invalid global address initializer"),
             }
         }
-        MIRConstant::String { value, offset } => match destination_kind {
+        MIRImmediate::String { value, offset } => match destination_kind {
             MIRTypeKind::Array { length, inner } if is_character_type(context, inner) => {
                 assert_eq!(*offset, 0, "an array is initialized from a whole string");
                 let bytes = value.as_bytes();
@@ -183,15 +183,8 @@ fn lower_initializer(
             }
             _ => panic!("string initializer has an invalid destination type"),
         },
-        MIRConstant::BlockAddress { function, label } => {
-            let (function, block) = context.block_address(*function, label);
-            LMIRGlobalInitializer::BlockAddress {
-                function: function.to_string(),
-                block,
-            }
-        }
-        MIRConstant::Nullptr { .. } | MIRConstant::Unit => LMIRGlobalInitializer::Null,
-        MIRConstant::Undefined => panic!("undefined MIR global initializer"),
+        MIRImmediate::Nullptr { .. } | MIRImmediate::Unit => LMIRGlobalInitializer::Null,
+        MIRImmediate::Undefined => panic!("undefined MIR global initializer"),
     }
 }
 
@@ -199,7 +192,7 @@ fn lower_initializer(
 /// the byte fields it occupies.
 fn lower_struct_initializer(
     context: &mut GlobalContext<'_>,
-    values: &[(usize, MIRConstant)],
+    values: &[(usize, MIRImmediate)],
     struct_ty: MIRTypeID,
     fields: &[MIRField],
 ) -> LMIRGlobalInitializer {
@@ -215,7 +208,7 @@ fn lower_struct_initializer(
                 ));
             }
             Some(StructMember::Bitfield { bit, width }) => {
-                let MIRConstant::Integer { value, .. } = value else {
+                let MIRImmediate::Integer { value, .. } = value else {
                     panic!("bitfield initializer is not an integer constant")
                 };
                 let bits = *value as u128 & low_bits(width);
@@ -297,11 +290,11 @@ fn is_character_type(context: &GlobalContext<'_>, ty: MIRTypeID) -> bool {
     )
 }
 
-fn zero(value: &MIRConstant) -> bool {
+fn zero(value: &MIRImmediate) -> bool {
     match value {
-        MIRConstant::Integer { value, .. } => *value == 0,
-        MIRConstant::Nullptr { .. } | MIRConstant::Unit => true,
-        MIRConstant::Aggregate { fields, .. } => fields.iter().all(|(_, value)| zero(value)),
+        MIRImmediate::Integer { value, .. } => *value == 0,
+        MIRImmediate::Nullptr { .. } | MIRImmediate::Unit => true,
+        MIRImmediate::Aggregate { fields, .. } => fields.iter().all(|(_, value)| zero(value)),
         _ => false,
     }
 }

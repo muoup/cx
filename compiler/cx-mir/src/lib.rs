@@ -1,5 +1,5 @@
-pub mod constant;
 pub mod expr;
+pub mod immediate;
 pub mod ty;
 pub mod unit;
 pub mod value;
@@ -16,7 +16,6 @@ pub use expr::intrinsic::{
     MIRPtrIntrinsic, MIRVAIntrinsic,
 };
 
-pub use constant::MIRConstant;
 pub use ty::{
     MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRUndefined, MIRIntType, MIRType, MIRTypeID,
     MIRTypeKind, MIRTypeLayout, MIRTypeMetadata,

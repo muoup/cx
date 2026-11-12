@@ -5,9 +5,10 @@ pub mod storage;
 use cx_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRConstant, MIRFunctionID, MIRInstructionKind, MIRPlaceDecl, MIRRegisterDecl, MIRTarget,
-    MIRValue,
-    constant::MIRAddressable, expr::instruction::MIRInvalidationKind,
+    MIRFunctionID, MIRInstructionKind, MIRIntType, MIRInternalIntrinsic, MIRPlaceDecl,
+    MIRPtrIntrinsic, MIRRegisterDecl, MIRTarget, MIRValue,
+    expr::instruction::MIRInvalidationKind,
+    immediate::{MIRAddressable, MIRImmediate},
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -60,46 +61,64 @@ pub fn value(
     span: &TokenRange,
 ) -> CXResult<MIRValue> {
     Ok(match value.kind() {
-        HMIRValueKind::Immediate(constant) => {
-            MIRValue::Constant(self::constant(context, constant, value.ty(), span)?)
+        HMIRValueKind::Immediate(immediate) => {
+            MIRValue::Immediate(self::immediate(context, immediate, value.ty(), span)?)
         }
         HMIRValueKind::Register(register) => MIRValue::Register(context.runtime().register(*register)),
         HMIRValueKind::Reference(_)
             if context.env().is_reference(value.ty()) || context.env().is_pointer(value.ty()) =>
         {
-            MIRValue::Constant(local(context, value))
+            local(context, value, span)?
         }
         HMIRValueKind::Reference(_) => storage::contents(context, value, span)?,
     })
 }
 
-pub(super) fn local(context: &LocalLoweringContext, value: &HMIRValue) -> MIRConstant {
+// The address of a place of this frame at the type of 'value', which is a pointer that leaves the place untouched
+// or a reference that uses it
+pub(super) fn local(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CXResult<MIRValue> {
     let HMIRValueKind::Reference(reference) = value.kind() else {
         unreachable!("a local address names a place")
     };
-    MIRConstant::Address {
-        base: MIRAddressable::Local(context.runtime().place(*reference.base())),
-        offset: reference.offset(),
+    let place = context.runtime().place(*reference.base());
+    let (out, base) = output(context, value.ty(), span)?;
+    let intrinsic = MIRInternalIntrinsic::PlaceAddress { out, place };
+    context.runtime_mut().emit_intrinsic(intrinsic, span.clone());
+    let base = self::value(context, &base, span)?;
+    if reference.offset() == 0 {
+        return Ok(base);
     }
+    let offset = MIRValue::Immediate(MIRImmediate::Integer {
+        ty: MIRIntType::I64,
+        value: i128::from(reference.offset()),
+    });
+    let (out, address) = output(context, value.ty(), span)?;
+    let intrinsic = MIRPtrIntrinsic::Add { out, ptr: base, offset };
+    context.runtime_mut().emit_intrinsic(intrinsic, span.clone());
+    self::value(context, &address, span)
 }
 
-pub fn constant(
+pub fn immediate(
     context: &mut LocalLoweringContext,
-    constant: &HMIRImmediate,
+    immediate: &HMIRImmediate,
     ty: HMIRTypeID,
     span: &TokenRange,
-) -> CXResult<MIRConstant> {
+) -> CXResult<MIRImmediate> {
     let kind = context.env_mut().resolve_kind(ty).clone();
-    Ok(match (constant, kind) {
-        (HMIRImmediate::Unit, _) => MIRConstant::Unit,
-        (HMIRImmediate::Int(0), HMIRTypeKind::PointerTo(_)) => MIRConstant::Nullptr {
+    Ok(match (immediate, kind) {
+        (HMIRImmediate::Unit, _) => MIRImmediate::Unit,
+        (HMIRImmediate::Int(0), HMIRTypeKind::PointerTo(_)) => MIRImmediate::Nullptr {
             ty: lower_type(context.env_mut(), ty, span)?,
         },
-        (HMIRImmediate::Int(value), HMIRTypeKind::Int(int)) => MIRConstant::Integer {
+        (HMIRImmediate::Int(value), HMIRTypeKind::Int(int)) => MIRImmediate::Integer {
             ty: mir_int(int.width()),
             value: *value,
         },
-        (HMIRImmediate::Float(value), HMIRTypeKind::Float(float)) => MIRConstant::Float {
+        (HMIRImmediate::Float(value), HMIRTypeKind::Float(float)) => MIRImmediate::Float {
             value: *value,
             ty: mir_float(float.width()),
         },
@@ -112,9 +131,9 @@ pub fn constant(
                     HMIRTypeKind::Struct { fields } => *fields[index].ty(),
                     _ => unreachable!("an aggregate constant is an array or structure"),
                 };
-                fields.push((index, self::constant(context, item, field, span)?));
+                fields.push((index, self::immediate(context, item, field, span)?));
             }
-            MIRConstant::Aggregate {
+            MIRImmediate::Aggregate {
                 ty: lower_type(context.env_mut(), ty, span)?,
                 fields,
             }
@@ -123,8 +142,8 @@ pub fn constant(
             HMIRImmediate::Union { variant, payload },
             HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields },
         ) => {
-            let payload = self::constant(context, payload, *fields[*variant].ty(), span)?;
-            MIRConstant::Aggregate {
+            let payload = self::immediate(context, payload, *fields[*variant].ty(), span)?;
+            MIRImmediate::Aggregate {
                 ty: lower_type(context.env_mut(), ty, span)?,
                 fields: vec![(*variant, payload)],
             }
@@ -135,12 +154,12 @@ pub fn constant(
         (HMIRImmediate::Curried { callee, args }, _) => {
             function(call::dependent::template(context, callee, args, ty, span)?)
         }
-        (constant, _) => unreachable!("{constant:?} has no runtime form"),
+        (immediate, _) => unreachable!("{immediate:?} has no runtime form"),
     })
 }
 
-fn function(function: MIRFunctionID) -> MIRConstant {
-    MIRConstant::Address {
+fn function(function: MIRFunctionID) -> MIRImmediate {
+    MIRImmediate::Address {
         base: MIRAddressable::Function(function),
         offset: 0,
     }
@@ -150,7 +169,7 @@ fn address(
     context: &mut LocalLoweringContext,
     address: &HMIRAddress<Addressable>,
     span: &TokenRange,
-) -> CXResult<MIRConstant> {
+) -> CXResult<MIRImmediate> {
     let offset = address.offset();
     let base = match address.base() {
         Addressable::Def(def) => {
@@ -163,20 +182,18 @@ fn address(
                 MIRAddressable::Global(global::declare(context.env_mut(), *def, object, span)?)
             }
         }
-        Addressable::Label { function, label } => {
-            return Ok(MIRConstant::BlockAddress {
-                function: *function,
-                label: label.to_string(),
-            });
-        }
+        Addressable::Label { function, label } => MIRAddressable::Block {
+            function: *function,
+            label: label.to_string(),
+        },
         Addressable::Literal(value) => {
-            return Ok(MIRConstant::String {
+            return Ok(MIRImmediate::String {
                 value: value.clone(),
                 offset,
             });
         }
     };
-    Ok(MIRConstant::Address { base, offset })
+    Ok(MIRImmediate::Address { base, offset })
 }
 
 pub(crate) fn register(

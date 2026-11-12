@@ -5,9 +5,9 @@ use cx_lmir::{
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::calculate_type_layout;
+use cx_mir::immediate::MIRImmediate;
 use cx_mir::{
-    MIRConstant, MIRFloatIntrinsic, MIRIntIntrinsic, MIRIntType, MIRPtrIntrinsic, MIRTypeKind,
-    MIRValue,
+    MIRFloatIntrinsic, MIRIntIntrinsic, MIRIntType, MIRPtrIntrinsic, MIRTypeKind, MIRValue,
 };
 
 use crate::context::FunctionContext;
@@ -263,7 +263,7 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
 }
 
 fn integer_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> MIRIntType {
-    if let MIRValue::Constant(MIRConstant::Integer { ty, .. }) = value {
+    if let MIRValue::Immediate(MIRImmediate::Integer { ty, .. }) = value {
         return *ty;
     }
     let ty = value_type(context, value).expect("integer operand lacks a MIR type");
@@ -278,7 +278,7 @@ fn integer_kind(context: &FunctionContext<'_, '_>, ty: cx_mir::MIRTypeID) -> MIR
 }
 
 fn float_type(context: &FunctionContext<'_, '_>, value: &MIRValue) -> cx_mir::MIRFloatType {
-    if let MIRValue::Constant(MIRConstant::Float { ty, .. }) = value {
+    if let MIRValue::Immediate(MIRImmediate::Float { ty, .. }) = value {
         return *ty;
     }
     let ty = value_type(context, value).expect("float operand lacks a MIR type");

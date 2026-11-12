@@ -2,9 +2,9 @@ use rustc_hash::FxHashMap;
 
 use cx_log::{CXResult, catalogue::analysis};
 use cx_mir::{
-    MIRBasicBlockID, MIRBindable, MIRConstant, MIRInstruction, MIRInstructionKind, MIRIntIntrinsic,
+    MIRBasicBlockID, MIRBindable, MIRInstruction, MIRInstructionKind, MIRIntIntrinsic,
     MIRInternalIntrinsic, MIRIntrinsic, MIRTarget, MIRValue,
-    expr::visit::successors, ty::interface::MTRegistry,
+    expr::visit::successors, immediate::MIRImmediate, ty::interface::MTRegistry,
 };
 use cx_tokens::TokenRange;
 
@@ -32,8 +32,8 @@ impl Values {
 
     fn value(&self, env: &AnalysisEnvironment, value: &MIRValue) -> Option<i128> {
         match value {
-            MIRValue::Constant(MIRConstant::Integer { value, .. }) => Some(*value),
-            MIRValue::Constant(MIRConstant::Nullptr { .. }) => Some(0),
+            MIRValue::Immediate(MIRImmediate::Integer { value, .. }) => Some(*value),
+            MIRValue::Immediate(MIRImmediate::Nullptr { .. }) => Some(0),
             MIRValue::Register(register) => {
                 self.known.get(&MIRBindable::Register(*register)).copied()
             }

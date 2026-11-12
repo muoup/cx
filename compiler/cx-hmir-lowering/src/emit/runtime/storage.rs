@@ -33,7 +33,7 @@ fn target(
             MIRTarget::Place(context.runtime().place(*address.base()))
         }
         HMIRValueKind::Reference(_) => MIRTarget::Indirect {
-            value: MIRValue::Constant(runtime::local(context, reference)),
+            value: runtime::local(context, reference, span)?,
             ty: lower_type(context.env_mut(), stored, span)?,
         },
         HMIRValueKind::Immediate(HMIRImmediate::Address(address))

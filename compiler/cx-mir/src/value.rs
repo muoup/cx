@@ -1,11 +1,10 @@
 use cx_util::dense_id;
 
 use crate::{
+    immediate::MIRImmediate,
     ty::MIRTypeID,
     unit::{MIRBasicBlockID, MIRGlobalID},
 };
-
-pub use crate::constant::MIRConstant;
 
 dense_id!(MIRPlaceID, "%p");
 dense_id!(MIRRegisterID, "%r");
@@ -26,7 +25,7 @@ pub enum MIRValue {
     Indirect { value: Box<MIRValue>, ty: MIRTypeID },
 
     Register(MIRRegisterID),
-    Constant(MIRConstant),
+    Immediate(MIRImmediate),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

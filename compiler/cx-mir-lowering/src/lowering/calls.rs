@@ -5,9 +5,9 @@ use cx_lmir::{
 };
 use cx_mir::ty::interface::MTRegistry;
 use cx_mir::ty::layout::calculate_type_layout;
-use cx_mir::constant::MIRAddressable;
+use cx_mir::immediate::{MIRAddressable, MIRImmediate};
 use cx_mir::{
-    MIRConstant, MIRFnSignature, MIRFunctionID, MIRRegister, MIRTypeID, MIRTypeKind, MIRValue,
+    MIRFnSignature, MIRFunctionID, MIRRegister, MIRTypeID, MIRTypeKind, MIRValue,
 };
 
 use crate::context::FunctionContext;
@@ -145,7 +145,7 @@ pub(super) fn lower_return(context: &mut FunctionContext<'_, '_>, value: Option<
 // The function a callee names outright, which is called directly rather than through its address
 fn direct(callee: &MIRValue) -> Option<MIRFunctionID> {
     match callee {
-        MIRValue::Constant(MIRConstant::Address {
+        MIRValue::Immediate(MIRImmediate::Address {
             base: MIRAddressable::Function(id),
             offset: 0,
         }) => Some(*id),

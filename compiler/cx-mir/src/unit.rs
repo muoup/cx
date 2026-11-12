@@ -6,7 +6,7 @@ pub mod function;
 pub mod body;
 
 use crate::{
-    constant::MIRConstant,
+    immediate::MIRImmediate,
     ty::{MIRTypeID, registry::MIRTypeRegistry},
     unit::function::{MIRFunction, MIRFunctionID},
 };
@@ -18,7 +18,7 @@ dense_id!(MIRBasicBlockID, "bb");
 pub enum MIRGlobalState {
     External,
     ZeroInitialized,
-    Initialized(MIRConstant),
+    Initialized(MIRImmediate),
 }
 
 #[derive(Debug, Clone)]

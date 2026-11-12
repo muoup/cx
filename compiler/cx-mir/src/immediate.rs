@@ -1,14 +1,16 @@
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::{
-    MIRGlobalID, MIRPlaceID, ty::{MIRFloatType, MIRIntType, MIRTypeID}, unit::function::MIRFunctionID,
+    MIRGlobalID,
+    ty::{MIRFloatType, MIRIntType, MIRTypeID},
+    unit::function::MIRFunctionID,
 };
 
+// Storage whose address is the same in every context, so that it may be named by an immediate
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MIRAddressable {
     Global(MIRGlobalID),
     Function(MIRFunctionID),
-    Local(MIRPlaceID),
     Block {
         function: MIRFunctionID,
         label: String,
@@ -16,7 +18,7 @@ pub enum MIRAddressable {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum MIRConstant {
+pub enum MIRImmediate {
     Unit,
     Integer {
         ty: MIRIntType,
@@ -28,7 +30,7 @@ pub enum MIRConstant {
     },
     Aggregate {
         ty: MIRTypeID,
-        fields: Vec<(usize, MIRConstant)>,
+        fields: Vec<(usize, MIRImmediate)>,
     },
     Address {
         base: MIRAddressable,
@@ -40,11 +42,6 @@ pub enum MIRConstant {
     },
     Nullptr {
         ty: MIRTypeID,
-    },
-    /// The address of the block that a label of `function` starts at.
-    BlockAddress {
-        function: MIRFunctionID,
-        label: String,
     },
     Undefined,
 }

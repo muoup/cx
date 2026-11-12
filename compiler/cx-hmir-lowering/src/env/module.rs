@@ -8,7 +8,7 @@ use cx_mir::{
     MIRTypeMetadata, MIRUnit,
     ty::{interface::MTRegistry, registry::MIRTypeRegistry},
 };
-use cx_mir::{MIRConstant, MIRValue, expr::visit::successors};
+use cx_mir::{MIRValue, expr::visit::successors, immediate::MIRImmediate};
 use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -283,7 +283,7 @@ impl MIRFunctionBuilder {
             };
             match &instruction.kind {
                 MIRInstructionKind::Branch {
-                    cond: MIRValue::Constant(MIRConstant::Integer { value, .. }),
+                    cond: MIRValue::Immediate(MIRImmediate::Integer { value, .. }),
                     true_target,
                     false_target,
                 } => pending.push(if *value != 0 {

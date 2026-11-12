@@ -3,7 +3,6 @@ use std::fmt::{self, Display, Formatter};
 use cx_util::linkage::LinkageMode;
 
 use crate::{
-    constant::MIRAddressable,
     expr::{
         instruction::{
             MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRInvalidationKind,
@@ -14,6 +13,7 @@ use crate::{
             MIRIntrinsic, MIRPtrIntrinsic, MIRVAIntrinsic,
         },
     },
+    immediate::{MIRAddressable, MIRImmediate},
     ty::{
         MIRBitfieldAccess, MIRField, MIRFloatType, MIRUndefined, MIRIntType, MIRTypeID, MIRTypeKind,
         interface::MTRegistry,
@@ -24,7 +24,7 @@ use crate::{
         function::{MIRFnSignature, MIRFunction},
     },
     value::{
-        MIRBindable, MIRBlockTarget, MIRConstant, MIRGlobalRef, MIRPlaceID, MIRRegisterID,
+        MIRBindable, MIRBlockTarget, MIRGlobalRef, MIRPlaceID, MIRRegisterID,
         MIRTarget, MIRValue,
     },
 };
@@ -35,7 +35,7 @@ impl Display for MIRBlockTarget {
     }
 }
 
-impl Display for MIRConstant {
+impl Display for MIRImmediate {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unit => f.write_str("()"),
@@ -52,6 +52,10 @@ impl Display for MIRConstant {
                 }
                 f.write_str("}")
             }
+            Self::Address {
+                base: MIRAddressable::Block { function, label },
+                ..
+            } => write!(f, "label {function}::{label}"),
             Self::Address { base, offset } => write!(f, "&{base:?} + {offset}"),
             Self::String { value, offset } => {
                 write!(f, "{value:?}")?;
@@ -60,7 +64,6 @@ impl Display for MIRConstant {
                 }
                 Ok(())
             }
-            Self::BlockAddress { function, label } => write!(f, "label {function}::{label}"),
             Self::Undefined => f.write_str("undefined"),
         }
     }
@@ -83,7 +86,7 @@ impl Display for MIRValue {
             Self::PlaceRef { place, .. } => Display::fmt(place, f),
             Self::GlobalRef(value) => Display::fmt(value, f),
             Self::Indirect { value, .. } => write!(f, "*{value}"),
-            Self::Constant(value) => Display::fmt(value, f),
+            Self::Immediate(value) => Display::fmt(value, f),
         }
     }
 }
@@ -1207,13 +1210,13 @@ fn write_value(
             f.write_str("*")?;
             write_value(f, unit, function, value.as_ref())
         }
-        MIRValue::Constant(constant) => write_constant(f, unit, constant),
+        MIRValue::Immediate(immediate) => write_immediate(f, unit, immediate),
     }
 }
 
-fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant) -> fmt::Result {
-    match constant {
-        MIRConstant::Address {
+fn write_immediate(f: &mut Formatter<'_>, unit: &MIRUnit, immediate: &MIRImmediate) -> fmt::Result {
+    match immediate {
+        MIRImmediate::Address {
             base: MIRAddressable::Function(function_id),
             offset: 0,
         } => {
@@ -1223,7 +1226,7 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
                 Display::fmt(function_id, f)
             }
         }
-        MIRConstant::Aggregate { fields, .. } => {
+        MIRImmediate::Aggregate { fields, .. } => {
             f.write_str("{")?;
             for (index, (field, value)) in fields.iter().enumerate() {
                 if index != 0 {
@@ -1234,7 +1237,7 @@ fn write_constant(f: &mut Formatter<'_>, unit: &MIRUnit, constant: &MIRConstant)
             }
             f.write_str("}")
         }
-        _ => Display::fmt(constant, f),
+        _ => Display::fmt(immediate, f),
     }
 }
 

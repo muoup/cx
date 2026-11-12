@@ -1,6 +1,5 @@
 use crate::{
     MIRInstruction,
-    constant::MIRConstant,
     expr::{instruction::MIRInstructionKind, intrinsic::*},
     value::{MIRBindable, MIRBlockTarget, MIRTarget, MIRValue},
 };
@@ -30,25 +29,7 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
             MIRValue::Register(register) => visit(MIRBindable::Register(*register)),
             MIRValue::PlaceRef { place, .. } => visit(MIRBindable::Place(*place)),
             MIRValue::Indirect { value, .. } => visit_value(value.as_ref(), visit),
-            MIRValue::GlobalRef(_) => {}
-            MIRValue::Constant(constant) => visit_constant(constant, visit),
-        }
-    }
-
-    fn visit_constant(constant: &MIRConstant, visit: &mut impl FnMut(MIRBindable)) {
-        match constant {
-            MIRConstant::Address {
-                base: crate::constant::MIRAddressable::Local(place),
-                ..
-            } => {
-                visit(MIRBindable::Place(*place));
-            }
-            MIRConstant::Aggregate { fields, .. } => {
-                for (_, field) in fields {
-                    visit_constant(field, visit);
-                }
-            }
-            _ => {}
+            MIRValue::GlobalRef(_) | MIRValue::Immediate(_) => {}
         }
     }
 
