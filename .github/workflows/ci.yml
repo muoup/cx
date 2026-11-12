@@ -77,7 +77,7 @@ jobs:
       - name: Run compiler benchmarks
         run: |
           set -o pipefail
-          cargo run --release -p cx-benchmarks --features backend-llvm -- --iterations 1 --warmups 0 --backend both --reference clang --format github --json-output benchmark-report/report.json > benchmark-report/report.md
+          cargo run --release -p cx-benchmarks --features backend-llvm -- --iterations 3 --warmups 1 --backend both --reference clang --format github --json-output benchmark-report/report.json > benchmark-report/report.md
 
       - name: Add benchmark report to job summary
         if: always()
