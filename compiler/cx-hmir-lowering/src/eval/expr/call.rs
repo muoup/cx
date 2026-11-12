@@ -20,7 +20,7 @@ use crate::{
     eval::{
         EvalResult,
         aggregate::variant,
-        coerce, comptime, eval, eval_comptime, expr,
+        coerce, comptime, eval, expr,
         flow::{self, Evaluation},
         place, staged, types,
     },
@@ -71,7 +71,7 @@ fn apply(
     };
     if matches!(
         callee.kind(),
-        HMIRValueKind::Immediate(HMIRImmediate::Quote(_))
+        HMIRValueKind::Immediate(HMIRImmediate::Quote(_) | HMIRImmediate::Opaque)
     ) {
         if let Some((_, argument)) = named.first() {
             let named = ("a named argument".into(), "a staged expression call".into());
@@ -197,7 +197,7 @@ fn arguments(
                 Some((def, function))
                     if !partial && function.prototype().params()[index].default().is_some() =>
                 {
-                    Some(default(context, def, function, index, ty)?)
+                    Some(default(context, def, function, index, ty)?.ready()?)
                 }
                 _ => None,
             },
@@ -215,13 +215,14 @@ fn default(
     function: &HMIRFunction,
     index: usize,
     ty: HMIRTypeID,
-) -> CXResult<HMIRValue> {
+) -> EvalResult<Evaluation<HMIRValue>> {
     let prototype = function.prototype();
     let default = prototype.params()[index].default();
     let default = default.expect("a parameter left to its default has one");
     let comptime = FnContext::Comptime(ComptimeContext::new());
-    let mut child = context.child(None, comptime, None).sourced(def.brand());
-    eval_comptime(&mut child, prototype.defaults(), default, Some(ty))
+    let evaluation = context.evaluation();
+    let mut child = context.child(None, comptime, Some(evaluation)).sourced(def.brand());
+    comptime::freeze(&mut child, prototype.defaults(), default, Some(ty))
 }
 
 // Calls 'callee', which is not curried, with a value for each of its parameters

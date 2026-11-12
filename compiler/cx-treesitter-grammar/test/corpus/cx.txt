@@ -1411,11 +1411,11 @@ closure bodies
 ==================
 
 void f() {
-    invoke(|value| => consume(value));
+    invoke(|auto value| => consume(value));
     invoke(|^int value| { consume(value); });
-    with_trace(source) <| |value| then
+    with_trace(source) <| |auto value| then
     consume(value);
-    with_trace(left) <| |a| => with_trace(right) <| |b| then
+    with_trace(left) <| |auto a| => with_trace(right) <| |auto b| then
     consume(b);
 }
 
@@ -1443,6 +1443,9 @@ void f() {
                 (expression
                   (primary_expression
                     (staged_lambda
+                      (type
+                        (builtin_type_sequence
+                          (builtin_type)))
                       (identifier)
                       (operator)
                       (expression
@@ -1498,6 +1501,9 @@ void f() {
                         (identifier)))))))
             (operator)
             (staged_continuation_lambda
+              (type
+                (builtin_type_sequence
+                  (builtin_type)))
               (identifier)
               (staged_then
                 (keyword)))))
@@ -1526,6 +1532,9 @@ void f() {
                         (identifier)))))))
             (operator)
             (staged_continuation_lambda
+              (type
+                (builtin_type_sequence
+                  (builtin_type)))
               (identifier)
               (operator)
               (staged_continuation_expression
@@ -1541,6 +1550,9 @@ void f() {
                             (identifier)))))))
                 (operator)
                 (staged_continuation_lambda
+                  (type
+                    (builtin_type_sequence
+                      (builtin_type)))
                   (identifier)
                   (staged_then
                     (keyword)))))))

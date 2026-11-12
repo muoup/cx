@@ -2,7 +2,7 @@ mod arguments;
 mod subject;
 
 pub(crate) use arguments::{Deduction, generated, generates_type};
-pub(crate) use subject::{detached, subject};
+pub(crate) use subject::{detached, placeholder, shadowed, subject, typed};
 
 use cx_hmir::{
     HMIRBodyContext, HMIRUnitID,
@@ -32,10 +32,11 @@ use crate::{
     value::{self, HMIRValue, immediate::HMIRImmediate},
 };
 
+// Completes from the type expected, or from none where the evaluation synthesizes its own
 type Resolver<T> = dyn FnOnce(
     &mut LocalLoweringContext,
     &HMIRBodyContext,
-    HMIRTypeID,
+    Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<T>>;
 
 pub(crate) enum IncompleteReason {
@@ -52,6 +53,7 @@ pub(crate) struct Incomplete<T> {
     partial: Option<T>,
     // Whether the partial may stand as the result when nothing completes it
     fallback: bool,
+    synthesizes: bool,
     resolve: Box<Resolver<T>>,
 }
 
@@ -74,15 +76,45 @@ impl<T: 'static> Incomplete<T> {
             span: span.clone(),
             partial,
             fallback: true,
+            synthesizes: false,
+            resolve: Box::new(move |context, body, expected| {
+                let expected = expected.expect("only a synthesizing evaluation completes without a type");
+                resolve(context, body, expected)
+            }),
+        }
+    }
+
+    // An evaluation that is completed from the type expected of it, or else from the type it synthesizes
+    pub(crate) fn synthesizing(
+        context: &LocalLoweringContext,
+        span: &TokenRange,
+        resolve: impl FnOnce(
+            &mut LocalLoweringContext,
+            &HMIRBodyContext,
+            Option<HMIRTypeID>,
+        ) -> EvalResult<Evaluation<T>>
+        + 'static,
+    ) -> Self {
+        Self {
+            reason: IncompleteReason::ExpectedType,
+            evaluation: context.evaluation(),
+            span: span.clone(),
+            partial: None,
+            fallback: false,
+            synthesizes: true,
             resolve: Box::new(resolve),
         }
+    }
+
+    pub(super) fn synthesizes(&self) -> bool {
+        self.synthesizes
     }
 
     pub(super) fn resolve(
         self,
         context: &mut LocalLoweringContext,
         body: &HMIRBodyContext,
-        expected: HMIRTypeID,
+        expected: Option<HMIRTypeID>,
     ) -> EvalResult<Evaluation<T>> {
         assert_eq!(
             self.evaluation,
@@ -99,7 +131,7 @@ impl<T: 'static> Incomplete<T> {
         wrap: impl FnOnce(
             &mut LocalLoweringContext,
             &HMIRBodyContext,
-            HMIRTypeID,
+            Option<HMIRTypeID>,
             Box<Resolver<T>>,
         ) -> EvalResult<Evaluation<U>>
         + 'static,
@@ -109,6 +141,7 @@ impl<T: 'static> Incomplete<T> {
             evaluation,
             span,
             fallback,
+            synthesizes,
             resolve,
             ..
         } = self;
@@ -118,6 +151,7 @@ impl<T: 'static> Incomplete<T> {
             span,
             partial,
             fallback,
+            synthesizes,
             resolve: Box::new(move |context, body, expected| {
                 wrap(context, body, expected, resolve)
             }),

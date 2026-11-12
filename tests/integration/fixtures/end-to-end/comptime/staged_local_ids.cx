@@ -21,8 +21,8 @@ comptime ^void with_generated_local(^int initial, fn proc(^int&) -> ^void) {
 }
 
 int nested_generated_locals() {
-    with_generated_local(emit 20) <| |left| =>
-    with_generated_local(emit 22) <| |right| then
+    with_generated_local(emit 20) <| |auto left| =>
+    with_generated_local(emit 22) <| |auto right| then
 
     printf("sum %d\n", left + right);
     return left + right;

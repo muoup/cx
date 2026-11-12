@@ -1,0 +1,4 @@
+int main() {
+    auto f = |x| => x;
+    return 0;
+}

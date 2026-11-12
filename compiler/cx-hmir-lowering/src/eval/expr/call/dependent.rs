@@ -30,7 +30,7 @@ use crate::{
     },
     log::hmir_error,
     lower::{self, declaration},
-    value::{self, HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue},
 };
 
 use super::contract;
@@ -229,24 +229,20 @@ pub(crate) fn call(
     let spliced = is_spliced(context, function);
     let runtime = context.is_runtime() && !spliced;
     let mut frame = Frame::new(function, def, ComptimeContext::of(def), runtime);
+    let mut deduction = Deduction::new(function, def);
 
     let prototype = function.prototype();
     let default = |index: usize| prototype.params()[index].default().filter(|_| !partial);
-    let is_hole = |index: &usize| {
-        let hole = |body: &HMIRBodyContext, expr| matches!(body.expr(expr).kind(), HMIRExprKind::Hole(_));
-        match (args[*index], default(*index)) {
-            _ if applied.get(*index).is_some_and(Option::is_some) => false,
-            (Some(arg), _) => hole(body, arg),
-            (None, Some(default)) => hole(prototype.defaults(), default),
-            (None, None) => false,
-        }
-    };
-    let holes = (0..params.len()).filter(is_hole).collect();
-    let deduction = Deduction::infer(context, &mut frame, function, def, holes, body, args, span)?;
-
     let mut values = vec![None; params.len()];
-    let mut undeduced = None;
     for index in 0..params.len() {
+        if let Some(hole) = deduction.blocking(index) {
+            for (bound, value) in deduction.infer(context, &mut frame, body, args, index, span)? {
+                values[bound] = Some(value);
+            }
+            if deduction.blocking(index).is_some() {
+                return Err(deduction.undeduced(context, hole, span).into());
+            }
+        }
         if let Some(value) = applied.get_mut(index).and_then(Option::take) {
             values[index] = Some(frame.argument(context, index, value, span)?);
             continue;
@@ -261,38 +257,37 @@ pub(crate) fn call(
             let operation = "a reference parameter".into();
             return Err(hmir_error(arg_span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
         }
-        let value = match arg {
-            _ if deduction.is_hole(index) => match deduction.inferred(index) {
-                Some(inferred) => {
-                    let universe = types::universe(context.env_mut(), arg_span);
-                    HMIRValue::new(universe, HMIRImmediate::Type(inferred))
-                }
-                None if !partial && deduce::generates_type(function) => {
-                    undeduced.get_or_insert(index);
-                    continue;
-                }
-                None => return Err(deduction.undeduced(context, index, span).into()),
-            },
-            Some(arg) if staged::is_code(context, ty) => {
-                staged::argument(context, body, arg, ty)?.ready()?
-            }
+        let evaluation = match arg {
+            Some(arg) if staged::is_code(context, ty) => staged::argument(context, body, arg, ty)?,
             Some(arg) if (runtime && params[index].comptime()) || spliced => {
-                comptime::freeze(context, body, arg, Some(ty))?.ready()?
+                comptime::freeze(context, body, arg, Some(ty))?
             }
             Some(arg) => {
                 let evaluated = eval(context, body, arg)?;
-                deduce::complete(context, body, evaluated, Some(ty))?.ready()?
+                deduce::complete(context, body, evaluated, Some(ty))?
             }
             None => super::default(context, def, function, index, ty)?,
+        };
+        let value = match evaluation {
+            Evaluation::Incomplete(pending)
+                if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type) =>
+            {
+                deduction.defer(index, pending, arg.is_none());
+                continue;
+            }
+            evaluation => evaluation.ready()?,
         };
         values[index] = Some(frame.argument(context, index, value, arg_span)?);
     }
 
-    let Some(index) = undeduced else {
+    let Some(index) = deduction.first() else {
         return finish(context, frame, values, span);
     };
+    let undeduced = deduction.undeduced(context, index, span);
+    if partial || !deduce::generates_type(function) {
+        return Err(undeduced.into());
+    }
     let span = span.clone();
-    let undeduced = deduction.undeduced(context, index, &span);
     deduce::generated(context, def, values, undeduced, &span).and_then(
         context,
         body,

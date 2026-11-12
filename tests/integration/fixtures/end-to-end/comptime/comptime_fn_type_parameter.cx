@@ -9,7 +9,7 @@ comptime ^void each(type T = _, ^T first, ^T second, fn callback(^T) -> ^void)
 
 int main() {
     printf("%d", value);
-    each(emit 2, emit 3, |item| => printf(" %d", item));
+    each(emit 2, emit 3, |auto item| => printf(" %d", item));
     printf("\n");
     return 0;
 }

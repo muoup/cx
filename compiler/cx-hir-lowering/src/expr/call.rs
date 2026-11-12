@@ -6,7 +6,7 @@ use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
 use crate::{
-    body::{BodyLowering, Symbol},
+    body::BodyLowering,
     expr::{lower_expr, lower_identifier},
     log::log_hir_error,
 };
@@ -130,46 +130,31 @@ fn lower_callee_call<'a>(
         }
     };
 
-    let unnamed = |named: &Named<'_>, feature: &str| match named.first() {
-        Some((_, value)) => log_hir_error(
-            &value.range,
-            &typecheck::INVALID_CONTEXT,
-            ("a named argument".into(), feature.into()),
-        ),
-        None => Ok(()),
-    };
     if let Some(root) = name.root_name_ref()
         && let Some(intrinsic) = lower_builtin_call(context, root.as_str(), &args, span)?
     {
-        unnamed(&named, "a builtin call")?;
+        if let Some((_, value)) = named.first() {
+            let feature = ("a named argument".into(), "a builtin call".into());
+            return log_hir_error(&value.range, &typecheck::INVALID_CONTEXT, feature);
+        }
         return Ok(intrinsic);
     }
 
-    match context.lookup(name, None) {
-        Symbol::Local(binding) if binding.is_quoted() => {
-            unnamed(&named, "a staged expression call")?;
-            let quote = context.push(HMIRExprKind::Local(binding.local()), &callee.range);
-            let args = lower_args(context, &args)?;
-            Ok(context.push(HMIRExprKind::Splice { quote, args }, span))
-        }
-        _ => {
-            let callee = lower_identifier(context, name, &callee.range)?;
-            let args = args
-                .iter()
-                .zip(&subjects)
-                .map(|(arg, piped)| {
-                    let value = lower_expr(context, arg)?;
-                    Ok(if *piped {
-                        context.push(HMIRExprKind::Piped(value), &arg.range)
-                    } else {
-                        value
-                    })
-                })
-                .collect::<CXResult<_>>()?;
-            let named = lower_named(context, named)?;
-            Ok(context.push(HMIRExprKind::Call { callee, args, named }, span))
-        }
-    }
+    let callee = lower_identifier(context, name, &callee.range)?;
+    let args = args
+        .iter()
+        .zip(&subjects)
+        .map(|(arg, piped)| {
+            let value = lower_expr(context, arg)?;
+            Ok(if *piped {
+                context.push(HMIRExprKind::Piped(value), &arg.range)
+            } else {
+                value
+            })
+        })
+        .collect::<CXResult<_>>()?;
+    let named = lower_named(context, named)?;
+    Ok(context.push(HMIRExprKind::Call { callee, args, named }, span))
 }
 
 fn lower_args<'a>(

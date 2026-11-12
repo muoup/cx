@@ -100,11 +100,29 @@ pub(crate) fn step(
             let char = types::qualify::specify(context, char, qualifiers, span);
             address(context, value, char, span)
         }
+        HMIRTypeKind::Function { .. }
+            if subject != value.ty() && types::comptime_only(env, subject) =>
+        {
+            function(context, value, subject, span).map(Coercion::Applied)
+        }
         HMIRTypeKind::Function { .. } => Ok(Coercion::Unapplied(value)),
         _ if subject != value.ty() => {
             reference_load(context, value, subject, span).map(Coercion::Applied)
         }
         _ => Ok(Coercion::Unapplied(value)),
+    }
+}
+
+// A comptime function read through its reference: a definition is the function itself, storage holds one
+fn function(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    subject: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    match value::as_function(&value) {
+        Some(_) => Ok(value.with_ty(subject)),
+        None => reference_load(context, value, subject, span),
     }
 }
 

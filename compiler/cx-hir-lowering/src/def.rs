@@ -23,7 +23,7 @@ use crate::{
     body::BodyLowering,
     expr::{lower_expr, lower_initial_value, lower_scope_statements},
     plan::{DefSource, PlannedSymbol},
-    ty::{lower_type, staged_signature},
+    ty::lower_type,
     unit::{UnitContext, def_name},
 };
 
@@ -125,13 +125,7 @@ fn lower_function<'a>(
             let mut params = Vec::new();
             for param in declared_params(prototype) {
                 let ty = lower_type(this, &param.ty)?;
-                params.push(this.declare(
-                    param.name.as_ref(),
-                    ty,
-                    param.comptime,
-                    staged_signature(&param.ty).is_some(),
-                    &param.range,
-                ));
+                params.push(this.declare(param.name.as_ref(), ty, param.comptime, &param.range));
             }
             let return_type = lower_type(this, &prototype.return_type)?;
             let contract = lower_contract(this, prototype)?;
@@ -257,8 +251,7 @@ fn lower_contract(
         .iter()
         .map(|param| {
             let ty = conditions.hole(&param.ty.range);
-            let quoted = staged_signature(&param.ty).is_some();
-            conditions.declare(param.name.as_ref(), ty, param.comptime, quoted, &param.range)
+            conditions.declare(param.name.as_ref(), ty, param.comptime, &param.range)
         })
         .collect();
 

@@ -83,7 +83,10 @@ impl<T: 'static> Evaluation<T> {
         expected: Option<HMIRTypeID>,
     ) -> EvalResult<Evaluation<T>> {
         match (self, expected) {
-            (Self::Incomplete(incomplete), Some(expected)) => incomplete.resolve(context, body, expected),
+            (Self::Incomplete(incomplete), Some(expected)) => incomplete.resolve(context, body, Some(expected)),
+            (Self::Incomplete(incomplete), None) if incomplete.synthesizes() => {
+                incomplete.resolve(context, body, None)
+            }
             (result, _) => Ok(result),
         }
     }
@@ -123,7 +126,7 @@ impl<T: 'static> Evaluation<T> {
                 Ok(Evaluation::Incomplete(incomplete.wrap(
                     partial,
                     move |context, body, expected, resolve| {
-                        resolve(context, body, expected)?.chain(context, body, Some(expected), unknown, then)
+                        resolve(context, body, expected)?.chain(context, body, expected, unknown, then)
                     },
                 )))
             }

@@ -228,7 +228,7 @@ pub enum HIRExprKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HIRClosureParam {
     pub name: CXIdent,
-    pub ty: Option<HIRType>,
+    pub ty: HIRType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

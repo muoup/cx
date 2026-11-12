@@ -45,7 +45,12 @@ pub(crate) fn eval_local(
         return Err(hmir_error(span, &catalogue::mir::COMPTIME_UNAVAILABLE, subject).into());
     };
 
-    Ok(Evaluation::Ready(coerce::collapse(context, value, span)?))
+    let value = coerce::collapse(context, value, span)?;
+    let referent = context.env().referent(value.ty());
+    match context.env().resolve_kind(referent) {
+        HMIRTypeKind::Staged(_) if context.is_runtime() => staged::splice(context, value, span),
+        _ => Ok(Evaluation::Ready(value)),
+    }
 }
 
 // A declaration is a statement, and evaluates to unit. Each evaluation binds a fresh instance of the local, so a
@@ -132,15 +137,6 @@ pub(crate) fn eval_let(
             (true, None) => value.ty(),
             (false, _) => types::qualify::value(context, value.ty(), &span),
         };
-        let subject = context.env().referent(inferred);
-        let function = matches!(
-            context.env().resolve_kind(subject),
-            HMIRTypeKind::Function { .. }
-        );
-        let inferred = match function && referent.is_none() {
-            true => types::reference(context.env_mut(), subject, None, &span),
-            false => inferred,
-        };
         declared
             .try_complete(context, body, Some(inferred))?
             .and_then(context, body, move |context, body, ty| {
@@ -194,13 +190,16 @@ fn declare(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let local = body.local(local_id);
-    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function { .. }) {
+    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function { .. })
+        && !(!context.is_runtime() && types::comptime_only(context.env(), ty))
+    {
         let requirement = (
             "local variable".into(),
             "an object type".into(),
             Some(types::name(context.env(), ty)),
         );
-        return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
+        let hint = "take the function's address with '&' to store it".into();
+        return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).with_notes(vec![hint]));
     }
     if !demand::complete(context.env_mut(), ty)? {
         let subject = format!("variable of type '{}'", types::name(context.env(), ty));

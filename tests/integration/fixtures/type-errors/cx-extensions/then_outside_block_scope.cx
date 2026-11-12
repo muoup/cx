@@ -7,6 +7,6 @@ comptime ^void with_value(^int& value, fn proc(^int&) -> ^void) {
 int main() {
     int source = 1;
     if (source)
-        with_value(emit source) <| |value| then
+        with_value(emit source) <| |auto value| then
     return 0;
 }

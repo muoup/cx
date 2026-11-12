@@ -1,0 +1,6 @@
+comptime ^void chain(type T = _, type U = _, fn f(^T) -> ^U, fn g(^U) -> ^void) => g(f(emit 1));
+
+int main() {
+    chain(|auto x| => x, |auto y| => y);
+    return 0;
+}

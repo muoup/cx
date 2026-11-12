@@ -1,0 +1,20 @@
+/* CX-STDOUT: call 1 */
+/* CX-STDOUT-NEXT: call4 4 */
+/* CX-STDOUT-NEXT: call6 pre */
+/* CX-STDOUT-NEXT: call6 6 */
+/* CX-STDOUT-NEXT: transform 4.5 */
+#include <stdio.h>
+
+comptime ^void call(type T = _, fn f(^T) -> ^void) => f(emit 1);
+comptime ^void call4(type T = _, ^T v, fn f(^T) -> ^void) => f(v);
+comptime ^void call6(type T = _, ^T v, fn f(^T) -> ^void) => emit .{ printf("call6 pre\n"); f(v); };
+comptime ^U transform(type T = _, type U = _, ^T v, fn f(^T) -> ^U) => f(v);
+
+int main() {
+    call(|^int x| => printf("call %d\n", x));
+    call4(4, |^int x| => printf("call4 %d\n", x));
+    call6(6, |^int x| => printf("call6 %d\n", x));
+    double d = transform(3, |auto x| => x * 1.5);
+    printf("transform %.1f\n", d);
+    return 0;
+}

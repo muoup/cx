@@ -79,9 +79,12 @@ fn evaluate(
     let value = eval(context, body, expr)?;
     let value = match value.known().and_then(value::as_type) {
         Some(_) => {
-            let ty =
-                (deduce::described_type(context, body, value, span)?.description())?.ready()?;
-            Evaluation::Ready(type_value(context, ty, span)?)
+            let span = span.clone();
+            deduce::described_type(context, body, value, &span)?
+                .description()?
+                .and_then(context, body, move |context, _, ty| {
+                    Ok(Evaluation::Ready(type_value(context, ty, &span)?))
+                })?
         }
         None => deduce::complete(context, body, value, expected)?,
     };

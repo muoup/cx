@@ -1,0 +1,18 @@
+/* CX-STDOUT: bounded 12 */
+/* CX-STDOUT-NEXT: sized 8 */
+#include <stdio.h>
+
+void bounded(comptime type A = int[_], A* p) { printf("bounded %d\n", (int) sizeof(A)); }
+
+comptime type boxed(type T) => struct { T value; };
+void sized(comptime type T = _, comptime fn& gen(comptime type) -> type, gen(T) p) {
+    printf("sized %d\n", (int) sizeof(T));
+}
+
+int main() {
+    int arr[3];
+    bounded(&arr);
+    boxed(long) cells;
+    sized(boxed, cells);
+    return 0;
+}

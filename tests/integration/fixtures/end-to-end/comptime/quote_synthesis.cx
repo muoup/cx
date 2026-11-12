@@ -1,0 +1,38 @@
+/* CX-STDOUT: 3 6 6 */
+/* CX-STDOUT-NEXT: fed 7 */
+/* CX-STDOUT-NEXT: 6 */
+/* CX-STDOUT-NEXT: 12 */
+/* CX-STDOUT-NEXT: 4 */
+/* CX-STDOUT-NEXT: 15 */
+#include <stdio.h>
+
+comptime ^void use(fn f(^int) -> ^int) => emit printf("%d\n", f(emit 2));
+comptime ^int dbl(^int x) => emit x * 2;
+
+comptime ^void synthesized() {
+    auto q = emit 1 + 2;
+    auto twice = |^int x| => x * 2;
+    auto bump = |^int& x| { x += 1; };
+    auto feed = |fn sink(^int) -> ^void| => sink(emit 7);
+    return emit .{
+        int y = 5;
+        bump(y);
+        printf("%d %d %d\n", q, twice(q), y);
+        feed(|auto v| => printf("fed %d\n", v));
+    };
+}
+
+comptime ^void stored() {
+    auto g = |^int x| => x + 10;
+    auto h = g;
+    auto d = dbl;
+    return emit .{ use(h); use(d); printf("%d\n", g(emit 5)); };
+}
+
+int main() {
+    synthesized();
+    auto c = |^int x| => x * 3;
+    use(c);
+    stored();
+    return 0;
+}

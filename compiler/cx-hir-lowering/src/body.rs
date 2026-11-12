@@ -31,19 +31,13 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Binding {
-    local: HMIRLocalID,
-    quoted: bool,
-}
-
-#[derive(Debug, Clone, Copy)]
 enum ScopeEntry {
-    Local(Binding),
+    Local(HMIRLocalID),
     Static(HMIRDefID),
 }
 
 pub(crate) enum Symbol {
-    Local(Binding),
+    Local(HMIRLocalID),
     Def(HMIRDefID),
     Name,
 }
@@ -84,16 +78,6 @@ impl<'a> Scope<'a> {
             symbols: FxHashMap::default(),
             kind,
         }
-    }
-}
-
-impl Binding {
-    pub(crate) fn local(self) -> HMIRLocalID {
-        self.local
-    }
-
-    pub(crate) fn is_quoted(self) -> bool {
-        self.quoted
     }
 }
 
@@ -305,7 +289,6 @@ impl<'a> BodyLowering<'a> {
         name: Option<&CXIdent>,
         ty: HMIRExprID,
         comptime: bool,
-        quoted: bool,
         span: &TokenRange,
     ) -> HMIRLocalID {
         let local =
@@ -316,7 +299,7 @@ impl<'a> BodyLowering<'a> {
                 .last_mut()
                 .expect("body lowering always has a root scope")
                 .symbols
-                .insert(name.clone(), ScopeEntry::Local(Binding { local, quoted }));
+                .insert(name.clone(), ScopeEntry::Local(local));
         }
         local
     }
@@ -327,7 +310,7 @@ impl<'a> BodyLowering<'a> {
         ty: HMIRExprID,
         span: &TokenRange,
     ) -> HMIRLocalID {
-        self.declare(name, ty, self.comptime, false, span)
+        self.declare(name, ty, self.comptime, span)
     }
 
     pub(crate) fn lookup(&self, name: &QualifiedName, tag: Option<HIRTagKind>) -> Symbol {
@@ -340,7 +323,7 @@ impl<'a> BodyLowering<'a> {
                 .find_map(|scope| scope.symbols.get(root))
         {
             return match *entry {
-                ScopeEntry::Local(binding) => Symbol::Local(binding),
+                ScopeEntry::Local(local) => Symbol::Local(local),
                 ScopeEntry::Static(def) => Symbol::Def(def),
             };
         }
@@ -442,7 +425,7 @@ pub(crate) fn lower_reify(
     let mut params = Vec::new();
     for param in declared_params(prototype) {
         let ty = lower_type(&mut anon, &param.ty)?;
-        params.push(anon.declare(param.name.as_ref(), ty, false, false, &param.range));
+        params.push(anon.declare(param.name.as_ref(), ty, false, &param.range));
     }
     let return_type = lower_type(&mut anon, &prototype.return_type)?;
 

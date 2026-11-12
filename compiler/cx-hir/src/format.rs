@@ -201,10 +201,7 @@ impl<'a> Display for HIRExprFormatter<'a> {
                     "Closure |{}|",
                     params
                         .iter()
-                        .map(|param| match &param.ty {
-                            Some(ty) => format!("{ty} {}", param.name),
-                            None => param.name.to_string(),
-                        })
+                        .map(|param| format!("{} {}", param.ty, param.name))
                         .collect::<Vec<_>>()
                         .join(", ")
                 )?;

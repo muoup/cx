@@ -55,6 +55,11 @@ impl CXError {
         self.error.code()
     }
 
+    pub fn with_notes(mut self, notes: Vec<String>) -> Self {
+        self.error = self.error.with_notes(notes);
+        self
+    }
+
     pub fn notes(&self) -> &[String] {
         &self.error.1
     }

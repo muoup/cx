@@ -6,7 +6,7 @@ comptime ^void invoke(fn proc(^int&) -> ^int) {
 }
 
 int main() {
-    invoke(|value| {
+    invoke(|auto value| {
         value += 1;
         yield;
     });

@@ -34,7 +34,7 @@ use crate::{
     expr::literal::{lower_float_literal, lower_int_literal},
     expr::op::{lower_binop, lower_unop},
     log::log_hir_error,
-    ty::{lower_type, staged_signature},
+    ty::lower_type,
 };
 
 pub(crate) fn lower_expr<'a>(
@@ -302,15 +302,7 @@ pub(crate) fn lower_identifier(
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     Ok(match context.lookup(name, None) {
-        Symbol::Local(binding) => {
-            let local = context.push(HMIRExprKind::Local(binding.local()), span);
-            if !binding.is_quoted() || context.comptime() {
-                return Ok(local);
-            }
-
-            let args = Vec::new();
-            context.push(HMIRExprKind::Splice { quote: local, args }, span)
-        }
+        Symbol::Local(local) => context.push(HMIRExprKind::Local(local), span),
         Symbol::Def(def) => context.push(HMIRExprKind::Def(def), span),
         Symbol::Name => context.push(
             HMIRExprKind::Name {
@@ -416,10 +408,7 @@ pub(crate) fn lower_quote<'a>(
 ) -> CXResult<HMIRExprID> {
     let types = params
         .iter()
-        .map(|param| match &param.ty {
-            Some(ty) => Ok((lower_type(context, ty)?, staged_signature(ty).is_some())),
-            None => Ok((context.hole(span), true)),
-        })
+        .map(|param| lower_type(context, &param.ty))
         .collect::<CXResult<Vec<_>>>()?;
 
     context.with_stage(false, |this| {
@@ -427,7 +416,7 @@ pub(crate) fn lower_quote<'a>(
             let params = params
                 .iter()
                 .zip(types)
-                .map(|(param, (ty, quoted))| this.declare(Some(&param.name), ty, false, quoted, span))
+                .map(|(param, ty)| this.declare(Some(&param.name), ty, false, span))
                 .collect();
             let body = lower_expr(this, body)?;
 

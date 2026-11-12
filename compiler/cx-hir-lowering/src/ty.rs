@@ -121,7 +121,7 @@ fn lower_type_name(
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
     Ok(match context.lookup(name, tag) {
-        Symbol::Local(binding) => context.push(HMIRExprKind::Local(binding.local()), span),
+        Symbol::Local(local) => context.push(HMIRExprKind::Local(local), span),
         Symbol::Def(def) => context.push(HMIRExprKind::Def(def), span),
         Symbol::Name => context.push(
             HMIRExprKind::Name {
@@ -135,7 +135,7 @@ fn lower_type_name(
 
 // The shape of a staged value: '^T', or a comptime function over code such as 'fn(^A) -> ^T'.
 // The result is listed by the type of code it carries; parameters are as declared.
-pub(crate) fn staged_signature(ty: &HIRType) -> Option<(Vec<&HIRType>, &HIRType)> {
+fn staged_signature(ty: &HIRType) -> Option<(Vec<&HIRType>, &HIRType)> {
     match &ty.kind {
         HIRTypeKind::Staged(result) => Some((Vec::new(), result)),
         HIRTypeKind::Function { prototype, .. } => {

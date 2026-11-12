@@ -635,31 +635,11 @@ pub(crate) fn parse_expr_val(
         TokenKind::Operator(OperatorType::Bar) => {
             let mut params = Vec::new();
             loop {
-                let untyped = matches!(
-                    (
-                        data.tokens.peek().map(|token| &token.kind),
-                        data.tokens
-                            .slice
-                            .get(data.tokens.index + 1)
-                            .map(|token| &token.kind),
-                    ),
-                    (
-                        Some(TokenKind::Identifier(_)),
-                        Some(operator!(Comma) | operator!(Bar))
-                    )
-                );
-
-                if untyped {
-                    let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-                        unreachable!()
-                    };
-                    params.push(HIRClosureParam { name, ty: None });
-                } else {
-                    let (Some(name), ty, _) = parse_initializer(data)? else {
-                        return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a closure parameter".into(), None));
-                    };
-                    params.push(HIRClosureParam { name, ty: Some(ty) });
-                }
+                let (Some(name), ty, _) = parse_initializer(data)? else {
+                    let expected = ("a typed closure parameter".into(), Some("such as 'auto value'".into()));
+                    return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, expected);
+                };
+                params.push(HIRClosureParam { name, ty });
 
                 if try_next!(data.tokens, operator!(Bar)) {
                     break;

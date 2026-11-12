@@ -14,7 +14,7 @@ Token stream to HIR, then HIR unit to HMIR unit. The parser consults the [prepar
 - **generator**: registry symbol of generator kind (a comptime function returning a type); names a type only once applied, `opt(int)`.
 - **temporary type name**: name bound by a `type` parameter, treated as a type for the declaration that binds it.
 - **class**: ordinary, or tag (`struct`, `union`, `enum` names).
-- **stage** (desugaring): runtime or comptime body being lowered; decides whether a quoted local splices.
+- **stage** (desugaring): runtime or comptime body being lowered.
 
 ## Unit
 
@@ -218,7 +218,7 @@ value = {prefix-op} ( type | literal | "true" | "false" | "&&" name | "." block
       | keyword-expr | "(" ")" | "(" expr ")" | initializer | "[" "]" | "[" expr "]" )
       { "::" name } {postfix-op} ;
 closure = "|" [ cparam { "," cparam } ] "|" ( "then" | "=>" expr | block ) ;
-cparam  = name | specifiers type-base declarator ;
+cparam  = specifiers type-base declarator ;
 initializer = "{" [ ["." name "="] expr { "," ["." name "="] expr } [","] ] "}" ;
 ```
 
@@ -231,6 +231,7 @@ initializer = "{" [ ["." name "="] expr { "," ["." name "="] expr } [","] ] "}" 
 - `()` and `[]` are void; `rule/quirk-bracket-value` `[e]` is just e.
 - `A::b` where A is a temporary type name: scope access on type A. `_::a::b`: scope access chain on a hole.
 - `rule/unresolved-type` identifier directly followed by an identifier: P0018.
+- `rule/typed-closure-param` closure parameter without a type (`|x|`): P0001; `auto x` leaves it to be inferred.
 - closure body: `=> e` in comma mode off; a `{ ... }` body is an expression block (yields); anything else: P0001.
 - `comptime` in value position: P0012. Other keyword: P0002.
 - `rule/quirk-va-arg` `va_arg(list, T)` and `__builtin_va_arg` parse their second argument as a type.
@@ -309,7 +310,7 @@ Unmangled naming, root namespace, or name `main`: the plain name. Else `_N` foll
 #### Function
 
 - `rule/void-parameter-list` a lone unnamed `void` parameter declares none.
-- parameters and return type lowered in the function's stage; each parameter a local, quoted when its type is a [staged signature](#staged-type).
+- parameters and return type lowered in the function's stage; each parameter a local.
 - `rule/hole-default-only` a default on a runtime parameter of a runtime function: T0017; a default other than `_`: T0042.
 - `rule/detached-contract` conditions lowered in a body of their own with a hole-typed local per parameter, typed from the signature later; postcondition binding is a hole-typed local in a nested scope. No conditions: empty contract keeping `safe`.
 - body: braced, a scoped non-yielding block; `=> e`, e itself.
@@ -395,15 +396,14 @@ Call, pipe and backward pipe lower in an arguments scope.
 - piped arguments marked piped for evaluation.
 - `rule/quirk-leading-void-argument` a call whose first argument is `()` loses it.
 - `rule/va-builtins` `va_start(l, last)`, `va_end(l)` (and `__builtin_` forms) with exactly those arities: intrinsics. Named arguments to them: T0017.
-- quoted local callee: splice with the arguments; named arguments: T0017.
 - `rule/quirk-computed-callee-pipe` callee not an identifier: plain call; piped marks dropped.
-- `rule/quoted-local-reference` a quoted local named in a runtime stage is spliced with no arguments; in a comptime stage it is the local.
+- a local is always a local reference; whether a staged local splices is decided in HMIR, see [Local](hmir-lowering.md#local).
 - `rule/scope-base` `_::v` base is a hole; type base lowered as type.
 
 #### Closures and quotes
 
 - closure: a quote with its parameters over its body; `then` quotes the rest of the enclosing block.
-- quote: parameter types lowered in the enclosing stage as written, untyped as holes; body lowered in runtime stage in a staged scope with the parameters as locals, quoted when untyped or of a staged signature.
+- quote: parameter types lowered in the enclosing stage as written (`auto` a hole); body lowered in runtime stage in a staged scope with the parameters as locals.
 - `emit e`: quote without parameters.
 
 #### Patterns

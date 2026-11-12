@@ -11,10 +11,10 @@ comptime ^int apply(fn f(^int, ^int) -> ^int, ^int a, ^int b) =>
 int main() {
     int x = 10;
     with(emit x, |^int& v| { v += 1; });
-    int d = apply(|a, b| => a - b, emit 8, emit 3);
+    int d = apply(|auto a, auto b| => a - b, emit 8, emit 3);
     int output = 0;
     int& reference = output;
-    reference = apply(|a, b| => a - b, emit 8, emit 3);
+    reference = apply(|auto a, auto b| => a - b, emit 8, emit 3);
     printf("%d %d %d\n", x, d, output);
     return 0;
 }

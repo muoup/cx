@@ -221,16 +221,17 @@ Int and float literals: constant of their suffix type. String literal: `str` con
 
 ### Local
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Binding of the local, collapsed.
+- `rule/runtime-staged-local-splices` runtime context, staged (`^T`) value: [spliced](#splice) with no arguments.
 
 - `rule/comptime-unavailable-local` no binding, comptime context: M0029.
 - `todo/runtime-unbound-local` no binding, runtime context.
 
 ### Let
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 `T x;`, `T x = e;`, `_ x = e;`, `auto& x = e;`. Yields unit. Each evaluation binds a fresh instance.
 
@@ -244,14 +245,13 @@ With initializer: e evaluated, completed expecting declared type, then:
 - converted implicitly to declared type, when known.
 - `_` or `auto&`: collapsed, kept as-is. Inferred type: `_` the value's own type, a reference when e is a place; `auto&` its referent.
 - otherwise inferred type is the value type.
-- inferred non-comptime function type becomes its function pointer.
 - declared type completed expecting inferred, then `auto&` wraps it as reference, value converted implicitly to it.
 - storage declared, then written if default-initialized earlier, else initialized.
 
 Rules:
 - `rule/runtime-staged-local` runtime, declared type is code: initializer required (T0017); bound as [staged argument](#staged-argument), no storage.
 - `rule/comptime-function-local` runtime, comptime-only function type: value bound directly, no storage.
-- `rule/local-object-type` function type: T0011. Incomplete or invisible type: T0009.
+- `rule/local-object-type` function type: T0011, noting to take its address; except a comptime-only function type in comptime storage, held there as a value. Incomplete or invisible type: T0009.
 - `rule/quirk-let-double-initialize` runtime local of complete, copyable declared type default-initialized before its initializer, then overwritten.
 - `todo/comptime-let-at-runtime` comptime-marked local in runtime context.
 
@@ -647,7 +647,7 @@ Inner expression evaluated unchanged.
 `f(args)`, `f(.p = a)`. Callee evaluated, then call evaluated, then result completed expecting the call's expectation.
 
 Callee prepared:
-- staged reference read; a code-typed callee is its known value (a comptime local holding a quote yields the quote). Quote callee: named arguments T0017; else [Apply](#apply).
+- staged reference read; a code-typed callee is its known value (a comptime local holding a quote yields the quote). Quote or opaque callee: named arguments T0017; else [Apply](#apply).
 - `fn&` kept; function value made a `fn&` constant; otherwise rvalue-decayed, function pointer dereferenced to `fn&`.
 - curried value unwrapped, its arguments applied first.
 
@@ -684,11 +684,13 @@ Arguments bound: curried values first; named arguments to comptime params by nam
 Per param in order, in a callee frame whose comptime state persists across params:
 - param type evaluated, adjusted as [Parameter type](#parameter-type).
 - `rule/specialized-code-param` runtime, code-typed param: M0021. Comptime, reference param: M0021.
-- staged param: [staged argument](#staged-argument). Runtime comptime param or spliced: argument frozen expecting param. Otherwise evaluated, completed expecting param, then converted implicitly; comptime call: exported. Default: hole.
+- param type naming a deferred param: [deduction](#deduction) from this param on; still deferred: T0023.
+- staged param: [staged argument](#staged-argument). Runtime comptime param or spliced: argument frozen expecting param. Otherwise evaluated, completed expecting param, then converted implicitly; comptime call: exported. Default: evaluated apart, in a comptime child of the declaring unit.
+- `type` param whose argument or default stays incomplete (`_`, `T[_]`): deferred; other incomplete: T0052.
 - comptime param bound in frame, later param types see it; canonicalized.
-- incomplete `type` argument deferred to [deduction](#deduction); other incomplete: T0052.
 
 After binding:
+- deferred param left: T0023, unless the function generates a type (all params comptime, returns `type`) and the call is not partial: yields incomplete, completed from the expected type's memo origin.
 - partial, and comptime-stage or an unbound comptime param: yields curried value.
 - signature formed; every other visible declaration re-evaluated against bound values, must agree in params, comptime-ness, defaults and signature, else T0006.
 - partial otherwise: specialization declared, yields it curried.
@@ -700,9 +702,17 @@ After binding:
 
 #### Deduction
 
-Deferred `type` arguments inferred from later arguments' actual types, typed by dry run. Param type expression unified against actual: through pointers, references, arrays, nominal qualifiers, staged, function signatures, and generator calls (arguments recovered from the memo origin of the actual type). Value types used unless the param is declared as reference.
+Runs once a param's type names a deferred param, over the arguments from that param on. No fixpoint: what a pass leaves deferred stays so.
+
+1. Arguments other than closure literals (through pipes) typed as [subject type](#subject-type). Param type expression unified against it: through pointers, references, arrays, nominal qualifiers, staged, function signatures, and generator calls (arguments recovered from the memo origin of the actual type, the generator itself possibly an earlier param). Value types used unless the param is declared as reference.
+2. Each deferred param inferred so far: its pending argument or default completed from the inferred type, bound in the frame.
+3. Closure literals, in order, then step 2 again after each. Param type must be a function type of the closure's arity, else skipped.
+   - declared closure param types unified against the param's, then step 2.
+   - `auto` closure params: the param's parameter type, evaluated in the frame; not yet known: closure skipped.
+   - closure body [synthesized](#quote) with those types; result lifted to `^R`, unified against the param's return type.
+
 - `rule/conflicting-deductions` two inferences not alike: T0024.
-- `rule/undeduced` left undeduced: T0023, unless the function generates a type (all params comptime, returns `type`) and the call is not partial: yields incomplete, completed from the expected type's memo origin.
+- `rule/closure-deduction-errors` errors from synthesizing a closure body are reported as-is.
 
 ### Contracts
 
@@ -733,14 +743,17 @@ Captures: free locals of the quoted expression, quote params and inner declarati
 
 `rule/emit-squash` in a runtime context, a quote without parameters is its quoted expression evaluated in place: emitting code being emitted changes nothing. A [staged argument](#staged-argument) or a spliced quote literal stays a quote.
 
-Otherwise incomplete until expected. Expected staged shape (`^T`, or comptime function to a staged result, any param types): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
+Otherwise incomplete, completing without expectation too. Expected staged shape (`^T`, or comptime function to a staged result, any param types): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
 - `rule/quote-materializes` non-staged expectation: quote materialized in place.
+- `rule/quote-synthesis` nothing expected: typed by itself. Declared param types evaluated as above; an `auto` param: T0052. Body evaluated with a placeholder per param (the carried type for `^T`), captures shadowed, in an unevaluated detached child as [subject type](#subject-type); result R. Type: `^R` without params, else a non-decaying comptime function from the declared types to `^R`.
 
 ### Splice
 
 *verified uncommitted*
 
-Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments evaluated for their value types, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, converged (a comptime local holding code yields the code, not its place), then [applied](#apply); with no arguments, a value that is not `^T` (a closure or frozen param) yields itself.
+Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments typed as [subject type](#subject-type), lifted, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, converged, then [applied](#apply).
+
+A staged value spliced without arguments (a [Local](#local) read at runtime): converged; a `^T` quote materialized; anything else yields itself.
 
 ### Intrinsic
 
@@ -760,6 +773,7 @@ Repeated until nothing applies:
 - array or `T[]`: pointer to first element; non-place held in a temporary. Element const if array const.
 - `str`: `char*`, qualifiers kept.
 - non-comptime function: function pointer.
+- `rule/comptime-function-read` reference to a comptime-only function: a function name yields the function itself; storage is [read](#read).
 - `T&`: read.
 
 #### Read
@@ -835,7 +849,7 @@ Type as a value; in runtime emitting context: T0017. Unsettled type forced. `T[]
 
 #### Subject type
 
-Operand evaluated in an unevaluated detached runtime child seeing frozen known values, placeholders for the rest. Diverging: `unreachable`. `type` value: that type. `rule/quirk-sizeof-string-literal` `str` constant: `char[len + 1]`. Otherwise referent type.
+Operand evaluated in an unevaluated detached runtime child seeing frozen known values (quotes with their captures shadowed), placeholders for the rest. A placeholder of a comptime-only type is opaque: no storage, its contents unknown. Diverging: `unreachable`. `type` value: that type. `rule/quirk-sizeof-string-literal` `str` constant: `char[len + 1]`. Otherwise referent type.
 
 #### Parameter type
 
@@ -843,7 +857,7 @@ Forced. `type` in a parameter that is neither marked `comptime` nor of a comptim
 
 #### Staged argument
 
-Quote literal: used as-is. Target a function to code (not `^T`): operand evaluated. Local already holding code: used as-is. Otherwise operand captured as a parameterless quote. Completed expecting target, converted implicitly.
+Quote literal: used as-is. Target a function to code (not `^T`): operand evaluated. Local already holding code: collapsed. Otherwise operand captured as a parameterless quote. Completed expecting target, converted implicitly.
 
 #### Apply
 
@@ -851,7 +865,7 @@ Code applied to arguments; needs staged shape (T0002), argument count (T0015). `
 
 #### Materialize
 
-Quote inserted at runtime. Quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
+Quote inserted at runtime. Opaque code: an opaque value of its result, unit for `void`. Otherwise quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
 
 ## Comptime execution
 

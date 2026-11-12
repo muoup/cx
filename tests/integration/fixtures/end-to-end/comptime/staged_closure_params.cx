@@ -30,10 +30,10 @@ comptime ^void at_runtime(fn f(^int) -> ^void) => emit .{ f(next()); };
 
 int main() {
     int count = 3;
-    each(upto(count), |value| => printf("%d\n", value));
-    each(first(emit 0), |value| => printf("named %d\n", value));
+    each(upto(count), |auto value| => printf("%d\n", value));
+    each(first(emit 0), |auto value| => printf("named %d\n", value));
     with_three(|int n| => printf("frozen %d\n", n));
-    at_comptime(|value| => printf("comptime apply %d %d\n", value, value));
-    at_runtime(|value| => printf("runtime apply %d %d\n", value, value));
+    at_comptime(|auto value| => printf("comptime apply %d %d\n", value, value));
+    at_runtime(|auto value| => printf("runtime apply %d %d\n", value, value));
     return 0;
 }

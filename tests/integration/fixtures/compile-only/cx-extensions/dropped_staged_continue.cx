@@ -3,6 +3,6 @@ comptime ^void discard(fn body(^int) -> ^void) {
 }
 
 int main() {
-    discard() <| |unused| { continue; };
+    discard() <| |auto unused| { continue; };
     return 0;
 }

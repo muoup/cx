@@ -38,4 +38,7 @@ pub enum HMIRImmediate {
     },
 
     Type(HMIRTypeID),
+
+    /// A value of a comptime-only type whose contents are unknown, standing in where nothing is evaluated
+    Opaque,
 }

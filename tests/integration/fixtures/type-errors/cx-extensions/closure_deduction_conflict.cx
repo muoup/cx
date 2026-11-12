@@ -1,0 +1,6 @@
+comptime ^void call4(type T = _, ^T v, fn f(^T) -> ^void) => f(v);
+
+int main() {
+    call4(4, |^long x| => x);
+    return 0;
+}

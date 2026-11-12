@@ -40,8 +40,17 @@ pub(crate) fn subject(
     operand: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     let span = body.expr(operand).span();
+    typed(context, span, |child| eval(child, body, operand))
+}
+
+// The type of what 'evaluate' yields in a detached context that emits nothing
+pub(crate) fn typed(
+    context: &mut LocalLoweringContext,
+    span: &TokenRange,
+    evaluate: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<HMIRValue>>,
+) -> EvalResult<Evaluation<HMIRTypeID>> {
     let mut child = detached(context, Emission::Unevaluated, false, span)?;
-    let result = match eval(&mut child, body, operand) {
+    let result = match evaluate(&mut child) {
         Err(EvalExit::Stop(StopReason::Runtime(RuntimeStop::Diverged))) => {
             return Ok(Evaluation::Ready(types::realize(
                 child.env_mut(),
@@ -117,7 +126,7 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
             Some(known) if value::as_type(known).is_some() || known == &value => {
                 shadow(&mut child, known.clone(), span)?
             }
-            _ => placeholder(&mut child, &value, span)?,
+            _ => placeholder(&mut child, value.ty(), span)?,
         };
         emit::storage::bind_local(&mut child, local, value);
     }
@@ -137,35 +146,40 @@ fn shadow(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if let HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) = value.kind() {
-        let quote = node.get();
-        let mut captures = Bindings::default();
-        for (local, captured) in quote.captures() {
-            captures.insert(*local, shadow(context, captured.clone(), span)?);
-        }
-        let code = Quote::new(quote.source(), quote.root(), quote.params().to_vec(), captures);
-        return Ok(HMIRValue::new(
-            value.ty(),
-            HMIRImmediate::Quote(QuoteRef::new(code)),
-        ));
-    }
     match value.kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) => {
+            let code = shadowed(context, node.get(), span)?;
+            Ok(HMIRValue::new(value.ty(), HMIRImmediate::Quote(QuoteRef::new(code))))
+        }
         HMIRValueKind::Immediate(_) => Ok(value),
-        _ => placeholder(context, &value, span),
+        _ => placeholder(context, value.ty(), span),
     }
 }
 
-// Unevaluated storage standing in for a local whose contents are unknown
-fn placeholder(
+// 'quote' with what it captures standing in a detached context
+pub(crate) fn shadowed(
     context: &mut LocalLoweringContext,
-    value: &HMIRValue,
+    quote: &Quote,
+    span: &TokenRange,
+) -> CXResult<Quote> {
+    let mut captures = Bindings::default();
+    for (local, captured) in quote.captures() {
+        captures.insert(*local, shadow(context, captured.clone(), span)?);
+    }
+    Ok(Quote::new(quote.source(), quote.root(), quote.params().to_vec(), captures))
+}
+
+// Unevaluated storage standing in for a value of type 'ty' whose contents are unknown
+pub(crate) fn placeholder(
+    context: &mut LocalLoweringContext,
+    ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    match context.env().reference_inner(value.ty()) {
+    if types::comptime_only(context.env(), ty) {
+        return Ok(HMIRValue::new(ty, HMIRImmediate::Opaque));
+    }
+    match context.env().reference_inner(ty) {
         Some(ty) => emit::storage::scratch(context, ty, span),
-        None => Ok(HMIRValue::new(
-            value.ty(),
-            emit::runtime::register(context, value.ty(), span)?,
-        )),
+        None => Ok(HMIRValue::new(ty, emit::runtime::register(context, ty, span)?)),
     }
 }

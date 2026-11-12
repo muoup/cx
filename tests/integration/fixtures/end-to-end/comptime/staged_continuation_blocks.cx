@@ -30,14 +30,14 @@ comptime ^void with_trace(^int& value, fn proc(^int&) -> ^void) {
 
 void call_form() {
     int source = 1;
-    with_trace(emit source, |value| then);
+    with_trace(emit source, |auto value| then);
     printf("call form %d\n", value);
 }
 
 void inner_block() {
     int source = 2;
     {
-        with_trace(emit source) <| |value| then
+        with_trace(emit source) <| |auto value| then
         printf("inner %d\n", value);
     }
     printf("after inner\n");
@@ -45,15 +45,15 @@ void inner_block() {
 
 void at_block_end() {
     int source = 3;
-    with_trace(emit source) <| |value| then
+    with_trace(emit source) <| |auto value| then
 }
 
 void sequential() {
     int left_source = 4;
     int right_source = 5;
-    with_trace(emit left_source) <| |left| then
+    with_trace(emit left_source) <| |auto left| then
     printf("between %d\n", left);
-    with_trace(emit right_source) <| |right| then
+    with_trace(emit right_source) <| |auto right| then
     printf("sum %d\n", left + right);
 }
 

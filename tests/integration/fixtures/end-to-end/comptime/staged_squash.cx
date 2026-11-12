@@ -12,7 +12,7 @@ int main() {
     int one = 1;
     printf("%d %d", succ(emit one), twice(emit one));
     emit printf(" %d", 3);
-    invoke(emit 4, |value| => emit printf(" %d", value));
-    invoke(emit 5, |value| { emit printf(" %d\n", value); });
+    invoke(emit 4, |auto value| => emit printf(" %d", value));
+    invoke(emit 5, |auto value| { emit printf(" %d\n", value); });
     return 0;
 }

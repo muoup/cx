@@ -31,7 +31,7 @@ int main() {
         iteration += 1;
         defer trace_cleanup(10);
         int value = iteration;
-        with_cleanup(emit value) <| |captured| {
+        with_cleanup(emit value) <| |auto captured| {
             printf("continue %d\n", captured);
             continue;
         };
