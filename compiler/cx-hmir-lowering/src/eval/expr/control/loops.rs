@@ -117,7 +117,7 @@ pub(crate) fn eval_while(
 fn comptime_while(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
-    span: &TokenRange,
+    _span: &TokenRange,
     condition: HMIRExprID,
     loop_body: HMIRExprID,
     increment: Option<HMIRExprID>,

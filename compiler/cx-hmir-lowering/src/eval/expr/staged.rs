@@ -24,7 +24,7 @@ use crate::{
     eval::{
         EvalResult, coerce, comptime, control,
         deduce::{self, Incomplete, IncompleteReason},
-        eval, eval_type, expr,
+        eval, eval_type,
         flow::{self, Evaluation},
         types,
     },

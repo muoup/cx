@@ -20,7 +20,7 @@ use crate::{
     eval::{
         EvalResult,
         binding::{eval_block, eval_scoped},
-        coerce, eval, eval_comptime, expr,
+        coerce, eval, eval_comptime,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
         types,
     },
@@ -108,7 +108,6 @@ pub(crate) fn eval_case(
         emit::runtime::flow::jump(context, target, span);
     }
     emit::runtime::flow::switch_to(context, target);
-    let span = span.clone();
     eval(context, body, statement)?.map(context, move |context, _| Ok(value::unit(context.env())))
 }
 
@@ -234,7 +233,6 @@ fn runtime_switch(
         emit::runtime::flow::switch_to(context, exit);
         Ok(())
     });
-    let span = span.clone();
     flow::catch_diverged(completion)?.map(context, move |context, _| Ok(value::unit(context.env())))
 }
 

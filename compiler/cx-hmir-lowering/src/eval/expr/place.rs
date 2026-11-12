@@ -20,7 +20,7 @@ use crate::{
         arithmetic::{self, binary_operands, eval_operand},
         coerce::{self, promotion},
         eval,
-        expr::{self, require_impure, require_nonsafe},
+        expr::{require_impure, require_nonsafe},
         flow::{self, EvalExit, Evaluation},
         types::{self, qualify},
     },

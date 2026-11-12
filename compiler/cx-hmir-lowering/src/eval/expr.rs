@@ -22,7 +22,7 @@ use cx_tokens::TokenRange;
 use crate::{
     emit,
     env::function::{LocalLoweringContext, Permission},
-    eval::{EvalResult, eval, eval_type, expr, flow::Evaluation, types::alike},
+    eval::{EvalResult, eval, eval_type, flow::Evaluation, types::alike},
     log::hmir_error,
     value::{
         self, HMIRValue,

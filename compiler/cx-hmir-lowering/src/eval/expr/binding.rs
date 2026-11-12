@@ -20,7 +20,7 @@ use crate::{
         EvalResult, coerce,
         control::{self, closing},
         deduce, eval, eval_type,
-        expr::{self, place},
+        expr::place,
         flow::{self, ComptimeStop, EvalExit, Evaluation, RuntimeStop, StopReason},
         staged, types,
     },
@@ -82,7 +82,6 @@ pub(crate) fn eval_let(
             return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind).into());
         };
         let value = staged::argument(context, body, initializer, ty)?;
-        let span = span.clone();
         return value.map(context, move |context, value| {
             emit::storage::bind_local(context, local_id, value);
             Ok(value::unit(context.env()))

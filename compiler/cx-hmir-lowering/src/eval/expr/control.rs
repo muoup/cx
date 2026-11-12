@@ -24,9 +24,9 @@ use crate::{
     emit,
     env::function::{FnContext, LocalLoweringContext, Permission},
     eval::{
-        self, EvalResult,
+        EvalResult,
         binding::eval_scoped,
-        coerce, eval, expr,
+        coerce, eval,
         flow::{self, ComptimeStop, Evaluation},
         types::{self, alike},
     },

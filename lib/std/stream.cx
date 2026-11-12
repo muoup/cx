@@ -38,7 +38,9 @@ comptime ^void stream::for_each(type T = _, stream(T) this, fn callback(^T) -> ^
 
 comptime stream(T) span::stream(type T = _, ^std::span(T) this)
     => |fn(^T) -> ^void sink| {
-        for (usize i = 0; i < this.length; i++) {
-            sink(this.data[i]);
+        auto spliced = this;
+    
+        for (usize i = 0; i < spliced.length; i++) {
+            sink(spliced.data[i]);
         }
     };

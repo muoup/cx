@@ -12,6 +12,7 @@ use crate::{
     value::{HMIRValIntrinsic, HMIRValue},
 };
 
+#[allow(dead_code)]
 // An intrinsic without a result produces a value of the unit type 'result'
 pub fn intrinsic(
     context: &mut LocalLoweringContext,

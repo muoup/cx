@@ -21,7 +21,7 @@ use crate::{
         runtime::RuntimeScope,
     },
     eval::{
-        EvalResult, coerce, eval, expr,
+        EvalResult, coerce, eval,
         flow::{EvalExit, Evaluation},
         symbol, types,
     },
