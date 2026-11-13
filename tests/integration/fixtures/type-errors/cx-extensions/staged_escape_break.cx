@@ -1,0 +1,11 @@
+import std::optional as std;
+
+int main() {
+    while (1) {
+        std::opt(int) value = std::opt(int)::none();
+        int inner = move value |> std::opt::unwrap_or_else(emit .{
+            break;
+        });
+    }
+    return 0;
+}

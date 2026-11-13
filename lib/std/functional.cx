@@ -3,13 +3,13 @@ public:
 comptime ^T tap(comptime type T = _, ^T value, fn func(^T&) -> ^void) =>
     emit .{
         T val = value;
-        func(val);
+        func(emit val);
         yield move val;
     };
 
 comptime ^T inspect(comptime type T = _, ^T value, fn func(^const T&) -> ^void) =>
     emit .{
         T val = value;
-        func(val);
+        func(emit val);
         yield move val;
     };

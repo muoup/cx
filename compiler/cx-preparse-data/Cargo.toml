@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 rustc-hash = { workspace = true }
-speedy = { version = "0.8.7" }
+speedy = { workspace = true }
 
 cx-util = { path = "../cx-util" }
 cx-namespace = { path = "../cx-namespace" }

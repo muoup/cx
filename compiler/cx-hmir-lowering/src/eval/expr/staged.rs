@@ -329,8 +329,10 @@ pub(crate) fn argument(
     target: HMIRTypeID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let mut operand = arg;
+    let mut piped = false;
     while let HMIRExprKind::Piped(inner) = body.expr(operand).kind() {
         operand = *inner;
+        piped = true;
     }
     let value = match body.expr(operand).kind() {
         HMIRExprKind::Quote { params, body: root } => quote(context, body, params, *root)?,
@@ -344,7 +346,11 @@ pub(crate) fn argument(
             let span = body.expr(operand).span();
             Evaluation::Ready(coerce::collapse(context, value, span)?)
         }
-        _ => quote(context, body, &[], operand)?,
+        _ if piped => quote(context, body, &[], operand)?,
+        _ => {
+            let span = body.expr(operand).span();
+            return Err(hmir_error(span, &typecheck::UNSTAGED_ARGUMENT, ()).into());
+        }
     };
     let span = body.expr(operand).span().clone();
     value
@@ -456,7 +462,8 @@ fn expand(
         .body(quote.root().body())
         .expect("a quoted body exists");
     let span = body.expr(quote.root()).span();
-    let scope = RuntimeScope::new(false).quoted(body.id());
+    let sealed = !context.runtime().quoting() && !context.expectations().allows_escape();
+    let scope = RuntimeScope::new(false).quoted(body.id(), sealed);
     context
         .runtime_mut()
         .scopes_mut()

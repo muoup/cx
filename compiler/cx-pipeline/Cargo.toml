@@ -10,8 +10,8 @@ backend-llvm = ["dep:cx-backend-llvm"]
 
 [dependencies]
 rustc-hash = { workspace = true }
-speedy = { version = "0.8.7" }
-fs2 = { version = "0.4.3" }
+speedy = { workspace = true }
+fs2 = { workspace = true }
 
 cx-lexer = { path = "../cx-lexer", default-features = false }
 cx-parsing = { path = "../cx-parsing" }

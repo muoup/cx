@@ -1,6 +1,6 @@
 use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression, HIRUnOp};
 use cx_hmir::{
-    HMIRAggregateOp, HMIRBinaryOp, HMIRCoerceMode, HMIROp, HMIROwnershipOp, HMIRUnaryOp,
+    HMIRAggregateOp, HMIRBinaryOp, HMIRCoerceMode, HMIRControlOp, HMIROp, HMIROwnershipOp, HMIRUnaryOp,
     expr::HMIRExprID,
 };
 use cx_log::{
@@ -130,5 +130,6 @@ pub(crate) fn lower_unop<'a>(
         HIRUnOp::PreIncrement(_) => unary(context, HMIRUnaryOp::PreIncrement),
         HIRUnOp::PostIncrement(delta) if *delta < 0 => unary(context, HMIRUnaryOp::PostDecrement),
         HIRUnOp::PostIncrement(_) => unary(context, HMIRUnaryOp::PostIncrement),
+        HIRUnOp::Escape => context.control(HMIRControlOp::Escape(value), span),
     })
 }

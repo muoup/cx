@@ -1,0 +1,40 @@
+/* CX-STDOUT: tried none */
+/* CX-STDOUT-NEXT: fallback 5 */
+/* CX-STDOUT-NEXT: piped back 3 */
+/* CX-STDOUT-NEXT: reified 4 */
+/* CX-STDOUT-NEXT: reified -1 */
+
+#include <stdio.h>
+
+import std::optional as std;
+
+comptime ^void with_value(^int value, fn proc(^int) -> ^void) => emit .{
+    proc(value);
+};
+
+std::opt(int) tried(std::opt(int) value) {
+    int inner = value |> std::opt::try()!;
+    return std::opt(int)::some(inner);
+}
+
+int main() {
+    match (tried(std::opt(int)::none())) {
+        some(auto value) => printf("tried some %d\n", value),
+        none() => printf("tried none\n"),
+    }
+
+    int fallback = std::opt(int)::none() |> std::opt::unwrap_or_else(emit 5)!;
+    printf("fallback %d\n", fallback);
+
+    with_value() <| 3 <| |auto value| => printf("piped back %d\n", value);
+
+    fn* positive(int) -> int = @reify(fn(int) -> int, |auto x| {
+        if (x < 0) {
+            return -1;
+        }
+        return x;
+    });
+    printf("reified %d\n", positive(4));
+    printf("reified %d\n", positive(-4));
+    return 0;
+}

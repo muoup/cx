@@ -13,12 +13,12 @@ comptime ^void forward_none(comptime type T) {
 }
 
 std::opt(int) int_result() {
-    forward_none(int);
+    forward_none(int)!;
     return std::opt(int)::some(123);
 }
 
 std::opt(float) float_result() {
-    forward_none(int);
+    forward_none(int)!;
     return std::opt(float)::some(4.5);
 }
 

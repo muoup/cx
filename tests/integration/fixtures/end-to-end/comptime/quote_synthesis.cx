@@ -16,7 +16,7 @@ comptime ^void synthesized() {
     auto feed = |fn sink(^int) -> ^void| => sink(emit 7);
     return emit .{
         int y = 5;
-        bump(y);
+        bump(emit y);
         printf("%d %d %d\n", q, twice(q), y);
         feed(|auto v| => printf("fed %d\n", v));
     };

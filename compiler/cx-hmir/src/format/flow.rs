@@ -135,10 +135,12 @@ impl Emitter<'_> {
                 temp.unwrap_or_else(|| NONE.to_string())
             }
             HMIRExprKind::Op(HMIROp::Control(
-                op @ (HMIRControlOp::Defer(body) | HMIRControlOp::Unsafe(body)),
+                op @ (HMIRControlOp::Defer(body)
+                | HMIRControlOp::Unsafe(body)
+                | HMIRControlOp::Escape(body)),
             )) => {
                 let keyword = op.path();
-                let valued = valued && matches!(op, HMIRControlOp::Unsafe(_));
+                let valued = valued && !matches!(op, HMIRControlOp::Defer(_));
                 let temp = valued.then(|| self.fresh(id));
                 self.open(format!("{}{keyword} {{", assignment(&temp)));
                 self.region(*body, valued);

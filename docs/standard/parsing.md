@@ -126,7 +126,7 @@ array      = "[" [expr] "]" ;
 - `(*f[4])(int)` is array 4 of pointer to function.
 - `rule/quirk-weak-pointer` `weak *` is a plain pointer.
 - `: T` after a name replaces an `auto` type (not C mode).
-- `fn {"*" {qualifier} | "&"} [name] {array} (params) -> R`: function type R, wrapped by each `*` (pointer) and `&` (reference) innermost first; `fn* f(int) -> int` is a pointer. Without a name or array the result is a base type taking further declarator suffixes. No `(`: P0001.
+- `fn {"*" {qualifier} | "&"} [name] {array} (params) -> R`: function type R, wrapped by each `*` (pointer) and `&` (reference) innermost first; `fn* f(int) -> int` is a pointer. Without a name or array: the function type itself, whose return type has already taken any `*`, `&`, `[]`; a name then directly followed by `(` is a function declarator returning it (`fn*(int) -> int pick(int which)`), any other name: P0022. No `(`: P0001.
 - `fn` function types are marked not decaying; C declarators (`R (*f)(params)`, `typedef R f(params)`) make decaying ones. See [Type lowering](#type-lowering).
 - abstract type: specifiers, base, pointer and reference suffixes, arrays; no name. A `fn` base reads its indirections and signature.
 
@@ -187,7 +187,7 @@ Specifiers, base, then declarators separated by `,` (comma mode off). Several yi
 Shunting-yard over values and operators; an operator pops those of precedence at most its own (assignment: strictly less, right-associative). Leftover stack state: PX001.
 
 Precedence, tightest first:
-- 1: `.` `->` call `[]`, postfix `++` `--`, prefix `move`
+- 1: `.` `->` call `[]`, postfix `++` `--`, postfix `!` (outside C mode), prefix `move`
 - 2: `|>` `<|`; prefix `++` `--` `~` `!` `-` `*` `&`
 - 3: `is`, cast
 - 4: `*` `/` `%`
@@ -317,7 +317,7 @@ Unmangled naming, root namespace, or name `main`: the plain name. Else `_N` foll
 
 ### Body scopes
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Scopes stack inside a body: plain, arguments, staged, block (remaining statements), switch.
 - `rule/local-lookup` untagged name whose namespace is root: innermost local or static binding; else left as a name for evaluation.
@@ -335,7 +335,7 @@ Runtime-stage `static` or `extern` local declarations; yield unit.
 
 #### Reify
 
-`@reify(function type, value)`: new static runtime function `reify.<def index>` at file scope; parameters from the signature; body returns a splice of the comptime value with the parameters. Signature not a function type (`fn(params) -> R`, no indirection): T0011.
+`@reify(function type, value)`: new static runtime function `reify.<def index>` at file scope; parameters from the signature; body returns an escaping splice of the comptime value with each parameter quoted (`emit p`), so the code may `return` from the reified function. Signature not a function type (`fn(params) -> R`, no indirection): T0011.
 
 ### Staged type
 
@@ -371,7 +371,8 @@ Staged signature: `^T`, or a function type (either form) returning `^T`. Paramet
 - arithmetic, comparison, logical, bitwise: binary op. Compound assignment: assign with that op.
 - `,` and grouped `,`: unscoped non-yielding block of both.
 - `.`/`->`: member of a name; right side not a name: T0011.
-- `[]`: index. `*`, `&`: dereference, address-of. `-`, `~`, `!`: unary. `move`: move. `++`/`--` pre and post.
+- `[]`: index. `*`, `&`: dereference, address-of. `-`, `~`, prefix `!`: unary. `move`: move. `++`/`--` pre and post.
+- postfix `!`: escape control op over the operand.
 - cast: C cast coerce. `is`: is with lowered pattern.
 - named argument outside a call: T0017. Taken expression: MX017.
 
@@ -381,7 +382,7 @@ Staged signature: `^T`, or a function type (either form) returning `^T`. Paramet
 - `rule/truthy-condition` if, while, for conditions coerce truthy to `bool`; void condition is `1`.
 - while and for: one scope over the loop, nested for the body.
 - match: scrutinee, then an anonymous hole-typed subject local; each arm scoped with its pattern.
-- switch body in a switch scope. `defer`, `@unsafe`, `return`, `yield`, `break`, `continue`, `goto`, `goto *`, labels: control ops.
+- switch body in a switch scope. `defer`, `@unsafe`, escape, `return`, `yield`, `break`, `continue`, `goto`, `goto *`, labels: control ops.
 
 #### Declarations
 
@@ -393,10 +394,10 @@ Staged signature: `^T`, or a function type (either form) returning `^T`. Paramet
 
 Call, pipe and backward pipe lower in an arguments scope.
 - `rule/pipe-insert` `x |>(n) f(args)` inserts x at n, innermost pipe applied last; n beyond the argument count: T0039. `f(args) <| x` appends x. Target not a call: T0002.
-- piped arguments marked piped for evaluation.
+- `rule/pipe-escape` a target under postfix `!` is lowered as the target with the piped values, then wrapped in escape: `x |> f()!` is `(f(x))!`.
+- arguments supplied by `|>` and `<|` marked piped for evaluation, whatever the callee.
 - `rule/quirk-leading-void-argument` a call whose first argument is `()` loses it.
 - `rule/va-builtins` `va_start(l, last)`, `va_end(l)` (and `__builtin_` forms) with exactly those arities: intrinsics. Named arguments to them: T0017.
-- `rule/quirk-computed-callee-pipe` callee not an identifier: plain call; piped marks dropped.
 - a local is always a local reference; whether a staged local splices is decided in HMIR, see [Local](hmir-lowering.md#local).
 - `rule/scope-base` `_::v` base is a hole; type base lowered as type.
 

@@ -96,6 +96,7 @@ pub enum HMIRControlOp {
 
     Defer(HMIRExprID),
     Unsafe(HMIRExprID),
+    Escape(HMIRExprID),
     Unreachable,
 }
 
@@ -204,6 +205,7 @@ impl HMIRControlOp {
             Self::LabelAddress { .. } => "label_address",
             Self::Defer(_) => "defer",
             Self::Unsafe(_) => "unsafe",
+            Self::Escape(_) => "escape",
             Self::Unreachable => "unreachable",
         }
     }

@@ -433,9 +433,13 @@ pub(crate) fn lower_reify(
     let quote = anon.push(HMIRExprKind::Comptime(quote), &value.range);
     let args = params
         .iter()
-        .map(|param| anon.push(HMIRExprKind::Local(*param), span))
+        .map(|param| {
+            let local = anon.push(HMIRExprKind::Local(*param), span);
+            anon.push(HMIRExprKind::Quote { params: Vec::new(), body: local }, span)
+        })
         .collect();
     let body = anon.push(HMIRExprKind::Splice { quote, args }, span);
+    let body = anon.control(HMIRControlOp::Escape(body), span);
     let root = anon.returning_block(body, span);
 
     let name = CXIdent::from(format!("reify.{}", id.index()).as_str());

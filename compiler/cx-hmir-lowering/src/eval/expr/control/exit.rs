@@ -3,7 +3,10 @@ use cx_hmir::{
     expr::HMIRExprID,
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
-use cx_log::catalogue::{self, typecheck};
+use cx_log::{
+    CXResult,
+    catalogue::{self, typecheck},
+};
 use cx_mir::MIRInstructionKind;
 use cx_tokens::TokenRange;
 
@@ -36,6 +39,7 @@ pub(super) fn eval_return(
     if context.is_unevaluated() {
         return flow::diverged();
     }
+    contained(context, 0, span, "return")?;
     let value = value.map(|value| eval(context, body, value)).transpose()?;
     return_value(context, body, value, true, span)
 }
@@ -97,9 +101,25 @@ pub(super) fn eval_loop_exit(
             false => untargeted(context, span, "continue", "a loop"),
         };
     };
+    contained(context, depth, span, if breaks { "break" } else { "continue" })?;
     defer::leave(context, depth, span)?;
     emit::runtime::flow::jump(context, target, span);
     flow::diverged()
+}
+
+// A jump to the scope at 'depth' may not leave a quote that was spliced without '!'
+pub(super) fn contained(
+    context: &LocalLoweringContext,
+    depth: usize,
+    span: &TokenRange,
+    jump: &str,
+) -> CXResult<()> {
+    match context.context() {
+        FnContext::Runtime(runtime) if !context.is_unevaluated() && runtime.sealed_past(depth) => {
+            Err(hmir_error(span, &typecheck::ESCAPING_SPLICE, jump.into()))
+        }
+        _ => Ok(()),
+    }
 }
 
 fn deferred(context: &LocalLoweringContext) -> bool {

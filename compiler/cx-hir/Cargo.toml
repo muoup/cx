@@ -11,5 +11,4 @@ cx-tokens = { path = "../cx-tokens" }
 cx-target = { path = "../cx-target" }
 cx-preparse-data = { path = "../cx-preparse-data" }
 
-uuid = { version = "1.16.0", features = ["v4"] }
 speedy = { version = "0.8.7" }

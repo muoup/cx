@@ -159,6 +159,7 @@ fn control_parts(op: &HMIRControlOp) -> (String, Vec<Arg>) {
         | HMIRControlOp::Yield(Some(operand))
         | HMIRControlOp::Defer(operand)
         | HMIRControlOp::Unsafe(operand)
+        | HMIRControlOp::Escape(operand)
         | HMIRControlOp::IndirectGoto(operand) => values(&[*operand]),
         HMIRControlOp::Goto(label) | HMIRControlOp::LabelAddress { name: label, .. } => {
             vec![Arg::Text(label.to_string())]

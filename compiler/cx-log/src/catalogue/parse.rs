@@ -51,6 +51,7 @@ define_errors! {
         let kind = if comptime { "comptime function" } else { "function" };
         format!("associated {kind} declarations must have exactly two segments")
     };
+    FN_TRAILING_NAME: String = "P0022" => |name| format!("the name of a 'fn' declarator goes after 'fn': 'fn {name}(...) -> T'");
 
     STACK_STATE: (String, String, String) = "PX001" => |(stack, expected, state)| format!("parser {stack} stack was not {expected}: {state}");
 }

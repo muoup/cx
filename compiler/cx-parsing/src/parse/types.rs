@@ -1063,9 +1063,16 @@ fn parse_fn_declarator(data: &mut ParserData) -> CXResult<(Option<CXIdent>, HIRT
 
     let function = parse_fn_type(data, indirections)?;
 
-    // The anonymous form is an ordinary base type
+    // An anonymous 'fn' type only takes a name as the return type of a function declarator
     if name.is_none() && array_suffixes.is_empty() {
-        return parse_base_mods(data, function);
+        let Some(trailing) = try_parse_simple_identifier(&mut data.tokens) else {
+            return Ok((None, function));
+        };
+        if peek_kind!(data.tokens, punctuator!(OpenParen)) {
+            return Ok((Some(trailing), function));
+        }
+        data.tokens.back();
+        return parse_point_error(&data.tokens, &FN_TRAILING_NAME, trailing.to_string());
     }
 
     let ty = array_suffixes

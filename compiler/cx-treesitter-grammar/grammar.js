@@ -157,6 +157,31 @@ const commaSep1 = (rule) => seq(rule, repeat(seq(",", rule)), optional(","));
 const keyword = ($, value) => alias(value, $.keyword);
 const op = ($, value) => alias(value, $.operator);
 
+const typeRule = ($, allowFunction) =>
+    seq(
+        repeat($.type_qualifier),
+        choice(
+            $.builtin_type_sequence,
+            keyword($, "type"),
+            ...(allowFunction ? [$.function_type] : []),
+            $.staged_type,
+            $.type_application,
+            $.templated_name,
+            $.qualified_name,
+            $.struct_type,
+            $.union_type,
+            $.enum_type,
+            $.enum_union_type,
+        ),
+        repeat(
+            choice(
+                $.pointer_modifier,
+                $.reference_modifier,
+                $.array_modifier,
+            ),
+        ),
+    );
+
 module.exports = grammar({
     name: "cx",
 
@@ -166,6 +191,8 @@ module.exports = grammar({
     ],
 
     word: ($) => $.identifier,
+
+    inline: ($) => [$._decl_type, $._fn_decl_type, $._declared_type],
 
     reserved: {
         global: (_) => [],
@@ -178,8 +205,10 @@ module.exports = grammar({
         [$._top_level_item, $._statement],
         [$.type, $.primary_expression],
         [$.type],
-        [$.type, $.type_application, $.primary_expression],
         [$.type, $.type_application],
+        [$.decl_type, $.primary_expression],
+        [$.decl_type, $.type_application, $.primary_expression],
+        [$.decl_type, $.type_application],
         [$.type_application, $.primary_expression],
         [$.builtin_type, $.variable_declaration],
         [$.builtin_type, $.function_declaration],
@@ -256,30 +285,17 @@ module.exports = grammar({
         template_argument: ($) =>
             choice($.type, $.number_literal, $.qualified_name, $.expression),
 
-        type: ($) =>
-            seq(
-                repeat($.type_qualifier),
-                choice(
-                    $.builtin_type_sequence,
-                    keyword($, "type"),
-                    $.function_type,
-                    $.staged_type,
-                    $.type_application,
-                    $.templated_name,
-                    $.qualified_name,
-                    $.struct_type,
-                    $.union_type,
-                    $.enum_type,
-                    $.enum_union_type,
-                ),
-                repeat(
-                    choice(
-                        $.pointer_modifier,
-                        $.reference_modifier,
-                        $.array_modifier,
-                    ),
-                ),
-            ),
+        type: ($) => typeRule($, true),
+
+        decl_type: ($) => typeRule($, false),
+
+        fn_decl_type: ($) => seq(repeat($.type_qualifier), $.function_type),
+
+        _decl_type: ($) => alias($.decl_type, $.type),
+
+        _fn_decl_type: ($) => alias($.fn_decl_type, $.type),
+
+        _declared_type: ($) => choice($._decl_type, $._fn_decl_type),
 
         function_type: ($) =>
             seq(
@@ -482,7 +498,7 @@ module.exports = grammar({
         field_declaration: ($) =>
             seq(
                 choice(
-                    seq($.type, commaSep1($.field_declarator)),
+                    seq($._decl_type, commaSep1($.field_declarator)),
                     $.function_type_declarator,
                 ),
                 ";",
@@ -524,7 +540,7 @@ module.exports = grammar({
 
         variable_declaration: ($) =>
             choice(
-                seq($.type, commaSep1($.declarator_with_initializer)),
+                seq($._decl_type, commaSep1($.declarator_with_initializer)),
                 seq(
                     $.function_type_declarator,
                     optional(seq(op($, "="), $.expression)),
@@ -578,7 +594,7 @@ module.exports = grammar({
                     repeat($.declaration_specifier),
                     choice(
                         seq(
-                            field("return_type", $.type),
+                            field("return_type", $._declared_type),
                             field("declarator", $.function_declarator),
                             optional($.function_contract),
                         ),
@@ -600,7 +616,7 @@ module.exports = grammar({
                 repeat($.declaration_specifier),
                 optional(keyword($, "comptime")),
                 choice(
-                    seq($.type, $.function_declarator, optional($.function_contract)),
+                    seq($._declared_type, $.function_declarator, optional($.function_contract)),
                     seq(
                         repeat($.type_qualifier),
                         alias("auto", $.builtin_type),
@@ -620,7 +636,7 @@ module.exports = grammar({
                     keyword($, "comptime"),
                     choice(
                         seq(
-                            field("return_type", $.type),
+                            field("return_type", $._declared_type),
                             field("name", $.callable_name),
                             field("parameters", $.parameter_list),
                             optional($.function_contract),
@@ -661,8 +677,10 @@ module.exports = grammar({
             choice(
                 seq(
                     optional(keyword($, "comptime")),
-                    $.type,
-                    optional($.declarator),
+                    choice(
+                        seq($._decl_type, optional($.declarator)),
+                        $._fn_decl_type,
+                    ),
                     optional($.parameter_default),
                 ),
                 $.function_type_declarator,
@@ -1088,7 +1106,7 @@ module.exports = grammar({
                             $.argument_list,
                             seq(choice(".", op($, "->"), op($, "::")), $.identifier),
                             seq("[", $.expression, "]"),
-                            choice(op($, "++"), op($, "--")),
+                            choice(op($, "++"), op($, "--"), op($, "!")),
                             seq(op($, "is"), $.match_pattern),
                         ),
                     ),
@@ -1176,7 +1194,7 @@ module.exports = grammar({
             ),
 
         _lambda_parameters: ($) =>
-            seq("|", optional(commaSep1(choice(seq($.type, $.identifier), $.function_type_declarator))), "|"),
+            seq("|", optional(commaSep1(choice(seq($._decl_type, $.identifier), $.function_type_declarator))), "|"),
 
         staged_then: ($) => prec(20, keyword($, "then")),
 

@@ -253,6 +253,8 @@ pub enum HIRUnOp {
 
     PreIncrement(i8),
     PostIncrement(i8),
+
+    Escape,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Readable, Writable)]

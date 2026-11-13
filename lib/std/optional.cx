@@ -44,19 +44,19 @@ T opt::unwrap_or(comptime type T = _, opt(T) this, T default_value) {
     }
 }
 
-comptime ^T opt::unwrap_or_else(comptime type T = _, ^opt(T) self, ^T on_none) =>
+comptime ^T opt::unwrap_or_else(type T = _, ^opt(T) self, ^T on_none) =>
     emit match (self) {
         some(auto value) => move value,
         none() => on_none,
     };
 
-comptime ^T opt::try(comptime type T = _, ^opt(T) self) =>
+comptime ^T opt::try(type T = _, ^opt(T) self) =>
     emit match (self) {
         some(auto value) => move value,
         none() => return _::none(),
     };
 
-comptime ^T opt::try_or(comptime type T = _, ^opt(T) self, ^void on_none) =>
+comptime ^T opt::try_or(type T = _, ^opt(T) self, ^void on_none) =>
     emit match (self) {
         some(auto value) => move value,
         none() => {

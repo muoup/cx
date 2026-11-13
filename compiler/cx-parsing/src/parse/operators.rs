@@ -53,6 +53,7 @@ pub(crate) fn binop_prec(op: HIRBinOp) -> u8 {
 pub(crate) fn unop_prec(op: HIRUnOp) -> u8 {
     match op {
         HIRUnOp::PostIncrement(_) => 1,
+        HIRUnOp::Escape => 1,
         HIRUnOp::Move => 1,
 
         HIRUnOp::PreIncrement(_) => 2,
@@ -147,6 +148,7 @@ pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> CXResult<Option<HIRUn
         TokenKind::Operator(op) => match op {
             OperatorType::Increment => Some(HIRUnOp::PostIncrement(1)),
             OperatorType::Decrement => Some(HIRUnOp::PostIncrement(-1)),
+            OperatorType::Exclamation if !data.c_mode => Some(HIRUnOp::Escape),
 
             _ => {
                 data.tokens.back();

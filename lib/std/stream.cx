@@ -23,7 +23,7 @@ comptime stream(T) stream::filter(
     type T = _,
     stream(T) this,
     fn predicate(^T) -> ^bool
-) => |fn(^T) -> ^void sink| {
+) => |fn sink(^T) -> ^void| {
     this(|^T value| {
         if (predicate(value)) {
             sink(value);
@@ -37,10 +37,10 @@ comptime ^void stream::for_each(type T = _, stream(T) this, fn callback(^T) -> ^
     });
 
 comptime stream(T) span::stream(type T = _, ^std::span(T) this)
-    => |fn(^T) -> ^void sink| {
+    => |fn sink(^T) -> ^void| {
         auto spliced = this;
     
         for (usize i = 0; i < spliced.length; i++) {
-            sink(spliced.data[i]);
+            sink(emit spliced.data[i]);
         }
     };

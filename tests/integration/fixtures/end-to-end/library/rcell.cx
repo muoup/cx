@@ -12,7 +12,7 @@ import std::cell::rcell as std;
 import std::io as std;
 
 int read_and_return(std::rcell(int)& cell) {
-    std::rcell::borrow_const(emit cell) <| |auto value| then
+    std::rcell::borrow_const(emit cell)! <| |auto value| then
 
     std::printf("returning %d\n", value);
     return value;

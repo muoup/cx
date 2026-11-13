@@ -6,6 +6,6 @@ comptime ^void show(type T = _, ^T v) => emit printf("%d\n", v);
 
 int main() {
     int x = 1;
-    show(id(x));
+    show(emit id(emit x));
     return 0;
 }

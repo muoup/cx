@@ -15,7 +15,7 @@ int main() {
     int value = make_value() |> std::opt::unwrap_or_else(emit .{
         printf("unexpected none\n");
         return 1;
-    });
+    })!;
 
     printf("value %d calls %d\n", value, calls);
 }

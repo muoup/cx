@@ -147,6 +147,17 @@ impl RuntimeContext {
         None
     }
 
+    pub(crate) fn quoting(&self) -> bool {
+        self.scopes.controls().any(|(_, scope)| scope.quote().is_some())
+    }
+
+    pub(crate) fn sealed_past(&self, depth: usize) -> bool {
+        self.scopes
+            .controls()
+            .skip(depth)
+            .any(|(_, scope)| scope.sealed())
+    }
+
     pub(crate) fn defers_past(&self, depth: usize) -> bool {
         self.scopes
             .controls()

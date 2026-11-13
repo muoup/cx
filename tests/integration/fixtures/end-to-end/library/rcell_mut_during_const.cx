@@ -6,7 +6,7 @@ import std::io as std;
 
 int main() {
     std::rcell(int) cell = std::rcell::new(8);
-    std::rcell::borrow_const(emit cell) <| |auto shared| then
+    std::rcell::borrow_const(emit cell)! <| |auto shared| then
 
     std::printf("shared active %d\n", shared);
     std::rcell::borrow(emit cell) <| |auto value| {

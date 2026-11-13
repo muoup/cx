@@ -1,5 +1,5 @@
-use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression};
-use cx_hmir::expr::{HMIRExprID, HMIRExprKind};
+use cx_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression, HIRUnOp};
+use cx_hmir::{HMIRControlOp, expr::{HMIRExprID, HMIRExprKind}};
 use cx_intrinsics::{Intrinsic, VAIntrinsic};
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -65,6 +65,10 @@ pub(crate) fn lower_call<'a>(
     mut piped: Vec<(usize, &'a HIRExpression)>,
     append: Vec<&'a HIRExpression>,
 ) -> CXResult<HMIRExprID> {
+    if let HIRExprKind::UnOp { operator: HIRUnOp::Escape, operand } = &call.kind {
+        let lowered = lower_call(context, operand, piped, append)?;
+        return Ok(context.control(HMIRControlOp::Escape(lowered), &call.range));
+    }
     let HIRExprKind::BinOp { op, lhs, rhs } = &call.kind else {
         return log_hir_error(
             &call.range,
@@ -90,7 +94,7 @@ pub(crate) fn lower_call<'a>(
                 }
                 args.insert(index, (value, true));
             }
-            args.extend(append.into_iter().map(|arg| (arg, false)));
+            args.extend(append.into_iter().map(|arg| (arg, true)));
             lower_callee_call(context, lhs, args, named, &call.range)
         }
         HIRBinOp::Pipe(index) => {
@@ -118,32 +122,28 @@ fn lower_callee_call<'a>(
     named: Named<'a>,
     span: &TokenRange,
 ) -> CXResult<HMIRExprID> {
-    let subjects = args.iter().map(|(_, piped)| *piped).collect::<Vec<_>>();
-    let args = args.into_iter().map(|(arg, _)| arg).collect::<Vec<_>>();
     let name = match &callee.kind {
-        HIRExprKind::Identifier { name } => name,
-        _ => {
-            let callee = lower_expr(context, callee)?;
-            let args = lower_args(context, &args)?;
-            let named = lower_named(context, named)?;
-            return Ok(context.push(HMIRExprKind::Call { callee, args, named }, span));
-        }
+        HIRExprKind::Identifier { name } => Some(name),
+        _ => None,
     };
 
-    if let Some(root) = name.root_name_ref()
-        && let Some(intrinsic) = lower_builtin_call(context, root.as_str(), &args, span)?
-    {
-        if let Some((_, value)) = named.first() {
-            let feature = ("a named argument".into(), "a builtin call".into());
-            return log_hir_error(&value.range, &typecheck::INVALID_CONTEXT, feature);
+    if let Some(root) = name.and_then(|name| name.root_name_ref()) {
+        let plain = args.iter().map(|(arg, _)| *arg).collect::<Vec<_>>();
+        if let Some(intrinsic) = lower_builtin_call(context, root.as_str(), &plain, span)? {
+            if let Some((_, value)) = named.first() {
+                let feature = ("a named argument".into(), "a builtin call".into());
+                return log_hir_error(&value.range, &typecheck::INVALID_CONTEXT, feature);
+            }
+            return Ok(intrinsic);
         }
-        return Ok(intrinsic);
     }
 
-    let callee = lower_identifier(context, name, &callee.range)?;
+    let callee = match name {
+        Some(name) => lower_identifier(context, name, &callee.range)?,
+        None => lower_expr(context, callee)?,
+    };
     let args = args
         .iter()
-        .zip(&subjects)
         .map(|(arg, piped)| {
             let value = lower_expr(context, arg)?;
             Ok(if *piped {

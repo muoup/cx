@@ -11,14 +11,14 @@ void trace_count(int count) {
 comptime ^void around(fn proc(^int) -> ^void) {
     return emit .{
         defer trace("stage cleanup");
-        proc(1);
+        proc(emit 1);
         printf("stage suffix\n");
     };
 }
 
 int returning() {
     defer trace("caller cleanup");
-    around() <| |auto unused| {
+    around()! <| |auto unused| {
         defer trace("callback cleanup");
         return 7;
     };
@@ -36,7 +36,7 @@ int main() {
     while (count < 2) {
         count += 1;
         defer trace_count(count);
-        around() <| |auto unused| { continue; };
+        around()! <| |auto unused| { continue; };
         printf("loop suffix\n");
     }
     ignore() <| |auto unused| { return 1; };

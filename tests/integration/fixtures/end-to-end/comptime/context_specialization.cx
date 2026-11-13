@@ -13,12 +13,12 @@ comptime ^void forward_none() {
 }
 
 std::opt(int) int_result() {
-    forward_none();
+    forward_none()!;
     return std::opt(int)::some(123);
 }
 
 std::opt(float) float_result() {
-    forward_none();
+    forward_none()!;
     return std::opt(float)::some(4.5);
 }
 

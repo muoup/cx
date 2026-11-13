@@ -58,6 +58,12 @@ pub(crate) fn eval_control(
                 eval(context, body, *operand)
             })
         }
+        HMIRControlOp::Escape(operand) => {
+            let expectations = context.expectations().allowing_escape();
+            flow::scoped(context, expectations, |context| {
+                eval(context, body, *operand)
+            })
+        }
         HMIRControlOp::Unreachable => todo!("HMIRControlOp::Unreachable"),
     }
 }

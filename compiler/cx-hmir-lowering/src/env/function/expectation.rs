@@ -9,6 +9,7 @@ pub enum Permission {
 pub struct Expectations {
     permission: Permission,
     pure: bool,
+    escaping: bool,
 }
 
 impl Expectations {
@@ -16,7 +17,17 @@ impl Expectations {
         Self {
             permission,
             pure: false,
+            escaping: false,
         }
+    }
+
+    pub fn allowing_escape(mut self) -> Self {
+        self.escaping = true;
+        self
+    }
+
+    pub fn allows_escape(self) -> bool {
+        self.escaping
     }
 
     pub fn permission(self) -> Permission {

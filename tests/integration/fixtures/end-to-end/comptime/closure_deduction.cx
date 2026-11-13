@@ -12,9 +12,9 @@ comptime ^U transform(type T = _, type U = _, ^T v, fn f(^T) -> ^U) => f(v);
 
 int main() {
     call(|^int x| => printf("call %d\n", x));
-    call4(4, |^int x| => printf("call4 %d\n", x));
-    call6(6, |^int x| => printf("call6 %d\n", x));
-    double d = transform(3, |auto x| => x * 1.5);
+    call4(emit 4, |^int x| => printf("call4 %d\n", x));
+    call6(emit 6, |^int x| => printf("call6 %d\n", x));
+    double d = transform(emit 3, |auto x| => x * 1.5);
     printf("transform %.1f\n", d);
     return 0;
 }

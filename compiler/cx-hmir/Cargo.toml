@@ -14,5 +14,4 @@ cx-target = { path = "../cx-target" }
 cx-namespace = { path = "../cx-namespace" }
 
 cx-tokens = { path = "../cx-tokens" }
-cx-log = { path = "../cx-log" }
 cx-util = { path = "../cx-util" }

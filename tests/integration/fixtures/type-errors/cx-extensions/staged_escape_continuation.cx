@@ -1,0 +1,8 @@
+comptime ^void around(fn proc(^int) -> ^void) => emit .{
+    proc(emit 1);
+};
+
+int main() {
+    around() <| |auto unused| then
+    return unused;
+}

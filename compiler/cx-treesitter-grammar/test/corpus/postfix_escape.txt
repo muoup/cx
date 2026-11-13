@@ -1,0 +1,407 @@
+==================
+postfix bang after call
+==================
+void run() {
+    forward_none()!;
+}
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (expression_statement
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (argument_list)
+              (operator))))))))
+
+==================
+postfix bang in pipe chain
+==================
+void run() {
+    int inner = value |> std::opt::try()!;
+    int v = std::opt(int)::none() |> std::opt::unwrap_or_else(emit 5)!;
+}
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (binary_expression
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier))))
+                  (operator)
+                  (expression
+                    (postfix_expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier)
+                          (operator)
+                          (identifier)
+                          (operator)
+                          (identifier)))
+                      (argument_list)
+                      (operator))))))))
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (binary_expression
+                  (expression
+                    (postfix_expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier)
+                          (operator)
+                          (identifier)))
+                      (argument_list
+                        (type
+                          (builtin_type_sequence
+                            (builtin_type))))
+                      (operator)
+                      (identifier)
+                      (argument_list)))
+                  (operator)
+                  (expression
+                    (postfix_expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier)
+                          (operator)
+                          (identifier)
+                          (operator)
+                          (identifier)))
+                      (argument_list
+                        (expression
+                          (primary_expression
+                            (emit_expression
+                              (keyword)
+                              (expression
+                                (primary_expression
+                                  (literal
+                                    (number_literal))))))))
+                      (operator))))))))))))
+
+==================
+postfix bang before closure pipe
+==================
+void run() {
+    with_cleanup(emit value)! <| |auto captured| { continue; };
+    std::rcell::borrow(emit cell)! <| |auto mutable| then
+    use(mutable);
+}
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (expression_statement
+          (expression
+            (binary_expression
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier)))
+                  (argument_list
+                    (expression
+                      (primary_expression
+                        (emit_expression
+                          (keyword)
+                          (expression
+                            (primary_expression
+                              (qualified_name
+                                (identifier))))))))
+                  (operator)))
+              (operator)
+              (expression
+                (primary_expression
+                  (staged_lambda
+                    (type
+                      (builtin_type_sequence
+                        (builtin_type)))
+                    (identifier)
+                    (compound_statement
+                      (continue_statement
+                        (keyword)))))))))
+        (staged_continuation_statement
+          (staged_continuation_expression
+            (expression
+              (postfix_expression
+                (primary_expression
+                  (qualified_name
+                    (identifier)
+                    (operator)
+                    (identifier)
+                    (operator)
+                    (identifier)))
+                (argument_list
+                  (expression
+                    (primary_expression
+                      (emit_expression
+                        (keyword)
+                        (expression
+                          (primary_expression
+                            (qualified_name
+                              (identifier))))))))
+                (operator)))
+            (operator)
+            (staged_continuation_lambda
+              (type
+                (builtin_type_sequence
+                  (builtin_type)))
+              (identifier)
+              (staged_then
+                (keyword)))))
+        (expression_statement
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (argument_list
+                (expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier))))))))))))
+
+==================
+postfix bang after multi-line call
+==================
+void run() {
+    int value = make_value() |> std::opt::unwrap_or_else(emit .{
+        return 1;
+    })!;
+}
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (binary_expression
+                  (expression
+                    (postfix_expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier)))
+                      (argument_list)))
+                  (operator)
+                  (expression
+                    (postfix_expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier)
+                          (operator)
+                          (identifier)
+                          (operator)
+                          (identifier)))
+                      (argument_list
+                        (expression
+                          (primary_expression
+                            (emit_expression
+                              (keyword)
+                              (staged_block
+                                (compound_statement
+                                  (return_statement
+                                    (keyword)
+                                    (expression
+                                      (primary_expression
+                                        (literal
+                                          (number_literal)))))))))))
+                      (operator))))))))))))
+
+==================
+bang equals stays not-equal
+==================
+void run(int x) {
+    if (f()!=x) { return; }
+    if (f() != x) { return; }
+    bool b = !x;
+    bool c = !f();
+    bool d = f()! != x;
+}
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (if_statement
+          (keyword)
+          (expression
+            (binary_expression
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier)))
+                  (argument_list)))
+              (operator)
+              (expression
+                (primary_expression
+                  (qualified_name
+                    (identifier))))))
+          (compound_statement
+            (return_statement
+              (keyword))))
+        (if_statement
+          (keyword)
+          (expression
+            (binary_expression
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier)))
+                  (argument_list)))
+              (operator)
+              (expression
+                (primary_expression
+                  (qualified_name
+                    (identifier))))))
+          (compound_statement
+            (return_statement
+              (keyword))))
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (unary_expression
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))))))))
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (unary_expression
+                  (operator)
+                  (expression
+                    (postfix_expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier)))
+                      (argument_list))))))))
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (binary_expression
+                  (expression
+                    (postfix_expression
+                      (primary_expression
+                        (qualified_name
+                          (identifier)))
+                      (argument_list)
+                      (operator)))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))))))))))))

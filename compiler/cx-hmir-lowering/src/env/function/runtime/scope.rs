@@ -78,6 +78,7 @@ pub(crate) struct RuntimeScope {
     returning: Option<HMIRUnitID>,
     yields: Option<Vec<(MIRBasicBlockID, HMIRValue)>>,
     quote: Option<HMIRBodyID>,
+    sealed: bool,
     places: Vec<HMIRPlaceID>,
 }
 
@@ -89,15 +90,21 @@ impl RuntimeScope {
         }
     }
 
-    pub(crate) fn quoted(self, body: HMIRBodyID) -> Self {
+    // A sealed quote cannot be jumped out of
+    pub(crate) fn quoted(self, body: HMIRBodyID, sealed: bool) -> Self {
         Self {
             quote: Some(body),
+            sealed,
             ..self
         }
     }
 
     pub(crate) fn quote(&self) -> Option<HMIRBodyID> {
         self.quote
+    }
+
+    pub(crate) fn sealed(&self) -> bool {
+        self.sealed
     }
 
     pub(crate) fn deferred(&self) -> bool {

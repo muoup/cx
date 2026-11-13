@@ -9,9 +9,9 @@
 
 comptime type source(type T) => fn(fn(^T) -> ^void) -> ^void;
 
-comptime source(int) upto(^int count) => |fn(^int) -> ^void sink| {
+comptime source(int) upto(^int count) => |fn sink(^int) -> ^void| {
     for (int i = 0; i < count; i++) {
-        sink(i * 2);
+        sink(emit i * 2);
     }
 };
 
@@ -26,11 +26,11 @@ int counter = 0;
 int next() { counter++; return counter; }
 
 comptime ^void at_comptime(fn f(^int) -> ^void) { return f(emit next()); }
-comptime ^void at_runtime(fn f(^int) -> ^void) => emit .{ f(next()); };
+comptime ^void at_runtime(fn f(^int) -> ^void) => emit .{ f(emit next()); };
 
 int main() {
     int count = 3;
-    each(upto(count), |auto value| => printf("%d\n", value));
+    each(upto(emit count), |auto value| => printf("%d\n", value));
     each(first(emit 0), |auto value| => printf("named %d\n", value));
     with_three(|int n| => printf("frozen %d\n", n));
     at_comptime(|auto value| => printf("comptime apply %d %d\n", value, value));

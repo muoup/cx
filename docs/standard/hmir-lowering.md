@@ -361,7 +361,7 @@ Binding pattern binds whole subject; variant with binding binds its payload, qua
 
 ### Labels and goto
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 `label: s`: runtime, emitting: jump into label block and continue there; then s evaluated.
 
@@ -369,15 +369,17 @@ Binding pattern binds whole subject; variant with binding binds its payload, qua
 
 - `rule/comptime-goto` goto in comptime: M0021.
 - `rule/defer-jump` goto inside deferred expression: T0058.
+- `rule/quirk-sealed-goto` goto or `goto *` inside a [sealed](#materialize) quote: T0076, even when the label lies inside the quote; labels are function-wide names.
 - `rule/label-address-context` `&&label` in comptime without named function: T0018.
 
 ### Return
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 `return e;`, `return;`. Unevaluated: diverges. Return type: current one, else signature's evaluated return type; no signature: M0039.
 
 - `rule/defer-return` inside deferred expression: T0058.
+- `rule/sealed-return` runtime, inside a [sealed](#materialize) quote: T0076.
 - `rule/noreturn-return` return type `unreachable`: T0057.
 - `rule/void-return-value` void return type and explicit value, even a void one: T0056.
 - `rule/missing-return-value` non-void return type and no value: T0020.
@@ -401,9 +403,10 @@ Value evaluated; incomplete marked as yielding; then rvalue-decayed. Comptime: y
 
 ### Break and continue
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Comptime: stop. Runtime: nearest target (loop or switch for `break`, loop for `continue`), scopes to it left, defers expanded, jump; diverges. No target: [Yield](#yield) `rule/untargeted-exit`.
+- `rule/sealed-loop-exit` evaluated, a [sealed](#materialize) quote between the exit and its target: T0076. A target inside the quote is not crossed; the nearest target is taken across non-root quotes, so a loop of library code can catch a caller's `break`.
 
 ### Defer
 
@@ -425,6 +428,12 @@ Operand dry-run once in a detached runtime child, emission enabled, deferred. Re
 *verified 425c5ff1*
 
 `@unsafe e`: e evaluated with permission unsafe; an incomplete result keeps the permission when resumed.
+
+### Escape
+
+*verified uncommitted*
+
+`e!`: e evaluated with escaping allowed; an incomplete result keeps it when resumed. Every root quote [materialized](#materialize) while it holds is unsealed. Covering no splice, or none that escapes, is allowed.
 
 - `todo/unreachable-op` `unreachable` control op.
 
@@ -857,7 +866,7 @@ Forced. `type` in a parameter that is neither marked `comptime` nor of a comptim
 
 #### Staged argument
 
-Quote literal: used as-is. Target a function to code (not `^T`): operand evaluated. Local already holding code: collapsed. Otherwise operand captured as a parameterless quote. Completed expecting target, converted implicitly.
+Piped marks stripped. Quote literal: used as-is. Target a function to code (not `^T`): operand evaluated. Local already holding code: collapsed. `rule/explicit-staged-argument` otherwise, a piped operand is captured as a parameterless quote; any other: T0075, so `f(emit e)`, `e |> f()` and `f() <| e`. Completed expecting target, converted implicitly.
 
 #### Apply
 
@@ -865,7 +874,7 @@ Code applied to arguments; needs staged shape (T0002), argument count (T0015). `
 
 #### Materialize
 
-Quote inserted at runtime. Opaque code: an opaque value of its result, unit for `void`. Otherwise quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
+Quote inserted at runtime. Opaque code: an opaque value of its result, unit for `void`. Otherwise quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; `rule/sealed-root-quote` the scope is sealed when no quoted scope encloses it (a root quote, inserted into hand-written runtime code) and escaping is not allowed ([Escape](#escape)); quotes materialized inside another are never sealed; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
 
 ## Comptime execution
 

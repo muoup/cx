@@ -6,11 +6,11 @@ autotests = false
 
 [dependencies]
 rustc-hash = { workspace = true }
+
 cx-log = { path = "../cx-log" }
 cx-util = { path = "../cx-util" }
 cx-lmir = { path = "../cx-lmir" }
 cx-target = { path = "../cx-target" }
-cx-hir = { path = "../cx-hir" }
 
 cranelift = "0.132.1"
 cranelift-module = "0.132.1"

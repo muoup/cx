@@ -23,7 +23,7 @@ comptime ^void rcell::borrow_const(comptime type T = _, ^rcell(T)& cell, fn proc
         cell.sema++;
 
         defer rcell::release_const(cell);
-        proc(cell.inner);
+        proc(emit cell.inner);
     };
 
 comptime ^void rcell::borrow(comptime type T = _, ^rcell(T)& cell, fn proc(^T&) -> ^void) =>
@@ -34,7 +34,7 @@ comptime ^void rcell::borrow(comptime type T = _, ^rcell(T)& cell, fn proc(^T&) 
         cell.sema = -1;
 
         defer rcell::release(cell);
-        proc(cell.inner);
+        proc(emit cell.inner);
     };
 
 void rcell::release(comptime type T = _, rcell(T)& cell) /* not safe */ {

@@ -115,7 +115,7 @@ impl Emitter<'_> {
                 self.flow(id, false);
             }
             HMIRExprKind::Op(HMIROp::Control(
-                HMIRControlOp::Defer(_) | HMIRControlOp::Unsafe(_),
+                HMIRControlOp::Defer(_) | HMIRControlOp::Unsafe(_) | HMIRControlOp::Escape(_),
             )) => {
                 self.flow(id, false);
             }
@@ -185,7 +185,7 @@ impl Emitter<'_> {
                 self.close();
                 temp
             }
-            HMIROp::Control(HMIRControlOp::Defer(_) | HMIRControlOp::Unsafe(_)) => {
+            HMIROp::Control(HMIRControlOp::Defer(_) | HMIRControlOp::Unsafe(_) | HMIRControlOp::Escape(_)) => {
                 self.flow(id, true)
             }
             HMIROp::Control(HMIRControlOp::LabelAddress { .. }) => {

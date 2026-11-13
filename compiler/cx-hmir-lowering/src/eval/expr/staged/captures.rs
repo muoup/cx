@@ -209,6 +209,7 @@ impl Locals<'_> {
                         children.extend(value)
                     }
                     HMIRControlOp::Unsafe(value)
+                    | HMIRControlOp::Escape(value)
                     | HMIRControlOp::Defer(value)
                     | HMIRControlOp::IndirectGoto(value) => children.push(*value),
                     _ => {}

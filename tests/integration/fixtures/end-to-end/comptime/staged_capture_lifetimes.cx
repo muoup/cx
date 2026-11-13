@@ -29,7 +29,7 @@ comptime ^void leave() => emit return 7;
 int with_cleanup() {
     int marker = 9;
     defer printf("cleanup %d\n", marker);
-    leave();
+    leave()!;
     return 0;
 }
 
@@ -39,7 +39,7 @@ int take(Pair pair, int other) { return pair.left + pair.right + other; }
 
 const int floor_value = 10;
 int imported_exit(int input) where post(result): (result >= floor_value) {
-    lib::exit_here(emit input);
+    lib::exit_here(emit input)!;
     return 0;
 }
 

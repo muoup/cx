@@ -114,7 +114,7 @@ fn jumpable(context: &LocalLoweringContext, span: &TokenRange) -> CXResult<()> {
         FnContext::Runtime(runtime) if runtime.deferred() => {
             Err(hmir_error(span, &typecheck::DEFER_JUMP, "jump".into()))
         }
-        FnContext::Runtime(_) => Ok(()),
+        FnContext::Runtime(_) => super::exit::contained(context, 0, span, "goto"),
     }
 }
 

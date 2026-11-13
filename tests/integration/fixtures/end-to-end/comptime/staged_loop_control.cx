@@ -31,7 +31,7 @@ int main() {
         iteration += 1;
         defer trace_cleanup(10);
         int value = iteration;
-        with_cleanup(emit value) <| |auto captured| {
+        with_cleanup(emit value)! <| |auto captured| {
             printf("continue %d\n", captured);
             continue;
         };
@@ -44,7 +44,7 @@ int main() {
         int result = move value |> std::opt::unwrap_or_else(emit .{
             printf("break\n");
             break;
-        });
+        })!;
         printf("unreachable break %d\n", result);
     }
     printf("broken\n");
@@ -55,7 +55,7 @@ int main() {
             move value |> std::opt::unwrap_or_else(emit .{
                 printf("switch break\n");
                 break;
-            });
+            })!;
             printf("unreachable switch\n");
         }
         default:
