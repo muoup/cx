@@ -3,6 +3,7 @@ import std::io as std;
 import std::string as std;
 
 extern "C":
+
 void exit(int status);
 
 #include <stdio.h>
@@ -19,11 +20,11 @@ comptime type span(comptime type T) =>
 span(T) span::new(comptime type T = _, T* data, usize length)
     => (span(T)) { .data = data, .length = length };
     
-usize span::length(comptime type T = _, span(T)& this) {
+usize span::length(comptime type T = _, span(T) this) {
     return this.length;
 }
 
-T* span::data(comptime type T = _, span(T)& this) {
+T* span::data(comptime type T = _, span(T) this) {
     return this.data;
 }
 
@@ -55,6 +56,12 @@ std::opt(span(T)) span::subspan(comptime type T = _, span(T) this, usize offset,
         .data = this.data + offset,
         .length = len
     } |> _::some();
+}
+
+bool span::equals(comptime type T = _, span(T) first, span(T) second) {
+    if (span::length(first) != span::length(second)) return false;
+
+    return memcmp(first |> span::data(), second |> span::data(), sizeof(T) * span::length(first)) == 0;
 }
 
 std::opt(T&) span::first(comptime type T = _, span(T)& this) {
