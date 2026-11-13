@@ -142,16 +142,22 @@ float get_area(shape& s) {
                     The CX compiler is an in-progress drop-in replacement for compilers like gcc and clang, and due to the backward compatibility of the language, any CX file can directly include a C header and call C functions without any wrappers or bindings.
                 </p>
                 <p>
-                    The build system of the compiler is also design with first-class support for C interopability. Use '.cxh' files to have the compiler automatically generate C header artifacts that allow for C code to call into CX code.
+                    The build system of the compiler is also designed with first-class support for C interoperability. Files with the '.cxc' extension keep their symbols unmangled, and marking them as exports of a library target in 'cx.lua' has the compiler generate C header artifacts that allow C code to call into CX code.
                 </p>
             </>
         ),
         files: [
             {
-                name: "mathlib.cxh",
+                name: "mathlib.cxc",
                 code: `i32 add(i32 a, i32 b) {
     return a + b;
 }`,
+            },
+            {
+                name: "cx.lua",
+                code: `project {}
+
+library "mathlib" { exports "mathlib.cxc" }`,
             },
             {
                 name: "main.c",

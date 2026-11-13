@@ -346,6 +346,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cx-extension-zed"
+version = "0.0.0"
+dependencies = [
+ "zed_extension_api",
+]
+
+[[package]]
 name = "cx-hir"
 version = "0.0.0"
 dependencies = [
@@ -601,13 +608,6 @@ dependencies = [
  "index_vec",
  "rustc-hash",
  "speedy",
-]
-
-[[package]]
-name = "cx-zed-extension"
-version = "0.0.0"
-dependencies = [
- "zed_extension_api",
 ]
 
 [[package]]

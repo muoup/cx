@@ -73,7 +73,7 @@ link dependencies.
 | Field | Type | Description |
 | --- | --- | --- |
 | `binaries` | array of `{ name, entry }` | Executable targets. `entry` is a `.cx` source file. |
-| `libraries` | array of `{ name, entry }` | Library targets. `entry` is typically a `.cxh` file. |
+| `libraries` | array of `{ name, entry }` | Library targets. `entry` is typically a `.cxc` file. |
 | `link` | array of `{ name, kind }` | External link dependencies. `kind` is `"system"`, `"static"`, or `"dynamic"`. |
 
 ## Building

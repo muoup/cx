@@ -1,4 +1,4 @@
 name = "CX"
 grammar = "cx"
-path_suffixes = ["cx", "cxh"]
+path_suffixes = ["cx", "cxc"]
 line_comments = ["//"]

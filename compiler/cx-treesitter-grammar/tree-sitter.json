@@ -7,7 +7,7 @@
       "path": ".",
       "file-types": [
         "cx",
-        "cxh"
+        "cxc"
       ],
       "highlights": "queries/highlights.scm"
     }

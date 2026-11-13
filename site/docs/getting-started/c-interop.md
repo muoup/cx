@@ -1,17 +1,17 @@
 ---
 title: Libraries and C Interop
-description: CX library targets, .cxh entry files, generated C headers, and linking from C.
+description: CX library targets, .cxc entry files, generated C headers, and linking from C.
 ---
 
 # Libraries and C Interop
 
 When interfacing a CX codebase with C, or with another language supporting C FFI, a project may define a library target. A library target consists of an object file containing the compiled CX code and a C header generated from its CX header entry file.
 
-## `.cxh` Library Entry Files
+## `.cxc` Library Entry Files
 
-Files with the `.cxh` extension serve as library entry points and use the same syntax as `.cx` files. When a `.cxh` file is compiled as a library target, its non-static, non-external functions become the library's exported symbols and declarations in the generated C header.
+Files with the `.cxc` extension serve as library entry points and use the same syntax as `.cx` files. When a `.cxc` file is compiled as a library target, its non-static, non-external functions become the library's exported symbols and declarations in the generated C header.
 
-```c title="mathlib.cxh"
+```c title="mathlib.cxc"
 i32 add(i32 a, i32 b) {
     return a + b;
 }
@@ -31,7 +31,7 @@ name = "mathlib"
 
 [workspace.targets.default]
 libraries = [
-  { name = "mathlib", entry = "mathlib.cxh" },
+  { name = "mathlib", entry = "mathlib.cxc" },
 ]
 ```
 

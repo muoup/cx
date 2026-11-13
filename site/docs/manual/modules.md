@@ -185,4 +185,4 @@ a private C header to be included and selected declarations to be published
 through `public extern "C"`, as `puts` is in the first example, without creating
 an additional shadow namespace.
 
-Files with the `.cxh` extension serve as library entry points and use the same syntax as `.cx` files. The [Libraries and C Interop](../getting-started/c-interop.md) guide explains how their public declarations become C-compatible library exports.
+Files with the `.cxc` extension serve as library entry points and use the same syntax as `.cx` files. The [Libraries and C Interop](../getting-started/c-interop.md) guide explains how their public declarations become C-compatible library exports.
