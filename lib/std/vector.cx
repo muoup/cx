@@ -1,5 +1,4 @@
-import std::optional as std;
-import std::span as std;
+import std::{span, optional} as std;
 
 extern "C":
 
@@ -63,7 +62,7 @@ void vector::push(comptime type T = _, vector(T)& this, T object) {
     this.length++;
 }
 
-std::optional::opt(T) vector::pop(comptime type T = _, vector(T)& this) {
+std::opt(T) vector::pop(comptime type T = _, vector(T)& this) {
     if (this.length == 0) return std::optional::opt(T)::none();
 
     T buffer;
@@ -74,12 +73,12 @@ std::optional::opt(T) vector::pop(comptime type T = _, vector(T)& this) {
     return std::optional::opt(T)::some(move buffer);
 }
 
-std::optional::opt(T&) vector::at(comptime type T = _, vector(T)& this, usize index) {
+std::opt(T&) vector::at(comptime type T = _, vector(T)& this, usize index) {
     if (index >= this.length) {
-        return std::optional::opt(T&)::none();
+        return _::none();
     }
 
-    return std::optional::opt(T&)::some(this.data[index]);
+    return _::some(this.data[index]);
 }
 
 std::span(T) vector::span(comptime type T = _, vector(T)& this)
