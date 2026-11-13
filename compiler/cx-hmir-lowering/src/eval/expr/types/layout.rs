@@ -20,7 +20,7 @@ use crate::{
     value::{self, HMIRValue},
 };
 
-pub(crate) fn eval_type_op(
+pub(super) fn eval_type_op(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
@@ -30,10 +30,12 @@ pub(crate) fn eval_type_op(
     | HMIRTypeOp::AlignOf(subject)
     | HMIRTypeOp::OffsetOf { ty: subject, .. }) = op
     else {
-        todo!("HMIRTypeOp: {}", op.path())
+        unreachable!("only layout queries are evaluated here")
     };
+
     let subject = deduce::subject(context, body, *subject)?;
     let (span, op) = (span.clone(), op.clone());
+
     subject.and_then(context, body, move |context, body, ty| {
         let width = HMIRIntWidth::pointer_width(context.env().architecture());
         let size_type = types::int(context.env_mut(), width, false, &span);
@@ -45,7 +47,11 @@ pub(crate) fn eval_type_op(
             }
             _ => unreachable!("only layout queries are evaluated here"),
         };
-        Ok(Evaluation::Ready(value::int(context.env(), value, size_type)))
+        Ok(Evaluation::Ready(value::int(
+            context.env(),
+            value,
+            size_type,
+        )))
     })
 }
 
@@ -98,9 +104,10 @@ fn offset(
                 };
                 let element_size = layout(context, element, span)?.size() as i128;
                 let value = eval_comptime(context, body, *index, Some(size_type))?;
-                let (HMIRTypeKind::Int(int_type), Some(value)) =
-                    (context.env().resolve_kind(value.ty()), value::as_int(&value))
-                else {
+                let (HMIRTypeKind::Int(int_type), Some(value)) = (
+                    context.env().resolve_kind(value.ty()),
+                    value::as_int(&value),
+                ) else {
                     let subject = ("offsetof subscript".into(), "integer".into());
                     return Err(hmir_error(index_span, &mir::EXPECTED_CONSTANT, subject));
                 };

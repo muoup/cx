@@ -1567,3 +1567,55 @@ void f() {
                   (primary_expression
                     (qualified_name
                       (identifier))))))))))))
+
+==================
+dotted intrinsics
+==================
+int main() {
+    return @int.add(@copy(x), 1) + @type.size_of(int);
+}
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (binary_expression
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (compiler_identifier))
+                  (argument_list
+                    (expression
+                      (postfix_expression
+                        (primary_expression
+                          (compiler_identifier))
+                        (argument_list
+                          (expression
+                            (primary_expression
+                              (qualified_name
+                                (identifier)))))))
+                    (expression
+                      (primary_expression
+                        (literal
+                          (number_literal)))))))
+              (operator)
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (compiler_identifier))
+                  (argument_list
+                    (type
+                      (builtin_type_sequence
+                        (builtin_type)))))))))))))

@@ -256,7 +256,7 @@ module.exports = grammar({
 
         identifier: (_) => /[A-Za-z_][A-Za-z0-9_]*/,
 
-        compiler_identifier: (_) => /@[A-Za-z_][A-Za-z0-9_]*/,
+        compiler_identifier: (_) => /@[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*/,
 
         compiler_attribute: ($) =>
             prec.right(seq($.compiler_identifier, optional($.parenthesized_group))),

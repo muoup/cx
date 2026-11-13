@@ -1,5 +1,6 @@
 pub(crate) mod call;
 pub(crate) mod control;
+pub(crate) mod intrinsic;
 pub(crate) mod literal;
 pub(crate) mod op;
 pub(crate) mod pattern;
@@ -30,6 +31,7 @@ use cx_util::{identifier::CXIdent, linkage::LinkageMode};
 use crate::{
     body::{BodyLowering, ScopeKind, Symbol, lower_reify, lower_static},
     expr::call::lower_call,
+    expr::intrinsic::lower_intrinsic,
     expr::control::{lower_case, lower_for, lower_if, lower_match, lower_switch, lower_while},
     expr::literal::{lower_float_literal, lower_int_literal},
     expr::op::{lower_binop, lower_unop},
@@ -225,6 +227,7 @@ pub(crate) fn lower_expr<'a>(
             context.ownership(HMIROwnershipOp::Copy(inner), span)
         }
         HIRExprKind::Reify { signature, value } => lower_reify(context, signature, value, span)?,
+        HIRExprKind::Intrinsic { path, args } => lower_intrinsic(context, path, args, span)?,
         HIRExprKind::NamedArgument { .. } => {
             return log_hir_error(
                 span,

@@ -1,4 +1,4 @@
-use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper};
+use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper, source::IntrinsicSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FloatBinaryOp {
@@ -24,6 +24,19 @@ pub enum FloatIntrinsic<V, T> {
 }
 
 impl FloatBinaryOp {
+    pub const ALL: [Self; 10] = [
+        Self::Add,
+        Self::Sub,
+        Self::Mul,
+        Self::Div,
+        Self::Eq,
+        Self::Neq,
+        Self::Lt,
+        Self::Le,
+        Self::Gt,
+        Self::Geq,
+    ];
+
     pub fn path(self) -> &'static str {
         match self {
             Self::Add => "float.add",
@@ -45,8 +58,7 @@ impl<V, T> FloatIntrinsic<V, T> {
         match self {
             Self::Neg { .. } => "float.neg",
             Self::Binary { op, .. } => op.path(),
-            Self::ToInt { signed: true, .. } => "float.to_int.signed",
-            Self::ToInt { signed: false, .. } => "float.to_int.unsigned",
+            Self::ToInt { .. } => "float.to_int",
             Self::Cast { .. } => "float.cast",
         }
     }
@@ -57,10 +69,44 @@ impl<V, T> FloatIntrinsic<V, T> {
             Self::Binary { lhs, rhs, .. } => {
                 vec![IntrinsicArg::Value(lhs), IntrinsicArg::Value(rhs)]
             }
-            Self::ToInt { value, target, .. } | Self::Cast { value, target } => {
+            Self::ToInt {
+                value,
+                target,
+                signed,
+            } => vec![
+                IntrinsicArg::Value(value),
+                IntrinsicArg::Type(target),
+                IntrinsicArg::Bool(*signed),
+            ],
+            Self::Cast { value, target } => {
                 vec![IntrinsicArg::Value(value), IntrinsicArg::Type(target)]
             }
         }
+    }
+
+    pub(crate) fn from_path<S: IntrinsicSource<V, T>>(
+        path: &str,
+        source: &mut S,
+    ) -> Result<Option<Self>, S::Error> {
+        if let Some(op) = FloatBinaryOp::ALL.into_iter().find(|op| op.path() == path) {
+            let (lhs, rhs) = (source.value()?, source.value()?);
+            return Ok(Some(Self::Binary { op, lhs, rhs }));
+        }
+        Ok(Some(match path {
+            "float.neg" => Self::Neg {
+                value: source.value()?,
+            },
+            "float.to_int" => Self::ToInt {
+                value: source.value()?,
+                target: source.ty()?,
+                signed: source.bool()?,
+            },
+            "float.cast" => Self::Cast {
+                value: source.value()?,
+                target: source.ty()?,
+            },
+            _ => return Ok(None),
+        }))
     }
 
     pub(crate) fn try_map<M: IntrinsicMapper<V, T>>(

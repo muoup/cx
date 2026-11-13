@@ -1,0 +1,5 @@
+comptime bool inner = @type.equal(@type.pointer_inner(int), int);
+
+int main() {
+    return 0;
+}

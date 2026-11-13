@@ -549,6 +549,7 @@ x's place lifted, x invalidated as moved; yields lifted value.
 Type node: declared type forced, yields its [type result](#type-result). `T[_]`: undefined array of T as partial; incomplete, no fallback.
 
 Runtime context evaluates types frozen. A type expression is memoized; a comptime stop escaping: M0039. Evaluated type described: rvalue-decayed, must be a type value (T0053).
+- `todo/runtime-local-in-type` a runtime local read in a type expression evaluated at runtime has no binding in the frozen context: internal error, as `T[sizeof(x)]` or `@type.equal(@type.type_of(x), T)`.
 
 Construction:
 - struct, union, tagged union declared forward first, so members may refer to it.
@@ -562,12 +563,19 @@ Construction:
 
 ### Type operator
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 `sizeof`, `alignof`, `offsetof`: subject [deduced](#subject-type); then yields constant of unsigned pointer-width int.
 - `sizeof`, `alignof`: complete object required, T0009.
 - `offsetof(T, a.b[i])`: complete object required; fields followed through anonymous members (T0003), bitfield T0019; index requires array (T0012), frozen int (M0001), adds element size times index.
-- `todo/type-ops` pointer inner, reference inner, member, `typeof`, decay, aggregate, is-int, is-float, is-pointer, is-signed, equal: not produced by HIR, `todo!` here.
+- `@type.size_of(T)`, `@type.align_of(T)`: as `sizeof`, `alignof`.
+- `rule/type-query-operand` other type operators evaluate their type operands as [type expressions](#type-expression), nothing deduced.
+- `is_int`, `is_float`, `is_pointer`, `is_reference`: kind of the type; `is_signed`: a signed int. `rule/is-const-top-level` `is_const`: the type's own const only, so `const T&` is not const. Never fail; yield `bool`.
+- `equal(A, B)`: alike.
+- `pointer_inner`, `reference_inner`: pointee, referent; other type: T0002.
+- `decay(T)`: referent of a reference, qualifiers dropped; then array to pointer to element, function to function pointer.
+- `rule/type-of-as-is` `type_of(e)`: e evaluated as for [subject type](#subject-type), yielding its type as-is: a place is `T&`.
+- `todo/type-ops` member, aggregate: `todo!`.
 
 ### Member
 
@@ -766,10 +774,18 @@ A staged value spliced without arguments (a [Local](#local) read at runtime): co
 
 ### Intrinsic
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 `va_start(l, last)`, `va_end(l)`, `va_arg(l, T)`. l must be a reference alike `__builtin_va_list` (T0012), passed by pointer. `last` rvalue-decayed. Yields result, else unit.
-- `inv/va-only` only variadic intrinsics reach HMIR lowering.
+
+Path intrinsics: operands, then result type checked, then emitted.
+- `rule/strict-intrinsic-operands` value operands as evaluated: never read, decayed or converted. Reference-typed: T0002, so a place is passed as `@copy(x)`. Type operands as [type expressions](#type-expression).
+- *alike operands*: alike ignoring top-level const, else T0014.
+- int: operands ints (T0002); binary operands alike. Comparisons, `l_and`, `l_or`: `bool`; other unary, binary: the operand type. `to_float(v, F, signed)` F a float, `cast(v, I, sign_extend)` I an int (T0002): the target. `to_ptr(v, sign_extend)`: `void*`.
+- float: operands floats (T0002); binary operands alike. Comparisons: `bool`; `neg`, other binary: the operand type. `to_int(v, I, signed)` I an int, `cast(v, F)` F a float: the target.
+- pointer: `to_int(p, I)` I an int: I. `rule/byte-pointer-offset` `add`, `sub`: pointer, offset an int of pointer width (T0002), in bytes; the pointer type. `diff(a, b, T)`: alike pointers, `i64`. Comparisons: alike pointers, `bool`.
+- `rule/bitcast-kinds` `internal.bitcast(v, T)`: pointer to pointer, or int to int of one width; else T0002.
+- `internal.assert(c [, message])`, `internal.assume(c)`: c an `i1` (T0002); unit.
 
 ---
 

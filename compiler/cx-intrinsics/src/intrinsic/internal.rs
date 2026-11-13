@@ -1,4 +1,4 @@
-use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper};
+use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper, source::IntrinsicSource};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum InternalIntrinsic<V, T> {
@@ -43,6 +43,26 @@ impl<V, T> InternalIntrinsic<V, T> {
             }
             Self::Assume { condition } => vec![IntrinsicArg::Value(condition)],
         }
+    }
+
+    pub(crate) fn from_path<S: IntrinsicSource<V, T>>(
+        path: &str,
+        source: &mut S,
+    ) -> Result<Option<Self>, S::Error> {
+        Ok(Some(match path {
+            "internal.bitcast" => Self::Bitcast {
+                value: source.value()?,
+                target: source.ty()?,
+            },
+            "internal.assert" => Self::Assert {
+                condition: source.value()?,
+                message: source.string()?,
+            },
+            "internal.assume" => Self::Assume {
+                condition: source.value()?,
+            },
+            _ => return Ok(None),
+        }))
     }
 
     pub(crate) fn try_map<M: IntrinsicMapper<V, T>>(

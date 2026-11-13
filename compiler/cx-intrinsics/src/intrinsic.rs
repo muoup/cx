@@ -11,6 +11,7 @@ use crate::{
         internal::InternalIntrinsic, pointer::PointerIntrinsic, va::VAIntrinsic,
     },
     mapper::{ClosureMapper, IntrinsicMapper},
+    source::IntrinsicSource,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -61,6 +62,21 @@ impl<V, T> Intrinsic<V, T> {
             Self::Internal(op) => op.args(),
             Self::VA(op) => op.args(),
         }
+    }
+
+    // The inverse of 'path' and 'args'; aggregate and variadic intrinsics are not named by a path
+    pub fn from_path<S: IntrinsicSource<V, T>>(
+        path: &str,
+        source: &mut S,
+    ) -> Result<Option<Self>, S::Error> {
+        let (family, _) = path.split_once('.').unwrap_or((path, ""));
+        Ok(match family {
+            "int" => IntIntrinsic::from_path(path, source)?.map(Self::Int),
+            "float" => FloatIntrinsic::from_path(path, source)?.map(Self::Float),
+            "pointer" => PointerIntrinsic::from_path(path, source)?.map(Self::Pointer),
+            "internal" => InternalIntrinsic::from_path(path, source)?.map(Self::Internal),
+            _ => None,
+        })
     }
 
     pub fn map<V2, T2>(

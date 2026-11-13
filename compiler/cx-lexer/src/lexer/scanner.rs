@@ -172,8 +172,11 @@ impl<'a> TokenAccumulator<'a> {
             }
 
             let previous_lex = self.cursor.cursor();
+            let word = &self.cursor.source()[self.last_consume..previous_lex];
 
-            if let Some(operator) =
+            if token_rules::continues_compiler_identifier(self.cursor, word) {
+                self.cursor.next();
+            } else if let Some(operator) =
                 token_rules::operator(self.cursor).or_else(|| token_rules::punctuator(self.cursor))
             {
                 self.consume(previous_lex);
@@ -190,7 +193,6 @@ impl<'a> TokenAccumulator<'a> {
             } else if let Some(quote @ ('"' | '\'')) = self.cursor.peek() {
                 // A literal directly after a word is a token of its own, unless the word is an
                 // encoding prefix, which belongs to the literal.
-                let word = &self.cursor.source()[self.last_consume..previous_lex];
                 match (quote, word) {
                     ('"', "u8") | ('\'', "L" | "u" | "U" | "u8") => {
                         self.last_consume = previous_lex;

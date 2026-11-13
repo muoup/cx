@@ -262,7 +262,9 @@ impl Locals<'_> {
                     | HMIRTypeOp::IsInt(value)
                     | HMIRTypeOp::IsFloat(value)
                     | HMIRTypeOp::IsPointer(value)
-                    | HMIRTypeOp::IsSigned(value) => children.push(*value),
+                    | HMIRTypeOp::IsSigned(value)
+                    | HMIRTypeOp::IsReference(value)
+                    | HMIRTypeOp::IsConst(value) => children.push(*value),
                 },
             },
             HMIRExprKind::Literal(_)

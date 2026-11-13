@@ -123,7 +123,9 @@ impl BodyPrinter<'_> {
             | HMIRTypeOp::IsInt(ty)
             | HMIRTypeOp::IsFloat(ty)
             | HMIRTypeOp::IsPointer(ty)
-            | HMIRTypeOp::IsSigned(ty) => values(&[*ty]),
+            | HMIRTypeOp::IsSigned(ty)
+            | HMIRTypeOp::IsReference(ty)
+            | HMIRTypeOp::IsConst(ty) => values(&[*ty]),
             HMIRTypeOp::Equal(lhs, rhs) => values(&[*lhs, *rhs]),
             HMIRTypeOp::OffsetOf { ty, member } => {
                 let steps = member

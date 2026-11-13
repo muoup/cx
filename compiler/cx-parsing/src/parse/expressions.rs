@@ -153,6 +153,20 @@ fn parse_at_intrinsic_expr(
             ))
         }
 
+        path if path.contains('.') => {
+            let args = parse_args(data)?;
+
+            Ok(HIRExprKind::Intrinsic {
+                path: CXIdent::new(path),
+                args,
+            }
+            .into_expr(
+                start_index,
+                data.tokens.index,
+                data.token_range(start_index, data.tokens.index),
+            ))
+        }
+
         _ => {
             data.tokens.back();
 

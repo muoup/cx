@@ -40,16 +40,16 @@ comptime ^add_result(A, B) add(
     type result_type = add_result(A, B);
 
     if (type.is_int(result_type)) {
-        return @intrinsic.int.add(
-            @intrinsic.int.cast(x, result_type), 
-            @intrinsic.int.cast(y, result_type)
+        return @integral.add(
+            @integral.coerce(x, result_type), 
+            @integral.coerce(y, result_type)
         );
     }
 
     if (type.is_float(result_type)) {
-        return @intrinsic.float.add(
-            @intrinsic.float.cast(x, result_type), 
-            @intrinsic.float.cast(y, result_type)
+        return @fp.add(
+            @fp.coerce(x, result_type), 
+            @fp.coerce(y, result_type)
         );
     }
 

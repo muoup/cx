@@ -1,0 +1,18 @@
+/* CX-STDOUT: popped: 2 */
+/* CX-STDOUT-NEXT: length: 1 */
+
+import std::vector;
+import std::optional;
+
+#include <stdio.h>
+
+int main() {
+    std::vector::vector(int) vec = std::vector::vector::new(int);
+    vec |> std::vector::vector::push(1);
+    vec |> std::vector::vector::push(2);
+
+    int popped = vec |> std::vector::vector::pop() |> std::optional::opt::unwrap();
+    printf("popped: %d\n", popped);
+    printf("length: %zu\n", vec.length);
+    move vec |> std::vector::vector::drop();
+}

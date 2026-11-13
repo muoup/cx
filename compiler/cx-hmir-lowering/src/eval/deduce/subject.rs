@@ -40,13 +40,14 @@ pub(crate) fn subject(
     operand: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     let span = body.expr(operand).span();
-    typed(context, span, |child| eval(child, body, operand))
+    typed(context, span, false, |child| eval(child, body, operand))
 }
 
-// The type of what 'evaluate' yields in a detached context that emits nothing
+// The type of what 'evaluate' yields in a detached context that emits nothing; its referent unless taken 'as_is'
 pub(crate) fn typed(
     context: &mut LocalLoweringContext,
     span: &TokenRange,
+    as_is: bool,
     evaluate: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<HMIRValue>>,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     let mut child = detached(context, Emission::Unevaluated, false, span)?;
@@ -85,6 +86,7 @@ pub(crate) fn typed(
                     &span,
                 )
             }
+            _ if as_is => value.ty(),
             _ => referent,
         };
         demand::prepare(context.env_mut(), ty)?;

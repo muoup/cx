@@ -1,0 +1,26 @@
+comptime int twice(comptime int v) => @int.add(@copy(v), @copy(v));
+
+comptime bool queries = @type.is_int(int)
+    && !@type.is_int(double)
+    && @type.is_float(double)
+    && @type.is_pointer(int*)
+    && @type.is_signed(int)
+    && !@type.is_signed(unsigned int)
+    && @type.is_reference(const int&)
+    && !@type.is_const(const int&)
+    && @type.is_const(const int)
+    && !@type.is_const(const int*)
+    && @type.equal(@type.pointer_inner(int*), int)
+    && @type.equal(@type.reference_inner(const int&), const int)
+    && @type.equal(@type.decay(const int&), int)
+    && @type.equal(@type.decay(int[4]), int*)
+    && @type.equal(@type.type_of(5), int)
+    && @type.size_of(long) == 8
+    && @type.align_of(int) == 4;
+
+comptime int doubled = twice(21);
+
+int main() {
+    if (!queries) return 1;
+    return doubled == 42 ? 0 : 2;
+}

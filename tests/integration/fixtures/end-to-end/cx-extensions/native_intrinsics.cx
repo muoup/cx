@@ -1,0 +1,36 @@
+/* CX-STDOUT: sum: 42 */
+/* CX-STDOUT-NEXT: wide: 42 */
+/* CX-STDOUT-NEXT: half: 21.0 */
+/* CX-STDOUT-NEXT: truncated: 2 */
+/* CX-STDOUT-NEXT: equal: 1 */
+/* CX-STDOUT-NEXT: elements: 1 */
+/* CX-STDOUT-NEXT: through bytes: 40 */
+
+#include <stdio.h>
+
+int main() {
+    int x = 40;
+    int y = 2;
+    int sum = @int.add(@copy(x), @copy(y));
+    long wide = @int.cast(@copy(sum), long, true);
+    double half = @float.div(@int.to_float(@copy(sum), double, true), 2.0);
+    int truncated = @float.to_int(2.75, int, true);
+    bool equal = @int.eq(@copy(sum), 42);
+    @internal.assert(@copy(equal), "sum is 42");
+    @internal.assume(@copy(equal));
+
+    int* p = &x;
+    int* q = @pointer.add(@copy(p), 4L);
+    long elements = @pointer.diff(@copy(q), @copy(p), int);
+    char* bytes = @internal.bitcast(@copy(p), char*);
+    int* back = @internal.bitcast(@copy(bytes), int*);
+
+    printf("sum: %d\n", sum);
+    printf("wide: %ld\n", wide);
+    printf("half: %.1f\n", half);
+    printf("truncated: %d\n", truncated);
+    printf("equal: %d\n", equal);
+    printf("elements: %ld\n", elements);
+    printf("through bytes: %d\n", *back);
+    return 0;
+}

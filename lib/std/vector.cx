@@ -8,7 +8,10 @@ extern "C":
 
 public:
 
-comptime type vector(comptime type T) =>
+comptime type vector(comptime type T)
+where
+    pre: (!@type.is_reference(T) && !@type.is_const(T)) => 
+
     struct : @nodrop {
         T* data;
         usize length;
@@ -64,11 +67,11 @@ std::optional::opt(T) vector::pop(comptime type T = _, vector(T)& this) {
     if (this.length == 0) return std::optional::opt(T)::none();
 
     T buffer;
-    T* data_ptr = &data[this.length - 1];
+    T* data_ptr = &this.data[this.length - 1];
     memcpy(&buffer, data_ptr, sizeof(T));
  
     this.length--;
-    return move buffer;
+    return std::optional::opt(T)::some(move buffer);
 }
 
 std::optional::opt(T&) vector::at(comptime type T = _, vector(T)& this, usize index) {

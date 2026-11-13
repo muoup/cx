@@ -209,6 +209,11 @@ pub enum HIRExprKind {
         signature: Box<HIRExpression>,
         value: Box<HIRExpression>,
     },
+    // '@family.name(args)': a native operation whose arguments are used as they are
+    Intrinsic {
+        path: CXIdent,
+        args: Vec<HIRExpression>,
+    },
     // '.name = value' among the arguments of a call
     NamedArgument {
         name: CXIdent,

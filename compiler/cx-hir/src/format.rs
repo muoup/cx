@@ -353,6 +353,13 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 HIRExprFormatter::new(signature, self.depth + 1).fmt(f)?;
                 HIRExprFormatter::new(value, self.depth + 1).fmt(f)
             }
+            HIRExprKind::Intrinsic { path, args } => {
+                writeln!(f, "Intrinsic @{path}")?;
+                for arg in args {
+                    HIRExprFormatter::new(arg, self.depth + 1).fmt(f)?;
+                }
+                Ok(())
+            }
             HIRExprKind::NamedArgument { name, value } => {
                 writeln!(f, "NamedArgument {name}")?;
                 HIRExprFormatter::new(value, self.depth + 1).fmt(f)

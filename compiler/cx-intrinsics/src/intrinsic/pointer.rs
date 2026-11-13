@@ -1,4 +1,4 @@
-use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper};
+use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper, source::IntrinsicSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PointerOffsetOp {
@@ -40,6 +40,8 @@ pub enum PointerIntrinsic<V, T> {
 }
 
 impl PointerOffsetOp {
+    pub const ALL: [Self; 2] = [Self::Add, Self::Sub];
+
     pub fn path(self) -> &'static str {
         match self {
             Self::Add => "pointer.add",
@@ -49,6 +51,8 @@ impl PointerOffsetOp {
 }
 
 impl PointerCompareOp {
+    pub const ALL: [Self; 6] = [Self::Eq, Self::Neq, Self::Lt, Self::Leq, Self::Gt, Self::Geq];
+
     pub fn path(self) -> &'static str {
         match self {
             Self::Eq => "pointer.eq",
@@ -88,6 +92,32 @@ impl<V, T> PointerIntrinsic<V, T> {
                 vec![IntrinsicArg::Value(lhs), IntrinsicArg::Value(rhs)]
             }
         }
+    }
+
+    pub(crate) fn from_path<S: IntrinsicSource<V, T>>(
+        path: &str,
+        source: &mut S,
+    ) -> Result<Option<Self>, S::Error> {
+        if let Some(op) = PointerOffsetOp::ALL.into_iter().find(|op| op.path() == path) {
+            let (ptr, offset) = (source.value()?, source.value()?);
+            return Ok(Some(Self::Offset { op, ptr, offset }));
+        }
+        if let Some(op) = PointerCompareOp::ALL.into_iter().find(|op| op.path() == path) {
+            let (lhs, rhs) = (source.value()?, source.value()?);
+            return Ok(Some(Self::Compare { op, lhs, rhs }));
+        }
+        Ok(Some(match path {
+            "pointer.to_int" => Self::ToInt {
+                ptr: source.value()?,
+                target: source.ty()?,
+            },
+            "pointer.diff" => Self::Diff {
+                lhs: source.value()?,
+                rhs: source.value()?,
+                element: source.ty()?,
+            },
+            _ => return Ok(None),
+        }))
     }
 
     pub(crate) fn try_map<M: IntrinsicMapper<V, T>>(

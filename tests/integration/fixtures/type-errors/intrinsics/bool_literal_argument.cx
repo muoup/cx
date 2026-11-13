@@ -1,0 +1,4 @@
+int main() {
+    long wide = @int.cast(1, long, 1);
+    return 0;
+}

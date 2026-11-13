@@ -1,0 +1,4 @@
+int main() {
+    @internal.assert(1);
+    return 0;
+}

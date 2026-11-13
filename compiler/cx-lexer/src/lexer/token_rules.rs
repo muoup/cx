@@ -288,3 +288,11 @@ pub(crate) fn starts_lifetime_modifier(iter: &LexCursor<'_>) -> bool {
 
     chars.peek() != Some(&'\'')
 }
+
+pub(crate) fn continues_compiler_identifier(iter: &LexCursor<'_>, word: &str) -> bool {
+    let mut rest = iter.source()[iter.cursor()..].chars();
+    word.len() > 1
+        && word.starts_with('@')
+        && rest.next() == Some('.')
+        && rest.next().is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
+}

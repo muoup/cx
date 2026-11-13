@@ -1,4 +1,4 @@
-use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper};
+use crate::{intrinsic::IntrinsicArg, mapper::IntrinsicMapper, source::IntrinsicSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IntUnaryOp {
@@ -68,6 +68,8 @@ pub enum IntIntrinsic<V, T> {
 }
 
 impl IntUnaryOp {
+    pub const ALL: [Self; 3] = [Self::Neg, Self::LNot, Self::BNot];
+
     pub fn path(self) -> &'static str {
         match self {
             Self::Neg => "int.neg",
@@ -78,6 +80,35 @@ impl IntUnaryOp {
 }
 
 impl IntBinaryOp {
+    pub const ALL: [Self; 26] = [
+        Self::Add,
+        Self::Sub,
+        Self::UMul,
+        Self::SMul,
+        Self::UDiv,
+        Self::SDiv,
+        Self::UMod,
+        Self::SMod,
+        Self::Eq,
+        Self::Neq,
+        Self::ULt,
+        Self::SLt,
+        Self::ULe,
+        Self::SLe,
+        Self::UGt,
+        Self::SGt,
+        Self::UGe,
+        Self::SGe,
+        Self::LAnd,
+        Self::LOr,
+        Self::BAnd,
+        Self::BOr,
+        Self::BXor,
+        Self::LShift,
+        Self::ARShift,
+        Self::LRShift,
+    ];
+
     pub fn path(self) -> &'static str {
         match self {
             Self::Add => "int.add",
@@ -115,29 +146,27 @@ impl<V, T> IntIntrinsic<V, T> {
         match self {
             Self::Unary { op, .. } => op.path(),
             Self::Binary { op, .. } => op.path(),
-            Self::ToFloat { signed: true, .. } => "int.to_float.signed",
-            Self::ToFloat { signed: false, .. } => "int.to_float.unsigned",
-            Self::Cast { .. } => "int.int_cast",
-            Self::ToPtr {
-                sign_extend: true, ..
-            } => "int.to_ptr.signed",
-            Self::ToPtr {
-                sign_extend: false, ..
-            } => "int.to_ptr.unsigned",
+            Self::ToFloat { .. } => "int.to_float",
+            Self::Cast { .. } => "int.cast",
+            Self::ToPtr { .. } => "int.to_ptr",
         }
     }
 
     pub fn args(&self) -> Vec<IntrinsicArg<'_, V, T>> {
         match self {
-            Self::Unary { value, .. } | Self::ToPtr { value, .. } => {
-                vec![IntrinsicArg::Value(value)]
-            }
+            Self::Unary { value, .. } => vec![IntrinsicArg::Value(value)],
             Self::Binary { lhs, rhs, .. } => {
                 vec![IntrinsicArg::Value(lhs), IntrinsicArg::Value(rhs)]
             }
-            Self::ToFloat { value, target, .. } => {
-                vec![IntrinsicArg::Value(value), IntrinsicArg::Type(target)]
-            }
+            Self::ToFloat {
+                value,
+                target,
+                signed,
+            } => vec![
+                IntrinsicArg::Value(value),
+                IntrinsicArg::Type(target),
+                IntrinsicArg::Bool(*signed),
+            ],
             Self::Cast {
                 value,
                 target,
@@ -147,7 +176,40 @@ impl<V, T> IntIntrinsic<V, T> {
                 IntrinsicArg::Type(target),
                 IntrinsicArg::Bool(*sign_extend),
             ],
+            Self::ToPtr { value, sign_extend } => {
+                vec![IntrinsicArg::Value(value), IntrinsicArg::Bool(*sign_extend)]
+            }
         }
+    }
+
+    pub(crate) fn from_path<S: IntrinsicSource<V, T>>(
+        path: &str,
+        source: &mut S,
+    ) -> Result<Option<Self>, S::Error> {
+        if let Some(op) = IntUnaryOp::ALL.into_iter().find(|op| op.path() == path) {
+            return Ok(Some(Self::Unary { op, value: source.value()? }));
+        }
+        if let Some(op) = IntBinaryOp::ALL.into_iter().find(|op| op.path() == path) {
+            let (lhs, rhs) = (source.value()?, source.value()?);
+            return Ok(Some(Self::Binary { op, lhs, rhs }));
+        }
+        Ok(Some(match path {
+            "int.to_float" => Self::ToFloat {
+                value: source.value()?,
+                target: source.ty()?,
+                signed: source.bool()?,
+            },
+            "int.cast" => Self::Cast {
+                value: source.value()?,
+                target: source.ty()?,
+                sign_extend: source.bool()?,
+            },
+            "int.to_ptr" => Self::ToPtr {
+                value: source.value()?,
+                sign_extend: source.bool()?,
+            },
+            _ => return Ok(None),
+        }))
     }
 
     pub(crate) fn try_map<M: IntrinsicMapper<V, T>>(

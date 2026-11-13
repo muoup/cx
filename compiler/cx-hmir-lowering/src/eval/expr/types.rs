@@ -3,9 +3,9 @@ mod layout;
 
 pub(crate) mod alias;
 pub(crate) mod qualify;
+pub(crate) mod query;
 
 pub(crate) use construct::{aggregate, construct_type, hole_bounded, undefined_array};
-pub(crate) use layout::eval_type_op;
 
 use cx_hmir::{
     HMIRBodyContext, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,

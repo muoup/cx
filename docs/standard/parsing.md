@@ -268,7 +268,8 @@ variant-tail = "(" [pattern] ")" ;
 
 #### Intrinsics
 
-`@unsafe {..}` or `@unsafe(e)`; `@leak(e)`, `@copy(e)`, `@adopt(e)`; `@reify(signature, value)`, exactly two arguments else P0001; `@unpack(e) { field: binding, ... }`. Other name: P0006.
+`@unsafe {..}` or `@unsafe(e)`; `@leak(e)`, `@copy(e)`, `@adopt(e)`; `@reify(signature, value)`, exactly two arguments else P0001; `@unpack(e) { field: binding, ... }`. Other undotted name: P0006.
+- `rule/dotted-intrinsic` `@` and following `.name` segments lex as one token when each `.` is directly followed by a letter or `_`: `@int.add`, `@type.is_const`. A dotted name takes call arguments; its path is checked in [Intrinsics](#intrinsic-lowering).
 
 ## Desugaring
 
@@ -400,6 +401,12 @@ Call, pipe and backward pipe lower in an arguments scope.
 - `rule/va-builtins` `va_start(l, last)`, `va_end(l)` (and `__builtin_` forms) with exactly those arities: intrinsics. Named arguments to them: T0017.
 - a local is always a local reference; whether a staged local splices is decided in HMIR, see [Local](hmir-lowering.md#local).
 - `rule/scope-base` `_::v` base is a hole; type base lowered as type.
+
+#### Intrinsic lowering
+
+- `rule/intrinsic-path` `@type.` paths lower to a type operator, other dotted paths to the intrinsic of that path. Unknown: P0006. Aggregate and variadic intrinsics have no path.
+- `rule/intrinsic-arguments-as-written` arguments lowered in order, nothing inserted or converted. Count other than the path takes: T0015. Named argument: T0017.
+- `rule/intrinsic-literal-flags` the flag of `int.cast`, `int.to_ptr` (sign-extend), `int.to_float`, `float.to_int` (signed) must be a `true`/`false` literal; the optional trailing message of `internal.assert` a string literal. Else T0002.
 
 #### Closures and quotes
 

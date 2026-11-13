@@ -1,3 +1,4 @@
+use cx_intrinsics::IntrinsicSource;
 use cx_util::identifier::CXIdent;
 
 use crate::{
@@ -134,6 +135,8 @@ pub enum HMIRTypeOp {
     IsFloat(HMIRExprID),
     IsPointer(HMIRExprID),
     IsSigned(HMIRExprID),
+    IsReference(HMIRExprID),
+    IsConst(HMIRExprID),
     Equal(HMIRExprID, HMIRExprID),
 }
 
@@ -238,7 +241,32 @@ impl HMIRTypeOp {
             Self::IsFloat(_) => "type.is_float",
             Self::IsPointer(_) => "type.is_pointer",
             Self::IsSigned(_) => "type.is_signed",
+            Self::IsReference(_) => "type.is_reference",
+            Self::IsConst(_) => "type.is_const",
             Self::Equal(..) => "type.equal",
         }
+    }
+
+    // The inverse of 'path' for the queries that take only types or values; the structured ones have syntax of their own
+    pub fn from_path<S: IntrinsicSource<HMIRExprID, HMIRExprID>>(
+        path: &str,
+        source: &mut S,
+    ) -> Result<Option<Self>, S::Error> {
+        Ok(Some(match path {
+            "type.pointer_inner" => Self::PointerInner(source.ty()?),
+            "type.reference_inner" => Self::ReferenceInner(source.ty()?),
+            "type.type_of" => Self::TypeOf(source.value()?),
+            "type.decay" => Self::Decay(source.ty()?),
+            "type.size_of" => Self::SizeOf(source.ty()?),
+            "type.align_of" => Self::AlignOf(source.ty()?),
+            "type.is_int" => Self::IsInt(source.ty()?),
+            "type.is_float" => Self::IsFloat(source.ty()?),
+            "type.is_pointer" => Self::IsPointer(source.ty()?),
+            "type.is_signed" => Self::IsSigned(source.ty()?),
+            "type.is_reference" => Self::IsReference(source.ty()?),
+            "type.is_const" => Self::IsConst(source.ty()?),
+            "type.equal" => Self::Equal(source.ty()?, source.ty()?),
+            _ => return Ok(None),
+        }))
     }
 }

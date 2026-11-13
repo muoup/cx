@@ -111,7 +111,7 @@ pub(crate) fn eval(
             HMIROp::AddressOf(operand) => place::eval_address_of(context, body, span, *operand),
             HMIROp::Dereference(pointer) => place::eval_dereference(context, body, span, *pointer),
             HMIROp::OwnershipOp(op) => place::eval_ownership(context, body, span, op),
-            HMIROp::Type(op) => types::eval_type_op(context, body, span, op),
+            HMIROp::Type(op) => types::query::eval_type_op(context, body, span, op),
             HMIROp::AggregateOp(aggregate) => {
                 aggregate::eval_aggregate(context, body, span, aggregate)
             }
@@ -139,7 +139,7 @@ pub(crate) fn eval(
         HMIRExprKind::Splice { quote, args } => {
             staged::eval_splice(context, body, span, *quote, args)
         }
-        HMIRExprKind::Intrinsic(op) => expr::eval_intrinsic(context, body, span, op),
+        HMIRExprKind::Intrinsic(op) => expr::intrinsic::eval_intrinsic(context, body, span, op),
     }?;
 
     result.chain(
