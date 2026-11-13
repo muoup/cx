@@ -12,4 +12,5 @@ backend-llvm = ["cx-pipeline/backend-llvm"]
 [dependencies]
 cx-log = { path = "../cx-log" }
 cx-pipeline = { path = "../cx-pipeline", default-features = false }
+cx-lexer = { path = "../cx-lexer" }
 cx-pipeline-data = { path = "../cx-pipeline-data" }

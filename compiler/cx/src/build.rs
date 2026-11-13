@@ -5,8 +5,9 @@ use std::process::{Command as ProcessCommand, ExitCode};
 
 use cx_pipeline::project;
 use cx_pipeline_data::config::{
-    find_project_root, load_project, Profile, ProjectConfig, TargetKind, CONFIG_FILE,
+    find_project_root, load_project, ProjectConfig, TargetKind, CONFIG_FILE, DEBUG_PROFILE,
 };
+use cx_pipeline_data::package::Packages;
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, UnsafeFlags,
 };
@@ -18,7 +19,7 @@ use crate::{
 
 pub(crate) fn run_project(args: RunArgs) -> CXResult<ExitCode> {
     let project = load(Topic::Run)?;
-    let selected = match args.build.target.as_deref() {
+    let selected = match args.build.targets.first() {
         Some(name) => {
             let index = target_index(&project, name, Topic::Run)?;
             if project.targets[index].kind == TargetKind::Library {
@@ -29,35 +30,26 @@ pub(crate) fn run_project(args: RunArgs) -> CXResult<ExitCode> {
             }
             index
         }
-        None => {
-            let executables = project
-                .targets
-                .iter()
-                .enumerate()
-                .filter(|(_, target)| target.default && target.kind == TargetKind::Executable)
-                .map(|(index, _)| index)
-                .collect::<Vec<_>>();
-            match executables.as_slice() {
-                [index] => *index,
-                [] => {
-                    return Err(error(
-                        "the project has no default executable to run",
-                        Some(Topic::Run),
-                    ))
-                }
-                _ => {
-                    let names = executables
-                        .iter()
-                        .map(|index| format!("  {}", project.targets[*index].name))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    return Err(error(
-                        format!("the project has several default executables; pass one to 'cx run'\n{names}"),
-                        Some(Topic::Run),
-                    ));
-                }
+        None => match executables(&project).as_slice() {
+            [index] => *index,
+            [] => {
+                return Err(error(
+                    "the project has no executable to run",
+                    Some(Topic::Run),
+                ))
             }
-        }
+            several => {
+                let names = several
+                    .iter()
+                    .map(|index| format!("  {}", project.targets[*index].name))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(error(
+                    format!("the project has several executables; pass one to 'cx run'\n{names}"),
+                    Some(Topic::Run),
+                ));
+            }
+        },
     };
 
     let outputs = build(&project, args.build, &[selected])?;
@@ -76,20 +68,28 @@ pub(crate) fn run_project(args: RunArgs) -> CXResult<ExitCode> {
 
 pub fn build_project(args: BuildArgs, topic: Topic) -> CXResult<Vec<PathBuf>> {
     let project = load(topic)?;
-    let selected = match args.target.as_deref() {
-        Some(name) => vec![target_index(&project, name, topic)?],
-        None => project
+    let selected = match args.targets.is_empty() {
+        true => executables(&project),
+        false => args
             .targets
             .iter()
-            .enumerate()
-            .filter(|(_, target)| target.default)
-            .map(|(index, _)| index)
-            .collect(),
+            .map(|name| target_index(&project, name, topic))
+            .collect::<CXResult<Vec<_>>>()?,
     };
     if selected.is_empty() {
-        return Err(error("the project has no default targets", Some(topic)));
+        return Err(error("the project has no executables to build", Some(topic)));
     }
     build(&project, args, &selected)
+}
+
+fn executables(project: &ProjectConfig) -> Vec<usize> {
+    project
+        .targets
+        .iter()
+        .enumerate()
+        .filter(|(_, target)| target.kind == TargetKind::Executable)
+        .map(|(index, _)| index)
+        .collect()
 }
 
 fn load(topic: Topic) -> CXResult<ProjectConfig> {
@@ -113,11 +113,11 @@ fn target_index(project: &ProjectConfig, name: &str, topic: Topic) -> CXResult<u
 }
 
 fn build(project: &ProjectConfig, args: BuildArgs, selected: &[usize]) -> CXResult<Vec<PathBuf>> {
-    let profile = match args.release {
-        true => Profile::Release,
-        false => Profile::Debug,
-    };
-    let settings = project.profile(profile);
+    let name = args.profile.as_deref().unwrap_or(DEBUG_PROFILE);
+    let profile = project
+        .profile(name)
+        .ok_or_else(|| error(format!("unknown profile '{name}'"), None))?;
+    let settings = &profile.settings;
     let backend = args
         .backend
         .or(settings.backend)
@@ -137,14 +137,11 @@ fn build(project: &ProjectConfig, args: BuildArgs, selected: &[usize]) -> CXResu
             .or(settings.require_explicit_return),
 
         output: project.root.clone(),
-        source_root: project.source_root.clone(),
         internal_directory: setup_internal_directory(&project.root)?,
+        packages: Packages::new(Vec::new()),
 
         link_entries: vec![],
         native_objects: vec![],
-        include_dirs: vec![],
-        predefined_macros: vec![],
-        external_modules: Default::default(),
         header_modules: Default::default(),
 
         unsafe_flags: UnsafeFlags {

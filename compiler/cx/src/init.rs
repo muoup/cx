@@ -20,8 +20,20 @@ pub(crate) fn init_project(args: args::InitArgs) -> CXResult<()> {
         )
     })?;
 
+    let package = args
+        .project_name
+        .chars()
+        .map(|character| match character.is_ascii_alphanumeric() {
+            true => character,
+            false => '_',
+        })
+        .collect::<String>();
+    let package = match package.starts_with(|character: char| character.is_ascii_digit()) {
+        true => format!("_{package}"),
+        false => package,
+    };
     let cx_lua = format!(
-        "executable \"{name}\" {{ \"main.cx\" }}\n",
+        "package(\"{package}\")\nstdlib(\"std\")\n\nlocal main = target(\"{name}\", \"executable\")\nmain:match(\"main.cx\")\n",
         name = args.project_name,
     );
 

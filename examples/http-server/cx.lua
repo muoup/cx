@@ -1,3 +1,6 @@
-project { backend = "llvm" }
+package("http_server")
+stdlib("std")
 
-executable "http-server" { "main.cx" }
+debug_profile():backend("llvm")
+
+target("http-server", "executable"):match("main.cx")

@@ -9,9 +9,9 @@ pub(crate) enum Topic {
 
 pub(crate) fn usage(topic: Topic) -> &'static str {
     match topic {
-        Topic::General => "cx <file.cx|file.cxc|file.c>... [options]\n       cx build [target] [options]\n       cx run [target] [options] [-- args...]\n       cx init <project-name>",
+        Topic::General => "cx <file.cx|file.cxc|file.c>... [options]\n       cx build [targets...] [options]\n       cx run [target] [options] [-- args...]\n       cx init <project-name>",
         Topic::File => "cx <file.cx|file.cxc|file.c>... [options]",
-        Topic::Build => "cx build [target] [options]",
+        Topic::Build => "cx build [targets...] [options]",
         Topic::Run => "cx run [target] [options] [-- args...]",
         Topic::Init => "cx init <project-name>",
     }
@@ -81,9 +81,9 @@ fn print_file_help() {
 fn print_build_help() {
     println!("Usage: {}", usage(Topic::Build));
     println!();
-    println!("Build the project's default targets, or one target and its dependencies when specified.");
+    println!("Build every executable of the project, or the named targets.");
     println!();
-    println!("  --release            Build with the release profile.");
+    println!("  -p, --profile <name> Build with a registered profile (default: debug).");
     print_common_options();
 }
 
@@ -92,7 +92,7 @@ fn print_run_help() {
     println!();
     println!("Build and run one project executable. Use -- to pass arguments to the executable.");
     println!();
-    println!("  --release            Build with the release profile.");
+    println!("  -p, --profile <name> Build with a registered profile (default: debug).");
     print_common_options();
 }
 

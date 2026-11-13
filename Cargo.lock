@@ -293,6 +293,7 @@ dependencies = [
 name = "cx"
 version = "0.0.0"
 dependencies = [
+ "cx-lexer",
  "cx-log",
  "cx-pipeline",
  "cx-pipeline-data",
@@ -516,7 +517,6 @@ dependencies = [
  "cx-hir",
  "cx-log",
  "cx-namespace",
- "cx-pipeline-data",
  "cx-preparse-data",
  "cx-tokens",
  "cx-util",
@@ -556,6 +556,7 @@ version = "0.0.0"
 dependencies = [
  "cx-hir",
  "cx-hmir",
+ "cx-lexer",
  "cx-lmir",
  "cx-log",
  "cx-mir",

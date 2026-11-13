@@ -41,7 +41,8 @@ pub fn semantic_tokens(
     index: Option<&FileIndex>,
 ) -> Vec<SemanticToken> {
     let references = index.map_or(&[][..], |index| &index.references);
-    let lexed = lex_with_context(text, path, &project.include_dirs, &project.predefined_macros);
+    let package = project.package(path);
+    let lexed = lex_with_context(text, path, &package.includes, &package.defines);
 
     let tokens = match lexed {
         Ok(lexed) => {

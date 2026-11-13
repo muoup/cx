@@ -1,3 +1,6 @@
-project { backend = "llvm" }
+package("lisp_interpreter")
+stdlib("std")
 
-executable "lisp-interpreter" { "main.cx" }
+debug_profile():backend("llvm")
+
+target("lisp-interpreter", "executable"):match("main.cx")

@@ -10,7 +10,7 @@ use crate::{
     definitions::Definitions,
 };
 
-pub fn generate_header(unit: &MIRUnit, link_entries: &[LinkEntry]) -> String {
+pub fn generate_header(unit: &MIRUnit) -> String {
     let types = unit.types();
     let exported = unit
         .functions()
@@ -27,15 +27,9 @@ pub fn generate_header(unit: &MIRUnit, link_entries: &[LinkEntry]) -> String {
         }
     }
 
-    let mut sections = vec!["#pragma once".to_string()];
-    if !link_entries.is_empty() {
-        let entries = link_entries
-            .iter()
-            .map(|entry| format!(" *   -l{} ({:?})\n", entry.name, entry.kind))
-            .collect::<String>();
-        sections.push(format!("/* Link dependencies:\n{entries} */"));
-    }
-    sections.push("#include <stdint.h>\n#include <stdbool.h>".into());
+    let mut sections = vec![
+        "#include <stdint.h>\n#include <stdbool.h>".to_string(),
+    ];
     sections.push("#ifdef __cplusplus\nextern \"C\" {\n#endif".into());
     if !definitions.forward.is_empty() {
         sections.push(definitions.forward.iter().map(|decl| format!("{decl};\n")).collect::<String>().trim_end().into());
@@ -48,6 +42,19 @@ pub fn generate_header(unit: &MIRUnit, link_entries: &[LinkEntry]) -> String {
     sections.push("#ifdef __cplusplus\n}\n#endif".into());
 
     sections.join("\n\n") + "\n"
+}
+
+pub fn render_header(body: &str, link_entries: &[LinkEntry]) -> String {
+    let mut sections = vec!["#pragma once".to_string()];
+    if !link_entries.is_empty() {
+        let entries = link_entries
+            .iter()
+            .map(|entry| format!(" *   -l{} ({:?})\n", entry.name, entry.kind))
+            .collect::<String>();
+        sections.push(format!("/* Link dependencies:\n{entries} */"));
+    }
+    sections.push(body.to_string());
+    sections.join("\n\n")
 }
 
 fn declaration(unit: &MIRUnit, prototype: &MIRFnPrototype) -> String {

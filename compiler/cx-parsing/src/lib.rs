@@ -22,6 +22,9 @@ pub fn preparse(
     path: NamespacePath,
 ) -> CXResult<PreparseContents> {
     let mut contents = PreparseContents::new(module, path);
+    for (alias, target) in config.scope.aliases() {
+        contents.add_namespace_alias(alias, target);
+    }
 
     let mut data = PreparseData {
         contents: &mut contents,

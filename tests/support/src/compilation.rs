@@ -1,5 +1,6 @@
 use cx_log::CXResult;
 use cx_pipeline::compile;
+use cx_pipeline_data::package::{PackageId, Packages};
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
     UnsafeFlags,
@@ -70,8 +71,9 @@ pub fn compiler_config(
     source_root: &Path,
     internal_directory: &Path,
     compilation_mode: CompilationMode,
-) -> CompilerConfig {
-    CompilerConfig {
+) -> (CompilerConfig, PackageId) {
+    let (packages, package) = Packages::standalone(source_root.to_path_buf(), vec![], vec![]);
+    let config = CompilerConfig {
         architecture: ArchitectureConfig::native(),
         backend,
         optimization_level: match backend {
@@ -84,17 +86,15 @@ pub fn compiler_config(
         compilation_mode,
         verbose: false,
         dump: false,
-        source_root: source_root.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
+        packages,
         module_mode: true,
         record_types: false,
         link_entries: vec![],
         native_objects: vec![],
-        include_dirs: vec![],
-        predefined_macros: vec![],
-        external_modules: Default::default(),
         header_modules: Default::default(),
-    }
+    };
+    (config, package)
 }
 
 pub fn compile_file(
@@ -103,8 +103,8 @@ pub fn compile_file(
     compilation_mode: CompilationMode,
     temp_dir: &TestTempDir,
 ) -> Result<CompilationResult, CompilationFailure> {
-    let config = file_config(input, backend, compilation_mode, temp_dir);
-    timed_compilation(config, |config| compile(config, &[input.to_path_buf()]).map(drop))
+    let (config, package) = file_config(input, backend, compilation_mode, temp_dir);
+    timed_compilation(config, |config| compile(config, package, &[input.to_path_buf()]).map(drop))
 }
 
 /// [`compile_file`] at `optimization_level` instead of the backend's test default.
@@ -115,9 +115,9 @@ pub fn compile_file_at(
     compilation_mode: CompilationMode,
     temp_dir: &TestTempDir,
 ) -> Result<CompilationResult, CompilationFailure> {
-    let mut config = file_config(input, backend, compilation_mode, temp_dir);
+    let (mut config, package) = file_config(input, backend, compilation_mode, temp_dir);
     config.optimization_level = optimization_level;
-    timed_compilation(config, |config| compile(config, &[input.to_path_buf()]).map(drop))
+    timed_compilation(config, |config| compile(config, package, &[input.to_path_buf()]).map(drop))
 }
 
 fn file_config(
@@ -125,7 +125,7 @@ fn file_config(
     backend: CompilerBackend,
     compilation_mode: CompilationMode,
     temp_dir: &TestTempDir,
-) -> CompilerConfig {
+) -> (CompilerConfig, PackageId) {
     let source_root = input
         .parent()
         .expect("test source should have a parent directory");

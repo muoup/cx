@@ -15,6 +15,7 @@ use crate::{
         source::{ConditionalFrame, LanguageMode, SourceFrame},
     },
     preprocessor::{Preprocessor, builtins::builtin_macros},
+    IncludeRoot,
 };
 
 #[derive(Clone)]
@@ -42,7 +43,7 @@ pub(crate) struct SourceInput {
 }
 
 pub(crate) struct LexingContext {
-    pub(crate) include_dirs: Vec<PathBuf>,
+    pub(crate) includes: Vec<IncludeRoot>,
     pub(crate) macros: FxHashMap<String, Macro>,
     pub(crate) once_files: FxHashSet<PathBuf>,
     source_texts: FxHashMap<PathBuf, String>,
@@ -57,7 +58,7 @@ impl LexingContext {
     pub(crate) fn new(
         source: String,
         source_path: &Path,
-        include_dirs: &[PathBuf],
+        includes: &[IncludeRoot],
         predefined_macros: &[(String, String)],
     ) -> CXResult<Self> {
         let builtin_path = PathBuf::from(cx_library_directory("libc/internal/__builtins.h"));
@@ -81,7 +82,7 @@ impl LexingContext {
         }
 
         Ok(Self {
-            include_dirs: include_dirs.to_vec(),
+            includes: includes.to_vec(),
             macros,
             once_files: FxHashSet::default(),
             source_texts: FxHashMap::from_iter([

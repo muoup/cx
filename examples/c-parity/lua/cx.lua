@@ -1,7 +1,8 @@
-project { backend = "llvm" }
+package("lua")
+link("m")
 
-executable "lua" {
-  "upstream/*.c",
-  "!upstream/onelua.c",
-  link = { "m" },
-}
+debug_profile():backend("llvm")
+
+local lua = target("lua", "executable")
+lua:match("upstream/*.c")
+lua:exclude("upstream/onelua.c")

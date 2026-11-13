@@ -8,6 +8,8 @@ use crate::log::error;
 use args::Command;
 use cx_log::{error::write_bug_report_notes, CXResult};
 use cx_pipeline::{compile, link_object_files, COMPILER_STACK_SIZE};
+use cx_lexer::IncludeRoot;
+use cx_pipeline_data::package::{PackageId, Packages};
 use cx_pipeline_data::{ArchitectureConfig, CompilationMode, CompilerConfig};
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -75,14 +77,16 @@ fn compiler_config_with_dirs(
     mode: CompilationMode,
     working_directory: PathBuf,
     internal_directory: PathBuf,
-) -> CompilerConfig {
-    let include_dirs = args
+) -> (CompilerConfig, PackageId) {
+    let includes = args
         .include_dirs
         .iter()
-        .map(|path| resolve_invocation_path(&working_directory, path))
+        .map(|path| IncludeRoot::directory(resolve_invocation_path(&working_directory, path), None))
         .collect();
+    let (packages, package) =
+        Packages::standalone(working_directory, includes, args.predefined_macros.clone());
 
-    CompilerConfig {
+    let config = CompilerConfig {
         architecture: ArchitectureConfig::native(),
         backend: args.backend,
         optimization_level: args.optimization_level,
@@ -90,20 +94,18 @@ fn compiler_config_with_dirs(
         unsafe_flags: args.unsafe_flags,
         verbose: args.verbose,
         dump: args.dump,
-        source_root: working_directory,
         internal_directory,
+        packages,
         compilation_mode: mode,
-        include_dirs,
-        predefined_macros: args.predefined_macros.clone(),
         require_explicit_return: args.require_explicit_return,
 
         module_mode: false,
         record_types: false,
         link_entries: vec![],
         native_objects: vec![],
-        external_modules: Default::default(),
         header_modules: Default::default(),
-    }
+    };
+    (config, package)
 }
 
 fn run_file_mode(args: args::FileArgs) -> CXResult<()> {
@@ -118,14 +120,14 @@ fn run_file_mode(args: args::FileArgs) -> CXResult<()> {
                 .as_ref()
                 .map(|output| resolve_invocation_path(&invocation_directory, output))
                 .unwrap_or_else(|| default_object_output(&invocation_directory, input_file));
-            let config = compiler_config_with_dirs(
+            let (config, package) = compiler_config_with_dirs(
                 &args,
                 output,
                 CompilationMode::Object,
                 invocation_directory.clone(),
                 internal_directory.clone(),
             );
-            compile(config, &[resolve_invocation_path(&invocation_directory, input_file)])?;
+            compile(config, package, &[resolve_invocation_path(&invocation_directory, input_file)])?;
         }
         return Ok(());
     }
@@ -138,14 +140,14 @@ fn run_file_mode(args: args::FileArgs) -> CXResult<()> {
 
     if args.input_files.len() == 1 {
         let internal_directory = setup_internal_directory(&invocation_directory)?;
-        let config = compiler_config_with_dirs(
+        let (config, package) = compiler_config_with_dirs(
             &args,
             output,
             CompilationMode::Executable,
             invocation_directory.clone(),
             internal_directory,
         );
-        compile(config, &[resolve_invocation_path(&invocation_directory, &args.input_files[0])])?;
+        compile(config, package, &[resolve_invocation_path(&invocation_directory, &args.input_files[0])])?;
         return Ok(());
     }
 
@@ -155,7 +157,7 @@ fn run_file_mode(args: args::FileArgs) -> CXResult<()> {
 
     for (index, input_file) in args.input_files.iter().enumerate() {
         let object_output = intermediate_object_output(&internal_directory, index, input_file);
-        let config = compiler_config_with_dirs(
+        let (config, package) = compiler_config_with_dirs(
             &args,
             object_output.clone(),
             CompilationMode::Object,
@@ -163,7 +165,7 @@ fn run_file_mode(args: args::FileArgs) -> CXResult<()> {
             internal_directory.clone(),
         );
 
-        compile(config, &[resolve_invocation_path(&working_directory, input_file)])?;
+        compile(config, package, &[resolve_invocation_path(&working_directory, input_file)])?;
         object_files.push(object_output);
     }
 

@@ -1,22 +1,43 @@
-use cx_pipeline::project;
-use cx_pipeline_data::config::{load_project, Profile, CONFIG_FILE};
+use cx_pipeline::project::ProjectPackages;
+use cx_pipeline_data::config::{load_project, CONFIG_FILE, DEBUG_PROFILE};
+use cx_pipeline_data::package::{Package, PackageId, Packages};
+use cx_pipeline_data::CompilationUnit;
 use std::path::{Path, PathBuf};
 
 pub struct ProjectSettings {
     pub root: PathBuf,
-    pub source_root: PathBuf,
-    pub include_dirs: Vec<PathBuf>,
-    pub predefined_macros: Vec<(String, String)>,
+    pub packages: Packages,
+    fallback: PackageId,
 }
 
 impl ProjectSettings {
     pub fn new(root: &Path) -> Self {
+        let (packages, fallback) = Packages::standalone(root.to_path_buf(), vec![], vec![]);
         Self {
             root: root.to_path_buf(),
-            source_root: root.to_path_buf(),
-            include_dirs: vec![],
-            predefined_macros: vec![],
+            packages,
+            fallback,
         }
+    }
+
+    pub fn package(&self, file: &Path) -> &Package {
+        self.packages.get(self.owner(file))
+    }
+
+    pub fn unit(&self, file: &Path) -> (Packages, CompilationUnit) {
+        if let Some(unit) = self.packages.unit(self.owner(file), file) {
+            return (self.packages.clone(), unit);
+        }
+        let directory = file.parent().unwrap_or(file).to_path_buf();
+        let (packages, package) = Packages::standalone(directory, vec![], vec![]);
+        let unit = packages
+            .unit(package, file)
+            .expect("a file lies under its own directory");
+        (packages, unit)
+    }
+
+    fn owner(&self, file: &Path) -> PackageId {
+        self.packages.owner(file).unwrap_or(self.fallback)
     }
 }
 
@@ -52,27 +73,19 @@ pub fn find_project_root(file_path: &Path) -> PathBuf {
 }
 
 pub fn load_project_settings(project_root: &Path) -> Result<ProjectSettings, String> {
-    let mut settings = ProjectSettings::new(project_root);
     if !project_root.join(CONFIG_FILE).is_file() {
-        return Ok(settings);
+        return Ok(ProjectSettings::new(project_root));
     }
 
     let project = load_project(project_root).map_err(|error| error.message())?;
-    let internal_directory = project_root.join(".internal");
-    settings.source_root = project.source_root.clone();
-    for target in &project.targets {
-        let usage = project::target_usage(&project, &internal_directory, Profile::Debug, target)
-            .map_err(|error| error.message())?;
-        for include_dir in usage.include {
-            if !settings.include_dirs.contains(&include_dir) {
-                settings.include_dirs.push(include_dir);
-            }
-        }
-        for define in usage.defines {
-            if !settings.predefined_macros.iter().any(|(name, _)| *name == define.0) {
-                settings.predefined_macros.push(define);
-            }
-        }
-    }
-    Ok(settings)
+    let profile = project
+        .profile(DEBUG_PROFILE)
+        .expect("every project has the debug profile");
+    let packages =
+        ProjectPackages::new(&project, &profile.settings).map_err(|error| error.message())?;
+    Ok(ProjectSettings {
+        root: project_root.to_path_buf(),
+        fallback: packages.id(0),
+        packages: packages.packages,
+    })
 }

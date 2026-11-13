@@ -24,3 +24,4 @@ cx-target = { path = "../cx-target" }
 
 cx-util = { path = "../cx-util" }
 cx-namespace = { path = "../cx-namespace" }
+cx-lexer = { path = "../cx-lexer" }

@@ -1,5 +1,7 @@
-local raylib = import "../raylib.lua"
+package("raylib_test")
+stdlib("std")
+import("../raylib.lua")
 
-project { backend = "cranelift" }
+debug_profile():backend("cranelift")
 
-executable "raylib-test" { "main.cx", deps = { raylib } }
+target("raylib-test", "executable"):match("main.cx")

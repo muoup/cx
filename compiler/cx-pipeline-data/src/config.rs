@@ -1,6 +1,5 @@
 mod lua;
 mod schema;
-mod values;
 
 use std::path::{Path, PathBuf};
 
@@ -22,7 +21,7 @@ pub fn find_project_root(start: &Path) -> Option<PathBuf> {
 }
 
 pub fn load_project(root: &Path) -> CXResult<ProjectConfig> {
-    lua::evaluate(root, &root.join(CONFIG_FILE)).map_err(|message| {
+    lua::evaluate(&root.join(CONFIG_FILE)).map_err(|message| {
         CXError::new(
             catalogue::INVALID_CONFIG.bind(message),
             CXNoSourceContext::error("project configuration could not be evaluated"),

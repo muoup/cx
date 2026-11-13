@@ -11,6 +11,7 @@ use crate::{
     context::{LexingContext, SourceInput},
     lexer::{scanner::LexTransition, source::LanguageMode},
     preprocessor::{conditionals::rest_of_logical_directive, includes},
+    IncludeRoot,
 };
 
 pub(crate) fn handle_include(
@@ -61,9 +62,9 @@ fn handle_include_impl(
 
     let current_file = context.current_frame().file_path.clone();
     let path = match if include_next {
-        includes::resolve_next_path(&current_file, &context.include_dirs, &file_name)
+        includes::resolve_next_path(&current_file, &context.includes, &file_name)
     } else {
-        includes::resolve_path(&current_file, &context.include_dirs, &file_name)
+        includes::resolve_path(&current_file, &context.includes, &file_name)
     } {
         Some(path) => path,
         None => {
@@ -124,7 +125,7 @@ pub(crate) fn handle_pragma(context: &mut LexingContext) -> CXResult<LexTransiti
 
 pub(crate) fn resolve_path(
     current_file: &std::path::Path,
-    include_dirs: &[PathBuf],
+    includes: &[IncludeRoot],
     file_name: &str,
 ) -> Option<PathBuf> {
     let is_quoted = file_name.starts_with('"') && file_name.ends_with('"');
@@ -135,35 +136,33 @@ pub(crate) fn resolve_path(
     }
 
     let inner = &file_name[1..file_name.len() - 1];
-    let mut candidates = Vec::new();
 
-    if is_quoted && let Some(parent) = current_file.parent() {
-        candidates.push(parent.join(inner));
+    let relative = is_quoted
+        .then(|| current_file.parent().map(|parent| parent.join(inner)))
+        .flatten()
+        .filter(|path| path.is_file());
+    if relative.is_some() {
+        return relative;
+    }
+    if let Some(path) = includes.iter().find_map(|root| root.resolve(inner)) {
+        return Some(path);
     }
 
-    let bundled = PathBuf::from(cx_library_directory(&format!("libc/{inner}")));
-
-    let search = candidates
-        .into_iter()
-        .chain(include_dirs.iter().map(|dir| dir.join(inner)))
-        .collect::<Vec<_>>();
-
     #[cfg(not(feature = "ignore-system-headers"))]
-    let search = search
-        .into_iter()
-        .chain(system_include_dirs().iter().map(|dir| dir.join(inner)));
-
-    #[cfg(feature = "ignore-system-headers")]
-    let search = search.into_iter();
-
-    search
-        .chain(std::iter::once(bundled))
+    if let Some(path) = system_include_dirs()
+        .iter()
+        .map(|dir| dir.join(inner))
         .find(|path| path.is_file())
+    {
+        return Some(path);
+    }
+
+    Some(PathBuf::from(cx_library_directory(&format!("libc/{inner}")))).filter(|path| path.is_file())
 }
 
 pub(crate) fn resolve_next_path(
     current_file: &std::path::Path,
-    include_dirs: &[PathBuf],
+    includes: &[IncludeRoot],
     file_name: &str,
 ) -> Option<PathBuf> {
     let is_angled = file_name.starts_with('<') && file_name.ends_with('>');
@@ -172,28 +171,26 @@ pub(crate) fn resolve_next_path(
     }
 
     let inner = &file_name[1..file_name.len() - 1];
-    let search = include_dirs.to_vec();
-
-    #[cfg(not(feature = "ignore-system-headers"))]
-    let search = search
-        .into_iter()
-        .chain(system_include_dirs().iter().cloned());
-
-    #[cfg(feature = "ignore-system-headers")]
-    let search = search.into_iter();
-
     let current_parent = current_file.parent()?.canonicalize().ok()?;
-    let mut passed_current_dir = false;
+    let is_current = |directory: &std::path::Path| directory.canonicalize().ok().as_ref() == Some(&current_parent);
 
-    for directory in search {
-        let canonical_directory = directory.canonicalize().ok();
+    let mut passed_current_dir = false;
+    for root in includes {
         if !passed_current_dir {
-            if canonical_directory.as_ref() == Some(&current_parent) {
-                passed_current_dir = true;
-            }
+            passed_current_dir = root.search_directory().is_some_and(is_current);
             continue;
         }
+        if let Some(path) = root.resolve(inner) {
+            return Some(path);
+        }
+    }
 
+    #[cfg(not(feature = "ignore-system-headers"))]
+    for directory in system_include_dirs() {
+        if !passed_current_dir {
+            passed_current_dir = is_current(directory);
+            continue;
+        }
         let candidate = directory.join(inner);
         if candidate.is_file() {
             return Some(candidate);

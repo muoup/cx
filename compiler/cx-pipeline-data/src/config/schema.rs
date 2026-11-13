@@ -2,21 +2,61 @@ use std::path::PathBuf;
 
 use crate::{CompilerBackend, OptimizationLevel};
 
+pub const DEBUG_PROFILE: &str = "debug";
+
 #[derive(Debug, Clone)]
 pub struct ProjectConfig {
     pub root: PathBuf,
-    pub name: String,
-    pub source_root: PathBuf,
-    pub debug: ProfileSettings,
-    pub release: ProfileSettings,
+    pub packages: Vec<PackageConfig>,
+    pub profiles: Vec<ProfileConfig>,
     pub targets: Vec<TargetConfig>,
-    pub dependencies: Vec<DependencyConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PackageConfig {
+    pub name: String,
+    pub root: PathBuf,
+    pub source_root: PathBuf,
+    pub mounts: Vec<Mount>,
+    pub usage: Usage,
+}
+
+#[derive(Debug, Clone)]
+pub struct Mount {
+    pub prefix: String,
+    pub target: MountTarget,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Profile {
-    Debug,
-    Release,
+pub enum MountTarget {
+    Std,
+    Package(usize),
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Usage {
+    pub includes: Vec<IncludeSpec>,
+    pub defines: Vec<(String, String)>,
+    pub objects: Vec<PathBuf>,
+    pub link: Vec<LinkEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IncludeSpec {
+    pub source: IncludeSpecSource,
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum IncludeSpecSource {
+    Directory(PathBuf),
+    Glob { base: PathBuf, pattern: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct ProfileConfig {
+    pub name: String,
+    pub settings: ProfileSettings,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -26,6 +66,7 @@ pub struct ProfileSettings {
     pub no_analysis: Option<bool>,
     pub no_assert: Option<bool>,
     pub require_explicit_return: Option<bool>,
+    pub defines: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,36 +79,10 @@ pub enum TargetKind {
 pub struct TargetConfig {
     pub name: String,
     pub kind: TargetKind,
-    pub sources: Vec<SourcePattern>,
-    pub usage: Usage,
-    pub deps: Vec<DependencyRef>,
-    pub default: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct SourcePattern {
-    pub pattern: String,
-    pub exported: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Usage {
-    pub include: Vec<PathBuf>,
-    pub defines: Vec<(String, String)>,
-    pub objects: Vec<PathBuf>,
-    pub link: Vec<LinkEntry>,
-}
-
-#[derive(Debug, Clone)]
-pub struct DependencyConfig {
-    pub usage: Usage,
-    pub deps: Vec<DependencyRef>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DependencyRef {
-    Bundle(usize),
-    Target(usize),
+    pub package: usize,
+    pub matches: Vec<String>,
+    pub excludes: Vec<String>,
+    pub headers: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,21 +98,21 @@ pub enum LinkKind {
     Dynamic,
 }
 
-impl Profile {
-    pub fn name(self) -> &'static str {
-        match self {
-            Profile::Debug => "debug",
-            Profile::Release => "release",
-        }
+impl ProfileSettings {
+    pub fn inherit(mut self, base: &ProfileSettings) -> Self {
+        self.optimization = self.optimization.or(base.optimization);
+        self.backend = self.backend.or(base.backend);
+        self.no_analysis = self.no_analysis.or(base.no_analysis);
+        self.no_assert = self.no_assert.or(base.no_assert);
+        self.require_explicit_return = self.require_explicit_return.or(base.require_explicit_return);
+        self.defines = base.defines.iter().cloned().chain(self.defines).collect();
+        self
     }
 }
 
 impl ProjectConfig {
-    pub fn profile(&self, profile: Profile) -> &ProfileSettings {
-        match profile {
-            Profile::Debug => &self.debug,
-            Profile::Release => &self.release,
-        }
+    pub fn profile(&self, name: &str) -> Option<&ProfileConfig> {
+        self.profiles.iter().find(|profile| profile.name == name)
     }
 
     pub fn target(&self, name: &str) -> Option<&TargetConfig> {

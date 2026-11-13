@@ -5,7 +5,7 @@ use crate::{
 use cx_log::catalogue::parse::*;
 use cx_log::CXResult;
 use cx_namespace::module::{NamespacePath, QualifiedName};
-use cx_pipeline_data::CompilerConfig;
+use cx_namespace::scope::ImportScope;
 use cx_preparse_data::{Import, PreparseContents};
 use cx_tokens::{
     identifier, intrinsic, keyword, operator, punctuator, specifier,
@@ -14,21 +14,13 @@ use cx_tokens::{
 };
 use cx_util::identifier::CXIdent;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PreparseConfig {
     pub module_mode: bool,
-}
-
-impl PreparseConfig {
-    pub fn from_compiler_config(config: &CompilerConfig) -> Self {
-        Self {
-            module_mode: config.module_mode,
-        }
-    }
+    pub scope: ImportScope,
 }
 
 pub(crate) struct PreparseData<'a> {
-    #[allow(dead_code)]
     pub(crate) config: &'a PreparseConfig,
     pub(crate) contents: &'a mut PreparseContents,
     pub(crate) tokens: TokenIter<'a>,
@@ -132,7 +124,10 @@ fn consume_token(data: &mut PreparseData) -> CXResult<()> {
 
         keyword!(Import) => {
             data.tokens.back();
-            let import = parse_import(&mut data.tokens)?;
+            let mut import = parse_import(&mut data.tokens)?;
+            for name in &mut import.names {
+                *name = data.config.scope.resolve_name(name);
+            }
 
             for name in &import.names {
                 let import_namespace = name.namespace.clone().child(name.name.clone());

@@ -3,18 +3,20 @@ pub mod db;
 pub mod hmir;
 pub mod internal_storage;
 pub mod jobs;
+pub mod package;
 
 use crate::config::LinkEntry;
 use crate::db::ModuleData;
+use crate::package::{PackageId, Packages};
 use cx_namespace::module::{ModulePath, NamespacePath};
 pub use cx_target::ArchitectureConfig;
-use cx_util::identifier::CXIdent;
+
 use speedy::{Context, Readable, Writable};
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
 /*
@@ -73,14 +75,11 @@ pub struct CompilerConfig {
     pub require_explicit_return: Option<bool>,
 
     pub output: PathBuf,
-    pub source_root: PathBuf,
     pub internal_directory: PathBuf,
+    pub packages: Packages,
 
     pub link_entries: Vec<LinkEntry>,
     pub native_objects: Vec<PathBuf>,
-    pub include_dirs: Vec<PathBuf>,
-    pub predefined_macros: Vec<(String, String)>,
-    pub external_modules: FxHashSet<PathBuf>,
     pub header_modules: FxHashSet<PathBuf>,
 
     pub unsafe_flags: UnsafeFlags,
@@ -115,39 +114,18 @@ pub enum CompilerBackend {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilationUnit {
+    package: PackageId,
     module: ModulePath,
     namespace: NamespacePath,
 }
 
 impl CompilationUnit {
-    pub fn new(
-        project_root: &Path,
-        module_path: ModulePath,
-        namespace_override: Option<NamespacePath>,
-    ) -> Self {
-        let module_path = if module_path.as_path().is_absolute() {
-            module_path
-        } else {
-            ModulePath::new(project_root.join(module_path.as_path()))
-        };
-        let diff = module_path
-            .as_path()
-            .strip_prefix(project_root)
-            .unwrap_or(module_path.as_path())
-            .with_extension("");
+    pub fn new(package: PackageId, module: ModulePath, namespace: NamespacePath) -> Self {
+        Self { package, module, namespace }
+    }
 
-        let namespace = namespace_override.unwrap_or_else(|| {
-            NamespacePath::new(
-                diff.components()
-                    .map(|c| CXIdent::from(c.as_os_str().to_string_lossy().to_string()))
-                    .collect(),
-            )
-        });
-
-        CompilationUnit {
-            module: module_path,
-            namespace,
-        }
+    pub fn package(&self) -> PackageId {
+        self.package
     }
 
     pub fn module(&self) -> &ModulePath {
@@ -159,18 +137,17 @@ impl CompilationUnit {
     }
 
     pub fn is_std_lib(&self) -> bool {
-        self.namespace
-            .segments().first()
-            .map(|s| s.as_str() == "std")
-            .unwrap_or(false)
+        self.package == PackageId::STD
     }
 }
 
 impl<'a, C: Context> Readable<'a, C> for CompilationUnit {
     fn read_from<R: speedy::Reader<'a, C>>(reader: &mut R) -> Result<Self, C::Error> {
+        let package = PackageId::read_from(reader)?;
         let module = PathBuf::from(String::read_from(reader)?);
         let namespace = NamespacePath::read_from(reader)?;
         Ok(Self {
+            package,
             module: ModulePath::new(module),
             namespace,
         })
@@ -182,6 +159,7 @@ impl<C: Context> Writable<C> for CompilationUnit {
     where
         W: ?Sized + speedy::Writer<C>,
     {
+        self.package.write_to(writer)?;
         self.module
             .as_path()
             .to_str()
@@ -193,6 +171,7 @@ impl<C: Context> Writable<C> for CompilationUnit {
 
 impl Hash for CompilationUnit {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        self.package.hash(state);
         self.module.hash(state);
         self.namespace.hash(state);
     }

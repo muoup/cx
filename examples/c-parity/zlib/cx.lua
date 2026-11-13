@@ -1,8 +1,8 @@
-project { backend = "llvm" }
+package("zlib")
+include("upstream")
 
-executable "roundtrip" {
-  "upstream/*.c",
-  "roundtrip.c",
-  "!upstream/gz*.c",
-  include = { "upstream" },
-}
+debug_profile():backend("llvm")
+
+local roundtrip = target("roundtrip", "executable")
+roundtrip:match("upstream/*.c", "roundtrip.c")
+roundtrip:exclude("upstream/gz*.c")

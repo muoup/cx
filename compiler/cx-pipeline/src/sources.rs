@@ -4,44 +4,58 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub(crate) fn expand_patterns(base: &Path, patterns: &[String]) -> CXResult<Vec<PathBuf>> {
+pub(crate) fn expand_patterns(
+    base: &Path,
+    matches: &[String],
+    excludes: &[String],
+) -> CXResult<Vec<PathBuf>> {
     let mut selected = BTreeSet::new();
-
-    for raw_pattern in patterns {
-        let (exclude, raw_pattern) = match raw_pattern.strip_prefix('!') {
-            Some(pattern) => (true, pattern),
-            None => (false, raw_pattern.as_str()),
-        };
-        let pattern = normalize_pattern(raw_pattern);
-        if pattern.is_empty() {
-            return Err(pipeline_error(&catalogue::EMPTY_MATCH_PATTERN, ()));
-        }
-        if Path::new(pattern.as_str()).is_absolute() {
-            return Err(pipeline_error(&catalogue::ABSOLUTE_MATCH_PATTERN, pattern));
-        }
-
-        let root = search_root(base, pattern.as_str());
-        if root.exists() {
-            let mut pattern_matches = BTreeSet::new();
-            collect_matches(base, &root, pattern.as_str(), &mut pattern_matches)?;
-            if exclude {
-                for path in pattern_matches {
-                    selected.remove(&path);
-                }
-            } else {
-                selected.extend(pattern_matches);
-            }
+    for pattern in matches {
+        selected.extend(pattern_matches(base, pattern)?);
+    }
+    for pattern in excludes {
+        for path in pattern_matches(base, pattern)? {
+            selected.remove(&path);
         }
     }
 
     if selected.is_empty() {
         return Err(pipeline_error(
             &catalogue::NO_SOURCES,
-            Some(patterns.join(", ")),
+            Some(matches.join(", ")),
         ));
     }
 
     Ok(selected.into_iter().collect())
+}
+
+pub(crate) fn expand_headers(base: &Path, pattern: &str) -> CXResult<(PathBuf, Vec<PathBuf>)> {
+    let fixed = search_root(base, &normalize_pattern(pattern));
+    let files = pattern_matches(base, pattern)?
+        .into_iter()
+        .filter_map(|path| base.join(path).strip_prefix(&fixed).ok().map(Path::to_path_buf))
+        .collect::<Vec<_>>();
+    if files.is_empty() {
+        return Err(pipeline_error(&catalogue::NO_SOURCES, Some(pattern.to_string())));
+    }
+    Ok((fixed, files))
+}
+
+fn pattern_matches(base: &Path, raw_pattern: &str) -> CXResult<BTreeSet<PathBuf>> {
+    let pattern = normalize_pattern(raw_pattern);
+    if pattern.is_empty() {
+        return Err(pipeline_error(&catalogue::EMPTY_MATCH_PATTERN, ()));
+    }
+    if Path::new(pattern.as_str()).is_absolute() {
+        return Err(pipeline_error(&catalogue::ABSOLUTE_MATCH_PATTERN, pattern));
+    }
+
+    let mut matches = BTreeSet::new();
+    let root = search_root(base, pattern.as_str());
+    if root.exists() {
+        collect_matches(base, &root, pattern.as_str(), &mut matches)?;
+    }
+    Ok(matches)
 }
 
 fn normalize_pattern(pattern: &str) -> String {

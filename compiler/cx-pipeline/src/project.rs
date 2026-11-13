@@ -1,250 +1,284 @@
 use std::path::{Path, PathBuf};
 
+use cx_lexer::{IncludeRoot, IncludeSource};
 use cx_log::{CXResult, catalogue::driver as catalogue};
 use cx_pipeline_data::config::{
-    DependencyRef, LinkEntry, Profile, ProjectConfig, TargetConfig, TargetKind,
+    IncludeSpec, IncludeSpecSource, LinkEntry, MountTarget, ProfileConfig, ProfileSettings,
+    ProjectConfig, TargetConfig, TargetKind,
 };
-use cx_pipeline_data::{CompilationMode, CompilerConfig};
+use cx_pipeline_data::internal_storage::resource_path;
+use cx_pipeline_data::package::{Package, PackageId, Packages};
+use cx_pipeline_data::{CompilationUnit, CompilerConfig, GlobalCompilationContext};
+use cx_util::identifier::CXIdent;
 use rustc_hash::FxHashSet;
 
-use crate::compile;
+use crate::linker::{link_executable, link_relocatable};
 use crate::log::pipeline_error;
-use crate::sources::expand_patterns;
+use crate::scheduler::imported_units;
+use crate::sources::{expand_headers, expand_patterns};
+use crate::{library_roots, reporting, root_unit, run_pipeline};
 
-pub struct TargetSources {
-    pub sources: Vec<PathBuf>,
-    pub exported: FxHashSet<PathBuf>,
+const RESERVED_TARGETS: &[&str] = &["obj", "include"];
+
+pub struct ProjectPackages {
+    pub packages: Packages,
+    ids: Vec<PackageId>,
 }
 
-#[derive(Default)]
-pub struct TargetUsage {
-    pub include: Vec<PathBuf>,
-    pub defines: Vec<(String, String)>,
-    pub objects: Vec<PathBuf>,
-    pub link: Vec<LinkEntry>,
-    pub external: FxHashSet<PathBuf>,
+struct TargetPlan<'a> {
+    target: &'a TargetConfig,
+    units: Vec<CompilationUnit>,
+    headers: FxHashSet<PathBuf>,
 }
 
-pub fn output_directory(internal_directory: &Path, profile: Profile) -> PathBuf {
-    internal_directory.join("output").join(profile.name())
-}
+impl ProjectPackages {
+    pub fn new(project: &ProjectConfig, profile: &ProfileSettings) -> CXResult<Self> {
+        let mut packages = Packages::new(profile.defines.clone());
+        let mut ids = Vec::new();
+        for package in &project.packages {
+            let includes = package
+                .usage
+                .includes
+                .iter()
+                .map(include_root)
+                .collect::<CXResult<Vec<_>>>()?;
+            ids.push(packages.push(Package {
+                name: Some(CXIdent::new(package.name.as_str())),
+                source_root: package.source_root.clone(),
+                mounts: Vec::new(),
+                includes,
+                defines: profile.defines.iter().chain(&package.usage.defines).cloned().collect(),
+            }));
+        }
+        for (package, id) in project.packages.iter().zip(&ids) {
+            packages.get_mut(*id).mounts = package
+                .mounts
+                .iter()
+                .map(|mount| {
+                    let target = match mount.target {
+                        MountTarget::Std => PackageId::STD,
+                        MountTarget::Package(index) => ids[index],
+                    };
+                    (CXIdent::new(mount.prefix.as_str()), target)
+                })
+                .collect();
+        }
+        Ok(Self { packages, ids })
+    }
 
-pub fn artifact(internal_directory: &Path, profile: Profile, target: &TargetConfig) -> PathBuf {
-    let directory = output_directory(internal_directory, profile);
-    match target.kind {
-        TargetKind::Executable => directory.join(&target.name),
-        TargetKind::Library => directory.join(format!("{}.o", target.name)),
+    pub fn id(&self, package: usize) -> PackageId {
+        self.ids[package]
+    }
+
+    fn index(&self, id: PackageId) -> Option<usize> {
+        self.ids.iter().position(|other| *other == id)
     }
 }
 
-pub fn header_directory(internal_directory: &Path, profile: Profile, target: &TargetConfig) -> PathBuf {
-    output_directory(internal_directory, profile)
-        .join("include")
-        .join(&target.name)
-}
-
-pub fn target_sources(project: &ProjectConfig, target: &TargetConfig) -> CXResult<TargetSources> {
-    let absolute = |paths: Vec<PathBuf>| paths.into_iter().map(|path| project.root.join(path));
-    let patterns = target
-        .sources
-        .iter()
-        .map(|source| source.pattern.clone())
-        .collect::<Vec<_>>();
-    let sources = absolute(expand_patterns(&project.root, &patterns)?).collect::<Vec<_>>();
-
-    let exported_patterns = target
-        .sources
-        .iter()
-        .filter(|source| source.exported)
-        .map(|source| source.pattern.clone())
-        .collect::<Vec<_>>();
-    let exported = match exported_patterns.is_empty() {
-        true => FxHashSet::default(),
-        false => absolute(expand_patterns(&project.root, &exported_patterns)?)
-            .filter(|path| sources.contains(path))
-            .collect(),
+pub fn include_root(spec: &IncludeSpec) -> CXResult<IncludeRoot> {
+    let source = match &spec.source {
+        IncludeSpecSource::Directory(directory) => IncludeSource::Directory(directory.clone()),
+        IncludeSpecSource::Glob { base, pattern } => {
+            let (fixed, files) = expand_headers(base, pattern)?;
+            IncludeSource::Files { base: fixed, files: files.into_iter().collect() }
+        }
     };
-    Ok(TargetSources { sources, exported })
+    Ok(IncludeRoot { source, alias: spec.alias.clone() })
 }
 
-pub fn target_usage(
+pub fn target_sources(project: &ProjectConfig, target: &TargetConfig) -> CXResult<Vec<PathBuf>> {
+    let root = &project.packages[target.package].root;
+    Ok(expand_patterns(root, &target.matches, &target.excludes)?
+        .into_iter()
+        .map(|path| absolute(root.join(path)))
+        .collect())
+}
+
+fn target_headers(
     project: &ProjectConfig,
-    internal_directory: &Path,
-    profile: Profile,
     target: &TargetConfig,
-) -> CXResult<TargetUsage> {
-    let mut usage = TargetUsage {
-        include: target.usage.include.clone(),
-        defines: target.usage.defines.clone(),
-        objects: target.usage.objects.clone(),
-        link: target.usage.link.clone(),
-        external: FxHashSet::default(),
-    };
-    compile_usage(project, internal_directory, profile, &target.deps, &mut FxHashSet::default(), &mut usage);
-    link_usage(project, internal_directory, profile, &target.deps, &mut FxHashSet::default(), &mut usage)?;
-    Ok(usage)
-}
-
-fn compile_usage(
-    project: &ProjectConfig,
-    internal_directory: &Path,
-    profile: Profile,
-    deps: &[DependencyRef],
-    visited: &mut FxHashSet<DependencyRef>,
-    usage: &mut TargetUsage,
-) {
-    for &dependency in deps {
-        if !visited.insert(dependency) {
-            continue;
-        }
-        match dependency {
-            DependencyRef::Bundle(index) => {
-                let bundle = &project.dependencies[index];
-                extend_unique(&mut usage.include, &bundle.usage.include);
-                extend_unique(&mut usage.defines, &bundle.usage.defines);
-                compile_usage(project, internal_directory, profile, &bundle.deps, visited, usage);
-            }
-            DependencyRef::Target(index) => {
-                let library = &project.targets[index];
-                extend_unique(&mut usage.include, &[header_directory(internal_directory, profile, library)]);
-            }
-        }
+    sources: &[PathBuf],
+) -> CXResult<FxHashSet<PathBuf>> {
+    if target.headers.is_empty() {
+        return Ok(FxHashSet::default());
     }
-}
-
-fn link_usage(
-    project: &ProjectConfig,
-    internal_directory: &Path,
-    profile: Profile,
-    deps: &[DependencyRef],
-    visited: &mut FxHashSet<DependencyRef>,
-    usage: &mut TargetUsage,
-) -> CXResult<()> {
-    for &dependency in deps {
-        if !visited.insert(dependency) {
-            continue;
-        }
-        let (bundle, deps) = match dependency {
-            DependencyRef::Bundle(index) => {
-                let bundle = &project.dependencies[index];
-                (&bundle.usage, &bundle.deps)
-            }
-            DependencyRef::Target(index) => {
-                let library = &project.targets[index];
-                extend_unique(&mut usage.objects, &[artifact(internal_directory, profile, library)]);
-                usage.external.extend(target_sources(project, library)?.sources);
-                (&library.usage, &library.deps)
-            }
-        };
-        extend_unique(&mut usage.objects, &bundle.objects);
-        extend_unique(&mut usage.link, &bundle.link);
-        link_usage(project, internal_directory, profile, deps, visited, usage)?;
-    }
-    Ok(())
-}
-
-fn extend_unique<T: Clone + PartialEq>(items: &mut Vec<T>, additions: &[T]) {
-    for addition in additions {
-        if !items.contains(addition) {
-            items.push(addition.clone());
-        }
-    }
-}
-
-pub fn required_targets(project: &ProjectConfig, selected: &[usize]) -> Vec<usize> {
-    fn visit(project: &ProjectConfig, deps: &[DependencyRef], required: &mut FxHashSet<usize>) {
-        for dependency in deps {
-            let deps = match *dependency {
-                DependencyRef::Bundle(index) => &project.dependencies[index].deps,
-                DependencyRef::Target(index) => {
-                    if !required.insert(index) {
-                        continue;
-                    }
-                    &project.targets[index].deps
-                }
-            };
-            visit(project, deps, required);
-        }
-    }
-
-    let mut required = FxHashSet::default();
-    for &index in selected {
-        if required.insert(index) {
-            visit(project, &project.targets[index].deps, &mut required);
-        }
-    }
-    let mut required = required.into_iter().collect::<Vec<_>>();
-    required.sort();
-    required
+    let root = &project.packages[target.package].root;
+    Ok(expand_patterns(root, &target.headers, &[])?
+        .into_iter()
+        .map(|path| absolute(root.join(path)))
+        .filter(|path| sources.contains(path))
+        .collect())
 }
 
 pub fn build(
     base: &CompilerConfig,
     project: &ProjectConfig,
-    profile: Profile,
+    profile: &ProfileConfig,
     selected: &[usize],
 ) -> CXResult<Vec<PathBuf>> {
-    let internal_directory = &base.internal_directory;
-    let mut outputs = Vec::new();
+    let profile_directory = base.internal_directory.join(&profile.name);
+    let packages = ProjectPackages::new(project, &profile.settings)?;
 
-    for index in required_targets(project, selected) {
+    let mut config = base.clone();
+    config.packages = packages.packages.clone();
+    config.internal_directory = profile_directory.join("obj");
+    config.module_mode = true;
+
+    let mut plans = Vec::new();
+    for &index in selected {
         let target = &project.targets[index];
+        if RESERVED_TARGETS.contains(&target.name.as_str()) {
+            return Err(pipeline_error(
+                &catalogue::INVALID_CONFIG,
+                format!("target name '{}' is reserved for the build directory", target.name),
+            ));
+        }
         let sources = target_sources(project, target)?;
-        let usage = target_usage(project, internal_directory, profile, target)?;
-        let output = artifact(internal_directory, profile, target);
-        create_directory(output.parent().expect("artifact has a parent directory"))?;
+        let headers = target_headers(project, target, &sources)?;
+        let package = packages.id(target.package);
+        let units = sources
+            .iter()
+            .map(|source| root_unit(&config, package, source))
+            .collect::<CXResult<Vec<_>>>()?;
+        config.header_modules.extend(headers.iter().cloned());
+        plans.push(TargetPlan { target, units, headers });
+    }
 
-        let mut config = base.clone();
-        config.output = output.clone();
-        config.source_root = project.source_root.clone();
-        config.internal_directory = internal_directory.join(profile.name()).join(&target.name);
-        config.module_mode = true;
-        config.include_dirs.extend(usage.include);
-        config.predefined_macros.extend(usage.defines);
-        config.native_objects.extend(usage.objects);
-        config.link_entries.extend(usage.link);
-        config.external_modules = usage.external;
-        config.compilation_mode = match target.kind {
-            TargetKind::Executable => CompilationMode::Executable,
-            TargetKind::Library => CompilationMode::Library,
-        };
-        config.header_modules = sources.exported;
+    let mut roots = Vec::new();
+    for unit in plans.iter().flat_map(|plan| &plan.units) {
+        if !roots.contains(unit) {
+            roots.push(unit.clone());
+        }
+    }
 
-        let kind = match target.kind {
+    for plan in &plans {
+        let kind = match plan.target.kind {
             TargetKind::Executable => "executable",
             TargetKind::Library => "library",
         };
         eprintln!(
             "Building {kind} '{}' ({}, {} sources)",
-            target.name,
-            profile.name(),
-            sources.sources.len()
+            plan.target.name,
+            profile.name,
+            plan.units.len()
         );
-        let headers = compile(config, &sources.sources)?;
+    }
 
-        let header_directory = header_directory(internal_directory, profile, target);
-        for (source, header) in headers {
-            let relative = source.strip_prefix(&project.source_root).unwrap_or(&source);
-            let path = header_directory.join(relative).with_extension("h");
-            create_directory(path.parent().expect("header has a parent directory"))?;
-            std::fs::write(&path, header).map_err(|error| {
-                pipeline_error(
-                    &catalogue::FILE_OPERATION,
-                    (
-                        "write".into(),
-                        "header".into(),
-                        Some(format!("{}", path.display())),
-                        format!("{}", error),
-                    ),
-                )
-            })?;
+    let context = GlobalCompilationContext::new(config);
+    reporting(context.config.verbose, |reporter| {
+        run_pipeline(&context, &roots, reporter)?;
+        let mut outputs = Vec::new();
+        for plan in &plans {
+            reporter.link_status(&format!("Linking '{}'", plan.target.name));
+            outputs.push(link_target(&context, project, &packages, &profile_directory, plan)?);
         }
+        Ok(outputs)
+    })
+}
 
-        if selected.contains(&index) {
-            outputs.push(output);
+fn link_target(
+    context: &GlobalCompilationContext,
+    project: &ProjectConfig,
+    packages: &ProjectPackages,
+    profile_directory: &Path,
+    plan: &TargetPlan,
+) -> CXResult<PathBuf> {
+    let reachable = reachable_units(context, &plan.units);
+    let cx_objects = reachable
+        .iter()
+        .map(|unit| resource_path(context, unit, ".o"))
+        .collect::<Vec<_>>();
+
+    let mut used = vec![plan.target.package];
+    used.extend(reachable.iter().filter_map(|unit| packages.index(unit.package())));
+    used.sort();
+    used.dedup();
+    let (native_objects, link) = native_inputs(project, &used);
+
+    create_directory(profile_directory)?;
+    match plan.target.kind {
+        TargetKind::Executable => {
+            let output = profile_directory.join(&plan.target.name);
+            let objects = cx_objects.into_iter().chain(native_objects).collect::<Vec<_>>();
+            link_executable(&output, &objects, &link)?;
+            Ok(output)
+        }
+        TargetKind::Library => {
+            let output = profile_directory.join(format!("{}.o", plan.target.name));
+            link_relocatable(&output, &cx_objects, &library_roots(context, &plan.units))?;
+            write_headers(context, project, profile_directory, plan, &link)?;
+            Ok(output)
         }
     }
-    Ok(outputs)
+}
+
+pub fn native_inputs(project: &ProjectConfig, packages: &[usize]) -> (Vec<PathBuf>, Vec<LinkEntry>) {
+    let mut objects = Vec::<PathBuf>::new();
+    let mut link = Vec::<LinkEntry>::new();
+    for usage in packages.iter().map(|index| &project.packages[*index].usage) {
+        for object in &usage.objects {
+            if !objects.contains(object) {
+                objects.push(object.clone());
+            }
+        }
+        for entry in &usage.link {
+            if !link.contains(entry) {
+                link.push(entry.clone());
+            }
+        }
+    }
+    (objects, link)
+}
+
+fn reachable_units(context: &GlobalCompilationContext, roots: &[CompilationUnit]) -> Vec<CompilationUnit> {
+    let mut seen = roots.iter().cloned().collect::<FxHashSet<_>>();
+    let mut reachable = roots.to_vec();
+    let mut index = 0;
+    while index < reachable.len() {
+        for unit in imported_units(context, &reachable[index]) {
+            if seen.insert(unit.clone()) {
+                reachable.push(unit);
+            }
+        }
+        index += 1;
+    }
+    reachable
+}
+
+fn write_headers(
+    context: &GlobalCompilationContext,
+    project: &ProjectConfig,
+    profile_directory: &Path,
+    plan: &TargetPlan,
+    link: &[LinkEntry],
+) -> CXResult<()> {
+    let source_root = &project.packages[plan.target.package].source_root;
+    let directory = profile_directory.join("include").join(&plan.target.name);
+    let headers = context.headers.lock().expect("Deadlock on headers mutex");
+    for source in &plan.headers {
+        let Some(body) = headers.get(source) else {
+            continue;
+        };
+        let relative = source.strip_prefix(source_root).unwrap_or(source);
+        let path = directory.join(relative).with_extension("h");
+        create_directory(path.parent().expect("header has a parent directory"))?;
+        std::fs::write(&path, cx_c_header::render_header(body, link)).map_err(|error| {
+            pipeline_error(
+                &catalogue::FILE_OPERATION,
+                (
+                    "write".into(),
+                    "header".into(),
+                    Some(format!("{}", path.display())),
+                    format!("{}", error),
+                ),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn absolute(path: PathBuf) -> PathBuf {
+    path.canonicalize().unwrap_or(path)
 }
 
 fn create_directory(path: &Path) -> CXResult<()> {

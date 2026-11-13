@@ -41,8 +41,8 @@ pub struct FileArgs {
 
 #[derive(Debug)]
 pub struct BuildArgs {
-    pub target: Option<String>,
-    pub release: bool,
+    pub targets: Vec<String>,
+    pub profile: Option<String>,
     pub backend: Option<CompilerBackend>,
     pub optimization_level: Option<OptimizationLevel>,
     pub unsafe_flags: UnsafeFlags,
@@ -99,7 +99,7 @@ fn parse_common_flags(args: impl IntoIterator<Item = String>) -> ParsedCommonArg
     let mut args_iter = args.into_iter();
 
     while let Some(arg) = args_iter.next() {
-        if matches!(arg.as_str(), "-o" | "-I" | "-D") {
+        if matches!(arg.as_str(), "-o" | "-I" | "-D" | "-p" | "--profile") {
             rest.push(arg);
             if let Some(path) = args_iter.next() {
                 rest.push(path);
@@ -189,13 +189,19 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> {
 
 fn parse_build_args(args: impl IntoIterator<Item = String>, topic: Topic) -> CXResult<BuildArgs> {
     let ParsedCommonArgs { common, rest } = parse_common_flags(args);
-    let mut target = None;
-    let mut release = false;
+    let mut targets = Vec::new();
+    let mut profile = None;
 
-    for arg in rest {
+    let mut rest = rest.into_iter();
+    while let Some(arg) = rest.next() {
         match arg.as_str() {
-            "--release" => {
-                release = true;
+            "-p" | "--profile" => {
+                let name = rest.next().ok_or_else(|| {
+                    error(format!("option '{arg}' requires a profile name"), Some(topic))
+                })?;
+                if profile.replace(name).is_some() {
+                    return Err(error("expected at most one profile", Some(topic)));
+                }
                 continue;
             }
             "-c" | "-o" => {
@@ -210,16 +216,16 @@ fn parse_build_args(args: impl IntoIterator<Item = String>, topic: Topic) -> CXR
         if arg.starts_with('-') {
             return Err(error(format!("unknown option '{arg}'"), Some(topic)));
         }
+        targets.push(arg);
+    }
 
-        if target.is_some() {
-            return Err(error("expected at most one target", Some(topic)));
-        }
-        target = Some(arg);
+    if topic == Topic::Run && targets.len() > 1 {
+        return Err(error("expected at most one target", Some(topic)));
     }
 
     Ok(BuildArgs {
-        target,
-        release,
+        targets,
+        profile,
         backend: common.backend,
         optimization_level: common.optimization_level,
         unsafe_flags: common.unsafe_flags,

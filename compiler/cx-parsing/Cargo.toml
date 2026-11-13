@@ -13,5 +13,4 @@ cx-hir = { path = "../cx-hir" }
 cx-tokens = { path = "../cx-tokens" }
 cx-preparse-data = { path = "../cx-preparse-data" }
 
-cx-pipeline-data = { path = "../cx-pipeline-data" }
 cx-log = { path = "../cx-log" }

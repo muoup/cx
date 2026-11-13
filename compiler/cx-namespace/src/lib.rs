@@ -1,6 +1,7 @@
 pub mod lookup;
 pub mod module;
 pub mod mangling;
+pub mod scope;
 
 use std::{
     path::{Path, PathBuf},

@@ -19,9 +19,7 @@ use cx_pipeline_data::internal_storage::resource_path;
 use cx_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
-use cx_pipeline_data::{
-    CompilationMode, CompilationUnit, CompilerBackend, GlobalCompilationContext,
-};
+use cx_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
 use cx_preparse_data::Import;
 use cx_tokens::TokenIter;
 use cx_util::format::{dump_data, dumps_enabled, with_dump_directory, with_dump_file};
@@ -29,7 +27,7 @@ use cx_util::identifier::CXIdent;
 use fs2::FileExt;
 use cx_lmir::{LMIRGlobalType, LMIRUnit, LinkageType};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+
 use std::num::NonZeroUsize;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::mpsc;
@@ -126,7 +124,11 @@ fn import_jobs_for_unit(
 ) -> CXResult<Vec<CompilationJob>> {
     let mut jobs = Vec::new();
 
-    for import in import_units(imports, &context.config.source_root) {
+    for name in imports.iter().flat_map(|import| &import.names) {
+        let namespace = name.namespace.clone().child(name.name.clone());
+        let Some(import) = context.config.packages.locate(&namespace) else {
+            return Err(pipeline_error(&catalogue::UNKNOWN_MODULE, format!("{namespace}")));
+        };
         if !context.config.module_mode && !import.is_std_lib() {
             return Err(pipeline_error(
                 &catalogue::SINGLE_FILE_IMPORT,
@@ -162,7 +164,7 @@ fn import_requirements_for_unit(
     step: CompilationStep,
     shallow: bool,
 ) -> Vec<CompilationJobRequirement> {
-    import_units(imports, &context.config.source_root)
+    import_units(context, imports)
         .map(|import| CompilationJobRequirement {
             unit: import,
             step,
@@ -180,49 +182,29 @@ fn import_units_for_unit(
         .preparse_base
         .lock()
         .get(unit.namespace())
-        .map(|preparse| import_units(&preparse.imports, &context.config.source_root).collect())
+        .map(|preparse| import_units(context, &preparse.imports).collect())
+}
+
+pub(crate) fn imported_units(
+    context: &GlobalCompilationContext,
+    unit: &CompilationUnit,
+) -> Vec<CompilationUnit> {
+    import_units_for_unit(context, unit).unwrap_or_default()
 }
 
 fn import_units<'a>(
+    context: &'a GlobalCompilationContext,
     imports: &'a [Import],
-    source_root: &'a Path,
 ) -> impl Iterator<Item = CompilationUnit> + 'a {
     imports
         .iter()
-        .flat_map(move |import| {
-            import.names.iter().map(move |name| {
-                let mut path = PathBuf::new();
-                for segment in name.namespace.segments() {
-                    path.push(segment.as_str());
-                }
-                path.push(name.name.as_str());
-                let namespace = name.namespace.clone().child(name.name.clone());
-                let module_path = if namespace
-                    .segments()
-                    .first()
-                    .is_some_and(|s| s.as_str() == "std")
-                {
-                    ModulePath::new(PathBuf::from(cx_namespace::cx_library_directory(&format!(
-                        "{}.cx",
-                        path.to_string_lossy()
-                    ))))
-                } else {
-                    ModulePath::new(module_source(&source_root.join(path)))
-                };
-                CompilationUnit::new(source_root, module_path, Some(namespace))
-            })
+        .flat_map(|import| &import.names)
+        .filter_map(|name| {
+            context
+                .config
+                .packages
+                .locate(&name.namespace.clone().child(name.name.clone()))
         })
-        .collect::<Vec<_>>()
-        .into_iter()
-}
-
-fn module_source(stem: &Path) -> PathBuf {
-    let source = stem.with_extension("cx");
-    let alternate = stem.with_extension("cxc");
-    match !source.is_file() && alternate.is_file() {
-        true => alternate,
-        false => source,
-    }
 }
 
 fn import_from_module_path(path: ModulePath) -> Import {
@@ -383,14 +365,18 @@ pub(crate) fn perform_job(
 
             // store_text(context, &job.unit, ".hash", &current_hash);
 
+            let package = context.config.packages.get(job.unit.package());
             let tokens = cx_lexer::lex_with_context(
                 file_contents.as_str(),
                 &file_path,
-                &context.config.include_dirs,
-                &context.config.predefined_macros,
+                &package.includes,
+                &package.defines,
             )?;
 
-            let preparse_config = PreparseConfig::from_compiler_config(&context.config);
+            let preparse_config = PreparseConfig {
+                module_mode: context.config.module_mode,
+                scope: context.config.packages.scope(job.unit.package()),
+            };
             let mut output = preparse(
                 &preparse_config,
                 TokenIter::new(&tokens, file_path.clone()),
@@ -501,14 +487,11 @@ pub(crate) fn perform_job(
                 .insert(job.unit.namespace().clone(), mir);
         }
 
-        CompilationStep::LMIR | CompilationStep::Codegen
-            if context.config.external_modules.contains(job.unit.module().as_path()) => {}
-
         CompilationStep::LMIR => {
             let mir = context.module_db.mir.take(job.unit.namespace());
             let module = job.unit.module().as_path();
             if context.config.header_modules.contains(module) {
-                let header = cx_c_header::generate_header(&mir, &context.config.link_entries);
+                let header = cx_c_header::generate_header(&mir);
                 context
                     .headers
                     .lock()
@@ -529,13 +512,11 @@ pub(crate) fn perform_job(
 
         CompilationStep::Codegen => {
             let lmir = context.module_db.lmir.take(job.unit.namespace());
-            if context.config.compilation_mode == CompilationMode::Library {
-                context
-                    .library_symbols
-                    .lock()
-                    .expect("Deadlock on library symbols mutex")
-                    .insert(job.unit.module().as_path().to_path_buf(), library_symbols(&lmir).collect());
-            }
+            context
+                .library_symbols
+                .lock()
+                .expect("Deadlock on library symbols mutex")
+                .insert(job.unit.module().as_path().to_path_buf(), library_symbols(&lmir).collect());
             let internal_directory = resource_path(context, &job.unit, ".o");
             if let Some(parent) = internal_directory.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| {

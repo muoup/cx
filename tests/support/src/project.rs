@@ -1,7 +1,10 @@
 use crate::compilation::{timed_compilation, CompilationFailure, CompilationResult, TestTempDir};
 use cx_pipeline::compile;
-use cx_pipeline::project::{target_sources, target_usage};
-use cx_pipeline_data::config::{load_project, LinkEntry, Profile, ProjectConfig};
+use cx_pipeline::project::{native_inputs, target_sources, ProjectPackages};
+use cx_pipeline_data::config::{
+    load_project, IncludeSpecSource, LinkEntry, ProfileConfig, ProjectConfig, DEBUG_PROFILE,
+};
+use cx_pipeline_data::package::PackageId;
 use cx_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
     UnsafeFlags,
@@ -9,19 +12,23 @@ use cx_pipeline_data::{
 use rustc_hash::FxHashSet;
 use std::path::{Path, PathBuf};
 
-/// One target of a `cx.lua` project, built with its release profile outside the project's own
-/// `.internal` directory.
+const PROFILE: &str = "release";
+
+/// One target of a `cx.lua` project, built with its release profile (or the debug profile when
+/// it has none) outside the project's own `.internal` directory.
 pub struct ProjectBinary {
     pub root: PathBuf,
     /// Relative to `root`.
     pub sources: Vec<PathBuf>,
+    /// The target package's unaliased include directories.
     pub include_dirs: Vec<PathBuf>,
     pub predefined_macros: Vec<(String, String)>,
     pub native_objects: Vec<PathBuf>,
     pub link_entries: Vec<LinkEntry>,
     pub optimization_level: OptimizationLevel,
-    external_modules: FxHashSet<PathBuf>,
-    project: ProjectConfig,
+    profile: ProfileConfig,
+    packages: ProjectPackages,
+    package: PackageId,
 }
 
 impl ProjectBinary {
@@ -30,28 +37,31 @@ impl ProjectBinary {
         let target = project
             .target(name)
             .ok_or_else(|| format!("{} has no target named '{name}'", root.display()))?;
-        let internal_directory = root.join(".internal");
+        let profile = project
+            .profile(PROFILE)
+            .or_else(|| project.profile(DEBUG_PROFILE))
+            .expect("every project has the debug profile")
+            .clone();
         let sources = target_sources(&project, target).map_err(|error| error.message())?;
-        let usage = target_usage(&project, &internal_directory, Profile::Release, target)
-            .map_err(|error| error.message())?;
+        let packages =
+            ProjectPackages::new(&project, &profile.settings).map_err(|error| error.message())?;
+        let package = packages.id(target.package);
+        let (native_objects, link_entries) = native_inputs(&project, &all_packages(&project));
 
         Ok(Self {
             root: root.to_path_buf(),
             sources: sources
-                .sources
                 .iter()
                 .map(|source| source.strip_prefix(root).unwrap_or(source).to_path_buf())
                 .collect(),
-            include_dirs: usage.include,
-            predefined_macros: usage.defines,
-            native_objects: usage.objects,
-            link_entries: usage.link,
-            optimization_level: project
-                .profile(Profile::Release)
-                .optimization
-                .unwrap_or_default(),
-            external_modules: usage.external,
-            project,
+            include_dirs: include_dirs(&project, target.package),
+            predefined_macros: packages.packages.get(package).defines.clone(),
+            native_objects,
+            link_entries,
+            optimization_level: profile.settings.optimization.unwrap_or_default(),
+            profile,
+            packages,
+            package,
         })
     }
 
@@ -67,21 +77,18 @@ impl ProjectBinary {
             architecture: ArchitectureConfig::native(),
             backend,
             optimization_level: self.optimization_level,
-            require_explicit_return: self.project.profile(Profile::Release).require_explicit_return,
+            require_explicit_return: self.profile.settings.require_explicit_return,
             output: temp_dir.path().join("case.out"),
             unsafe_flags: UnsafeFlags::default(),
             compilation_mode,
             verbose: false,
             dump: false,
-            source_root: self.project.source_root.clone(),
             internal_directory: temp_dir.internal_directory(),
+            packages: self.packages.packages.clone(),
             module_mode: true,
             record_types: false,
             link_entries: self.link_entries.clone(),
             native_objects: self.native_objects.clone(),
-            include_dirs: self.include_dirs.clone(),
-            predefined_macros: self.predefined_macros.clone(),
-            external_modules: self.external_modules.clone(),
             header_modules: FxHashSet::default(),
         };
         let sources = self
@@ -90,6 +97,22 @@ impl ProjectBinary {
             .map(|source| self.root.join(source))
             .collect::<Vec<_>>();
 
-        timed_compilation(config, |config| compile(config, &sources).map(drop))
+        timed_compilation(config, |config| compile(config, self.package, &sources).map(drop))
     }
+}
+
+fn all_packages(project: &ProjectConfig) -> Vec<usize> {
+    (0..project.packages.len()).collect()
+}
+
+fn include_dirs(project: &ProjectConfig, package: usize) -> Vec<PathBuf> {
+    project.packages[package]
+        .usage
+        .includes
+        .iter()
+        .filter_map(|spec| match (&spec.source, &spec.alias) {
+            (IncludeSpecSource::Directory(directory), None) => Some(directory.clone()),
+            _ => None,
+        })
+        .collect()
 }

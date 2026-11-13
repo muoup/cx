@@ -1,27 +1,18 @@
 use crate::pipeline_error;
-use crate::progress::ProgressReporter;
 use cx_log::CXResult;
 use cx_log::catalogue::driver as catalogue;
-use cx_pipeline_data::GlobalCompilationContext;
-use cx_pipeline_data::config::LinkKind;
+use cx_pipeline_data::config::{LinkEntry, LinkKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub(crate) fn link_relocatable(
-    context: &GlobalCompilationContext,
-    roots: &[String],
-    reporter: &mut ProgressReporter,
-) -> CXResult<()> {
-    reporter.link_status("Linking (relocatable)");
-
-    let output = &context.config.output;
+pub(crate) fn link_relocatable(output: &Path, objects: &[PathBuf], roots: &[String]) -> CXResult<()> {
     let mut command = Command::new("ld");
     command.arg("-r").arg("--gc-sections");
     for root in roots {
         command.arg(format!("--undefined={root}"));
     }
     command.arg("-o").arg(output);
-    command.args(context.linking_files.lock().unwrap().iter());
+    command.args(objects);
     run(&mut command, "relocatable")?;
 
     let keep = output.with_extension("symbols");
@@ -43,49 +34,26 @@ pub(crate) fn link_relocatable(
     result
 }
 
-pub(crate) fn link(
-    context: &GlobalCompilationContext,
-    reporter: &mut ProgressReporter,
-) -> CXResult<()> {
-    reporter.link_status("Linking");
+pub(crate) fn link_executable(output: &Path, objects: &[PathBuf], link_entries: &[LinkEntry]) -> CXResult<()> {
+    let mut command = Command::new("gcc");
+    command.arg("-Wl,--gc-sections");
+    command.arg("-o").arg(output);
+    command.args(objects);
 
-    let mut cmd = Command::new("gcc");
-    cmd.arg("-Wl,--gc-sections");
-    cmd.arg("-o")
-        .arg(context.config.output.to_str().expect("Output path invalid"));
-
-    let linking_files = context.linking_files.lock().unwrap();
-
-    for file in linking_files.iter() {
-        cmd.arg(file.to_str().expect("File path invalid"));
-    }
-
-    for file in &context.config.native_objects {
-        cmd.arg(file);
-    }
-
-    for entry in &context.config.link_entries {
+    for entry in link_entries {
         match entry.kind {
             LinkKind::System | LinkKind::Dynamic => {
-                cmd.arg(format!("-l{}", entry.name));
+                command.arg(format!("-l{}", entry.name));
             }
             LinkKind::Static => {
-                cmd.arg("-Wl,-Bstatic");
-                cmd.arg(format!("-l{}", entry.name));
-                cmd.arg("-Wl,-Bdynamic");
+                command.arg("-Wl,-Bstatic");
+                command.arg(format!("-l{}", entry.name));
+                command.arg("-Wl,-Bdynamic");
             }
         }
     }
 
-    run(&mut cmd, "executable")
-}
-
-pub(crate) fn link_objects(output: &Path, object_files: &[PathBuf]) -> CXResult<()> {
-    let mut cmd = Command::new("gcc");
-    cmd.arg("-Wl,--gc-sections");
-    cmd.arg("-o").arg(output);
-    cmd.args(object_files);
-    run(&mut cmd, "executable")
+    run(&mut command, "executable")
 }
 
 fn run(command: &mut Command, kind: &str) -> CXResult<()> {

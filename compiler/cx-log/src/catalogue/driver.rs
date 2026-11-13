@@ -30,6 +30,7 @@ define_errors! {
     AMBIGUOUS_MODULE: (String, String, String) = "D0016" => |(name, a, b)| format!("module '{name}' is provided by both '{a}' and '{b}'");
     OUTSIDE_SOURCE_ROOT: (String, String) = "D0017" => |(path, root)| format!("source file '{path}' is outside the source root '{root}'");
     UNREPRESENTABLE_EXPORT: (String, String) = "D0018" => |(symbol, reason)| format!("cannot declare '{symbol}' in a C header: {reason}");
+    UNKNOWN_MODULE: String = "D0019" => |name| format!("import '{name}' does not name a module");
 
     SCHEDULER_STALL: String = "DX001" => |jobs| format!("compilation stalled with no runnable jobs: {jobs}");
 }
