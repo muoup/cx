@@ -11,6 +11,7 @@ use cx_intrinsics::InternalIntrinsic;
 use cx_log::{
     CXResult,
     catalogue::{self, typecheck},
+    error::CXError,
 };
 use cx_tokens::TokenRange;
 
@@ -63,13 +64,45 @@ pub(crate) fn check(
     if !matches!(value?.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(value)) if *value != 0)
     {
         let name = symbol::name(context.env(), def);
-        return Err(hmir_error(
+        let error = hmir_error(
             span,
             &catalogue::mir::COMPTIME_ASSERTION,
             Some(format!("{label} of '{name}' does not hold at compile time")),
-        ));
+        );
+        return Err(defined_here(context, error, contract, expression, label, def, args));
     }
     Ok(())
+}
+
+fn defined_here(
+    context: &LocalLoweringContext,
+    error: CXError,
+    contract: &HMIRContract,
+    expression: HMIRExprID,
+    label: &str,
+    def: HMIRDefID,
+    args: &[HMIRValue],
+) -> CXError {
+    let env = context.env();
+    let bindings = contract
+        .params()
+        .iter()
+        .zip(args)
+        .filter_map(|(local, arg)| {
+            let name = contract.body().local(*local).name()?;
+            let value = match arg.kind() {
+                HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) => types::name(env, *ty),
+                HMIRValueKind::Immediate(HMIRImmediate::Int(value)) => value.to_string(),
+                _ => return None,
+            };
+            Some(format!("{name} = '{value}'"))
+        })
+        .collect::<Vec<_>>();
+    let mut message = format!("{label} of '{}' defined here", symbol::name(env, def));
+    if !bindings.is_empty() {
+        message = format!("{message}, with {}", bindings.join(", "));
+    }
+    error.with_note(message, Some(contract.body().expr(expression).span()))
 }
 
 pub(crate) fn call(
@@ -93,7 +126,9 @@ pub(crate) fn call(
     let mut bindings = bind_params(context, contract, args, span)?;
     if let Some(expression) = contract.precondition() {
         let value = condition(context, contract, def.brand(), expression, span)?;
-        assert(context, &value, Some("precondition failed"), span)?;
+        assert(context, &value, Some("precondition failed"), span).map_err(|error| {
+            defined_here(context, error, contract, expression, "precondition", def, args)
+        })?;
     }
     let result = emit(context)?;
     if let (Evaluation::Ready(value), Some((local, expression))) =

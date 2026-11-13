@@ -1,6 +1,8 @@
 use crate::catalogue::{ISSUE_TRACKER, is_internal};
 use crate::error::context::{CXErrorContextTrait, CXSourceSpan};
 use crate::error::message::CXErrorMessage;
+use crate::error::note::CXNote;
+use cx_tokens::TokenRange;
 
 pub fn write_bug_report_notes(f: &mut dyn std::io::Write) -> std::io::Result<()> {
     writeln!(f, "note: this is a bug in the cx compiler, not in your code")?;
@@ -10,7 +12,7 @@ pub fn write_bug_report_notes(f: &mut dyn std::io::Write) -> std::io::Result<()>
     )
 }
 
-pub struct CXRawError(pub Box<dyn CXErrorMessage>, pub(crate) Vec<String>);
+pub struct CXRawError(pub Box<dyn CXErrorMessage>);
 pub type CXErrorContext = Box<dyn CXErrorContextTrait>;
 
 pub enum CXErrorMaybeRaw {
@@ -36,15 +38,21 @@ pub type CXMaybeRawResult<T> = Result<T, CXErrorMaybeRaw>;
 
 pub mod context;
 pub mod message;
+pub mod note;
 
 pub struct CXError {
     error: CXRawError,
     context: CXErrorContext,
+    notes: Vec<CXNote>,
 }
 
 impl CXError {
     pub fn new(error: CXRawError, context: CXErrorContext) -> Self {
-        CXError { error, context }
+        CXError {
+            error,
+            context,
+            notes: Vec::new(),
+        }
     }
 
     pub fn message(&self) -> String {
@@ -55,13 +63,13 @@ impl CXError {
         self.error.code()
     }
 
-    pub fn with_notes(mut self, notes: Vec<String>) -> Self {
-        self.error = self.error.with_notes(notes);
+    pub fn with_note(mut self, message: impl Into<String>, span: Option<&TokenRange>) -> Self {
+        self.notes.push(CXNote::new(message, span));
         self
     }
 
-    pub fn notes(&self) -> &[String] {
-        &self.error.1
+    pub fn notes(&self) -> &[CXNote] {
+        &self.notes
     }
 
     pub fn is_internal(&self) -> bool {
@@ -80,7 +88,7 @@ impl CXError {
         writeln!(f)?;
         self.context.dump(f)?;
         for note in self.notes() {
-            writeln!(f, "note: {note}")?;
+            note.dump(f)?;
         }
         if self.is_internal() {
             write_bug_report_notes(f)?;

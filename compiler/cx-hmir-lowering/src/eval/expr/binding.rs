@@ -197,8 +197,8 @@ fn declare(
             "an object type".into(),
             Some(types::name(context.env(), ty)),
         );
-        let hint = "take the function's address with '&' to store it".into();
-        return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).with_notes(vec![hint]));
+        let hint = "take the function's address with '&' to store it";
+        return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement).with_note(hint, None));
     }
     if !demand::complete(context.env_mut(), ty)? {
         let subject = format!("variable of type '{}'", types::name(context.env(), ty));

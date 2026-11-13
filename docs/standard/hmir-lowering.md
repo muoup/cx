@@ -733,12 +733,13 @@ Runs once a param's type names a deferred param, over the arguments from that pa
 
 ### Contracts
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 Runtime call to a def with pre or postcondition: params bound to const observed copies of arguments; precondition evaluated and asserted before call ("precondition failed"); result bound, postcondition asserted after. Conditions evaluated in the caller's runtime, pure expectations, permission per contract safety.
 - `rule/void-postcondition-binding` result binding on a void result: T0066.
 - `rule/contract-condition-value` condition stops: T0011.
 - `inv/contract-both-sides` function entry and returns also assert its own contract, so each holds checked on both sides.
+- `rule/contract-failure-note` a condition failing at compile time (M0026) notes the condition's location, with each named parameter bound to a type or int.
 
 ### Hole
 

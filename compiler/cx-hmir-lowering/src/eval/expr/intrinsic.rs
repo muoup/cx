@@ -57,9 +57,9 @@ impl IntrinsicMapper<HMIRExprID, HMIRExprID> for Operands<'_, '_, '_, '_, '_> {
         let value = eval(self.context, self.body, *value)?.ready()?;
         if self.context.env().is_reference(value.ty()) {
             let subject = operand(self.context.env(), value.ty(), self.path);
-            let hint = "copy its value out with '@copy'".into();
+            let hint = "copy its value out with '@copy'";
             let error = hmir_error(span, &typecheck::UNEXPECTED_KIND, (subject, "a value".into()));
-            return Err(error.with_notes(vec![hint]).into());
+            return Err(error.with_note(hint, None).into());
         }
         Ok(value)
     }

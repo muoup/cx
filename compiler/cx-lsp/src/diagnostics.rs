@@ -1,4 +1,5 @@
 use crate::position::SourceCache;
+use cx_log::error::note::CXNote;
 use cx_pipeline::pipeline::PipelineFailure;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::path::Path;
@@ -35,11 +36,11 @@ pub fn from_failures(
                 .notes()
                 .iter()
                 .map(|note| DiagnosticRelatedInformation {
-                    location: Location {
+                    location: note_location(note, sources).unwrap_or_else(|| Location {
                         uri: uri.clone(),
                         range,
-                    },
-                    message: note.clone(),
+                    }),
+                    message: note.message().to_string(),
                 })
                 .collect()
         });
@@ -57,6 +58,13 @@ pub fn from_failures(
     }
 
     grouped
+}
+
+fn note_location(note: &CXNote, sources: &mut SourceCache) -> Option<Location> {
+    let span = note.source_span()?;
+    let uri = Url::from_file_path(&span.file).ok()?;
+    let range = sources.get(&span.file)?.range(span.byte_start, span.byte_end);
+    Some(Location { uri, range })
 }
 
 pub struct Publication {

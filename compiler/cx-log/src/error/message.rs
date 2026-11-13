@@ -26,11 +26,6 @@ pub struct CXStdErrMessage {
 }
 
 impl CXRawError {
-    pub fn with_notes(mut self, notes: Vec<String>) -> Self {
-        self.1.extend(notes);
-        self
-    }
-
     pub fn code(&self) -> String {
         self.0.code()
     }
@@ -49,11 +44,11 @@ impl CXStdErrMessage {
     }
 
     pub fn error(code: impl Into<String>, message: impl Into<String>) -> CXRawError {
-        CXRawError(Box::new(Self::new(code, message)), Vec::new())
+        CXRawError(Box::new(Self::new(code, message)))
     }
 
     pub fn result<T>(code: impl Into<String>, message: impl Into<String>) -> CXRawResult<T> {
-        Err(CXRawError(Box::new(Self::new(code, message)), Vec::new()))
+        Err(CXRawError(Box::new(Self::new(code, message))))
     }
 }
 
