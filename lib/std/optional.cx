@@ -50,6 +50,12 @@ comptime ^T opt::unwrap_or_else(type T = _, ^opt(T) self, ^T on_none) =>
         none() => on_none,
     };
 
+comptime T opt::expect(comptime type T = _, ^opt(T) this, ^_str& error) =>
+    emit match (self) {
+        some(auto value) => move value,
+        none() => std::panic(error)
+    };
+    
 comptime ^T opt::try(type T = _, ^opt(T) self) =>
     emit match (self) {
         some(auto value) => move value,

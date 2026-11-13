@@ -144,10 +144,10 @@ std::span(char) str::as_bytes(_str& this) {
     return std::span::new(.T = char, (char*) this, len);
 }
 
-std::span(const char) str::as_const_bytes(const _str& this) {
+std::span(const u8) str::as_const_bytes(const _str& this) {
     usize len = str::length(this);
     
-    return std::span::new(.T = const char, (const char*) this, len);
+    return std::span::new((const u8*) this, len);
 }
 
 private:

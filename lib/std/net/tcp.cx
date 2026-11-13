@@ -1,25 +1,8 @@
-import std::optional as std;
-import std::span as std;
-
+import std::{span, optional} as std;
 import std::net::address as std::net;
 
-extern "C":
-
-i32 socket(int domain, int kind, int protocol);
-i32 setsockopt(int socket, int level, int option_name, const void* option_value, u32 option_len);
-i32 bind(int sockfd, const void* addr, u32 addrlen);
-i32 listen(int sockfd, int backlog);
-i32 accept(int sockfd, void* addr, u32* addrlen);
-i64 read(int fd, void* buffer, usize length);
-i64 write(int fd, const void* buffer, usize length);
-i32 close(int fd);
-
-enum {
-    LINUX_AF_INET = 2,
-    LINUX_SOCK_STREAM = 1,
-    LINUX_SOL_SOCKET = 1,
-    LINUX_SO_REUSEADDR = 2,
-};
+#include <sys/socket.h>
+#include <fcntl.h>
 
 public:
 
@@ -44,6 +27,11 @@ std::opt(tcp_listener) tcp_listener::open() {
     return _::some((tcp_listener) { .fd = fd });
 }
 
+void tcp_listener::close(tcp_listener this) {
+    close(this.fd);
+    @leak(this);
+}
+
 std::opt(void) tcp_listener::bind(tcp_listener& this, std::net::endpoint addr) {
     if (bind(this.fd, &addr.address, addr.length) < 0) {
         return _::none();
@@ -60,6 +48,21 @@ std::opt(void) tcp_listener::listen(tcp_listener& this, int backlog) {
     return _::some();
 }
 
+std::opt(void) tcp_listener::set_blocking(tcp_listener& this, bool is_blocking) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1) return _::none();
+
+    if (is_blocking) {
+        flags &= ~O_NONBLOCK;
+    } else {
+        flags |= O_NONBLOCK;
+    }
+        
+    return _::some();
+}
+
+// tcp_stream logic
+
 std::opt(tcp_stream) tcp_listener::accept(tcp_listener& this) {
     std::net::endpoint remote;
     remote.length = (u32) sizeof(std::net::sockaddr_in);
@@ -71,11 +74,6 @@ std::opt(tcp_stream) tcp_listener::accept(tcp_listener& this) {
     }
 
     return _::some((tcp_stream) { .fd = fd });
-}
-
-void tcp_listener::close(tcp_listener this) {
-    close(this.fd);
-    @leak(this);
 }
 
 std::opt(u64) tcp_stream::read(tcp_stream& this, void* buffer, u64 capacity) {
