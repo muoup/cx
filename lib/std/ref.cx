@@ -1,0 +1,10 @@
+// Equivalent to C++'s reference_wrapper, because references are not reassignable, std::ref acts as a reassignable version
+// of a native T& type.
+
+public:
+
+comptime type ref(type T) => struct { T* inner; };
+
+ref(T) ref::new(comptime type T = _, T& val) => (ref(T)) { .inner = &val };
+
+T& ref::as_ref(comptime type T = _, ref(T) ref) => *ref.inner;

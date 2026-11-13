@@ -19,23 +19,16 @@ comptime type span(comptime type T) =>
 span(T) span::new(comptime type T = _, T* data, usize length)
     => (span(T)) { .data = data, .length = length };
     
-usize span::size(comptime type T = _, span(T)& this) {
+usize span::length(comptime type T = _, span(T)& this) {
     return this.length;
 }
 
-span(const u8) span::str_as_bytes(const _str& this) {
-    return (span(const u8)) {
-        .data = (u8*) this,
-        .length = strlen((u8*) this)
-    };
+T* span::data(comptime type T = _, span(T)& this) {
+    return this.data;
 }
 
-const _str& span::as_str(span(const u8)& this) {
-    return (const _str&) this.data;
-}
-
-_str& span::as_str_mut(span(u8)& this) {
-    return (_str&) this.data;
+std::span(const T) span::as_const(comptime type T = _, span(T) this) {
+    return span::new(.T = const T, (const T*) this.data, this.length);
 }
 
 std::opt(T&) span::get(comptime type T = _, span(T)& this, usize index) {
@@ -53,6 +46,15 @@ T& span::at(comptime type T = _, span(T)& this, usize index) {
     }
 
     return this.data[index];
+}
+
+std::opt(span(T)) span::subspan(comptime type T = _, span(T) this, usize offset, usize len) {
+    if (this |> span::length() <= offset + len) return _::none();
+
+    return (span(T)) {
+        .data = this.data + offset,
+        .length = len
+    } |> _::some();
 }
 
 std::opt(T&) span::first(comptime type T = _, span(T)& this) {

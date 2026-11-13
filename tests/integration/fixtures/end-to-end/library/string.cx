@@ -1,15 +1,15 @@
 /* CX-STDOUT: Hello, world! */
 
-import std::string;
-import std::optional;
+import std::string as std;
+import std::optional as std;
 
 #include <stdio.h>
 
 int main() {
     std::string::string s = std::string::string::new();
-    s |> std::string::string::append("Hello, worl");
-    s |> std::string::string::append_char('d');
-    s |> std::string::string::append_char('!');
+    s |> std::string::append_str("Hello, worl");
+    s |> std::string::append_char('d');
+    s |> std::string::append_char('!');
     printf("%s\n", s.data);
     move s |> std::string::string::drop();
 }
