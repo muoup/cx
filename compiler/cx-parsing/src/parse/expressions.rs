@@ -153,11 +153,11 @@ fn parse_at_intrinsic_expr(
             ))
         }
 
-        path if path.contains('.') => {
+        _ => {
             let args = parse_args(data)?;
 
             Ok(HIRExprKind::Intrinsic {
-                path: CXIdent::new(path),
+                path: CXIdent::new(ident),
                 args,
             }
             .into_expr(
@@ -165,12 +165,6 @@ fn parse_at_intrinsic_expr(
                 data.tokens.index,
                 data.token_range(start_index, data.tokens.index),
             ))
-        }
-
-        _ => {
-            data.tokens.back();
-
-            parse_point_error(&data.tokens, &UNKNOWN_NAME, ("intrinsic".into(), ident.to_string()))
         }
     }
 }
