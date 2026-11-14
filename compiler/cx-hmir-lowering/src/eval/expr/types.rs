@@ -1,4 +1,5 @@
 mod construct;
+mod flexible;
 mod layout;
 
 pub(crate) mod alias;
@@ -433,6 +434,7 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
 }
 
 pub(crate) fn validate(env: &HMIREnvironment, ty: &HMIRType) -> CXResult<()> {
+    flexible::validate(env, ty)?;
     let fields = match ty.kind() {
         HMIRTypeKind::Struct { fields }
         | HMIRTypeKind::Union { fields }

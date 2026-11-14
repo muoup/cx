@@ -202,6 +202,7 @@ HMIR type to MIR type, cached per underlying type.
 - const and volatile become metadata. Qualified arrays qualify elements instead.
 - struct, union, tagged union: distinct per type, never shape-interned; undefined while fields lower, so self-reference works. Bitfields keep width. Forward-declared tag: undefined of that tag.
 - `void`, `unreachable`: void. Reference: memory reference. `T[]`: undefined array.
+- `inv/flexible-array-layout` `T[]` as a struct member lowers flagged flexible: zero-sized, aligned as `T`. Any other `T[]` has no layout.
 - comptime-only types laid out pointer-sized in comptime memory.
 
 ## Expression evaluation
@@ -553,12 +554,15 @@ Runtime context evaluates types frozen. A type expression is memoized; a comptim
 
 Construction:
 - struct, union, tagged union declared forward first, so members may refer to it.
-- member and element types must be complete and visible: T0009.
+- member and element types must be complete and visible: T0009. A struct member may be `T[]`: a flexible array.
 - array bound frozen: `void` is unbounded `T[]`; int, non-negative, within `u64` (T0011); otherwise M0001. `_` bound while constructing: T0052.
 - function type parameters adjusted as [Parameter type](#parameter-type).
 - `rule/staged-squash` staged over a staged type is that type: `^^T` and `^T` with `T = ^U` are `^U`; staged shapes formed by quotes squash likewise.
 - `rule/field-traits` owned field nodrop, nocopy or `@unsafe_move` without the container declaring it: T0029.
 - `rule/unreachable-pointee` pointer to `unreachable`: T0011.
+- `rule/flexible-array-placement` flexible array not the last member, or with no other named member before it: T0077. An anonymous aggregate member counts as named; an unnamed bitfield does not.
+- `rule/flexible-array-nodrop` flexible array in a nodrop struct, or of nodrop elements: T0077. Checked before `rule/field-traits`.
+- `rule/flexible-array-nesting` struct ending in a flexible array, or union holding one at any depth, as a struct member, tagged union member or array element: T0078. As a union member allowed.
 - copy-traits declaration takes move semantics of the named type.
 
 ### Type operator
@@ -600,6 +604,8 @@ Construction:
 `T{...}`, `{...}` against expected type. Target type evaluated, known partial used as guide; then by kind. Each value completed expecting its slot type, converted implicitly.
 
 - struct, union: named entries by name (T0003); positional entries continue after the previous entry. Past the last field: T0016.
+- `rule/flexible-array-initializer` entry for a flexible array, named or positional: T0077.
+- `todo/flexible-array-comptime-init` struct with a flexible array initialized at comptime (initialized global, static local): internal error, as it has no zero value.
 - array: more entries than bound: T0016; named entry: T0003. `T[]` bound becomes entry count.
 - `rule/quirk-braced-string-array` char array with a single `str` entry: the whole array string-converted.
 - tagged union: exactly one named entry (else T0054), a variant (T0003), payload.

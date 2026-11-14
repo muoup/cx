@@ -59,14 +59,15 @@ impl MIRTypeMetadata {
 }
 
 // A declared type that was never defined; interacting with it requires an operation that asserts what it cannot
-// provide, and its tag only lets headers rebuild its declaration
+// provide, and its tag only lets headers rebuild its declaration. A flexible array is the trailing member of a
+// struct, and the only undefined type with a layout: it occupies no storage but is aligned as its element
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MIRUndefined {
     Struct,
     Union,
     TaggedUnion,
     Enum,
-    Array { element: MIRTypeID },
+    Array { element: MIRTypeID, flexible: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -203,9 +204,9 @@ pub enum MIRTypeKind {
     Array { length: usize, inner: MIRTypeID },
     Function { signature: MIRFnSignature },
 
-    Undefined(MIRUndefined),
     // A complete type whose structure only intrinsics interpret
     Builtin { name: String, layout: MIRTypeLayout },
+    Undefined(MIRUndefined),
 
     Str,
 }

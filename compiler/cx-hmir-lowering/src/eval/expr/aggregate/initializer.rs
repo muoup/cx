@@ -83,6 +83,11 @@ fn structure(
             let limit = ("aggregate".into(), Some(declared.len()));
             return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit).into());
         };
+        if context.env().is_unbounded_array(*field.ty()) {
+            let name = field.name().map(CXIdent::to_string).unwrap_or_default();
+            let subject = (name, "cannot be initialized".into());
+            return Err(hmir_error(span, &typecheck::FLEXIBLE_ARRAY_MEMBER, subject).into());
+        }
         next = index + 1;
         values.push((index, (field_value(context, body, *value, *field.ty()))?.ready()?));
     }

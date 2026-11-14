@@ -10,7 +10,7 @@ use cx_mir::ty::layout::{calculate_field_layouts, calculate_type_layout};
 use cx_mir::ty::registry::MIRTypeRegistry;
 use cx_mir::{
     MIRField, MIRFieldLayout, MIRFloatType, MIRFnPrototype, MIRFnSignature, MIRIntType, MIRTypeID,
-    MIRTypeKind,
+    MIRTypeKind, MIRUndefined,
 };
 use cx_target::ArchitectureConfig;
 use cx_util::identifier::CXIdent;
@@ -160,8 +160,17 @@ pub(crate) fn convert_type(ty: MIRTypeID, types: &MIRTypeRegistry) -> LMIRType {
         .definition(ty)
         .unwrap_or_else(|| panic!("invalid MIR type {ty}"));
 
-    if let MIRTypeKind::Undefined(_) = definition.kind() {
-        return LMIRType::new(LMIRTypeKind::Opaque { bytes: 0 }, 1);
+    match definition.kind() {
+        MIRTypeKind::Undefined(MIRUndefined::Array { element, flexible: true }) => {
+            let kind = LMIRTypeKind::Array {
+                element: Box::new(storage_type(*element, types)),
+                size: 0,
+            };
+            let alignment = calculate_type_layout(types, ty).alignment() as u8;
+            return LMIRType { kind, alignment };
+        }
+        MIRTypeKind::Undefined(_) => return LMIRType::new(LMIRTypeKind::Opaque { bytes: 0 }, 1),
+        _ => {}
     }
 
     let kind = match &definition.kind() {

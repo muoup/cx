@@ -18,7 +18,7 @@ pub(crate) fn declare(types: &MIRTypeRegistry, ty: MIRTypeID, declarator: &str) 
             declare(types, *inner, &pointer)
         }
         MIRTypeKind::Array { length, inner } => declare(types, *inner, &format!("{declarator}[{length}]")),
-        MIRTypeKind::Undefined(MIRUndefined::Array { element }) => declare(types, *element, &format!("{declarator}[]")),
+        MIRTypeKind::Undefined(MIRUndefined::Array { element, .. }) => declare(types, *element, &format!("{declarator}[]")),
         MIRTypeKind::Function { signature } => {
             let declarator = format!("{declarator}({})", parameters(types, signature, false));
             declare(types, signature.return_type(), &declarator)

@@ -208,7 +208,9 @@ fn member(
         | HMIRExprTypeKind::TaggedUnion { .. } => "member",
         _ => return Ok(ty),
     };
-    if demand::complete(context.env_mut(), ty)? {
+    let flexible = matches!(owner, HMIRExprTypeKind::Struct { .. })
+        && context.env().is_unbounded_array(ty);
+    if demand::complete(context.env_mut(), ty)? || flexible {
         return Ok(ty);
     }
     let subject = format!("{subject} of type '{}'", types::name(context.env(), ty));

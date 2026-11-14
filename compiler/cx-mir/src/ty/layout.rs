@@ -2,7 +2,7 @@ pub mod cache;
 
 use rustc_hash::FxHashSet;
 
-use crate::ty::{MIRField, MIRTypeKind, interface::MTRegistry};
+use crate::ty::{MIRField, MIRTypeKind, MIRUndefined, interface::MTRegistry};
 
 use super::MIRTypeID;
 
@@ -143,6 +143,9 @@ pub(crate) fn compute_layout<Registry: MTRegistry>(
             )
         }
         MIRTypeKind::Builtin { layout, .. } => *layout,
+        MIRTypeKind::Undefined(MIRUndefined::Array { element, flexible: true }) => {
+            MIRTypeLayout::new(0, child(*element).alignment)
+        }
         MIRTypeKind::Undefined(_) => panic!("undefined MIR type {ty} has no layout"),
         MIRTypeKind::Str => MIRTypeLayout::new(1, 1),
     };

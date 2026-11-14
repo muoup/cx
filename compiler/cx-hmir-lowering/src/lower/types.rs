@@ -117,10 +117,10 @@ fn qualify(env: &mut HMIREnvironment, base: MIRTypeID, metadata: MIRTypeMetadata
                 .intern_type(MIRType::new(MIRTypeKind::Array { length, inner }))
         }
         
-        MIRTypeKind::Undefined(MIRUndefined::Array { element }) => {
+        MIRTypeKind::Undefined(MIRUndefined::Array { element, flexible }) => {
             let element = qualify(env, element, metadata);
-            env.module_mut()
-                .intern_type(MIRType::new(MIRTypeKind::Undefined(MIRUndefined::Array { element })))
+            let kind = MIRTypeKind::Undefined(MIRUndefined::Array { element, flexible });
+            env.module_mut().intern_type(MIRType::new(kind))
         }
 
         _ => {
@@ -223,6 +223,7 @@ fn lower_underlying(
         },
         HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => MIRTypeKind::Undefined(MIRUndefined::Array {
             element: lower_type(env, element, span)?,
+            flexible: false,
         }),
         HMIRTypeKind::Builtin { name, size, alignment } => MIRTypeKind::Builtin {
             name,
@@ -268,6 +269,10 @@ fn lower_aggregate(
         .map(|field| {
             let name = field.name().map(CXIdent::as_string);
             let ty = lower_type(env, *field.ty(), span)?;
+            let ty = match tag {
+                MIRUndefined::Struct => flexible(env, ty),
+                _ => ty,
+            };
 
             Ok(match field.bit_width() {
                 Some(width) => MIRField::Bitfield {
@@ -286,6 +291,15 @@ fn lower_aggregate(
         env.module_mut().define_type(qualified, ty);
     }
     Ok(id)
+}
+
+// Validation leaves an unbounded array only as the trailing member of a struct, where it is a flexible array
+fn flexible(env: &mut HMIREnvironment, ty: MIRTypeID) -> MIRTypeID {
+    let MIRTypeKind::Undefined(MIRUndefined::Array { element, .. }) = *env.module().resolve_type(ty).kind() else {
+        return ty;
+    };
+    let kind = MIRTypeKind::Undefined(MIRUndefined::Array { element, flexible: true });
+    env.module_mut().intern_type(MIRType::new(kind))
 }
 
 fn mir_tag(tag: HIRTagKind) -> MIRUndefined {

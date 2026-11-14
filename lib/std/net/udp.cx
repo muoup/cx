@@ -4,18 +4,7 @@ import std::io as std;
 
 import std::net::address as std::net;
 
-extern "C":
-
-i32 socket(int domain, int kind, int protocol);
-i32 bind(int sockfd, const void* addr, u32 addrlen);
-i32 listen(int sockfd, int backlog);
-i64 sendto(int sockfd, const void* buf, usize len, int flags, const void* dest_addr, u32 addrlen);
-i64 recvfrom(int sockfd, void* buf, usize len, int flags, void* src_addr, u32* addrlen);
-i32 close(int fd);
-
-enum {
-    LINUX_SOCK_DGRAM = 2,
-};
+#include <sys/socket.h>
 
 public:
 
@@ -29,7 +18,7 @@ struct udp_socket : @nodrop {
 };
 
 std::opt(udp_socket) udp_socket::open() {
-    i32 fd = socket(std::net::LINUX_AF_INET, LINUX_SOCK_DGRAM, 0);
+    i32 fd = socket(AF_INET, SOCK_DGRAM, 0);
 
     if (fd < 0) {
         return _::none();

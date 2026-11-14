@@ -76,9 +76,9 @@ fn same_kind<T: MTRegistry>(
                     .all(|(left, right)| same_type_inner(registry, compared, left.ty(), right.ty()))
         }
         (
-            MIRTypeKind::Undefined(MIRUndefined::Array { element: left }),
-            MIRTypeKind::Undefined(MIRUndefined::Array { element: right }),
-        ) => same_type_inner(registry, compared, *left, *right),
+            MIRTypeKind::Undefined(MIRUndefined::Array { element: left, flexible: left_flexible }),
+            MIRTypeKind::Undefined(MIRUndefined::Array { element: right, flexible: right_flexible }),
+        ) => left_flexible == right_flexible && same_type_inner(registry, compared, *left, *right),
         (MIRTypeKind::Undefined(left), MIRTypeKind::Undefined(right)) => left == right,
         (MIRTypeKind::Builtin { .. }, MIRTypeKind::Builtin { .. }) => left == right,
         _ => false,

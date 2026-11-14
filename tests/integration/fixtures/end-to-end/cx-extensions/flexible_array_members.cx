@@ -1,0 +1,24 @@
+/* CX-STDOUT: 8 6 */
+
+#include <stdio.h>
+#include <stdlib.h>
+
+struct Buffer {
+    usize length;
+    i32 data[];
+};
+
+int main() {
+    Buffer* buffer = malloc(sizeof(Buffer) + 3 * sizeof(i32));
+    buffer->length = 3;
+    for (usize i = 0; i < buffer->length; i++) {
+        buffer->data[i] = (i32) (i + 1);
+    }
+    i32 sum = 0;
+    for (usize i = 0; i < buffer->length; i++) {
+        sum += buffer->data[i];
+    }
+    printf("%d %d\n", (int) sizeof(Buffer), sum);
+    free(buffer);
+    return 0;
+}

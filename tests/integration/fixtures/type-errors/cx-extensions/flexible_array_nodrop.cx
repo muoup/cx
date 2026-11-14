@@ -1,0 +1,8 @@
+struct Resource : @nodrop {
+    int length;
+    int data[];
+};
+
+int main() {
+    return 0;
+}

@@ -39,7 +39,7 @@ impl<'a> Definitions<'a> {
         match kind {
             MIRTypeKind::PointerTo { inner } | MIRTypeKind::MemoryReference { inner } => self.deferred.push(*inner),
             MIRTypeKind::Array { inner, .. } => self.visit(*inner),
-            MIRTypeKind::Undefined(MIRUndefined::Array { element }) => self.visit(*element),
+            MIRTypeKind::Undefined(MIRUndefined::Array { element, .. }) => self.visit(*element),
             MIRTypeKind::Undefined(_) => {
                 let keyword = aggregate_keyword(kind).expect("an undefined tag has a keyword");
                 self.forward.insert(format!("{keyword} {}", aggregate_name(self.types, ty)));
@@ -83,7 +83,13 @@ impl<'a> Definitions<'a> {
         fields
             .iter()
             .enumerate()
-            .filter(|(_, field)| self.types.layout(field.ty()).size() != 0)
+            .filter(|(_, field)| {
+                let flexible = matches!(
+                    definition_kind(self.types, field.ty()),
+                    MIRTypeKind::Undefined(MIRUndefined::Array { flexible: true, .. })
+                );
+                flexible || self.types.layout(field.ty()).size() != 0
+            })
             .map(|(index, field)| {
                 let member = match field {
                     MIRField::Standard { name, type_id } => {

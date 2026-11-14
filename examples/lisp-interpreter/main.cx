@@ -13,10 +13,10 @@ i32 main(i32 argc, char** argv) {
     }
 
     std::file f = std::file::open(argv[1], "r")
-        |> std::opt::unwrap_or(.{ 
+        |> std::opt::unwrap_or(emit .{ 
             std::println("Could not find file specified");
             return -1;
-        });
+        })!;
     std::string s = f |> std::file::read_to_string();
 
     run(s |> std::string::as_str());

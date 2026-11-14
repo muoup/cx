@@ -248,7 +248,10 @@ impl<'a, T: MTRegistry + Sized> TypePrinter<'a, T> {
                     MIRUndefined::Union => f.write_str("union"),
                     MIRUndefined::TaggedUnion => f.write_str("tagged union"),
                     MIRUndefined::Enum => f.write_str("enum"),
-                    MIRUndefined::Array { element } => {
+                    MIRUndefined::Array { element, flexible } => {
+                        if *flexible {
+                            f.write_str("flexible ")?;
+                        }
                         self.write(f, *element)?;
                         f.write_str("[]")
                     }

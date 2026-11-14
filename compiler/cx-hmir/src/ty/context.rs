@@ -1,6 +1,6 @@
 use cx_target::ArchitectureConfig;
 
-use crate::ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics};
+use crate::ty::{HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics};
 
 pub trait HMIRTypeContext {
     fn architecture(&self) -> &ArchitectureConfig;
@@ -51,6 +51,10 @@ pub trait HMIRTypeContext {
 
     fn is_array(&self, ty: HMIRTypeID) -> bool {
         self.array_inner(ty).is_some()
+    }
+
+    fn is_unbounded_array(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }))
     }
 
     fn is_float(&self, ty: HMIRTypeID) -> bool {
