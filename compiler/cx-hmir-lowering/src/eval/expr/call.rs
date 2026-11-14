@@ -71,7 +71,7 @@ fn apply(
     };
     if matches!(
         callee.kind(),
-        HMIRValueKind::Immediate(HMIRImmediate::Quote(_) | HMIRImmediate::Opaque)
+        HMIRValueKind::Immediate(HMIRImmediate::Quote(_) | HMIRImmediate::Lifted(_) | HMIRImmediate::Opaque)
     ) {
         if let Some((_, argument)) = named.first() {
             let named = ("a named argument".into(), "a staged expression call".into());

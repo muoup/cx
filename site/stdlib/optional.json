@@ -43,7 +43,7 @@
     {
       "name": "unwrap_or_else",
       "owner": "opt",
-      "signature": "comptime expr T opt::unwrap_or_else<T>(expr opt<T> self, expr unreachable on_none)",
+      "signature": "comptime expr T opt::unwrap_or<T>(expr opt<T> self, expr unreachable on_none)",
       "stage": "comptime",
       "description": "Produces staged code that uses an unreachable fallback when an optional is none.",
       "parameters": [

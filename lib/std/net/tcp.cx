@@ -1,8 +1,28 @@
 import std::{span, optional} as std;
 import std::net::address as std::net;
 
-#include <sys/socket.h>
-#include <fcntl.h>
+extern "C":
+
+i32 socket(int domain, int kind, int protocol);
+i32 setsockopt(int socket, int level, int option_name, const void* option_value, u32 option_len);
+i32 bind(int sockfd, const void* addr, u32 addrlen);
+i32 listen(int sockfd, int backlog);
+i32 accept(int sockfd, void* addr, u32* addrlen);
+i32 fcntl(int sockfd, int config, ...);
+i64 read(int fd, void* buffer, usize length);
+i64 write(int fd, const void* buffer, usize length);
+i32 close(int fd);
+
+enum {
+    LINUX_AF_INET = 2,
+    LINUX_SOCK_STREAM = 1,
+    LINUX_SOL_SOCKET = 1,
+    LINUX_SO_REUSEADDR = 2,
+};
+
+// Not enough C parity for these headers yet:
+//#include <sys/socket.h>
+//#include <fcntl.h>
 
 public:
 

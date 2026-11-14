@@ -33,7 +33,7 @@ postfix bang in pipe chain
 ==================
 void run() {
     int inner = value |> std::opt::try()!;
-    int v = std::opt(int)::none() |> std::opt::unwrap_or_else(emit 5)!;
+    int v = std::opt(int)::none() |> std::opt::unwrap_or(emit 5)!;
 }
 
 ---
@@ -220,7 +220,7 @@ void run() {
 postfix bang after multi-line call
 ==================
 void run() {
-    int value = make_value() |> std::opt::unwrap_or_else(emit .{
+    int value = make_value() |> std::opt::unwrap_or(emit .{
         return 1;
     })!;
 }

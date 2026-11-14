@@ -1,4 +1,4 @@
-import std::io;
+import std::panic as std;
 
 extern "C":
 
@@ -31,26 +31,18 @@ T opt::unwrap(comptime type T = _, opt(T) this) {
     match (move this) {
         some(auto val) => return move val,
         none() => {
-            std::io::println("Error: called `opt::unwrap()` on a `None` value");
-            exit(1);
+            std::panic("Called `opt::unwrap()` on a `None` value");
         }
     }
 }
 
-T opt::unwrap_or(comptime type T = _, opt(T) this, T default_value) {
-    match (move this) {
-        some(auto val) => return move val,
-        none() => return default_value,
-    }
-}
-
-comptime ^T opt::unwrap_or_else(type T = _, ^opt(T) self, ^T on_none) =>
+comptime ^T opt::unwrap_or(type T = _, ^opt(T) self, ^T default_value) =>
     emit match (self) {
-        some(auto value) => move value,
-        none() => on_none,
+        some(auto val) => move val,
+        none() => default_value,
     };
 
-comptime T opt::expect(comptime type T = _, ^opt(T) this, ^_str& error) =>
+comptime ^T opt::expect(type T = _, ^opt(T) self, ^_str& error) =>
     emit match (self) {
         some(auto value) => move value,
         none() => std::panic(error)

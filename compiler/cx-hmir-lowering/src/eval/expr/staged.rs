@@ -25,7 +25,7 @@ use crate::{
         EvalResult, coerce, comptime, control,
         deduce::{self, Incomplete, IncompleteReason},
         eval, eval_type,
-        flow::{self, Evaluation},
+        flow::{self, EvalExit, Evaluation},
         types,
     },
     log::hmir_error,
@@ -144,7 +144,7 @@ pub(crate) fn splice(
         HMIRTypeKind::Staged(_)
     );
     match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Quote(_)) if staged => {
+        HMIRValueKind::Immediate(HMIRImmediate::Quote(_) | HMIRImmediate::Lifted(_)) if staged => {
             materialize(context, &value, &[])
         }
         _ => Ok(Evaluation::Ready(value)),
@@ -339,18 +339,14 @@ pub(crate) fn argument(
         _ if !matches!(context.env().resolve_kind(target), HMIRTypeKind::Staged(_)) => {
             eval(context, body, operand)?
         }
-        HMIRExprKind::Local(local)
-            if let Some(value) = context.get_local(local).cloned()
-                && is_code(context, value.ty()) =>
-        {
-            let span = body.expr(operand).span();
-            Evaluation::Ready(coerce::collapse(context, value, span)?)
-        }
         _ if piped => quote(context, body, &[], operand)?,
-        _ => {
-            let span = body.expr(operand).span();
-            return Err(hmir_error(span, &typecheck::UNSTAGED_ARGUMENT, ()).into());
-        }
+        _ => comptime::freeze(context, body, operand, Some(target)).map_err(|exit| match exit {
+            EvalExit::Diagnostic(error) => {
+                let hint = "to pass it as runtime code, write 'emit' before it or pipe it in";
+                EvalExit::Diagnostic(error.with_note(hint, None))
+            }
+            exit => exit,
+        })?,
     };
     let span = body.expr(operand).span().clone();
     value
@@ -388,8 +384,10 @@ pub(crate) fn apply(
     if context.is_runtime() {
         return materialize(context, &code, &values);
     }
-    let HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) = code.kind() else {
-        unreachable!("compile-time code is a quote")
+    let node = match code.kind() {
+        HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) => node,
+        HMIRValueKind::Immediate(HMIRImmediate::Lifted(_)) => return Ok(Evaluation::Ready(code)),
+        _ => unreachable!("compile-time code is a quote"),
     };
     let source = node.get();
     let mut captures = source.captures().clone();
@@ -412,6 +410,10 @@ pub(crate) fn materialize(
     let node = match code.kind() {
         HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) => node,
         HMIRValueKind::Immediate(HMIRImmediate::Opaque) => return opaque(context, result),
+        HMIRValueKind::Immediate(HMIRImmediate::Lifted(immediate)) => {
+            let value = HMIRValue::new(result, immediate.as_ref().clone());
+            return Ok(Evaluation::Ready(value));
+        }
         _ => {
             let subject = "this staged value".into();
             return Err(

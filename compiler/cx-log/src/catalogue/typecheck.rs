@@ -112,7 +112,6 @@ define_errors! {
     NODROP_DISCARDED: String = "T0071" => |ty| format!("the @nodrop value of type '{ty}' is discarded; move or leak it");
     UNKNOWN_PARAMETER: (String, String) = "T0072" => |(function, name)| format!("{function} has no comptime parameter named '{name}'");
     UNCOPYABLE: String = "T0073" => |ty| format!("a value of type '{ty}' cannot be copied");
-    UNSTAGED_ARGUMENT: () = "T0075" => |()| "a staged value must be given staged code; write 'emit' before it or pipe it in".into();
     ESCAPING_SPLICE: String = "T0076" => |jump| format!("'{jump}' leaves spliced code; mark the splice with a postfix '!' to allow it");
 
     COMPTIME_INTERPRETATION: String = "T0074" => |action| format!("failure during comptime evaluation: {action}");

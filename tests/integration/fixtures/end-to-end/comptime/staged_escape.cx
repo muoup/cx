@@ -23,7 +23,7 @@ int main() {
         none() => printf("tried none\n"),
     }
 
-    int fallback = std::opt(int)::none() |> std::opt::unwrap_or_else(emit 5)!;
+    int fallback = std::opt(int)::none() |> std::opt::unwrap_or(emit 5)!;
     printf("fallback %d\n", fallback);
 
     with_value() <| 3 <| |auto value| => printf("piped back %d\n", value);

@@ -664,7 +664,7 @@ Inner expression evaluated unchanged.
 `f(args)`, `f(.p = a)`. Callee evaluated, then call evaluated, then result completed expecting the call's expectation.
 
 Callee prepared:
-- staged reference read; a code-typed callee is its known value (a comptime local holding a quote yields the quote). Quote or opaque callee: named arguments T0017; else [Apply](#apply).
+- staged reference read; a code-typed callee is its known value (a comptime local holding a quote yields the quote). Quote, lifted or opaque callee: named arguments T0017; else [Apply](#apply).
 - `fn&` kept; function value made a `fn&` constant; otherwise rvalue-decayed, function pointer dereferenced to `fn&`.
 - curried value unwrapped, its arguments applied first.
 
@@ -771,7 +771,7 @@ Otherwise incomplete, completing without expectation too. Expected staged shape 
 
 Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments typed as [subject type](#subject-type), lifted, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, converged, then [applied](#apply).
 
-A staged value spliced without arguments (a [Local](#local) read at runtime): converged; a `^T` quote materialized; anything else yields itself.
+A staged value spliced without arguments (a [Local](#local) read at runtime): converged; a `^T` quote or lifted code materialized; anything else yields itself.
 
 ### Intrinsic
 
@@ -825,6 +825,7 @@ Otherwise one step, then retried:
 - `rule/bitfield-bind` bitfield reference to compatible non-bitfield reference: T0043. Other reference to reference: fails.
 - reference source, or array to pointer: decay step.
 - staged to non-staged: decay step.
+- `rule/comptime-lift` comptime context, non-code source, `^U` target: converted to U, converged, then lifted: code yielding that immediate. Fails if not convertible.
 - `rule/reference-binds-temporary` non-reference to `U&`, compatible with U: address taken, of a temporary unless `str` or function designator.
 - `rule/string-to-char-array` `str` constant to `char[n]` or `char[]`: NUL-padded char array constant; `[]` bound is length plus one; longer than bound: T0016.
 - move semantics differ: fails.
@@ -883,15 +884,15 @@ Forced. `type` in a parameter that is neither marked `comptime` nor of a comptim
 
 #### Staged argument
 
-Piped marks stripped. Quote literal: used as-is. Target a function to code (not `^T`): operand evaluated. Local already holding code: collapsed. `rule/explicit-staged-argument` otherwise, a piped operand is captured as a parameterless quote; any other: T0075, so `f(emit e)`, `e |> f()` and `f() <| e`. Completed expecting target, converted implicitly.
+Piped marks stripped. Quote literal: used as-is. Target a function to code (not `^T`): operand evaluated. A piped operand is captured as a parameterless quote. `rule/frozen-staged-argument` any other operand is frozen expecting the target, so code is used as-is and a comptime immediate is [lifted](#implicit-conversion); failure notes `emit`. So `f(emit e)`, `e |> f()`, `f() <| e`, and `f(5)`. Completed expecting target, converted implicitly.
 
 #### Apply
 
-Code applied to arguments; needs staged shape (T0002), argument count (T0015). `rule/closure-params` code params (`^T`, or a function to code) take [staged arguments](#staged-argument), so `^T` code is spliced at each use; others are frozen expecting the param, evaluated once. Runtime: quote materialized with them. Comptime: new quote with params bound as captures.
+Code applied to arguments; needs staged shape (T0002), argument count (T0015). `rule/closure-params` code params (`^T`, or a function to code) take [staged arguments](#staged-argument), so `^T` code is spliced at each use; others are frozen expecting the param, evaluated once. Runtime: quote materialized with them. Comptime: new quote with params bound as captures; lifted code yields itself.
 
 #### Materialize
 
-Quote inserted at runtime. Opaque code: an opaque value of its result, unit for `void`. Otherwise quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; `rule/sealed-root-quote` the scope is sealed when no quoted scope encloses it (a root quote, inserted into hand-written runtime code) and escaping is not allowed ([Escape](#escape)); quotes materialized inside another are never sealed; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
+Quote inserted at runtime. Opaque code: an opaque value of its result, unit for `void`. Lifted code: its immediate, typed as the result. Otherwise quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; `rule/sealed-root-quote` the scope is sealed when no quoted scope encloses it (a root quote, inserted into hand-written runtime code) and escaping is not allowed ([Escape](#escape)); quotes materialized inside another are never sealed; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
 
 ## Comptime execution
 

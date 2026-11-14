@@ -15,11 +15,11 @@ void serve(std::net::tcp_listener& server) {
     while (true) {
         std::net::tcp_stream client = server
             |> std::net::tcp_listener::accept()
-            |> std::opt::unwrap_or_else(.{ continue; });
+            |> std::opt::unwrap_or(.{ continue; });
 
         std::span<const u8> reply = std::span::str_as_bytes("hello\\n");
         client |> std::net::tcp_stream::write(reply)
-            |> std::opt::unwrap_or_else(.{ continue; });
+            |> std::opt::unwrap_or(.{ continue; });
 
         move client |> std::net::tcp_stream::close();
     }
@@ -32,11 +32,11 @@ void serve(std::net::tcp_listener& server) {
     while (true) {
         std::net::tcp_stream client = server
             |> std::net::tcp_listener::accept()
-            |> std::opt::unwrap_or_else(.{ continue; });
+            |> std::opt::unwrap_or(.{ continue; });
 
         std::span<const u8> reply = std::span::str_as_bytes("hello\\n");
         client |> std::net::tcp_stream::write(reply)
-            |> std::opt::unwrap_or_else(.{
+            |> std::opt::unwrap_or(.{
                 move client |> std::net::tcp_stream::close();
                 continue;
             });
@@ -265,7 +265,7 @@ function LeakDiagnostic() {
             <span className={styles.error}>error:</span> `client` is marked @nodrop but is leaked without cleanup{"\n"}
             {"  "}{gutter("-->")} server.cx:12:44{"\n"}
             {"   "}{gutter("|")}{"\n"}
-            {gutter("12 |")}{"             |> std::opt::unwrap_or_else(.{ continue; });\n"}
+            {gutter("12 |")}{"             |> std::opt::unwrap_or(.{ continue; });\n"}
             {"   "}{gutter("|")}{" ".repeat(44)}
             <span className={styles.error}>^^^^^^^^ `client` leaks here</span>{"\n"}
             {"   "}{gutter("=")} <span className={styles.help}>help:</span> close it first: move client |&gt; std::net::tcp_stream::close();

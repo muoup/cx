@@ -25,6 +25,8 @@ pub enum HMIRImmediate {
     },
 
     Quote(QuoteRef),
+    /// Code yielding a compile-time immediate, spliced as the immediate itself
+    Lifted(Box<HMIRImmediate>),
 
     /// The function constructing a variant of a tagged union. It is generated only where it is lowered as a
     /// runtime operand; a comptime call constructs the variant in place

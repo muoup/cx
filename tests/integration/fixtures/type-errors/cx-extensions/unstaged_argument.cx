@@ -2,5 +2,5 @@ import std::optional as std;
 
 int main() {
     std::opt(int) value = std::opt(int)::none();
-    return std::opt::unwrap_or_else(value, 0);
+    return std::opt::unwrap_or(value, 0);
 }

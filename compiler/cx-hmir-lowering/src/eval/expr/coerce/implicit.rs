@@ -13,7 +13,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
         coerce::{self, applied},
-        expr,
+        comptime, expr, staged,
         types::{self, signatures_alike},
     },
     log::hmir_error,
@@ -154,6 +154,11 @@ fn step(
         (HMIRTypeKind::Staged(_), target) if !matches!(target, HMIRTypeKind::Staged(_)) => {
             return promotion::step(context, value, span);
         }
+        (_, HMIRTypeKind::Staged(inner))
+            if !context.is_runtime() && !staged::is_code(context, source) =>
+        {
+            return lift(context, value, *inner, target, span, explicit);
+        }
         (_, HMIRTypeKind::ReferenceTo { inner, .. }) => {
             return bind(context, value, *inner, target, span);
         }
@@ -202,6 +207,25 @@ fn step(
         }
         _ => Coercion::Unapplied(value),
     })
+}
+
+fn lift(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    inner: HMIRTypeID,
+    target: HMIRTypeID,
+    span: &TokenRange,
+    explicit: bool,
+) -> CXResult<Coercion> {
+    let value = match convert(context, value, inner, span, explicit)? {
+        Coercion::Applied(value) => comptime::converge(context, value, span)?,
+        unapplied => return Ok(unapplied),
+    };
+    let HMIRValueKind::Immediate(immediate) = value.kind() else {
+        unreachable!("a converged value is an immediate")
+    };
+    let lifted = HMIRImmediate::Lifted(Box::new(immediate.clone()));
+    Ok(Coercion::Applied(HMIRValue::new(target, lifted)))
 }
 
 fn bind(

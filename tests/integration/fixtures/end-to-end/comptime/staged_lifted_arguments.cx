@@ -1,0 +1,26 @@
+/* CX-STDOUT: lifted string */
+/* CX-STDOUT-NEXT: 37 4.5 3 5 9 11 */
+
+#include <stdio.h>
+
+import std::optional as std;
+
+comptime ^T pass(comptime type T, ^T value) {
+    return emit value;
+}
+
+comptime ^int folded() => 1 + 2;
+
+comptime ^void show(^const _str& message) => emit printf("%s\n", message);
+
+int main() {
+    int a = pass(int, 37);
+    float b = pass(float, 4.5);
+    int c = folded();
+    show("lifted string");
+    int d = std::opt(int)::none() |> std::opt::unwrap_or(5);
+    int e = std::opt(int)::some(9) |> std::opt::expect("never");
+    ^int f = 11;
+    int g = f;
+    printf("%d %.1f %d %d %d %d\n", a, b, c, d, e, g);
+}
