@@ -17,7 +17,7 @@ int main() {
     printf("Vector length: %zu\n", vec.length);
     printf("Vector capacity: %zu\n", vec.capacity);
     
-    std::optional::opt(int&) maybe_value = vec |> std::vector::vector::at(0);
+    std::optional::opt(int&) maybe_value = vec |> std::vector::vector::get(0);
     int value = move maybe_value |> std::optional::opt::unwrap();
     
     printf("vec[0]: %d\n", value);

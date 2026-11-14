@@ -34,23 +34,32 @@ pub(crate) fn eval_local(
     span: &TokenRange,
     local: HMIRLocalID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let Some(value) = context.get_local(&local).cloned() else {
-        if context.is_runtime() {
-            todo!("local {local} has no binding in the evaluating context")
-        }
-        let subject = match body.local(local).name() {
-            Some(name) => format!("variable '{name}'"),
-            None => "this variable".into(),
-        };
-        return Err(hmir_error(span, &catalogue::mir::COMPTIME_UNAVAILABLE, subject).into());
-    };
-
+    let value = lookup(context, body, span, local)?;
     let value = coerce::collapse(context, value, span)?;
     let referent = context.env().referent(value.ty());
     match context.env().resolve_kind(referent) {
         HMIRTypeKind::Staged(_) if context.is_runtime() => staged::splice(context, value, span),
         _ => Ok(Evaluation::Ready(value)),
     }
+}
+
+pub(crate) fn lookup(
+    context: &LocalLoweringContext,
+    body: &HMIRBodyContext,
+    span: &TokenRange,
+    local: HMIRLocalID,
+) -> CXResult<HMIRValue> {
+    if let Some(value) = context.get_local(&local) {
+        return Ok(value.clone());
+    }
+    if context.is_runtime() {
+        todo!("local {local} has no binding in the evaluating context")
+    }
+    let subject = match body.local(local).name() {
+        Some(name) => format!("variable '{name}'"),
+        None => "this variable".into(),
+    };
+    Err(hmir_error(span, &catalogue::mir::COMPTIME_UNAVAILABLE, subject))
 }
 
 // A declaration is a statement, and evaluates to unit. Each evaluation binds a fresh instance of the local, so a

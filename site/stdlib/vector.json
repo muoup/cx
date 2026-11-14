@@ -82,7 +82,7 @@
     {
       "name": "at",
       "owner": "vector",
-      "signature": "std::optional::opt<T&> vector::at<T>(vector<T>& this, usize index)",
+      "signature": "std::optional::opt<T&> vector::get<T>(vector<T>& this, usize index)",
       "description": "Returns an optional reference to an in-range element.",
       "parameters": [
         {"name": "this", "type": "vector<T>&", "description": "The vector to index."},

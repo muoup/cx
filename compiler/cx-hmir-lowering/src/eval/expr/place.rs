@@ -20,7 +20,7 @@ use crate::{
         arithmetic::{self, binary_operands, eval_operand},
         coerce::{self, promotion},
         eval,
-        expr::{require_impure, require_nonsafe},
+        expr::{binding, require_impure, require_nonsafe},
         flow::{self, EvalExit, Evaluation},
         types::{self, qualify},
     },
@@ -105,10 +105,7 @@ fn eval_move(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     require_impure(context, span, "move")?;
     let local = require_local(body, operand, span, "move")?;
-    let binding = context
-        .get_local(&local)
-        .cloned()
-        .expect("an evaluated local has a binding");
+    let binding = binding::lookup(context, body, span, local)?;
     let (Some(_), Some(inner)) = (
         value::as_place(&binding),
         context.env().reference_inner(binding.ty()),
