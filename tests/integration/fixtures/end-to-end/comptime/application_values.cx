@@ -11,6 +11,7 @@
 /* CX-STDOUT-NEXT: call 9 */
 /* CX-STDOUT-NEXT: callback 19 */
 /* CX-STDOUT-NEXT: generic 8 */
+/* CX-STDOUT-NEXT: constant 23 */
 
 #include <stdio.h>
 
@@ -32,6 +33,7 @@ comptime ^int delayed(fn f(^int) -> ^int) => f(emit 5);
 comptime ^int partial(fn f(^int, ^int) -> ^int) => f(emit 3)(emit 4);
 comptime ^int curried(fn f(^int) -> ^int) => f(emit 8);
 comptime ^void nullary(fn f() -> ^void) => f();
+comptime ^int constant(^int code) => code();
 
 comptime int eager() {
     int value = 1;
@@ -66,5 +68,6 @@ int main() {
     printf("order %d\n", order);
     printf("callback %d\n", callback(select_callback)(9));
     printf("generic %d\n", curried(identity(int)));
+    printf("constant %d\n", constant(23));
     return 0;
 }

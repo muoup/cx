@@ -68,10 +68,7 @@ pub(crate) fn step(
     match env.resolve_kind(subject) {
         HMIRTypeKind::Staged(_) if context.is_runtime() && subject == value.ty() => {
             let value = match flow::top(flow::catch_diverged(staged::materialize(
-                context,
-                &value,
-                &[],
-                span,
+                context, value, span,
             )))? {
                 Some(value) => value,
                 None => {

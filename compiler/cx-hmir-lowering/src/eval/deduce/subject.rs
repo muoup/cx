@@ -148,10 +148,14 @@ fn shadow(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    if let Some(application) = value::as_application(&value) {
-        let application = application.try_map(|operand| shadow(context, operand, span))?;
-        return Ok(value::application(value.ty(), application));
-    }
+    let ty = value.ty();
+    let value = match value::into_application(value) {
+        Ok(application) => {
+            let application = application.try_map(|operand| shadow(context, operand, span))?;
+            return Ok(value::application(ty, application));
+        }
+        Err(value) => value,
+    };
     match value.kind() {
         HMIRValueKind::Immediate(HMIRImmValue::Quote(node)) => {
             let quote = QuoteRef::new(shadowed(context, node.get(), span)?);

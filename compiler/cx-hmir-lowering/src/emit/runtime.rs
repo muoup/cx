@@ -67,8 +67,8 @@ pub fn value(
         HMIRValueKind::Application(application) => {
             let function = call::dependent::template(
                 context,
-                application.callee(),
-                application.args(),
+                &application.callee,
+                &application.args,
                 value.ty(),
                 span,
             )?;
@@ -171,9 +171,9 @@ pub fn immediate(
             function(variant::function(context.env_mut(), *ty, *variant, span)?)
         }
         (HMIRImmValue::Application(application), _) => {
-            let callee = application.callee().clone().into();
+            let callee = (*application.callee).clone().into();
             let args = application
-                .args()
+                .args
                 .iter()
                 .cloned()
                 .map(|arg| arg.map(Into::into))

@@ -1,5 +1,4 @@
 pub mod address;
-pub mod application;
 pub mod immediate;
 pub mod place;
 pub mod staged;
@@ -11,10 +10,9 @@ use cx_util::{dense_id, unsafe_float::FloatWrapper};
 use crate::{
     emit::comptime,
     env::HMIREnvironment,
-    eval::{staged::adapts, types},
+    eval::types,
     value::{
         address::{Addressable, HMIRAddress},
-        application::HMIRApplication,
         immediate::{HMIRImmValue, HMIRImmediate},
         place::HMIRPlaceID,
     },
@@ -90,25 +88,47 @@ pub fn application(ty: HMIRTypeID, application: HMIRApplication<HMIRValue>) -> H
     HMIRValue::new(ty, kind)
 }
 
-pub fn as_application(value: &HMIRValue) -> Option<HMIRApplication<HMIRValue>> {
-    match value.kind() {
-        HMIRValueKind::Application(application) => Some(application.clone()),
+pub fn into_application(value: HMIRValue) -> Result<HMIRApplication<HMIRValue>, HMIRValue> {
+    let ty = value.ty();
+    match value.take_kind() {
+        HMIRValueKind::Application(application) => Ok(application),
         HMIRValueKind::Immediate(HMIRImmValue::Application(application)) => {
-            let (callee, args) = application.clone().into_parts();
-            let args = args.into_iter().map(|arg| arg.map(Into::into)).collect();
-            Some(HMIRApplication::new(callee.into(), args))
+            let args = application
+                .args
+                .into_iter()
+                .map(|arg| arg.map(Into::into))
+                .collect();
+            Ok(HMIRApplication {
+                callee: Box::new((*application.callee).into()),
+                args,
+            })
         }
-        _ => None,
+        kind => Err(HMIRValue::new(ty, kind)),
     }
 }
 
-pub fn unapplied(env: &HMIREnvironment, value: HMIRValue) -> (HMIRValue, Vec<Option<HMIRValue>>) {
-    if let Some(application) = as_application(&value)
-        && !adapts(env, application.callee().ty(), value.ty())
-    {
-        return application.into_parts();
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct HMIRApplication<V> {
+    pub callee: Box<V>,
+    pub args: Vec<Option<V>>,
+}
+
+impl<V> HMIRApplication<V> {
+    pub fn try_map<U, E>(
+        self,
+        mut map: impl FnMut(V) -> Result<U, E>,
+    ) -> Result<HMIRApplication<U>, E> {
+        let callee = map(*self.callee)?;
+        let args = self
+            .args
+            .into_iter()
+            .map(|arg| arg.map(&mut map).transpose())
+            .collect::<Result<_, _>>()?;
+        Ok(HMIRApplication {
+            callee: Box::new(callee),
+            args,
+        })
     }
-    (value, Vec::new())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

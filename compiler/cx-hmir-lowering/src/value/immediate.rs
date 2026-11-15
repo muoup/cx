@@ -2,9 +2,8 @@ use cx_hmir::ty::HMIRTypeID;
 use cx_util::unsafe_float::FloatWrapper;
 
 use crate::value::{
-    HMIRValue, HMIRValueKind,
+    HMIRApplication, HMIRValue, HMIRValueKind,
     address::{Addressable, HMIRAddress},
-    application::HMIRApplication,
     staged::QuoteRef,
 };
 

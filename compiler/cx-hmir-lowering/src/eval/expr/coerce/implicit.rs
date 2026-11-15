@@ -18,9 +18,7 @@ use crate::{
         types::{self, signatures_alike},
     },
     log::hmir_error,
-    value::{
-        self, HMIRValue, HMIRValueKind, application::HMIRApplication, immediate::HMIRImmValue,
-    },
+    value::{self, HMIRApplication, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 pub(crate) fn standard(
@@ -313,13 +311,11 @@ fn eta(
     let Some(callee) = comptime::known(context, &value) else {
         return Ok(Coercion::Unapplied(value));
     };
-    let lifted = match value::as_application(&callee) {
-        Some(application) => value::application(target, application),
-        None => value::application(
-            target,
-            HMIRApplication::new(callee, vec![None; from.params().len()]),
-        ),
-    };
+    let application = value::into_application(callee).unwrap_or_else(|callee| HMIRApplication {
+        callee: Box::new(callee),
+        args: vec![None; from.params().len()],
+    });
+    let lifted = value::application(target, application);
     Ok(Coercion::Applied(lifted))
 }
 

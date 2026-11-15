@@ -27,7 +27,7 @@ use crate::{
     log::hmir_error,
     lower::declaration,
     value::{
-        self, HMIRValue, HMIRValueKind, address::Addressable, application::HMIRApplication,
+        self, HMIRApplication, HMIRValue, HMIRValueKind, address::Addressable,
         immediate::HMIRImmValue,
     },
 };
@@ -78,7 +78,10 @@ fn apply(
     }
 
     let callee = callable(context, callee, span)?;
-    let (callee, applied) = value::unapplied(context.env(), callee);
+    let (callee, applied) = match value::into_application(callee) {
+        Ok(application) => (*application.callee, application.args),
+        Err(callee) => (callee, Vec::new()),
+    };
     let (callee, signature) = coerce_callee(context, callee, span)?;
     let def = value::as_function(&callee);
 
@@ -241,7 +244,13 @@ pub(crate) fn curry(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let value = value::application(ty, HMIRApplication::new(callee, values));
+    let value = value::application(
+        ty,
+        HMIRApplication {
+            callee: Box::new(callee),
+            args: values,
+        },
+    );
     comptime::converge(context, value, span)
 }
 

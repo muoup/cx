@@ -347,7 +347,10 @@ impl<'a> Deduction<'a> {
         let value = frame
             .enter(context, span, |child| flow::top(eval(child, body, callee)))
             .ok()?;
-        let (callee, curried) = value::unapplied(context.env(), value);
+        let (callee, curried) = match value::into_application(value) {
+            Ok(application) => (*application.callee, application.args),
+            Err(callee) => (callee, Vec::new()),
+        };
         let def = value::as_function(&callee)?;
         let instance = instance(context, def, actual)?;
         let source = context.env().symbols().resolve_definition(def);
