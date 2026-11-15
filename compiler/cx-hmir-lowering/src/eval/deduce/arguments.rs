@@ -19,7 +19,8 @@ use crate::{
     eval::{
         EvalResult,
         call::dependent::Frame,
-        deduce::{Incomplete, IncompleteReason, subject},
+        coerce, comptime,
+        deduce::{self, Incomplete, IncompleteReason, subject},
         eval, eval_type,
         flow::{self, Evaluation},
         staged, symbol,
@@ -30,13 +31,14 @@ use crate::{
     value::{self, HMIRValue},
 };
 
-// The type arguments of a call deferred to deduction, by parameter, and the type deduced for each
+// The comptime arguments of a call deferred to deduction, by parameter, and the value deduced for each
 pub(crate) struct Deduction<'a> {
     function: &'a HMIRFunction,
     def: HMIRDefID,
-    // Each deferred argument left incomplete, with whether it is the parameter's default
-    deferred: BTreeMap<usize, (Incomplete<HMIRValue>, bool)>,
-    inferred: BTreeMap<usize, HMIRTypeID>,
+    // Each deferred argument, with whether it is the parameter's default. A type is left incomplete, while a
+    // value is a bare hole that the value deduced for it replaces
+    deferred: BTreeMap<usize, (Option<Incomplete<HMIRValue>>, bool)>,
+    inferred: BTreeMap<usize, HMIRValue>,
     bound: Vec<(usize, HMIRValue)>,
 }
 
@@ -51,7 +53,12 @@ impl<'a> Deduction<'a> {
         }
     }
 
-    pub(crate) fn defer(&mut self, index: usize, pending: Incomplete<HMIRValue>, default: bool) {
+    pub(crate) fn defer(
+        &mut self,
+        index: usize,
+        pending: Option<Incomplete<HMIRValue>>,
+        default: bool,
+    ) {
         self.deferred.insert(index, (pending, default));
     }
 
@@ -182,15 +189,19 @@ impl<'a> Deduction<'a> {
             .collect::<Vec<_>>();
         for index in ready {
             let (pending, default) = self.deferred.remove(&index).expect("a deferred argument");
+            let inferred = self.inferred[&index].clone();
+            let Some(pending) = pending else {
+                let value = frame.argument(context, index, inferred, span)?;
+                self.bound.push((index, value));
+                continue;
+            };
             let source = match default {
                 true => self.function.prototype().defaults(),
                 false => body,
             };
-            let value = Evaluation::Incomplete(pending).complete(
-                context,
-                source,
-                Some(self.inferred[&index]),
-            )?;
+            let inferred = value::as_type(&inferred).expect("a deferred type infers a type");
+            let value =
+                Evaluation::Incomplete(pending).complete(context, source, Some(inferred))?;
             let value = frame.argument(context, index, value, span)?;
             self.bound.push((index, value));
         }
@@ -222,28 +233,31 @@ impl<'a> Deduction<'a> {
     ) -> CXResult<()> {
         let function = self.function;
         match function.body().expr(form).kind() {
-            HMIRExprKind::Local(local) => {
-                match function.params().iter().position(|param| param == local) {
-                    Some(index) => self.record(context, index, actual, span),
-                    None => Ok(()),
+            HMIRExprKind::Local(_) => match self.param(form) {
+                Some(index) => {
+                    let actual = actual.map(|actual| deduce::type_constant(context, actual, span));
+                    self.record(context, frame, index, actual, span)
                 }
-            }
+                None => Ok(()),
+            },
             HMIRExprKind::Call {
                 callee,
                 args,
                 named,
             } => {
-                let applied = actual.and_then(|actual| {
+                let mut applied = actual.and_then(|actual| {
                     self.applied(context, frame, *callee, args.len(), named, actual, span)
                 });
                 let forms = args.iter().chain(named.iter().map(|(_, form)| form));
                 for (index, form) in forms.enumerate() {
                     let actual = applied
-                        .as_ref()
-                        .and_then(|values| values.get(index))
-                        .and_then(Option::as_ref)
-                        .and_then(value::as_type);
-                    self.unify(context, frame, *form, actual, span)?;
+                        .as_mut()
+                        .and_then(|values| values.get_mut(index))
+                        .and_then(Option::take);
+                    match (actual.as_ref().and_then(value::as_type), self.param(*form)) {
+                        (None, Some(param)) => self.record(context, frame, param, actual, span)?,
+                        (ty, _) => self.unify(context, frame, *form, ty, span)?,
+                    }
                 }
                 Ok(())
             }
@@ -372,40 +386,67 @@ impl<'a> Deduction<'a> {
         Some(values)
     }
 
+    // The parameter that 'form' names, when it names one
+    fn param(&self, form: HMIRExprID) -> Option<usize> {
+        let HMIRExprKind::Local(local) = self.function.body().expr(form).kind() else {
+            return None;
+        };
+        self.function
+            .params()
+            .iter()
+            .position(|param| param == local)
+    }
+
+    // Records 'actual' as deduced for the parameter 'index'. A value other than a type is compared as the type of
+    // its parameter has it, which is known once its argument is deferred
     fn record(
         &mut self,
-        context: &LocalLoweringContext,
+        context: &mut LocalLoweringContext,
+        frame: &mut Frame,
         index: usize,
-        actual: Option<HMIRTypeID>,
+        actual: Option<HMIRValue>,
         span: &TokenRange,
     ) -> CXResult<()> {
-        let unreachable = |actual| {
-            matches!(
-                context.env().resolve_kind(actual),
-                HMIRTypeKind::Unreachable
-            )
+        let Some(actual) = actual else {
+            return Ok(());
         };
-        if actual.is_some_and(unreachable) {
+        if !self.inferred.contains_key(&index) && !self.is_hole(index) {
             return Ok(());
         }
-        match (actual, self.inferred.get(&index).copied()) {
-            (Some(actual), Some(first)) if !alike(context.env(), first, actual, true) => {
-                Err(hmir_error(
-                    span,
-                    &typecheck::CONFLICTING_DEDUCTIONS,
-                    (
-                        self.parameter(index),
-                        types::name(context.env(), first),
-                        types::name(context.env(), actual),
-                    ),
-                ))
+        let actual = match value::as_type(&actual) {
+            Some(ty) if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Unreachable) => {
+                return Ok(());
             }
-            (Some(actual), None) if self.is_hole(index) => {
-                self.inferred.insert(index, actual);
-                Ok(())
+            Some(_) => actual,
+            None => {
+                let ty = frame.parameter(context, index, span)?;
+                frame.enter(context, span, |child| {
+                    let actual = coerce::implicit::standard(child, actual, ty, span)?;
+                    comptime::converge(child, actual, span)
+                })?
             }
-            _ => Ok(()),
+        };
+        let Some(first) = self.inferred.get(&index) else {
+            self.inferred.insert(index, actual);
+            return Ok(());
+        };
+        let agrees = match (value::as_type(first), value::as_type(&actual)) {
+            (Some(first), Some(actual)) => alike(context.env(), first, actual, true),
+            _ => first == &actual,
+        };
+        if agrees {
+            return Ok(());
         }
+        let describe = |value: &HMIRValue| {
+            value::describe(context.env(), value).unwrap_or_else(|| {
+                format!("a value of '{}'", types::name(context.env(), value.ty()))
+            })
+        };
+        Err(hmir_error(
+            span,
+            &typecheck::CONFLICTING_DEDUCTIONS,
+            (self.parameter(index), describe(first), describe(&actual)),
+        ))
     }
 
     fn parameter(&self, index: usize) -> String {

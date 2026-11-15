@@ -50,6 +50,14 @@ pub fn as_int(value: &HMIRValue) -> Option<i128> {
     }
 }
 
+pub fn describe(env: &HMIREnvironment, value: &HMIRValue) -> Option<String> {
+    match value.kind() {
+        HMIRValueKind::Immediate(HMIRImmValue::Type(ty)) => Some(types::name(env, *ty)),
+        HMIRValueKind::Immediate(HMIRImmValue::Int(int)) => Some(int.to_string()),
+        _ => None,
+    }
+}
+
 fn as_addressable(value: &HMIRValue) -> Option<&Addressable> {
     match value.kind() {
         HMIRValueKind::Immediate(HMIRImmValue::Address(address)) if address.offset() == 0 => {

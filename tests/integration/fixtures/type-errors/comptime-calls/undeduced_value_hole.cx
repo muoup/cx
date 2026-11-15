@@ -1,0 +1,5 @@
+usize ignored(comptime usize len = _, int x) => len;
+
+int main() {
+    return (int) ignored(1);
+}

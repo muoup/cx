@@ -28,7 +28,7 @@ use crate::{
     },
     log::hmir_error,
     lower::declaration,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 struct Shadowed {
@@ -90,11 +90,7 @@ fn defined_here(
         .zip(args)
         .filter_map(|(local, arg)| {
             let name = contract.body().local(*local).name()?;
-            let value = match arg.kind() {
-                HMIRValueKind::Immediate(HMIRImmValue::Type(ty)) => types::name(env, *ty),
-                HMIRValueKind::Immediate(HMIRImmValue::Int(value)) => value.to_string(),
-                _ => return None,
-            };
+            let value = value::describe(env, arg)?;
             Some(format!("{name} = '{value}'"))
         })
         .collect::<Vec<_>>();

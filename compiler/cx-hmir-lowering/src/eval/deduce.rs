@@ -357,7 +357,7 @@ pub(crate) fn eval_hole(
     Ok(Evaluation::Incomplete(incomplete))
 }
 
-fn type_constant(
+pub(super) fn type_constant(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,

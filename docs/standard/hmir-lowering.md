@@ -708,7 +708,8 @@ Arguments bound: applied values first; named arguments to comptime params by nam
 Per param in order, in a callee frame whose comptime state persists across params:
 - param type evaluated, adjusted as [Parameter type](#parameter-type).
 - `rule/specialized-code-param` runtime, code-typed param: M0021. Comptime, reference param: M0021.
-- param type naming a deferred param: [deduction](#deduction) from this param on; still deferred: T0023.
+- param type naming a deferred param: [deduction](#deduction) from this param on; one still named: T0023 for it.
+- `rule/value-hole` bare `_` as argument or default of a comptime param whose type is not `type`: deferred as a value, not evaluated.
 - staged param: [staged argument](#staged-argument). Runtime comptime param or spliced: argument frozen expecting param. Otherwise evaluated, completed expecting param, then converted implicitly; comptime call: exported. Default: evaluated apart, in a comptime child of the declaring unit.
 - `type` param whose argument or default stays incomplete (`_`, `T[_]`): deferred; other incomplete: T0052.
 - comptime param bound in frame, later param types see it; canonicalized.
@@ -728,14 +729,14 @@ After binding:
 
 Runs once a param's type names a deferred param, over the arguments from that param on. No fixpoint: what a pass leaves deferred stays so.
 
-1. Arguments other than closure literals (through pipes) typed as [subject type](#subject-type). Param type expression unified against it: through pointers, references, arrays, nominal qualifiers, staged, function signatures, and generator calls (arguments recovered from the memo origin of the actual type, the generator itself possibly an earlier param). Value types used unless the param is declared as reference.
-2. Each deferred param inferred so far: its pending argument or default completed from the inferred type, bound in the frame.
+1. Arguments other than closure literals (through pipes) typed as [subject type](#subject-type). Param type expression unified against it: through pointers, references, arrays, nominal qualifiers, staged, function signatures, and generator calls (arguments recovered from the memo origin of the actual type, the generator itself possibly an earlier param; a recovered argument other than a type inferred only for a generator argument that names a param). Value types used unless the param is declared as reference.
+2. Each deferred param inferred so far: its pending argument or default completed from the inferred type, or a deferred value taken as inferred; bound in the frame.
 3. Closure literals, in order, then step 2 again after each. Param type must be a function type of the closure's arity, else skipped.
    - declared closure param types unified against the param's, then step 2.
    - `auto` closure params: the param's parameter type, evaluated in the frame; not yet known: closure skipped.
    - closure body [synthesized](#quote) with those types; result lifted to `^R`, unified against the param's return type.
 
-- `rule/conflicting-deductions` two inferences not alike: T0024.
+- `rule/conflicting-deductions` two inferred types not alike, or two inferred values unequal once each is converted implicitly to the param type in the callee frame and exported: T0024.
 - `rule/closure-deduction-errors` errors from synthesizing a closure body are reported as-is.
 
 ### Contracts
@@ -750,9 +751,9 @@ Runtime call to a def with pre or postcondition: params bound to const observed 
 
 ### Hole
 
-*verified 425c5ff1*
+*verified uncommitted*
 
-`_`: incomplete; completes to the expected type as a type value.
+`_`: incomplete; completes to the expected type as a type value. As a value deduced for a call, never evaluated: [Dependent call](#dependent-call) `rule/value-hole`.
 
 ### Comptime
 

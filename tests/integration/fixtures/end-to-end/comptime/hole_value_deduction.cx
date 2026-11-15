@@ -1,0 +1,32 @@
+/* CX-STDOUT: length 4 */
+/* CX-STDOUT-NEXT: named 6 */
+/* CX-STDOUT-NEXT: tag 9 */
+/* CX-STDOUT-NEXT: agreed 3 */
+/* CX-STDOUT-NEXT: generated 5 */
+#include <stdio.h>
+
+comptime type buffer(comptime type T, comptime usize size) => struct { T data[size]; };
+comptime type sized(comptime int n) => struct { int x; };
+comptime type tagged(comptime type T, comptime T tag) => struct { T value; };
+
+usize length(comptime type T = _, comptime usize len = _, const buffer(T, len)& b) => len;
+usize named(comptime type T = _, comptime usize len = 1, const buffer(T, len)& b) => len;
+long tag(comptime type T = _, comptime T value = _, const tagged(T, value)& t) => (long) value;
+usize agreed(comptime usize len = _, const buffer(int, len)& b, const sized(len)& s) => len;
+
+int main() {
+    buffer(int, 4) four;
+    buffer(char, 6) six;
+    tagged(long, 9) nine;
+    buffer(int, 3) three;
+    sized(3) also_three;
+    buffer(short, 5) five;
+    buffer(short, _) generated = five;
+
+    printf("length %d\n", (int) length(four));
+    printf("named %d\n", (int) named(.len = _, six));
+    printf("tag %d\n", (int) tag(nine));
+    printf("agreed %d\n", (int) agreed(three, also_three));
+    printf("generated %d\n", (int) length(generated));
+    return 0;
+}

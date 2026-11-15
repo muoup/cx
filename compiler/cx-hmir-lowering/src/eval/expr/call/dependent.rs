@@ -235,11 +235,11 @@ pub(crate) fn call(
     let default = |index: usize| prototype.params()[index].default().filter(|_| !partial);
     let mut values = vec![None; params.len()];
     for index in 0..params.len() {
-        if let Some(hole) = deduction.blocking(index) {
+        if deduction.blocking(index).is_some() {
             for (bound, value) in deduction.infer(context, &mut frame, body, args, index, span)? {
                 values[bound] = Some(value);
             }
-            if deduction.blocking(index).is_some() {
+            if let Some(hole) = deduction.blocking(index) {
                 return Err(deduction.undeduced(context, hole, span).into());
             }
         }
@@ -256,6 +256,17 @@ pub(crate) fn call(
         if !runtime && context.env().is_reference(ty) {
             let operation = "a reference parameter".into();
             return Err(hmir_error(arg_span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
+        }
+        let given = match arg {
+            Some(arg) => body.expr(arg),
+            None => prototype.defaults().expr(default(index).expect("a default is given")),
+        };
+        if matches!(given.kind(), HMIRExprKind::Hole(_))
+            && function.signature().is_comptime_param(index)
+            && !matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type)
+        {
+            deduction.defer(index, None, arg.is_none());
+            continue;
         }
         let evaluation = match arg {
             Some(arg) if staged::is_code(context, ty) => staged::argument(context, body, arg, ty),
@@ -281,7 +292,7 @@ pub(crate) fn call(
             Evaluation::Incomplete(pending)
                 if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type) =>
             {
-                deduction.defer(index, pending, arg.is_none());
+                deduction.defer(index, Some(pending), arg.is_none());
                 continue;
             }
             evaluation => evaluation.ready()?,
