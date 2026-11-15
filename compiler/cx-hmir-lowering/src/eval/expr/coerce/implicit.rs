@@ -1,8 +1,9 @@
 use cx_hmir::{
-    HMIRFnSignature,
+    HMIRFnSignature, HMIRFunctionStage,
     ty::{
         HMIRTypeID, HMIRTypeKind, HMIRUndefined, context::HMIRTypeContext, intrinsic::HMIRIntWidth,
     },
+    unit::function::HMIRFnParam,
 };
 use cx_log::{CXResult, catalogue::typecheck};
 use cx_tokens::TokenRange;
@@ -17,7 +18,9 @@ use crate::{
         types::{self, signatures_alike},
     },
     log::hmir_error,
-    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{
+        self, HMIRValue, HMIRValueKind, application::HMIRApplication, immediate::HMIRImmValue,
+    },
 };
 
 pub(crate) fn standard(
@@ -90,6 +93,37 @@ fn step(
         }
         (HMIRTypeKind::Function { .. }, HMIRTypeKind::PointerTo(_)) => {
             return promotion::function_pointer(context, value, span);
+        }
+        (
+            HMIRTypeKind::Function {
+                signature: from, ..
+            },
+            HMIRTypeKind::Staged(result),
+        ) if from.stage() == HMIRFunctionStage::Runtime
+            && from.params().is_empty()
+            && (env.same_type(*from.return_type(), *result)
+                || discards(env, *from.return_type(), *result)) =>
+        {
+            let from = from.clone();
+            let to = HMIRFnSignature::new(
+                HMIRFunctionStage::Comptime,
+                Vec::new(),
+                target,
+                false,
+                from.contract().clone(),
+            );
+            return eta(context, value, &from, &to, target, span);
+        }
+        (
+            HMIRTypeKind::Function {
+                signature: from, ..
+            },
+            HMIRTypeKind::Function { signature: to, .. },
+        ) if from.stage() == HMIRFunctionStage::Runtime
+            && to.stage() == HMIRFunctionStage::Comptime =>
+        {
+            let (from, to) = (from.clone(), to.clone());
+            return eta(context, value, &from, &to, target, span);
         }
         _ => {}
     }
@@ -176,9 +210,9 @@ fn step(
     }
     Ok(match (from, to) {
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_))
-            if matches!(value.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(0))) =>
+            if matches!(value.kind(), HMIRValueKind::Immediate(HMIRImmValue::Int(0))) =>
         {
-            Coercion::Applied(HMIRValue::new(target, HMIRImmediate::Int(0)))
+            Coercion::Applied(HMIRValue::new(target, HMIRImmValue::Int(0)))
         }
         (
             HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_),
@@ -217,15 +251,76 @@ fn lift(
     span: &TokenRange,
     explicit: bool,
 ) -> CXResult<Coercion> {
+    if types::comptime_only(context.env(), inner) {
+        return Ok(Coercion::Unapplied(value));
+    }
     let value = match convert(context, value, inner, span, explicit)? {
         Coercion::Applied(value) => comptime::converge(context, value, span)?,
         unapplied => return Ok(unapplied),
     };
-    let HMIRValueKind::Immediate(immediate) = value.kind() else {
-        unreachable!("a converged value is an immediate")
+    Ok(Coercion::Applied(value.with_ty(target)))
+}
+
+// A runtime function as a comptime function on code, which calls it where the code it yields is spliced. Each
+// parameter is the same or lifted, and the result is lifted, or discarded for a void one
+fn eta(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    from: &HMIRFnSignature<HMIRTypeID>,
+    to: &HMIRFnSignature<HMIRTypeID>,
+    target: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<Coercion> {
+    let env = context.env();
+    let HMIRTypeKind::Staged(result) = *env.resolve_kind(*to.return_type()) else {
+        return Ok(Coercion::Unapplied(value));
     };
-    let lifted = HMIRImmediate::Lifted(Box::new(immediate.clone()));
-    Ok(Coercion::Applied(HMIRValue::new(target, lifted)))
+    if types::comptime_only(env, *from.return_type())
+        || from.is_variadic()
+        || from.params().len() != to.params().len()
+        || from.params().iter().any(|param| param.comptime())
+    {
+        return Ok(Coercion::Unapplied(value));
+    }
+    let returned = *from.return_type();
+    let discarding = discards(env, returned, result);
+    let mut params = Vec::with_capacity(from.params().len());
+    for (param, expected) in from.params().iter().zip(to.params()) {
+        let ty = match context.env().resolve_kind(*expected.ty()) {
+            HMIRTypeKind::Staged(_) => staged::lift(context.env_mut(), *param.ty(), span),
+            _ => *param.ty(),
+        };
+        params.push(HMIRFnParam::new(false, ty));
+    }
+    let result = staged::lift(
+        context.env_mut(),
+        if discarding { result } else { returned },
+        span,
+    );
+    let lifted = HMIRFnSignature::new(
+        HMIRFunctionStage::Comptime,
+        params,
+        result,
+        from.is_variadic(),
+        from.contract().clone(),
+    );
+    if !signatures_alike(context.env(), &lifted, to) {
+        return Ok(Coercion::Unapplied(value));
+    }
+    if discarding {
+        discarded(context, returned, value.ty(), target, span)?;
+    }
+    let Some(callee) = comptime::known(context, &value) else {
+        return Ok(Coercion::Unapplied(value));
+    };
+    let lifted = match value::as_application(&callee) {
+        Some(application) => value::application(target, application),
+        None => value::application(
+            target,
+            HMIRApplication::new(callee, vec![None; from.params().len()]),
+        ),
+    };
+    Ok(Coercion::Applied(lifted))
 }
 
 fn bind(
@@ -265,9 +360,9 @@ fn string(
         let limit = ("string".into(), usize::try_from(bound).ok());
         return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit));
     }
-    let mut items = vec![HMIRImmediate::Int(0); bound as usize];
+    let mut items = vec![HMIRImmValue::Int(0); bound as usize];
     for (item, byte) in items.iter_mut().zip(string.bytes()) {
-        *item = HMIRImmediate::Int(byte as i128);
+        *item = HMIRImmValue::Int(byte as i128);
     }
     let ty = match length {
         None => types::array(context.env_mut(), target, bound, span),
@@ -275,7 +370,7 @@ fn string(
     };
     Ok(Coercion::Applied(HMIRValue::new(
         ty,
-        HMIRImmediate::Aggregate { fields: items },
+        HMIRImmValue::Aggregate { fields: items },
     )))
 }
 
@@ -301,7 +396,7 @@ fn discard(
         return Ok(Coercion::Unapplied(value));
     };
     let result = *from.return_type();
-    if !env.is_void(*to.return_type()) || env.is_void(result) {
+    if !discards(env, result, *to.return_type()) {
         return Ok(Coercion::Unapplied(value));
     }
     let discarding = HMIRFnSignature::new(
@@ -314,12 +409,31 @@ fn discard(
     if !signatures_alike(env, &discarding, to) {
         return Ok(Coercion::Unapplied(value));
     }
-    if env.is_nodrop(result) {
-        let names = (types::name(env, value.ty()), types::name(env, target));
-        return Err(hmir_error(span, &typecheck::DISCARDED_NODROP, names));
-    }
+    discarded(context, result, value.ty(), target, span)?;
+    let env = context.env();
     if explicit && !(compatible(env, value.ty(), target) && qualified(env, value.ty(), target)) {
         expr::require_nonsafe(context, span, "Unsafe type conversion")?;
     }
     Ok(Coercion::Applied(value.with_ty(target)))
+}
+
+// Whether a function returning 'from' may be taken as one returning 'to', which discards what it returns
+fn discards(env: &HMIREnvironment, from: HMIRTypeID, to: HMIRTypeID) -> bool {
+    env.is_void(to) && !env.is_void(from)
+}
+
+// A function of type 'source' taken as one of type 'target' discards its result, which must be one that drops
+fn discarded(
+    context: &LocalLoweringContext,
+    result: HMIRTypeID,
+    source: HMIRTypeID,
+    target: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<()> {
+    let env = context.env();
+    if !env.is_nodrop(result) {
+        return Ok(());
+    }
+    let names = (types::name(env, source), types::name(env, target));
+    Err(hmir_error(span, &typecheck::DISCARDED_NODROP, names))
 }

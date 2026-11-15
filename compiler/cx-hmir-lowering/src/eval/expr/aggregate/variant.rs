@@ -20,7 +20,7 @@ use crate::{
     },
     eval::types,
     lower,
-    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 pub(crate) struct Variant {
@@ -92,7 +92,7 @@ pub(crate) fn reference(
     };
     let signature = signature(context.env(), ty, index);
     let callable = types::callable(context.env_mut(), signature, span);
-    let constructor = HMIRImmediate::Constructor { ty, variant: index };
+    let constructor = HMIRImmValue::Constructor { ty, variant: index };
     Ok(Some(HMIRValue::new(callable, constructor)))
 }
 
@@ -130,7 +130,7 @@ pub(crate) fn tag(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     let ty = types::int(context.env_mut(), HMIRIntWidth::I8, false, span);
-    if let HMIRValueKind::Immediate(HMIRImmediate::Union { variant, .. }) = value.kind() {
+    if let HMIRValueKind::Immediate(HMIRImmValue::Union { variant, .. }) = value.kind() {
         return Ok(value::int(context.env(), *variant as i128, ty));
     }
     let sum = context.env().referent(value.ty());

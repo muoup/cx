@@ -27,9 +27,8 @@ use crate::{
     log::hmir_error,
     lower::declaration,
     value::{
-        self, HMIRValue, HMIRValueKind,
-        address::Addressable,
-        immediate::HMIRImmediate,
+        self, HMIRValue, HMIRValueKind, address::Addressable, application::HMIRApplication,
+        immediate::HMIRImmValue,
     },
 };
 
@@ -69,10 +68,7 @@ fn apply(
         true => comptime::known(context, &callee).unwrap_or(callee),
         false => callee,
     };
-    if matches!(
-        callee.kind(),
-        HMIRValueKind::Immediate(HMIRImmediate::Quote(_) | HMIRImmediate::Lifted(_) | HMIRImmediate::Opaque)
-    ) {
+    if staged::applies(context, &callee) {
         if let Some((_, argument)) = named.first() {
             let named = ("a named argument".into(), "a staged expression call".into());
             let span = body.expr(*argument).span();
@@ -81,7 +77,8 @@ fn apply(
         return staged::apply(context, body, callee, args, span);
     }
 
-    let (callee, applied) = value::uncurried(callable(context, callee, span)?);
+    let callee = callable(context, callee, span)?;
+    let (callee, applied) = value::unapplied(context.env(), callee);
     let (callee, signature) = coerce_callee(context, callee, span)?;
     let def = value::as_function(&callee);
 
@@ -99,7 +96,9 @@ fn apply(
     };
     let function = declared.map(|(_, function)| function);
     let name = name(context, &callee);
-    let (args, partial) = bind(function, &signature, &applied, body, args, named, &name, span)?;
+    let (args, partial) = bind(
+        function, &signature, &applied, body, args, named, &name, span,
+    )?;
 
     let referent = context.env().referent(callee.ty());
     if let Some((def, function)) = declared.filter(|_| dependent::applies(context, referent)) {
@@ -112,9 +111,14 @@ fn apply(
     if partial {
         let residual = types::residual(&signature, |index| values[index].is_some());
         let ty = types::callable(context.env_mut(), residual, span);
-        return Ok(Evaluation::Ready(value::curried(ty, callee, values)));
+        return Ok(Evaluation::Ready(curry(context, callee, values, ty, span)?));
     }
-    hmir_call(context, span, callee, values.into_iter().flatten().collect())
+    hmir_call(
+        context,
+        span,
+        callee,
+        values.into_iter().flatten().collect(),
+    )
 }
 
 // The argument of each parameter of a callee, then those past the parameters of a variadic one:
@@ -134,7 +138,11 @@ fn bind(
 ) -> CXResult<(Vec<Option<HMIRExprID>>, bool)> {
     let params = signature.params();
     let declared = function.map_or(&[][..], |function| function.prototype().params());
-    let defaulted = |index: usize| declared.get(index).is_some_and(|param| param.default().is_some());
+    let defaulted = |index: usize| {
+        declared
+            .get(index)
+            .is_some_and(|param| param.default().is_some())
+    };
     let applied = |index: usize| applied.get(index).is_some_and(Option::is_some);
 
     let mut bound = vec![None; params.len()];
@@ -146,7 +154,10 @@ fn bind(
             return Err(hmir_error(arg_span, &typecheck::UNKNOWN_PARAMETER, unknown));
         };
         if applied(index) || bound[index].is_some() {
-            let duplicate = (format!("argument '{argument}'"), format!("call to '{name}'"));
+            let duplicate = (
+                format!("argument '{argument}'"),
+                format!("call to '{name}'"),
+            );
             return Err(hmir_error(arg_span, &typecheck::DUPLICATE_ITEM, duplicate));
         }
         bound[index] = Some(*expr);
@@ -159,9 +170,15 @@ fn bind(
     }
     let partial = args.len() < positional.len();
     let curries = (!args.is_empty() || !named.is_empty())
-        && (0..params.len()).all(|index| bound[index].is_none() || signature.is_comptime_param(index));
+        && (0..params.len())
+            .all(|index| bound[index].is_none() || signature.is_comptime_param(index));
     if (partial && !curries) || (args.len() > positional.len() && !signature.is_variadic()) {
-        let counts = (format!("'{name}'"), positional.len(), args.len(), signature.is_variadic());
+        let counts = (
+            format!("'{name}'"),
+            positional.len(),
+            args.len(),
+            signature.is_variadic(),
+        );
         return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts));
     }
     bound.extend(args.iter().skip(positional.len()).map(|arg| Some(*arg)));
@@ -187,11 +204,20 @@ fn arguments(
             (Some(value), _, _) => Some(value),
             (None, Some(arg), Some(ty)) => {
                 let value = eval(context, body, arg)?.complete(context, body, Some(ty))?;
-                Some(coerce::implicit::standard(context, value, ty, body.expr(arg).span())?)
+                Some(coerce::implicit::standard(
+                    context,
+                    value,
+                    ty,
+                    body.expr(arg).span(),
+                )?)
             }
             (None, Some(arg), None) => {
                 let value = eval(context, body, arg)?.complete(context, body, None)?;
-                Some(coerce::default_argument(context, value, body.expr(arg).span())?)
+                Some(coerce::default_argument(
+                    context,
+                    value,
+                    body.expr(arg).span(),
+                )?)
             }
             (None, None, Some(ty)) => match declared {
                 Some((def, function))
@@ -205,6 +231,18 @@ fn arguments(
         });
     }
     Ok(values)
+}
+
+// 'callee' partially applied to 'values', each of which binds a comptime parameter and so is known here
+pub(crate) fn curry(
+    context: &mut LocalLoweringContext,
+    callee: HMIRValue,
+    values: Vec<Option<HMIRValue>>,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
+    let value = value::application(ty, HMIRApplication::new(callee, values));
+    comptime::converge(context, value, span)
 }
 
 // The default of a parameter means the same at every call: it is evaluated apart from the call, in the unit
@@ -221,7 +259,9 @@ fn default(
     let default = default.expect("a parameter left to its default has one");
     let comptime = FnContext::Comptime(ComptimeContext::new());
     let evaluation = context.evaluation();
-    let mut child = context.child(None, comptime, Some(evaluation)).sourced(def.brand());
+    let mut child = context
+        .child(None, comptime, Some(evaluation))
+        .sourced(def.brand());
     comptime::freeze(&mut child, prototype.defaults(), default, Some(ty))
 }
 
@@ -245,7 +285,7 @@ pub(crate) fn hmir_call(
     }
 
     let constructor = match *callee.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Constructor { ty, variant }) => Some((ty, variant)),
+        HMIRValueKind::Immediate(HMIRImmValue::Constructor { ty, variant }) => Some((ty, variant)),
         _ => None,
     };
     if constructor.is_none() {
@@ -287,7 +327,11 @@ pub(crate) fn hmir_call(
 // To simplify semantics, all function callees are unified into fn& types. Whether a direct or indirect
 // call is generated at runtime depends on the underlying MIRValue produced, not on the type.
 // A callee read out of the storage holding it, unless it names a function itself
-fn callable(context: &mut LocalLoweringContext, callee: HMIRValue, span: &TokenRange) -> CXResult<HMIRValue> {
+fn callable(
+    context: &mut LocalLoweringContext,
+    callee: HMIRValue,
+    span: &TokenRange,
+) -> CXResult<HMIRValue> {
     let env = context.env();
     match env.is_function(env.referent(callee.ty())) {
         true => Ok(callee),
@@ -319,7 +363,7 @@ fn coerce_callee(
 
 fn name(context: &LocalLoweringContext, callee: &HMIRValue) -> String {
     match callee.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Address(address))
+        HMIRValueKind::Immediate(HMIRImmValue::Address(address))
             if let Addressable::Def(def) = address.base() =>
         {
             context
@@ -330,7 +374,7 @@ fn name(context: &LocalLoweringContext, callee: &HMIRValue) -> String {
                 .to_string()
         }
 
-        HMIRValueKind::Immediate(HMIRImmediate::Constructor { ty, variant }) => {
+        HMIRValueKind::Immediate(HMIRImmValue::Constructor { ty, variant }) => {
             variant::name(context.env(), *ty, *variant)
         }
 
@@ -363,7 +407,10 @@ fn finish(
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let result = match context.is_unevaluated() {
-        true => HMIRValue::new(return_type, emit::runtime::register(context, return_type, span)?),
+        true => HMIRValue::new(
+            return_type,
+            emit::runtime::register(context, return_type, span)?,
+        ),
         false => emit::call(context, callee, args, return_type, span)?,
     };
 
@@ -374,8 +421,8 @@ fn finish(
                 .emit(MIRInstructionKind::Unreachable, span.clone());
 
             flow::diverged()
-        },
+        }
 
-        _ => Ok(Evaluation::Ready(result))
+        _ => Ok(Evaluation::Ready(result)),
     }
 }

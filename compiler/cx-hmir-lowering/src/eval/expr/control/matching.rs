@@ -27,7 +27,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 struct Match {
@@ -166,7 +166,7 @@ fn cases(
             HMIRPattern::Value(expr) if variants.is_none() => {
                 let value = eval_comptime(context, body, *expr, Some(dispatch_ty))?;
                 match value.kind() {
-                    HMIRValueKind::Immediate(HMIRImmediate::Int(value)) => Some(*value),
+                    HMIRValueKind::Immediate(HMIRImmValue::Int(value)) => Some(*value),
                     _ => return Err(hmir_error(arm_span, &typecheck::VALUE_PATTERN_CONSTANT, ())),
                 }
             }

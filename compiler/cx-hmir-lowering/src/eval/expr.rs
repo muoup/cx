@@ -21,7 +21,7 @@ use crate::{
     value::{
         self, HMIRValue,
         address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        immediate::HMIRImmValue,
     },
 };
 
@@ -35,7 +35,7 @@ pub(crate) fn eval_literal(
         HMIRLiteral::Str(value) => {
             let ty = types::realize(context.env_mut(), HMIRTypeKind::Str, span);
             let literal = HMIRAddress::new(Addressable::Literal(value.clone()), 0);
-            HMIRValue::new(ty, HMIRImmediate::Address(literal))
+            HMIRValue::new(ty, HMIRImmValue::Address(literal))
         }
         HMIRLiteral::Int { value, ty } => {
             let ty = types::int(context.env_mut(), ty.width(), ty.signed(), span);

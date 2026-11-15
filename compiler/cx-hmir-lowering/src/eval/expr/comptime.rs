@@ -19,7 +19,10 @@ use crate::{
         name::type_value,
     },
     log::hmir_error,
-    value::{self, HMIRValue, HMIRValueKind},
+    value::{
+        self, HMIRValue, HMIRValueKind,
+        immediate::{HMIRImmValue, HMIRImmediate},
+    },
 };
 
 // Evaluates an expression in a comptime child that sees only the known values of the visible locals
@@ -114,6 +117,18 @@ pub(crate) fn converge(
         true => emit::comptime::storage::contents(context, &value, span)?,
         false => value,
     };
+    if let HMIRValueKind::Application(application) = value.kind() {
+        let application = application.clone().try_map(|operand| {
+            let value = converge(context, operand, span)?;
+            Ok::<_, cx_log::error::CXError>(
+                HMIRImmediate::try_from(value).expect("a converged operand is immediate"),
+            )
+        })?;
+        return Ok(HMIRValue::new(
+            value.ty(),
+            HMIRImmValue::Application(application),
+        ));
+    }
     if let HMIRValueKind::Immediate(_) = value.kind() {
         return Ok(value);
     }
@@ -131,7 +146,7 @@ pub(crate) fn converge(
 pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<HMIRValue> {
     let span = TokenRange::internal();
     let value = match value.kind() {
-        HMIRValueKind::Reference(_) if !context.is_runtime() => {
+        HMIRValueKind::Reference(_) if context.is_comptime() => {
             emit::storage::read(context, value, &span).ok()?
         }
         _ => value.clone(),

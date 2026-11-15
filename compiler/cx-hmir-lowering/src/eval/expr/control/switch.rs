@@ -25,7 +25,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 struct CaseLabel {
@@ -164,7 +164,7 @@ fn case_value(
 ) -> CXResult<i128> {
     let value = eval_comptime(context, body, expr, None)?;
     match (context.env().resolve_kind(value.ty()), value.kind()) {
-        (HMIRTypeKind::Int(source), HMIRValueKind::Immediate(HMIRImmediate::Int(value))) => {
+        (HMIRTypeKind::Int(source), HMIRValueKind::Immediate(HMIRImmValue::Int(value))) => {
             Ok(int::normalize(int::normalize(*value, *source), integer))
         }
         _ => {

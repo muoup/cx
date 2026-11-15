@@ -12,7 +12,7 @@ use crate::{
     eval::{symbol, types},
     log::hmir_error,
     value::{
-        HMIRValue, HMIRValueKind, address::HMIRAddress, immediate::HMIRImmediate,
+        HMIRValue, HMIRValueKind, address::HMIRAddress, immediate::HMIRImmValue,
         place::HMIRPlaceID,
     },
 };
@@ -138,7 +138,7 @@ pub fn variant(
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CXResult<usize> {
-    if let HMIRValueKind::Immediate(HMIRImmediate::Union { variant, .. }) = value.kind() {
+    if let HMIRValueKind::Immediate(HMIRImmValue::Union { variant, .. }) = value.kind() {
         return Ok(*variant);
     }
     let location = locate(context, value, false, span)?;

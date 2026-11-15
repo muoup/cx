@@ -25,7 +25,7 @@ use crate::{
         types::{self, qualify},
     },
     log::{hmir_error, log_hmir_error},
-    value::{self, HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue, immediate::HMIRImmValue},
 };
 
 pub(crate) fn eval_assign(
@@ -346,7 +346,7 @@ pub(crate) fn null_check(
     if !context.env().settings().assertions() {
         return Ok(());
     }
-    let null = HMIRValue::new(pointer.ty(), HMIRImmediate::Int(0));
+    let null = HMIRValue::new(pointer.ty(), HMIRImmValue::Int(0));
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let valid = arithmetic::binary(context, HMIRBinaryOp::Neq, pointer, &null, boolean, span)?;
     let unit = value::unit(context.env()).ty();

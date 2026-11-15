@@ -27,7 +27,7 @@ use crate::{
     value::{
         HMIRValue,
         address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        immediate::HMIRImmValue,
     },
 };
 
@@ -169,7 +169,7 @@ fn function_value(
     let signature = flow::top(types::eval_signature(context, function))?;
     let ty = types::callable(context.env_mut(), signature, span);
     let address = HMIRAddress::new(Addressable::Def(id), 0);
-    Ok(HMIRValue::new(ty, HMIRImmediate::Address(address)))
+    Ok(HMIRValue::new(ty, HMIRImmValue::Address(address)))
 }
 
 fn global_value(
@@ -252,7 +252,7 @@ fn address(
     let reference = types::reference(context.env_mut(), ty, None, span);
     HMIRValue::new(
         reference,
-        HMIRImmediate::Address(HMIRAddress::new(Addressable::Def(id), 0)),
+        HMIRImmValue::Address(HMIRAddress::new(Addressable::Def(id), 0)),
     )
 }
 
@@ -346,7 +346,7 @@ pub(crate) fn zero(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
     span: &TokenRange,
-) -> CXResult<HMIRImmediate> {
+) -> CXResult<HMIRImmValue> {
     types::zero(context.env(), ty).ok_or_else(|| {
         let subject = format!("global of type '{}'", types::name(context.env(), ty));
         hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject)

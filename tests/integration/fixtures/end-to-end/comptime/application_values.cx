@@ -1,0 +1,70 @@
+/* CX-STDOUT: eager 13 */
+/* CX-STDOUT-NEXT: call 5 */
+/* CX-STDOUT-NEXT: first 15 */
+/* CX-STDOUT-NEXT: call 5 */
+/* CX-STDOUT-NEXT: second 15 */
+/* CX-STDOUT-NEXT: partial 7 */
+/* CX-STDOUT-NEXT: curried 12 */
+/* CX-STDOUT-NEXT: ping */
+/* CX-STDOUT-NEXT: quote 21 */
+/* CX-STDOUT-NEXT: order 12 */
+/* CX-STDOUT-NEXT: call 9 */
+/* CX-STDOUT-NEXT: callback 19 */
+/* CX-STDOUT-NEXT: generic 8 */
+
+#include <stdio.h>
+
+int add(comptime int amount, int value) {
+    return amount + value;
+}
+
+T identity(comptime type T, T value) => value;
+
+int traced(int value) {
+    printf("call %d\n", value);
+    return value + 10;
+}
+
+int sum(int first, int second) => first + second;
+void ping() { printf("ping\n"); }
+
+comptime ^int delayed(fn f(^int) -> ^int) => f(emit 5);
+comptime ^int partial(fn f(^int, ^int) -> ^int) => f(emit 3)(emit 4);
+comptime ^int curried(fn f(^int) -> ^int) => f(emit 8);
+comptime ^void nullary(fn f() -> ^void) => f();
+
+comptime int eager() {
+    int value = 1;
+    int result = add(++value, ++value);
+    return result * 2 + value;
+}
+
+comptime int computed = eager();
+
+typedef int (*Callback)(int);
+Callback select_callback() => traced;
+comptime ^Callback callback(fn f() -> ^Callback) => f();
+
+int order = 0;
+int step(int value) { order = order * 10 + value; return value; }
+
+int main() {
+    printf("eager %d\n", computed);
+    ^int code = delayed(traced);
+    if (false) {
+        int unused = code;
+    }
+    printf("first %d\n", code);
+    printf("second %d\n", code);
+    printf("partial %d\n", partial(sum));
+    printf("curried %d\n", curried(add(4)));
+    nullary(ping);
+    int captured = 20;
+    printf("quote %d\n", partial(|^int a, ^int b| => captured + a - b + 2));
+    step(1);
+    step(2);
+    printf("order %d\n", order);
+    printf("callback %d\n", callback(select_callback)(9));
+    printf("generic %d\n", curried(identity(int)));
+    return 0;
+}

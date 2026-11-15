@@ -28,7 +28,7 @@ use crate::{
     },
     log::hmir_error,
     lower::declaration,
-    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 struct Shadowed {
@@ -61,7 +61,7 @@ pub(crate) fn check(
     let owner = context.source();
     let value = condition(context, contract, owner, expression, span);
     restore(context, bindings);
-    if !matches!(value?.kind(), HMIRValueKind::Immediate(HMIRImmediate::Int(value)) if *value != 0)
+    if !matches!(value?.kind(), HMIRValueKind::Immediate(HMIRImmValue::Int(value)) if *value != 0)
     {
         let name = symbol::name(context.env(), def);
         let error = hmir_error(
@@ -91,8 +91,8 @@ fn defined_here(
         .filter_map(|(local, arg)| {
             let name = contract.body().local(*local).name()?;
             let value = match arg.kind() {
-                HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) => types::name(env, *ty),
-                HMIRValueKind::Immediate(HMIRImmediate::Int(value)) => value.to_string(),
+                HMIRValueKind::Immediate(HMIRImmValue::Type(ty)) => types::name(env, *ty),
+                HMIRValueKind::Immediate(HMIRImmValue::Int(value)) => value.to_string(),
                 _ => return None,
             };
             Some(format!("{name} = '{value}'"))

@@ -51,7 +51,7 @@ bool is_number_token(_str& token) {
 
 std::string string_from_owned_token(_str& token) {
     std::string result = std::string::new();
-    result |> std::string::append(token);
+    result |> std::string::append_str(token);
     result.data[result.length] = '\0';
     free(token);
     return move result;

@@ -670,9 +670,9 @@ Inner expression evaluated unchanged.
 `f(args)`, `f(.p = a)`. Callee evaluated, then call evaluated, then result completed expecting the call's expectation.
 
 Callee prepared:
-- staged reference read; a code-typed callee is its known value (a comptime local holding a quote yields the quote). Quote, lifted or opaque callee: named arguments T0017; else [Apply](#apply).
+- staged reference read; a code-typed callee is its known value (a comptime local holding a quote yields the quote). Quote, opaque, `^T` value or a runtime callable exposed through a code-producing signature: named arguments T0017; else [Apply](#apply).
 - `fn&` kept; function value made a `fn&` constant; otherwise rvalue-decayed, function pointer dereferenced to `fn&`.
-- curried value unwrapped, its arguments applied first.
+- application unwrapped when its exposed signature does not stage the underlying runtime invocation; its bound arguments applied first.
 
 Routed to [Dependent call](#dependent-call):
 - comptime context, not a variant constructor.
@@ -687,6 +687,7 @@ Otherwise:
 - unevaluated: placeholder of return type. Comptime constructor: variant built. Else call emitted.
 - `rule/noreturn-call` return type `unreachable`: unreachable emitted, diverges.
 - runtime emitting def call: [Contracts](#contracts) around it.
+- partial: callee and arguments converged; yields the callee applied to them.
 
 ### Dependent call
 
@@ -697,7 +698,7 @@ Call needing comptime evaluation: comptime parameters, comptime-stage functions,
 - `rule/dependent-callee` callee not a def function: M0029. Variadic: M0021.
 - *spliced*: runtime context, comptime-stage function. *runtime*: runtime context, not spliced; produces a specialization.
 
-Arguments bound: curried values first; named arguments to comptime params by name (any param of a comptime-stage function); positional fill remaining non-defaulted params in order.
+Arguments bound: applied values first; named arguments to comptime params by name (any param of a comptime-stage function); positional fill remaining non-defaulted params in order.
 - `rule/unknown-parameter` named argument matching no such param: T0072. Twice: T0007.
 - `rule/dependent-argument-count` too many positional: T0015.
 - `rule/partial-application` fewer positional allowed only if something supplied and no runtime param given an expression; else T0015.
@@ -714,9 +715,9 @@ Per param in order, in a callee frame whose comptime state persists across param
 
 After binding:
 - deferred param left: T0023, unless the function generates a type (all params comptime, returns `type`) and the call is not partial: yields incomplete, completed from the expected type's memo origin.
-- partial, and comptime-stage or an unbound comptime param: yields curried value.
+- partial, and comptime-stage or an unbound comptime param: yields the function applied to the converged arguments, each typed as its param was instantiated.
 - signature formed; every other visible declaration re-evaluated against bound values, must agree in params, comptime-ness, defaults and signature, else T0006.
-- partial otherwise: specialization declared, yields it curried.
+- partial otherwise: specialization declared, yields it applied.
 - runtime: specialization applied. One per def and comptime arguments, static, named `<link>.__cx_specialize.<n>`; called with runtime arguments; [Contracts](#contracts) around it.
 - comptime: executed in frame. Precondition must hold (M0026). Body: root other than a non-yielding block returns its value; otherwise fallthrough: `void` returns unit, `unreachable` M0027, else M0002. Return value exported. Live nodrop comptime storage unconsumed: A0003. Postcondition must hold.
 - `rule/quirk-comptime-main-fallthrough` comptime fallthrough of an int function named `main` exempt from M0002.
@@ -767,7 +768,7 @@ Captures: free locals of the quoted expression, quote params and inner declarati
 
 `rule/emit-squash` in a runtime context, a quote without parameters is its quoted expression evaluated in place: emitting code being emitted changes nothing. A [staged argument](#staged-argument) or a spliced quote literal stays a quote.
 
-Otherwise incomplete, completing without expectation too. Expected staged shape (`^T`, or comptime function to a staged result, any param types): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields quote of the shape.
+Otherwise incomplete, completing without expectation too. Expected staged shape (`^T`, or comptime function to a staged result, any param types): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields a quote of the shape, retaining its lexical parameter locals.
 - `rule/quote-materializes` non-staged expectation: quote materialized in place.
 - `rule/quote-synthesis` nothing expected: typed by itself. Declared param types evaluated as above; an `auto` param: T0052. Body evaluated with a placeholder per param (the carried type for `^T`), captures shadowed, in an unevaluated detached child as [subject type](#subject-type); result R. Type: `^R` without params, else a non-decaying comptime function from the declared types to `^R`.
 
@@ -777,7 +778,7 @@ Otherwise incomplete, completing without expectation too. Expected staged shape 
 
 Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments typed as [subject type](#subject-type), lifted, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, converged, then [applied](#apply).
 
-A staged value spliced without arguments (a [Local](#local) read at runtime): converged; a `^T` quote or lifted code materialized; anything else yields itself.
+A staged value spliced without arguments (a [Local](#local) read at runtime): converged; a `^T` value other than opaque materialized; anything else yields itself.
 
 ### Intrinsic
 
@@ -826,12 +827,13 @@ Directly retyped:
 
 Otherwise one step, then retried:
 - referent `str` or non-comptime function, T pointer: decay step.
+- `rule/lifted-function` referent runtime function, T comptime function returning `^R`: lifted. Params pairwise the same or lifted to `^P`, none comptime; result R the same, or `void` discarding a non-`void` result ([discarding](#implicit-conversion) nodrop: T0048); otherwise alike. Value must be known, else fails. Existing application bindings are preserved; otherwise yields an application with all parameter slots open. Variadics fail. The nullary shape `fn() -> ^R` is represented by `^R` and follows the same conversion.
 - `E[n]&` to `E[n]` or `E[]`: same element, length if given, not nocopy, same move semantics: copied, retyped.
 - reference to reference whose source is a reference to a reference: decay step.
 - `rule/bitfield-bind` bitfield reference to compatible non-bitfield reference: T0043. Other reference to reference: fails.
 - reference source, or array to pointer: decay step.
 - staged to non-staged: decay step.
-- `rule/comptime-lift` comptime context, non-code source, `^U` target: converted to U, converged, then lifted: code yielding that immediate. Fails if not convertible.
+- `rule/comptime-lift` comptime context, non-code source, `^U` target: converted to U, converged, then retyped `^U`: code yielding that immediate. Fails if U is comptime-only or not convertible.
 - `rule/reference-binds-temporary` non-reference to `U&`, compatible with U: address taken, of a temporary unless `str` or function designator.
 - `rule/string-to-char-array` `str` constant to `char[n]` or `char[]`: NUL-padded char array constant; `[]` bound is length plus one; longer than bound: T0016.
 - move semantics differ: fails.
@@ -894,11 +896,13 @@ Piped marks stripped. Quote literal: used as-is. Target a function to code (not 
 
 #### Apply
 
-Code applied to arguments; needs staged shape (T0002), argument count (T0015). `rule/closure-params` code params (`^T`, or a function to code) take [staged arguments](#staged-argument), so `^T` code is spliced at each use; others are frozen expecting the param, evaluated once. Runtime: quote materialized with them. Comptime: new quote with params bound as captures; lifted code yields itself.
+Code applied to arguments; needs staged shape (T0002), argument count (T0015). `rule/closure-params` code params (`^T`, or a function to code) take [staged arguments](#staged-argument), so `^T` code is spliced at each use; others are frozen expecting the param, evaluated once. Arguments fill open slots of one generic application, shared by quotes and functions. Fewer arguments retain a residual callable signature. Full application of a quote or staged runtime invocation yields `^R` code; runtime use materializes it, while comptime use retains it. Ordinary fully applied runtime and comptime calls execute eagerly; ordinary values never retain unevaluated calls. An ordinary comptime function returning code executes eagerly to produce that code.
 
 #### Materialize
 
-Quote inserted at runtime. Opaque code: an opaque value of its result, unit for `void`. Lifted code: its immediate, typed as the result. Otherwise quote constant required (M0029); count (T0015); comptime: M0021. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; `rule/sealed-root-quote` the scope is sealed when no quoted scope encloses it (a root quote, inserted into hand-written runtime code) and escaping is not allowed ([Escape](#escape)); quotes materialized inside another are never sealed; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
+Code inserted at runtime; count (T0015). Opaque code: an opaque value of its result, unit for `void`. A fully bound application expands its quoted callee with the bound arguments, or invokes its runtime callee through normal call coercion and contract handling; arguments materialize as required by the underlying parameter types. Pending computations cannot materialize at comptime (M0021). Other `^T` immediates yield themselves, typed as the result. A direct quote expands with the supplied arguments. Unavailable code: M0029. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; `rule/sealed-root-quote` the scope is sealed when no quoted scope encloses it (a root quote, inserted into hand-written runtime code) and escaping is not allowed ([Escape](#escape)); quotes materialized inside another are never sealed; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
+
+An application has either contextual `HMIRValue` operands or independently well-formed `HMIRImmediate` operands. Export recursively converges the callee and bound arguments into the immediate form without executing the represented code. Invalid escaping storage references are rejected; quote captures retain their existing rules.
 
 ## Comptime execution
 
@@ -971,10 +975,10 @@ Runtime context writing a MIR function.
 
 ### Constants
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 - aggregate: zero members omitted. Union, tagged union: active member only.
-- function def: prototype declared; requested for generation if of this unit or static. Constructor: [Variant constructor](#variant-constructor). Curried: must be a generated specialization, else M0021.
+- function def: prototype declared; requested for generation if of this unit or static. Constructor: [Variant constructor](#variant-constructor). Application used as an ordinary runtime callable: must be a generated specialization, else M0021. Code applications materialize before runtime operand lowering.
 - address of a global: global with offset. Of a runtime place: local with offset.
 - `rule/comptime-value-at-runtime` comptime region, or register address, reaching runtime: M0032.
 - `todo/constant-lowering` any other constant (type, quote, ...): `todo!`.

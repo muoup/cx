@@ -5,6 +5,8 @@ import std::io as std;
 import std::net::address as std::net;
 
 #include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 public:
 
@@ -28,15 +30,20 @@ std::opt(udp_socket) udp_socket::open() {
 }
 
 std::opt(void) udp_socket::bind(udp_socket& this, std::net::endpoint addr) {
-    if (bind(this.fd, &addr.address, addr.length) < 0) {
+    if (bind(this.fd, (sockaddr*) &addr.address, addr.length) < 0) {
         return _::none();
     }
 
     return _::some();
 }
 
-std::opt(u64) udp_socket::send_to(udp_socket& this, const std::span(const u8) buffer, std::net::endpoint& remote) {
-    i64 sent = sendto(this.fd, buffer.data, buffer.length, 0, &remote.address, remote.length);
+std::opt(u64) udp_socket::send_to(
+    udp_socket& this, 
+    const std::span(const u8) buffer, 
+    std::net::endpoint& remote
+) {
+    i64 sent = 
+        sendto(this.fd, buffer.data, buffer.length, 0, (sockaddr*) &remote.address, remote.length);
 
     if (sent < 0) {
         return _::none();
@@ -47,9 +54,10 @@ std::opt(u64) udp_socket::send_to(udp_socket& this, const std::span(const u8) bu
 
 std::opt(datagram) udp_socket::recv_from(udp_socket& this, void* buffer, u64 capacity) {
     std::net::endpoint source;
-    source.length = (u32) sizeof(std::net::sockaddr_in);
+    source.length = (u32) sizeof(sockaddr_in);
 
-    i64 received = recvfrom(this.fd, buffer, capacity, 0, &source.address, &source.length);
+    i64 received = 
+        recvfrom(this.fd, buffer, capacity, 0, (sockaddr*) &source.address, &source.length);
 
     if (received < 0) {
         return _::none();

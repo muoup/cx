@@ -1,4 +1,5 @@
 pub mod address;
+pub mod application;
 pub mod immediate;
 pub mod place;
 pub mod staged;
@@ -10,10 +11,11 @@ use cx_util::{dense_id, unsafe_float::FloatWrapper};
 use crate::{
     emit::comptime,
     env::HMIREnvironment,
-    eval::types,
+    eval::{staged::adapts, types},
     value::{
         address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        application::HMIRApplication,
+        immediate::{HMIRImmValue, HMIRImmediate},
         place::HMIRPlaceID,
     },
 };
@@ -23,36 +25,36 @@ dense_id!(HMIRRegisterID, "$");
 pub type HMIRValIntrinsic = Intrinsic<HMIRValue, HMIRTypeID>;
 
 pub fn unit(_: &HMIREnvironment) -> HMIRValue {
-    HMIRValue::new(HMIRTypeID::new(0), HMIRImmediate::Unit)
+    HMIRValue::new(HMIRTypeID::new(0), HMIRImmValue::Unit)
 }
 
 pub fn int(env: &HMIREnvironment, value: i128, ty: HMIRTypeID) -> HMIRValue {
     let value = comptime::int::normalize(value, types::int_type(env, ty));
-    HMIRValue::new(ty, HMIRImmediate::Int(value))
+    HMIRValue::new(ty, HMIRImmValue::Int(value))
 }
 
 pub fn float(env: &HMIREnvironment, value: f64, ty: HMIRTypeID) -> HMIRValue {
     let value = comptime::float::round(value, types::float_type(env, ty).width());
-    HMIRValue::new(ty, HMIRImmediate::Float(FloatWrapper::from(value)))
+    HMIRValue::new(ty, HMIRImmValue::Float(FloatWrapper::from(value)))
 }
 
 pub fn as_type(value: &HMIRValue) -> Option<HMIRTypeID> {
     match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) => Some(*ty),
+        HMIRValueKind::Immediate(HMIRImmValue::Type(ty)) => Some(*ty),
         _ => None,
     }
 }
 
 pub fn as_int(value: &HMIRValue) -> Option<i128> {
     match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Int(int)) => Some(*int),
+        HMIRValueKind::Immediate(HMIRImmValue::Int(int)) => Some(*int),
         _ => None,
     }
 }
 
 fn as_addressable(value: &HMIRValue) -> Option<&Addressable> {
     match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Address(address)) if address.offset() == 0 => {
+        HMIRValueKind::Immediate(HMIRImmValue::Address(address)) if address.offset() == 0 => {
             Some(address.base())
         }
         _ => None,
@@ -80,18 +82,33 @@ pub fn as_place(value: &HMIRValue) -> Option<HMIRPlaceID> {
     }
 }
 
-pub fn curried(ty: HMIRTypeID, callee: HMIRValue, args: Vec<Option<HMIRValue>>) -> HMIRValue {
-    let callee = Box::new(callee);
-    HMIRValue::new(ty, HMIRImmediate::Curried { callee, args })
+pub fn application(ty: HMIRTypeID, application: HMIRApplication<HMIRValue>) -> HMIRValue {
+    let kind = match application.clone().try_map(HMIRImmediate::try_from) {
+        Ok(immediate) => HMIRValueKind::Immediate(HMIRImmValue::Application(immediate)),
+        Err(_) => HMIRValueKind::Application(application),
+    };
+    HMIRValue::new(ty, kind)
 }
 
-// A callee apart from the values a curried call has bound to its parameters
-pub fn uncurried(value: HMIRValue) -> (HMIRValue, Vec<Option<HMIRValue>>) {
-    let ty = value.ty();
-    match value.take_kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Curried { callee, args }) => (*callee, args),
-        kind => (HMIRValue::new(ty, kind), Vec::new()),
+pub fn as_application(value: &HMIRValue) -> Option<HMIRApplication<HMIRValue>> {
+    match value.kind() {
+        HMIRValueKind::Application(application) => Some(application.clone()),
+        HMIRValueKind::Immediate(HMIRImmValue::Application(application)) => {
+            let (callee, args) = application.clone().into_parts();
+            let args = args.into_iter().map(|arg| arg.map(Into::into)).collect();
+            Some(HMIRApplication::new(callee.into(), args))
+        }
+        _ => None,
     }
+}
+
+pub fn unapplied(env: &HMIREnvironment, value: HMIRValue) -> (HMIRValue, Vec<Option<HMIRValue>>) {
+    if let Some(application) = as_application(&value)
+        && !adapts(env, application.callee().ty(), value.ty())
+    {
+        return application.into_parts();
+    }
+    (value, Vec::new())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -104,7 +121,9 @@ pub struct HMIRValue {
 pub enum HMIRValueKind {
     /// Well-formed representation of a full value in any context, which is the form a comptime evaluation
     /// converges to when it hands its value back to runtime
-    Immediate(HMIRImmediate),
+    Immediate(HMIRImmValue),
+
+    Application(HMIRApplication<HMIRValue>),
 
     /// An address into storage local to the function evaluating it, whether runtime or comptime; it is never
     /// well-formed outside of that function, so a comptime value holding one cannot converge
@@ -140,8 +159,8 @@ impl HMIRValue {
     }
 }
 
-impl From<HMIRImmediate> for HMIRValueKind {
-    fn from(value: HMIRImmediate) -> Self {
+impl From<HMIRImmValue> for HMIRValueKind {
+    fn from(value: HMIRImmValue) -> Self {
         HMIRValueKind::Immediate(value)
     }
 }

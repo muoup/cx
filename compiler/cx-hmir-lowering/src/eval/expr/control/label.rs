@@ -24,7 +24,7 @@ use crate::{
     value::{
         HMIRValue,
         address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        immediate::HMIRImmValue,
     },
 };
 
@@ -100,7 +100,7 @@ pub(super) fn eval_label_address(
     };
     Ok(Evaluation::Ready(HMIRValue::new(
         ty,
-        HMIRImmediate::Address(HMIRAddress::new(label, 0)),
+        HMIRImmValue::Address(HMIRAddress::new(label, 0)),
     )))
 }
 

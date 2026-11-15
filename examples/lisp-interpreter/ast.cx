@@ -36,7 +36,6 @@ enum union lisp_node : @nodrop {
 void lisp_node::drop(lisp_node node) {
     match (move node) {
         Program(auto body) => move body |> std::vector::drop_with(lisp_node::drop),
-        Number(_) => {}
         Symbol(auto name) => move name |> std::string::drop(),
         FnDef(auto fn_def) => {
             @unpack(move fn_def) {
@@ -78,5 +77,7 @@ void lisp_node::drop(lisp_node node) {
         }
         PrintNum(auto value) => move value |> std::box::drop_with(lisp_node::drop),
         PrintStr(auto value) => move value |> std::string::drop(),
+        
+        Number(_) => {}
     }
 }

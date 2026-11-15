@@ -71,6 +71,7 @@ pub(crate) fn step(
                 context,
                 &value,
                 &[],
+                span,
             )))? {
                 Some(value) => value,
                 None => {

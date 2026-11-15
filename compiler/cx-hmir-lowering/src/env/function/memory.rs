@@ -18,7 +18,7 @@ use crate::{
     value::{
         HMIRValueKind,
         address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        immediate::HMIRImmValue,
         place::{HMIRPageID, HMIRPlaceBrand, HMIRPlaceID},
     },
 };
@@ -307,11 +307,11 @@ impl LocalLoweringContext<'_, '_, '_> {
         };
         let address = match address {
             HMIRValueKind::Reference(local) => return Ok(local.clone()),
-            HMIRValueKind::Immediate(HMIRImmediate::Int(0)) => {
+            HMIRValueKind::Immediate(HMIRImmValue::Int(0)) => {
                 let operation = "dereference".into();
                 return Err(hmir_error(span, &mir::COMPTIME_UNDEFINED_ARITHMETIC, operation));
             }
-            HMIRValueKind::Immediate(HMIRImmediate::Address(address)) => address,
+            HMIRValueKind::Immediate(HMIRImmValue::Address(address)) => address,
             _ => return invalid("accessing storage through this address"),
         };
         let region = match address.base() {

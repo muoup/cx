@@ -30,7 +30,7 @@ use crate::{
         staged,
     },
     log::hmir_error,
-    value::immediate::HMIRImmediate,
+    value::immediate::HMIRImmValue,
 };
 
 // A slot naming a parameter is only fixed by the arguments of a call, so the shape leaves it dependent
@@ -299,21 +299,21 @@ pub(crate) fn member(env: &HMIREnvironment, ty: HMIRTypeID, index: usize) -> HMI
     }
 }
 
-pub(crate) fn zero(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<HMIRImmediate> {
+pub(crate) fn zero(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<HMIRImmValue> {
     Some(match env.resolve_kind(ty) {
-        HMIRTypeKind::Int(_) | HMIRTypeKind::PointerTo(_) => HMIRImmediate::Int(0),
-        HMIRTypeKind::Float(_) => HMIRImmediate::Float(0.0.into()),
-        HMIRTypeKind::Void => HMIRImmediate::Unit,
-        HMIRTypeKind::Array { element, length } => HMIRImmediate::Aggregate {
+        HMIRTypeKind::Int(_) | HMIRTypeKind::PointerTo(_) => HMIRImmValue::Int(0),
+        HMIRTypeKind::Float(_) => HMIRImmValue::Float(0.0.into()),
+        HMIRTypeKind::Void => HMIRImmValue::Unit,
+        HMIRTypeKind::Array { element, length } => HMIRImmValue::Aggregate {
             fields: vec![zero(env, *element)?; *length as usize],
         },
-        HMIRTypeKind::Struct { fields } => HMIRImmediate::Aggregate {
+        HMIRTypeKind::Struct { fields } => HMIRImmValue::Aggregate {
             fields: fields
                 .iter()
                 .map(|field| zero(env, *field.ty()))
                 .collect::<Option<_>>()?,
         },
-        HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields } => HMIRImmediate::Union {
+        HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields } => HMIRImmValue::Union {
             variant: 0,
             payload: Box::new(zero(env, *fields.first()?.ty())?),
         },

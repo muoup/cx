@@ -21,7 +21,7 @@ use crate::{
     log::hmir_error,
     value::{
         self, HMIRValue, HMIRValueKind,
-        immediate::HMIRImmediate,
+        immediate::HMIRImmValue,
         place::HMIRPlaceBrand,
         staged::{Quote, QuoteRef},
     },
@@ -75,7 +75,7 @@ pub(crate) fn typed(
                     )
                 })?
             }
-            (_, HMIRValueKind::Immediate(HMIRImmediate::Address(_)))
+            (_, HMIRValueKind::Immediate(HMIRImmValue::Address(_)))
                 if let Some(string) = value::as_literal(&value) =>
             {
                 let element = types::int(context.env_mut(), HMIRIntWidth::I8, false, &span);
@@ -148,10 +148,14 @@ fn shadow(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
+    if let Some(application) = value::as_application(&value) {
+        let application = application.try_map(|operand| shadow(context, operand, span))?;
+        return Ok(value::application(value.ty(), application));
+    }
     match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Quote(node)) => {
-            let code = shadowed(context, node.get(), span)?;
-            Ok(HMIRValue::new(value.ty(), HMIRImmediate::Quote(QuoteRef::new(code))))
+        HMIRValueKind::Immediate(HMIRImmValue::Quote(node)) => {
+            let quote = QuoteRef::new(shadowed(context, node.get(), span)?);
+            Ok(HMIRValue::new(value.ty(), HMIRImmValue::Quote(quote)))
         }
         HMIRValueKind::Immediate(_) => Ok(value),
         _ => placeholder(context, value.ty(), span),
@@ -168,7 +172,12 @@ pub(crate) fn shadowed(
     for (local, captured) in quote.captures() {
         captures.insert(*local, shadow(context, captured.clone(), span)?);
     }
-    Ok(Quote::new(quote.source(), quote.root(), quote.params().to_vec(), captures))
+    Ok(Quote::new(
+        quote.source(),
+        quote.root(),
+        quote.params().to_vec(),
+        captures,
+    ))
 }
 
 // Unevaluated storage standing in for a value of type 'ty' whose contents are unknown
@@ -178,10 +187,13 @@ pub(crate) fn placeholder(
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
     if types::comptime_only(context.env(), ty) {
-        return Ok(HMIRValue::new(ty, HMIRImmediate::Opaque));
+        return Ok(HMIRValue::new(ty, HMIRImmValue::Opaque));
     }
     match context.env().reference_inner(ty) {
         Some(ty) => emit::storage::scratch(context, ty, span),
-        None => Ok(HMIRValue::new(ty, emit::runtime::register(context, ty, span)?)),
+        None => Ok(HMIRValue::new(
+            ty,
+            emit::runtime::register(context, ty, span)?,
+        )),
     }
 }

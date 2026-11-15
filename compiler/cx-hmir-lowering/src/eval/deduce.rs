@@ -29,7 +29,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{self, HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue, immediate::HMIRImmValue},
 };
 
 // Completes from the type expected, or from none where the evaluation synthesizes its own
@@ -363,7 +363,7 @@ fn type_constant(
     span: &TokenRange,
 ) -> HMIRValue {
     let universe = types::universe(context.env_mut(), span);
-    HMIRValue::new(universe, HMIRImmediate::Type(ty))
+    HMIRValue::new(universe, HMIRImmValue::Type(ty))
 }
 
 // Completes an evaluation from the type expected of it, unless a type is expected and the evaluation describes one

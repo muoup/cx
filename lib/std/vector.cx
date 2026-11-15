@@ -74,7 +74,7 @@ std::opt(T) vector::pop(comptime type T = _, vector(T)& this) {
     memcpy(&buffer, data_ptr, sizeof(T));
  
     this.length--;
-    return std::optional::opt(T)::some(move buffer);
+    return _::some(move buffer);
 }
 
 std::opt(T&) vector::get(comptime type T = _, vector(T)& this, usize index) {

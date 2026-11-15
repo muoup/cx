@@ -34,11 +34,11 @@ impl Quote {
     pub(crate) fn source(&self) -> HMIRUnitID {
         self.source
     }
-    
+
     pub(crate) fn root(&self) -> HMIRExprID {
         self.root
     }
-    
+
     pub(crate) fn params(&self) -> &[HMIRLocalID] {
         &self.params
     }
@@ -55,7 +55,7 @@ impl QuoteRef {
     pub(crate) fn new(quote: Quote) -> Self {
         Self(Rc::new(quote))
     }
-    
+
     pub(crate) fn get(&self) -> &Quote {
         &self.0
     }

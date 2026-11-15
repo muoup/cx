@@ -27,10 +27,7 @@ use crate::{
     },
     log::hmir_error,
     lower::declaration,
-    value::{
-        self, HMIRValue, HMIRValueKind,
-        immediate::HMIRImmediate,
-    },
+    value::{self, HMIRValue},
 };
 
 // The type arguments of a call deferred to deduction, by parameter, and the type deduced for each
@@ -71,7 +68,10 @@ impl<'a> Deduction<'a> {
         let form = *self.function.signature().params()[index].ty();
         let references = staged::references(self.function.body(), form);
         let params = self.function.params();
-        self.deferred.keys().copied().find(|hole| references.contains(&params[*hole]))
+        self.deferred
+            .keys()
+            .copied()
+            .find(|hole| references.contains(&params[*hole]))
     }
 
     // Deduces the deferred arguments from the arguments from 'from' on, binding each one deduced in 'frame'.
@@ -147,7 +147,10 @@ impl<'a> Deduction<'a> {
                 Some(ty) => ty,
                 None => {
                     let evaluated = frame.enter(context, span, |child| {
-                        flow::top(eval_type(child, function.body(), *param.ty()).and_then(|ty| ty.description()))
+                        flow::top(
+                            eval_type(child, function.body(), *param.ty())
+                                .and_then(|ty| ty.description()),
+                        )
                     });
                     match evaluated {
                         Ok(ty) => ty,
@@ -183,7 +186,11 @@ impl<'a> Deduction<'a> {
                 true => self.function.prototype().defaults(),
                 false => body,
             };
-            let value = Evaluation::Incomplete(pending).complete(context, source, Some(self.inferred[&index]))?;
+            let value = Evaluation::Incomplete(pending).complete(
+                context,
+                source,
+                Some(self.inferred[&index]),
+            )?;
             let value = frame.argument(context, index, value, span)?;
             self.bound.push((index, value));
         }
@@ -256,12 +263,13 @@ impl<'a> Deduction<'a> {
         let env = context.env();
         match ty.kind() {
             HMIRExprTypeKind::PointerTo(inner) => {
-                let actual = actual.and_then(|actual| match env.resolve_kind(env.referent(actual)) {
-                    HMIRTypeKind::Function { .. } => Some(env.referent(actual)),
-                    _ => env
-                        .pointer_inner(actual)
-                        .or_else(|| env.array_inner(actual)),
-                });
+                let actual =
+                    actual.and_then(|actual| match env.resolve_kind(env.referent(actual)) {
+                        HMIRTypeKind::Function { .. } => Some(env.referent(actual)),
+                        _ => env
+                            .pointer_inner(actual)
+                            .or_else(|| env.array_inner(actual)),
+                    });
                 self.unify(context, frame, *inner, actual, span)
             }
             HMIRExprTypeKind::ReferenceTo { inner, .. } => {
@@ -298,11 +306,15 @@ impl<'a> Deduction<'a> {
             }
             HMIRExprTypeKind::Function { signature, .. } => {
                 let actual = actual
-                    .map(|actual| env.pointer_inner(actual).unwrap_or_else(|| env.referent(actual)))
+                    .map(|actual| {
+                        env.pointer_inner(actual)
+                            .unwrap_or_else(|| env.referent(actual))
+                    })
                     .and_then(|actual| match env.resolve_kind(actual) {
-                        HMIRTypeKind::Function { signature: actual, .. }
-                            if actual.is_variadic() == signature.is_variadic()
-                                && actual.params().len() == signature.params().len() =>
+                        HMIRTypeKind::Function {
+                            signature: actual, ..
+                        } if actual.is_variadic() == signature.is_variadic()
+                            && actual.params().len() == signature.params().len() =>
                         {
                             Some(actual.clone())
                         }
@@ -335,19 +347,15 @@ impl<'a> Deduction<'a> {
         let value = frame
             .enter(context, span, |child| flow::top(eval(child, body, callee)))
             .ok()?;
-        let (callee, curried) = match value.kind() {
-            HMIRValueKind::Immediate(HMIRImmediate::Curried { callee, args }) => {
-                (callee.as_ref(), args.as_slice())
-            }
-            _ => (&value, [].as_slice()),
-        };
-        let def = value::as_function(callee)?;
+        let (callee, curried) = value::unapplied(context.env(), value);
+        let def = value::as_function(&callee)?;
         let instance = instance(context, def, actual)?;
         let source = context.env().symbols().resolve_definition(def);
         let params = declaration::function(source).prototype().params();
         let mut values = (0..params.len())
             .filter(|index| {
-                curried.get(*index).is_none_or(Option::is_none) && params[*index].default().is_none()
+                curried.get(*index).is_none_or(Option::is_none)
+                    && params[*index].default().is_none()
             })
             .map(|index| instance.get(index).cloned())
             .take(args)
@@ -405,7 +413,12 @@ impl<'a> Deduction<'a> {
         }
     }
 
-    pub(crate) fn undeduced(&self, context: &LocalLoweringContext, index: usize, span: &TokenRange) -> CXError {
+    pub(crate) fn undeduced(
+        &self,
+        context: &LocalLoweringContext,
+        index: usize,
+        span: &TokenRange,
+    ) -> CXError {
         let subject = format!(
             "comptime argument '{}' of '{}'",
             self.parameter(index),
@@ -419,7 +432,11 @@ impl<'a> Deduction<'a> {
 //
 // A generator that yields a type it did not define, such as one another generator defined, is not its origin, so
 // 'foo(_)' only deduces from a type that 'foo' was the first to generate.
-fn instance(context: &LocalLoweringContext, def: HMIRDefID, ty: HMIRTypeID) -> Option<Vec<HMIRValue>> {
+fn instance(
+    context: &LocalLoweringContext,
+    def: HMIRDefID,
+    ty: HMIRTypeID,
+) -> Option<Vec<HMIRValue>> {
     let ty = context.env().underlying(ty);
     let (origin, args) = context.env().resolver().origin(ty)?;
     (origin == def).then(|| args.to_vec())
@@ -455,7 +472,9 @@ pub(crate) fn generated(
             };
             let applied = values.into_iter().zip(instance);
             Ok(Evaluation::Ready(
-                applied.map(|(value, bound)| Some(value.unwrap_or(bound))).collect(),
+                applied
+                    .map(|(value, bound)| Some(value.unwrap_or(bound)))
+                    .collect(),
             ))
         },
     ))

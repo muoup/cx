@@ -23,7 +23,7 @@ use crate::{
     value::{
         self, HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        immediate::HMIRImmValue,
     },
 };
 
@@ -54,7 +54,7 @@ fn int_value(value: &HMIRValue, span: &TokenRange) -> CXResult<i128> {
 fn float_value(context: &LocalLoweringContext, value: &HMIRValue, span: &TokenRange) -> CXResult<f64> {
     let width = types::float_type(context.env(), value.ty()).width();
     match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Float(value)) => Ok(float::round(f64::from(value), width)),
+        HMIRValueKind::Immediate(HMIRImmValue::Float(value)) => Ok(float::round(f64::from(value), width)),
         _ => unsupported(span, "floating arithmetic on this value"),
     }
 }
@@ -96,7 +96,7 @@ pub fn int(
             Ok(value::int(context.env(), int::extend(value, bits, *sign_extend), result))
         }
         IntIntrinsic::ToPtr { value, .. } => match int_value(value, span)? {
-            0 => Ok(HMIRValue::new(result, HMIRImmediate::Int(0))),
+            0 => Ok(HMIRValue::new(result, HMIRImmValue::Int(0))),
             _ => unsupported(span, "converting this integer to an address"),
         },
     }
@@ -139,7 +139,7 @@ pub fn float(
 fn arithmetic(context: &LocalLoweringContext, address: &HMIRValueKind) -> bool {
     match address {
         HMIRValueKind::Reference(_) => true,
-        HMIRValueKind::Immediate(HMIRImmediate::Address(address)) => match address.base() {
+        HMIRValueKind::Immediate(HMIRImmValue::Address(address)) => match address.base() {
             Addressable::Def(def) => {
                 !declaration::is_function(context.env().symbols().resolve_definition(*def))
             }
@@ -153,8 +153,8 @@ fn arithmetic(context: &LocalLoweringContext, address: &HMIRValueKind) -> bool {
 fn shifted(address: &HMIRValueKind, bytes: i64) -> Option<HMIRValueKind> {
     Some(match address {
         HMIRValueKind::Reference(address) => address.offset_by(bytes)?.into(),
-        HMIRValueKind::Immediate(HMIRImmediate::Address(address)) => {
-            HMIRImmediate::Address(address.offset_by(bytes)?).into()
+        HMIRValueKind::Immediate(HMIRImmValue::Address(address)) => {
+            HMIRImmValue::Address(address.offset_by(bytes)?).into()
         }
         _ => unreachable!("only an address is shifted"),
     })
@@ -166,13 +166,13 @@ fn distance(lhs: &HMIRValueKind, rhs: &HMIRValueKind) -> Option<i64> {
         (lhs.base() == rhs.base()).then(|| lhs.offset() - rhs.offset())
     }
     match (lhs, rhs) {
-        (HMIRValueKind::Immediate(HMIRImmediate::Int(0)), HMIRValueKind::Immediate(HMIRImmediate::Int(0))) => {
+        (HMIRValueKind::Immediate(HMIRImmValue::Int(0)), HMIRValueKind::Immediate(HMIRImmValue::Int(0))) => {
             Some(0)
         }
         (HMIRValueKind::Reference(lhs), HMIRValueKind::Reference(rhs)) => within(lhs, rhs),
         (
-            HMIRValueKind::Immediate(HMIRImmediate::Address(lhs)),
-            HMIRValueKind::Immediate(HMIRImmediate::Address(rhs)),
+            HMIRValueKind::Immediate(HMIRImmValue::Address(lhs)),
+            HMIRValueKind::Immediate(HMIRImmValue::Address(rhs)),
         ) => within(lhs, rhs),
         _ => None,
     }
@@ -199,8 +199,8 @@ pub fn pointer(
             let bytes = bytes.and_then(|bytes| i64::try_from(bytes).ok()).ok_or_else(|| overflow(span))?;
             let address = ptr.kind();
             let kind = match address {
-                HMIRValueKind::Immediate(HMIRImmediate::Int(0)) if bytes == 0 => address.clone(),
-                HMIRValueKind::Immediate(HMIRImmediate::Int(0)) => {
+                HMIRValueKind::Immediate(HMIRImmValue::Int(0)) if bytes == 0 => address.clone(),
+                HMIRValueKind::Immediate(HMIRImmValue::Int(0)) => {
                     return Err(undefined(span, "pointer arithmetic"));
                 }
                 address if arithmetic(context, address) => {
@@ -320,7 +320,7 @@ fn init(
         types::zero(context.env(), ty).expect("an initialized aggregate has a zero value")
     };
     let mut constant = zero(context, ty);
-    if let (HMIRImmediate::Union { variant, payload }, Some((index, _))) = (&mut constant, fields.last()) {
+    if let (HMIRImmValue::Union { variant, payload }, Some((index, _))) = (&mut constant, fields.last()) {
         (*variant, **payload) = (*index, zero(context, types::member(context.env(), ty, *index)));
     }
     let storage = HMIRAddress::new(context.allocate(ty, span)?, 0);
@@ -354,9 +354,9 @@ pub fn internal(
         }
         InternalIntrinsic::Assert { condition, message } => match int_value(condition, span)? {
             0 => Err(hmir_error(span, &mir::COMPTIME_ASSERTION, message.clone())),
-            _ => Ok(HMIRValue::new(result, HMIRImmediate::Unit)),
+            _ => Ok(HMIRValue::new(result, HMIRImmValue::Unit)),
         },
-        InternalIntrinsic::Assume { .. } => Ok(HMIRValue::new(result, HMIRImmediate::Unit)),
+        InternalIntrinsic::Assume { .. } => Ok(HMIRValue::new(result, HMIRImmValue::Unit)),
     }
 }
 

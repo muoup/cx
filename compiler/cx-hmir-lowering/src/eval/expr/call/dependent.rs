@@ -409,7 +409,7 @@ fn curried(
     let residual = types::residual(signature, |index| values[index].is_some());
     let ty = types::callable(context.env_mut(), residual, span);
     let callee = symbol::value(context.env_mut(), def)?;
-    Ok(value::curried(ty, callee, values))
+    super::curry(context, callee, values, ty, span)
 }
 
 // The function generated for 'callee' curried with the arguments of its comptime parameters, where 'ty' is the

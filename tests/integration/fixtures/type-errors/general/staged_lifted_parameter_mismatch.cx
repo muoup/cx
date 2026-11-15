@@ -1,0 +1,3 @@
+long take(int x) { return 0; }
+comptime ^void wrong(fn f(^long) -> ^void) => f(emit 1);
+int main() { wrong(take); return 0; }

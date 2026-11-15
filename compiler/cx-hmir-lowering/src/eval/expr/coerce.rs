@@ -19,7 +19,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{EvalResult, arithmetic, eval, eval_type, flow::Evaluation, place, types},
     log::hmir_error,
-    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 pub(crate) enum Coercion {
@@ -214,13 +214,13 @@ fn truth(
         }
         HMIRTypeKind::Int(_) => value::int(env, 0, ty),
         HMIRTypeKind::Float(_) => value::float(env, 0.0, ty),
-        HMIRTypeKind::PointerTo(_) => HMIRValue::new(ty, HMIRImmediate::Int(0)),
+        HMIRTypeKind::PointerTo(_) => HMIRValue::new(ty, HMIRImmValue::Int(0)),
         _ => return Ok(Coercion::Unapplied(value)),
     };
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let known = match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmediate::Int(value)) => Some(*value != 0),
-        HMIRValueKind::Immediate(HMIRImmediate::Float(value)) => Some(f64::from(value) != 0.0),
+        HMIRValueKind::Immediate(HMIRImmValue::Int(value)) => Some(*value != 0),
+        HMIRValueKind::Immediate(HMIRImmValue::Float(value)) => Some(f64::from(value) != 0.0),
         _ => None,
     };
     Ok(Coercion::Applied(match known {

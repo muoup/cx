@@ -23,7 +23,7 @@ use crate::{
     value::{
         HMIRRegisterID, HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        immediate::HMIRImmValue,
         place::HMIRPlaceID,
     },
 };
@@ -64,7 +64,19 @@ pub fn value(
         HMIRValueKind::Immediate(immediate) => {
             MIRValue::Immediate(self::immediate(context, immediate, value.ty(), span)?)
         }
-        HMIRValueKind::Register(register) => MIRValue::Register(context.runtime().register(*register)),
+        HMIRValueKind::Application(application) => {
+            let function = call::dependent::template(
+                context,
+                application.callee(),
+                application.args(),
+                value.ty(),
+                span,
+            )?;
+            MIRValue::Immediate(self::function(function))
+        }
+        HMIRValueKind::Register(register) => {
+            MIRValue::Register(context.runtime().register(*register))
+        }
         HMIRValueKind::Reference(_)
             if context.env().is_reference(value.ty()) || context.env().is_pointer(value.ty()) =>
         {
@@ -87,7 +99,9 @@ pub(super) fn local(
     let place = context.runtime().place(*reference.base());
     let (out, base) = output(context, value.ty(), span)?;
     let intrinsic = MIRInternalIntrinsic::PlaceAddress { out, place };
-    context.runtime_mut().emit_intrinsic(intrinsic, span.clone());
+    context
+        .runtime_mut()
+        .emit_intrinsic(intrinsic, span.clone());
     let base = self::value(context, &base, span)?;
     if reference.offset() == 0 {
         return Ok(base);
@@ -97,32 +111,41 @@ pub(super) fn local(
         value: i128::from(reference.offset()),
     });
     let (out, address) = output(context, value.ty(), span)?;
-    let intrinsic = MIRPtrIntrinsic::Add { out, ptr: base, offset };
-    context.runtime_mut().emit_intrinsic(intrinsic, span.clone());
+    let intrinsic = MIRPtrIntrinsic::Add {
+        out,
+        ptr: base,
+        offset,
+    };
+    context
+        .runtime_mut()
+        .emit_intrinsic(intrinsic, span.clone());
     self::value(context, &address, span)
 }
 
 pub fn immediate(
     context: &mut LocalLoweringContext,
-    immediate: &HMIRImmediate,
+    immediate: &HMIRImmValue,
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<MIRImmediate> {
     Ok(match (immediate, context.env().resolve_kind(ty)) {
-        (HMIRImmediate::Unit, _) => MIRImmediate::Unit,
-        (HMIRImmediate::Int(0), HMIRTypeKind::PointerTo(_)) => MIRImmediate::Nullptr {
+        (HMIRImmValue::Unit, _) => MIRImmediate::Unit,
+        (HMIRImmValue::Int(0), HMIRTypeKind::PointerTo(_)) => MIRImmediate::Nullptr {
             ty: lower_type(context.env_mut(), ty, span)?,
         },
-        (HMIRImmediate::Int(value), &HMIRTypeKind::Int(int)) => MIRImmediate::Integer {
+        (HMIRImmValue::Int(value), &HMIRTypeKind::Int(int)) => MIRImmediate::Integer {
             ty: mir_int(int.width()),
             value: *value,
         },
-        (HMIRImmediate::Float(value), &HMIRTypeKind::Float(float)) => MIRImmediate::Float {
+        (HMIRImmValue::Float(value), &HMIRTypeKind::Float(float)) => MIRImmediate::Float {
             value: *value,
             ty: mir_float(float.width()),
         },
-        (HMIRImmediate::Address(address), _) => self::address(context, address, span)?,
-        (HMIRImmediate::Aggregate { fields: items }, HMIRTypeKind::Array { .. } | HMIRTypeKind::Struct { .. }) => {
+        (HMIRImmValue::Address(address), _) => self::address(context, address, span)?,
+        (
+            HMIRImmValue::Aggregate { fields: items },
+            HMIRTypeKind::Array { .. } | HMIRTypeKind::Struct { .. },
+        ) => {
             let mut fields = Vec::with_capacity(items.len());
             for (index, item) in items.iter().enumerate() {
                 let field = types::member(context.env(), ty, index);
@@ -134,7 +157,7 @@ pub fn immediate(
             }
         }
         (
-            HMIRImmediate::Union { variant, payload },
+            HMIRImmValue::Union { variant, payload },
             HMIRTypeKind::Union { .. } | HMIRTypeKind::TaggedUnion { .. },
         ) => {
             let field = types::member(context.env(), ty, *variant);
@@ -144,11 +167,20 @@ pub fn immediate(
                 fields: vec![(*variant, payload)],
             }
         }
-        (HMIRImmediate::Constructor { ty, variant }, _) => {
+        (HMIRImmValue::Constructor { ty, variant }, _) => {
             function(variant::function(context.env_mut(), *ty, *variant, span)?)
         }
-        (HMIRImmediate::Curried { callee, args }, _) => {
-            function(call::dependent::template(context, callee, args, ty, span)?)
+        (HMIRImmValue::Application(application), _) => {
+            let callee = application.callee().clone().into();
+            let args = application
+                .args()
+                .iter()
+                .cloned()
+                .map(|arg| arg.map(Into::into))
+                .collect::<Vec<_>>();
+            function(call::dependent::template(
+                context, &callee, &args, ty, span,
+            )?)
         }
         (immediate, _) => unreachable!("{immediate:?} has no runtime form"),
     })

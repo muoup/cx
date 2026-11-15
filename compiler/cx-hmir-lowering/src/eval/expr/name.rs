@@ -22,7 +22,7 @@ use crate::{
     eval::{EvalResult, aggregate::variant, deduce, eval_type, flow::Evaluation, symbol, types},
     log::hmir_error,
     lower::declaration,
-    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 pub(crate) fn eval_name(
@@ -73,7 +73,7 @@ pub(crate) fn type_value(
         return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject));
     }
     let universe = types::universe(context.env_mut(), span);
-    Ok(HMIRValue::new(universe, HMIRImmediate::Type(ty)))
+    Ok(HMIRValue::new(universe, HMIRImmValue::Type(ty)))
 }
 
 pub(crate) fn intrinsic_type(
@@ -209,7 +209,7 @@ fn qualified_constructor(
             continue;
         };
         let parent = symbol::value(context.env_mut(), id)?;
-        let HMIRValueKind::Immediate(HMIRImmediate::Type(ty)) = parent.kind() else {
+        let HMIRValueKind::Immediate(HMIRImmValue::Type(ty)) = parent.kind() else {
             continue;
         };
         if let Some(value) = variant::reference(context, *ty, &name.name, span)? {

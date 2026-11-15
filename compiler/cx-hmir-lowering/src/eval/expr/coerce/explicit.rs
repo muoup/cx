@@ -6,7 +6,7 @@ use crate::{
     env::function::LocalLoweringContext, eval::{
         coerce::{self, Coercion, applied, implicit, is_char, promotion},
         expr,
-    }, value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
+    }, value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 pub(crate) fn standard(
@@ -60,7 +60,7 @@ fn extension(
         (HMIRTypeKind::Int(_), HMIRTypeKind::PointerTo(_)) => {
             if !matches!(
                 value.kind(),
-                HMIRValueKind::Immediate(HMIRImmediate::Int(0))
+                HMIRValueKind::Immediate(HMIRImmValue::Int(0))
             ) {
                 expr::require_nonsafe(context, span, "Unsafe type conversion")?;
             }

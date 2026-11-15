@@ -15,7 +15,7 @@ use crate::{
     env::function::LocalLoweringContext,
     eval::types,
     lower::types::{lower_type, mir_float, mir_int},
-    value::{HMIRValue, immediate::HMIRImmediate},
+    value::{HMIRValue, immediate::HMIRImmValue},
 };
 
 type Operands = (MIRTarget, MIRValue, MIRValue);
@@ -328,7 +328,7 @@ pub fn internal(
     result: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let unit = HMIRValue::new(result, HMIRImmediate::Unit);
+    let unit = HMIRValue::new(result, HMIRImmValue::Unit);
     match intrinsic {
         InternalIntrinsic::Bitcast { value, target } => {
             let target_ty = lower_type(context.env_mut(), *target, span)?;
@@ -359,7 +359,7 @@ pub fn va(
     result: HMIRTypeID,
     span: &TokenRange,
 ) -> CXResult<HMIRValue> {
-    let unit = HMIRValue::new(result, HMIRImmediate::Unit);
+    let unit = HMIRValue::new(result, HMIRImmValue::Unit);
     match intrinsic {
         VAIntrinsic::Start { list, last } => {
             let list = runtime::value(context, list, span)?;

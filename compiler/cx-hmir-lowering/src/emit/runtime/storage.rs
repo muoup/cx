@@ -1,9 +1,8 @@
 use cx_hmir::ty::{HMIRTypeID, aggregate::HMIRBitfield, context::HMIRTypeContext};
 use cx_log::CXResult;
 use cx_mir::{
-    MIRBindable, MIRBitfieldAccess, MIRInstructionKind, MIRInternalIntrinsic,
-    MIRPlaceID, MIRStoreBitfield, MIRTarget, MIRTypeID, MIRValue,
-    expr::instruction::MIRInvalidationKind,
+    MIRBindable, MIRBitfieldAccess, MIRInstructionKind, MIRInternalIntrinsic, MIRPlaceID,
+    MIRStoreBitfield, MIRTarget, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
@@ -16,7 +15,7 @@ use crate::{
     value::{
         HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
-        immediate::HMIRImmediate,
+        immediate::HMIRImmValue,
         place::HMIRPlaceID,
     },
 };
@@ -36,10 +35,11 @@ fn target(
             value: runtime::local(context, reference, span)?,
             ty: lower_type(context.env_mut(), stored, span)?,
         },
-        HMIRValueKind::Immediate(HMIRImmediate::Address(address))
+        HMIRValueKind::Immediate(HMIRImmValue::Address(address))
             if let Addressable::Def(def) = address.base() =>
         {
-            let global = global::reference(context.env_mut(), *def, address.offset(), stored, span)?;
+            let global =
+                global::reference(context.env_mut(), *def, address.offset(), stored, span)?;
             MIRTarget::Global(global)
         }
         _ => MIRTarget::Indirect {
@@ -182,7 +182,9 @@ pub fn lift(
         HMIRValueKind::Register(register) => {
             MIRBindable::Register(context.runtime().register(*register))
         }
-        HMIRValueKind::Immediate(_) => unreachable!("a lift reads out of local storage"),
+        HMIRValueKind::Immediate(_) | HMIRValueKind::Application(_) => {
+            unreachable!("a lift reads out of local storage")
+        }
     };
     let inner = context.env().referent(source.ty());
     let source = target(context, source, span)?;
@@ -191,7 +193,11 @@ pub fn lift(
         unreachable!("an output is a register")
     };
 
-    let lift = MIRInstructionKind::Lift { out, source, origin };
+    let lift = MIRInstructionKind::Lift {
+        out,
+        source,
+        origin,
+    };
     context.runtime_mut().emit(lift, span.clone());
 
     Ok(result)
@@ -247,7 +253,11 @@ fn store(
     context.runtime_mut().emit(store, span.clone())
 }
 
-fn access(context: &LocalLoweringContext, ty: HMIRTypeID, bitfield: HMIRBitfield) -> MIRBitfieldAccess {
+fn access(
+    context: &LocalLoweringContext,
+    ty: HMIRTypeID,
+    bitfield: HMIRBitfield,
+) -> MIRBitfieldAccess {
     MIRBitfieldAccess {
         bit_offset: bitfield.offset,
         bit_width: bitfield.width,

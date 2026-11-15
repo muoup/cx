@@ -12,20 +12,6 @@ struct endpoint {
     u32 length;
 };
 
-struct in_addr;
-struct sockaddr_in;
-
-//struct in_addr {
-//    u32 s_addr;
-//};
-//
-//struct sockaddr_in {
-//    u16 sin_family;
-//    u16 sin_port;
-//    in_addr sin_addr;
-//    char sin_zero[8];
-//};
-
 std::opt(endpoint) endpoint::ipv4(const _str& address, u16 port) {
     u32 raw_address = inet_addr(address);
 

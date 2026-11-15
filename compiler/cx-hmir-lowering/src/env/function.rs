@@ -238,6 +238,10 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
         matches!(self.context, FnContext::Runtime(_))
     }
 
+    pub fn is_comptime(&self) -> bool {
+        matches!(self.context, FnContext::Comptime(_))
+    }
+
     pub fn is_unevaluated(&self) -> bool {
         matches!(&self.context, FnContext::Runtime(runtime) if runtime.emission() == runtime::Emission::Unevaluated)
     }

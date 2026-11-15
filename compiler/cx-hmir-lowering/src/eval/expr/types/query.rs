@@ -14,7 +14,7 @@ use crate::{
         types::{self, alike, layout, qualify},
     },
     log::hmir_error,
-    value::{self, HMIRValue, immediate::HMIRImmediate},
+    value::{self, HMIRValue, immediate::HMIRImmValue},
 };
 
 pub(crate) fn eval_type_op(
@@ -114,7 +114,7 @@ fn decay(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) 
 
 fn type_value(context: &mut LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> HMIRValue {
     let universe = types::universe(context.env_mut(), span);
-    HMIRValue::new(universe, HMIRImmediate::Type(ty))
+    HMIRValue::new(universe, HMIRImmValue::Type(ty))
 }
 
 fn boolean(context: &mut LocalLoweringContext, holds: bool, span: &TokenRange) -> HMIRValue {
