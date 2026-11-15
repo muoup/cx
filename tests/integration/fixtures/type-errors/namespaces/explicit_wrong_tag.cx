@@ -1,0 +1,7 @@
+struct Socket {
+    int fd;
+};
+
+int main() {
+    return sizeof(union Socket);
+}

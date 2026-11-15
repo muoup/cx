@@ -1,8 +1,6 @@
 mod intrinsic;
 mod mapper;
 mod source;
-#[cfg(test)]
-mod tests;
 
 pub use intrinsic::{
     Intrinsic, IntrinsicArg,

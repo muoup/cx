@@ -11,10 +11,10 @@ import styles from "./index.module.css";
 const leakingServer = `import std::{optional, span} as std;
 import std::net::{tcp, address} as std::net;
 
-void serve(std::net::tcp_listener& server) {
+void serve(std::net::tcp_socket& server) {
     while (true) {
         std::net::tcp_stream client = server
-            |> std::net::tcp_listener::accept()
+            |> std::net::tcp_socket::accept()
             |> std::opt::unwrap_or(.{ continue; });
 
         std::span<const u8> reply = std::span::str_as_bytes("hello\\n");
@@ -28,10 +28,10 @@ void serve(std::net::tcp_listener& server) {
 const fixedServer = `import std::{optional, span} as std;
 import std::net::{tcp, address} as std::net;
 
-void serve(std::net::tcp_listener& server) {
+void serve(std::net::tcp_socket& server) {
     while (true) {
         std::net::tcp_stream client = server
-            |> std::net::tcp_listener::accept()
+            |> std::net::tcp_socket::accept()
             |> std::opt::unwrap_or(.{ continue; });
 
         std::span<const u8> reply = std::span::str_as_bytes("hello\\n");

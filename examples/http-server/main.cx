@@ -9,22 +9,22 @@ int main() {
             return 1;
         })!;
 
-    std::net::tcp_listener server = std::net::tcp_listener::open()
+    std::net::tcp_socket server = std::net::tcp_socket::open()
         |> std::opt::unwrap_or(emit .{
             std::io::println("Failed to open socket");
             return 1;
         })!;
 
-    server |> std::net::tcp_listener::bind(addr)
+    server |> std::net::tcp_socket::bind(addr)
         |> std::opt::unwrap_or(emit .{
-            move server |> std::net::tcp_listener::close();
+            move server |> std::net::tcp_socket::close();
             std::io::println("Failed to bind socket");
             return 1;
         })!;
 
-    server |> std::net::tcp_listener::listen(128)
+    server |> std::net::tcp_socket::listen(128)
         |> std::opt::unwrap_or(emit .{
-            move server |> std::net::tcp_listener::close();
+            move server |> std::net::tcp_socket::close();
             std::io::println("Failed to listen on socket");
             return 1;
         })!;
@@ -36,7 +36,7 @@ int main() {
     while (1) {
         std::println("Waiting for client connection...");
 
-        std::net::tcp_stream client = server |> std::net::tcp_listener::accept()
+        std::net::tcp_stream client = server |> std::net::tcp_socket::accept()
             |> std::opt::unwrap_or(emit .{
                 std::io::println("Failed to accept client");
                 continue;
@@ -62,5 +62,5 @@ int main() {
         move client |> std::net::tcp_stream::close();
     }
 
-    move server |> std::net::tcp_listener::close();
+    move server |> std::net::tcp_socket::close();
 }

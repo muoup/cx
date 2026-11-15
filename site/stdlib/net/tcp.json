@@ -5,7 +5,7 @@
   "summary": "Minimal TCP listener and stream wrappers for IPv4 sockets.",
   "types": [
     {
-      "name": "struct tcp_listener",
+      "name": "struct tcp_socket",
       "description": "A struct that owns a TCP listening socket descriptor.",
       "attributes": ["@nodrop"],
       "fields": [
@@ -24,20 +24,20 @@
   "functions": [
     {
       "name": "open",
-      "owner": "tcp_listener",
-      "signature": "std::optional::opt<tcp_listener> tcp_listener::open()",
+      "owner": "tcp_socket",
+      "signature": "std::optional::opt<tcp_socket> tcp_socket::open()",
       "description": "Creates a TCP listening socket.",
       "parameters": [],
-      "returnType": "std::optional::opt<tcp_listener>",
+      "returnType": "std::optional::opt<tcp_socket>",
       "returnDescription": "Some listener on socket creation success."
     },
     {
       "name": "bind",
-      "owner": "tcp_listener",
-      "signature": "std::optional::opt<void> tcp_listener::bind(tcp_listener& this, std::net::address::endpoint addr)",
+      "owner": "tcp_socket",
+      "signature": "std::optional::opt<void> tcp_socket::bind(tcp_socket& this, std::net::address::endpoint addr)",
       "description": "Binds a listener to an endpoint.",
       "parameters": [
-        {"name": "this", "type": "tcp_listener&", "description": "The listener to bind."},
+        {"name": "this", "type": "tcp_socket&", "description": "The listener to bind."},
         {"name": "addr", "type": "std::net::address::endpoint", "description": "The local endpoint."}
       ],
       "returnType": "std::optional::opt<void>",
@@ -45,11 +45,11 @@
     },
     {
       "name": "listen",
-      "owner": "tcp_listener",
-      "signature": "std::optional::opt<void> tcp_listener::listen(tcp_listener& this, int backlog)",
+      "owner": "tcp_socket",
+      "signature": "std::optional::opt<void> tcp_socket::listen(tcp_socket& this, int backlog)",
       "description": "Starts accepting connections on a bound listener.",
       "parameters": [
-        {"name": "this", "type": "tcp_listener&", "description": "The listener to activate."},
+        {"name": "this", "type": "tcp_socket&", "description": "The listener to activate."},
         {"name": "backlog", "type": "int", "description": "The pending-connection backlog."}
       ],
       "returnType": "std::optional::opt<void>",
@@ -57,22 +57,22 @@
     },
     {
       "name": "accept",
-      "owner": "tcp_listener",
-      "signature": "std::optional::opt<tcp_stream> tcp_listener::accept(tcp_listener& this)",
+      "owner": "tcp_socket",
+      "signature": "std::optional::opt<tcp_stream> tcp_socket::accept(tcp_socket& this)",
       "description": "Accepts one pending TCP connection.",
       "parameters": [
-        {"name": "this", "type": "tcp_listener&", "description": "The listener receiving the connection."}
+        {"name": "this", "type": "tcp_socket&", "description": "The listener receiving the connection."}
       ],
       "returnType": "std::optional::opt<tcp_stream>",
       "returnDescription": "Some stream when a connection is accepted."
     },
     {
       "name": "close",
-      "owner": "tcp_listener",
-      "signature": "void tcp_listener::close(tcp_listener this)",
+      "owner": "tcp_socket",
+      "signature": "void tcp_socket::close(tcp_socket this)",
       "description": "Closes a TCP listener descriptor.",
       "parameters": [
-        {"name": "this", "type": "tcp_listener", "description": "The listener to close."}
+        {"name": "this", "type": "tcp_socket", "description": "The listener to close."}
       ],
       "returnType": "void"
     },

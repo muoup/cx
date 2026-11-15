@@ -11,7 +11,7 @@ extern "C":
 
 public:
 
-struct tcp_listener : @nodrop {
+struct tcp_socket : @nodrop {
     i32 fd;
 };
 
@@ -19,7 +19,7 @@ struct tcp_stream : @nodrop {
     i32 fd;
 };
 
-std::opt(tcp_listener) tcp_listener::open() {
+std::opt(tcp_socket) tcp_socket::open() {
     i32 fd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (fd < 0) {
@@ -29,15 +29,15 @@ std::opt(tcp_listener) tcp_listener::open() {
     int enabled = 1;
     setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enabled, (u32) sizeof(int));
 
-    return _::some((tcp_listener) { .fd = fd });
+    return _::some((tcp_socket) { .fd = fd });
 }
 
-void tcp_listener::close(tcp_listener this) {
+void tcp_socket::close(tcp_socket this) {
     close(this.fd);
     @leak(this);
 }
 
-std::opt(void) tcp_listener::bind(tcp_listener& this, std::net::endpoint addr) {
+std::opt(void) tcp_socket::bind(tcp_socket& this, std::net::endpoint addr) {
     if (bind(this.fd, (sockaddr*) &addr.address, addr.length) < 0) {
         return _::none();
     }
@@ -45,7 +45,7 @@ std::opt(void) tcp_listener::bind(tcp_listener& this, std::net::endpoint addr) {
     return _::some();
 }
 
-std::opt(void) tcp_listener::listen(tcp_listener& this, int backlog) {
+std::opt(void) tcp_socket::listen(tcp_socket& this, int backlog) {
     if (listen(this.fd, backlog) < 0) {
         return _::none();
     }
@@ -53,7 +53,15 @@ std::opt(void) tcp_listener::listen(tcp_listener& this, int backlog) {
     return _::some();
 }
 
-std::opt(void) tcp_listener::set_blocking(tcp_listener& this, bool is_blocking) {
+std::opt(void) tcp_socket::connect(tcp_socket& this, std::net::endpoint address) {
+    if (connect(this.fd, (sockaddr*) &address.address, sizeof(address.address)) < 0) {
+        return _::none();
+    }
+
+    return _::some();
+}
+
+std::opt(void) tcp_socket::set_blocking(tcp_socket& this, bool is_blocking) {
     int flags = fcntl(this.fd, F_GETFL, 0);
     
     if (flags == -1) return _::none();
@@ -69,7 +77,7 @@ std::opt(void) tcp_listener::set_blocking(tcp_listener& this, bool is_blocking) 
 
 // tcp_stream logic
 
-std::opt(tcp_stream) tcp_listener::accept(tcp_listener& this) {
+std::opt(tcp_stream) tcp_socket::accept(tcp_socket& this) {
     std::net::endpoint remote;
     remote.length = (u32) sizeof(sockaddr_in);
 

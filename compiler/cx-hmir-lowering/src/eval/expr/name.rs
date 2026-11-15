@@ -205,6 +205,16 @@ fn qualified_constructor(
     };
     let parent = QualifiedName::new(NamespacePath::new(namespace.to_vec()), parent.clone());
     for tag in [None, Some(HIRTagKind::Union)] {
+        if let Some(tag) = tag {
+            let source = context.source();
+            let ids = context.env_mut().symbols_mut().lookup(source, &parent, Some(tag));
+            if !ids.iter().any(|id| {
+                context.env().symbols().resolve_definition(*id).declarations().iter()
+                    .any(|decl| decl.tag() == Some(tag))
+            }) {
+                continue;
+            }
+        }
         let Some(id) = resolve(context, span, &parent, tag)? else {
             continue;
         };
