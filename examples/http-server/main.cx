@@ -1,50 +1,36 @@
-import std::{io, optional, span, string, functional} as std;
+import std::{io, panic, optional, span, string, functional} as std;
 
 import std::net::{tcp, address} as std::net;
 
 int main() {
     std::net::endpoint addr = std::net::endpoint::ipv4("0.0.0.0", 8080)
-        |> std::opt::unwrap_or(emit .{
-            std::io::println("Failed to create endpoint");
-            return 1;
-        })!;
+        |> std::opt::expect("Failed to create endpoint")!;
+    std::net::tcp_server server = std::net::tcp_server::new()
+        |> std::opt::expect("Failed to open socket")!;
+    defer move server |> std::net::tcp_server::drop();
 
-    std::net::tcp_socket server = std::net::tcp_socket::open()
+    server
+        |> std::net::tcp_server::bind(move addr)
         |> std::opt::unwrap_or(emit .{
-            std::io::println("Failed to open socket");
-            return 1;
-        })!;
-
-    server |> std::net::tcp_socket::bind(addr)
-        |> std::opt::unwrap_or(emit .{
-            move server |> std::net::tcp_socket::close();
-            std::io::println("Failed to bind socket");
-            return 1;
-        })!;
-
-    server |> std::net::tcp_socket::listen(128)
-        |> std::opt::unwrap_or(emit .{
-            move server |> std::net::tcp_socket::close();
-            std::io::println("Failed to listen on socket");
-            return 1;
+            std::panic("Failed to bind socket");
         })!;
 
     std::println("Server started on 127.0.0.1:8080");
-
     char buffer[1024];
+    std::span(u8) buffer_span = std::span::new(buffer, 1024);
 
     while (1) {
         std::println("Waiting for client connection...");
 
-        std::net::tcp_stream client = server |> std::net::tcp_socket::accept()
+        std::net::tcp_connection client = server |> std::net::tcp_server::accept()
             |> std::opt::unwrap_or(emit .{
                 std::io::println("Failed to accept client");
                 continue;
             })!;
+        defer move client |> std::net::tcp_connection::drop();
 
-        client |> std::net::tcp_stream::read(buffer, 1024)
+        client |> std::net::tcp_connection::read(buffer_span)
             |> std::opt::unwrap_or(emit .{
-                move client |> std::net::tcp_stream::close();
                 std::io::println("Failed to read request");
                 continue;
             })!;
@@ -52,15 +38,10 @@ int main() {
         std::println("Received request");
 
         std::span(const u8) response_buffer = std::str::as_const_bytes("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 48\r\nConnection: close\r\n\r\n<html><body><h1>Hello, world!</h1></body></html>");
-        client |> std::net::tcp_stream::write(response_buffer)
+        client |> std::net::tcp_connection::send(response_buffer)
             |> std::opt::unwrap_or(emit .{
-                move client |> std::net::tcp_stream::close();
                 std::io::println("Failed to write response");
                 continue;
             })!;
-
-        move client |> std::net::tcp_stream::close();
     }
-
-    move server |> std::net::tcp_socket::close();
 }

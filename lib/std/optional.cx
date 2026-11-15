@@ -12,6 +12,12 @@ comptime type opt(comptime type T) =>
         some :: T
     };
 
+comptime ^opt(T) opt::if_then(type T = _, ^bool condition, ^T value) 
+    => emit .{
+        if (condition) yield _::some(value);
+        yield _::none();
+    }; 
+    
 bool opt::is_some(comptime type T = _, opt(T)& this) {
     return this is some(_);
 }
@@ -20,12 +26,17 @@ bool opt::is_none(comptime type T = _, opt(T)& this) {
     return this is none();
 }
 
-opt(U) opt::map(comptime type T = _, comptime type U = _, opt(T) this, fn* func(T) -> U) {
-    match (move this) {
-        some(auto value) => return opt(U)::some(func(move value)),
-        none() => return opt(U)::none(),
-    }
-}
+comptime ^opt(U) opt::map(comptime type T = _, comptime type U = _, ^opt(T) this, fn func(^T) -> ^U)
+    => emit match (this) {
+        some(auto value) => _::some(func(emit move value)),
+        none() => _::none(),
+    };
+
+comptime ^opt(U) opt::and_then(comptime type T = _, comptime type U = _, ^opt(T) this, fn func(^T) -> opt(^U))
+    => emit match (this) {
+        some(auto value) => func(emit move value),
+        non() => _::none(),
+    };
 
 T opt::unwrap(comptime type T = _, opt(T) this) {
     match (move this) {

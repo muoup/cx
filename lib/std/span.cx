@@ -28,7 +28,7 @@ T* span::data(comptime type T = _, span(T) this) {
     return this.data;
 }
 
-std::span(const T) span::as_const(comptime type T = _, span(T) this) {
+span(const T) span::as_const(comptime type T = _, span(T) this) {
     return span::new(.T = const T, (const T*) this.data, this.length);
 }
 

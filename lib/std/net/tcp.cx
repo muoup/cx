@@ -1,9 +1,8 @@
 import std::{span, optional} as std;
-import std::net::address as std::net;
+import std::net::{socket, address} as std::net;
 
 extern "C":
 
-// Not enough C parity for these headers yet:
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -11,106 +10,84 @@ extern "C":
 
 public:
 
-struct tcp_socket : @nodrop {
-    i32 fd;
+struct tcp_server : @nodrop {
+    std::net::socket socket;
 };
 
-struct tcp_stream : @nodrop {
-    i32 fd;
+struct tcp_connection : @nodrop {
+    std::net::socket socket;
 };
 
-std::opt(tcp_socket) tcp_socket::open() {
-    i32 fd = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (fd < 0) {
-        return _::none();
-    }
+std::opt(tcp_server) tcp_server::new() {
+    auto server_socket = std::net::socket::open()
+        |> std::opt::try()!;
 
     int enabled = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enabled, (u32) sizeof(int));
+    server_socket 
+        |> std::net::socket::set_opt(SOL_SOCKET, SO_REUSEADDR, &enabled, (u32) sizeof(int));
 
-    return _::some((tcp_socket) { .fd = fd });
+    return _::some((tcp_server) { .socket = move server_socket });
 }
 
-void tcp_socket::close(tcp_socket this) {
-    close(this.fd);
-    @leak(this);
+std::opt(tcp_connection) tcp_connection::connect_to(std::net::endpoint address) {
+    auto client_socket = std::net::socket::open()
+        |> std::opt::try()!;
+
+    client_socket
+        |> std::net::socket::connect(move address)
+        |> std::opt::try_or(emit .{ move client_socket |> std::net::socket::close(); })!;
+
+    return _::some((tcp_connection) { .socket = move client_socket });
 }
 
-std::opt(void) tcp_socket::bind(tcp_socket& this, std::net::endpoint addr) {
-    if (bind(this.fd, (sockaddr*) &addr.address, addr.length) < 0) {
-        return _::none();
-    }
+void tcp_server::drop(tcp_server server) {
+    @unpack(move server) {
+        socket: socket
+    };
 
-    return _::some();
+    move socket |> std::net::socket::close();
 }
 
-std::opt(void) tcp_socket::listen(tcp_socket& this, int backlog) {
-    if (listen(this.fd, backlog) < 0) {
-        return _::none();
-    }
-
-    return _::some();
-}
-
-std::opt(void) tcp_socket::connect(tcp_socket& this, std::net::endpoint address) {
-    if (connect(this.fd, (sockaddr*) &address.address, sizeof(address.address)) < 0) {
-        return _::none();
-    }
-
-    return _::some();
-}
-
-std::opt(void) tcp_socket::set_blocking(tcp_socket& this, bool is_blocking) {
-    int flags = fcntl(this.fd, F_GETFL, 0);
+void tcp_connection::drop(tcp_connection connection) {
+    @unpack(move connection) {
+        socket: socket
+    };
     
-    if (flags == -1) return _::none();
+    move socket |> std::net::socket::close();
+}
 
-    if (is_blocking) {
-        flags &= ~O_NONBLOCK;
-    } else {
-        flags |= O_NONBLOCK;
-    }
-        
+std::opt(void) tcp_server::bind(tcp_server& server, std::net::endpoint address) {
+    server.socket
+        |> std::net::socket::bind(move address)
+        |> std::opt::try()!;
+
+    server.socket
+        |> std::net::socket::listen(10)
+        |> std::opt::try()!;
+
     return _::some();
 }
 
-// tcp_stream logic
+std::opt(tcp_connection) tcp_server::accept(tcp_server& server)
+    => server.socket
+        |> std::net::socket::accept()
+        |> std::opt::map(|auto socket| => (tcp_connection) { .socket = socket });
 
-std::opt(tcp_stream) tcp_socket::accept(tcp_socket& this) {
-    std::net::endpoint remote;
-    remote.length = (u32) sizeof(sockaddr_in);
+std::opt(void) tcp_server::set_blocking(tcp_server& server, bool blocking) {
+    server.socket
+        |> std::net::socket::set_blocking(blocking);
 
-    i32 fd = accept(this.fd, (sockaddr*) &remote.address, &remote.length);
-
-    if (fd < 0) {
-        return _::none();
-    }
-
-    return _::some((tcp_stream) { .fd = fd });
+    return _::some();
 }
 
-std::opt(u64) tcp_stream::read(tcp_stream& this, void* buffer, u64 capacity) {
-    i64 received = read(this.fd, buffer, capacity);
+std::opt(void) tcp_connection::send(tcp_connection& connection, std::span(const u8) message) {
+    connection.socket
+        |> std::net::socket::write(message |> std::span::as_const())
+        |> std::opt::try()!;
 
-    if (received < 0) {
-        return _::none();
-    }
-
-    return _::some((u64) received);
+    return _::some();
 }
 
-std::opt(u64) tcp_stream::write(tcp_stream& this, const std::span(const u8) buffer) {
-    i64 sent = write(this.fd, buffer.data, buffer.length);
-
-    if (sent < 0) {
-        return _::none();
-    }
-
-    return _::some((u64) sent);
-}
-
-void tcp_stream::close(tcp_stream this) {
-    close(this.fd);
-    @leak(this);
-}
+std::opt(std::span(u8)) tcp_connection::read(tcp_connection& connection, std::span(u8) buffer)
+    => connection.socket
+        |> std::net::socket::read(buffer);
