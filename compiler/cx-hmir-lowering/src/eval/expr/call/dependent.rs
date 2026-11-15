@@ -258,16 +258,25 @@ pub(crate) fn call(
             return Err(hmir_error(arg_span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
         }
         let evaluation = match arg {
-            Some(arg) if staged::is_code(context, ty) => staged::argument(context, body, arg, ty)?,
+            Some(arg) if staged::is_code(context, ty) => staged::argument(context, body, arg, ty),
             Some(arg) if (runtime && params[index].comptime()) || spliced => {
-                comptime::freeze(context, body, arg, Some(ty))?
+                comptime::freeze(context, body, arg, Some(ty))
             }
-            Some(arg) => {
-                let evaluated = eval(context, body, arg)?;
-                deduce::complete(context, body, evaluated, Some(ty))?
+            Some(arg) => eval(context, body, arg)
+                .and_then(|evaluated| deduce::complete(context, body, evaluated, Some(ty))),
+            None => super::default(context, def, function, index, ty),
+        }
+        .map_err(|exit| match exit {
+            EvalExit::Diagnostic(error) if error.code() == typecheck::INVALID_CONVERSION.code => {
+                let parameter = function.body().local(function.params()[index]);
+                let name = parameter.name().map_or("<anonymous>", |name| name.as_str());
+                EvalExit::Diagnostic(error.with_note(
+                    format!("parameter '{name}' declared here"),
+                    Some(parameter.span()),
+                ))
             }
-            None => super::default(context, def, function, index, ty)?,
-        };
+            exit => exit,
+        })?;
         let value = match evaluation {
             Evaluation::Incomplete(pending)
                 if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type) =>

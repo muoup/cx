@@ -134,7 +134,7 @@ pub(crate) fn eval(
             context, body, *inner, None,
         )?)),
         HMIRExprKind::Quote { params, body: root } => {
-            staged::eval_quote(context, body, params, *root)
+            staged::eval_quote(context, body, params, *root, span)
         }
         HMIRExprKind::Splice { quote, args } => {
             staged::eval_splice(context, body, span, *quote, args)

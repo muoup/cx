@@ -32,10 +32,11 @@ pub(crate) fn eval_quote(
     body: &HMIRBodyContext,
     params: &[HMIRLocalID],
     root: HMIRExprID,
+    span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     match context.is_runtime() && params.is_empty() {
         true => eval(context, body, root),
-        false => capture(context, body, params, root),
+        false => capture(context, body, params, root, span),
     }
 }
 
@@ -44,9 +45,10 @@ pub(super) fn capture(
     body: &HMIRBodyContext,
     params: &[HMIRLocalID],
     root: HMIRExprID,
+    span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let code = QuoteRef::new(closure(context, body, params, root)?);
-    let span = body.expr(root).span().clone();
+    let span = span.clone();
     let pending =
         Incomplete::synthesizing(
             context,
@@ -121,6 +123,10 @@ fn resolve(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let (Shape { params, result }, insert) = match shape(context.env(), expected) {
         Some(shape) => (shape, false),
+        None if !code.get().params().is_empty() => {
+            let conversion = ("a staged closure".into(), types::name(context.env(), expected));
+            return Err(hmir_error(span, &typecheck::INVALID_CONVERSION, conversion).into());
+        }
         None => (
             Shape {
                 params: Vec::new(),

@@ -171,7 +171,8 @@ pub(crate) fn eval_splice(
             }
             let ty = signature(context, params, expected, &span);
             let code =
-                quote::capture(context, body, &quoted, root)?.complete(context, body, Some(ty))?;
+                quote::capture(context, body, &quoted, root, body.expr(literal).span())?
+                    .complete(context, body, Some(ty))?;
             apply(context, body, code, &args, &span)
         },
     );
@@ -216,11 +217,13 @@ pub(crate) fn argument(
         piped = true;
     }
     let value = match body.expr(operand).kind() {
-        HMIRExprKind::Quote { params, body: root } => quote::capture(context, body, params, *root)?,
+        HMIRExprKind::Quote { params, body: root } => {
+            quote::capture(context, body, params, *root, body.expr(operand).span())?
+        }
         _ if !matches!(context.env().resolve_kind(target), HMIRTypeKind::Staged(_)) => {
             eval(context, body, operand)?
         }
-        _ if piped => quote::capture(context, body, &[], operand)?,
+        _ if piped => quote::capture(context, body, &[], operand, body.expr(operand).span())?,
         _ => comptime::freeze(context, body, operand, Some(target)).map_err(|exit| match exit {
             EvalExit::Diagnostic(error) => {
                 let hint = "to pass it as runtime code, write 'emit' before it or pipe it in";
