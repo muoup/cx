@@ -9,7 +9,7 @@ languages = ["languages/chl"]
 
 [grammars.chl]
 repository = "https://github.com/muoup/cx"
-rev = "a2b6a6b03ecabd44861d3a8b4939ddd748005b4c"
+rev = "5c2d580e353985e63d8b07d17fbf3e268cff8cc6"
 path = "compiler/chl-treesitter-grammar"
 
 [language_servers.chl-lsp]

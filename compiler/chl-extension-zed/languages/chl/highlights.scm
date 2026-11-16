@@ -1,1 +1,1 @@
-../../../cx-treesitter-grammar/queries/highlights.scm
+../../../chl-treesitter-grammar/queries/highlights.scm
