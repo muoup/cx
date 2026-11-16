@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
-import {tokenizeCx} from "../src/lib/cx-syntax.mjs";
+import {tokenizeChl} from "../src/lib/chl-syntax.mjs";
 
 const siteDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryDirectory = path.resolve(siteDirectory, "..");
@@ -12,12 +12,12 @@ const outputDirectory = path.join(siteDirectory, "docs", "stdlib");
 const sourceBase = "https://github.com/muoup/cx/blob/main/lib/std";
 const undocumented = "*No documentation provided.*";
 
-// CX_BIN names a built compiler; otherwise cargo builds one from this checkout.
+// CHL_BIN names a built compiler; otherwise cargo builds one from this checkout.
 function readDocumentation() {
     const options = {cwd: repositoryDirectory, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"]};
-    const output = process.env.CX_BIN
-        ? execFileSync(process.env.CX_BIN, ["doc", libraryDirectory], options)
-        : execFileSync("cargo", ["run", "--quiet", "--release", "-p", "cx", "--", "doc", libraryDirectory], options);
+    const output = process.env.CHL_BIN
+        ? execFileSync(process.env.CHL_BIN, ["doc", libraryDirectory], options)
+        : execFileSync("cargo", ["run", "--quiet", "--release", "-p", "chl", "--", "doc", libraryDirectory], options);
     return JSON.parse(output);
 }
 
@@ -70,11 +70,11 @@ function mdxMarkdown(markdown) {
 // Highlights code[start, end), tokenizing all of code so the slice keeps its context.
 function tokens(code, start, end) {
     let offset = 0;
-    return tokenizeCx(code)
+    return tokenizeChl(code)
         .map(({text, kind}) => {
             const part = text.slice(Math.max(start - offset, 0), Math.max(end - offset, 0));
             offset += text.length;
-            return part && kind ? `<span className="cx-token-${kind}">${mdxText(part)}</span>` : mdxText(part);
+            return part && kind ? `<span className="chl-token-${kind}">${mdxText(part)}</span>` : mdxText(part);
         })
         .join("");
 }
@@ -85,7 +85,7 @@ function reference(qualified, {slug, id}, from) {
     const name = parts.pop();
     const target = `${path.posix.relative(path.posix.dirname(from), slug)}.md#${id}`;
     const href = target.startsWith(".") ? target : `./${target}`;
-    return `[<span className="cx-stdlib-ref">${parts.map(mdxText).join("::")}::<span className="cx-token-type">${mdxText(name)}</span></span>](${href})`;
+    return `[<span className="chl-stdlib-ref">${parts.map(mdxText).join("::")}::<span className="chl-token-type">${mdxText(name)}</span></span>](${href})`;
 }
 
 function highlighted(code, start, end, from) {
@@ -108,7 +108,7 @@ function span(className, content) {
 
 // A qualified name may break after its ::, never inside a word; lines can wrap between inline blocks.
 function qualifiedName(name) {
-    return name.split(/(?<=::)/).map((part) => `<span className="cx-stdlib-segment">${mdxText(part)}</span>`).join("");
+    return name.split(/(?<=::)/).map((part) => `<span className="chl-stdlib-segment">${mdxText(part)}</span>`).join("");
 }
 
 function itemId(item) {
@@ -145,7 +145,7 @@ function parameterRanges(signature, open, close) {
 function renderSignature(signature, name, from) {
     const at = signature.indexOf(name);
     if (at < 0) {
-        return span("cx-stdlib-name", qualifiedName(name));
+        return span("chl-stdlib-name", qualifiedName(name));
     }
 
     const end = at + name.length;
@@ -157,15 +157,15 @@ function renderSignature(signature, name, from) {
         : [
             highlighted(signature, end, open + 1, from),
             ...parameters.map(([start, stop], index) =>
-                span("cx-stdlib-parameter", highlighted(signature, start, stop, from) + (index < parameters.length - 1 ? "," : "")),
+                span("chl-stdlib-parameter", highlighted(signature, start, stop, from) + (index < parameters.length - 1 ? "," : "")),
             ),
             highlighted(signature, close, signature.length, from),
         ].join("");
 
     return [
-        span("cx-stdlib-signature", highlighted(signature, 0, at, from)),
-        span("cx-stdlib-name", qualifiedName(name)),
-        span("cx-stdlib-signature", rest),
+        span("chl-stdlib-signature", highlighted(signature, 0, at, from)),
+        span("chl-stdlib-name", qualifiedName(name)),
+        span("chl-stdlib-signature", rest),
     ].join("");
 }
 
@@ -190,10 +190,10 @@ function renderDoc(doc) {
 // An item's declaration heads it; its docs sit indented below.
 function renderItem(item, from) {
     const heading = item.kind === "type"
-        ? `### <code>${span("cx-stdlib-name", qualifiedName(item.name))}</code> \\{#${itemId(item)}}`
+        ? `### <code>${span("chl-stdlib-name", qualifiedName(item.name))}</code> \\{#${itemId(item)}}`
         : `### <code>${renderSignature(item.declaration, item.name, from)}</code> \\{#${itemId(item)}}`;
-    const declaration = item.kind === "type" ? [["~~~cx", item.declaration, "~~~"].join("\n")] : [];
-    return [heading, "", `<div className="cx-stdlib-item">`, "", ...[...declaration, ...renderDoc(item.doc)].flatMap((block) => [block, ""]), "</div>"].join("\n");
+    const declaration = item.kind === "type" ? [["~~~chl", item.declaration, "~~~"].join("\n")] : [];
+    return [heading, "", `<div className="chl-stdlib-item">`, "", ...[...declaration, ...renderDoc(item.doc)].flatMap((block) => [block, ""]), "</div>"].join("\n");
 }
 
 const sections = [
@@ -216,11 +216,11 @@ function renderModule(module, position) {
         `description: ${yamlString(module.doc?.summary || "Standard-library module.")}`,
         "---",
         "",
-        `<div className="cx-stdlib-page">`,
+        `<div className="chl-stdlib-page">`,
         "",
         `# ${module.module}`,
         "",
-        `<div className="cx-stdlib-meta">`,
+        `<div className="chl-stdlib-meta">`,
         "",
         `Source: ${sourceLink(module)}`,
         "",
@@ -243,14 +243,14 @@ function renderIndex(modules) {
         "---",
         "title: Standard Library",
         "sidebar_position: 1",
-        "description: Reference for the CX standard library, generated from its doc comments.",
+        "description: Reference for the Chloro standard library, generated from its doc comments.",
         "---",
         "",
-        "<div className=\"cx-stdlib-page\">",
+        "<div className=\"chl-stdlib-page\">",
         "",
         "# Standard Library",
         "",
-        "This reference is generated by `cx doc` from the public declarations and doc comments in `lib/std`.",
+        "This reference is generated by `chl doc` from the public declarations and doc comments in `lib/std`.",
         "",
         "## Modules",
         "",
@@ -277,7 +277,7 @@ function writeModule(module, position) {
 const {modules} = readDocumentation();
 
 if (modules.length === 0) {
-    throw new Error(`cx doc found no modules in ${libraryDirectory}`);
+    throw new Error(`chl doc found no modules in ${libraryDirectory}`);
 }
 
 // Documented types by fully qualified name, so signatures can link to them.

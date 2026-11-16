@@ -1,6 +1,6 @@
-/* CX-STDOUT: 3 2 */
-/* CX-STDOUT-NEXT: 3 */
-/* CX-STDOUT-NEXT: 1 2 3 */
+/* CHL-STDOUT: 3 2 */
+/* CHL-STDOUT-NEXT: 3 */
+/* CHL-STDOUT-NEXT: 1 2 3 */
 
 #include <stdio.h>
 

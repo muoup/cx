@@ -1,4 +1,4 @@
-/* CX-STDOUT: 12 */
+/* CHL-STDOUT: 12 */
 
 import _include_state as state;
 import std::io as std;

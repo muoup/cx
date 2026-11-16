@@ -1,6 +1,6 @@
-/* CX-STDOUT: folded 1 0 */
-/* CX-STDOUT-NEXT: locals 1 */
-/* CX-STDOUT-NEXT: globals 1 1 1 */
+/* CHL-STDOUT: folded 1 0 */
+/* CHL-STDOUT-NEXT: locals 1 */
+/* CHL-STDOUT-NEXT: globals 1 1 1 */
 
 #include <stdio.h>
 

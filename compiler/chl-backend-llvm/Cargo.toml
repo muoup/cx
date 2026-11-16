@@ -1,0 +1,15 @@
+[package]
+name = "chl-backend-llvm"
+version = "0.0.0"
+edition = "2024"
+autotests = false
+
+[dependencies]
+rustc-hash = "2.1.3"
+chl-lmir = { path = "../chl-lmir" }
+chl-log = { path = "../chl-log" }
+chl-pipeline-data = { path = "../chl-pipeline-data" }
+chl-target = { path = "../chl-target" }
+chl-util = { path = "../chl-util" }
+
+inkwell = { version = "0.9.0", default-features = false, features=["llvm22-1-prefer-dynamic"] }

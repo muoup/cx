@@ -128,7 +128,7 @@ Prototype: link name, reconciled linkage, lowered signature.
 
 *verified 425c5ff1*
 
-Variant `S::V` used as runtime function: static `V.__cx_variant.<n>`; payload param moved into the variant, returned.
+Variant `S::V` used as runtime function: static `V.__chl_variant.<n>`; payload param moved into the variant, returned.
 
 ## Globals
 
@@ -719,7 +719,7 @@ After binding:
 - partial, and comptime-stage or an unbound comptime param: yields the function applied to the converged arguments, each typed as its param was instantiated.
 - signature formed; every other visible declaration re-evaluated against bound values, must agree in params, comptime-ness, defaults and signature, else T0006.
 - partial otherwise: specialization declared, yields it applied.
-- runtime: specialization applied. One per def and comptime arguments, static, named `<link>.__cx_specialize.<n>`; called with runtime arguments; [Contracts](#contracts) around it.
+- runtime: specialization applied. One per def and comptime arguments, static, named `<link>.__chl_specialize.<n>`; called with runtime arguments; [Contracts](#contracts) around it.
 - comptime: executed in frame. Precondition must hold (M0026). Body: root other than a non-yielding block returns its value; otherwise fallthrough: `void` returns unit, `unreachable` M0027, else M0002. Return value exported. Live nodrop comptime storage unconsumed: A0003. Postcondition must hold.
 - `rule/quirk-comptime-main-fallthrough` comptime fallthrough of an int function named `main` exempt from M0002.
 - spliced: result exported; staged quote result materialized.

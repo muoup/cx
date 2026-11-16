@@ -1,4 +1,4 @@
-/* CX-STDOUT: Hello, world! */
+/* CHL-STDOUT: Hello, world! */
 
 import std::string as std;
 import std::optional as std;

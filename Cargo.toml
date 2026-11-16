@@ -2,9 +2,9 @@
 resolver = "2"
 
 members = [
-    "compiler/cx", "compiler/cx-hmir", "compiler/cx-intrinsics",
-    "compiler/cx-lsp",
-    "compiler/cx-extension-zed",
+    "compiler/chl", "compiler/chl-hmir", "compiler/chl-intrinsics",
+    "compiler/chl-lsp",
+    "compiler/chl-extension-zed",
     "tests/benchmarks",
     "tests/integration",
     "tests/support"
@@ -13,7 +13,7 @@ members = [
 # Keep feature-gated path dependencies out of the workspace's default package set.
 # They are still built when a workspace member enables the corresponding feature.
 exclude = [
-    "compiler/cx-backend-llvm",
+    "compiler/chl-backend-llvm",
 ]
 
 [workspace.dependencies]

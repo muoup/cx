@@ -1,5 +1,5 @@
 use crate::case::{Case, Sources};
-use cx_test_support::{
+use chl_test_support::{
     backend_name, compile_file_at, run_command, CompilationFailure, CompilationMode,
     CompilationResult, CompilerBackend, OptimizationLevel, ProjectBinary, ReferenceCompiler,
     TestTempDir,
@@ -9,13 +9,13 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-/// The level single-file cases are built at; projects name their own in `cx.toml`.
+/// The level single-file cases are built at; projects name their own in `chl.toml`.
 const FILE_OPTIMIZATION: OptimizationLevel = OptimizationLevel::O2;
 
-/// What builds a case: cx with one of its backends, or the C compiler it is compared against.
+/// What builds a case: chl with one of its backends, or the C compiler it is compared against.
 #[derive(Clone, Copy)]
 pub enum Toolchain<'a> {
-    Cx(CompilerBackend),
+    Chl(CompilerBackend),
     Reference(&'a ReferenceCompiler),
 }
 
@@ -28,7 +28,7 @@ pub struct Build {
 impl Toolchain<'_> {
     pub fn label(&self) -> String {
         match self {
-            Toolchain::Cx(backend) => backend_name(*backend).to_string(),
+            Toolchain::Chl(backend) => backend_name(*backend).to_string(),
             Toolchain::Reference(reference) => reference.command.clone(),
         }
     }
@@ -39,7 +39,7 @@ impl Toolchain<'_> {
 
     pub fn builds(&self, case: &Case) -> bool {
         match self {
-            Toolchain::Cx(backend) => case.backends.contains(backend),
+            Toolchain::Chl(backend) => case.backends.contains(backend),
             Toolchain::Reference(_) => match &case.sources {
                 Sources::File(file) => is_c_source(file),
                 Sources::Project { binary, .. } => {
@@ -51,7 +51,7 @@ impl Toolchain<'_> {
 
     pub fn build(&self, case: &Case, temp_dir: &TestTempDir) -> Result<Build, String> {
         match self {
-            Toolchain::Cx(backend) => {
+            Toolchain::Chl(backend) => {
                 let compilation = match &case.sources {
                     Sources::File(file) => compile_file_at(
                         file,
@@ -98,7 +98,7 @@ impl Toolchain<'_> {
     }
 }
 
-// Compiles each source in its own process, as many at once as cx runs jobs, so that the reference
+// Compiles each source in its own process, as many at once as chl runs jobs, so that the reference
 // is built the way a parallel make would build it
 fn compile_objects(
     reference: &ReferenceCompiler,

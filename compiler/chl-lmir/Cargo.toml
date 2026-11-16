@@ -1,0 +1,10 @@
+[package]
+name = "chl-lmir"
+version = "0.0.0"
+edition = "2021"
+autotests = false
+
+[dependencies]
+chl-target = { path = "../chl-target" }
+chl-namespace = { path = "../chl-namespace" }
+chl-util = { path = "../chl-util" }

@@ -1,7 +1,7 @@
-/* CX-STDOUT: opt 1011 0 1003 */
-/* CX-STDOUT-NEXT: identity 1 1 0 */
-/* CX-STDOUT-NEXT: either 1 0 */
-/* CX-STDOUT-NEXT: identity 1 */
+/* CHL-STDOUT: opt 1011 0 1003 */
+/* CHL-STDOUT-NEXT: identity 1 1 0 */
+/* CHL-STDOUT-NEXT: either 1 0 */
+/* CHL-STDOUT-NEXT: identity 1 */
 
 #include <stdio.h>
 #include <string.h>

@@ -1,0 +1,27 @@
+/* CHL-STDOUT: 20 */
+/* CHL-STDOUT-NEXT: 30 */
+
+#include <stdio.h>
+#include <stdlib.h>
+
+struct Pair {
+    int left;
+    int right;
+};
+
+int main() {
+    Pair* ptr = malloc(sizeof(Pair));
+    *ptr = (Pair) { .left = 1, .right = 2 };
+
+    Pair alias = @unsafe(@adopt(*ptr));
+    alias.right = 20;
+    printf("%d\n", (*ptr).right);
+
+    Pair& reference = *ptr;
+    Pair through = @unsafe(@adopt(reference));
+    through.right = 30;
+    printf("%d\n", (*ptr).right);
+
+    free(ptr);
+    return 0;
+}

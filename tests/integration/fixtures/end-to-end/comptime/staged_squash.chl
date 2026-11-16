@@ -1,4 +1,4 @@
-/* CX-STDOUT: 2 2 3 4 5 */
+/* CHL-STDOUT: 2 2 3 4 5 */
 #include <stdio.h>
 
 comptime type lifted(type T) => ^T;

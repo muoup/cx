@@ -1,6 +1,6 @@
-/* CX-STDOUT: int 37 */
-/* CX-STDOUT-NEXT: float 4.5 */
-/* CX-STDOUT-NEXT: selected 9 */
+/* CHL-STDOUT: int 37 */
+/* CHL-STDOUT-NEXT: float 4.5 */
+/* CHL-STDOUT-NEXT: selected 9 */
 
 #include <stdio.h>
 

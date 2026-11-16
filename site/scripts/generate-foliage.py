@@ -12,18 +12,18 @@ def polygon(cls, ps): return f'<polygon class="{cls}" points="{pts(ps)}"/>'
 def part(level, pivot, body, attrs=""):
     return f'<g data-l="{level}" data-p="{f(pivot[0])},{f(pivot[1])}"{attrs}>{"".join(body)}</g>'
 
-def poly(rng, cx, cy, r, n, rot=None, jitter=0.22, spread=(0.86, 1.08)):
+def poly(rng, chl, cy, r, n, rot=None, jitter=0.22, spread=(0.86, 1.08)):
     rot = rng.uniform(0, 2 * math.pi) if rot is None else rot
     step = 2 * math.pi / n
     out = []
     for i in range(n):
         a = rot + i * step + rng.uniform(-jitter, jitter) * step
         rr = r * rng.uniform(*spread)
-        out.append((cx + rr * math.cos(a), cy + rr * math.sin(a)))
+        out.append((chl + rr * math.cos(a), cy + rr * math.sin(a)))
     return out
 
 # Clumps keep their vertices near-even so no corner turns into a spike.
-def clump(rng, cx, cy, r, n): return poly(rng, cx, cy, r, n, jitter=0.12, spread=(0.92, 1.05))
+def clump(rng, chl, cy, r, n): return poly(rng, chl, cy, r, n, jitter=0.12, spread=(0.92, 1.05))
 
 def leaf(rng, x, y, ang, L, cls):
     W = L * rng.uniform(0.32, 0.4)
@@ -33,8 +33,8 @@ def leaf(rng, x, y, ang, L, cls):
     return [polygon(cls, [(x + px * c - py * s, y + px * s + py * c) for px, py in local])]
 
 # A facet spans two edges from near the centre, so it stays broad instead of forming a thin wedge.
-def facets(rng, cx, cy, r, ps, lit):
-    o = (cx + rng.uniform(-0.08, 0.08) * r, cy + rng.uniform(-0.08, 0.08) * r)
+def facets(rng, chl, cy, r, ps, lit):
+    o = (chl + rng.uniform(-0.08, 0.08) * r, cy + rng.uniform(-0.08, 0.08) * r)
     n = len(ps)
     i = rng.randrange(n)
     kite = lambda j: [o, ps[j % n], ps[(j + 1) % n], ps[(j + 2) % n]]
@@ -49,23 +49,23 @@ def tier(rng, R, lobe, leaf_len, leaf_share, cls, px, ids):
         a = (i + 0.5) / count * math.pi / 2 + rng.uniform(-0.05, 0.05)
         r = lobe * rng.uniform(0.8, 1.12)
         rr = R + rng.uniform(-0.15, 0.1) * lobe
-        cx, cy = rr * math.cos(a), rr * math.sin(a)
-        clumps.append((cx, cy, r, rr, a, clump(rng, cx, cy, r, rng.randint(6, 7)), next(ids)))
+        chl, cy = rr * math.cos(a), rr * math.sin(a)
+        clumps.append((chl, cy, r, rr, a, clump(rng, chl, cy, r, rng.randint(6, 7)), next(ids)))
 
     out = [polygon(cls, poly(rng, 0, 0, R * 0.92, 14, 0))]
-    for i, (cx, cy, r, rr, a, ps, cid) in enumerate(clumps):
-        body = [polygon(cls, ps)] + (facets(rng, cx, cy, r, ps, i % 4 == 1) if i % 2 else [])
+    for i, (chl, cy, r, rr, a, ps, cid) in enumerate(clumps):
+        body = [polygon(cls, ps)] + (facets(rng, chl, cy, r, ps, i % 4 == 1) if i % 2 else [])
         if i % 2 == 0:
             b = a + rng.uniform(-0.9, 0.9)
             d = r * rng.uniform(0.72, 0.9)
-            body.append(polygon(cls, clump(rng, cx + d * math.cos(b), cy + d * math.sin(b), r * rng.uniform(0.32, 0.45), 5)))
+            body.append(polygon(cls, clump(rng, chl + d * math.cos(b), cy + d * math.sin(b), r * rng.uniform(0.32, 0.45), 5)))
         base = rr - r * 0.7
         out.append(part(1, (base * math.cos(a), base * math.sin(a)), body, f' data-id="{cid}"'))
 
     for j in range(round(count * leaf_share)):
-        cx, cy, r, _, a, _, cid = clumps[(j * 3) % count]
+        chl, cy, r, _, a, _, cid = clumps[(j * 3) % count]
         b = a + rng.uniform(-0.75, 0.75)
-        x, y = cx + (r - 8 / px) * math.cos(b), cy + (r - 8 / px) * math.sin(b)
+        x, y = chl + (r - 8 / px) * math.cos(b), cy + (r - 8 / px) * math.sin(b)
         L = leaf_len * rng.uniform(0.8, 1.15)
         out.append(part(2, (x, y), leaf(rng, x, y, b + rng.uniform(-0.35, 0.35), L, cls), f' data-parent="{cid}"'))
     return out

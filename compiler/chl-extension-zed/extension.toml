@@ -1,0 +1,17 @@
+id = "chl-lsp"
+name = "Chloro Support"
+version = "0.0.1"
+schema_version = 1
+authors = ["Zachary Verlardi <zacharyverlardi@gmail.com>"]
+description = "Language Support for the Chloro Language"
+repository = "https://github.com/muoup/cx"
+languages = ["languages/chl"]
+
+[grammars.chl]
+repository = "https://github.com/muoup/cx"
+rev = "a2b6a6b03ecabd44861d3a8b4939ddd748005b4c"
+path = "compiler/chl-treesitter-grammar"
+
+[language_servers.chl-lsp]
+name = "Chloro Language Server"
+languages = ["Chloro"]

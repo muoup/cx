@@ -1,11 +1,11 @@
-/* CX-STDOUT: frozen 7 7 */
-/* CX-STDOUT-NEXT: repeated 1 1 */
-/* CX-STDOUT-NEXT: alias 12 */
-/* CX-STDOUT-NEXT: duplicated 3 2 */
-/* CX-STDOUT-NEXT: cleanup 9 */
-/* CX-STDOUT-NEXT: returned 7 */
-/* CX-STDOUT-NEXT: snapshot 23 23 */
-/* CX-STDOUT-NEXT: imported 42 11 */
+/* CHL-STDOUT: frozen 7 7 */
+/* CHL-STDOUT-NEXT: repeated 1 1 */
+/* CHL-STDOUT-NEXT: alias 12 */
+/* CHL-STDOUT-NEXT: duplicated 3 2 */
+/* CHL-STDOUT-NEXT: cleanup 9 */
+/* CHL-STDOUT-NEXT: returned 7 */
+/* CHL-STDOUT-NEXT: snapshot 23 23 */
+/* CHL-STDOUT-NEXT: imported 42 11 */
 
 #include <stdio.h>
 import _staged_capture_source as lib;

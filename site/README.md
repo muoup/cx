@@ -1,4 +1,4 @@
-# CX Website
+# Chloro Website
 
 This public documentation site is built with [Docusaurus](https://docusaurus.io/).
 

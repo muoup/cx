@@ -1,4 +1,4 @@
-/* CX-STDOUT: value 41 calls 1 */
+/* CHL-STDOUT: value 41 calls 1 */
 
 #include <stdio.h>
 

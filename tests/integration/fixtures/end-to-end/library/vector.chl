@@ -1,6 +1,6 @@
-/* CX-STDOUT: Vector length: 3 */
-/* CX-STDOUT-NEXT: Vector capacity: 4 */
-/* CX-STDOUT-NEXT: vec[0]: 1 */
+/* CHL-STDOUT: Vector length: 3 */
+/* CHL-STDOUT-NEXT: Vector capacity: 4 */
+/* CHL-STDOUT-NEXT: vec[0]: 1 */
 
 import std::vector;
 import std::optional;

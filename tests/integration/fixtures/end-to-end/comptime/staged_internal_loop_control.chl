@@ -1,8 +1,8 @@
-/* CX-STDOUT: break body */
-/* CX-STDOUT-NEXT: break complete */
-/* CX-STDOUT-NEXT: continue 1 */
-/* CX-STDOUT-NEXT: continue 2 */
-/* CX-STDOUT-NEXT: continue complete */
+/* CHL-STDOUT: break body */
+/* CHL-STDOUT-NEXT: break complete */
+/* CHL-STDOUT-NEXT: continue 1 */
+/* CHL-STDOUT-NEXT: continue 2 */
+/* CHL-STDOUT-NEXT: continue complete */
 
 #include <stdio.h>
 

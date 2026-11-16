@@ -1,4 +1,4 @@
-/* CX-STDOUT: i = 2 */
+/* CHL-STDOUT: i = 2 */
 
 import std::box;
 

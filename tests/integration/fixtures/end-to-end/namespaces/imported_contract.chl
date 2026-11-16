@@ -1,4 +1,4 @@
-/* CX-STDOUT: 8 12 */
+/* CHL-STDOUT: 8 12 */
 
 #include <stdio.h>
 

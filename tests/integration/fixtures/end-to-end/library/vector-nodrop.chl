@@ -1,13 +1,13 @@
-/* CX-STDOUT: dropped num: 0 */
-/* CX-STDOUT-NEXT: dropped num: 1 */
-/* CX-STDOUT-NEXT: dropped num: 2 */
-/* CX-STDOUT-NEXT: dropped num: 3 */
-/* CX-STDOUT-NEXT: dropped num: 4 */
-/* CX-STDOUT-NEXT: dropped num: 5 */
-/* CX-STDOUT-NEXT: dropped num: 6 */
-/* CX-STDOUT-NEXT: dropped num: 7 */
-/* CX-STDOUT-NEXT: dropped num: 8 */
-/* CX-STDOUT-NEXT: dropped num: 9 */
+/* CHL-STDOUT: dropped num: 0 */
+/* CHL-STDOUT-NEXT: dropped num: 1 */
+/* CHL-STDOUT-NEXT: dropped num: 2 */
+/* CHL-STDOUT-NEXT: dropped num: 3 */
+/* CHL-STDOUT-NEXT: dropped num: 4 */
+/* CHL-STDOUT-NEXT: dropped num: 5 */
+/* CHL-STDOUT-NEXT: dropped num: 6 */
+/* CHL-STDOUT-NEXT: dropped num: 7 */
+/* CHL-STDOUT-NEXT: dropped num: 8 */
+/* CHL-STDOUT-NEXT: dropped num: 9 */
 
 import std::vector;
 

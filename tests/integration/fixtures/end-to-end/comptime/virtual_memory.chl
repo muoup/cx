@@ -1,11 +1,11 @@
-/* CX-STDOUT: offsets 40 10 30 */
-/* CX-STDOUT-NEXT: difference 3 -3 1 */
-/* CX-STDOUT-NEXT: copies 7 9 */
-/* CX-STDOUT-NEXT: unions 65 2 1 */
-/* CX-STDOUT-NEXT: mutation 11 22 5 */
-/* CX-STDOUT-NEXT: layout 8 4 120 */
-/* CX-STDOUT-NEXT: globals 7 30 1 */
-/* CX-STDOUT-NEXT: types 4 8 */
+/* CHL-STDOUT: offsets 40 10 30 */
+/* CHL-STDOUT-NEXT: difference 3 -3 1 */
+/* CHL-STDOUT-NEXT: copies 7 9 */
+/* CHL-STDOUT-NEXT: unions 65 2 1 */
+/* CHL-STDOUT-NEXT: mutation 11 22 5 */
+/* CHL-STDOUT-NEXT: layout 8 4 120 */
+/* CHL-STDOUT-NEXT: globals 7 30 1 */
+/* CHL-STDOUT-NEXT: types 4 8 */
 
 #include <stdio.h>
 

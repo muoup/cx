@@ -1,4 +1,4 @@
-/* CX-STDOUT: public include */
+/* CHL-STDOUT: public include */
 
 import _public_include as ffi;
 

@@ -1,0 +1,14 @@
+[package]
+name = "chl-hir"
+version = "0.0.0"
+edition = "2021"
+autotests = false
+
+[dependencies]
+chl-namespace = { path = "../chl-namespace" }
+chl-util = { path = "../chl-util" }
+chl-tokens = { path = "../chl-tokens" }
+chl-target = { path = "../chl-target" }
+chl-preparse-data = { path = "../chl-preparse-data" }
+
+speedy = { version = "0.8.7" }

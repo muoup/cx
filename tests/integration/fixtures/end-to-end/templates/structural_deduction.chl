@@ -1,4 +1,4 @@
-/* CX-STDOUT: 7 5 6 5 9 4 42 42 43 11 */
+/* CHL-STDOUT: 7 5 6 5 9 4 42 42 43 11 */
 
 #include <stdio.h>
 

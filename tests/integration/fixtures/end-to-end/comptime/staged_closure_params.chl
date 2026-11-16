@@ -1,10 +1,10 @@
-/* CX-STDOUT: 0 */
-/* CX-STDOUT-NEXT: 2 */
-/* CX-STDOUT-NEXT: 4 */
-/* CX-STDOUT-NEXT: named 0 */
-/* CX-STDOUT-NEXT: frozen 3 */
-/* CX-STDOUT-NEXT: comptime apply 1 2 */
-/* CX-STDOUT-NEXT: runtime apply 3 4 */
+/* CHL-STDOUT: 0 */
+/* CHL-STDOUT-NEXT: 2 */
+/* CHL-STDOUT-NEXT: 4 */
+/* CHL-STDOUT-NEXT: named 0 */
+/* CHL-STDOUT-NEXT: frozen 3 */
+/* CHL-STDOUT-NEXT: comptime apply 1 2 */
+/* CHL-STDOUT-NEXT: runtime apply 3 4 */
 #include <stdio.h>
 
 comptime type source(type T) => fn(fn(^T) -> ^void) -> ^void;

@@ -1,4 +1,4 @@
-/* CX-STDOUT: dropped num: 1 */
+/* CHL-STDOUT: dropped num: 1 */
 
 import std::box;
 

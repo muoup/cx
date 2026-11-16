@@ -1,4 +1,4 @@
-/* CX-STDOUT: included module */
+/* CHL-STDOUT: included module */
 
 import _include_binding as binding;
 

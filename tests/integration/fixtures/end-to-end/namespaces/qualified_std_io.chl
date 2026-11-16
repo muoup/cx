@@ -1,4 +1,4 @@
-/* CX-STDOUT: qualified io */
+/* CHL-STDOUT: qualified io */
 
 import std::io;
 

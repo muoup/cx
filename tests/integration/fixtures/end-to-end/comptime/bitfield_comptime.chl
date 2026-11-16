@@ -1,4 +1,4 @@
-/* CX-STDOUT: comptime 5167 */
+/* CHL-STDOUT: comptime 5167 */
 #include <stdio.h>
 
 struct flags {

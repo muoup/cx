@@ -1,4 +1,4 @@
-/* CX-STDOUT: 7 */
+/* CHL-STDOUT: 7 */
 
 import std::optional;
 

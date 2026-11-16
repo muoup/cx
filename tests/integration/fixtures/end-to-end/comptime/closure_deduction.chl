@@ -1,8 +1,8 @@
-/* CX-STDOUT: call 1 */
-/* CX-STDOUT-NEXT: call4 4 */
-/* CX-STDOUT-NEXT: call6 pre */
-/* CX-STDOUT-NEXT: call6 6 */
-/* CX-STDOUT-NEXT: transform 4.5 */
+/* CHL-STDOUT: call 1 */
+/* CHL-STDOUT-NEXT: call4 4 */
+/* CHL-STDOUT-NEXT: call6 pre */
+/* CHL-STDOUT-NEXT: call6 6 */
+/* CHL-STDOUT-NEXT: transform 4.5 */
 #include <stdio.h>
 
 comptime ^void call(type T = _, fn f(^T) -> ^void) => f(emit 1);

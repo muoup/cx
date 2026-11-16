@@ -1,9 +1,9 @@
-/* CX-STDOUT: 3 6 6 */
-/* CX-STDOUT-NEXT: fed 7 */
-/* CX-STDOUT-NEXT: 6 */
-/* CX-STDOUT-NEXT: 12 */
-/* CX-STDOUT-NEXT: 4 */
-/* CX-STDOUT-NEXT: 15 */
+/* CHL-STDOUT: 3 6 6 */
+/* CHL-STDOUT-NEXT: fed 7 */
+/* CHL-STDOUT-NEXT: 6 */
+/* CHL-STDOUT-NEXT: 12 */
+/* CHL-STDOUT-NEXT: 4 */
+/* CHL-STDOUT-NEXT: 15 */
 #include <stdio.h>
 
 comptime ^void use(fn f(^int) -> ^int) => emit printf("%d\n", f(emit 2));

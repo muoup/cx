@@ -1,0 +1,16 @@
+[package]
+name = "chl-parsing"
+version = "0.0.0"
+edition = "2021"
+autotests = false
+
+[dependencies]
+rustc-hash = { workspace = true }
+chl-util = { path = "../chl-util" }
+chl-namespace = { path = "../chl-namespace" }
+
+chl-hir = { path = "../chl-hir" }
+chl-tokens = { path = "../chl-tokens" }
+chl-preparse-data = { path = "../chl-preparse-data" }
+
+chl-log = { path = "../chl-log" }

@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-  title: 'CX Programming Language',
+  title: 'Chloro Programming Language',
   tagline: 'A C-shaped systems language experiment in linear resources',
   favicon: 'img/favicon.svg',
 
@@ -71,7 +71,7 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/cx-social-card.png',
+    image: 'img/chl-social-card.png',
     colorMode: {
       respectPrefersColorScheme: true,
     },

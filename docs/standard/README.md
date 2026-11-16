@@ -15,7 +15,7 @@ A standard states what the compiler *does*, not what it should do. Special cases
 
 ## Conventions
 
-- Plain truncated English; CX syntax and abstract variables (`T`, `x`, `e`) allowed; no type-theory notation.
+- Plain truncated English; Chloro syntax and abstract variables (`T`, `x`, `e`) allowed; no type-theory notation.
 - Each section carries `verified <hash>`: the last commit it was checked against. Unchanged hash on changed code means possibly stale.
 - Rule ids are stable, unique, and prefixed by kind:
   - `rule/` behavior or rejection.

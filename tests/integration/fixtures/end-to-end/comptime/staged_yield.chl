@@ -1,4 +1,4 @@
-/* CX-STDOUT: yielded 42 */
+/* CHL-STDOUT: yielded 42 */
 
 #include <stdio.h>
 

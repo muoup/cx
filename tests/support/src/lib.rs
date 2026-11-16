@@ -8,8 +8,8 @@ pub use compilation::{
     compile_file, compile_file_at, compiler_config, CompilationFailure,
     CompilationResult, TestTempDir,
 };
-pub use cx_pipeline_data::config::LinkEntry;
-pub use cx_pipeline_data::{
+pub use chl_pipeline_data::config::LinkEntry;
+pub use chl_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
 };
 pub use format::{expected_stdout, parse_file, FormatError, StdoutExpectation, TestSpec};

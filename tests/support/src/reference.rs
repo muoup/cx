@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-/// The C compiler that cx is compared against.
+/// The C compiler that chl is compared against.
 #[derive(Serialize, Clone)]
 pub struct ReferenceCompiler {
     pub command: String,

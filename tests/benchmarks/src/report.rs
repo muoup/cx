@@ -1,5 +1,5 @@
 use crate::stats::TimingStats;
-use cx_test_support::ReferenceCompiler;
+use chl_test_support::ReferenceCompiler;
 use serde::{Deserialize, Serialize};
 use tabled::{
     builder::Builder,
@@ -26,7 +26,7 @@ pub struct BenchmarkResult {
     /// the rows of the cases themselves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workload: Option<String>,
-    /// The cx backend, or the command of the reference compiler.
+    /// The chl backend, or the command of the reference compiler.
     pub backend: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reference: bool,
@@ -64,7 +64,7 @@ pub fn render_github_table(report: &BenchmarkReport) -> String {
 
     if let Some(reference) = &report.reference {
         output.push_str(&format!(
-            "\n`vs {}` compares each cx time with the `{}` time ({}).\n",
+            "\n`vs {}` compares each chl time with the `{}` time ({}).\n",
             reference.command, reference.command, reference.version
         ));
     }

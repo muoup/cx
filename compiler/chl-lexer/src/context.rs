@@ -1,0 +1,757 @@
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::path::{Path, PathBuf};
+
+use chl_log::CHLResult;
+use chl_log::catalogue::parse::{READ_FILE, UNCLOSED_SYNTAX};
+use chl_namespace::chl_library_directory;
+use chl_tokens::token::{
+    AttributeType, IntegerLiteral, OperatorType, PunctuatorType, Token, TokenKind,
+};
+
+use crate::{
+    lexer::{
+        comments::skip_directive_tail,
+        scanner::{LexEvent, LexTransition, Lexer, tokenize_text},
+        source::{ConditionalFrame, LanguageMode, SourceFrame},
+    },
+    preprocessor::{Preprocessor, builtins::builtin_macros},
+    IncludeRoot,
+};
+
+#[derive(Clone)]
+pub(crate) enum Macro {
+    Object(Box<[Token]>),
+    Builtin(BuiltinMacro),
+    Function {
+        params: Box<[String]>,
+        body: Box<[Token]>,
+        variadic: bool,
+    },
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum BuiltinMacro {
+    File,
+    Line,
+    Attribute,
+}
+
+pub(crate) struct SourceInput {
+    pub(crate) source: String,
+    pub(crate) path: PathBuf,
+    pub(crate) language_mode: LanguageMode,
+}
+
+pub(crate) struct LexingContext {
+    pub(crate) includes: Vec<IncludeRoot>,
+    pub(crate) macros: FxHashMap<String, Macro>,
+    pub(crate) once_files: FxHashSet<PathBuf>,
+    source_texts: FxHashMap<PathBuf, String>,
+    sources: Vec<SourceFrame>,
+    pending_tokens: Vec<Token>,
+    tokens: Vec<Token>,
+    /// How many brackets are open at the end of `tokens`.
+    bracket_depth: usize,
+}
+
+impl LexingContext {
+    pub(crate) fn new(
+        source: String,
+        source_path: &Path,
+        includes: &[IncludeRoot],
+        predefined_macros: &[(String, String)],
+    ) -> CHLResult<Self> {
+        let builtin_path = PathBuf::from(chl_library_directory("libc/internal/__builtins.h"));
+        let builtin_source = std::fs::read_to_string(&builtin_path).map_err(|e| {
+            crate::log::no_source_error(
+                &READ_FILE,
+                (
+                    "internal builtin header".into(),
+                    builtin_path.display().to_string(),
+                    e.to_string(),
+                ),
+                "the chl library could not be found; set CHL_HOME to the directory containing its 'lib' folder",
+            )
+        })?;
+
+        let mut macros = builtin_macros();
+        let language_mode = LanguageMode::for_root_path(source_path);
+        for (name, value) in predefined_macros {
+            let tokens = tokenize_text(value, source_path, language_mode)?;
+            macros.insert(name.clone(), Macro::Object(tokens.into_boxed_slice()));
+        }
+
+        Ok(Self {
+            includes: includes.to_vec(),
+            macros,
+            once_files: FxHashSet::default(),
+            source_texts: FxHashMap::from_iter([
+                (source_path.to_path_buf(), source.clone()),
+                (builtin_path.clone(), builtin_source.clone()),
+            ]),
+            sources: vec![
+                SourceFrame::new(source, source_path),
+                SourceFrame::new(builtin_source, &builtin_path),
+            ],
+            pending_tokens: Vec::new(),
+            tokens: Vec::new(),
+            bracket_depth: 0,
+        })
+    }
+
+    pub(crate) fn run(mut self) -> CHLResult<Vec<Token>> {
+        let preprocessor = Preprocessor;
+
+        while !self.sources.is_empty() {
+            let event = {
+                let frame = self.current_frame_mut();
+                Lexer::new(frame).step()?
+            };
+
+            let transition = match event {
+                LexEvent::Continue => LexTransition::Continue,
+                LexEvent::Tokens(tokens) => {
+                    self.emit_tokens(tokens);
+                    LexTransition::Continue
+                }
+                LexEvent::Directive => preprocessor.handle_directive(&mut self)?,
+                LexEvent::Eof => LexTransition::PopSource,
+            };
+
+            self.apply_transition(transition)?;
+        }
+
+        Ok(concatenate_string_literals(self.tokens))
+    }
+
+    pub(crate) fn current_frame(&self) -> &SourceFrame {
+        self.sources.last().unwrap()
+    }
+
+    pub(crate) fn current_frame_mut(&mut self) -> &mut SourceFrame {
+        self.sources.last_mut().unwrap()
+    }
+
+    pub(crate) fn emit_tokens(&mut self, tokens: Vec<Token>) {
+        self.pending_tokens.extend(tokens);
+        if !self.has_incomplete_function_macro_invocation(&self.pending_tokens) {
+            self.flush_pending_tokens();
+        }
+    }
+
+    fn apply_transition(&mut self, transition: LexTransition) -> CHLResult<()> {
+        match transition {
+            LexTransition::Continue => {}
+            LexTransition::MoveTo(index) => {
+                self.current_frame_mut().cursor = index;
+            }
+            LexTransition::PushSource(input) => {
+                self.flush_pending_tokens();
+                self.source_texts
+                    .insert(input.path.clone(), input.source.clone());
+                // An include in the middle of a declaration or a body only contributes tokens to it,
+                // so the parser is not told about it.
+                let marks_include = self.bracket_depth == 0;
+                if marks_include {
+                    self.tokens.push(Token::new(
+                        TokenKind::IncludeBegin,
+                        (0, 0),
+                        input.path.clone().into(),
+                    ));
+                }
+                self.sources.push(SourceFrame::new_include(
+                    input.source,
+                    &input.path,
+                    input.language_mode,
+                    marks_include,
+                ));
+            }
+            LexTransition::PopSource => {
+                self.finish_current_source()?;
+                if self.current_frame().marks_include {
+                    let path = self.current_frame().file_path.clone();
+                    let end = self.current_frame().source.len();
+                    self.tokens
+                        .push(Token::new(TokenKind::IncludeEnd, (end, end), path.into()));
+                }
+                self.sources.pop();
+            }
+        }
+
+        Ok(())
+    }
+
+    fn finish_current_source(&mut self) -> CHLResult<()> {
+        let frame = self.current_frame();
+
+        if let Some(conditional) = frame.conditionals.last() {
+            return frame.cursor_view().log_error(
+                frame.cursor,
+                &UNCLOSED_SYNTAX,
+                format!("preprocessor conditional starting in {} branch", if conditional.parent_active {
+                    "active"
+                } else {
+                    "inactive"
+                }),
+            );
+        }
+
+        self.flush_pending_tokens();
+        Ok(())
+    }
+
+    fn flush_pending_tokens(&mut self) {
+        if self.pending_tokens.is_empty() {
+            return;
+        }
+
+        let pending = std::mem::take(&mut self.pending_tokens);
+        let expanded = self.expand_macros(pending);
+        for token in &expanded {
+            match token.kind {
+                TokenKind::Punctuator(
+                    PunctuatorType::OpenParen
+                    | PunctuatorType::OpenBracket
+                    | PunctuatorType::OpenBrace,
+                ) => self.bracket_depth += 1,
+                TokenKind::Punctuator(
+                    PunctuatorType::CloseParen
+                    | PunctuatorType::CloseBracket
+                    | PunctuatorType::CloseBrace,
+                ) => self.bracket_depth = self.bracket_depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        self.tokens.extend(expanded);
+    }
+
+    fn has_incomplete_function_macro_invocation(&self, tokens: &[Token]) -> bool {
+        let mut index = 0;
+
+        while index < tokens.len() {
+            let TokenKind::Identifier(name) = &tokens[index].kind else {
+                index += 1;
+                continue;
+            };
+
+            if !matches!(
+                self.macros.get(name),
+                Some(Macro::Function { .. } | Macro::Builtin(BuiltinMacro::Attribute))
+            ) {
+                index += 1;
+                continue;
+            }
+
+            match tokens.get(index + 1).map(|token| &token.kind) {
+                Some(TokenKind::Punctuator(PunctuatorType::OpenParen)) => {}
+                None => return true,
+                Some(_) => {
+                    index += 1;
+                    continue;
+                }
+            }
+
+            let Some(next_index) = matching_close_paren_index(tokens, index + 1) else {
+                return true;
+            };
+            index = next_index + 1;
+        }
+
+        false
+    }
+
+    pub(crate) fn expand_macros(&self, base_tokens: Vec<Token>) -> Vec<Token> {
+        let mut current = base_tokens;
+        for _ in 0..16 {
+            if !self.names_macro(&current) {
+                return current;
+            }
+            let next = self.expand_macros_once(&current);
+            if next == current {
+                return next;
+            }
+            current = next;
+        }
+        current
+    }
+
+    fn names_macro(&self, tokens: &[Token]) -> bool {
+        tokens.iter().any(|token| {
+            matches!(&token.kind, TokenKind::Identifier(name) if self.macros.contains_key(name))
+        })
+    }
+
+    fn expand_macros_once(&self, base_tokens: &[Token]) -> Vec<Token> {
+        let mut expanded = Vec::new();
+        let mut index = 0;
+
+        while index < base_tokens.len() {
+            let token = &base_tokens[index];
+            let TokenKind::Identifier(name) = &token.kind else {
+                expanded.push(token.clone());
+                index += 1;
+                continue;
+            };
+
+            let Some(macro_) = self.macros.get(name) else {
+                expanded.push(token.clone());
+                index += 1;
+                continue;
+            };
+
+            match macro_ {
+                Macro::Object(body) => {
+                    expanded.extend(retarget_tokens(body.iter().cloned(), token));
+                    index += 1;
+                }
+                Macro::Builtin(BuiltinMacro::File) => {
+                    expanded.extend(retarget_tokens(
+                        std::iter::once(Token::new_unknown(TokenKind::StringLiteral(
+                            token.file_origin.to_string_lossy().into_owned(),
+                        ))),
+                        token,
+                    ));
+                    index += 1;
+                }
+                Macro::Builtin(BuiltinMacro::Line) => {
+                    let line = self
+                        .source_texts
+                        .get(token.file_origin.as_ref())
+                        .map(|source| {
+                            source[..token.byte_start_index.min(source.len())]
+                                .bytes()
+                                .filter(|byte| *byte == b'\n')
+                                .count()
+                                + 1
+                        })
+                        .unwrap_or(1);
+                    expanded.extend(retarget_tokens(
+                        std::iter::once(Token::new_unknown(TokenKind::IntLiteral(
+                            IntegerLiteral::decimal(line as u64),
+                        ))),
+                        token,
+                    ));
+                    index += 1;
+                }
+                Macro::Builtin(BuiltinMacro::Attribute) => {
+                    let Some((args, next_index)) = parse_macro_args(base_tokens, index + 1) else {
+                        expanded.push(token.clone());
+                        index += 1;
+                        continue;
+                    };
+                    expanded.extend(retarget_tokens(
+                        gnu_attributes(&args)
+                            .map(|attribute| Token::new_unknown(TokenKind::Attribute(attribute))),
+                        token,
+                    ));
+                    index = next_index;
+                }
+                Macro::Function {
+                    params,
+                    body,
+                    variadic,
+                } => {
+                    let Some((mut args, next_index)) = parse_macro_args(base_tokens, index + 1)
+                    else {
+                        expanded.push(token.clone());
+                        index += 1;
+                        continue;
+                    };
+
+                    if !variadic && args.is_empty() && params.len() == 1 {
+                        args.push(Vec::new());
+                    }
+
+                    if (!variadic && args.len() != params.len())
+                        || (*variadic && args.len() < params.len())
+                    {
+                        expanded.push(token.clone());
+                        index += 1;
+                        continue;
+                    }
+
+                    let variadic_args = macro_variadic_args(&args, params.len(), *variadic);
+                    let expanded_args = args
+                        .iter()
+                        .map(|arg| self.expand_macros(arg.clone()))
+                        .collect::<Vec<_>>();
+                    let expanded_variadic_args =
+                        macro_variadic_args(&expanded_args, params.len(), *variadic);
+
+                    let mut body_index = 0;
+                    while body_index < body.len() {
+                        let body_token = &body[body_index];
+
+                        if is_hash_hash(body, body_index) {
+                            body_index += 2;
+                            let Some(left) = expanded.pop() else {
+                                continue;
+                            };
+                            let Some(next_token) = body.get(body_index) else {
+                                expanded.push(left);
+                                continue;
+                            };
+                            let mut right = replacement_tokens_for_macro_body_token(
+                                next_token,
+                                params,
+                                &args,
+                                &expanded_args,
+                                &variadic_args,
+                                &expanded_variadic_args,
+                                *variadic,
+                                false,
+                            );
+                            if right.is_empty() {
+                                expanded.push(left);
+                                body_index += 1;
+                                continue;
+                            }
+
+                            let first_right = right.remove(0);
+                            expanded.push(paste_tokens(left, first_right, token));
+                            expanded.extend(retarget_tokens(right, token));
+                            body_index += 1;
+                            continue;
+                        }
+
+                        if matches!(
+                            &body_token.kind,
+                            TokenKind::Punctuator(PunctuatorType::Hash)
+                        ) && let Some(next_token) = body.get(body_index + 1)
+                            && let TokenKind::Identifier(identifier) = &next_token.kind
+                            && let Some(stringified) = stringify_macro_parameter(
+                                identifier,
+                                params,
+                                &args,
+                                &variadic_args,
+                                *variadic,
+                            )
+                        {
+                            expanded.extend(retarget_tokens(
+                                std::iter::once(Token::new_unknown(TokenKind::StringLiteral(
+                                    stringify_macro_arg(&stringified),
+                                ))),
+                                token,
+                            ));
+                            body_index += 2;
+                            continue;
+                        }
+
+                        if let TokenKind::Identifier(identifier) = &body_token.kind
+                            && (params.iter().any(|param| param == identifier)
+                                || (*variadic && identifier == "__VA_ARGS__"))
+                        {
+                            let arg_tokens = if is_hash_hash(body, body_index + 1) {
+                                replacement_tokens_for_macro_body_token(
+                                    body_token,
+                                    params,
+                                    &args,
+                                    &expanded_args,
+                                    &variadic_args,
+                                    &expanded_variadic_args,
+                                    *variadic,
+                                    false,
+                                )
+                            } else {
+                                replacement_tokens_for_macro_body_token(
+                                    body_token,
+                                    params,
+                                    &args,
+                                    &expanded_args,
+                                    &variadic_args,
+                                    &expanded_variadic_args,
+                                    *variadic,
+                                    true,
+                                )
+                            };
+                            expanded.extend(retarget_tokens(arg_tokens, token));
+                            body_index += 1;
+                            continue;
+                        }
+
+                        expanded
+                            .extend(retarget_tokens(std::iter::once(body_token.clone()), token));
+                        body_index += 1;
+                    }
+
+                    index = next_index;
+                }
+            }
+        }
+
+        expanded
+    }
+
+    pub fn push(&mut self, condition: bool) {
+        let frame = self.current_frame_mut();
+
+        let parent_active = frame.is_active();
+        let branch_active = parent_active && condition;
+
+        frame.conditionals.push(ConditionalFrame {
+            parent_active,
+            branch_active,
+            any_branch_taken: branch_active,
+            else_seen: false,
+        });
+    }
+
+    pub fn skip_tail(&mut self) {
+        self.current_frame_mut().with_cursor(skip_directive_tail);
+    }
+}
+
+fn concatenate_string_literals(tokens: Vec<Token>) -> Vec<Token> {
+    let mut result: Vec<Token> = Vec::with_capacity(tokens.len());
+
+    for token in tokens {
+        if let Some(previous) = result.last_mut()
+            && let TokenKind::StringLiteral(previous_value) = &mut previous.kind
+            && let TokenKind::StringLiteral(value) = &token.kind
+        {
+            previous_value.push_str(value);
+            previous.byte_end_index = token.byte_end_index;
+        } else {
+            result.push(token);
+        }
+    }
+
+    result
+}
+
+fn is_hash_hash(tokens: &[Token], index: usize) -> bool {
+    matches!(
+        (
+            tokens.get(index).map(|token| &token.kind),
+            tokens.get(index + 1).map(|token| &token.kind)
+        ),
+        (
+            Some(TokenKind::Punctuator(PunctuatorType::Hash)),
+            Some(TokenKind::Punctuator(PunctuatorType::Hash))
+        )
+    )
+}
+
+fn replacement_tokens_for_macro_body_token(
+    body_token: &Token,
+    params: &[String],
+    raw_args: &[Vec<Token>],
+    expanded_args: &[Vec<Token>],
+    variadic_args: &[Token],
+    expanded_variadic_args: &[Token],
+    variadic: bool,
+    expand_arg: bool,
+) -> Vec<Token> {
+    if let TokenKind::Identifier(identifier) = &body_token.kind {
+        if variadic && identifier == "__VA_ARGS__" {
+            return if expand_arg {
+                expanded_variadic_args.to_vec()
+            } else {
+                variadic_args.to_vec()
+            };
+        }
+
+        if let Some(param_index) = params.iter().position(|param| param == identifier) {
+            return if expand_arg {
+                expanded_args[param_index].clone()
+            } else {
+                raw_args[param_index].clone()
+            };
+        }
+    }
+
+    vec![body_token.clone()]
+}
+
+fn macro_variadic_args(args: &[Vec<Token>], named_count: usize, variadic: bool) -> Vec<Token> {
+    if !variadic || args.len() <= named_count {
+        return Vec::new();
+    }
+
+    let mut result = Vec::new();
+    for (index, arg) in args[named_count..].iter().enumerate() {
+        if index > 0 {
+            result.push(Token::new_unknown(TokenKind::Operator(
+                OperatorType::Comma,
+            )));
+        }
+        result.extend(arg.iter().cloned());
+    }
+    result
+}
+
+fn stringify_macro_parameter(
+    identifier: &str,
+    params: &[String],
+    raw_args: &[Vec<Token>],
+    variadic_args: &[Token],
+    variadic: bool,
+) -> Option<Vec<Token>> {
+    if let Some(param_index) = params.iter().position(|param| param == identifier) {
+        return Some(raw_args[param_index].clone());
+    }
+    if variadic && identifier == "__VA_ARGS__" {
+        return Some(variadic_args.to_vec());
+    }
+    None
+}
+
+fn paste_tokens(left: Token, right: Token, expansion_site: &Token) -> Token {
+    let pasted_text = format!(
+        "{}{}",
+        token_paste_text(&left.kind),
+        token_paste_text(&right.kind)
+    );
+    let mode = LanguageMode::for_root_path(expansion_site.file_origin.as_ref());
+    let kind = TokenKind::from_str(pasted_text);
+    let mut token = Token::new_unknown(match mode {
+        LanguageMode::C => kind.into_c_mode(),
+        LanguageMode::Chl => kind,
+    });
+    token.byte_start_index = expansion_site.byte_start_index;
+    token.byte_end_index = expansion_site.byte_end_index;
+    token.file_origin = expansion_site.file_origin.clone();
+    token
+}
+
+fn token_paste_text(kind: &TokenKind) -> String {
+    match kind {
+        TokenKind::Identifier(name) => name.clone(),
+        TokenKind::CompilerIdentifier(name) => format!("@{name}"),
+        TokenKind::IntLiteral(literal) => literal.source_text(),
+        TokenKind::FloatLiteral(literal) => literal.source_text(),
+        TokenKind::StringLiteral(value) => format!("\"{value}\""),
+        TokenKind::Operator(operator) => operator.as_str().to_string(),
+        TokenKind::Assignment(operator) => {
+            format!("{}=", operator.map_or("", |operator| operator.as_str()))
+        }
+        TokenKind::Punctuator(punctuator) => punctuator.as_str().to_string(),
+        _ => kind.to_string(),
+    }
+}
+
+/// The spelling of a string literal holding `value`.
+fn string_literal_text(value: &str) -> String {
+    let mut text = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '"' => text.push_str("\\\""),
+            '\\' => text.push_str("\\\\"),
+            '\n' => text.push_str("\\n"),
+            '\t' => text.push_str("\\t"),
+            '\r' => text.push_str("\\r"),
+            ' '..='~' => text.push(character),
+            _ if character.is_ascii() => text.push_str(&format!("\\{:03o}", character as u32)),
+            _ => text.push(character),
+        }
+    }
+    text.push('"');
+    text
+}
+
+fn retarget_tokens(tokens: impl IntoIterator<Item = Token>, expansion_site: &Token) -> Vec<Token> {
+    tokens
+        .into_iter()
+        .map(|mut token| {
+            token.byte_start_index = expansion_site.byte_start_index;
+            token.byte_end_index = expansion_site.byte_end_index;
+            token.file_origin = expansion_site.file_origin.clone();
+            token
+        })
+        .collect()
+}
+
+/// Condenses the arguments of `__attribute__((a, b(x), ...))` into the attributes the
+/// compiler recognizes; anything unrecognized or malformed is dropped.
+fn gnu_attributes(args: &[Vec<Token>]) -> impl Iterator<Item = AttributeType> + '_ {
+    args.iter()
+        .filter_map(|arg| parse_macro_args(arg, 0).filter(|(_, end)| *end == arg.len()))
+        .flat_map(|(attributes, _)| attributes)
+        .filter_map(|attribute| match attribute.first().map(|token| &token.kind) {
+            Some(TokenKind::Identifier(name)) => AttributeType::from_gnu_name(name),
+            _ => None,
+        })
+}
+
+fn stringify_macro_arg(tokens: &[Token]) -> String {
+    tokens
+        .iter()
+        .map(|token| match &token.kind {
+            TokenKind::StringLiteral(value) => string_literal_text(value),
+            kind => token_paste_text(kind),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn matching_close_paren_index(tokens: &[Token], open_paren_index: usize) -> Option<usize> {
+    if !matches!(
+        tokens.get(open_paren_index).map(|token| &token.kind),
+        Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
+    ) {
+        return None;
+    }
+
+    let mut depth = 0usize;
+    let mut index = open_paren_index;
+    while index < tokens.len() {
+        match &tokens[index].kind {
+            TokenKind::Punctuator(PunctuatorType::OpenParen) => depth += 1,
+            TokenKind::Punctuator(PunctuatorType::CloseParen) => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+
+        index += 1;
+    }
+
+    None
+}
+
+fn parse_macro_args(tokens: &[Token], open_paren_index: usize) -> Option<(Vec<Vec<Token>>, usize)> {
+    if !matches!(
+        tokens.get(open_paren_index).map(|token| &token.kind),
+        Some(TokenKind::Punctuator(PunctuatorType::OpenParen))
+    ) {
+        return None;
+    }
+
+    let mut args = Vec::new();
+    let mut current = Vec::new();
+    let mut depth = 0usize;
+    let mut index = open_paren_index + 1;
+
+    while index < tokens.len() {
+        let token = &tokens[index];
+        match &token.kind {
+            TokenKind::Punctuator(PunctuatorType::OpenParen) => {
+                depth += 1;
+                current.push(token.clone());
+            }
+            TokenKind::Punctuator(PunctuatorType::CloseParen) => {
+                if depth == 0 {
+                    if !current.is_empty() || !args.is_empty() {
+                        args.push(current);
+                    }
+                    return Some((args, index + 1));
+                }
+
+                depth -= 1;
+                current.push(token.clone());
+            }
+            TokenKind::Operator(OperatorType::Comma) if depth == 0 => {
+                args.push(current);
+                current = Vec::new();
+            }
+            _ => current.push(token.clone()),
+        }
+
+        index += 1;
+    }
+
+    None
+}

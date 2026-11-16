@@ -1,7 +1,7 @@
 use crate::report::{format_stats, markdown_table, render_pretty, BenchmarkResult, Table, Timing, ABSENT};
 use crate::stats::TimingStats;
 use crate::{Options, Rendered};
-use cx_test_support::TestTempDir;
+use chl_test_support::TestTempDir;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;

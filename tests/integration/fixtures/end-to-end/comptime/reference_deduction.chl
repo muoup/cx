@@ -1,5 +1,5 @@
-/* CX-STDOUT: boxed 5 */
-/* CX-STDOUT-NEXT: written 8 9 */
+/* CHL-STDOUT: boxed 5 */
+/* CHL-STDOUT-NEXT: written 8 9 */
 
 import std::box as std;
 import std::optional;

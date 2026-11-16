@@ -1,13 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const root = process.env.CX_REPORT_DIR || "publisher-input";
+const root = process.env.CHL_REPORT_DIR || "publisher-input";
 const event = readJson(process.env.GITHUB_EVENT_PATH) || {};
 const workflowRun = event.workflow_run || {};
 const pullRequest = readJson(path.join(root, "pull-request.json")) || {};
 const metadata = readJson(path.join(root, "pr", "metadata.json"));
 const pullRequestNumber = Number(pullRequest.number || 0);
-const outputPath = process.env.CX_REPORT_OUTPUT || path.join(root, "comment.md");
+const outputPath = process.env.CHL_REPORT_OUTPUT || path.join(root, "comment.md");
 
 if (!pullRequestNumber) {
   fs.writeFileSync(outputPath, "");
@@ -33,8 +33,8 @@ const usableReport = artifactIssue ? null : report;
 const baselineCases = indexCases(baselineReport);
 
 const lines = [
-  "<!-- cx-ci-report -->",
-  `## CX CI · ${status(workflowRun.conclusion)}`,
+  "<!-- chl-ci-report -->",
+  `## Chloro CI · ${status(workflowRun.conclusion)}`,
   "",
   `Commit: ${link(commit.slice(0, 8), commit ? `${repositoryUrl}/commit/${commit}` : "")} · ${link("View workflow run", runUrl)}`,
   `Pull request: ${link(`#${pullRequestNumber}`, pullRequest.html_url || `${repositoryUrl}/pull/${pullRequestNumber}`)}`,
@@ -101,7 +101,7 @@ if (artifactIssue) {
   if (reference) {
     lines.push(
       "",
-      `\`vs ${cell(reference.command)}\` compares each cx time with the \`${cell(reference.command)}\` time (${cell(reference.version)}).`,
+      `\`vs ${cell(reference.command)}\` compares each chl time with the \`${cell(reference.command)}\` time (${cell(reference.version)}).`,
     );
   }
 
@@ -124,7 +124,7 @@ if (artifactIssue) {
   if (baselineReport?.cases && baselineMetadata) {
     const baselineBranch = baselineMetadata.base_branch || pullRequest.base?.ref || "base";
     const baselineCommit = baselineReport.commit || baselineMetadata.source_sha || "";
-    const baselineRunId = process.env.CX_BASELINE_RUN_ID || "";
+    const baselineRunId = process.env.CHL_BASELINE_RUN_ID || "";
     const baselineRunUrl = baselineRunId ? `${repositoryUrl}/actions/runs/${baselineRunId}` : "";
     lines.push(
       "",

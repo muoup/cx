@@ -1,0 +1,15 @@
+[package]
+name = "chl-hir-lowering"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+rustc-hash = { workspace = true }
+chl-hir = { path = "../chl-hir" }
+chl-hmir = { path = "../chl-hmir" }
+chl-intrinsics = { path = "../chl-intrinsics" }
+chl-log = { path = "../chl-log" }
+chl-namespace = { path = "../chl-namespace" }
+chl-target = { path = "../chl-target" }
+chl-tokens = { path = "../chl-tokens" }
+chl-util = { path = "../chl-util" }

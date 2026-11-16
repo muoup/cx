@@ -14,7 +14,7 @@ Do not reintroduce a separate `'static` lifetime *semantics* merely to express a
 
 ## Syntax for the first implementation
 
-```cx
+```chl
 comptime expr<T> pass<T>(expr<T> value) {
     return value;
 }
@@ -36,7 +36,7 @@ The examples above show intended syntax, not complete function bodies.
 - Replace trailing `safe` with trailing `@safe`. `@safe` is a function contract marker, not an effect-list member.
 - Replace `@unsafe { ... }` and `@unsafe(expr)` with `with [@unsafe] { ... }` and `with [@unsafe](expr)`. Support the corresponding `@nonsafe` forms. The inner `with` scope sets its exact tier: `with [@nonsafe]` nested in `with [@unsafe]` removes explicit unsafe permission until it ends.
 - Parse and retain a function effect-list slot before `@safe`, but reject nonempty lists with a clear unsupported-feature diagnostic in v0. Do not silently accept `std::fileops` or other unimplemented contracts. The syntax for explicitly unsafe function declarations while general effect lists are unavailable remains open.
-- Migrate repository examples and fixtures and reject superseded spellings in the same branch. Preserve standard C syntax where applicable; the CX-specific syntax cutover must not break C parsing.
+- Migrate repository examples and fixtures and reject superseded spellings in the same branch. Preserve standard C syntax where applicable; the Chloro-specific syntax cutover must not break C parsing.
 
 The future effect design uses closed empty defaults for omitted lists on safe functions and open defaults on nonsafe functions, and includes library-declared effects and intrinsic `@return`/`@yield`. These are design context, not checks to implement in this v0 syntax migration. Future `with` authority may be restricted to trusted code; v0 treats it as the replacement for the current explicit unsafe island.
 
@@ -126,7 +126,7 @@ These rules should be implemented as general conversions and analysis facts rath
 
 ## Current code landmarks and open decisions
 
-At the time of this note, `compiler/cx-parsing/src/parse/types.rs` accepts lifetime spellings in `HIRTypeKind::MemoryReference`, but `compiler/cx-typechecker/src/symbol/completion.rs` discards them. THIR defines `THIRReferenceLifetime` without carrying it through completed reference types. `THIRCoercion::ReferenceBounding` remains a `todo!()` in `compiler/cx-thir-lowering/src/lowering/operators.rs`. MIR defines `BindLifetime`, while `compiler/cx-mir-analysis/src/passes/ownership.rs` currently tracks ownership availability rather than reference dependencies. Verify all these landmarks against the checkout before editing.
+At the time of this note, `compiler/chl-parsing/src/parse/types.rs` accepts lifetime spellings in `HIRTypeKind::MemoryReference`, but `compiler/chl-typechecker/src/symbol/completion.rs` discards them. THIR defines `THIRReferenceLifetime` without carrying it through completed reference types. `THIRCoercion::ReferenceBounding` remains a `todo!()` in `compiler/chl-thir-lowering/src/lowering/operators.rs`. MIR defines `BindLifetime`, while `compiler/chl-mir-analysis/src/passes/ownership.rs` currently tracks ownership availability rather than reference dependencies. Verify all these landmarks against the checkout before editing.
 
 The following details were not settled and should be asked about before their implementation slice:
 

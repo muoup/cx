@@ -24,13 +24,13 @@
 }
 
 /* Fills are unscoped since the generated markup uses plain class names. */
-:global(.b1) { fill: var(--cx-bush-1); }
-:global(.b2) { fill: var(--cx-bush-2); }
-:global(.b3) { fill: var(--cx-bush-3); }
-:global(.berry) { fill: var(--cx-berry); }
-:global(.fh) { fill: var(--cx-facet-hi); }
-:global(.fl) { fill: var(--cx-facet-lo); }
-:global(.dl) { fill: var(--cx-bush-3); }
+:global(.b1) { fill: var(--chl-bush-1); }
+:global(.b2) { fill: var(--chl-bush-2); }
+:global(.b3) { fill: var(--chl-bush-3); }
+:global(.berry) { fill: var(--chl-berry); }
+:global(.fh) { fill: var(--chl-facet-hi); }
+:global(.fl) { fill: var(--chl-facet-lo); }
+:global(.dl) { fill: var(--chl-bush-3); }
 
 .bush {
   position: absolute;
@@ -105,7 +105,7 @@
 
 .gust path {
   fill: none;
-  stroke: var(--cx-bush-3);
+  stroke: var(--chl-bush-3);
   stroke-width: 1.5;
   stroke-linecap: round;
   stroke-dasharray: 28 200;

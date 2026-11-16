@@ -11,7 +11,7 @@ A `.chl` module uses namespace-based symbol names by default. A library target c
 
 Use a `public extern "C":` section for definitions intended for the C interface:
 
-```cx title="mathlib.chl"
+```chl title="mathlib.chl"
 public extern "C":
 
 struct Point {
@@ -45,9 +45,9 @@ Static definitions and imported declarations are omitted from the generated inte
 
 ## Library Targets
 
-Request headers explicitly in `cx.lua`:
+Request headers explicitly in `chl.lua`:
 
-```lua title="cx.lua"
+```lua title="chl.lua"
 package("mathlib")
 stdlib("std")
 
@@ -56,7 +56,7 @@ lib:match("mathlib.chl")
 lib:headers("mathlib.chl")
 ```
 
-Run `cx build mathlib`. With the default debug profile, the output is `.internal/debug/mathlib.o` and `.internal/debug/include/mathlib/mathlib.h`.
+Run `chl build mathlib`. With the default debug profile, the output is `.internal/debug/mathlib.o` and `.internal/debug/include/mathlib/mathlib.h`.
 
 Header selection controls the C interface. The object also retains ordinary namespaced symbols from the library target's source modules.
 

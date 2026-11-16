@@ -5,7 +5,7 @@ mod stats;
 mod toolchain;
 
 use case::{all_cases, project_names, selected_case, Case, Workload};
-use cx_test_support::{
+use chl_test_support::{
     assert_stdout, run_command, CompilerBackend, ReferenceCompiler, TestTempDir,
 };
 use report::{render_github_table, render_pretty_table, BenchmarkReport, BenchmarkResult};
@@ -53,7 +53,7 @@ fn main() {
         Ok(options) => options,
         Err(error) => {
             eprintln!("error: {error}");
-            eprintln!("usage: cargo run -p cx-benchmarks -- [options]");
+            eprintln!("usage: cargo run -p chl-benchmarks -- [options]");
             std::process::exit(2);
         }
     };
@@ -113,7 +113,7 @@ fn measure(options: &Options, invocation_directory: &Path) -> Result<Rendered, S
         .transpose()?;
     let mut toolchains = select_backends(options.backend.as_deref())?
         .into_iter()
-        .map(Toolchain::Cx)
+        .map(Toolchain::Chl)
         .collect::<Vec<_>>();
     toolchains.extend(reference.as_ref().map(Toolchain::Reference));
 

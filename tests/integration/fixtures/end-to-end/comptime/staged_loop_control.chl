@@ -1,14 +1,14 @@
-/* CX-STDOUT: continue 1 */
-/* CX-STDOUT-NEXT: cleanup 20 */
-/* CX-STDOUT-NEXT: cleanup 10 */
-/* CX-STDOUT-NEXT: continue 2 */
-/* CX-STDOUT-NEXT: cleanup 20 */
-/* CX-STDOUT-NEXT: cleanup 10 */
-/* CX-STDOUT-NEXT: continued */
-/* CX-STDOUT-NEXT: break */
-/* CX-STDOUT-NEXT: broken */
-/* CX-STDOUT-NEXT: switch break */
-/* CX-STDOUT-NEXT: switched */
+/* CHL-STDOUT: continue 1 */
+/* CHL-STDOUT-NEXT: cleanup 20 */
+/* CHL-STDOUT-NEXT: cleanup 10 */
+/* CHL-STDOUT-NEXT: continue 2 */
+/* CHL-STDOUT-NEXT: cleanup 20 */
+/* CHL-STDOUT-NEXT: cleanup 10 */
+/* CHL-STDOUT-NEXT: continued */
+/* CHL-STDOUT-NEXT: break */
+/* CHL-STDOUT-NEXT: broken */
+/* CHL-STDOUT-NEXT: switch break */
+/* CHL-STDOUT-NEXT: switched */
 
 #include <stdio.h>
 

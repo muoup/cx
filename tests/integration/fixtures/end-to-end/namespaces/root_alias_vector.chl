@@ -1,4 +1,4 @@
-/* CX-STDOUT: 1 */
+/* CHL-STDOUT: 1 */
 
 import std::vector as _;
 

@@ -1,11 +1,11 @@
 use crate::compilation::{timed_compilation, CompilationFailure, CompilationResult, TestTempDir};
-use cx_pipeline::compile;
-use cx_pipeline::project::{native_inputs, target_sources, ProjectPackages};
-use cx_pipeline_data::config::{
+use chl_pipeline::compile;
+use chl_pipeline::project::{native_inputs, target_sources, ProjectPackages};
+use chl_pipeline_data::config::{
     load_project, IncludeSpecSource, LinkEntry, ProfileConfig, ProjectConfig, DEBUG_PROFILE,
 };
-use cx_pipeline_data::package::PackageId;
-use cx_pipeline_data::{
+use chl_pipeline_data::package::PackageId;
+use chl_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
     UnsafeFlags,
 };
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 const PROFILE: &str = "release";
 
-/// One target of a `cx.lua` project, built with its release profile (or the debug profile when
+/// One target of a `chl.lua` project, built with its release profile (or the debug profile when
 /// it has none) outside the project's own `.internal` directory.
 pub struct ProjectBinary {
     pub root: PathBuf,

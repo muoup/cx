@@ -1,8 +1,8 @@
-/* CX-STDOUT: checksum=8410afb240a3d8bb */
-/* CX-STDOUT-NEXT: largest_component=224194 successful_routes=192 */
-/* CX-STDOUT-NEXT: total_distance=458719 total_expanded=13607903 total_length=65674 */
-/* CX-STDOUT-NEXT: maximum_flow=2512 maximum_flow_cell=79243 */
-/* CX-STDOUT-NEXT: verification=passed */
+/* CHL-STDOUT: checksum=8410afb240a3d8bb */
+/* CHL-STDOUT-NEXT: largest_component=224194 successful_routes=192 */
+/* CHL-STDOUT-NEXT: total_distance=458719 total_expanded=13607903 total_length=65674 */
+/* CHL-STDOUT-NEXT: maximum_flow=2512 maximum_flow_cell=79243 */
+/* CHL-STDOUT-NEXT: verification=passed */
 
 #include <stdint.h>
 #include <stdio.h>

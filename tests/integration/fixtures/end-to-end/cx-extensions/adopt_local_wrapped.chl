@@ -1,7 +1,0 @@
-/* CX-STDOUT: */
-int main() {
-    int source = 7;
-    int alias = @adopt(@unsafe(source));
-    alias = 9;
-    return source == 9 ? 0 : 1;
-}

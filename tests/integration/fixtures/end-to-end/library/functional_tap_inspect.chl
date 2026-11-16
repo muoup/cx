@@ -1,5 +1,5 @@
-/* CX-STDOUT: tapped 5 */
-/* CX-STDOUT-NEXT: inspected 5 */
+/* CHL-STDOUT: tapped 5 */
+/* CHL-STDOUT-NEXT: inspected 5 */
 
 #include <stdio.h>
 

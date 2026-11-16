@@ -1,4 +1,4 @@
-use cx_test_support::{
+use chl_test_support::{
     assert_stdout, backend_name, compile_file, expected_stdout, run_binary, run_command,
     CompilationFailure, CompilationMode, CompilerBackend, ReferenceCompiler, TestTempDir,
 };
@@ -97,9 +97,9 @@ const REFERENCE_FLAGS: &[&str] = &[
 fn reference_compiler() -> &'static ReferenceCompiler {
     static REFERENCE: OnceLock<ReferenceCompiler> = OnceLock::new();
     REFERENCE.get_or_init(|| {
-        let command = std::env::var("CX_TEST_CC").unwrap_or_else(|_| "cc".to_string());
+        let command = std::env::var("CHL_TEST_CC").unwrap_or_else(|_| "cc".to_string());
         ReferenceCompiler::detect(&command).unwrap_or_else(|error| {
-            panic!("C fixtures need a reference compiler (CX_TEST_CC): {error}")
+            panic!("C fixtures need a reference compiler (CHL_TEST_CC): {error}")
         })
     })
 }

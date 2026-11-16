@@ -8,7 +8,7 @@ The `safe` keyword is currently a work-in-progress feature to restrict a functio
 implementation such that it is free of undefined behavior outside of explicitly accepted
 unsafe blocks.
 
-```cx
+```chl
 int fn() safe
 where
     post(ret): (ret == 1)
@@ -17,7 +17,7 @@ where
 }
 ```
 
-A `safe` function must use a subset of CX semantics that is suitable for
+A `safe` function must use a subset of Chloro semantics that is suitable for
 formal verification. The feature is still being stabilized, but the current
 rules include:
 
@@ -38,7 +38,7 @@ not escape its intended lifetime without explicit annotation.
 Native `T&` references are safe in a narrow case: a `T&` may be returned from a
 safe function and used with an rvalue lifetime in the caller's context.
 
-```cx
+```chl
 import std::io;
 
 struct Data {
@@ -74,7 +74,7 @@ The unsafe island suppresses safe-subset checks for its enclosed subtree only.
 Safe functions are checked during typechecking, and constant-false contract
 assertions are checked from MIR before ordinary MIR-to-LMIR lowering continues.
 
-```cx
+```chl
 int fn() safe
 where
     post(ret): (ret == 1)

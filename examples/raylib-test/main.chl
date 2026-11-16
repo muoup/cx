@@ -1,7 +1,7 @@
 #include <raylib.h>
 
 int main() {
-    InitWindow(800, 450, "CX + Raylib");
+    InitWindow(800, 450, "Chloro + Raylib");
     SetTargetFPS(60);
 
     Color background = { 245, 245, 245, 255 };
@@ -10,7 +10,7 @@ int main() {
     while (!WindowShouldClose()) {
         BeginDrawing();
         ClearBackground(background);
-        DrawText("Hello from CX + Raylib", 220, 200, 24, text);
+        DrawText("Hello from Chloro + Raylib", 220, 200, 24, text);
         EndDrawing();
     }
 

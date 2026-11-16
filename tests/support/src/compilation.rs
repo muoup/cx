@@ -1,7 +1,7 @@
-use cx_log::CXResult;
-use cx_pipeline::compile;
-use cx_pipeline_data::package::{PackageId, Packages};
-use cx_pipeline_data::{
+use chl_log::CHLResult;
+use chl_pipeline::compile;
+use chl_pipeline_data::package::{PackageId, Packages};
+use chl_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
     UnsafeFlags,
 };
@@ -19,7 +19,7 @@ pub struct TestTempDir {
 impl TestTempDir {
     pub fn new(test_name: &str) -> Self {
         let unique_id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join("cx-test-suite").join(format!(
+        let path = std::env::temp_dir().join("chl-test-suite").join(format!(
             "{}-{}-{}",
             sanitize_name(test_name),
             std::process::id(),
@@ -140,7 +140,7 @@ fn file_config(
 
 pub(crate) fn timed_compilation(
     config: CompilerConfig,
-    compile: impl FnOnce(CompilerConfig) -> CXResult<()>,
+    compile: impl FnOnce(CompilerConfig) -> CHLResult<()>,
 ) -> Result<CompilationResult, CompilationFailure> {
     let output = config.output.clone();
     let start = Instant::now();

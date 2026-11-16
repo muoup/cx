@@ -7,7 +7,7 @@
 
 .chapters li {
   margin: 0;
-  border-bottom: 1px solid var(--cx-rule);
+  border-bottom: 1px solid var(--chl-rule);
 }
 
 .chapters li:last-child {
@@ -20,17 +20,17 @@
   align-items: baseline;
   padding: 12px 8px;
   border-radius: 6px;
-  color: var(--cx-ink);
+  color: var(--chl-ink);
   text-decoration: none !important;
 }
 
 .chapter:hover {
-  background: var(--cx-inset);
-  color: var(--cx-ink);
+  background: var(--chl-inset);
+  color: var(--chl-ink);
 }
 
 .number {
-  color: var(--cx-faint);
+  color: var(--chl-faint);
   font: 500 14px var(--ifm-font-family-monospace);
 }
 
@@ -44,6 +44,6 @@
 .description {
   display: block;
   margin-top: 2px;
-  color: var(--cx-muted);
+  color: var(--chl-muted);
   font-size: 15px;
 }

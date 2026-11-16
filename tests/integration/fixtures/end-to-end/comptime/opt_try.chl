@@ -1,5 +1,5 @@
-/* CX-STDOUT: some 42 */
-/* CX-STDOUT-NEXT: none */
+/* CHL-STDOUT: some 42 */
+/* CHL-STDOUT-NEXT: none */
 
 #include <stdio.h>
 

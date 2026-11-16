@@ -1,0 +1,188 @@
+use chl_hir::ast::expression::{HIRBinOp, HIRExprKind, HIRExpression, HIRUnOp};
+use chl_hmir::{HMIRControlOp, expr::{HMIRExprID, HMIRExprKind}};
+use chl_intrinsics::{Intrinsic, VAIntrinsic};
+use chl_log::{CHLResult, catalogue::typecheck};
+use chl_tokens::TokenRange;
+use chl_util::identifier::CHLIdent;
+
+use crate::{
+    body::BodyLowering,
+    expr::{lower_expr, lower_identifier},
+    log::log_hir_error,
+};
+
+fn comma_separated(expr: &HIRExpression) -> Vec<&HIRExpression> {
+    match &expr.kind {
+        HIRExprKind::Void => Vec::new(),
+        HIRExprKind::BinOp {
+            op: HIRBinOp::Comma,
+            lhs,
+            rhs,
+        } => {
+            let mut exprs = comma_separated(lhs);
+            exprs.push(rhs);
+            exprs
+        }
+        _ => vec![expr],
+    }
+}
+
+type Named<'h> = Vec<(&'h CHLIdent, &'h HIRExpression)>;
+
+// The positional arguments in order, apart from those that name the parameter they bind
+fn split_arguments<'h>(args: impl IntoIterator<Item = &'h HIRExpression>) -> (Vec<&'h HIRExpression>, Named<'h>) {
+    let mut positional = Vec::new();
+    let mut named = Vec::new();
+    for arg in args {
+        match &arg.kind {
+            HIRExprKind::NamedArgument { name, value } => named.push((name, value.as_ref())),
+            _ => positional.push(arg),
+        }
+    }
+    (positional, named)
+}
+
+fn lower_named<'a>(context: &mut BodyLowering<'a>, named: Named<'a>) -> CHLResult<Vec<(CHLIdent, HMIRExprID)>> {
+    named
+        .into_iter()
+        .map(|(name, value)| Ok((name.clone(), lower_expr(context, value)?)))
+        .collect()
+}
+
+pub(crate) fn lower_arguments<'a>(
+    context: &mut BodyLowering<'a>,
+    args: impl IntoIterator<Item = &'a HIRExpression>,
+) -> CHLResult<(Vec<HMIRExprID>, Vec<(CHLIdent, HMIRExprID)>)> {
+    let (positional, named) = split_arguments(args);
+    let positional = lower_args(context, &positional)?;
+    Ok((positional, lower_named(context, named)?))
+}
+
+// 'piped' values are placed at the argument index their pipe names, 'append' after the rest
+pub(crate) fn lower_call<'a>(
+    context: &mut BodyLowering<'a>,
+    call: &'a HIRExpression,
+    mut piped: Vec<(usize, &'a HIRExpression)>,
+    append: Vec<&'a HIRExpression>,
+) -> CHLResult<HMIRExprID> {
+    if let HIRExprKind::UnOp { operator: HIRUnOp::Escape, operand } = &call.kind {
+        let lowered = lower_call(context, operand, piped, append)?;
+        return Ok(context.control(HMIRControlOp::Escape(lowered), &call.range));
+    }
+    let HIRExprKind::BinOp { op, lhs, rhs } = &call.kind else {
+        return log_hir_error(
+            &call.range,
+            &typecheck::UNEXPECTED_KIND,
+            ("pipe target".into(), "a call".into()),
+        );
+    };
+    match op {
+        HIRBinOp::MethodCall => {
+            let (args, named) = split_arguments(comma_separated(rhs));
+            let mut args = args.into_iter().map(|arg| (arg, false)).collect::<Vec<_>>();
+            for (index, value) in piped.into_iter().rev() {
+                if index > args.len() {
+                    return log_hir_error(
+                        &value.range,
+                        &typecheck::INDEX_BOUNDS,
+                        (
+                            "pipe".into(),
+                            index.to_string(),
+                            Some(args.len().to_string()),
+                        ),
+                    );
+                }
+                args.insert(index, (value, true));
+            }
+            args.extend(append.into_iter().map(|arg| (arg, true)));
+            lower_callee_call(context, lhs, args, named, &call.range)
+        }
+        HIRBinOp::Pipe(index) => {
+            // REVIEW: We might want to consider consolidating this into HMIR eval, i.e. have this be a standard operation
+            piped.push((*index as usize, lhs.as_ref()));
+            lower_call(context, rhs, piped, append)
+        }
+        HIRBinOp::BackwardPipe => {
+            let append = std::iter::once(rhs.as_ref()).chain(append).collect();
+            lower_call(context, lhs, piped, append)
+        }
+        _ => log_hir_error(
+            &call.range,
+            &typecheck::UNEXPECTED_KIND,
+            ("pipe target".into(), "a call".into()),
+        ),
+    }
+}
+
+// Each argument is paired with whether a pipe supplied it
+fn lower_callee_call<'a>(
+    context: &mut BodyLowering<'a>,
+    callee: &'a HIRExpression,
+    args: Vec<(&'a HIRExpression, bool)>,
+    named: Named<'a>,
+    span: &TokenRange,
+) -> CHLResult<HMIRExprID> {
+    let name = match &callee.kind {
+        HIRExprKind::Identifier { name } => Some(name),
+        _ => None,
+    };
+
+    if let Some(root) = name.and_then(|name| name.root_name_ref()) {
+        let plain = args.iter().map(|(arg, _)| *arg).collect::<Vec<_>>();
+        if let Some(intrinsic) = lower_builtin_call(context, root.as_str(), &plain, span)? {
+            if let Some((_, value)) = named.first() {
+                let feature = ("a named argument".into(), "a builtin call".into());
+                return log_hir_error(&value.range, &typecheck::INVALID_CONTEXT, feature);
+            }
+            return Ok(intrinsic);
+        }
+    }
+
+    let callee = match name {
+        Some(name) => lower_identifier(context, name, &callee.range)?,
+        None => lower_expr(context, callee)?,
+    };
+    let args = args
+        .iter()
+        .map(|(arg, piped)| {
+            let value = lower_expr(context, arg)?;
+            Ok(if *piped {
+                context.push(HMIRExprKind::Piped(value), &arg.range)
+            } else {
+                value
+            })
+        })
+        .collect::<CHLResult<_>>()?;
+    let named = lower_named(context, named)?;
+    Ok(context.push(HMIRExprKind::Call { callee, args, named }, span))
+}
+
+fn lower_args<'a>(
+    context: &mut BodyLowering<'a>,
+    args: &[&'a HIRExpression],
+) -> CHLResult<Vec<HMIRExprID>> {
+    args.iter().map(|arg| lower_expr(context, arg)).collect()
+}
+
+fn lower_builtin_call<'a>(
+    context: &mut BodyLowering<'a>,
+    name: &str,
+    args: &[&'a HIRExpression],
+    span: &TokenRange,
+) -> CHLResult<Option<HMIRExprID>> {
+    let intrinsic = match (name, args) {
+        ("va_start" | "__builtin_va_start", [list, last]) => VAIntrinsic::Start {
+            list: lower_expr(context, list)?,
+            last: lower_expr(context, last)?,
+        },
+        ("va_end" | "__builtin_va_end", [list]) => VAIntrinsic::End {
+            list: lower_expr(context, list)?,
+        },
+        _ => return Ok(None),
+    };
+
+    Ok(Some(context.push(
+        HMIRExprKind::Intrinsic(Intrinsic::VA(intrinsic)),
+        span,
+    )))
+}

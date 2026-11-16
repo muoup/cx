@@ -37,11 +37,11 @@ jobs:
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - name: Build cx for the standard-library reference
+      - name: Build chl for the standard-library reference
         working-directory: .
         run: |
-          cargo build --release --locked -p cx
-          echo "CX_BIN=$GITHUB_WORKSPACE/target/release/cx" >> "$GITHUB_ENV"
+          cargo build --release --locked -p chl
+          echo "CHL_BIN=$GITHUB_WORKSPACE/target/release/chl" >> "$GITHUB_ENV"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

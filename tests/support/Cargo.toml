@@ -1,16 +1,16 @@
 [package]
-name = "cx-test-support"
+name = "chl-test-support"
 version = "0.0.0"
 edition = "2021"
 
 [features]
-default = ["cx-pipeline-data/test"]
-ignore-system-headers = ["cx-pipeline/ignore-system-headers"]
-backend-llvm = ["cx-pipeline/backend-llvm"]
+default = ["chl-pipeline-data/test"]
+ignore-system-headers = ["chl-pipeline/ignore-system-headers"]
+backend-llvm = ["chl-pipeline/backend-llvm"]
 
 [dependencies]
-cx-pipeline-data = { path = "../../compiler/cx-pipeline-data", default-features = false }
-cx-pipeline = { path = "../../compiler/cx-pipeline", default-features = false }
-cx-log = { path = "../../compiler/cx-log" }
+chl-pipeline-data = { path = "../../compiler/chl-pipeline-data", default-features = false }
+chl-pipeline = { path = "../../compiler/chl-pipeline", default-features = false }
+chl-log = { path = "../../compiler/chl-log" }
 rustc-hash = { workspace = true }
 serde = { version = "1", features = ["derive"] }

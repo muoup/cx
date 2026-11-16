@@ -1,4 +1,4 @@
-/* CX-STDOUT: 1 9 */
+/* CHL-STDOUT: 1 9 */
 #include <stdio.h>
 comptime int calculate() {
     int count = 0;

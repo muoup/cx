@@ -5,9 +5,9 @@ edition = "2021"
 build = "build.rs"
 
 [features]
-default = ["cx-test-support/default"]
-ignoresystem-headers = ["cx-test-support/ignore-system-headers"]
-backend-llvm = ["cx-test-support/backend-llvm"]
+default = ["chl-test-support/default"]
+ignoresystem-headers = ["chl-test-support/ignore-system-headers"]
+backend-llvm = ["chl-test-support/backend-llvm"]
 
 [[test]]
 name = "suite"
@@ -15,6 +15,6 @@ path = "test.rs"
 harness = true
 
 [dependencies]
-cx-test-support = { path = "../support", default-features = false }
-cx-pipeline = { path = "../../compiler/cx-pipeline", default-features = false }
-cx-pipeline-data = { path = "../../compiler/cx-pipeline-data" }
+chl-test-support = { path = "../support", default-features = false }
+chl-pipeline = { path = "../../compiler/chl-pipeline", default-features = false }
+chl-pipeline-data = { path = "../../compiler/chl-pipeline-data" }

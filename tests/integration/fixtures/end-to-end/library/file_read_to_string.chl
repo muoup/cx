@@ -1,5 +1,5 @@
-/* CX-STDOUT: alpha */
-/* CX-STDOUT-NEXT: beta */
+/* CHL-STDOUT: alpha */
+/* CHL-STDOUT-NEXT: beta */
 
 import std::file;
 import std::optional;

@@ -1,23 +1,23 @@
 ---
 title: Build System
-description: Project builds, cx.lua configuration, library targets, and C header generation.
+description: Project builds, chl.lua configuration, library targets, and C header generation.
 ---
 
 # Build System
 
-Project builds enable the module system and read their configuration from `cx.lua`. Every CX source module uses the `.chl` extension. The same module can be imported normally and selected for C header generation by a library target.
+Project builds enable the module system and read their configuration from `chl.lua`. Every Chloro source module uses the `.chl` extension. The same module can be imported normally and selected for C header generation by a library target.
 
 ## Starting a Project
 
 ```bash
-cx init my_project
+chl init my_project
 cd my_project
-cx build
+chl build
 ```
 
 The starter project contains `main.chl` and a Lua configuration:
 
-```lua title="cx.lua"
+```lua title="chl.lua"
 package("my_project")
 stdlib("std")
 
@@ -25,13 +25,13 @@ local main = target("my_project", "executable")
 main:match("main.chl")
 ```
 
-`package` names the package. `stdlib` mounts the compiler's standard library. `source_root("src")` optionally changes the module source directory; otherwise it is the directory containing `cx.lua`.
+`package` names the package. `stdlib` mounts the compiler's standard library. `source_root("src")` optionally changes the module source directory; otherwise it is the directory containing `chl.lua`.
 
 ## Targets and Headers
 
 Targets select source files with `:match(...)` and optionally remove matches with `:exclude(...)`. Both accept file paths and glob patterns relative to the project directory.
 
-```lua title="cx.lua"
+```lua title="chl.lua"
 package("mathlib")
 stdlib("std")
 
@@ -58,12 +58,12 @@ release:backend("cranelift")
 
 ## Building
 
-The compiler searches the current directory and its parents for `cx.lua`. Build all targets or select them by name:
+The compiler searches the current directory and its parents for `chl.lua`. Build all targets or select them by name:
 
 ```bash
-cx build
-cx build mathlib
-cx build --profile release --backend-llvm -O3
+chl build
+chl build mathlib
+chl build --profile release --backend-llvm -O3
 ```
 
 Build artifacts live under `.internal/<profile>/`. An executable is named after its target. A library produces `<target>.o`, with generated headers under `include/<target>/`, preserving source paths relative to the package source root.
@@ -73,8 +73,8 @@ Build artifacts live under `.internal/<profile>/`. An executable is named after 
 Direct file compilation uses a C-like command line:
 
 ```bash
-cx main.chl -o main
-cx -c library.chl -o library.o
+chl main.chl -o main
+chl -c library.chl -o library.o
 ```
 
 Imports in this mode are restricted to compiler-owned libraries. Use project mode for ordinary module imports. `-I <directory>` adds a header search path and `-D <name>[=value]` defines a preprocessor macro.

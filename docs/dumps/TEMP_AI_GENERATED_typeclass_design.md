@@ -20,7 +20,7 @@ Goal: one syntax and one semantic reading for typeclasses covering static (monom
 
 ## Guiding syntax
 
-~~~cx
+~~~chl
 comptime @metatype iter(@type T) =>
     typeclass(@type this) : @dyn {
         std::opt(T) next(this&);
@@ -110,7 +110,7 @@ int main() {
 | comptime fn | `^iter(T) value` | staged expression |
 
 - CONFIRMED: a parameter is comptime only if marked `comptime` or inside a comptime function. No deduction from the classifier.
-- CONFIRMED: the current implicit rule is wrong and should go: compiler/cx-parsing/src/parse/functions.rs:235-238 treats a `@type` parameter as comptime without the keyword. Roughly 45 signature lines in 33 files under lib/ and tests/ rely on it (rough grep, may include continuation lines of comptime functions).
+- CONFIRMED: the current implicit rule is wrong and should go: compiler/chl-parsing/src/parse/functions.rs:235-238 treats a `@type` parameter as comptime without the keyword. Roughly 45 signature lines in 33 files under lib/ and tests/ rely on it (rough grep, may include continuation lines of comptime functions).
 - CONFIRMED: a runtime variant of @type with basic reflection metadata is wanted eventually; unsupported for now. All current @type uses are comptime.
 - A metatype where a type is expected means "some member type". `iter(T) value` therefore introduces a hidden comptime type parameter, monomorphized per type. This is the one implicit element left. The type is recovered with `@type(value)`.
 - Consequence, unconfirmed: the earlier named-binder form `iter(T) I = _, I value` and the agent's `iter(T) auto value` marker are dropped, since `iter(T) x` now always declares a value. Unbounded `auto value` (Zig anytype) was not revisited.
@@ -153,7 +153,7 @@ Rust-style borrowed `&dyn` only.
 - Whether a bounded body is checked once against the bound or at each instantiation. User stated the body should have guarantees, which implies the former; consistent with the Rust-style generic checking goal in docs/TEMP_AI_GENERATED_staged_expression_design.md.
 - Typed initializer `T { ... }` as a general form: struct gives an initializer list, metatype gives a member type, function type could give a statement body as an alternative to @reify. Only the metatype case was pinned down.
 - Owned erasure, consuming receivers in @dyn classes, allocators, runtime-built vtables. Conclusions reached before deferral, to avoid re-deriving:
-  - CX has no implicit destructors (`vector::drop_with` takes its destructor as an argument), so there is no drop slot. An owned erased value must be @nodrop and discharged through a consuming member, so a class meant for owned erasure must declare one.
+  - Chloro has no implicit destructors (`vector::drop_with` takes its destructor as an argument), so there is no drop slot. An owned erased value must be @nodrop and discharged through a consuming member, so a class meant for owned erasure must declare one.
   - A by-value slot takes a pointer and is always a thunk: `by_value(move @adopt(*(I*)p))`. Consuming has two halves: the slot consumes the subject, the container releases storage and `@leak`s itself.
   - `std::dyn` should borrow its vtable, never own it; owning forces one vtable per value or a refcount, and an allocator handle in the fat pointer. Owned vtables belong in a separate handle that `std::dyn` borrows from.
   - "Pseudo-allocation" for static vtables is not the general allocator interface (allocate-then-write would write constant memory). It is a narrower source with acquire/release; construction differs by stage, use is uniform.
@@ -182,11 +182,11 @@ Notation from Kovács, "Staged Compilation with Two-Level Type Theory" (2022) an
 
 ## Parser landmarks (read, not modified)
 
-- compiler/cx-parsing/src/preparse.rs:83-102: generators are recognised only by the literal tokens `comptime @type name(`. Needs a `@metatype` equivalent. An associated name such as `comptime @type span::span_iter_t(` is not matched today, because `::` follows the first identifier.
-- compiler/cx-parsing/src/parse.rs:248: type binders are found by scanning for `@type ident`; the scan stops at `=>`, so a `typeclass(@type this)` binder after the arrow must be noted by the typeclass parser.
-- compiler/cx-parsing/src/parse/functions.rs:235-238: implicit comptime for `@type` parameters (to be removed).
-- compiler/cx-parsing/src/parse/expressions.rs:492: a type in value position followed by `{` is currently a parse error; hook point for `T { ... }`. `:27-102` holds the `@` intrinsics (`@reify`, `@leak`, `@adopt`).
-- compiler/cx-parsing/src/parse/types.rs:84-99: aggregate attributes after `:`; `:795` `auto` as a base type outside C mode.
+- compiler/chl-parsing/src/preparse.rs:83-102: generators are recognised only by the literal tokens `comptime @type name(`. Needs a `@metatype` equivalent. An associated name such as `comptime @type span::span_iter_t(` is not matched today, because `::` follows the first identifier.
+- compiler/chl-parsing/src/parse.rs:248: type binders are found by scanning for `@type ident`; the scan stops at `=>`, so a `typeclass(@type this)` binder after the arrow must be noted by the typeclass parser.
+- compiler/chl-parsing/src/parse/functions.rs:235-238: implicit comptime for `@type` parameters (to be removed).
+- compiler/chl-parsing/src/parse/expressions.rs:492: a type in value position followed by `{` is currently a parse error; hook point for `T { ... }`. `:27-102` holds the `@` intrinsics (`@reify`, `@leak`, `@adopt`).
+- compiler/chl-parsing/src/parse/types.rs:84-99: aggregate attributes after `:`; `:795` `auto` as a base type outside C mode.
 - New syntax must use token sequences that are syntax errors in C; no methods are planned beyond member dispatch; `::` is association by naming convention.
 
 ## Prerequisite not verified

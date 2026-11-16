@@ -14,32 +14,32 @@
 
 /* Reading surfaces are lighter than the ground in both modes; code on a sheet sits slightly inset */
 :root {
-  --cx-ground: #d2dfc3;
-  --cx-band: #dce7cf;
-  --cx-sheet: #f5f8ef;
-  --cx-inset: #e9efe0;
-  --cx-rule: #b8c8a8;
-  --cx-ink: #15201a;
-  --cx-muted: #42513f;
-  --cx-faint: #52624f;
-  --cx-moss: #285f3d;
-  --cx-moss-tint: #c8dcb8;
-  --cx-on-moss: #f6f8ef;
-  --cx-clay: #8a4b1c;
-  --cx-clay-tint: #f1e2cf;
-  --cx-error: #a12d27;
-  --cx-error-bg: #f4dbd3;
-  --cx-band-lift: color-mix(in srgb, var(--cx-band) 65%, var(--cx-sheet));
-  --cx-bush-1: #bdd0a8;
-  --cx-bush-2: #adc497;
-  --cx-bush-3: #9db883;
-  --cx-berry: #c07252;
-  --cx-facet-hi: rgb(255 255 240 / 0.28);
-  --cx-facet-lo: rgb(40 70 30 / 0.07);
-  --cx-code-kw: #b23d17;
-  --cx-code-ty: #22683b;
-  --cx-code-str: #7c5700;
-  --cx-code-com: #5c6b5f;
+  --chl-ground: #d2dfc3;
+  --chl-band: #dce7cf;
+  --chl-sheet: #f5f8ef;
+  --chl-inset: #e9efe0;
+  --chl-rule: #b8c8a8;
+  --chl-ink: #15201a;
+  --chl-muted: #42513f;
+  --chl-faint: #52624f;
+  --chl-moss: #285f3d;
+  --chl-moss-tint: #c8dcb8;
+  --chl-on-moss: #f6f8ef;
+  --chl-clay: #8a4b1c;
+  --chl-clay-tint: #f1e2cf;
+  --chl-error: #a12d27;
+  --chl-error-bg: #f4dbd3;
+  --chl-band-lift: color-mix(in srgb, var(--chl-band) 65%, var(--chl-sheet));
+  --chl-bush-1: #bdd0a8;
+  --chl-bush-2: #adc497;
+  --chl-bush-3: #9db883;
+  --chl-berry: #c07252;
+  --chl-facet-hi: rgb(255 255 240 / 0.28);
+  --chl-facet-lo: rgb(40 70 30 / 0.07);
+  --chl-code-kw: #b23d17;
+  --chl-code-ty: #22683b;
+  --chl-code-str: #7c5700;
+  --chl-code-com: #5c6b5f;
 
   --ifm-color-primary: #285f3d;
   --ifm-color-primary-dark: #245637;
@@ -56,69 +56,69 @@
   --ifm-code-font-size: 88%;
   --ifm-line-height-base: 1.6;
 
-  --ifm-background-color: var(--cx-ground);
-  --ifm-background-surface-color: var(--cx-sheet);
-  --ifm-navbar-background-color: var(--cx-ground);
+  --ifm-background-color: var(--chl-ground);
+  --ifm-background-surface-color: var(--chl-sheet);
+  --ifm-navbar-background-color: var(--chl-ground);
   --ifm-footer-background-color: transparent;
-  --ifm-font-color-base: var(--cx-ink);
-  --ifm-heading-color: var(--cx-ink);
-  --ifm-color-content: var(--cx-ink);
-  --ifm-color-content-secondary: var(--cx-muted);
-  --ifm-link-color: var(--cx-moss);
-  --ifm-color-emphasis-100: var(--cx-band);
-  --ifm-color-emphasis-200: var(--cx-moss-tint);
-  --ifm-color-emphasis-300: var(--cx-rule);
-  --ifm-toc-border-color: var(--cx-rule);
-  --ifm-hr-background-color: var(--cx-rule);
-  --ifm-table-border-color: var(--cx-rule);
+  --ifm-font-color-base: var(--chl-ink);
+  --ifm-heading-color: var(--chl-ink);
+  --ifm-color-content: var(--chl-ink);
+  --ifm-color-content-secondary: var(--chl-muted);
+  --ifm-link-color: var(--chl-moss);
+  --ifm-color-emphasis-100: var(--chl-band);
+  --ifm-color-emphasis-200: var(--chl-moss-tint);
+  --ifm-color-emphasis-300: var(--chl-rule);
+  --ifm-toc-border-color: var(--chl-rule);
+  --ifm-hr-background-color: var(--chl-rule);
+  --ifm-table-border-color: var(--chl-rule);
   --ifm-table-stripe-background: transparent;
-  --ifm-menu-color: var(--cx-muted);
-  --ifm-menu-color-active: var(--cx-ink);
-  --ifm-menu-color-background-active: var(--cx-sheet);
-  --ifm-menu-color-background-hover: var(--cx-band);
-  --ifm-navbar-link-color: var(--cx-muted);
-  --ifm-navbar-link-hover-color: var(--cx-ink);
-  --ifm-navbar-link-active-color: var(--cx-ink);
-  --ifm-breadcrumb-item-background-active: var(--cx-band);
-  --ifm-breadcrumb-color-active: var(--cx-ink);
+  --ifm-menu-color: var(--chl-muted);
+  --ifm-menu-color-active: var(--chl-ink);
+  --ifm-menu-color-background-active: var(--chl-sheet);
+  --ifm-menu-color-background-hover: var(--chl-band);
+  --ifm-navbar-link-color: var(--chl-muted);
+  --ifm-navbar-link-hover-color: var(--chl-ink);
+  --ifm-navbar-link-active-color: var(--chl-ink);
+  --ifm-breadcrumb-item-background-active: var(--chl-band);
+  --ifm-breadcrumb-color-active: var(--chl-ink);
 
   --ifm-global-radius: 8px;
   --ifm-code-border-radius: 4px;
-  --ifm-code-background: var(--cx-inset);
-  --ifm-pre-background: var(--cx-inset);
+  --ifm-code-background: var(--chl-inset);
+  --ifm-pre-background: var(--chl-inset);
 
-  --docusaurus-highlighted-code-line-bg: color-mix(in srgb, var(--cx-moss) 12%, transparent);
+  --docusaurus-highlighted-code-line-bg: color-mix(in srgb, var(--chl-moss) 12%, transparent);
 }
 
 [data-theme='dark'] {
   color-scheme: dark;
 
-  --cx-ground: #15281c;
-  --cx-band: #1c3224;
-  --cx-sheet: #223a2a;
-  --cx-inset: #192e21;
-  --cx-rule: #34503d;
-  --cx-ink: #e8eee2;
-  --cx-muted: #b4c2b4;
-  --cx-faint: #93a596;
-  --cx-moss: #a3d48e;
-  --cx-moss-tint: #2c4e36;
-  --cx-on-moss: #0c1610;
-  --cx-clay: #e3ab76;
-  --cx-clay-tint: #433321;
-  --cx-error: #ff9d91;
-  --cx-error-bg: #4a2b27;
-  --cx-band-lift: color-mix(in srgb, var(--cx-band) 20%, var(--cx-sheet));
-  --cx-bush-1: #23402d;
-  --cx-bush-2: #2a4d36;
-  --cx-bush-3: #325a40;
-  --cx-berry: #9c5238;
-  --cx-facet-hi: rgb(200 240 190 / 0.05);
-  --cx-facet-lo: rgb(0 0 0 / 0.14);
-  --cx-code-kw: #ff8f5e;
-  --cx-code-ty: #9bd889;
-  --cx-code-str: #e8c26a;
-  --cx-code-com: #8fa293;
+  --chl-ground: #15281c;
+  --chl-band: #1c3224;
+  --chl-sheet: #223a2a;
+  --chl-inset: #192e21;
+  --chl-rule: #34503d;
+  --chl-ink: #e8eee2;
+  --chl-muted: #b4c2b4;
+  --chl-faint: #93a596;
+  --chl-moss: #a3d48e;
+  --chl-moss-tint: #2c4e36;
+  --chl-on-moss: #0c1610;
+  --chl-clay: #e3ab76;
+  --chl-clay-tint: #433321;
+  --chl-error: #ff9d91;
+  --chl-error-bg: #4a2b27;
+  --chl-band-lift: color-mix(in srgb, var(--chl-band) 20%, var(--chl-sheet));
+  --chl-bush-1: #23402d;
+  --chl-bush-2: #2a4d36;
+  --chl-bush-3: #325a40;
+  --chl-berry: #9c5238;
+  --chl-facet-hi: rgb(200 240 190 / 0.05);
+  --chl-facet-lo: rgb(0 0 0 / 0.14);
+  --chl-code-kw: #ff8f5e;
+  --chl-code-ty: #9bd889;
+  --chl-code-str: #e8c26a;
+  --chl-code-com: #8fa293;
 
   --ifm-color-primary: #a3d48e;
   --ifm-color-primary-dark: #8eca74;
@@ -140,8 +140,8 @@ kbd {
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--cx-clay) 28%, var(--cx-sheet));
-  color: var(--cx-ink);
+  background: color-mix(in srgb, var(--chl-clay) 28%, var(--chl-sheet));
+  color: var(--chl-ink);
 }
 
 .markdown a:not(.hash-link, .card) {
@@ -159,27 +159,27 @@ kbd {
 .navbar {
   height: 64px;
   box-shadow: none;
-  border-bottom: 1px solid var(--cx-rule);
+  border-bottom: 1px solid var(--chl-rule);
 }
 
-.navbar__brand.cx-wordmark {
+.navbar__brand.chl-wordmark {
   gap: 10px;
   margin-right: 1.25rem;
-  color: var(--cx-ink);
+  color: var(--chl-ink);
 }
 
-.cx-wordmark b {
+.chl-wordmark b {
   font-family: var(--ifm-font-family-monospace);
   font-size: 23px;
   font-weight: 600;
   letter-spacing: -0.03em;
 }
 
-.cx-tag {
+.chl-tag {
   padding: 2px 9px;
   border-radius: 999px;
-  background: var(--cx-sheet);
-  color: var(--cx-moss);
+  background: var(--chl-sheet);
+  color: var(--chl-moss);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.5;
@@ -200,7 +200,7 @@ kbd {
 }
 
 .navbar [class*='colorModeToggle'] button {
-  background: var(--cx-band);
+  background: var(--chl-band);
 }
 
 /* The landing page scrolls under fixed foliage, so its navbar sits flat on the page. */
@@ -219,8 +219,8 @@ body:has(.landing-page) .footer > .container {
 /* Footer */
 .footer {
   padding: 24px var(--ifm-navbar-padding-horizontal) 32px;
-  border-top: 1px solid var(--cx-rule);
-  color: var(--cx-muted);
+  border-top: 1px solid var(--chl-rule);
+  color: var(--chl-muted);
   font-size: 14px;
 }
 
@@ -247,11 +247,11 @@ body:has(.landing-page) .footer > .container {
 
 .footer__link-item,
 .footer__copyright {
-  color: var(--cx-muted);
+  color: var(--chl-muted);
 }
 
 .footer__link-item:hover {
-  color: var(--cx-ink);
+  color: var(--chl-ink);
   text-decoration: none;
 }
 
@@ -270,13 +270,13 @@ body:has(.landing-page) .footer {
 
 body:has(.landing-page) .footer > .container {
   padding-top: 24px;
-  border-top: 1px solid var(--cx-rule);
+  border-top: 1px solid var(--chl-rule);
 }
 
 /* Docs */
 /* The content is a lighter section between the sidebar and the contents list, which stay on the ground */
 main[class*='docMainContainer'] {
-  background: var(--cx-sheet);
+  background: var(--chl-sheet);
 }
 
 main[class*='docMainContainer'] > .container {
@@ -285,20 +285,20 @@ main[class*='docMainContainer'] > .container {
   padding: 0;
 }
 
-main[class*='docMainContainer'] :is(.container, .cx-chapter) {
+main[class*='docMainContainer'] :is(.container, .chl-chapter) {
   display: flex;
   flex: 1;
   flex-direction: column;
 }
 
 /* Theme padding and the 75% article cap are layered !important, so they are worked around rather than overridden */
-main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row {
+main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row {
   flex: 1;
   flex-wrap: nowrap;
   margin: -1rem 0 -2rem;
 }
 
-main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col:first-child {
+main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col:first-child {
   flex: 3 1 0;
   padding: 2.5rem clamp(1.25rem, 4vw, 3.5rem) 3rem;
 }
@@ -308,17 +308,17 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col:first
   margin-inline: auto;
 }
 
-main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
+main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
   flex: 1 1 0;
   min-width: 240px;
   max-width: none;
   padding: 1rem 0.75rem;
-  border-left: 1px solid var(--cx-rule);
-  background: var(--cx-ground);
+  border-left: 1px solid var(--chl-rule);
+  background: var(--chl-ground);
 }
 
 @media (max-width: 996px) {
-  main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col:first-child {
+  main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col:first-child {
     padding: 1.5rem 1rem 2rem;
   }
 }
@@ -342,7 +342,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   --ifm-h2-font-size: 1.45rem;
   margin-top: 2.75rem;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--cx-rule);
+  border-bottom: 1px solid var(--chl-rule);
 }
 
 .markdown :not(pre) > code {
@@ -350,57 +350,57 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   padding: 1px 5px;
 }
 
-.cx-doc-header {
+.chl-doc-header {
   margin-bottom: 2rem;
   padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--cx-rule);
+  border-bottom: 1px solid var(--chl-rule);
 }
 
-.cx-doc-description {
+.chl-doc-description {
   margin: 10px 0 0;
-  color: var(--cx-muted);
+  color: var(--chl-muted);
   font-size: 18px;
   line-height: 1.5;
 }
 
-.cx-chapter .markdown h1::before {
-  content: "Chapter " counter(cx-chapter);
+.chl-chapter .markdown h1::before {
+  content: "Chapter " counter(chl-chapter);
   display: block;
   margin-bottom: 8px;
-  color: var(--cx-moss);
+  color: var(--chl-moss);
   font: 600 12.5px/1.6 var(--ifm-font-family-monospace);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.cx-chapter .markdown h2 {
-  counter-increment: cx-sec;
+.chl-chapter .markdown h2 {
+  counter-increment: chl-sec;
 }
 
-.cx-chapter .markdown h2::before,
-.cx-chapter .table-of-contents > li > a::before {
+.chl-chapter .markdown h2::before,
+.chl-chapter .table-of-contents > li > a::before {
   margin-right: 14px;
-  color: var(--cx-faint);
+  color: var(--chl-faint);
   font: 500 14px var(--ifm-font-family-monospace);
   letter-spacing: 0;
 }
 
-.cx-chapter .markdown h2::before {
-  content: counter(cx-chapter) "." counter(cx-sec);
+.chl-chapter .markdown h2::before {
+  content: counter(chl-chapter) "." counter(chl-sec);
 }
 
-.cx-chapter .table-of-contents > li {
-  counter-increment: cx-toc;
+.chl-chapter .table-of-contents > li {
+  counter-increment: chl-toc;
 }
 
-.cx-chapter .table-of-contents > li > a::before {
-  content: counter(cx-chapter) "." counter(cx-toc);
+.chl-chapter .table-of-contents > li > a::before {
+  content: counter(chl-chapter) "." counter(chl-toc);
   margin-right: 6px;
   font-size: 11.5px;
 }
 
-.cx-chapter .table-of-contents > li > a.table-of-contents__link--active::before {
-  color: var(--cx-moss);
+.chl-chapter .table-of-contents > li > a.table-of-contents__link--active::before {
+  color: var(--chl-moss);
 }
 
 /* Sidebar */
@@ -422,11 +422,11 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
    lifts further toward the page */
 .menu__list-item-collapsible,
 .menu__list .menu__list {
-  background: var(--cx-band);
+  background: var(--chl-band);
 }
 
 .menu__list .menu__list :where(.menu__list-item-collapsible, .menu__list) {
-  background: var(--cx-band-lift);
+  background: var(--chl-band-lift);
 }
 
 .menu__list .menu__list {
@@ -444,19 +444,19 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 
 .menu__list-item-collapsible:hover,
 .menu__list .menu__list .menu__link:hover:not([aria-current="page"]) {
-  background: color-mix(in srgb, var(--cx-band) 40%, var(--cx-sheet));
+  background: color-mix(in srgb, var(--chl-band) 40%, var(--chl-sheet));
 }
 
 .menu__list .menu__list .menu__list .menu__link:hover:not([aria-current="page"]) {
-  background: color-mix(in srgb, var(--cx-band-lift), var(--cx-sheet));
+  background: color-mix(in srgb, var(--chl-band-lift), var(--chl-sheet));
 }
 
 /* The theme keeps category links transparent, so a category's own page highlights its row */
 .menu__link[aria-current="page"],
 .menu .menu__list-item-collapsible--active,
 .menu .menu__list-item-collapsible--active:hover {
-  background: var(--cx-sheet);
-  box-shadow: inset 2px 0 0 var(--cx-moss);
+  background: var(--chl-sheet);
+  box-shadow: inset 2px 0 0 var(--chl-moss);
   border-radius: 0 6px 6px 0;
   font-weight: 500;
 }
@@ -473,12 +473,12 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 
 .menu__link[data-chapter]::before {
   content: attr(data-chapter);
-  color: var(--cx-faint);
+  color: var(--chl-faint);
   font: 500 12.5px/1.65 var(--ifm-font-family-monospace);
 }
 
 .menu__link[aria-current="page"][data-chapter]::before {
-  color: var(--cx-moss);
+  color: var(--chl-moss);
 }
 
 /* TOC */
@@ -486,7 +486,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   content: "On this page";
   display: block;
   margin: 0.5rem 0 0.5rem calc(var(--ifm-toc-padding-horizontal) + 8px);
-  color: var(--cx-faint);
+  color: var(--chl-faint);
   font: 600 11.5px/1.6 var(--ifm-font-family-monospace);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -505,19 +505,19 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   display: block;
   padding: 3px 8px;
   border-radius: 0 6px 6px 0;
-  color: var(--cx-muted);
+  color: var(--chl-muted);
 }
 
 .table-of-contents__link:hover {
-  background: var(--cx-band);
-  color: var(--cx-ink);
+  background: var(--chl-band);
+  color: var(--chl-ink);
 }
 
 .table-of-contents__link--active,
 .table-of-contents__link--active:hover {
-  background: var(--cx-sheet);
-  box-shadow: inset 2px 0 0 var(--cx-moss);
-  color: var(--cx-ink);
+  background: var(--chl-sheet);
+  box-shadow: inset 2px 0 0 var(--chl-moss);
+  color: var(--chl-ink);
   font-weight: 500;
 }
 
@@ -534,7 +534,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 
 /* Breadcrumbs only earn their space in nested sections, and a chapter already names itself */
 .theme-doc-breadcrumbs:not(:has(.breadcrumbs__item:nth-child(3))),
-.cx-chapter .theme-doc-breadcrumbs {
+.chl-chapter .theme-doc-breadcrumbs {
   display: none;
 }
 
@@ -546,7 +546,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   content: "/";
   margin: 0 8px;
   background: none;
-  color: var(--cx-faint);
+  color: var(--chl-faint);
   filter: none;
   opacity: 1;
 }
@@ -555,7 +555,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 .breadcrumbs__item--active .breadcrumbs__link {
   padding: 0;
   background: none;
-  color: var(--cx-muted);
+  color: var(--chl-muted);
   font-size: 13.5px;
 }
 
@@ -565,12 +565,12 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 }
 
 .theme-edit-this-page {
-  color: var(--cx-faint);
+  color: var(--chl-faint);
   font-size: 13.5px;
 }
 
 .theme-edit-this-page:hover {
-  color: var(--cx-ink);
+  color: var(--chl-ink);
   text-decoration: none;
 }
 
@@ -588,17 +588,17 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 .pagination-nav__link {
   padding: 12px 16px;
   border: 0;
-  background: var(--cx-inset);
+  background: var(--chl-inset);
   transition: background var(--ifm-transition-fast);
 }
 
 .pagination-nav__link:hover {
-  background: color-mix(in srgb, var(--cx-moss) 9%, var(--cx-inset));
+  background: color-mix(in srgb, var(--chl-moss) 9%, var(--chl-inset));
 }
 
 .pagination-nav__sublabel {
   margin-bottom: 2px;
-  color: var(--cx-faint);
+  color: var(--chl-faint);
   font-size: 12.5px;
   font-weight: 400;
 }
@@ -635,14 +635,14 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 .markdown table th,
 .markdown table td {
   border: 0;
-  border-bottom: 1px solid var(--cx-rule);
+  border-bottom: 1px solid var(--chl-rule);
   padding: 10px 16px 10px 0;
   background: transparent;
   text-align: left;
 }
 
 .markdown table th {
-  color: var(--cx-muted);
+  color: var(--chl-muted);
   font-size: 13px;
   font-weight: 600;
 }
@@ -656,57 +656,57 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   border: 0;
   box-shadow: none;
   padding: 12px 16px;
-  color: var(--cx-ink);
-  --ifm-alert-background-color: var(--cx-inset);
-  --ifm-alert-foreground-color: var(--cx-ink);
-  --cx-alert-accent: var(--cx-moss);
+  color: var(--chl-ink);
+  --ifm-alert-background-color: var(--chl-inset);
+  --ifm-alert-foreground-color: var(--chl-ink);
+  --chl-alert-accent: var(--chl-moss);
 }
 
 .theme-admonition [class*='admonitionHeading'] {
   margin-bottom: 2px;
-  color: var(--cx-alert-accent);
+  color: var(--chl-alert-accent);
   font-size: 13.5px;
   font-weight: 600;
   text-transform: none;
 }
 
 .theme-admonition [class*='admonitionIcon'] svg {
-  fill: var(--cx-alert-accent);
+  fill: var(--chl-alert-accent);
 }
 
 .theme-admonition-tip,
 .theme-admonition-info {
-  --ifm-alert-background-color: var(--cx-moss-tint);
+  --ifm-alert-background-color: var(--chl-moss-tint);
 }
 
 .theme-admonition-warning,
 .theme-admonition-caution {
-  --ifm-alert-background-color: var(--cx-clay-tint);
-  --cx-alert-accent: var(--cx-clay);
+  --ifm-alert-background-color: var(--chl-clay-tint);
+  --chl-alert-accent: var(--chl-clay);
 }
 
 .theme-admonition-danger {
-  --ifm-alert-background-color: var(--cx-error-bg);
-  --cx-alert-accent: var(--cx-error);
+  --ifm-alert-background-color: var(--chl-error-bg);
+  --chl-alert-accent: var(--chl-error);
 }
 
 .theme-admonition code {
-  background: color-mix(in srgb, var(--cx-alert-accent) 14%, transparent);
+  background: color-mix(in srgb, var(--chl-alert-accent) 14%, transparent);
 }
 
 /* Code blocks */
 .theme-code-block {
   overflow: hidden;
   border-radius: var(--ifm-global-radius);
-  background: var(--cx-inset);
+  background: var(--chl-inset);
   box-shadow: none;
-  scrollbar-color: var(--cx-rule) transparent;
+  scrollbar-color: var(--chl-rule) transparent;
 }
 
 .theme-code-block pre.prism-code,
 .theme-code-block [class*='codeBlockTitle'] {
-  background: var(--cx-inset) !important;
-  color: var(--cx-ink) !important;
+  background: var(--chl-inset) !important;
+  color: var(--chl-ink) !important;
 }
 
 .theme-code-block pre.prism-code {
@@ -716,10 +716,10 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 }
 
 .theme-code-block [class*='codeBlockTitle'],
-.cx-code-block-title {
+.chl-code-block-title {
   padding: 8px 16px 0;
   border-bottom: 0;
-  color: var(--cx-muted);
+  color: var(--chl-muted);
   font: 500 12.5px var(--ifm-font-family-monospace);
 }
 
@@ -727,7 +727,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 .theme-code-block .token.prolog,
 .theme-code-block .token.doctype,
 .theme-code-block .token.cdata {
-  color: var(--cx-code-com) !important;
+  color: var(--chl-code-com) !important;
   font-style: italic;
 }
 
@@ -736,7 +736,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 .theme-code-block .token.directive,
 .theme-code-block .token.important,
 .theme-code-block .token.operator {
-  color: var(--cx-code-kw) !important;
+  color: var(--chl-code-kw) !important;
 }
 
 .theme-code-block .token.class-name,
@@ -745,7 +745,7 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 .theme-code-block .token.function,
 .theme-code-block .token.table,
 .theme-code-block .token.property {
-  color: var(--cx-code-ty) !important;
+  color: var(--chl-code-ty) !important;
 }
 
 .theme-code-block .token.string,
@@ -753,54 +753,54 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
 .theme-code-block .token.attr-value,
 .theme-code-block .token.number,
 .theme-code-block .token.boolean {
-  color: var(--cx-code-str) !important;
+  color: var(--chl-code-str) !important;
 }
 
 .theme-code-block .token.punctuation,
 .theme-code-block .token.plain {
-  color: var(--cx-ink) !important;
+  color: var(--chl-ink) !important;
 }
 
-.cx-token-comment {
-  color: var(--cx-code-com);
+.chl-token-comment {
+  color: var(--chl-code-com);
   font-style: italic;
 }
 
-.cx-token-keyword,
-.cx-token-operator {
-  color: var(--cx-code-kw);
+.chl-token-keyword,
+.chl-token-operator {
+  color: var(--chl-code-kw);
   font-weight: 600;
 }
 
-.cx-token-type {
-  color: var(--cx-code-ty);
+.chl-token-type {
+  color: var(--chl-code-ty);
   font-weight: 500;
 }
 
-.cx-token-string,
-.cx-token-number,
-.cx-token-constant {
-  color: var(--cx-code-str);
+.chl-token-string,
+.chl-token-number,
+.chl-token-constant {
+  color: var(--chl-code-str);
 }
 
-.cx-code-block {
+.chl-code-block {
   overflow-x: auto;
   margin: 0;
   padding: 8px 0 14px;
   border-radius: 0;
-  background: var(--cx-inset);
-  color: var(--cx-ink);
+  background: var(--chl-inset);
+  color: var(--chl-ink);
   font-family: var(--ifm-font-family-monospace);
   font-size: 13px;
   line-height: 1.65;
   white-space: pre;
 }
 
-.cx-code-block-title + .cx-code-block-content .cx-code-block {
+.chl-code-block-title + .chl-code-block-content .chl-code-block {
   padding-top: 6px;
 }
 
-.cx-code-lines {
+.chl-code-lines {
   display: inline-block;
   min-width: 100%;
   padding: 0;
@@ -810,112 +810,112 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   font-size: inherit;
 }
 
-.cx-line {
+.chl-line {
   display: block;
   padding-right: 20px;
 }
 
-.cx-line::before {
+.chl-line::before {
   content: attr(data-n);
   display: inline-block;
   width: 3.2em;
   padding-right: 1.3em;
-  color: var(--cx-faint);
+  color: var(--chl-faint);
   text-align: right;
   user-select: none;
 }
 
-.cx-code-block--single .cx-line {
+.chl-code-block--single .chl-line {
   padding-left: 16px;
 }
 
-.cx-code-block--single .cx-line::before {
+.chl-code-block--single .chl-line::before {
   display: none;
 }
 
-.cx-line.cx-line-error {
-  background: color-mix(in srgb, var(--cx-error) 12%, transparent);
+.chl-line.chl-line-error {
+  background: color-mix(in srgb, var(--chl-error) 12%, transparent);
 }
 
-.cx-code-block-container {
+.chl-code-block-container {
   overflow: hidden;
   margin-bottom: var(--ifm-leading);
   border-radius: var(--ifm-global-radius);
-  background: var(--cx-inset);
+  background: var(--chl-inset);
 }
 
-.cx-code-block-content {
+.chl-code-block-content {
   position: relative;
 }
 
-.cx-code-block-copy {
+.chl-code-block-copy {
   position: absolute;
   top: 8px;
   right: 8px;
   padding: 3px 10px;
   border-radius: 6px;
-  background: var(--cx-sheet);
-  color: var(--cx-muted);
+  background: var(--chl-sheet);
+  color: var(--chl-muted);
   font-size: 12px;
   font-weight: 500;
 }
 
-.cx-code-block-copy:hover {
-  color: var(--cx-ink);
+.chl-code-block-copy:hover {
+  color: var(--chl-ink);
 }
 
 @media (hover: hover) {
-  .cx-code-block-copy {
+  .chl-code-block-copy {
     opacity: 0;
     transition: opacity var(--ifm-transition-fast);
   }
 
-  .cx-code-block-content:hover .cx-code-block-copy,
-  .cx-code-block-copy:focus-visible {
+  .chl-code-block-content:hover .chl-code-block-copy,
+  .chl-code-block-copy:focus-visible {
     opacity: 1;
   }
 }
 
 /* Standard library reference: denser than the prose pages */
-.cx-stdlib-page h2 {
+.chl-stdlib-page h2 {
   margin: 2rem 0 0.75rem;
 }
 
-.cx-stdlib-page h3 {
+.chl-stdlib-page h3 {
   margin-top: 1rem;
   padding-top: 0.9rem;
-  border-top: 1px solid var(--cx-rule);
+  border-top: 1px solid var(--chl-rule);
   font-size: 1.15rem;
 }
 
-.cx-stdlib-page h2 + h3 {
+.chl-stdlib-page h2 + h3 {
   padding-top: 0;
   border-top: 0;
 }
 
-.cx-stdlib-page h3 code {
+.chl-stdlib-page h3 code {
   padding: 0;
   background: transparent;
   font-size: 1em;
 }
 
-.cx-stdlib-page .hash-link {
+.chl-stdlib-page .hash-link {
   display: none;
 }
 
 /* The reference sits closer to the sidebar: half the usual gap, including any centring slack */
 @media (min-width: 997px) {
-  main[class*='docMainContainer'] .row > .col:first-child:has(.cx-stdlib-page) {
+  main[class*='docMainContainer'] .row > .col:first-child:has(.chl-stdlib-page) {
     padding-left: clamp(0.625rem, 2vw, 1.75rem);
   }
 
-  [class*='docItemContainer']:has(.cx-stdlib-page) {
+  [class*='docItemContainer']:has(.chl-stdlib-page) {
     margin-left: max(0px, (100% - 880px) / 4);
   }
 }
 
 /* An item's heading is its declaration with the name picked out, wrapping with a hanging indent */
-.cx-stdlib-page h3:has(.cx-stdlib-name) {
+.chl-stdlib-page h3:has(.chl-stdlib-name) {
   margin-bottom: 0;
   padding-left: 2ch;
   text-indent: -2ch;
@@ -923,98 +923,98 @@ main[class*='docMainContainer'] :is(.container, .cx-chapter) > .row > .col--3 {
   line-height: 1.55;
 }
 
-.cx-stdlib-page .cx-stdlib-signature {
-  color: var(--cx-muted);
+.chl-stdlib-page .chl-stdlib-signature {
+  color: var(--chl-muted);
   font-weight: 400;
 }
 
 /* Only the name is bold, so the highlighted parts of the signature stay lighter */
-.cx-stdlib-signature [class^="cx-token-"] {
+.chl-stdlib-signature [class^="chl-token-"] {
   font-weight: inherit;
 }
 
-.cx-stdlib-segment {
+.chl-stdlib-segment {
   display: inline-block;
   text-indent: 0;
 }
 
 /* A referenced type links to its docs */
-.markdown .cx-stdlib-signature a[href] {
+.markdown .chl-stdlib-signature a[href] {
   color: inherit;
   text-decoration: none;
 }
 
-.cx-stdlib-ref {
+.chl-stdlib-ref {
   white-space: nowrap;
 }
 
-.cx-stdlib-signature a:hover .cx-stdlib-ref {
+.chl-stdlib-signature a:hover .chl-stdlib-ref {
   text-decoration: underline dotted;
   text-underline-offset: 3px;
 }
 
 /* Parameters and members each take their own indented line */
-.cx-stdlib-page h3:is(:has(.cx-stdlib-parameter), :has(.cx-stdlib-member)) {
+.chl-stdlib-page h3:is(:has(.chl-stdlib-parameter), :has(.chl-stdlib-member)) {
   padding-left: 0;
   text-indent: 0;
 }
 
-.cx-stdlib-parameter {
+.chl-stdlib-parameter {
   display: block;
   padding-left: 6ch;
   text-indent: -2ch;
 }
 
 /* A member's comment sits in a column beside it, dropping below when there is no room */
-.cx-stdlib-member {
+.chl-stdlib-member {
   display: flex;
   flex-wrap: wrap;
   padding-left: 4ch;
 }
 
-.cx-stdlib-member-code {
+.chl-stdlib-member-code {
   flex: none;
   max-width: 100%;
 }
 
-.cx-stdlib-member .cx-token-comment {
+.chl-stdlib-member .chl-token-comment {
   flex: 1 1 24ch;
   padding-left: 3ch;
   text-indent: -3ch;
 }
 
-.table-of-contents .cx-stdlib-signature {
+.table-of-contents .chl-stdlib-signature {
   display: none;
 }
 
-.cx-stdlib-item {
+.chl-stdlib-item {
   margin-top: 0.6rem;
   padding-left: 2rem;
   font-size: 16.5px;
 }
 
-.cx-stdlib-item > :last-child {
+.chl-stdlib-item > :last-child {
   margin-bottom: 0;
 }
 
-.cx-stdlib-page h4 {
+.chl-stdlib-page h4 {
   margin: 1rem 0 0.25rem;
-  color: var(--cx-muted);
+  color: var(--chl-muted);
   font: 600 12.5px var(--ifm-font-family-base);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.cx-stdlib-meta {
+.chl-stdlib-meta {
   margin: -0.5rem 0 var(--ifm-leading);
-  color: var(--cx-faint);
+  color: var(--chl-faint);
   font-size: 13.5px;
 }
 
-.cx-stdlib-meta p {
+.chl-stdlib-meta p {
   margin: 0;
 }
 
-.cx-stdlib-meta code {
+.chl-stdlib-meta code {
   font-size: 0.95em;
 }

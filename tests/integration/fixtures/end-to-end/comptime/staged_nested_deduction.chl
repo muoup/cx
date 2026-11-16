@@ -1,4 +1,4 @@
-/* CX-STDOUT: 1 */
+/* CHL-STDOUT: 1 */
 #include <stdio.h>
 
 comptime ^T id(type T = _, ^T v) => v;

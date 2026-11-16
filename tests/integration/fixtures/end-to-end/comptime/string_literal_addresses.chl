@@ -1,4 +1,4 @@
-/* CX-STDOUT: 5 2 502 */
+/* CHL-STDOUT: 5 2 502 */
 #include <stdio.h>
 
 comptime i32 length(const char* text) {

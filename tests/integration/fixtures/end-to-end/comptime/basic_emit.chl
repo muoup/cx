@@ -1,5 +1,5 @@
-/* CX-STDOUT: value 42 */
-/* CX-STDOUT-NEXT: chained 18 */
+/* CHL-STDOUT: value 42 */
+/* CHL-STDOUT-NEXT: chained 18 */
 
 #include <stdio.h>
 

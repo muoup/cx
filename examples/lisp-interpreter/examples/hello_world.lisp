@@ -1,9 +1,9 @@
-(fndef add (x y) 
-    (+ x y)) 
+(fndef add (x y)
+    (+ x y))
 
-(fndef double (x) 
-    (add x x)) 
+(fndef double (x)
+    (add x x))
 
-(print-str "CX Lisp says hello") 
-(print-num (+ 1 2)) 
+(print-str "Chloro Lisp says hello")
+(print-num (+ 1 2))
 (print-num (- (double 21) 2))

@@ -1,16 +1,16 @@
-/* CX-STDOUT: enter 4 */
-/* CX-STDOUT-NEXT: leave 5 */
-/* CX-STDOUT-NEXT: single complete */
-/* CX-STDOUT-NEXT: enter 7 */
-/* CX-STDOUT-NEXT: return body 7 */
-/* CX-STDOUT-NEXT: leave 7 */
-/* CX-STDOUT-NEXT: returned 8 */
-/* CX-STDOUT-NEXT: enter 20 */
-/* CX-STDOUT-NEXT: enter 22 */
-/* CX-STDOUT-NEXT: nested sum 42 */
-/* CX-STDOUT-NEXT: leave 22 */
-/* CX-STDOUT-NEXT: leave 20 */
-/* CX-STDOUT-NEXT: nested returned 42 */
+/* CHL-STDOUT: enter 4 */
+/* CHL-STDOUT-NEXT: leave 5 */
+/* CHL-STDOUT-NEXT: single complete */
+/* CHL-STDOUT-NEXT: enter 7 */
+/* CHL-STDOUT-NEXT: return body 7 */
+/* CHL-STDOUT-NEXT: leave 7 */
+/* CHL-STDOUT-NEXT: returned 8 */
+/* CHL-STDOUT-NEXT: enter 20 */
+/* CHL-STDOUT-NEXT: enter 22 */
+/* CHL-STDOUT-NEXT: nested sum 42 */
+/* CHL-STDOUT-NEXT: leave 22 */
+/* CHL-STDOUT-NEXT: leave 20 */
+/* CHL-STDOUT-NEXT: nested returned 42 */
 
 #include <stdio.h>
 

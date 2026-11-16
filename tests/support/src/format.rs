@@ -45,7 +45,7 @@ pub fn expected_stdout(path: &Path) -> Result<Option<String>, FormatError> {
         return Ok(Some(stdout_text(&stdout)));
     }
 
-    let sidecar = path.with_extension("cx-output");
+    let sidecar = path.with_extension("chl-output");
     if !sidecar.exists() {
         return Ok(None);
     }
@@ -67,11 +67,11 @@ pub fn parse_source(path: &Path, source: &str) -> Result<TestSpec, FormatError> 
             let line_number = line + offset;
             let directive = comment_line.trim_start();
 
-            if let Some(value) = directive.strip_prefix("CX-STDOUT-NEXT:") {
+            if let Some(value) = directive.strip_prefix("CHL-STDOUT-NEXT:") {
                 let stdout = stdout.as_mut().ok_or_else(|| FormatError {
                     path: path.to_path_buf(),
                     line: line_number,
-                    message: "CX-STDOUT-NEXT must follow CX-STDOUT".to_string(),
+                    message: "CHL-STDOUT-NEXT must follow CHL-STDOUT".to_string(),
                 })?;
                 let (value, trailing_newline) = directive_value(value);
                 stdout.lines.push(value);
@@ -79,12 +79,12 @@ pub fn parse_source(path: &Path, source: &str) -> Result<TestSpec, FormatError> 
                 continue;
             }
 
-            if let Some(value) = directive.strip_prefix("CX-STDOUT:") {
+            if let Some(value) = directive.strip_prefix("CHL-STDOUT:") {
                 if stdout.is_some() {
                     return Err(FormatError {
                         path: path.to_path_buf(),
                         line: line_number,
-                        message: "use CX-STDOUT-NEXT for subsequent output lines".to_string(),
+                        message: "use CHL-STDOUT-NEXT for subsequent output lines".to_string(),
                     });
                 }
 

@@ -1,18 +1,18 @@
-/* CX-STDOUT: enter 1 */
-/* CX-STDOUT-NEXT: call form 1 */
-/* CX-STDOUT-NEXT: leave 1 */
-/* CX-STDOUT-NEXT: enter 2 */
-/* CX-STDOUT-NEXT: inner 2 */
-/* CX-STDOUT-NEXT: leave 2 */
-/* CX-STDOUT-NEXT: after inner */
-/* CX-STDOUT-NEXT: enter 3 */
-/* CX-STDOUT-NEXT: leave 3 */
-/* CX-STDOUT-NEXT: enter 4 */
-/* CX-STDOUT-NEXT: between 4 */
-/* CX-STDOUT-NEXT: enter 5 */
-/* CX-STDOUT-NEXT: sum 9 */
-/* CX-STDOUT-NEXT: leave 5 */
-/* CX-STDOUT-NEXT: leave 4 */
+/* CHL-STDOUT: enter 1 */
+/* CHL-STDOUT-NEXT: call form 1 */
+/* CHL-STDOUT-NEXT: leave 1 */
+/* CHL-STDOUT-NEXT: enter 2 */
+/* CHL-STDOUT-NEXT: inner 2 */
+/* CHL-STDOUT-NEXT: leave 2 */
+/* CHL-STDOUT-NEXT: after inner */
+/* CHL-STDOUT-NEXT: enter 3 */
+/* CHL-STDOUT-NEXT: leave 3 */
+/* CHL-STDOUT-NEXT: enter 4 */
+/* CHL-STDOUT-NEXT: between 4 */
+/* CHL-STDOUT-NEXT: enter 5 */
+/* CHL-STDOUT-NEXT: sum 9 */
+/* CHL-STDOUT-NEXT: leave 5 */
+/* CHL-STDOUT-NEXT: leave 4 */
 
 #include <stdio.h>
 

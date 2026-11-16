@@ -1,5 +1,5 @@
-/* CX-STDOUT: popped: 2 */
-/* CX-STDOUT-NEXT: length: 1 */
+/* CHL-STDOUT: popped: 2 */
+/* CHL-STDOUT-NEXT: length: 1 */
 
 import std::vector;
 import std::optional;

@@ -1,0 +1,55 @@
+pub mod comptime;
+pub mod intrinsics;
+pub mod runtime;
+pub mod storage;
+
+use chl_hmir::ty::HMIRTypeID;
+use chl_log::{CHLResult, catalogue::mir};
+use chl_tokens::TokenRange;
+
+use crate::{
+    env::function::{FnContext, LocalLoweringContext, comptime::ComptimeScope, scope::Bindings},
+    log::hmir_error,
+    value::HMIRValue,
+};
+
+pub(crate) fn unsupported<T>(span: &TokenRange, operation: &str) -> CHLResult<T> {
+    Err(hmir_error(
+        span,
+        &mir::COMPTIME_INVALID_OPERATION,
+        operation.into(),
+    ))
+}
+
+pub fn open_scope(context: &mut LocalLoweringContext) -> usize {
+    match context.context_mut() {
+        FnContext::Runtime(_) => runtime::open_scope(context),
+        FnContext::Comptime(comptime) => {
+            let scopes = comptime.scopes_mut();
+            let parent = scopes.top();
+            scopes.push(ComptimeScope::default(), Some(parent), Bindings::default())
+        }
+    }
+}
+
+pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
+    match context.context_mut() {
+        FnContext::Runtime(_) => runtime::close_scope(context, span),
+        FnContext::Comptime(comptime) => {
+            comptime.scopes_mut().pop();
+        }
+    }
+}
+
+pub fn call(
+    context: &mut LocalLoweringContext,
+    callee: &HMIRValue,
+    args: &[HMIRValue],
+    result: HMIRTypeID,
+    span: &TokenRange,
+) -> CHLResult<HMIRValue> {
+    match context.context() {
+        FnContext::Runtime(_) => runtime::flow::call(context, callee, args, result, span),
+        FnContext::Comptime(_) => unsupported(span, "a function call"),
+    }
+}

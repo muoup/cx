@@ -1,11 +1,11 @@
-/* CX-STDOUT: a is some: 1 */
-/* CX-STDOUT-NEXT: b is some: 0 */
-/* CX-STDOUT-NEXT: a unwrap_or 100: 42 */
-/* CX-STDOUT-NEXT: b unwrap_or 100: 100 */
-/* CX-STDOUT-NEXT: c is some: 1 */
-/* CX-STDOUT-NEXT: d is some: 0 */
-/* CX-STDOUT-NEXT: c unwrap: 43 */
-/* CX-STDOUT-NEXT: PANIC: Called `opt::unwrap()` on a `None` value */
+/* CHL-STDOUT: a is some: 1 */
+/* CHL-STDOUT-NEXT: b is some: 0 */
+/* CHL-STDOUT-NEXT: a unwrap_or 100: 42 */
+/* CHL-STDOUT-NEXT: b unwrap_or 100: 100 */
+/* CHL-STDOUT-NEXT: c is some: 1 */
+/* CHL-STDOUT-NEXT: d is some: 0 */
+/* CHL-STDOUT-NEXT: c unwrap: 43 */
+/* CHL-STDOUT-NEXT: PANIC: Called `opt::unwrap()` on a `None` value */
 
 import std::optional;
 

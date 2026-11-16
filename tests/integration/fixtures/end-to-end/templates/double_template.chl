@@ -1,4 +1,4 @@
-/* CX-STDOUT: result: 8.14 */
+/* CHL-STDOUT: result: 8.14 */
 
 import std::io as std;
 

@@ -1,5 +1,5 @@
-/* CX-STDOUT: lifted string */
-/* CX-STDOUT-NEXT: 37 4.5 3 5 9 11 */
+/* CHL-STDOUT: lifted string */
+/* CHL-STDOUT-NEXT: 37 4.5 3 5 9 11 */
 
 #include <stdio.h>
 

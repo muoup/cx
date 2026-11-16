@@ -1,6 +1,6 @@
-/* CX-STDOUT: both some 42 */
-/* CX-STDOUT-NEXT: left none */
-/* CX-STDOUT-NEXT: right none */
+/* CHL-STDOUT: both some 42 */
+/* CHL-STDOUT-NEXT: left none */
+/* CHL-STDOUT-NEXT: right none */
 
 #include <stdio.h>
 

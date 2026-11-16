@@ -1,4 +1,4 @@
-/* CX-STDOUT: comptime 50997 */
+/* CHL-STDOUT: comptime 50997 */
 #include <stdio.h>
 
 struct mixed {

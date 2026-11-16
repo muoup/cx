@@ -1,0 +1,27 @@
+[package]
+name = "chl-pipeline-data"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+default = []
+test = []
+
+[dependencies]
+rustc-hash = { workspace = true }
+speedy = { workspace = true }
+mlua = { workspace = true }
+
+chl-tokens = { path = "../chl-tokens" }
+chl-log = { path = "../chl-log" }
+
+chl-preparse-data = { path = "../chl-preparse-data" }
+chl-hir  = { path = "../chl-hir" }
+chl-hmir = { path = "../chl-hmir" }
+chl-mir = { path = "../chl-mir" }
+chl-lmir = { path = "../chl-lmir" }
+chl-target = { path = "../chl-target" }
+
+chl-util = { path = "../chl-util" }
+chl-namespace = { path = "../chl-namespace" }
+chl-lexer = { path = "../chl-lexer" }

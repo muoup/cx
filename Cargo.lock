@@ -108,6 +108,343 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "chl"
+version = "0.0.0"
+dependencies = [
+ "chl-doc",
+ "chl-lexer",
+ "chl-log",
+ "chl-pipeline",
+ "chl-pipeline-data",
+]
+
+[[package]]
+name = "chl-backend-cranelift"
+version = "0.0.0"
+dependencies = [
+ "chl-lmir",
+ "chl-log",
+ "chl-target",
+ "chl-util",
+ "cranelift",
+ "cranelift-module",
+ "cranelift-native",
+ "cranelift-object",
+ "rustc-hash",
+]
+
+[[package]]
+name = "chl-backend-llvm"
+version = "0.0.0"
+dependencies = [
+ "chl-lmir",
+ "chl-log",
+ "chl-pipeline-data",
+ "chl-target",
+ "chl-util",
+ "inkwell",
+ "rustc-hash",
+]
+
+[[package]]
+name = "chl-benchmarks"
+version = "0.0.0"
+dependencies = [
+ "chl-test-support",
+ "serde",
+ "serde_json",
+ "tabled",
+]
+
+[[package]]
+name = "chl-c-header"
+version = "0.0.0"
+dependencies = [
+ "chl-mir",
+ "chl-pipeline-data",
+ "chl-util",
+]
+
+[[package]]
+name = "chl-doc"
+version = "0.0.0"
+dependencies = [
+ "chl-hir",
+ "chl-hmir",
+ "chl-namespace",
+ "chl-tokens",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "chl-extension-zed"
+version = "0.0.0"
+dependencies = [
+ "zed_extension_api",
+]
+
+[[package]]
+name = "chl-hir"
+version = "0.0.0"
+dependencies = [
+ "chl-namespace",
+ "chl-preparse-data",
+ "chl-target",
+ "chl-tokens",
+ "chl-util",
+ "speedy",
+]
+
+[[package]]
+name = "chl-hir-lowering"
+version = "0.0.0"
+dependencies = [
+ "chl-hir",
+ "chl-hmir",
+ "chl-intrinsics",
+ "chl-log",
+ "chl-namespace",
+ "chl-target",
+ "chl-tokens",
+ "chl-util",
+ "rustc-hash",
+]
+
+[[package]]
+name = "chl-hmir"
+version = "0.1.0"
+dependencies = [
+ "chl-hir",
+ "chl-intrinsics",
+ "chl-namespace",
+ "chl-target",
+ "chl-tokens",
+ "chl-util",
+ "rustc-hash",
+ "speedy",
+]
+
+[[package]]
+name = "chl-hmir-lowering"
+version = "0.0.0"
+dependencies = [
+ "chl-hir",
+ "chl-hmir",
+ "chl-intrinsics",
+ "chl-log",
+ "chl-mir",
+ "chl-namespace",
+ "chl-pipeline-data",
+ "chl-target",
+ "chl-tokens",
+ "chl-util",
+ "index_vec",
+ "rustc-hash",
+ "smallvec",
+ "speedy",
+]
+
+[[package]]
+name = "chl-intrinsics"
+version = "0.1.0"
+
+[[package]]
+name = "chl-lexer"
+version = "0.0.0"
+dependencies = [
+ "chl-log",
+ "chl-namespace",
+ "chl-tokens",
+ "chl-util",
+ "rustc-hash",
+]
+
+[[package]]
+name = "chl-lmir"
+version = "0.0.0"
+dependencies = [
+ "chl-namespace",
+ "chl-target",
+ "chl-util",
+]
+
+[[package]]
+name = "chl-log"
+version = "0.0.0"
+dependencies = [
+ "chl-tokens",
+]
+
+[[package]]
+name = "chl-lsp"
+version = "0.0.0"
+dependencies = [
+ "chl-doc",
+ "chl-hmir",
+ "chl-hmir-lowering",
+ "chl-lexer",
+ "chl-log",
+ "chl-namespace",
+ "chl-parsing",
+ "chl-pipeline",
+ "chl-pipeline-data",
+ "chl-tokens",
+ "chl-util",
+ "dashmap",
+ "rustc-hash",
+ "tokio",
+ "tower-lsp",
+]
+
+[[package]]
+name = "chl-mir"
+version = "0.1.0"
+dependencies = [
+ "chl-target",
+ "chl-tokens",
+ "chl-util",
+ "index_vec",
+ "rustc-hash",
+ "speedy",
+]
+
+[[package]]
+name = "chl-mir-analysis"
+version = "0.0.0"
+dependencies = [
+ "chl-hir",
+ "chl-log",
+ "chl-mir",
+ "chl-tokens",
+ "chl-util",
+ "rustc-hash",
+]
+
+[[package]]
+name = "chl-mir-lowering"
+version = "0.0.0"
+dependencies = [
+ "chl-lmir",
+ "chl-log",
+ "chl-mir",
+ "chl-target",
+ "chl-util",
+ "rustc-hash",
+]
+
+[[package]]
+name = "chl-namespace"
+version = "0.0.0"
+dependencies = [
+ "chl-util",
+ "rustc-hash",
+ "speedy",
+]
+
+[[package]]
+name = "chl-parsing"
+version = "0.0.0"
+dependencies = [
+ "chl-hir",
+ "chl-log",
+ "chl-namespace",
+ "chl-preparse-data",
+ "chl-tokens",
+ "chl-util",
+ "rustc-hash",
+]
+
+[[package]]
+name = "chl-pipeline"
+version = "0.0.0"
+dependencies = [
+ "chl-backend-cranelift",
+ "chl-backend-llvm",
+ "chl-c-header",
+ "chl-hir",
+ "chl-hir-lowering",
+ "chl-hmir-lowering",
+ "chl-lexer",
+ "chl-lmir",
+ "chl-log",
+ "chl-mir",
+ "chl-mir-analysis",
+ "chl-mir-lowering",
+ "chl-namespace",
+ "chl-parsing",
+ "chl-pipeline-data",
+ "chl-preparse-data",
+ "chl-tokens",
+ "chl-util",
+ "fs2",
+ "rustc-hash",
+ "speedy",
+]
+
+[[package]]
+name = "chl-pipeline-data"
+version = "0.0.0"
+dependencies = [
+ "chl-hir",
+ "chl-hmir",
+ "chl-lexer",
+ "chl-lmir",
+ "chl-log",
+ "chl-mir",
+ "chl-namespace",
+ "chl-preparse-data",
+ "chl-target",
+ "chl-tokens",
+ "chl-util",
+ "mlua",
+ "rustc-hash",
+ "speedy",
+]
+
+[[package]]
+name = "chl-preparse-data"
+version = "0.0.0"
+dependencies = [
+ "chl-namespace",
+ "chl-util",
+ "rustc-hash",
+ "speedy",
+]
+
+[[package]]
+name = "chl-target"
+version = "0.0.0"
+
+[[package]]
+name = "chl-test-support"
+version = "0.0.0"
+dependencies = [
+ "chl-log",
+ "chl-pipeline",
+ "chl-pipeline-data",
+ "rustc-hash",
+ "serde",
+]
+
+[[package]]
+name = "chl-tokens"
+version = "0.0.0"
+dependencies = [
+ "speedy",
+]
+
+[[package]]
+name = "chl-util"
+version = "0.0.0"
+dependencies = [
+ "index_vec",
+ "rustc-hash",
+ "speedy",
+]
+
+[[package]]
 name = "cranelift"
 version = "0.132.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -287,343 +624,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "01a7799fd6b852db0e61728dde9a204c423b44d689dbd432522543614b490e78"
 dependencies = [
  "cfg-if",
-]
-
-[[package]]
-name = "cx"
-version = "0.0.0"
-dependencies = [
- "cx-doc",
- "cx-lexer",
- "cx-log",
- "cx-pipeline",
- "cx-pipeline-data",
-]
-
-[[package]]
-name = "cx-backend-cranelift"
-version = "0.0.0"
-dependencies = [
- "cranelift",
- "cranelift-module",
- "cranelift-native",
- "cranelift-object",
- "cx-lmir",
- "cx-log",
- "cx-target",
- "cx-util",
- "rustc-hash",
-]
-
-[[package]]
-name = "cx-backend-llvm"
-version = "0.0.0"
-dependencies = [
- "cx-lmir",
- "cx-log",
- "cx-pipeline-data",
- "cx-target",
- "cx-util",
- "inkwell",
- "rustc-hash",
-]
-
-[[package]]
-name = "cx-benchmarks"
-version = "0.0.0"
-dependencies = [
- "cx-test-support",
- "serde",
- "serde_json",
- "tabled",
-]
-
-[[package]]
-name = "cx-c-header"
-version = "0.0.0"
-dependencies = [
- "cx-mir",
- "cx-pipeline-data",
- "cx-util",
-]
-
-[[package]]
-name = "cx-doc"
-version = "0.0.0"
-dependencies = [
- "cx-hir",
- "cx-hmir",
- "cx-namespace",
- "cx-tokens",
- "rustc-hash",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cx-extension-zed"
-version = "0.0.0"
-dependencies = [
- "zed_extension_api",
-]
-
-[[package]]
-name = "cx-hir"
-version = "0.0.0"
-dependencies = [
- "cx-namespace",
- "cx-preparse-data",
- "cx-target",
- "cx-tokens",
- "cx-util",
- "speedy",
-]
-
-[[package]]
-name = "cx-hir-lowering"
-version = "0.0.0"
-dependencies = [
- "cx-hir",
- "cx-hmir",
- "cx-intrinsics",
- "cx-log",
- "cx-namespace",
- "cx-target",
- "cx-tokens",
- "cx-util",
- "rustc-hash",
-]
-
-[[package]]
-name = "cx-hmir"
-version = "0.1.0"
-dependencies = [
- "cx-hir",
- "cx-intrinsics",
- "cx-namespace",
- "cx-target",
- "cx-tokens",
- "cx-util",
- "rustc-hash",
- "speedy",
-]
-
-[[package]]
-name = "cx-hmir-lowering"
-version = "0.0.0"
-dependencies = [
- "cx-hir",
- "cx-hmir",
- "cx-intrinsics",
- "cx-log",
- "cx-mir",
- "cx-namespace",
- "cx-pipeline-data",
- "cx-target",
- "cx-tokens",
- "cx-util",
- "index_vec",
- "rustc-hash",
- "smallvec",
- "speedy",
-]
-
-[[package]]
-name = "cx-intrinsics"
-version = "0.1.0"
-
-[[package]]
-name = "cx-lexer"
-version = "0.0.0"
-dependencies = [
- "cx-log",
- "cx-namespace",
- "cx-tokens",
- "cx-util",
- "rustc-hash",
-]
-
-[[package]]
-name = "cx-lmir"
-version = "0.0.0"
-dependencies = [
- "cx-namespace",
- "cx-target",
- "cx-util",
-]
-
-[[package]]
-name = "cx-log"
-version = "0.0.0"
-dependencies = [
- "cx-tokens",
-]
-
-[[package]]
-name = "cx-lsp"
-version = "0.0.0"
-dependencies = [
- "cx-doc",
- "cx-hmir",
- "cx-hmir-lowering",
- "cx-lexer",
- "cx-log",
- "cx-namespace",
- "cx-parsing",
- "cx-pipeline",
- "cx-pipeline-data",
- "cx-tokens",
- "cx-util",
- "dashmap",
- "rustc-hash",
- "tokio",
- "tower-lsp",
-]
-
-[[package]]
-name = "cx-mir"
-version = "0.1.0"
-dependencies = [
- "cx-target",
- "cx-tokens",
- "cx-util",
- "index_vec",
- "rustc-hash",
- "speedy",
-]
-
-[[package]]
-name = "cx-mir-analysis"
-version = "0.0.0"
-dependencies = [
- "cx-hir",
- "cx-log",
- "cx-mir",
- "cx-tokens",
- "cx-util",
- "rustc-hash",
-]
-
-[[package]]
-name = "cx-mir-lowering"
-version = "0.0.0"
-dependencies = [
- "cx-lmir",
- "cx-log",
- "cx-mir",
- "cx-target",
- "cx-util",
- "rustc-hash",
-]
-
-[[package]]
-name = "cx-namespace"
-version = "0.0.0"
-dependencies = [
- "cx-util",
- "rustc-hash",
- "speedy",
-]
-
-[[package]]
-name = "cx-parsing"
-version = "0.0.0"
-dependencies = [
- "cx-hir",
- "cx-log",
- "cx-namespace",
- "cx-preparse-data",
- "cx-tokens",
- "cx-util",
- "rustc-hash",
-]
-
-[[package]]
-name = "cx-pipeline"
-version = "0.0.0"
-dependencies = [
- "cx-backend-cranelift",
- "cx-backend-llvm",
- "cx-c-header",
- "cx-hir",
- "cx-hir-lowering",
- "cx-hmir-lowering",
- "cx-lexer",
- "cx-lmir",
- "cx-log",
- "cx-mir",
- "cx-mir-analysis",
- "cx-mir-lowering",
- "cx-namespace",
- "cx-parsing",
- "cx-pipeline-data",
- "cx-preparse-data",
- "cx-tokens",
- "cx-util",
- "fs2",
- "rustc-hash",
- "speedy",
-]
-
-[[package]]
-name = "cx-pipeline-data"
-version = "0.0.0"
-dependencies = [
- "cx-hir",
- "cx-hmir",
- "cx-lexer",
- "cx-lmir",
- "cx-log",
- "cx-mir",
- "cx-namespace",
- "cx-preparse-data",
- "cx-target",
- "cx-tokens",
- "cx-util",
- "mlua",
- "rustc-hash",
- "speedy",
-]
-
-[[package]]
-name = "cx-preparse-data"
-version = "0.0.0"
-dependencies = [
- "cx-namespace",
- "cx-util",
- "rustc-hash",
- "speedy",
-]
-
-[[package]]
-name = "cx-target"
-version = "0.0.0"
-
-[[package]]
-name = "cx-test-support"
-version = "0.0.0"
-dependencies = [
- "cx-log",
- "cx-pipeline",
- "cx-pipeline-data",
- "rustc-hash",
- "serde",
-]
-
-[[package]]
-name = "cx-tokens"
-version = "0.0.0"
-dependencies = [
- "speedy",
-]
-
-[[package]]
-name = "cx-util"
-version = "0.0.0"
-dependencies = [
- "index_vec",
- "rustc-hash",
- "speedy",
 ]
 
 [[package]]
@@ -995,9 +995,9 @@ dependencies = [
 name = "integration-tests"
 version = "0.0.0"
 dependencies = [
- "cx-pipeline",
- "cx-pipeline-data",
- "cx-test-support",
+ "chl-pipeline",
+ "chl-pipeline-data",
+ "chl-test-support",
 ]
 
 [[package]]

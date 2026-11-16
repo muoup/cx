@@ -1,0 +1,18 @@
+[package]
+name = "chl-backend-cranelift"
+version = "0.0.0"
+edition = "2021"
+autotests = false
+
+[dependencies]
+rustc-hash = { workspace = true }
+
+chl-log = { path = "../chl-log" }
+chl-util = { path = "../chl-util" }
+chl-lmir = { path = "../chl-lmir" }
+chl-target = { path = "../chl-target" }
+
+cranelift = "0.132.1"
+cranelift-module = "0.132.1"
+cranelift-native = "0.132.1"
+cranelift-object = "0.132.1"

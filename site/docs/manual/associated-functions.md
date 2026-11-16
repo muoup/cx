@@ -5,7 +5,7 @@ description: "Associated functions, and forward and backward pipe calls."
 
 # Functions and Calls
 
-CX uses C function declarations and calls, and adds associated function names and pipe-style calls for organizing related operations.
+Chloro uses C function declarations and calls, and adds associated function names and pipe-style calls for organizing related operations.
 
 ## Associated Functions
 
@@ -13,7 +13,7 @@ Inside any module, an associated function can be created by naming it with `inne
 
 The primary application is type-associated functions, but the inner namespace does not need to correspond to the name of a type or any other symbol. Association organizes the function's name; it does not introduce implicit receiver or method-dispatch behavior.
 
-```cx
+```chl
 struct counter {
     int value;
 };
@@ -31,14 +31,14 @@ void counter::increment(counter& this) {
 
 The pipe operator `|>` passes the expression on its left as the first argument to the function call on its right. These calls are equivalent:
 
-```cx
+```chl
 counter::increment(c);
 c |> counter::increment();
 ```
 
 The remaining arguments follow the inserted first argument, and the result can be piped into another call:
 
-```cx
+```chl
 int transform(int value, int scale);
 void print_int(int value);
 
@@ -53,14 +53,14 @@ Pipe calls are ordinary function calls, so ownership and type coercion apply to 
 
 The backward pipe operator `<|` appends its right-hand expression to the argument list of the function call on its left. These calls are equivalent:
 
-```cx
+```chl
 combine(first, second, third);
 combine(first, second) <| third;
 ```
 
 The operator has one concrete purpose: supplying the final argument after the callee and its earlier arguments have been written. Forward and backward pipes can be combined:
 
-```cx
+```chl
 value |> combine(second) <| third;
 // combine(value, second, third)
 ```

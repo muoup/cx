@@ -6,7 +6,7 @@ Token stream to HIR, then HIR unit to HMIR unit. The parser consults the [prepar
 
 *verified uncommitted*
 
-- **mode**: file extension decides. `.c` is *C mode*; `.chl` uses CX syntax and namespaced naming by default.
+- **mode**: file extension decides. `.c` is *C mode*; `.chl` uses Chloro syntax and namespaced naming by default.
 - **include region**: tokens between include markers the lexer inserts for `#include`d text.
 - **ordered**: a statement made in C mode or an include region; its def declaration carries its point, so it is seen only after it.
 - **comma mode**: whether `,` is an operator at the current nesting; a stack, outermost true.

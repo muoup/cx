@@ -1,0 +1,129 @@
+use chl_hir::ast::{
+    modifiers::{HIRSymbolNameScheme, VisibilityMode},
+    types::HIRTagKind,
+};
+use chl_namespace::module::QualifiedName;
+use chl_tokens::TokenRange;
+use chl_util::branded_id;
+
+use crate::unit::{
+    function::HMIRFunction,
+    global::{HMIRComptimeGlobal, HMIRGlobal},
+    id::HMIRUnitID,
+};
+
+branded_id!(HMIRDefID, HMIRUnitID, "def");
+branded_id!(HMIRDeclarationPoint, HMIRUnitID, "decl");
+
+#[derive(Debug, Clone)]
+pub struct HMIRDef {
+    name: QualifiedName,
+    declarations: Vec<HMIRDeclaration>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum HMIRDeclarationRole {
+    Declaration,
+    Tentative,
+    Definition,
+}
+
+#[derive(Debug, Clone)]
+pub struct HMIRDeclaration {
+    point: HMIRDeclarationPoint,
+    span: TokenRange,
+    role: HMIRDeclarationRole,
+    tag: Option<HIRTagKind>,
+    visibility: VisibilityMode,
+    naming: Option<HIRSymbolNameScheme>,
+    kind: Option<HMIRDefKind>,
+}
+
+#[derive(Debug, Clone)]
+pub enum HMIRDefKind {
+    Function(Box<HMIRFunction>),
+    Global(Box<HMIRGlobal>),
+    ComptimeGlobal(Box<HMIRComptimeGlobal>),
+}
+
+impl HMIRDef {
+    pub fn new(name: QualifiedName, declarations: Vec<HMIRDeclaration>) -> Self {
+        Self { name, declarations }
+    }
+
+    pub fn name(&self) -> &QualifiedName {
+        &self.name
+    }
+
+    pub fn declarations(&self) -> &[HMIRDeclaration] {
+        &self.declarations
+    }
+
+    // A tagged type, a type definition, or a generator of types
+    pub fn declares_type(&self) -> bool {
+        self.declarations.iter().any(|declaration| {
+            declaration.tag.is_some()
+                || match &declaration.kind {
+                    Some(HMIRDefKind::ComptimeGlobal(global)) => global.declares_type(),
+                    Some(HMIRDefKind::Function(function)) => function.returns_type(),
+                    _ => false,
+                }
+        })
+    }
+
+    pub fn extend(&mut self, declarations: impl IntoIterator<Item = HMIRDeclaration>) {
+        self.declarations.extend(declarations);
+        self.declarations
+            .sort_by_key(|declaration| declaration.point());
+    }
+}
+
+impl HMIRDeclaration {
+    pub fn new(
+        point: HMIRDeclarationPoint,
+        span: TokenRange,
+        role: HMIRDeclarationRole,
+        tag: Option<HIRTagKind>,
+        visibility: VisibilityMode,
+        naming: Option<HIRSymbolNameScheme>,
+        kind: Option<HMIRDefKind>,
+    ) -> Self {
+        Self {
+            point,
+            span,
+            role,
+            tag,
+            visibility,
+            naming,
+            kind,
+        }
+    }
+
+    pub fn point(&self) -> HMIRDeclarationPoint {
+        self.point
+    }
+
+    pub fn span(&self) -> &TokenRange {
+        &self.span
+    }
+
+    pub fn role(&self) -> HMIRDeclarationRole {
+        self.role
+    }
+
+    pub fn tag(&self) -> Option<HIRTagKind> {
+        self.tag
+    }
+
+    pub fn visibility(&self) -> VisibilityMode {
+        self.visibility
+    }
+
+    pub fn naming(&self) -> Option<HIRSymbolNameScheme> {
+        self.naming
+    }
+
+    pub fn kind(&self) -> Option<&HMIRDefKind> {
+        self.kind.as_ref()
+    }
+}

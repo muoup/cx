@@ -1,5 +1,5 @@
-/* CX-STDOUT: mutable active 8 */
-/* CX-STDOUT-NEXT: PANIC: Cannot immutably borrow cell while it is currently mutably borrowed */
+/* CHL-STDOUT: mutable active 8 */
+/* CHL-STDOUT-NEXT: PANIC: Cannot immutably borrow cell while it is currently mutably borrowed */
 
 import std::cell::rcell as std;
 import std::io as std;

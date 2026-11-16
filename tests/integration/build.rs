@@ -122,12 +122,12 @@ fn write_module(
 }
 
 fn has_stdout_expectation(path: &Path) -> bool {
-    if path.with_extension("cx-output").exists() {
+    if path.with_extension("chl-output").exists() {
         return true;
     }
 
     fs::read_to_string(path)
-        .map(|source| source.contains("CX-STDOUT:"))
+        .map(|source| source.contains("CHL-STDOUT:"))
         .unwrap_or(false)
 }
 

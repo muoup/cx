@@ -1,0 +1,11 @@
+[package]
+name = "chl-preparse-data"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+rustc-hash = { workspace = true }
+speedy = { workspace = true }
+
+chl-util = { path = "../chl-util" }
+chl-namespace = { path = "../chl-namespace" }

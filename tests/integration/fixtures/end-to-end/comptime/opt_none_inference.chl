@@ -1,5 +1,5 @@
-/* CX-STDOUT: initialized none */
-/* CX-STDOUT-NEXT: returned none */
+/* CHL-STDOUT: initialized none */
+/* CHL-STDOUT-NEXT: returned none */
 
 #include <stdio.h>
 

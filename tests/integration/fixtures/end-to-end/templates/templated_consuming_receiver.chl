@@ -1,4 +1,4 @@
-/* CX-STDOUT: drop templated_object */
+/* CHL-STDOUT: drop templated_object */
 
 #include <stdio.h>
 

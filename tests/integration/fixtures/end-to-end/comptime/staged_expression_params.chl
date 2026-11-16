@@ -1,4 +1,4 @@
-/* CX-STDOUT: staged pair 42 */
+/* CHL-STDOUT: staged pair 42 */
 
 #include <stdio.h>
 

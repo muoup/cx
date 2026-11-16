@@ -1,9 +1,9 @@
-/* CX-STDOUT: enter 20 */
-/* CX-STDOUT-NEXT: enter 22 */
-/* CX-STDOUT-NEXT: sum 42 */
-/* CX-STDOUT-NEXT: leave 22 */
-/* CX-STDOUT-NEXT: leave 20 */
-/* CX-STDOUT-NEXT: returned 42 */
+/* CHL-STDOUT: enter 20 */
+/* CHL-STDOUT-NEXT: enter 22 */
+/* CHL-STDOUT-NEXT: sum 42 */
+/* CHL-STDOUT-NEXT: leave 22 */
+/* CHL-STDOUT-NEXT: leave 20 */
+/* CHL-STDOUT-NEXT: returned 42 */
 
 #include <stdio.h>
 

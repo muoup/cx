@@ -1,0 +1,241 @@
+use std::path::PathBuf;
+
+#[cfg(not(feature = "ignore-system-headers"))]
+use std::sync::OnceLock;
+
+use chl_log::CHLResult;
+use chl_log::catalogue::parse::*;
+use chl_namespace::chl_library_directory;
+
+use crate::{
+    context::{LexingContext, SourceInput},
+    lexer::{scanner::LexTransition, source::LanguageMode},
+    preprocessor::{conditionals::rest_of_logical_directive, includes},
+    IncludeRoot,
+};
+
+pub(crate) fn handle_include(
+    context: &mut LexingContext,
+    directive_start: usize,
+    _directive_end: usize,
+) -> CHLResult<LexTransition> {
+    handle_include_impl(context, directive_start, false)
+}
+
+pub(crate) fn handle_include_next(
+    context: &mut LexingContext,
+    directive_start: usize,
+) -> CHLResult<LexTransition> {
+    handle_include_impl(context, directive_start, true)
+}
+
+fn handle_include_impl(
+    context: &mut LexingContext,
+    directive_start: usize,
+    include_next: bool,
+) -> CHLResult<LexTransition> {
+    if !context.current_frame().is_active() {
+        context.skip_tail();
+        return Ok(LexTransition::Continue);
+    }
+
+    context.current_frame_mut().skip_whitespace();
+
+    let file_name_start = context.current_frame().cursor;
+    let Some(file_name) = context.current_frame_mut().next_word() else {
+        let frame = context.current_frame();
+
+        return frame
+            .cursor_view()
+            .log_error(directive_start, &EXPECTED_SYNTAX, ("an include path".into(), Some("after '#include'".into())));
+    };
+    let _file_name_end = context.current_frame().cursor;
+
+    if !(file_name.starts_with('"') && file_name.ends_with('"'))
+        && !(file_name.starts_with('<') && file_name.ends_with('>'))
+    {
+        let frame = context.current_frame();
+        return frame
+            .cursor_view()
+            .log_error(file_name_start, &EXPECTED_SYNTAX, ("\"...\" or <...>".into(), Some("for an include path".into())));
+    }
+
+    let current_file = context.current_frame().file_path.clone();
+    let path = match if include_next {
+        includes::resolve_next_path(&current_file, &context.includes, &file_name)
+    } else {
+        includes::resolve_path(&current_file, &context.includes, &file_name)
+    } {
+        Some(path) => path,
+        None => {
+            let frame = context.current_frame();
+            return frame
+                .cursor_view()
+                .log_error(file_name_start, &INCLUDE_NOT_FOUND, file_name);
+        }
+    };
+
+    let canonical_path = path.canonicalize().unwrap_or(path.clone());
+    if context.once_files.contains(&canonical_path) {
+        return Ok(LexTransition::Continue);
+    }
+
+    let source = std::fs::read_to_string(path.as_path()).map_err(|e| {
+        crate::log::no_source_error(
+            &READ_FILE,
+            (
+                "included file".into(),
+                path.display().to_string(),
+                e.to_string(),
+            ),
+            "failed to read included source file",
+        )
+    })?;
+
+    let parent_mode = context.current_frame().language_mode;
+    let language_mode =
+        LanguageMode::for_include_path(&path, parent_mode);
+
+    Ok(LexTransition::PushSource(SourceInput {
+        source,
+        path,
+        language_mode,
+    }))
+}
+
+pub(crate) fn handle_pragma(context: &mut LexingContext) -> CHLResult<LexTransition> {
+    if !context.current_frame().is_active() {
+        context.skip_tail();
+        return Ok(LexTransition::Continue);
+    }
+
+    let pragma = rest_of_logical_directive(context.current_frame_mut())
+        .trim()
+        .to_string();
+    if pragma == "once" {
+        let frame = context.current_frame();
+        let canonical_path = frame
+            .file_path
+            .canonicalize()
+            .unwrap_or_else(|_| frame.file_path.clone());
+        context.once_files.insert(canonical_path);
+    }
+    Ok(LexTransition::Continue)
+}
+
+pub(crate) fn resolve_path(
+    current_file: &std::path::Path,
+    includes: &[IncludeRoot],
+    file_name: &str,
+) -> Option<PathBuf> {
+    let is_quoted = file_name.starts_with('"') && file_name.ends_with('"');
+    let is_angled = file_name.starts_with('<') && file_name.ends_with('>');
+
+    if !is_quoted && !is_angled {
+        return None;
+    }
+
+    let inner = &file_name[1..file_name.len() - 1];
+
+    let relative = is_quoted
+        .then(|| current_file.parent().map(|parent| parent.join(inner)))
+        .flatten()
+        .filter(|path| path.is_file());
+    if relative.is_some() {
+        return relative;
+    }
+    if let Some(path) = includes.iter().find_map(|root| root.resolve(inner)) {
+        return Some(path);
+    }
+
+    #[cfg(not(feature = "ignore-system-headers"))]
+    if let Some(path) = system_include_dirs()
+        .iter()
+        .map(|dir| dir.join(inner))
+        .find(|path| path.is_file())
+    {
+        return Some(path);
+    }
+
+    Some(PathBuf::from(chl_library_directory(&format!("libc/{inner}")))).filter(|path| path.is_file())
+}
+
+pub(crate) fn resolve_next_path(
+    current_file: &std::path::Path,
+    includes: &[IncludeRoot],
+    file_name: &str,
+) -> Option<PathBuf> {
+    let is_angled = file_name.starts_with('<') && file_name.ends_with('>');
+    if !is_angled {
+        return None;
+    }
+
+    let inner = &file_name[1..file_name.len() - 1];
+    let current_parent = current_file.parent()?.canonicalize().ok()?;
+    let is_current = |directory: &std::path::Path| directory.canonicalize().ok().as_ref() == Some(&current_parent);
+
+    let mut passed_current_dir = false;
+    for root in includes {
+        if !passed_current_dir {
+            passed_current_dir = root.search_directory().is_some_and(is_current);
+            continue;
+        }
+        if let Some(path) = root.resolve(inner) {
+            return Some(path);
+        }
+    }
+
+    #[cfg(not(feature = "ignore-system-headers"))]
+    for directory in system_include_dirs() {
+        if !passed_current_dir {
+            passed_current_dir = is_current(directory);
+            continue;
+        }
+        let candidate = directory.join(inner);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+#[cfg(not(feature = "ignore-system-headers"))]
+fn system_include_dirs() -> &'static [PathBuf] {
+    static SYSTEM_INCLUDE_DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+
+    SYSTEM_INCLUDE_DIRS.get_or_init(discover_system_include_dirs)
+}
+
+#[cfg(all(unix, not(feature = "ignore-system-headers")))]
+fn discover_system_include_dirs() -> Vec<PathBuf> {
+    let dirs = gcc_search_dirs();
+    if dirs.is_empty() {
+        return vec![PathBuf::from("/usr/include")];
+    }
+    dirs
+}
+
+#[cfg(all(not(unix), not(feature = "ignore-system-headers")))]
+fn discover_system_include_dirs() -> Vec<PathBuf> {
+    vec![]
+}
+
+#[cfg(all(unix, not(feature = "ignore-system-headers")))]
+fn gcc_search_dirs() -> Vec<PathBuf> {
+    let Ok(output) = std::process::Command::new("gcc")
+        .args(["-E", "-Wp,-v", "-xc", "/dev/null"])
+        .output()
+    else {
+        return Vec::new();
+    };
+
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .skip_while(|line| !line.starts_with("#include <...>"))
+        .skip(1)
+        .take_while(|line| line.starts_with(' '))
+        .map(|line| PathBuf::from(line.trim()))
+        .filter(|dir| dir.is_dir())
+        .collect()
+}

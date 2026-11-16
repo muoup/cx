@@ -1,4 +1,4 @@
-/* CX-STDOUT: 1 2 3 */
+/* CHL-STDOUT: 1 2 3 */
 #include <stdio.h>
 
 comptime T identity(type T, T value) => value;

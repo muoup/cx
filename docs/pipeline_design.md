@@ -34,14 +34,14 @@ The parser builds the AST, represented as HIR, using the combined declaration en
 
 ## Stage 5: HMIR Generation
 
-`cx-hir-lowering` resolves names and constructs HMIR from HIR and the declaration environment. HMIR retains type expressions, comptime parameters and bodies, and staged quotes for evaluation during lowering.
+`chl-hir-lowering` resolves names and constructs HMIR from HIR and the declaration environment. HMIR retains type expressions, comptime parameters and bodies, and staged quotes for evaluation during lowering.
 
 - **Input**: HIR + declaration environment
 - **Output**: HMIR
 
 ## Stage 6: MIR Generation and Analysis
 
-`cx-hmir-lowering` evaluates comptime expressions, specializes functions, resolves types, inserts conversions, and splices staged quotes while lowering HMIR into MIR. Comptime parameters are bound in the evaluator and omitted from runtime signatures. Type and quote values cannot escape into runtime MIR values.
+`chl-hmir-lowering` evaluates comptime expressions, specializes functions, resolves types, inserts conversions, and splices staged quotes while lowering HMIR into MIR. Comptime parameters are bound in the evaluator and omitted from runtime signatures. Type and quote values cannot escape into runtime MIR values.
 
 MIR contains concrete runtime instructions, types, and constants. It owns interned semantic types, target-dependent size/alignment layouts, storage ownership metadata such as `@nodrop`, and source ranges for emitted instructions. Symbolic `sizeof` and `alignof` queries are resolved during HMIR lowering. MIR has no comptime register bank, comptime instruction stream, or staged-expression values.
 
@@ -93,4 +93,4 @@ After library linking, a C header is generated from the entry file's LMIR unit. 
 - **MIR**: typed, semantically resolved frontend IR
 - **LMIR**: lowered SSA-style IR for code generation
 
-The legacy THIR, typechecker, THIR lowering, and MIR comptime evaluator sources are retained for parity comparisons but are not part of the active workspace. THIR-specific MIR definitions are archived in [the legacy MIR reference](../compiler/cx-mir-comptime/legacy-mir/README.md).
+The legacy THIR, typechecker, THIR lowering, and MIR comptime evaluator sources are retained for parity comparisons but are not part of the active workspace. THIR-specific MIR definitions are archived in [the legacy MIR reference](../compiler/chl-mir-comptime/legacy-mir/README.md).

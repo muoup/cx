@@ -1,6 +1,6 @@
-/* CX-STDOUT: get 4 4 4 */
-/* CX-STDOUT-NEXT: convert 5 6 */
-/* CX-STDOUT-NEXT: dropped */
+/* CHL-STDOUT: get 4 4 4 */
+/* CHL-STDOUT-NEXT: convert 5 6 */
+/* CHL-STDOUT-NEXT: dropped */
 
 import std::box as std;
 

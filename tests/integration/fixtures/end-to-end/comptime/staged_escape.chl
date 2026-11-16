@@ -1,8 +1,8 @@
-/* CX-STDOUT: tried none */
-/* CX-STDOUT-NEXT: fallback 5 */
-/* CX-STDOUT-NEXT: piped back 3 */
-/* CX-STDOUT-NEXT: reified 4 */
-/* CX-STDOUT-NEXT: reified -1 */
+/* CHL-STDOUT: tried none */
+/* CHL-STDOUT-NEXT: fallback 5 */
+/* CHL-STDOUT-NEXT: piped back 3 */
+/* CHL-STDOUT-NEXT: reified 4 */
+/* CHL-STDOUT-NEXT: reified -1 */
 
 #include <stdio.h>
 

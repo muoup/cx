@@ -1,9 +1,9 @@
-/* CX-STDOUT: twice 5 */
-/* CX-STDOUT-NEXT: twice 6 */
-/* CX-STDOUT-NEXT: kept 12 */
-/* CX-STDOUT-NEXT: twice 7 */
-/* CX-STDOUT-NEXT: plain 14 */
-/* CX-STDOUT-NEXT: twice 8 */
+/* CHL-STDOUT: twice 5 */
+/* CHL-STDOUT-NEXT: twice 6 */
+/* CHL-STDOUT-NEXT: kept 12 */
+/* CHL-STDOUT-NEXT: twice 7 */
+/* CHL-STDOUT-NEXT: plain 14 */
+/* CHL-STDOUT-NEXT: twice 8 */
 
 #include <stdio.h>
 

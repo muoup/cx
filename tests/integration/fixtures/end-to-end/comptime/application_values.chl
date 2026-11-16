@@ -1,17 +1,17 @@
-/* CX-STDOUT: eager 13 */
-/* CX-STDOUT-NEXT: call 5 */
-/* CX-STDOUT-NEXT: first 15 */
-/* CX-STDOUT-NEXT: call 5 */
-/* CX-STDOUT-NEXT: second 15 */
-/* CX-STDOUT-NEXT: partial 7 */
-/* CX-STDOUT-NEXT: curried 12 */
-/* CX-STDOUT-NEXT: ping */
-/* CX-STDOUT-NEXT: quote 21 */
-/* CX-STDOUT-NEXT: order 12 */
-/* CX-STDOUT-NEXT: call 9 */
-/* CX-STDOUT-NEXT: callback 19 */
-/* CX-STDOUT-NEXT: generic 8 */
-/* CX-STDOUT-NEXT: constant 23 */
+/* CHL-STDOUT: eager 13 */
+/* CHL-STDOUT-NEXT: call 5 */
+/* CHL-STDOUT-NEXT: first 15 */
+/* CHL-STDOUT-NEXT: call 5 */
+/* CHL-STDOUT-NEXT: second 15 */
+/* CHL-STDOUT-NEXT: partial 7 */
+/* CHL-STDOUT-NEXT: curried 12 */
+/* CHL-STDOUT-NEXT: ping */
+/* CHL-STDOUT-NEXT: quote 21 */
+/* CHL-STDOUT-NEXT: order 12 */
+/* CHL-STDOUT-NEXT: call 9 */
+/* CHL-STDOUT-NEXT: callback 19 */
+/* CHL-STDOUT-NEXT: generic 8 */
+/* CHL-STDOUT-NEXT: constant 23 */
 
 #include <stdio.h>
 
