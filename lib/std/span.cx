@@ -50,18 +50,25 @@ T& span::at(comptime type T = _, span(T)& this, usize index) {
 }
 
 std::opt(span(T)) span::subspan(comptime type T = _, span(T) this, usize offset, usize len) {
-    if (this |> span::length() <= offset + len) return _::none();
+    if (this |> span::length() < offset + len) return _::none();
 
-    return (span(T)) {
+    return _::some((span(T)) {
         .data = this.data + offset,
         .length = len
-    } |> _::some();
+    });
 }
 
-bool span::equals(comptime type T = _, span(T) first, span(T) second) {
+bool span::equals(comptime type T = _, comptime type U = _, span(T) first, span(U) second) 
+where
+    pre: (@type.equal(@type.unqualify(T), @type.unqualify(U)))
+{
     if (span::length(first) != span::length(second)) return false;
 
     return memcmp(first |> span::data(), second |> span::data(), sizeof(T) * span::length(first)) == 0;
+}
+
+span(U) span::reinterpret(comptime type T = _, comptime type U = _, span(T) this) {
+    return span::new(.T = U, (U*) this.data, this.length * sizeof(T) / sizeof(U));
 }
 
 std::opt(T&) span::first(comptime type T = _, span(T)& this) {

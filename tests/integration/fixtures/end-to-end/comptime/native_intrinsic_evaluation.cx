@@ -14,6 +14,9 @@ comptime bool queries = @type.is_int(int)
     && @type.equal(@type.reference_inner(const int&), const int)
     && @type.equal(@type.decay(const int&), int)
     && @type.equal(@type.decay(int[4]), int*)
+    && @type.equal(@type.unqualify(const volatile int), int)
+    && @type.equal(@type.unqualify(const int* const), const int*)
+    && @type.equal(@type.unqualify(const int&), const int&)
     && @type.equal(@type.type_of(5), int)
     && @type.size_of(long) == 8
     && @type.align_of(int) == 4;

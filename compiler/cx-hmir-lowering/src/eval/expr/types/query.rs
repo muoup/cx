@@ -55,21 +55,34 @@ pub(crate) fn eval_type_op(
             let decayed = decay(context, ty, span);
             type_value(context, decayed, span)
         }
+        HMIRTypeOp::Unqualify(ty) => {
+            let ty = subject(context, body, *ty)?;
+            let unqualified = qualify::unqualified(context, ty, span);
+            type_value(context, unqualified, span)
+        }
         HMIRTypeOp::IsInt(ty)
         | HMIRTypeOp::IsFloat(ty)
         | HMIRTypeOp::IsPointer(ty)
         | HMIRTypeOp::IsSigned(ty)
         | HMIRTypeOp::IsReference(ty)
-        | HMIRTypeOp::IsConst(ty) => {
+        | HMIRTypeOp::IsConst(ty) 
+        | HMIRTypeOp::IsNodrop(ty) 
+        | HMIRTypeOp::IsNocopy(ty) 
+        | HMIRTypeOp::IsUnsafeMove(ty) => {
             let ty = subject(context, body, *ty)?;
             let env = context.env();
             let holds = match op {
                 HMIRTypeOp::IsInt(_) => env.is_int(ty),
                 HMIRTypeOp::IsFloat(_) => env.is_float(ty),
                 HMIRTypeOp::IsPointer(_) => env.is_pointer(ty),
-                HMIRTypeOp::IsSigned(_) => env.is_int(ty) && types::int_type(env, ty).signed(),
                 HMIRTypeOp::IsReference(_) => env.is_reference(ty),
-                _ => env.semantics(ty).constant,
+                HMIRTypeOp::IsSigned(_) => env.is_int(ty) && types::int_type(env, ty).signed(),
+                HMIRTypeOp::IsConst(_) => env.semantics(ty).constant,
+                HMIRTypeOp::IsNocopy(_) => env.is_nocopy(ty),
+                HMIRTypeOp::IsNodrop(_) => env.is_nodrop(ty),
+                HMIRTypeOp::IsUnsafeMove(_) => env.semantics(ty).unsafe_move,
+
+                _ => unreachable!()
             };
             boolean(context, holds, span)
         }

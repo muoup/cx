@@ -141,7 +141,11 @@ impl Locals<'_> {
                 self.bind(*local);
                 children.extend(initializer);
             }
-            HMIRExprKind::Call { callee, args, named } => {
+            HMIRExprKind::Call {
+                callee,
+                args,
+                named,
+            } => {
                 children.push(*callee);
                 children.extend(args);
                 children.extend(named.iter().map(|(_, value)| *value));
@@ -257,6 +261,7 @@ impl Locals<'_> {
                     | HMIRTypeOp::Member { ty: value, .. }
                     | HMIRTypeOp::TypeOf(value)
                     | HMIRTypeOp::Decay(value)
+                    | HMIRTypeOp::Unqualify(value)
                     | HMIRTypeOp::SizeOf(value)
                     | HMIRTypeOp::AlignOf(value)
                     | HMIRTypeOp::IsInt(value)
@@ -264,7 +269,10 @@ impl Locals<'_> {
                     | HMIRTypeOp::IsPointer(value)
                     | HMIRTypeOp::IsSigned(value)
                     | HMIRTypeOp::IsReference(value)
-                    | HMIRTypeOp::IsConst(value) => children.push(*value),
+                    | HMIRTypeOp::IsConst(value)
+                    | HMIRTypeOp::IsNodrop(value)
+                    | HMIRTypeOp::IsNocopy(value)
+                    | HMIRTypeOp::IsUnsafeMove(value) => children.push(*value),
                 },
             },
             HMIRExprKind::Literal(_)

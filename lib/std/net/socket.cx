@@ -1,4 +1,4 @@
-import std::{span, optional} as std;
+import std::{io, span, optional} as std;
 
 import std::platform::posix as posix;
 import std::net::address as std::net;
@@ -56,7 +56,12 @@ std::opt(void) socket::connect(socket& this, std::net::endpoint address) {
     return _::some();
 }
 
-std::opt(socket) socket::accept(socket& this) {
+struct accept_details : @nodrop {
+    socket socket;
+    std::net::endpoint remote;
+};
+
+std::opt(accept_details) socket::accept(socket& this) {
     std::net::endpoint remote;
     remote.length = (u32) sizeof(posix::sockaddr_in);
 
@@ -66,7 +71,7 @@ std::opt(socket) socket::accept(socket& this) {
         return _::none();
     }
 
-    return _::some((socket) { .fd = fd });
+    return _::some((accept_details) { .socket = (socket) { .fd = fd }, .remote = remote });
 }
 
 std::opt(void) socket::set_opt(socket& this, int level, int option_name, const void* option_value, usize option_len) {
@@ -86,6 +91,7 @@ std::opt(void) socket::set_blocking(socket& this, bool is_blocking) {
     } else {
         flags |= posix::ENUM_O_NONBLOCK;
     }
-        
+
+    posix::fcntl(this.fd, posix::ENUM_F_SETFL, flags);
     return _::some();
 }

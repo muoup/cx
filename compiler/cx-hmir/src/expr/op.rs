@@ -119,6 +119,7 @@ pub enum HMIRTypeOp {
     },
     TypeOf(HMIRExprID),
     Decay(HMIRExprID),
+    Unqualify(HMIRExprID),
     Aggregate {
         ty: HMIRExprID,
         pairs: Vec<(Option<CXIdent>, HMIRExprID)>,
@@ -137,6 +138,9 @@ pub enum HMIRTypeOp {
     IsSigned(HMIRExprID),
     IsReference(HMIRExprID),
     IsConst(HMIRExprID),
+    IsNodrop(HMIRExprID),
+    IsNocopy(HMIRExprID),
+    IsUnsafeMove(HMIRExprID),
     Equal(HMIRExprID, HMIRExprID),
 }
 
@@ -233,6 +237,7 @@ impl HMIRTypeOp {
             Self::Member { .. } => "type.member",
             Self::TypeOf(_) => "type.type_of",
             Self::Decay(_) => "type.decay",
+            Self::Unqualify(_) => "type.unqualify",
             Self::Aggregate { .. } => "type.aggregate",
             Self::SizeOf(_) => "type.size_of",
             Self::AlignOf(_) => "type.align_of",
@@ -243,6 +248,9 @@ impl HMIRTypeOp {
             Self::IsSigned(_) => "type.is_signed",
             Self::IsReference(_) => "type.is_reference",
             Self::IsConst(_) => "type.is_const",
+            Self::IsNodrop(_) => "type.is_nodrop",
+            Self::IsNocopy(_) => "type.is_nocopy",
+            Self::IsUnsafeMove(_) => "type.is_unsafe_move",
             Self::Equal(..) => "type.equal",
         }
     }
@@ -257,6 +265,7 @@ impl HMIRTypeOp {
             "type.reference_inner" => Self::ReferenceInner(source.ty()?),
             "type.type_of" => Self::TypeOf(source.value()?),
             "type.decay" => Self::Decay(source.ty()?),
+            "type.unqualify" => Self::Unqualify(source.ty()?),
             "type.size_of" => Self::SizeOf(source.ty()?),
             "type.align_of" => Self::AlignOf(source.ty()?),
             "type.is_int" => Self::IsInt(source.ty()?),
@@ -265,6 +274,9 @@ impl HMIRTypeOp {
             "type.is_signed" => Self::IsSigned(source.ty()?),
             "type.is_reference" => Self::IsReference(source.ty()?),
             "type.is_const" => Self::IsConst(source.ty()?),
+            "type.is_nodrop" => Self::IsNodrop(source.ty()?),
+            "type.is_nocopy" => Self::IsNocopy(source.ty()?),
+            "type.is_unsafe_move" => Self::IsUnsafeMove(source.ty()?),
             "type.equal" => Self::Equal(source.ty()?, source.ty()?),
             _ => return Ok(None),
         }))

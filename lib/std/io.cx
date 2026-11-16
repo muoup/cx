@@ -1,4 +1,4 @@
-extern "C":
+import std::span as std;
 
 #include <stdio.h>
 
@@ -6,14 +6,18 @@ public extern "C": int printf(const char *__restrict format, ...);
 
 public:
 
-void print(const _str& s) safe {
-    @unsafe { printf(s); };
+void print(const _str& s) {
+    printf(s);
 }
 
-void println(const _str& s) safe {
-    @unsafe { puts(s); };
+void println(const _str& s) {
+    puts(s);
 }
 
-void print_char(i32 c) safe {
-    @unsafe { putchar(c); };
+void print_char(i32 c) {
+    putchar(c);
+}
+
+void print_span(const std::span(char) data_str) {
+    fwrite(data_str |> std::span::data(), data_str |> std::span::length(), 1, stdout); 
 }

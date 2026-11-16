@@ -7,11 +7,12 @@ extern "C":
 
 public:
 
+comptime bool valid_vector_inner(comptime type T) => !@type.is_reference(T) && !@type.is_const(T);
+
 comptime type vector(comptime type T)
 where
-    pre: (!@type.is_reference(T) && !@type.is_const(T)) => 
-
-    struct : @nodrop {
+    pre: (@unsafe(valid_vector_inner(T)))
+    => struct : @nodrop {
         T* data;
         usize length;
         usize capacity;
@@ -33,7 +34,10 @@ vector(T) vector::with_capacity(comptime type T, usize capacity) {
     };
 }
 
-void vector::drop(comptime type T = _, vector(T) this) {
+void vector::drop(comptime type T = _, vector(T) this) 
+where
+    pre: (!@type.is_nodrop(T))
+{
     @unsafe {
         free(this.data);
         @leak(this);
@@ -98,3 +102,15 @@ T& vector::at(comptime type T = _, vector(T)& this, usize index) {
 
 std::span(T) vector::span(comptime type T = _, vector(T)& this)
     => std::span::new(this.data, this.length);
+
+vector(@type.unqualify(T)) vector::from_span(comptime type T = _, std::span(T) this) 
+where
+    pre: (!@type.is_unsafe_move(T))
+{
+    const usize length = this |> std::span::length();
+    auto vector = vector::with_capacity(@type.unqualify(T), length);
+    
+    vector.length = length;
+    memcpy(vector.data, this.data, sizeof(T) * length);
+    return move vector;
+}

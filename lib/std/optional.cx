@@ -32,11 +32,11 @@ comptime ^opt(U) opt::map(comptime type T = _, comptime type U = _, ^opt(T) this
         none() => _::none(),
     };
 
-comptime ^opt(U) opt::and_then(comptime type T = _, comptime type U = _, ^opt(T) this, fn func(^T) -> opt(^U))
-    => emit match (this) {
-        some(auto value) => func(emit move value),
-        non() => _::none(),
-    };
+//comptime ^opt(U) opt::and_then(comptime type T = _, comptime type U = _, ^opt(T) this, fn func(^T) -> opt(^U))
+//    => emit match (this) {
+//        some(auto value) => func(emit move value),
+//        non() => _::none(),
+//    };
 
 T opt::unwrap(comptime type T = _, opt(T) this) {
     match (move this) {
