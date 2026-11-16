@@ -1,5 +1,5 @@
 [package]
-name = "chl"
+name = "chloro"
 version = "0.0.0"
 edition = "2021"
 autotests = false

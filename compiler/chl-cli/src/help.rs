@@ -10,22 +10,22 @@ pub(crate) enum Topic {
 
 pub(crate) fn usage(topic: Topic) -> &'static str {
     match topic {
-        Topic::General => "chl <file.chl|file.c>... [options]\n       chl build [targets...] [options]\n       chl run [target] [options] [-- args...]\n       chl init <project-name>\n       chl doc [path] [-o file]",
-        Topic::File => "chl <file.chl|file.c>... [options]",
-        Topic::Build => "chl build [targets...] [options]",
-        Topic::Run => "chl run [target] [options] [-- args...]",
-        Topic::Init => "chl init <project-name>",
-        Topic::Doc => "chl doc [path] [-o file]",
+        Topic::General => "chloro <file.chl|file.c>... [options]\n       chloro build [targets...] [options]\n       chloro run [target] [options] [-- args...]\n       chloro init <project-name>\n       chloro doc [path] [-o file]",
+        Topic::File => "chloro <file.chl|file.c>... [options]",
+        Topic::Build => "chloro build [targets...] [options]",
+        Topic::Run => "chloro run [target] [options] [-- args...]",
+        Topic::Init => "chloro init <project-name>",
+        Topic::Doc => "chloro doc [path] [-o file]",
     }
 }
 
 pub(crate) fn name(topic: Topic) -> &'static str {
     match topic {
-        Topic::General | Topic::File => "chl",
-        Topic::Build => "chl build",
-        Topic::Run => "chl run",
-        Topic::Init => "chl init",
-        Topic::Doc => "chl doc",
+        Topic::General | Topic::File => "chloro",
+        Topic::Build => "chloro build",
+        Topic::Run => "chloro run",
+        Topic::Init => "chloro init",
+        Topic::Doc => "chloro doc",
     }
 }
 
@@ -41,7 +41,7 @@ pub(crate) fn dispatch(topic: Topic) {
 }
 
 pub(crate) fn print_version() {
-    println!("chl 0.0 pre-alpha");
+    println!("chloro 0.0 pre-alpha");
 }
 
 pub(crate) fn is_help_flag(flag: &str) -> bool {
@@ -56,13 +56,13 @@ fn print_general_help() {
     println!("Usage: {}", usage(Topic::General));
     println!();
     println!("Commands:");
-    println!("  build [target]       Build from chl.lua (default targets or a specific one)");
+    println!("  build [target]       Build from chloro.lua (default targets or a specific one)");
     println!("  run [target]         Build and run a project executable");
-    println!("  init <project-name>  Create a new Chloro project");
+    println!("  init <project-name>  Create a new chlorooro project");
     println!("  doc [path]           Extract documentation from the .chl files under a path as JSON");
     println!();
     println!("Legacy single-file mode:");
-    println!("  <file.chl|file.c>...  Compile source files without using chl.lua");
+    println!("  <file.chl|file.c>...  Compile source files without using chloro.lua");
     println!();
     print_common_options();
     println!("  -c                   Compile only; emit an object file.");
@@ -74,7 +74,7 @@ fn print_general_help() {
 fn print_file_help() {
     println!("Usage: {}", usage(Topic::File));
     println!();
-    println!("Compile source files without using chl.lua.");
+    println!("Compile source files without using chloro.lua.");
     println!();
     print_common_options();
     println!("  -c                   Compile only; emit an object file.");
@@ -104,7 +104,7 @@ fn print_run_help() {
 fn print_init_help() {
     println!("Usage: {}", usage(Topic::Init));
     println!();
-    println!("Create a new Chloro project in a directory named project-name.");
+    println!("Create a new chloro project in a directory named project-name.");
 }
 
 fn print_doc_help() {
