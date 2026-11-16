@@ -293,6 +293,7 @@ dependencies = [
 name = "cx"
 version = "0.0.0"
 dependencies = [
+ "cx-doc",
  "cx-lexer",
  "cx-log",
  "cx-pipeline",
@@ -344,6 +345,19 @@ dependencies = [
  "cx-mir",
  "cx-pipeline-data",
  "cx-util",
+]
+
+[[package]]
+name = "cx-doc"
+version = "0.0.0"
+dependencies = [
+ "cx-hir",
+ "cx-hmir",
+ "cx-namespace",
+ "cx-tokens",
+ "rustc-hash",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -449,6 +463,7 @@ dependencies = [
 name = "cx-lsp"
 version = "0.0.0"
 dependencies = [
+ "cx-doc",
  "cx-hmir",
  "cx-hmir-lowering",
  "cx-lexer",

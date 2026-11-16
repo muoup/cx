@@ -1,5 +1,6 @@
 mod args;
 mod build;
+mod doc;
 mod help;
 mod init;
 mod log;
@@ -184,6 +185,7 @@ fn execute(command: Command) -> CXResult<ExitCode> {
         }
         Command::Run(args) => return run_project(args),
         Command::Init(args) => init_project(args)?,
+        Command::Doc(args) => doc::document(args)?,
     }
     Ok(ExitCode::SUCCESS)
 }

@@ -2,7 +2,7 @@ use std::{cmp::Reverse, mem::discriminant, ptr};
 
 use cx_hmir::{
     HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind, HMIRFunction,
-    HMIRFunctionStage, HMIRUnit, expr::HMIRExprKind, ty::HMIRExprTypeKind,
+    HMIRFunctionStage, HMIRUnit,
 };
 use cx_log::{CXResult, catalogue::typecheck, error::CXError};
 use cx_util::{identifier::CXIdent, linkage::LinkageMode};
@@ -220,25 +220,15 @@ pub(crate) fn referenced(env: &mut HMIREnvironment, id: HMIRDefID) {
 }
 
 fn is_type(declaration: &HMIRDeclaration) -> bool {
-    let Some(HMIRDefKind::ComptimeGlobal(global)) = declaration.kind() else {
-        return false;
-    };
-    let HMIRExprKind::Type(ty) = global.body().expr(global.ty()).kind() else {
-        return false;
-    };
-    matches!(ty.kind(), HMIRExprTypeKind::Type)
+    matches!(declaration.kind(), Some(HMIRDefKind::ComptimeGlobal(global)) if global.declares_type())
 }
 
 // Only a C-style function may be declared more than once. Any other function has one declaration, as a call to
 // it binds its arguments from what that declaration says of the parameters
 fn is_redeclarable(function: &HMIRFunction) -> bool {
     let signature = function.signature();
-    let generator = matches!(
-        function.body().expr(*signature.return_type()).kind(),
-        HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::Type)
-    );
     signature.stage() == HMIRFunctionStage::Runtime
-        && !generator
+        && !function.returns_type()
         && signature.params().iter().all(|param| !param.comptime())
         && function.prototype().params().iter().all(|param| param.default().is_none())
 }

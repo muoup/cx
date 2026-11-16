@@ -381,6 +381,7 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
         }
 
         specifier!(Const) | intrinsic!(Auto) => {
+            let start_index = data.tokens.index;
             let is_const = try_next!(data.tokens, specifier!(Const));
             assert_token_matches!(data.tokens, intrinsic!(Auto), "'auto'");
             let is_reference = try_next!(data.tokens, operator!(Ampersand));
@@ -406,7 +407,11 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CXResult<HIRPattern> {
                 );
             };
 
-            Ok(HIRPattern::Binding { name, mode })
+            Ok(HIRPattern::Binding {
+                name,
+                mode,
+                span: data.token_range(start_index, data.tokens.index),
+            })
         }
 
         // '_::some(x)' names a variant of the subject's own type

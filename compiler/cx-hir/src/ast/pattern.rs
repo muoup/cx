@@ -1,3 +1,4 @@
+use cx_tokens::TokenRange;
 use cx_util::{identifier::CXIdent, unsafe_float::FloatWrapper};
 
 use crate::ast::expression::HIRExpression;
@@ -15,6 +16,7 @@ pub enum HIRPattern {
     Binding {
         name: CXIdent,
         mode: HIRBindingMode,
+        span: TokenRange,
     },
 
     Integer(i64),

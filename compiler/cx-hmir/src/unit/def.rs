@@ -59,6 +59,18 @@ impl HMIRDef {
         &self.declarations
     }
 
+    // A tagged type, a type definition, or a generator of types
+    pub fn declares_type(&self) -> bool {
+        self.declarations.iter().any(|declaration| {
+            declaration.tag.is_some()
+                || match &declaration.kind {
+                    Some(HMIRDefKind::ComptimeGlobal(global)) => global.declares_type(),
+                    Some(HMIRDefKind::Function(function)) => function.returns_type(),
+                    _ => false,
+                }
+        })
+    }
+
     pub fn extend(&mut self, declarations: impl IntoIterator<Item = HMIRDeclaration>) {
         self.declarations.extend(declarations);
         self.declarations

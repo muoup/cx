@@ -9,6 +9,7 @@ tower-lsp = "0.20"
 tokio = { version = "1.48.0", features = ["full"] }
 dashmap = "5.5"
 
+cx-doc = { path = "../cx-doc" }
 cx-hmir = { path = "../cx-hmir" }
 cx-hmir-lowering = { path = "../cx-hmir-lowering" }
 cx-lexer = { path = "../cx-lexer" }

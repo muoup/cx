@@ -1,29 +1,39 @@
 use crate::index::{Declaration, DeclarationSite, FileIndex, SymbolClass};
+use cx_doc::sections::DocComment;
 use cx_hmir::HMIRDeclarationRole;
+use std::cmp::Reverse;
 use tower_lsp::lsp_types::{Hover, HoverContents, MarkupContent, MarkupKind, Position};
 
 const SINGLE_LINE_WIDTH: usize = 60;
+const TYPE_LINES: usize = 24;
 
 pub fn hover(index: &FileIndex, position: Position) -> Option<Hover> {
-    let (range, declaration, ty) = match index.reference_at(position) {
-        Some(reference) => (
-            reference.range,
-            declaration(&reference.targets).map(|declaration| format(declaration, reference.class)),
-            reference.ty.as_deref(),
-        ),
+    let mut sections = Vec::new();
+    let range = match index.reference_at(position) {
+        Some(reference) => {
+            let mut ty = reference.ty.as_deref();
+            if let Some(declaration) = declaration(&reference.targets) {
+                let mut text = format(declaration, reference.class);
+                if let Some(inferred) = ty.filter(|_| is_inferred(&declaration.text)) {
+                    text = format!("{text}: {inferred}");
+                    ty = None;
+                }
+                sections.push(format!("```cx\n{text}\n```"));
+            }
+            if let Some(doc) = doc(&reference.targets) {
+                sections.push(render(&DocComment::parse(doc)));
+            }
+            if let Some(ty) = ty {
+                sections.push(format!("Type: `{ty}`"));
+            }
+            reference.range
+        }
         None => {
             let span = index.type_at(position)?;
-            (span.range, None, Some(span.ty.as_str()))
+            sections.push(format!("Type: `{}`", span.ty));
+            span.range
         }
     };
-
-    let mut sections = Vec::new();
-    if let Some(declaration) = declaration {
-        sections.push(format!("```cx\n{declaration}\n```"));
-    }
-    if let Some(ty) = ty {
-        sections.push(format!("Type: `{ty}`"));
-    }
     if sections.is_empty() {
         return None;
     }
@@ -31,7 +41,7 @@ pub fn hover(index: &FileIndex, position: Position) -> Option<Hover> {
     Some(Hover {
         contents: HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
-            value: sections.join("\n\n"),
+            value: sections.join("\n\n---\n\n"),
         }),
         range: Some(range),
     })
@@ -46,8 +56,45 @@ fn declaration(targets: &[DeclarationSite]) -> Option<&Declaration> {
         .filter(|declaration| !declaration.text.is_empty())
 }
 
+// The definition's doc comment, or else the first a declaration has
+fn doc(targets: &[DeclarationSite]) -> Option<&str> {
+    let mut targets = targets.iter().collect::<Vec<_>>();
+    targets.sort_by_key(|target| Reverse(target.role));
+    targets.into_iter().find_map(|target| target.declaration.doc.as_deref())
+}
+
+// A declaration whose type is left to inference ('auto x', 'some(auto& x)')
+fn is_inferred(text: &str) -> bool {
+    text.split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .any(|word| word == "auto")
+}
+
+fn render(doc: &DocComment) -> String {
+    let mut blocks = vec![doc.summary.clone()];
+    blocks.extend(doc.body.clone());
+    if !doc.parameters.is_empty() {
+        let items = doc
+            .parameters
+            .iter()
+            .map(|parameter| format!("- `{}` — {}", parameter.name, parameter.description))
+            .collect::<Vec<_>>();
+        blocks.push(format!("**Parameters**\n\n{}", items.join("\n")));
+    }
+    if let Some(returns) = &doc.returns {
+        blocks.push(format!("**Returns**\n\n{returns}"));
+    }
+    if let Some(examples) = &doc.examples {
+        blocks.push(format!("**Examples**\n\n{examples}"));
+    }
+    blocks.retain(|block| !block.is_empty());
+    blocks.join("\n\n")
+}
+
 fn format(declaration: &Declaration, class: SymbolClass) -> String {
     let text = &declaration.text;
+    if class == SymbolClass::Type {
+        return truncate(text);
+    }
     if class != SymbolClass::Function || text.len() <= SINGLE_LINE_WIDTH {
         return text.clone();
     }
@@ -67,6 +114,16 @@ fn format(declaration: &Declaration, class: SymbolClass) -> String {
     }
     lines.push(text[close..].to_string());
     lines.join("\n")
+}
+
+fn truncate(text: &str) -> String {
+    let lines = text.lines().collect::<Vec<_>>();
+    if lines.len() <= TYPE_LINES {
+        return text.to_string();
+    }
+    let mut kept = lines[..TYPE_LINES - 1].to_vec();
+    kept.push("    // ...");
+    kept.join("\n")
 }
 
 // The parentheses of the parameter list that directly follows the declared name

@@ -488,11 +488,7 @@ fn instance(
 
 pub(crate) fn generates_type(function: &HMIRFunction) -> bool {
     let signature = function.signature();
-    signature.params().iter().all(|param| param.comptime())
-        && matches!(
-            function.body().expr(*signature.return_type()).kind(),
-            HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::Type)
-        )
+    signature.params().iter().all(|param| param.comptime()) && function.returns_type()
 }
 
 // The arguments of a type generator that a call left as holes are those the type expected of the call was

@@ -296,7 +296,7 @@ fn parse_global_expr(data: &mut ParserData, comptime: bool) -> CXResult<()> {
 }
 
 fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<()> {
-    let start = data.tokens.index;
+    let start = data.tokens.index - usize::from(comptime);
     let (name, return_type, specifiers) = parse_initializer(data)?;
     let range = data.token_range(start, data.tokens.index);
     let linkage = specifiers.linkage;

@@ -88,15 +88,15 @@ const sidebars: SidebarsConfig = {
                 //     id: "manual/safe-functions",
                 //     label: "9. Safe Functions and Verification",
                 // },
-                {
-                    type: "doc",
-                    id: "manual/templates",
-                    label: "8. Templates",
-                },
+                // {
+                //     type: "doc",
+                //     id: "manual/templates",
+                //     label: "8. Templates",
+                // },
                 {
                     type: "doc",
                     id: "manual/comptime",
-                    label: "9. Comptime and Staged Expressions",
+                    label: "8. Comptime and Staged Expressions",
                 },
             ],
         },

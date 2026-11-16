@@ -123,7 +123,7 @@ pub(crate) fn lower_unop<'a>(
             context.coerce(HMIRCoerceMode::CCast, value, target, span)
         }
         HIRUnOp::Is(pattern) => {
-            let pattern = lower_pattern(context, pattern, span)?;
+            let pattern = lower_pattern(context, pattern)?;
             context.aggregate_op(HMIRAggregateOp::Is { value, pattern }, span)
         }
         HIRUnOp::PreIncrement(delta) if *delta < 0 => unary(context, HMIRUnaryOp::PreDecrement),

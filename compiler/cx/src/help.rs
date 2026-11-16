@@ -5,15 +5,17 @@ pub(crate) enum Topic {
     Build,
     Run,
     Init,
+    Doc,
 }
 
 pub(crate) fn usage(topic: Topic) -> &'static str {
     match topic {
-        Topic::General => "cx <file.cx|file.cxc|file.c>... [options]\n       cx build [targets...] [options]\n       cx run [target] [options] [-- args...]\n       cx init <project-name>",
+        Topic::General => "cx <file.cx|file.cxc|file.c>... [options]\n       cx build [targets...] [options]\n       cx run [target] [options] [-- args...]\n       cx init <project-name>\n       cx doc [path] [-o file]",
         Topic::File => "cx <file.cx|file.cxc|file.c>... [options]",
         Topic::Build => "cx build [targets...] [options]",
         Topic::Run => "cx run [target] [options] [-- args...]",
         Topic::Init => "cx init <project-name>",
+        Topic::Doc => "cx doc [path] [-o file]",
     }
 }
 
@@ -23,6 +25,7 @@ pub(crate) fn name(topic: Topic) -> &'static str {
         Topic::Build => "cx build",
         Topic::Run => "cx run",
         Topic::Init => "cx init",
+        Topic::Doc => "cx doc",
     }
 }
 
@@ -33,6 +36,7 @@ pub(crate) fn dispatch(topic: Topic) {
         Topic::Build => print_build_help(),
         Topic::Run => print_run_help(),
         Topic::Init => print_init_help(),
+        Topic::Doc => print_doc_help(),
     }
 }
 
@@ -55,6 +59,7 @@ fn print_general_help() {
     println!("  build [target]       Build from cx.lua (default targets or a specific one)");
     println!("  run [target]         Build and run a project executable");
     println!("  init <project-name>  Create a new CX project");
+    println!("  doc [path]           Extract documentation from the .cx files under a path as JSON");
     println!();
     println!("Legacy single-file mode:");
     println!("  <file.cx|file.cxc|file.c>...  Compile source files without using cx.lua");
@@ -100,6 +105,15 @@ fn print_init_help() {
     println!("Usage: {}", usage(Topic::Init));
     println!();
     println!("Create a new CX project in a directory named project-name.");
+}
+
+fn print_doc_help() {
+    println!("Usage: {}", usage(Topic::Doc));
+    println!();
+    println!("Extract the public API and doc comments of every .cx file under path (default: the");
+    println!("current directory) as JSON.");
+    println!();
+    println!("  -o <output_file>     Write the JSON to a file instead of standard output.");
 }
 
 fn print_common_options() {

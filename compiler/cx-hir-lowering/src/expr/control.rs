@@ -119,7 +119,7 @@ pub(crate) fn lower_match<'a>(
         .iter()
         .map(|(pattern, body)| {
             context.scoped(|this| {
-                let pattern = lower_pattern(this, pattern, &body.range)?;
+                let pattern = lower_pattern(this, pattern)?;
                 Ok((pattern, lower_expr(this, body)?))
             })
         })

@@ -103,6 +103,10 @@ impl HMIRFunction {
     pub fn def(&self) -> Option<&HMIRFnDefinition> {
         self.def.as_ref()
     }
+
+    pub fn returns_type(&self) -> bool {
+        self.body.is_type_kind(*self.signature().return_type())
+    }
 }
 
 impl HMIRFnPrototype {

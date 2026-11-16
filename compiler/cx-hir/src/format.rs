@@ -699,7 +699,7 @@ impl Display for HIRPattern {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             HIRPattern::Wildcard => write!(f, "_"),
-            HIRPattern::Binding { name, mode } => match mode {
+            HIRPattern::Binding { name, mode, .. } => match mode {
                 HIRBindingMode::Owned => write!(f, "auto {name}"),
                 HIRBindingMode::Reference => write!(f, "auto& {name}"),
                 HIRBindingMode::ConstReference => write!(f, "const auto& {name}"),

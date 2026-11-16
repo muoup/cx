@@ -1,5 +1,3 @@
-// NOTE: This is currently a sketch, this module will not compile
-
 import std::span as std;
 
 public:

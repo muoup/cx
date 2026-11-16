@@ -15,11 +15,10 @@ use crate::{body::BodyLowering, expr::lower_expr, ty::lower_type};
 pub(crate) fn lower_pattern<'a>(
     context: &mut BodyLowering<'a>,
     pattern: &'a HIRPattern,
-    span: &TokenRange,
 ) -> CXResult<HMIRPattern> {
     Ok(match pattern {
         HIRPattern::Wildcard => HMIRPattern::Wildcard,
-        HIRPattern::Binding { name, mode } => {
+        HIRPattern::Binding { name, mode, span } => {
             let ty = lower_binding_type(context, *mode, span);
             HMIRPattern::Binding(context.declare_local(Some(name), ty, span))
         }
@@ -36,7 +35,7 @@ pub(crate) fn lower_pattern<'a>(
                 _ => None,
             };
             let inner = match inner.as_deref() {
-                Some(inner) => Some(Box::new(lower_pattern(context, inner, span)?)),
+                Some(inner) => Some(Box::new(lower_pattern(context, inner)?)),
                 None => None,
             };
             HMIRPattern::Variant {

@@ -3,7 +3,10 @@ use std::cell::Cell;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 
-use crate::expr::{HMIRExpr, HMIRExprID};
+use crate::{
+    expr::{HMIRExpr, HMIRExprID, HMIRExprKind},
+    ty::HMIRExprTypeKind,
+};
 
 thread_local! {
     static NEXT_BODY: Cell<u32> = Cell::new(0);
@@ -153,6 +156,14 @@ impl HMIRBodyContext {
     pub fn expr(&self, id: HMIRExprID) -> &HMIRExpr {
         debug_assert_eq!(id.body(), self.id, "expression used outside of its body");
         &self.exprs[id.index()]
+    }
+
+    // Whether the expression is the type 'type' itself
+    pub fn is_type_kind(&self, id: HMIRExprID) -> bool {
+        matches!(
+            self.expr(id).kind(),
+            HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::Type)
+        )
     }
 
     pub fn expr_mut(&mut self, id: HMIRExprID) -> &mut HMIRExpr {

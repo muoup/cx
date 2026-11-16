@@ -2,22 +2,22 @@ use crate::index::{
     Declaration, DeclarationSite, FileIndex, IndexedSymbol, Reference, SymbolClass, TypedSpan,
 };
 use crate::position::SourceCache;
+use cx_doc::{comment, declaration};
 use cx_hmir::body::{HMIRBodyContext, HMIRLocalID};
 use cx_hmir::expr::HMIRExprKind;
-use cx_hmir::ty::HMIRGenericTypeKind;
 use cx_hmir::unit::def::{HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind};
-use cx_hmir::unit::global::HMIRComptimeGlobal;
 use cx_hmir::unit::HMIRUnit;
 use cx_hmir_lowering::env::symbols::HMIRSymbolEnv;
 use cx_pipeline_data::db::ModuleData;
 use cx_pipeline_data::hmir::facts::HMIRTypeFacts;
 use cx_pipeline_data::hmir::HMIRUnitRegistry;
 use cx_pipeline_data::GlobalCompilationContext;
-use cx_tokens::token::TokenKind;
+use cx_tokens::token::{Token, TokenKind};
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use rustc_hash::FxHashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tower_lsp::lsp_types::{Location, Range, Url};
 
 struct Identifier {
@@ -41,6 +41,7 @@ struct Site {
 }
 
 struct Indexer<'a> {
+    db: &'a ModuleData,
     identifiers: FxHashMap<PathBuf, Vec<Identifier>>,
     sources: &'a mut SourceCache,
     facts: HMIRTypeFacts,
@@ -63,6 +64,7 @@ pub fn from_context(
     }
 
     let mut indexer = Indexer {
+        db,
         identifiers: identifiers(db),
         sources,
         facts,
@@ -287,12 +289,17 @@ impl Indexer<'_> {
             return sites.clone();
         }
         let name = source_name(&def.name().name);
+        let tokens = (def_class(def) == SymbolClass::Type).then(|| self.tokens(id)).flatten();
         let sites = def
             .declarations()
             .iter()
             .filter_map(|declaration| {
                 let site = self.name_site(declaration.span(), name, Occurrence::Last)?;
-                let text = self.declaration_text(declaration.span(), site.name_end, None);
+                let mut text = match &tokens {
+                    Some(tokens) => self.type_text(declaration.span(), site.name_end, tokens),
+                    None => self.declaration_text(declaration.span(), site.name_end, None),
+                };
+                text.doc = self.doc(declaration.span());
                 declaration_site(&site, declaration.role(), text)
             })
             .collect::<Vec<_>>();
@@ -301,20 +308,43 @@ impl Indexer<'_> {
     }
 
     fn declaration_text(&mut self, span: &TokenRange, name_end: usize, until: Option<usize>) -> Declaration {
-        let collapse = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
         let Some((source, start, end)) = span
             .source_bounds()
             .and_then(|(file, start, end)| Some((self.sources.get(file)?, start, end)))
         else {
-            return Declaration {
-                text: String::new(),
-                name_end: 0,
-            };
+            return empty_declaration();
         };
         Declaration {
-            text: collapse(source.slice(start, until.unwrap_or(end))),
-            name_end: collapse(source.slice(start, name_end)).len(),
+            text: declaration::collapse(source.slice(start, until.unwrap_or(end))),
+            name_end: declaration::collapse(source.slice(start, name_end)).len(),
+            doc: None,
         }
+    }
+
+    // A type reads through its body, as it is written
+    fn type_text(&mut self, span: &TokenRange, name_end: usize, tokens: &[Token]) -> Declaration {
+        let Some((file, start, header_end)) = span.source_bounds() else {
+            return empty_declaration();
+        };
+        let Some(source) = self.sources.get(file) else {
+            return empty_declaration();
+        };
+        let end = declaration::end(tokens, file, header_end).unwrap_or(header_end);
+        Declaration {
+            text: declaration::dedent(source.text(), start, end),
+            name_end: name_end.saturating_sub(start),
+            doc: None,
+        }
+    }
+
+    fn doc(&mut self, span: &TokenRange) -> Option<String> {
+        let (file, start, _) = span.source_bounds()?;
+        comment::leading(self.sources.get(file)?.text(), start)
+    }
+
+    fn tokens(&self, id: HMIRDefID) -> Option<Arc<Box<[Token]>>> {
+        let unit = self.db.hmir.owner(id.brand())?;
+        self.db.lex_tokens.lock().get(unit.namespace()).cloned()
     }
 
     fn name_site(&mut self, span: &TokenRange, name: &str, occurrence: Occurrence) -> Option<Site> {
@@ -394,28 +424,25 @@ fn declaration_bodies(
 }
 
 fn def_class(def: &HMIRDef) -> SymbolClass {
-    for declaration in def.declarations() {
-        if declaration.tag().is_some() {
-            return SymbolClass::Type;
-        }
-        match declaration.kind() {
-            Some(HMIRDefKind::Function(_)) => return SymbolClass::Function,
-            Some(HMIRDefKind::Global(_)) => return SymbolClass::Global,
-            Some(HMIRDefKind::ComptimeGlobal(global)) if declares_type(global) => {
-                return SymbolClass::Type;
-            }
-            Some(HMIRDefKind::ComptimeGlobal(_)) => return SymbolClass::Global,
-            None => {}
-        }
+    if def.declares_type() {
+        return SymbolClass::Type;
     }
-    SymbolClass::Global
+    let function = def
+        .declarations()
+        .iter()
+        .any(|declaration| matches!(declaration.kind(), Some(HMIRDefKind::Function(_))));
+    match function {
+        true => SymbolClass::Function,
+        false => SymbolClass::Global,
+    }
 }
 
-fn declares_type(global: &HMIRComptimeGlobal) -> bool {
-    matches!(
-        global.body().expr(global.ty()).kind(),
-        HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRGenericTypeKind::Type)
-    )
+fn empty_declaration() -> Declaration {
+    Declaration {
+        text: String::new(),
+        name_end: 0,
+        doc: None,
+    }
 }
 
 fn source_name(name: &CXIdent) -> &str {

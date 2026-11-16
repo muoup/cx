@@ -44,6 +44,10 @@ impl SourceText {
         }
     }
 
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
     pub fn slice(&self, start: usize, end: usize) -> &str {
         let start = self.floor_char_boundary(start);
         let end = self.floor_char_boundary(end).max(start);

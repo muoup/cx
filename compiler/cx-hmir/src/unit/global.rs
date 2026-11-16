@@ -79,4 +79,8 @@ impl HMIRComptimeGlobal {
     pub fn initializer(&self) -> HMIRExprID {
         self.initializer
     }
+
+    pub fn declares_type(&self) -> bool {
+        self.body.is_type_kind(self.ty)
+    }
 }

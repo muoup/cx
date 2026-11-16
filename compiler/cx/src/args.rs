@@ -17,11 +17,19 @@ pub enum Command {
     Run(RunArgs),
     /// Initialize a new project: cx init <project-name>
     Init(InitArgs),
+    /// Extract documentation as JSON: cx doc [path] [-o file]
+    Doc(DocArgs),
 }
 
 #[derive(Debug)]
 pub struct InitArgs {
     pub project_name: String,
+}
+
+#[derive(Debug)]
+pub struct DocArgs {
+    pub path: Option<String>,
+    pub output: Option<String>,
 }
 
 #[derive(Debug)]
@@ -148,6 +156,7 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> {
         "build" => (Topic::Build, args_iter.collect::<Vec<_>>()),
         "run" => (Topic::Run, args_iter.collect::<Vec<_>>()),
         "init" => (Topic::Init, args_iter.collect::<Vec<_>>()),
+        "doc" => (Topic::Doc, args_iter.collect::<Vec<_>>()),
         _ if help::is_help_flag(&first_arg) => return Ok(Command::Help(Topic::General)),
         _ if help::is_version_flag(&first_arg) => return Ok(Command::Version),
         _ => (
@@ -168,7 +177,7 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> {
     };
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
-        if topic == Topic::File && matches!(arg.as_str(), "-o" | "-I" | "-D") {
+        if matches!(topic, Topic::File | Topic::Doc) && matches!(arg.as_str(), "-o" | "-I" | "-D") {
             iter.next();
         } else if help::is_help_flag(arg) {
             return Ok(Command::Help(topic));
@@ -183,6 +192,7 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> {
             executable_args,
         })),
         Topic::Init => parse_init_args(args),
+        Topic::Doc => parse_doc_args(args),
         Topic::File | Topic::General => parse_file_args(args),
     }
 }
@@ -390,4 +400,23 @@ fn parse_init_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> 
     }
 
     Ok(Command::Init(InitArgs { project_name }))
+}
+
+fn parse_doc_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> {
+    let mut path = None;
+    let mut output = None;
+    let mut args_iter = args.into_iter();
+    while let Some(arg) = args_iter.next() {
+        if arg == "-o" {
+            let file = args_iter
+                .next()
+                .ok_or_else(|| error("option '-o' requires an output file", Some(Topic::Doc)))?;
+            output = Some(file);
+        } else if arg.starts_with('-') {
+            return Err(error(format!("unknown option '{arg}'"), Some(Topic::Doc)));
+        } else if path.replace(arg).is_some() {
+            return Err(error("expected at most one path", Some(Topic::Doc)));
+        }
+    }
+    Ok(Command::Doc(DocArgs { path, output }))
 }

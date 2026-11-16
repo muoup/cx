@@ -26,6 +26,7 @@ pub struct DeclarationSite {
 pub struct Declaration {
     pub text: String,
     pub name_end: usize,
+    pub doc: Option<String>,
 }
 
 #[derive(Debug, Clone)]

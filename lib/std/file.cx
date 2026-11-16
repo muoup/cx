@@ -13,12 +13,8 @@ struct file : @nodrop {
 
 std::opt(file) file::open(const char* path, const char* mode) {
     FILE* handle = fopen(path, mode);
-    
-    if (handle == NULL) {
-        return _::none();
-    }
-    
-    return _::some((file) { .handle = handle });
+
+    return std::opt::if_then(emit handle != NULL, emit (file) { .handle = handle });
 }
 
 void file::close(file this) {
@@ -53,10 +49,10 @@ std::opt(usize) file::read_line(file& this, char* buffer, u64 buffer_size) {
 }
 
 std::opt(usize) file::read(file& this, char* buffer, u64 buffer_size) {
-    if (this.handle == NULL) return _::none();
-
-    return fread(buffer, 1, buffer_size, this.handle)
-        |> _::some();
+    return std::opt::if_then(
+        emit this.handle != NULL, 
+        emit fread(buffer, 1, buffer_size, this.handle)
+    );
 }
 
 std::string file::read_to_string(file& this) {
