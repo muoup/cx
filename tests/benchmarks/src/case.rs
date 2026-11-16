@@ -27,7 +27,7 @@ pub struct Workload {
     pub expected_stdout: String,
 }
 
-/// A `chl.toml` project that is benchmarked where it lives in the repository.
+/// A `chl.lua` project that is benchmarked where it lives in the repository.
 struct Project {
     name: &'static str,
     /// Relative to the repository root.

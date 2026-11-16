@@ -58,9 +58,9 @@ Tagged-union patterns name the variant and may bind its payload inside the corre
 ```chl
 float get_area(shape& s) {
     match (s) {
-        shape::circle(radius) => return radius * radius * 3.14;
-        shape::rectangle(r) => return r.width * r.height;
-        shape::point() => return 0;
+        circle(f64 radius) => return radius * radius * 3.14;
+        rectangle(auto r) => return r.width * r.height;
+        point() => return 0;
     }
 }
 ```

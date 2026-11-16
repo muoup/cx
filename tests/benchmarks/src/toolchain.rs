@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-/// The level single-file cases are built at; projects name their own in `chl.toml`.
+/// The level single-file cases are built at; projects name their own in `chl.lua`.
 const FILE_OPTIMIZATION: OptimizationLevel = OptimizationLevel::O2;
 
 /// What builds a case: chl with one of its backends, or the C compiler it is compared against.

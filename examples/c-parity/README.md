@@ -1,6 +1,6 @@
 # C parity examples
 
-These projects build unmodified upstream C software with chl. Each keeps its sources in an `upstream/` submodule and describes the build in a `chl.toml`; anything else in the directory is glue owned by the example. Check the sources out with `git submodule update --init` before building.
+These projects build unmodified upstream C software with chl. Each keeps its sources in an `upstream/` submodule and describes the build in a `chl.lua`; anything else in the directory is glue owned by the example. Check the sources out with `git submodule update --init` before building.
 
 | Project | What it builds |
 | --- | --- |

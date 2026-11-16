@@ -10,7 +10,7 @@ Chloro is a research preview. The compiler builds working programs, but the lang
 | Area | State | Notes |
 | --- | --- | --- |
 | Cranelift backend | Working | Default code generator. |
-| Projects and modules | Working | `chl init`, `chl build`, and `chl.toml`. |
+| Projects and modules | Working | `chl init`, `chl build`, and `chl.lua`. |
 | Linear resources, tagged unions, templates | Working | Covered in the [manual](../manual/overview.md). |
 | C99 compatibility | Partial | Most C compiles unchanged; some features are missing. |
 | LLVM backend | Optional | Build with `--features backend-llvm`. |

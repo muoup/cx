@@ -93,7 +93,7 @@ void use_string(string s) {
         body: (
             <>
                 <p>
-                    Chloro takes a modest set of modern language syntax including templates, modules, tagged unions, and pattern matching to enable safe and expressive programming with a smaller language core in favor of a larger standard library.
+                    Chloro takes a modest set of modern language syntax including modules, tagged unions, and pattern matching to enable safe and expressive programming with a smaller language core in favor of an extensive comptime for type-safe meta code generation.
                 </p>
                 <p>
                     Features like member functions, operator overloading, and template specialization are intentionally excluded, every symbol corresponds to a single well-defined meaning, and hidden behavior is avoided in favor of explicit and readable idioms.
@@ -111,9 +111,9 @@ void use_string(string s) {
 
 float get_area(shape& s) {
     match (s) {
-        shape::circle(radius) => return radius * radius * 3.14;
-        shape::rectangle(r) => return r.width * r.height;
-        shape::point() => return 0;
+        circle(f64 radius) => return radius * radius * 3.14;
+        rectangle(auto r) => return r.width * r.height;
+        point() => return 0;
     }
 }`,
             },
@@ -183,7 +183,7 @@ const standing: {title: string; items: ReactNode[]}[] = [
         title: "Works today",
         items: [
             "Cranelift code generation, the default backend",
-            <><code>chl init</code>, <code>chl build</code>, and <code>chl.toml</code> projects</>,
+            <><code>chl init</code>, <code>chl build</code>, and <code>chl.lua</code> projects</>,
             "Linear resources, tagged unions, and templates",
             "Most C99 code, compiled unchanged",
         ],
