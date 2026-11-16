@@ -1,0 +1,34 @@
+/* CHL-STDOUT: enter 20 */
+/* CHL-STDOUT-NEXT: enter 22 */
+/* CHL-STDOUT-NEXT: sum 42 */
+/* CHL-STDOUT-NEXT: leave 22 */
+/* CHL-STDOUT-NEXT: leave 20 */
+/* CHL-STDOUT-NEXT: returned 42 */
+
+#include <stdio.h>
+
+void leave_generated(int value) {
+    printf("leave %d\n", value);
+}
+
+comptime ^void with_generated_local(^int initial, fn proc(^int&) -> ^void) {
+    return emit .{
+        int staged_value = initial;
+        printf("enter %d\n", staged_value);
+        defer leave_generated(staged_value);
+        proc(emit staged_value);
+    };
+}
+
+int nested_generated_locals() {
+    with_generated_local(emit 20)! <| |auto left| =>
+    with_generated_local(emit 22) <| |auto right| then
+
+    printf("sum %d\n", left + right);
+    return left + right;
+}
+
+int main() {
+    printf("returned %d\n", nested_generated_locals());
+    return 0;
+}

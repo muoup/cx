@@ -1,0 +1,17 @@
+[package]
+name = "chloro"
+version = "0.0.0"
+edition = "2021"
+autotests = false
+
+[features]
+default = []
+ignore-system-headers = ["chl-pipeline/ignore-system-headers"]
+backend-llvm = ["chl-pipeline/backend-llvm"]
+
+[dependencies]
+chl-doc = { path = "../chl-doc" }
+chl-log = { path = "../chl-log" }
+chl-pipeline = { path = "../chl-pipeline", default-features = false }
+chl-lexer = { path = "../chl-lexer" }
+chl-pipeline-data = { path = "../chl-pipeline-data" }

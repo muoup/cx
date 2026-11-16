@@ -1,0 +1,5 @@
+int add(comptime int amount, int value) => amount + value;
+int main() safe {
+    auto partial = add(1);
+    return partial(2);
+}

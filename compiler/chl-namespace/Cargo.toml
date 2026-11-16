@@ -1,0 +1,11 @@
+[package]
+name = "chl-namespace"
+version = "0.0.0"
+edition = "2024"
+autotests = false
+
+[dependencies]
+rustc-hash = { workspace = true }
+chl-util = { path = "../chl-util" }
+
+speedy = { workspace = true }

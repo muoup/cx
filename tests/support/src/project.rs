@@ -1,61 +1,71 @@
 use crate::compilation::{timed_compilation, CompilationFailure, CompilationResult, TestTempDir};
-use cx_pipeline::{binary_sources, multi_file_compilation, standard_compilation};
-use cx_pipeline_data::config::{load_config, CXProjectConfig, LinkEntry};
-use cx_pipeline_data::{
-    ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
+use chl_pipeline::compile;
+use chl_pipeline::project::{native_inputs, target_sources, ProjectPackages};
+use chl_pipeline_data::config::{
+    load_project, IncludeSpecSource, LinkEntry, ProfileConfig, ProjectConfig, DEBUG_PROFILE,
 };
+use chl_pipeline_data::package::PackageId;
+use chl_pipeline_data::{
+    ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
+    UnsafeFlags,
+};
+use rustc_hash::FxHashSet;
 use std::path::{Path, PathBuf};
 
-/// One binary of a `cx.toml` project, resolved so that it can be built outside the project's own
-/// `.internal` directory.
+const PROFILE: &str = "release";
+
+/// One target of a `chl.lua` project, built with its release profile (or the debug profile when
+/// it has none) outside the project's own `.internal` directory.
 pub struct ProjectBinary {
     pub root: PathBuf,
     /// Relative to `root`.
     pub sources: Vec<PathBuf>,
+    /// The target package's unaliased include directories.
     pub include_dirs: Vec<PathBuf>,
+    pub predefined_macros: Vec<(String, String)>,
     pub native_objects: Vec<PathBuf>,
     pub link_entries: Vec<LinkEntry>,
     pub optimization_level: OptimizationLevel,
-    /// Whether the sources are compiled as given, rather than discovered from the first of them.
-    matched_sources: bool,
-    config: CXProjectConfig,
+    profile: ProfileConfig,
+    packages: ProjectPackages,
+    package: PackageId,
 }
 
 impl ProjectBinary {
     pub fn load(root: &Path, name: &str) -> Result<Self, String> {
-        let config = load_config(&root.join("cx.toml"))?;
-        let (target, binary) = config
-            .workspace
-            .iter()
-            .flat_map(|workspace| workspace.targets.values())
-            .find_map(|target| {
-                let binary = target.binaries.iter().flatten().find(|binary| binary.name == name)?;
-                Some((target, binary))
-            })
-            .ok_or_else(|| format!("{} has no binary named '{name}'", root.display()))?;
-        let resolve = |paths: &Option<Vec<String>>| {
-            paths.iter().flatten().map(|path| root.join(path)).collect::<Vec<_>>()
-        };
+        let project = load_project(root).map_err(|error| error.message())?;
+        let target = project
+            .target(name)
+            .ok_or_else(|| format!("{} has no target named '{name}'", root.display()))?;
+        let profile = project
+            .profile(PROFILE)
+            .or_else(|| project.profile(DEBUG_PROFILE))
+            .expect("every project has the debug profile")
+            .clone();
+        let sources = target_sources(&project, target).map_err(|error| error.message())?;
+        let packages =
+            ProjectPackages::new(&project, &profile.settings).map_err(|error| error.message())?;
+        let package = packages.id(target.package);
+        let (native_objects, link_entries) = native_inputs(&project, &all_packages(&project));
 
         Ok(Self {
             root: root.to_path_buf(),
-            sources: binary_sources(root, binary).map_err(|error| error.message())?,
-            include_dirs: resolve(&target.include_dirs),
-            native_objects: resolve(&target.native_objects),
-            link_entries: target.link.clone().unwrap_or_default(),
-            optimization_level: config
-                .build
-                .as_ref()
-                .map(|build| build.optimization_level())
-                .transpose()?
-                .flatten()
-                .unwrap_or_default(),
-            matched_sources: binary.match_patterns.is_some(),
-            config,
+            sources: sources
+                .iter()
+                .map(|source| source.strip_prefix(root).unwrap_or(source).to_path_buf())
+                .collect(),
+            include_dirs: include_dirs(&project, target.package),
+            predefined_macros: packages.packages.get(package).defines.clone(),
+            native_objects,
+            link_entries,
+            optimization_level: profile.settings.optimization.unwrap_or_default(),
+            profile,
+            packages,
+            package,
         })
     }
 
-    /// Builds the binary with `backend`, whatever backend the project asks for. In
+    /// Builds the target with `backend`, whatever backend the project asks for. In
     /// [`CompilationMode::Object`] the sources are compiled and nothing is linked.
     pub fn compile(
         &self,
@@ -67,32 +77,42 @@ impl ProjectBinary {
             architecture: ArchitectureConfig::native(),
             backend,
             optimization_level: self.optimization_level,
-            require_explicit_return: self
-                .config
-                .build
-                .as_ref()
-                .and_then(|build| build.require_explicit_return),
+            require_explicit_return: self.profile.settings.require_explicit_return,
             output: temp_dir.path().join("case.out"),
-            unsafe_mode: false,
+            unsafe_flags: UnsafeFlags::default(),
             compilation_mode,
             verbose: false,
             dump: false,
-            working_directory: self.root.clone(),
             internal_directory: temp_dir.internal_directory(),
+            packages: self.packages.packages.clone(),
             module_mode: true,
-            project_config: Some(self.config.clone()),
+            record_types: false,
             link_entries: self.link_entries.clone(),
             native_objects: self.native_objects.clone(),
-            include_dirs: self.include_dirs.clone(),
-            predefined_macros: vec![],
+            header_modules: FxHashSet::default(),
         };
+        let sources = self
+            .sources
+            .iter()
+            .map(|source| self.root.join(source))
+            .collect::<Vec<_>>();
 
-        timed_compilation(config, |config| {
-            if self.matched_sources {
-                multi_file_compilation(config, &self.sources)
-            } else {
-                standard_compilation(config, &self.sources[0])
-            }
-        })
+        timed_compilation(config, |config| compile(config, self.package, &sources).map(drop))
     }
+}
+
+fn all_packages(project: &ProjectConfig) -> Vec<usize> {
+    (0..project.packages.len()).collect()
+}
+
+fn include_dirs(project: &ProjectConfig, package: usize) -> Vec<PathBuf> {
+    project.packages[package]
+        .usage
+        .includes
+        .iter()
+        .filter_map(|spec| match (&spec.source, &spec.alias) {
+            (IncludeSpecSource::Directory(directory), None) => Some(directory.clone()),
+            _ => None,
+        })
+        .collect()
 }

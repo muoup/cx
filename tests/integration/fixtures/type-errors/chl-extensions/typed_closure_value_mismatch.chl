@@ -1,0 +1,11 @@
+comptime ^void use(fn f(^int) -> ^long) => f(emit 2);
+
+comptime ^void typed_value() {
+    auto g = |^int x| => x;
+    return use(g);
+}
+
+int main() {
+    typed_value();
+    return 0;
+}

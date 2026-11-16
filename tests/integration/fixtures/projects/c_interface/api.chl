@@ -1,0 +1,78 @@
+import types;
+
+private:
+
+struct Hidden {
+    int value;
+};
+
+public:
+
+int native_only(int value) {
+    return value * 2;
+}
+
+public extern "C":
+
+struct Standalone {
+    int value;
+};
+
+struct Node {
+    struct Node* next;
+    int value;
+};
+
+struct Opaque;
+
+typedef i32 Count;
+typedef struct Standalone Renamed;
+typedef Hidden PublicHidden;
+typedef int (*Callback)(int value);
+typedef int Values[3];
+
+comptime type Constructed = struct {
+    int value;
+};
+
+enum Mode {
+    Ready = 3,
+    Done,
+};
+
+struct Envelope {
+    Hidden hidden;
+    types::External external;
+    types::Hidden other;
+};
+
+int exported_count = 7;
+const int exported_constant = 11;
+
+int imported_function(int value);
+
+static int static_c(int value) {
+    return value;
+}
+
+static int static_generic(comptime int value) {
+    return value;
+}
+
+int chl_add(int a, int b) {
+    return a + b + exported_count;
+}
+
+Hidden chl_hidden(Hidden value) {
+    return value;
+}
+
+types::External chl_imported(types::External value) {
+    return value;
+}
+
+private extern "C":
+
+int private_c(int value) {
+    return value;
+}

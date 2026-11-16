@@ -1,0 +1,133 @@
+use chl_hmir::{
+    HMIRBodyContext, HMIRDefID,
+    expr::HMIRExprID,
+    ty::{HMIRType, HMIRTypeID, HMIRTypeKind, aggregate::HMIRTypeSemantics},
+};
+use chl_log::{
+    CHLResult,
+    catalogue::{self, typecheck},
+};
+use chl_mir::{MIRBlockTarget, MIRInstructionKind};
+use chl_tokens::TokenRange;
+use chl_util::identifier::CHLIdent;
+
+use crate::{
+    emit,
+    env::function::{FnContext, LocalLoweringContext},
+    eval::{
+        EvalResult, coerce, eval,
+        flow::{self, Evaluation},
+        types,
+    },
+    log::hmir_error,
+    lower::types::lower_prototype,
+    value::{
+        HMIRValue,
+        address::{Addressable, HMIRAddress},
+        immediate::HMIRImmValue,
+    },
+};
+
+pub(crate) fn eval_label(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    span: &TokenRange,
+    name: &CHLIdent,
+    statement: HMIRExprID,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    if context.is_runtime() && !context.is_unevaluated() {
+        let target = context.runtime_mut().label(name);
+        emit::runtime::flow::jump(context, target, span);
+        emit::runtime::flow::switch_to(context, target);
+    }
+    eval(context, body, statement)
+}
+
+pub(super) fn eval_goto(
+    context: &mut LocalLoweringContext,
+    span: &TokenRange,
+    name: &CHLIdent,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    jumpable(context, span)?;
+    if !context.is_unevaluated() {
+        let target = context.runtime_mut().label(name);
+        emit::runtime::flow::jump(context, target, span);
+    }
+    flow::diverged()
+}
+
+pub(super) fn eval_indirect_goto(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    span: &TokenRange,
+    target: HMIRExprID,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    jumpable(context, span)?;
+    let value = eval(context, body, target)?.ready()?;
+    let ty = address_type(context, true, span);
+    let value = coerce::implicit::standard(context, value, ty, span)?;
+    let address = emit::runtime::value(context, &value, span)?;
+    let builder = context.runtime().builder();
+    let targets = builder
+        .address_labels()
+        .iter()
+        .map(|(_, block)| MIRBlockTarget::new(*block))
+        .collect();
+    let jump = MIRInstructionKind::IndirectJump { address, targets };
+    context.runtime_mut().emit(jump, span.clone());
+    flow::diverged()
+}
+
+pub(super) fn eval_label_address(
+    context: &mut LocalLoweringContext,
+    span: &TokenRange,
+    function: Option<HMIRDefID>,
+    name: &CHLIdent,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let prototype = match (function, context.context()) {
+        (Some(def), _) => lower_prototype(context.env_mut(), def, span)?,
+        (None, FnContext::Runtime(runtime)) => runtime.builder().prototype().clone(),
+        (None, FnContext::Comptime(_)) => {
+            let required = ("label address".into(), "a function".into());
+            return Err(hmir_error(span, &typecheck::REQUIRED_CONTEXT, required).into());
+        }
+    };
+    let function = context.env_mut().module_mut().declare_function(prototype);
+    let ty = address_type(context, false, span);
+    let label = Addressable::Label {
+        function,
+        label: name.clone(),
+    };
+    Ok(Evaluation::Ready(HMIRValue::new(
+        ty,
+        HMIRImmValue::Address(HMIRAddress::new(label, 0)),
+    )))
+}
+
+fn jumpable(context: &LocalLoweringContext, span: &TokenRange) -> CHLResult<()> {
+    match context.context() {
+        FnContext::Comptime(_) => Err(hmir_error(
+            span,
+            &catalogue::mir::COMPTIME_INVALID_OPERATION,
+            "'goto'".into(),
+        )),
+        FnContext::Runtime(runtime) if runtime.deferred() => {
+            Err(hmir_error(span, &typecheck::DEFER_JUMP, "jump".into()))
+        }
+        FnContext::Runtime(_) => super::exit::contained(context, 0, span, "goto"),
+    }
+}
+
+fn address_type(
+    context: &mut LocalLoweringContext,
+    constant: bool,
+    span: &TokenRange,
+) -> HMIRTypeID {
+    let semantics = HMIRTypeSemantics {
+        constant,
+        ..Default::default()
+    };
+    let void = HMIRType::new(HMIRTypeKind::Void, semantics, span.clone(), None);
+    let void = context.env_mut().resolver_mut().realize_type(void);
+    types::pointer(context.env_mut(), void, span)
+}

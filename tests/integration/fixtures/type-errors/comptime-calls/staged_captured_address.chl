@@ -1,0 +1,7 @@
+comptime ^int* invalid() {
+    int local = 7;
+    int* pointer = &local;
+    return emit pointer;
+}
+comptime ^int* code = invalid();
+int main() { return 0; }

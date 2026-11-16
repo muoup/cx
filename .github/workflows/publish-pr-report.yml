@@ -18,7 +18,7 @@ jobs:
     if: github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     env:
-      CX_INPUT_DIR: ${{ runner.temp }}/cx-publisher-input
+      CHL_INPUT_DIR: ${{ runner.temp }}/chl-publisher-input
     steps:
       - name: Check out the trusted default branch
         uses: actions/checkout@v4
@@ -27,15 +27,15 @@ jobs:
           persist-credentials: false
 
       - name: Create publisher input directory
-        run: mkdir -p "$CX_INPUT_DIR"
+        run: mkdir -p "$CHL_INPUT_DIR"
 
       - name: Download pull request benchmark artifact
         if: always()
         continue-on-error: true
         uses: actions/download-artifact@v5
         with:
-          name: cx-benchmark-report
-          path: ${{ runner.temp }}/cx-publisher-input/pr
+          name: chl-benchmark-report
+          path: ${{ runner.temp }}/chl-publisher-input/pr
           repository: ${{ github.repository }}
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -47,7 +47,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('node:fs');
-            const inputDir = process.env.CX_INPUT_DIR;
+            const inputDir = process.env.CHL_INPUT_DIR;
             try {
               const workflowRun = context.payload.workflow_run;
               const metadata = (() => {
@@ -120,7 +120,7 @@ jobs:
           script: |
             try {
               const fs = require('node:fs');
-              const inputDir = process.env.CX_INPUT_DIR;
+              const inputDir = process.env.CHL_INPUT_DIR;
               const workflowRun = context.payload.workflow_run;
               const pullRequest = (() => {
                 try {
@@ -155,7 +155,7 @@ jobs:
                   run_id: run.id,
                   per_page: 100,
                 });
-                if (artifacts.some((artifact) => artifact.name === 'cx-benchmark-report' && !artifact.expired)) {
+                if (artifacts.some((artifact) => artifact.name === 'chl-benchmark-report' && !artifact.expired)) {
                   core.setOutput('run_id', String(run.id));
                   return;
                 }
@@ -172,8 +172,8 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v5
         with:
-          name: cx-benchmark-report
-          path: ${{ runner.temp }}/cx-publisher-input/baseline
+          name: chl-benchmark-report
+          path: ${{ runner.temp }}/chl-publisher-input/baseline
           repository: ${{ github.repository }}
           run-id: ${{ steps.baseline.outputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -185,7 +185,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('node:fs');
-            const inputDir = process.env.CX_INPUT_DIR;
+            const inputDir = process.env.CHL_INPUT_DIR;
             try {
               const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
                 owner: context.repo.owner,
@@ -203,21 +203,21 @@ jobs:
       - name: Render pinned report
         if: always()
         env:
-          CX_REPORT_DIR: ${{ runner.temp }}/cx-publisher-input
-          CX_REPORT_OUTPUT: ${{ runner.temp }}/cx-publisher-input/comment.md
-          CX_BASELINE_RUN_ID: ${{ steps.baseline.outputs.run_id }}
+          CHL_REPORT_DIR: ${{ runner.temp }}/chl-publisher-input
+          CHL_REPORT_OUTPUT: ${{ runner.temp }}/chl-publisher-input/comment.md
+          CHL_BASELINE_RUN_ID: ${{ steps.baseline.outputs.run_id }}
         run: node .github/scripts/render-ci-report.mjs
 
       - name: Update the pinned pull request comment
         if: always()
         uses: actions/github-script@v8
         env:
-          CX_REPORT_PATH: ${{ runner.temp }}/cx-publisher-input/comment.md
+          CHL_REPORT_PATH: ${{ runner.temp }}/chl-publisher-input/comment.md
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('node:fs');
-            const inputDir = process.env.CX_INPUT_DIR;
+            const inputDir = process.env.CHL_INPUT_DIR;
             const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
             const pullRequest = (() => {
               try {
@@ -226,13 +226,13 @@ jobs:
                 return null;
               }
             })();
-            const body = fs.readFileSync(process.env.CX_REPORT_PATH, 'utf8').trim();
+            const body = fs.readFileSync(process.env.CHL_REPORT_PATH, 'utf8').trim();
             if (!pullRequest?.number || !body) {
               core.info('No pull request report was rendered.');
               return;
             }
 
-            const marker = '<!-- cx-ci-report -->';
+            const marker = '<!-- chl-ci-report -->';
             const { owner, repo } = context.repo;
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,

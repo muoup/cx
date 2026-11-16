@@ -1,5 +1,3 @@
-/* CX-STDOUT: 11 5 */
-
 #include <stdio.h>
 
 typedef struct Thread Thread;

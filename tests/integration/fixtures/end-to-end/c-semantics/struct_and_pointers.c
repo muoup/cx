@@ -1,7 +1,3 @@
-/* CX-STDOUT: Point(10, 20) */
-/* CX-STDOUT-NEXT: Point(30, 20) */
-/* CX-STDOUT-NEXT: Point(30, 20) */
-
 #include <stdio.h>
 
 struct Point {

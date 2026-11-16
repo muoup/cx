@@ -1,7 +1,9 @@
-use cx_log::CXResult;
-use cx_pipeline::standard_compilation;
-use cx_pipeline_data::{
+use chl_log::CHLResult;
+use chl_pipeline::compile;
+use chl_pipeline_data::package::{PackageId, Packages};
+use chl_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
+    UnsafeFlags,
 };
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
@@ -17,7 +19,7 @@ pub struct TestTempDir {
 impl TestTempDir {
     pub fn new(test_name: &str) -> Self {
         let unique_id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join("cx-test-suite").join(format!(
+        let path = std::env::temp_dir().join("chl-test-suite").join(format!(
             "{}-{}-{}",
             sanitize_name(test_name),
             std::process::id(),
@@ -66,11 +68,12 @@ impl Display for CompilationFailure {
 pub fn compiler_config(
     backend: CompilerBackend,
     output: PathBuf,
-    working_directory: &Path,
+    source_root: &Path,
     internal_directory: &Path,
     compilation_mode: CompilationMode,
-) -> CompilerConfig {
-    CompilerConfig {
+) -> (CompilerConfig, PackageId) {
+    let (packages, package) = Packages::standalone(source_root.to_path_buf(), vec![], vec![]);
+    let config = CompilerConfig {
         architecture: ArchitectureConfig::native(),
         backend,
         optimization_level: match backend {
@@ -79,19 +82,19 @@ pub fn compiler_config(
         },
         require_explicit_return: None,
         output,
-        unsafe_mode: false,
+        unsafe_flags: UnsafeFlags::default(),
         compilation_mode,
         verbose: false,
         dump: false,
-        working_directory: working_directory.to_path_buf(),
         internal_directory: internal_directory.to_path_buf(),
+        packages,
         module_mode: true,
-        project_config: None,
+        record_types: false,
         link_entries: vec![],
         native_objects: vec![],
-        include_dirs: vec![],
-        predefined_macros: vec![],
-    }
+        header_modules: Default::default(),
+    };
+    (config, package)
 }
 
 pub fn compile_file(
@@ -100,10 +103,8 @@ pub fn compile_file(
     compilation_mode: CompilationMode,
     temp_dir: &TestTempDir,
 ) -> Result<CompilationResult, CompilationFailure> {
-    let config = file_config(input, backend, compilation_mode, temp_dir);
-    timed_compilation(config, |config| {
-        standard_compilation(config, base_file_name(input))
-    })
+    let (config, package) = file_config(input, backend, compilation_mode, temp_dir);
+    timed_compilation(config, |config| compile(config, package, &[input.to_path_buf()]).map(drop))
 }
 
 /// [`compile_file`] at `optimization_level` instead of the backend's test default.
@@ -114,11 +115,9 @@ pub fn compile_file_at(
     compilation_mode: CompilationMode,
     temp_dir: &TestTempDir,
 ) -> Result<CompilationResult, CompilationFailure> {
-    let mut config = file_config(input, backend, compilation_mode, temp_dir);
+    let (mut config, package) = file_config(input, backend, compilation_mode, temp_dir);
     config.optimization_level = optimization_level;
-    timed_compilation(config, |config| {
-        standard_compilation(config, base_file_name(input))
-    })
+    timed_compilation(config, |config| compile(config, package, &[input.to_path_buf()]).map(drop))
 }
 
 fn file_config(
@@ -126,14 +125,14 @@ fn file_config(
     backend: CompilerBackend,
     compilation_mode: CompilationMode,
     temp_dir: &TestTempDir,
-) -> CompilerConfig {
-    let working_directory = input
+) -> (CompilerConfig, PackageId) {
+    let source_root = input
         .parent()
         .expect("test source should have a parent directory");
     compiler_config(
         backend,
         temp_dir.path().join("case.out"),
-        working_directory,
+        source_root,
         &temp_dir.internal_directory(),
         compilation_mode,
     )
@@ -141,7 +140,7 @@ fn file_config(
 
 pub(crate) fn timed_compilation(
     config: CompilerConfig,
-    compile: impl FnOnce(CompilerConfig) -> CXResult<()>,
+    compile: impl FnOnce(CompilerConfig) -> CHLResult<()>,
 ) -> Result<CompilationResult, CompilationFailure> {
     let output = config.output.clone();
     let start = Instant::now();
@@ -165,16 +164,6 @@ pub(crate) fn timed_compilation(
             })
         }
     }
-}
-
-pub fn base_file_name(input: &Path) -> &Path {
-    Path::new(
-        input
-            .file_name()
-            .expect("missing file name for test case")
-            .to_str()
-            .expect("test file name was not valid UTF-8"),
-    )
 }
 
 fn sanitize_name(name: &str) -> String {

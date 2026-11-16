@@ -1,0 +1,14 @@
+enum union Choice {
+    zero :: int,
+    one :: int
+};
+
+void inspect(Choice value) {
+    match (move value) {
+        zero(auto inner) => {}
+    }
+}
+
+int main() {
+    return 0;
+}

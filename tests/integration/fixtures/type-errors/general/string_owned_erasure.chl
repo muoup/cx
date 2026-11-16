@@ -1,0 +1,4 @@
+int main() {
+    _str erased = @copy("hello");
+    return 0;
+}

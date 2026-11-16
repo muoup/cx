@@ -1,5 +1,3 @@
-/* CX-STDOUT: 12 9 30 */
-
 #include <stdio.h>
 
 typedef struct State State;

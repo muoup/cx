@@ -1,0 +1,18 @@
+public:
+
+T value(comptime type T, T input) {
+    return input + 1;
+}
+
+comptime ^T staged(comptime type T, ^T input) {
+    return emit input;
+}
+
+comptime type Box(comptime type T) =>
+    struct {
+        T value;
+    };
+
+T Box::read(comptime type T, Box(T)& this) {
+    return this.value;
+}

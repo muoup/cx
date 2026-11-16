@@ -1,9 +1,0 @@
-/* CX-STDOUT: 12 */
-
-import _include_state as state;
-import std::io as std;
-
-int main() {
-    std::printf("%d\n", state::restored_public());
-    return 0;
-}

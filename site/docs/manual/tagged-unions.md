@@ -9,7 +9,7 @@ Tagged unions, also known as sum types, are structured data containing one of mu
 
 They are declared with `enum union`, chosen because the type contains both an enumerated variant tag and a union payload:
 
-```cx
+```chl
 enum union shape {
     circle :: f64,
     rectangle :: struct { f64 width; f64 height; },
@@ -19,7 +19,7 @@ enum union shape {
 
 While the language currently makes no guarantee about the exact memory configuration, the type above is often equivalent in layout to:
 
-```cx
+```chl
 struct shape {
     union {
         f64 circle;
@@ -34,7 +34,7 @@ struct shape {
 
 Each variant is constructed through an associated function generated for the tagged union:
 
-```cx
+```chl
 shape c = shape::circle(2.5f);
 shape r = shape::rectangle({ .width = 5f, .height = 10f });
 shape p = shape::point();
@@ -43,7 +43,7 @@ shape p = shape::point();
 Variant constructors are addressable functions. This allows them to be passed
 where a matching function pointer is expected:
 
-```cx
+```chl
 shape (*make_circle)(f64) = shape::circle;
 shape c = make_circle(2.5f);
 ```

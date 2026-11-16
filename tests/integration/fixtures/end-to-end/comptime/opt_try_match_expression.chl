@@ -1,0 +1,36 @@
+/* CHL-STDOUT: a some 42 */
+/* CHL-STDOUT-NEXT: b none */
+
+#include <stdio.h>
+
+import std::optional as std;
+
+enum union Choice {
+    a :: int,
+    b :: void
+};
+
+std::opt(int) choose_optional(Choice choice) {
+    match (choice) {
+        a(auto value) => return std::opt(int)::some(value),
+        b() => return std::opt(int)::none(),
+    }
+}
+
+std::opt(int) add_three(Choice choice) {
+    int value = choose_optional(choice) |> std::opt::try()!;
+
+    return std::opt(int)::some(value + 3);
+}
+
+void print_result(const char* label, std::opt(int) value) {
+    match (value) {
+        some(auto inner) => printf("%s some %d\n", label, inner),
+        none() => printf("%s none\n", label),
+    }
+}
+
+int main() {
+    print_result("a", add_three(Choice::a(39)));
+    print_result("b", add_three(Choice::b()));
+}

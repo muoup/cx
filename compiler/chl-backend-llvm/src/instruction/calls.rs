@@ -1,0 +1,234 @@
+use super::inst_num;
+use crate::attributes::{attr_alignment, attr_byval, attr_sret};
+use crate::log::{LLVMError, LLVMResult};
+use crate::routines::get_function;
+use crate::typing::{any_to_basic_type, any_to_basic_val, bc_llvm_signature, bc_llvm_type};
+use crate::{CodegenValue, FunctionState, GlobalState};
+use chl_lmir::{LMIRFunctionSignature, LMIRParameterABI, LMIRReturnABI, LMIRValue};
+use chl_log::catalogue::backend as catalogue;
+use chl_util::identifier::CHLIdent;
+use inkwell::attributes::AttributeLoc;
+use inkwell::values::{
+    AnyValue, AnyValueEnum, BasicValue, BasicValueEnum, CallSiteValue, ValueKind,
+};
+use inkwell::AddressSpace;
+
+pub(super) fn generate_direct_call<'a, 'b>(
+    global_state: &GlobalState<'a>,
+    function_state: &FunctionState<'a, 'b>,
+    func: &CHLIdent,
+    args: &[LMIRValue],
+    method_sig: &LMIRFunctionSignature,
+) -> LLVMResult<CodegenValue<'a>> {
+    let function_val = get_function(global_state, func.as_str(), method_sig)?;
+    let arg_vals = args
+        .iter()
+        .map(|arg| -> LLVMResult<_> {
+            let val = function_state.get_value(arg)?.get_value()?;
+            let basic_val = match val {
+                AnyValueEnum::FunctionValue(value) => {
+                    value.as_global_value().as_pointer_value().into()
+                }
+                value => any_to_basic_val(value)?,
+            };
+            Ok(basic_val.into())
+        })
+        .collect::<LLVMResult<Vec<_>>>()?;
+
+    let call = function_state
+        .builder
+        .build_direct_call(function_val, arg_vals.as_slice(), inst_num().as_str())
+        .map_err(LLVMError::from_error)?;
+    apply_call_abi_attributes(global_state, &call, method_sig)?;
+
+    codegen_call_return(function_state, method_sig, &call)
+}
+
+pub(super) fn generate_indirect_call<'a, 'b>(
+    global_state: &GlobalState<'a>,
+    function_state: &FunctionState<'a, 'b>,
+    func_ptr: &LMIRValue,
+    args: &[LMIRValue],
+    method_sig: &LMIRFunctionSignature,
+) -> LLVMResult<CodegenValue<'a>> {
+    let ptr = function_state.get_value(func_ptr)?.get_value()?;
+    let fn_type = bc_llvm_signature(global_state, method_sig)?;
+    let arg_vals = args
+        .iter()
+        .map(|arg| -> LLVMResult<_> {
+            let val = function_state.get_value(arg)?.get_value()?;
+            let basic_val = any_to_basic_val(val)?;
+            Ok(basic_val.into())
+        })
+        .collect::<LLVMResult<Vec<_>>>()?;
+
+    let call = function_state
+        .builder
+        .build_indirect_call(
+            fn_type,
+            ptr.into_pointer_value(),
+            arg_vals.as_slice(),
+            inst_num().as_str(),
+        )
+        .map_err(LLVMError::from_error)?;
+    apply_call_abi_attributes(global_state, &call, method_sig)?;
+
+    codegen_call_return(function_state, method_sig, &call)
+}
+
+pub(super) fn codegen_call_return<'a, 'b>(
+    function_state: &FunctionState<'a, 'b>,
+    method_sig: &LMIRFunctionSignature,
+    call: &CallSiteValue<'a>,
+) -> LLVMResult<CodegenValue<'a>> {
+    let basic = match call.try_as_basic_value() {
+        ValueKind::Basic(value) => value,
+        ValueKind::Instruction(_) => return Ok(CodegenValue::Null),
+    };
+
+    match &method_sig.return_abi {
+        LMIRReturnABI::Direct { slots } if slots.len() > 1 => {
+            let aggregate = basic.into_struct_value();
+            let mut values = Vec::new();
+            for (index, slot) in slots.iter().enumerate() {
+                let value = function_state
+                    .builder
+                    .build_extract_value(aggregate, index as u32, inst_num().as_str())
+                    .map_err(LLVMError::from_error)?;
+                values.push((slot.clone(), value));
+            }
+            Ok(CodegenValue::AggregateSlots(values))
+        }
+        _ => Ok(CodegenValue::Value(basic.as_any_value_enum())),
+    }
+}
+
+pub(super) fn apply_call_abi_attributes<'a>(
+    global_state: &GlobalState<'a>,
+    call: &CallSiteValue<'a>,
+    method_sig: &LMIRFunctionSignature,
+) -> LLVMResult<()> {
+    if let LMIRReturnABI::IndirectSret { .. } = &method_sig.return_abi {
+        let pointee = bc_llvm_type(global_state.context, &method_sig.return_type)?;
+        call.add_attribute(
+            AttributeLoc::Param(0),
+            attr_sret(global_state.context, pointee),
+        );
+    }
+
+    let mut index = usize::from(method_sig.return_abi.has_indirect_return_param());
+    for parameter in &method_sig.params {
+        match &parameter.abi {
+            LMIRParameterABI::Direct { slots } => index += slots.len(),
+            LMIRParameterABI::Indirect { .. } => index += 1,
+            LMIRParameterABI::ByValue { alignment } => {
+                let pointee = bc_llvm_type(global_state.context, &parameter.ty)?;
+                call.add_attribute(
+                    AttributeLoc::Param(index as u32),
+                    attr_byval(global_state.context, pointee),
+                );
+                call.add_attribute(
+                    AttributeLoc::Param(index as u32),
+                    attr_alignment(global_state.context, *alignment),
+                );
+                index += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn build_direct_return_from_memory<'a, 'b>(
+    global_state: &GlobalState<'a>,
+    function_state: &FunctionState<'a, 'b>,
+    memory: AnyValueEnum<'a>,
+) -> LLVMResult<BasicValueEnum<'a>> {
+    let LMIRReturnABI::Direct { slots } = &function_state.signature.return_abi else {
+        return any_to_basic_val(memory);
+    };
+
+    let memory = memory.into_pointer_value();
+    if slots.len() == 1 {
+        let ty = any_to_basic_type(bc_llvm_type(global_state.context, &slots[0].ty)?)?;
+        let loaded = function_state
+            .builder
+            .build_load(ty, memory, inst_num().as_str())
+            .map_err(LLVMError::from_error)?;
+        loaded
+            .as_instruction_value()
+            .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
+            .set_alignment(slots[0].ty.alignment() as u32)
+            .map_err(LLVMError::from_error)?;
+        return Ok(loaded);
+    }
+
+    let fields = slots
+        .iter()
+        .map(|slot| any_to_basic_type(bc_llvm_type(global_state.context, &slot.ty)?))
+        .collect::<LLVMResult<Vec<_>>>()?;
+    let struct_type = global_state.context.struct_type(fields.as_slice(), false);
+    let mut aggregate = struct_type.const_zero();
+    let usize_type = global_state.pointer_int_type;
+    let base = function_state
+        .builder
+        .build_ptr_to_int(memory, usize_type, inst_num().as_str())
+        .map_err(LLVMError::from_error)?;
+
+    for (index, slot) in slots.iter().enumerate() {
+        let offset = usize_type.const_int(slot.offset as u64, false);
+        let ptr_int = function_state
+            .builder
+            .build_int_add(base, offset, inst_num().as_str())
+            .map_err(LLVMError::from_error)?;
+        let field_ptr = function_state
+            .builder
+            .build_int_to_ptr(
+                ptr_int,
+                global_state
+                    .context
+                    .ptr_type(AddressSpace::from(0)),
+                inst_num().as_str(),
+            )
+            .map_err(LLVMError::from_error)?;
+        let field_ty = any_to_basic_type(bc_llvm_type(global_state.context, &slot.ty)?)?;
+        let field = function_state
+            .builder
+            .build_load(field_ty, field_ptr, inst_num().as_str())
+            .map_err(LLVMError::from_error)?;
+        field
+            .as_instruction_value()
+            .unwrap_or_else(|| unreachable!("LLVM load did not produce an instruction"))
+            .set_alignment(slot.ty.alignment() as u32)
+            .map_err(LLVMError::from_error)?;
+        aggregate = function_state
+            .builder
+            .build_insert_value(aggregate, field, index as u32, inst_num().as_str())
+            .map_err(LLVMError::from_error)?
+            .into_struct_value();
+    }
+
+    Ok(aggregate.as_basic_value_enum())
+}
+
+pub(super) fn generate_get_function_addr<'a>(
+    global_state: &GlobalState<'a>,
+    func: &str,
+) -> LLVMResult<CodegenValue<'a>> {
+    let function_val = global_state
+        .module
+        .get_function(func)
+        .ok_or_else(|| {
+            LLVMError::new(
+                &catalogue::MISSING_ENTITY,
+                (format!("function '{func}'"), "LLVM module".into()),
+            )
+        })?
+        .as_global_value()
+        .as_pointer_value();
+
+    // Calling as_any_value_enum() on a function pointer produces a
+    // FunctionValue instead of the pointer value LLVM expects here.
+    let any_value_enum = AnyValueEnum::PointerValue(function_val);
+
+    Ok(CodegenValue::Value(any_value_enum))
+}

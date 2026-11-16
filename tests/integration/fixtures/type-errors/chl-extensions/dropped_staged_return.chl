@@ -1,0 +1,7 @@
+comptime ^void discard(fn body(^int) -> ^void) {
+    return emit .{};
+}
+
+int missing_return() {
+    discard() <| |auto unused| { return 1; };
+}

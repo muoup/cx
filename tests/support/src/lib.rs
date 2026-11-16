@@ -2,18 +2,20 @@ mod compilation;
 mod format;
 mod process;
 mod project;
+mod reference;
 
 pub use compilation::{
-    base_file_name, compile_file, compile_file_at, compiler_config, CompilationFailure,
+    compile_file, compile_file_at, compiler_config, CompilationFailure,
     CompilationResult, TestTempDir,
 };
-pub use cx_pipeline_data::config::LinkEntry;
-pub use cx_pipeline_data::{
+pub use chl_pipeline_data::config::LinkEntry;
+pub use chl_pipeline_data::{
     ArchitectureConfig, CompilationMode, CompilerBackend, CompilerConfig, OptimizationLevel,
 };
 pub use format::{expected_stdout, parse_file, FormatError, StdoutExpectation, TestSpec};
 pub use process::{run_binary, run_command, ExecutionResult};
 pub use project::ProjectBinary;
+pub use reference::ReferenceCompiler;
 
 pub fn assert_stdout(expected: &str, actual: &str, label: &str) -> Result<(), String> {
     if expected == actual {

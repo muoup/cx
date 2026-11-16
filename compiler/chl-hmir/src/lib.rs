@@ -1,0 +1,17 @@
+pub mod body;
+pub mod expr;
+pub mod ty;
+pub mod unit;
+
+mod format;
+
+pub use body::HMIRBodyContext;
+pub use expr::aggregate::{HMIRAggregateOp, HMIRPattern};
+pub use expr::op::{
+    HMIRBinaryOp, HMIRCoerceMode, HMIRControlOp, HMIROp, HMIROwnershipOp, HMIRUnaryOp,
+};
+pub use unit::HMIRUnit;
+pub use unit::def::{HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind};
+pub use unit::function::{HMIRContract, HMIRFnSignature, HMIRFunction, HMIRFunctionStage};
+pub use unit::global::{HMIRComptimeGlobal, HMIRGlobal};
+pub use unit::id::{HMIRUnitAllocator, HMIRUnitID};

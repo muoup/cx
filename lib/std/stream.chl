@@ -1,0 +1,44 @@
+import std::span as std;
+
+public:
+
+comptime type stream(type T)
+    => fn(fn(^T) -> ^void) -> ^void;
+
+comptime stream(U) stream::map(
+    type T = _, type U = _, 
+    stream(T) this, 
+    fn callback(^T) -> ^U
+) => |fn sink(^U) -> ^void| {
+    this(|^T value| {
+        value
+            |> callback()
+            |> sink();
+    });
+};
+
+comptime stream(T) stream::filter(
+    type T = _,
+    stream(T) this,
+    fn predicate(^T) -> ^bool
+) => |fn sink(^T) -> ^void| {
+    this(|^T value| {
+        if (predicate(value)) {
+            sink(value);
+        }
+    });
+};
+
+comptime ^void stream::for_each(type T = _, stream(T) this, fn callback(^T) -> ^void)
+    => this(|^T value| {
+        callback(value);
+    });
+
+comptime stream(T) span::stream(type T = _, ^std::span(T) this)
+    => |fn sink(^T) -> ^void| {
+        auto spliced = this;
+    
+        for (usize i = 0; i < spliced.length; i++) {
+            sink(emit spliced.data[i]);
+        }
+    };

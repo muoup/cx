@@ -1,0 +1,24 @@
+/* CHL-STDOUT: data: 42 */
+
+#include <stdio.h>
+
+comptime type Ptr(comptime type T) => T*;
+
+comptime type Data(comptime type T) =>
+    struct {
+        Ptr(T) ptr;
+    };
+
+void access(Data(int) *data) {
+    *data.ptr = 42;
+}
+
+int main() {
+    int val;
+    Data(int) data = {
+        .ptr = &val
+    };
+
+    access(&data);
+    printf("data: %d\n", *data.ptr); //Output: data: 42
+}

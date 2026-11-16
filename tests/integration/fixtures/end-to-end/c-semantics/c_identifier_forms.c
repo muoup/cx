@@ -1,5 +1,3 @@
-/* CX-STDOUT: 23 8 4096 */
-
 #include <stdio.h>
 
 int main(void) {

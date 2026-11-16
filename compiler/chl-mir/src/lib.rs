@@ -1,0 +1,30 @@
+pub mod expr;
+pub mod immediate;
+pub mod ty;
+pub mod unit;
+pub mod value;
+
+pub(crate) mod format;
+
+pub use format::MIRDisplay;
+
+pub use expr::instruction::{
+    MIRBasicBlock, MIRInstruction, MIRInstructionKind, MIRStoreBitfield,
+};
+pub use expr::intrinsic::{
+    MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRIntIntrinsic, MIRInternalIntrinsic, MIRIntrinsic,
+    MIRPtrIntrinsic, MIRVAIntrinsic,
+};
+
+pub use ty::{
+    MIRBitfieldAccess, MIRField, MIRFieldLayout, MIRFloatType, MIRUndefined, MIRIntType, MIRType, MIRTypeID,
+    MIRTypeKind, MIRTypeLayout, MIRTypeMetadata,
+};
+pub use unit::function::{MIRFnParam, MIRFnPrototype, MIRFnSignature, MIRFunction, MIRFunctionID};
+pub use unit::body::{MIRBody, MIRPlaceDecl, MIRRegisterDecl};
+pub use unit::{MIRBasicBlockID, MIRGlobalID, MIRGlobalState, MIRGlobalVariable, MIRUnit};
+pub use value::MIRRegisterID as MIRRegister;
+pub use value::{
+    MIRBindable, MIRBlockTarget, MIRGlobalRef, MIRPlaceID, MIRRegisterID,
+    MIRTarget, MIRValue,
+};

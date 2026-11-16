@@ -1,0 +1,194 @@
+use std::borrow::Borrow;
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::hash::Hash;
+
+#[derive(Debug, Clone)]
+pub struct ScopedMap<K, V>
+where
+    K: Eq + Hash + Clone,
+{
+    data: FxHashMap<K, V>,
+    overwrites: Vec<Vec<(K, Option<V>)>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopedSet<T: Eq + Hash + Clone> {
+    data: FxHashSet<T>,
+    writes: Vec<Vec<T>>,
+}
+
+impl<K, V> Default for ScopedMap<K, V>
+where
+    K: Eq + Hash + Clone,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: Eq + Hash + Clone> Default for ScopedSet<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<K, V> ScopedMap<K, V>
+where
+    K: Eq + Hash + Clone,
+{
+    pub fn new() -> Self {
+        Self {
+            data: FxHashMap::default(),
+            overwrites: Vec::new(),
+        }
+    }
+
+    pub fn new_with_starting_scope() -> Self {
+        let mut m = Self::new();
+        m.push_scope();
+        m
+    }
+
+    pub fn push_scope(&mut self) {
+        self.overwrites.push(Vec::new());
+    }
+
+    pub fn pop_scope(&mut self) -> Box<[(K, V)]> {
+        if self.overwrites.is_empty() {
+            panic!("Scope table has uneven push/pop");
+        }
+
+        let mut acc = vec![];
+
+        for (name, value) in self.overwrites.pop().unwrap().into_iter().rev() {
+            let Some((name2, val)) = self.data.remove_entry(&name) else {
+                panic!("Improper overwrite in scope table");
+            };
+
+            acc.push((name2, val));
+
+            if let Some(val) = value {
+                self.data.insert(name, val);
+            }
+        }
+
+        acc.into_boxed_slice()
+    }
+
+    pub fn insert(&mut self, name: K, value: V) {
+        let replacing = self.data.insert(name.clone(), value);
+        self.overwrites
+            .last_mut()
+            .expect("Uneven push/pop in ScopedMap")
+            .push((name, replacing));
+    }
+
+    pub fn insert_at_level(&mut self, level: usize, name: K, value: V) {
+        let replacing = self.data.insert(name.clone(), value);
+        self.overwrites
+            .get_mut(level)
+            .expect("Invalid level in ScopedMap")
+            .push((name, replacing));
+    }
+
+    pub fn get<Q>(&self, name: &Q) -> Option<&V>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        self.data.get(name)
+    }
+
+    pub fn get_multi<'s, Q>(&'s self, name: &'s Q) -> impl Iterator<Item = &'s V>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        self.data
+            .get(name)
+            .into_iter()
+            .chain(self.overwrites.iter().rev().flat_map(move |scope| {
+                scope.iter().rev().filter_map(move |(key, previous)| {
+                    (key.borrow() == name).then_some(previous.as_ref()).flatten()
+                })
+            }))
+    }
+
+    pub fn get_mut<Q>(&mut self, name: &Q) -> Option<&mut V>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        self.data.get_mut(name)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.data.iter()
+    }
+
+    pub fn get_all_at_level(&self, level: usize) -> impl Iterator<Item = (&K, &V)> {
+        self.overwrites
+            .get(level)
+            .expect("Invalid level in ScopedMap")
+            .iter()
+            .filter_map(move |(name, _)| self.data.get_key_value(name))
+    }
+
+    pub fn scope_depth(&self) -> usize {
+        self.overwrites.len() - 1
+    }
+}
+
+impl<T: Eq + Hash + Clone> ScopedSet<T> {
+    pub fn new() -> Self {
+        Self {
+            data: FxHashSet::default(),
+            writes: vec![],
+        }
+    }
+
+    pub fn push_scope(&mut self) {
+        self.writes.push(Vec::new());
+    }
+
+    pub fn pop_scope(&mut self) {
+        if self.writes.is_empty() {
+            panic!("Scope table has uneven push/pop");
+        }
+
+        for name in self.writes.pop().unwrap() {
+            self.data.remove(&name);
+        }
+    }
+
+    pub fn insert(&mut self, name: T) {
+        if !self.data.contains(&name) {
+            self.data.insert(name.clone());
+
+            self.writes
+                .last_mut()
+                .expect("Uneven push/pop in ScopedSet")
+                .push(name.clone());
+        }
+    }
+
+    pub fn contains(&self, name: &T) -> bool {
+        self.data.contains(name)
+    }
+
+    pub fn remove(&mut self, name: &T) {
+        self.data.remove(name);
+    }
+
+    pub fn get_all_at_level(&self, level: usize) -> impl Iterator<Item = &T> {
+        self.writes
+            .get(level)
+            .expect("Invalid level in ScopedSet")
+            .iter()
+            .filter(move |name| self.data.contains(*name))
+    }
+
+    pub fn scope_depth(&self) -> usize {
+        self.writes.len() - 1
+    }
+}

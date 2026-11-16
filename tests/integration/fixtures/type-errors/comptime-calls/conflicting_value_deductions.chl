@@ -1,0 +1,10 @@
+comptime type buffer(comptime type T, comptime usize size) => struct { T data[size]; };
+comptime type sized(comptime int n) => struct { int x; };
+
+usize both(comptime usize len = _, const buffer(int, len)& b, const sized(len)& s) => len;
+
+int main() {
+    buffer(int, 3) three;
+    sized(4) four;
+    return (int) both(three, four);
+}

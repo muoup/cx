@@ -1,0 +1,39 @@
+/* CHL-STDOUT: break body */
+/* CHL-STDOUT-NEXT: break complete */
+/* CHL-STDOUT-NEXT: continue 1 */
+/* CHL-STDOUT-NEXT: continue 2 */
+/* CHL-STDOUT-NEXT: continue complete */
+
+#include <stdio.h>
+
+comptime ^void with_break(^unreachable stop) {
+    return emit .{
+        while (1) {
+            printf("break body\n");
+            stop;
+        }
+        printf("break complete\n");
+    };
+}
+
+comptime ^void with_continue(^void next) {
+    return emit .{
+        int iteration = 0;
+        while (iteration < 2) {
+            iteration += 1;
+            printf("continue %d\n", iteration);
+            next;
+        }
+        printf("continue complete\n");
+    };
+}
+
+int main() {
+    with_break(emit .{
+        break;
+    });
+    with_continue(emit .{
+        continue;
+    });
+    return 0;
+}

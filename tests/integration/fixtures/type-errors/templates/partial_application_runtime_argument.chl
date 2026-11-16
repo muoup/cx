@@ -1,0 +1,5 @@
+int add(int first, int second) => first + second;
+int main() {
+    auto partial = add(1);
+    return 0;
+}

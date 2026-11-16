@@ -1,0 +1,13 @@
+[package]
+name = "chl-mir"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rustc-hash = { workspace = true }
+index_vec = { workspace = true }
+speedy = { workspace = true }
+
+chl-util = { path = "../chl-util" }
+chl-target = { path = "../chl-target" }
+chl-tokens = { path = "../chl-tokens" }

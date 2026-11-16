@@ -1,0 +1,27 @@
+import std::{optional, span} as std;
+
+public:
+
+comptime type array(type T, usize len)
+    => struct {
+        usize length;
+        T data[len];
+    };
+
+comptime ^array(T, len) array::new(comptime type T = _, comptime usize len = _)
+    => emit (array(T, len)) { .length = len, .data = { 0 } };
+
+comptime usize array::length(comptime type T = _, comptime usize len = _, ^array(T, len)& array)
+    => len;
+
+std::opt(T&) array::get(comptime type T = _, comptime usize len = _, array(T, len) array, usize index)
+    => std::opt::if_then(emit index < len, emit array.data[index]);
+
+T& array::at(comptime type T = _, comptime usize len = _, array(T, len) array, usize index) {
+    if (index >= len) std::panic("Attempted to index outside of array bounds");
+
+    return array.data[usize];
+}
+
+std::span(T) array::as_span(comptime type T = _, comptime usize len = _, array(T, len)& array)
+    => std::span::new(array.data, len);

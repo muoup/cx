@@ -1,0 +1,17 @@
+[package]
+name = "chl-hmir"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rustc-hash = { workspace = true }
+speedy = "0.8.7"
+
+chl-hir = { path = "../chl-hir" }
+chl-intrinsics = { path = "../chl-intrinsics" }
+
+chl-target = { path = "../chl-target" }
+chl-namespace = { path = "../chl-namespace" }
+
+chl-tokens = { path = "../chl-tokens" }
+chl-util = { path = "../chl-util" }

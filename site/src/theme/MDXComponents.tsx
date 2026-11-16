@@ -8,9 +8,9 @@ function Title(props: ComponentProps<"h1">): ReactNode {
     const description = useContext(DocDescriptionContext);
 
     return (
-        <header className="cx-doc-header">
+        <header className="chl-doc-header">
             <MDXHeading as="h1" {...props} />
-            {description && <p className="cx-doc-description">{description}</p>}
+            {description && <p className="chl-doc-description">{description}</p>}
         </header>
     );
 }

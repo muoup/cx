@@ -1,0 +1,10 @@
+int counter = 0;
+
+comptime int bump() {
+    counter = 1;
+    return counter;
+}
+
+comptime int result = bump();
+
+int main() { return result; }

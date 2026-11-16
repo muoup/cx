@@ -1,0 +1,16 @@
+[package]
+name = "chl-lexer"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+default = []
+ignore-system-headers = []
+
+[dependencies]
+rustc-hash = { workspace = true }
+chl-log = { path = "../chl-log" }
+chl-tokens = { path = "../chl-tokens" }
+
+chl-util = { path = "../chl-util" }
+chl-namespace = { path = "../chl-namespace" }

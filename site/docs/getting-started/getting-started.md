@@ -1,11 +1,11 @@
 ---
 title: Getting Started
-description: Build the CX compiler and compile your first CX source file or project.
+description: Build the Chloro compiler and compile your first Chloro source file or project.
 ---
 
 # Getting Started
 
-CX is currently built from source. The compiler is written in Rust and links
+Chloro is currently built from source. The compiler is written in Rust and links
 executables with GCC. LLVM is optional; the default backend is Cranelift.
 
 ## Prerequisites
@@ -33,35 +33,35 @@ cargo build --release --features backend-llvm
 During development, you can run the compiler directly through Cargo:
 
 ```bash
-cargo run --release -- <file.cx> [options]
+cargo run --release -- <file.chl> [options]
 ```
 
 For a shorter command, add the built binary to your `PATH` or create a symlink:
 
 ```bash
-ln -s /path/to/cx/target/release/cx ~/.local/bin/cx
+ln -s /path/to/chl/target/release/chl ~/.local/bin/chl
 ```
 
 ## Create a Project
 
-Project mode is the preferred workflow because it enables the CX module system
-and reads build settings from `cx.toml`.
+Project mode is the preferred workflow because it enables the Chloro module system
+and reads build settings from `chl.lua`.
 
 ```bash
-cx init hello_cx
-cd hello_cx
-cx build
+chl init hello_chl
+cd hello_chl
+chl build
 ```
 
-This creates a starter project with a `cx.toml` file and a `main.cx`, then writes
+This creates a starter project with a `chl.lua` file and a `main.chl`, then writes
 build output under `.internal/`.
 
 ## Compile a Single File
 
-CX can also compile a single `.cx` file directly:
+Chloro can also compile a single `.chl` file directly:
 
 ```bash
-cx main.cx -o main
+chl main.chl -o main
 ```
 
 Single-file compilation is intended to behave like a C compiler invocation.
@@ -82,6 +82,6 @@ larger multi-file projects should use project mode.
 
 ## Current Status
 
-CX is a work in progress. It aims for C99 compatibility, but not every C feature
+Chloro is a work in progress. It aims for C99 compatibility, but not every C feature
 is implemented yet. Direct `.c` compilation is supported in single-file mode;
-project mode remains the workflow for CX module builds.
+project mode remains the workflow for Chloro module builds.

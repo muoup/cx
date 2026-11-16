@@ -5,21 +5,21 @@ import Layout from "@theme/Layout";
 import Heading from "@theme/Heading";
 
 import Foliage from "../components/Foliage";
-import {cxLines} from "../lib/cx-lines";
+import {chlLines} from "../lib/chl-lines";
 import styles from "./index.module.css";
 
 const leakingServer = `import std::{optional, span} as std;
 import std::net::{tcp, address} as std::net;
 
-void serve(std::net::tcp_listener& server) {
+void serve(std::net::tcp_socket& server) {
     while (true) {
         std::net::tcp_stream client = server
-            |> std::net::tcp_listener::accept()
-            |> std::opt::unwrap_or_else(.{ continue; });
+            |> std::net::tcp_socket::accept()
+            |> std::opt::unwrap_or(.{ continue; });
 
         std::span<const u8> reply = std::span::str_as_bytes("hello\\n");
         client |> std::net::tcp_stream::write(reply)
-            |> std::opt::unwrap_or_else(.{ continue; });
+            |> std::opt::unwrap_or(.{ continue; });
 
         move client |> std::net::tcp_stream::close();
     }
@@ -28,15 +28,15 @@ void serve(std::net::tcp_listener& server) {
 const fixedServer = `import std::{optional, span} as std;
 import std::net::{tcp, address} as std::net;
 
-void serve(std::net::tcp_listener& server) {
+void serve(std::net::tcp_socket& server) {
     while (true) {
         std::net::tcp_stream client = server
-            |> std::net::tcp_listener::accept()
-            |> std::opt::unwrap_or_else(.{ continue; });
+            |> std::net::tcp_socket::accept()
+            |> std::opt::unwrap_or(.{ continue; });
 
         std::span<const u8> reply = std::span::str_as_bytes("hello\\n");
         client |> std::net::tcp_stream::write(reply)
-            |> std::opt::unwrap_or_else(.{
+            |> std::opt::unwrap_or(.{
                 move client |> std::net::tcp_stream::close();
                 continue;
             });
@@ -59,16 +59,16 @@ const principles: Principle[] = [
         body: (
             <>
                 <p>
-                    CX gives the tools to write safe code with no hidden behavior, no destructors, no garbage collector, everything is manually handled but rules are well-enforced. 
+                    Chloro gives the tools to write safe code with no hidden behavior, no destructors, no garbage collector, everything is manually handled but rules are well-enforced.
                 </p>
                 <p>
-                    Use `@nodrop` to define a resource that must be cleaned up before they are dropped, requiring an explicit leak. All cleanup is done through standard explicit methods, and the compiler enforced that resources are never leaked unexpectedly. 
+                    Use `@nodrop` to define a resource that must be cleaned up before they are dropped, requiring an explicit leak. All cleanup is done through standard explicit methods, and the compiler enforced that resources are never leaked unexpectedly.
                 </p>
             </>
         ),
         files: [
             {
-                name: "string.cx",
+                name: "string.chl",
                 code: `struct string : @nodrop {
     char* data;
     usize length;
@@ -93,16 +93,16 @@ void use_string(string s) {
         body: (
             <>
                 <p>
-                    CX takes a modest set of modern language syntax including templates, modules, tagged unions, and pattern matching to enable safe and expressive programming with a smaller language core in favor of a larger standard library.
+                    Chloro takes a modest set of modern language syntax including modules, tagged unions, and pattern matching to enable safe and expressive programming with a smaller language core in favor of an extensive comptime for type-safe meta code generation.
                 </p>
                 <p>
-                    Features like member functions, operator overloading, and template specialization are intentionally excluded, every symbol corresponds to a single well-defined meaning, and hidden behavior is avoided in favor of explicit and readable idioms. 
+                    Features like member functions, operator overloading, and template specialization are intentionally excluded, every symbol corresponds to a single well-defined meaning, and hidden behavior is avoided in favor of explicit and readable idioms.
                 </p>
             </>
         ),
         files: [
             {
-                name: "shape.cx",
+                name: "shape.chl",
                 code: `enum union shape {
     circle :: f64,
     rectangle :: struct { f64 width; f64 height; },
@@ -111,9 +111,9 @@ void use_string(string s) {
 
 float get_area(shape& s) {
     match (s) {
-        shape::circle(radius) => return radius * radius * 3.14;
-        shape::rectangle(r) => return r.width * r.height;
-        shape::point() => return 0;
+        circle(f64 radius) => return radius * radius * 3.14;
+        rectangle(auto r) => return r.width * r.height;
+        point() => return 0;
     }
 }`,
             },
@@ -131,7 +131,7 @@ float get_area(shape& s) {
     //             <p>Placeholder: when code steps outside the safe subset, and how that is made visible.</p>
     //         </>
     //     ),
-    //     files: [{name: "safe.cx", code: "// Placeholder: a short safe function example."}],
+    //     files: [{name: "safe.chl", code: "// Placeholder: a short safe function example."}],
     //     placeholder: true,
     // },
     {
@@ -139,19 +139,30 @@ float get_area(shape& s) {
         body: (
             <>
                 <p>
-                    The CX compiler is an in-progress drop-in replacement for compilers like gcc and clang, and due to the backward compatibility of the language, any CX file can directly include a C header and call C functions without any wrappers or bindings.
+                    The Chloro compiler is an in-progress drop-in replacement for compilers like gcc and clang, and due to the backward compatibility of the language, any Chloro file can directly include a C header and call C functions without any wrappers or bindings.
                 </p>
                 <p>
-                    The build system of the compiler is also design with first-class support for C interopability. Use '.cxh' files to have the compiler automatically generate C header artifacts that allow for C code to call into CX code.
+                    The build system of the compiler is also designed with first-class support for C interoperability. Ordinary '.chl' modules can expose public extern C definitions through generated C headers, while remaining available through normal module imports. Library targets select their header modules in 'chl.lua'.
                 </p>
             </>
         ),
         files: [
             {
-                name: "mathlib.cxh",
-                code: `i32 add(i32 a, i32 b) {
+                name: "mathlib.chl",
+                code: `public extern "C":
+
+i32 add(i32 a, i32 b) {
     return a + b;
 }`,
+            },
+            {
+                name: "chl.lua",
+                code: `package("mathlib")
+stdlib("std")
+
+local lib = target("mathlib", "library")
+lib:match("mathlib.chl")
+lib:headers("mathlib.chl")`,
             },
             {
                 name: "main.c",
@@ -172,7 +183,7 @@ const standing: {title: string; items: ReactNode[]}[] = [
         title: "Works today",
         items: [
             "Cranelift code generation, the default backend",
-            <><code>cx init</code>, <code>cx build</code>, and <code>cx.toml</code> projects</>,
+            <><code>chl init</code>, <code>chl build</code>, and <code>chl.lua</code> projects</>,
             "Linear resources, tagged unions, and templates",
             "Most C99 code, compiled unchanged",
         ],
@@ -231,14 +242,14 @@ function Install() {
 }
 
 function Code({source, errorLine}: {source: string; errorLine?: number}) {
-    const lines = cxLines(source);
+    const lines = chlLines(source);
 
     return (
-        <pre className={clsx("cx-code-block", lines.length === 1 && "cx-code-block--single", styles.code)}>
-            <code className="cx-code-lines">
+        <pre className={clsx("chl-code-block", lines.length === 1 && "chl-code-block--single", styles.code)}>
+            <code className="chl-code-lines">
                 {lines.map((line, index) => (
                     <span
-                        className={clsx("cx-line", index + 1 === errorLine && "cx-line-error")}
+                        className={clsx("chl-line", index + 1 === errorLine && "chl-line-error")}
                         data-n={index + 1}
                         key={index}
                     >
@@ -257,9 +268,9 @@ function LeakDiagnostic() {
     return (
         <div className={styles.diagnostic}>
             <span className={styles.error}>error:</span> `client` is marked @nodrop but is leaked without cleanup{"\n"}
-            {"  "}{gutter("-->")} server.cx:12:44{"\n"}
+            {"  "}{gutter("-->")} server.chl:12:44{"\n"}
             {"   "}{gutter("|")}{"\n"}
-            {gutter("12 |")}{"             |> std::opt::unwrap_or_else(.{ continue; });\n"}
+            {gutter("12 |")}{"             |> std::opt::unwrap_or(.{ continue; });\n"}
             {"   "}{gutter("|")}{" ".repeat(44)}
             <span className={styles.error}>^^^^^^^^ `client` leaks here</span>{"\n"}
             {"   "}{gutter("=")} <span className={styles.help}>help:</span> close it first: move client |&gt; std::net::tcp_stream::close();
@@ -274,7 +285,7 @@ function Example() {
         <div className={styles.example}>
             <div className={styles.frame}>
                 <div className={styles.frameHead}>
-                    <span>server.cx</span>
+                    <span>server.chl</span>
                     <div className={styles.pills} role="group" aria-label="Example version">
                         <button aria-pressed={!fixed} onClick={() => setFixed(false)} type="button">
                             Leaks
@@ -288,7 +299,7 @@ function Example() {
             </div>
             {fixed ? (
                 <div className={clsx(styles.diagnostic, styles.ok)}>
-                    <span className={styles.help}>ok:</span> server.cx compiles; every path consumes `client`
+                    <span className={styles.help}>ok:</span> server.chl compiles; every path consumes `client`
                 </div>
             ) : (
                 <LeakDiagnostic />
@@ -306,7 +317,7 @@ function Hero() {
                         Low-level control for safe, traceable, and performant systems.
                     </Heading>
                     <p className={styles.lede}>
-                        CX is an experimental systems language taking an alternative approach to modernizing C. All code is explicit, every reference is easily traced to its definition, and the compiler provides safety measures you can gradually adopt to ensure your codebase does what you expect.
+                        Chloro is an experimental systems language taking an alternative approach to modernizing C. All code is explicit, every reference is easily traced to its definition, and the compiler provides safety measures you can gradually adopt to ensure your codebase does what you expect.
                     </p>
                     <Install />
                     <div className={styles.actions}>
@@ -373,7 +384,7 @@ function Standing() {
             <div className={styles.standingIntro}>
                 <Eyebrow>Where it stands</Eyebrow>
                 <p>
-                    CX is a research preview. The compiler builds working programs, but the language and
+                    Chloro is a research preview. The compiler builds working programs, but the language and
                     standard library are still changing.
                 </p>
             </div>
@@ -396,7 +407,7 @@ function Standing() {
 export default function Home(): ReactNode {
     return (
         <Layout
-            title="The CX Programming Language"
+            title="The Chloro Programming Language"
             description="An experimental systems language built as a superset of C, with linear resources and no hidden control flow."
             wrapperClassName="landing-page"
         >

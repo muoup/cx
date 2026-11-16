@@ -1,0 +1,8 @@
+typedef int Values[];
+typedef const Values ConstValues;
+
+int main() {
+    ConstValues values = { 1, 2 };
+    values[0] = 3;
+    return 0;
+}

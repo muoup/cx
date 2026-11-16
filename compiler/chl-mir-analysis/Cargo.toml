@@ -1,0 +1,14 @@
+[package]
+name = "chl-mir-analysis"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+rustc-hash = { workspace = true }
+chl-log = { path = "../chl-log" }
+chl-mir = { path = "../chl-mir" }
+chl-tokens = { path = "../chl-tokens" }
+
+[dev-dependencies]
+chl-hir = { path = "../chl-hir" }
+chl-util = { path = "../chl-util" }

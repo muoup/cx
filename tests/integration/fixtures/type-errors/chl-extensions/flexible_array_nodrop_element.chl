@@ -1,0 +1,12 @@
+struct Handle : @nodrop {
+    int fd;
+};
+
+struct Handles : @nodrop {
+    int length;
+    Handle data[];
+};
+
+int main() {
+    return 0;
+}

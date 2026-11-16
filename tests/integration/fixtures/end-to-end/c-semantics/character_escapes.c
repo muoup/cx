@@ -1,5 +1,3 @@
-/* CX-STDOUT: 92 39 34 */
-
 #include <stdio.h>
 #define CHARACTER_ADDRESS &'a'
 

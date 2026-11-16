@@ -1,0 +1,14 @@
+#include <stdio.h>
+
+int check(int* pointer) safe {
+    int* null = (int*) 0;
+    const int* qualified = pointer;
+    void* erased = pointer;
+    return (pointer != null) && (qualified != null) && (erased != null);
+}
+
+int main() {
+    int value = 1;
+    printf("%d %d\n", check(&value), check((int*) 0));
+    return 0;
+}

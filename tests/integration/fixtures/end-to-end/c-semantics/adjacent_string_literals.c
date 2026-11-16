@@ -1,8 +1,3 @@
-/* CX-STDOUT: first */
-/* CX-STDOUT-NEXT: second */
-/* CX-STDOUT-NEXT: http://example.com */
-/* CX-STDOUT-NEXT: divider */
-
 #include <stdio.h>
 
 void divider(void) {

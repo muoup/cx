@@ -1,5 +1,3 @@
-/* CX-STDOUT: 54321 [no-final-newline] */
-
 #include <stdio.h>
 
 int for_loop(int n) {

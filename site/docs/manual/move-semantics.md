@@ -5,15 +5,15 @@ description: "Owned values and references, regions, type restrictions, and move 
 
 # Ownership and Moves
 
-CX differentiates between two categories of value: an owned value and a reference. A reference, declared with the `&` suffix, is an non-owning view of a value of its inner type. Every value otherwise is considered owned.
+Chloro differentiates between two categories of value: an owned value and a reference. A reference, declared with the `&` suffix, is an non-owning view of a value of its inner type. Every value otherwise is considered owned.
 
 An owned value is responsible for leasing references to its data. Initializing `T var = ...` creates a binding named `var` to an owned value of type `T`; referring to `var` provides a reference to that owned value. Any use of a reference that outlives the value leasing it is undefined behavior.
 
 ## Regions
 
-CX semantics are described in terms of regions rather than memory. A region of type `T` is an accessible container of data large enough to contain the runtime storage of a valid value of `T`. An integer literal is an owning value over a region of its integer type, just as a structured initializer is an owning value over a region of its struct type. While a region is often stored in memory, it may also be stored across one or more registers.
+Chloro semantics are described in terms of regions rather than memory. A region of type `T` is an accessible container of data large enough to contain the runtime storage of a valid value of `T`. An integer literal is an owning value over a region of its integer type, just as a structured initializer is an owning value over a region of its struct type. While a region is often stored in memory, it may also be stored across one or more registers.
 
-This distinction explains why CX describes moves as transferring responsibility for a value rather than transferring a particular memory allocation. It also allows references to describe non-owning access independently of where the value is stored.
+This distinction explains why Chloro describes moves as transferring responsibility for a value rather than transferring a particular memory allocation. It also allows references to describe non-owning access independently of where the value is stored.
 
 ## Type Restrictions
 
@@ -26,7 +26,7 @@ Structs and tagged unions may be marked with the following type restrictions:
 
 Restrictions follow a type declaration after a colon:
 
-```cx
+```chl
 struct Data : @nocopy {
     int payload[32];
 };
@@ -36,7 +36,7 @@ Restriction application is monotonic: `@nodrop` also applies `@nocopy`, and dupl
 
 `@unsafe_move` is independent of copy and drop restrictions. It is intended for values that may become pinned or otherwise require a runtime condition before relocation:
 
-```cx
+```chl
 struct guarded_cell<T> : @copy_traits(T), @unsafe_move {
     T value;
     int borrow_count;
@@ -51,7 +51,7 @@ Operations such as variable initialization, assignment, and function pass-by-val
 
 The expression `move var` transfers the value and kills the `var` binding, avoiding the need for a copy. Any subsequent use of that binding is caught by the typechecker. If a variable is moved in only one control-flow path, the compiler pessimistically treats it as dead in all paths that join the moving path.
 
-```cx
+```chl
 struct Data : @nocopy {
     int payload[32];
 };

@@ -1,0 +1,84 @@
+import std::optional as std;
+import std::io as std;
+import std::string as std;
+
+extern "C":
+
+void exit(int status);
+
+#include <stdio.h>
+#include <string.h>
+
+public:
+
+comptime type span(comptime type T) =>
+    struct {
+        T* data;
+        usize length;
+    };
+
+span(T) span::new(comptime type T = _, T* data, usize length)
+    => (span(T)) { .data = data, .length = length };
+    
+usize span::length(comptime type T = _, span(T) this) {
+    return this.length;
+}
+
+T* span::data(comptime type T = _, span(T) this) {
+    return this.data;
+}
+
+span(const T) span::as_const(comptime type T = _, span(T) this) {
+    return span::new(.T = const T, (const T*) this.data, this.length);
+}
+
+std::opt(T&) span::get(comptime type T = _, span(T)& this, usize index) {
+    if (index >= this.length) {
+        return _::none();
+    }
+
+    return this.data[index];
+}
+
+T& span::at(comptime type T = _, span(T)& this, usize index) {
+    if (index >= this.length) {
+        printf("Index out of bounds: %d >= %d\n", index, this.length);
+        exit(1);
+    }
+
+    return this.data[index];
+}
+
+std::opt(span(T)) span::subspan(comptime type T = _, span(T) this, usize offset, usize len) {
+    if (this |> span::length() < offset + len) return _::none();
+
+    return _::some((span(T)) {
+        .data = this.data + offset,
+        .length = len
+    });
+}
+
+bool span::equals(comptime type T = _, comptime type U = _, span(T) first, span(U) second) 
+where
+    pre: (@type.equal(@type.unqualify(T), @type.unqualify(U)))
+{
+    if (span::length(first) != span::length(second)) return false;
+
+    return memcmp(first |> span::data(), second |> span::data(), sizeof(T) * span::length(first)) == 0;
+}
+
+span(U) span::reinterpret(comptime type T = _, comptime type U = _, span(T) this) {
+    return span::new(.T = U, (U*) this.data, this.length * sizeof(T) / sizeof(U));
+}
+
+std::opt(T&) span::first(comptime type T = _, span(T)& this) {
+    return this |>(1) span::get(T, 0);
+}
+
+std::opt(T&) span::last(comptime type T = _, span(T)& this) {
+    if (this.length == 0) {
+        return _::none();
+    }
+
+    return _::some(this.data[this.length - 1]);
+}

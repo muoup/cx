@@ -1,7 +1,0 @@
-[package]
-name = "cx-log"
-version = "0.0.0"
-edition = "2024"
-
-[dependencies]
-cx-tokens = { path = "../cx-tokens" }

@@ -1,0 +1,268 @@
+use crate::codegen::{codegen_fn_prototype, codegen_function};
+use crate::globals::{declare_global, define_global};
+use crate::log::raw;
+use crate::value_type::get_cranelift_type;
+use cranelift::codegen::ir;
+use cranelift::codegen::ir::FuncRef;
+use cranelift::prelude::{settings, Block, FunctionBuilder, InstBuilder, Value};
+use cranelift_module::{DataId, FuncId, Module};
+use cranelift_object::{ObjectBuilder, ObjectModule};
+use chl_lmir::types::{LMIRFloatType, LMIRTypeKind};
+use chl_lmir::{LMIRABISlot, LMIRFunctionSignature};
+use chl_lmir::{LMIRBlockID, LMIRRegister, LMIRUnit, LMIRValue};
+use chl_log::catalogue::backend::*;
+use chl_log::error::context::CHLNoSourceContext;
+use chl_log::error::CHLError;
+use chl_log::{CHLRawResult, CHLResult};
+use chl_target::ArchitectureConfig;
+use chl_util::identifier::CHLIdent;
+use rustc_hash::FxHashMap;
+
+mod codegen;
+mod globals;
+mod inst_calling;
+mod instruction;
+mod log;
+mod routines;
+mod value_type;
+
+#[derive(Debug, Clone)]
+pub(crate) enum CodegenValue {
+    Value(Value),
+    Aggregate(Vec<Value>),
+    AggregateSlots(Vec<(LMIRABISlot, Value)>),
+    Null,
+}
+
+impl CodegenValue {
+    pub(crate) fn as_value(&self) -> Value {
+        match self {
+            CodegenValue::Value(value) => *value,
+
+            _ => panic!("Expected Value, got: {self:?}"),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn is_null(&self) -> bool {
+        matches!(self, CodegenValue::Null)
+    }
+}
+
+pub(crate) type VariableTable = FxHashMap<LMIRRegister, CodegenValue>;
+
+pub struct FunctionState<'a> {
+    pub(crate) object_module: &'a mut ObjectModule,
+
+    pub(crate) function_ids: &'a mut FxHashMap<String, FuncId>,
+    pub(crate) global_ids: &'a [DataId],
+
+    pub(crate) block_map: FxHashMap<CHLIdent, Block>,
+    pub(crate) assert_fail: Option<Block>,
+    pub(crate) builder: FunctionBuilder<'a>,
+    pub(crate) fn_params: Vec<Value>,
+
+    pub(crate) variable_table: VariableTable,
+    pub(crate) pointer_type: ir::Type,
+    pub(crate) signature: LMIRFunctionSignature,
+}
+
+pub(crate) struct GlobalState<'a> {
+    pub(crate) architecture: &'a ArchitectureConfig,
+    pub(crate) object_module: ObjectModule,
+    pub(crate) function_ids: FxHashMap<String, FuncId>,
+    pub(crate) global_ids: Vec<DataId>,
+    pub(crate) function_sigs: &'a mut FxHashMap<FuncId, ir::Signature>,
+}
+
+impl FunctionState<'_> {
+    pub(crate) fn get_function(&mut self, name: &str) -> Option<(FuncId, FuncRef)> {
+        let func_id = self.function_ids.get(name).cloned()?;
+        let func_ref = self
+            .object_module
+            .declare_func_in_func(func_id, self.builder.func);
+
+        Some((func_id, func_ref))
+    }
+
+    pub(crate) fn get_block(&mut self, id: &LMIRBlockID) -> Block {
+        self.block_map.get(id).cloned().unwrap()
+    }
+
+    pub(crate) fn get_value(&mut self, bc_value: &LMIRValue) -> CHLRawResult<CodegenValue> {
+        match bc_value {
+            LMIRValue::NULL => Ok(CodegenValue::Null),
+
+            LMIRValue::ParameterRef(i) => self
+                .fn_params
+                .get(*i as usize)
+                .copied()
+                .map(CodegenValue::Value)
+                .ok_or_else(|| raw(&INDEX_BOUNDS, ("function parameter".into(), i.to_string()))),
+
+            LMIRValue::IntImmediate { val, ty } => {
+                let int_type = get_cranelift_type(ty);
+                let value = self.builder.ins().iconst(int_type?, *val);
+
+                Ok(CodegenValue::Value(value))
+            }
+
+            LMIRValue::FloatImmediate { val, ty } => match ty.kind {
+                LMIRTypeKind::Float(LMIRFloatType::F32) => {
+                    let as_f32: f32 = val.into();
+                    let value = self.builder.ins().f32const(as_f32);
+                    Ok(CodegenValue::Value(value))
+                }
+                LMIRTypeKind::Float(LMIRFloatType::F64) => {
+                    let as_f64: f64 = val.into();
+                    let value = self.builder.ins().f64const(as_f64);
+                    Ok(CodegenValue::Value(value))
+                }
+                _ => Err(raw(
+                    &ENTITY_REQUIREMENT,
+                    (
+                        "float immediate".into(),
+                        "a float type".into(),
+                        Some(format!("{ty:?}")),
+                    ),
+                )),
+            },
+
+            LMIRValue::Global(id) => {
+                let Some(data_id) = self.global_ids.get(*id as usize).cloned() else {
+                    return Err(raw(
+                        &MISSING_ENTITY,
+                        (format!("global g{id}"), "Cranelift global table".into()),
+                    ));
+                };
+
+                let global_ref = self
+                    .object_module
+                    .declare_data_in_func(data_id, self.builder.func);
+
+                let gv = self
+                    .builder
+                    .ins()
+                    .global_value(self.pointer_type, global_ref);
+
+                Ok(CodegenValue::Value(gv))
+            }
+
+            LMIRValue::BlockAddress { .. } => Err(raw(
+                &UNSUPPORTED_FEATURE,
+                ("label addresses".into(), "Cranelift lowering".into()),
+            )),
+
+            LMIRValue::Register { register, ty: _ } => {
+                let Some(var) = self.variable_table.get(register).cloned() else {
+                    return Err(raw(
+                        &MISSING_ENTITY,
+                        (
+                            format!("variable {:?}", bc_value),
+                            "Cranelift variable table".into(),
+                        ),
+                    ));
+                };
+
+                Ok(var)
+            }
+        }
+    }
+}
+
+pub fn lmir_aot_codegen(bc: &LMIRUnit, output: &str) -> CHLResult<Vec<u8>> {
+    let settings_builder = settings::builder();
+    let flags = settings::Flags::new(settings_builder);
+
+    let native_builder = cranelift_native::builder().unwrap();
+    let isa = native_builder.finish(flags).unwrap();
+    let target_pointer_size = isa.frontend_config().pointer_type().bytes() as usize;
+    if bc.architecture.pointer_size() != target_pointer_size {
+        return Err(CHLError::new(
+            raw(
+                &TARGET_LAYOUT,
+                (
+                    "Cranelift".into(),
+                    "pointer size".into(),
+                    bc.architecture.pointer_size().to_string(),
+                    target_pointer_size.to_string(),
+                ),
+            ),
+            CHLNoSourceContext::error("LMIR and Cranelift target configurations disagree"),
+        ));
+    }
+
+    let mut global_state = GlobalState {
+        architecture: &bc.architecture,
+        object_module: {
+            let mut builder = ObjectBuilder::new(
+                isa.clone(),
+                output,
+                cranelift_module::default_libcall_names(),
+            )
+            .unwrap();
+            builder.per_function_section(true);
+            ObjectModule::new(builder)
+        },
+
+        function_ids: FxHashMap::default(),
+        global_ids: Vec::new(),
+        function_sigs: &mut FxHashMap::default(),
+    };
+
+    for fn_prototype in bc.fn_map.values() {
+        codegen_fn_prototype(&mut global_state, fn_prototype).map_err(|e| {
+            CHLError::new(
+                e,
+                CHLNoSourceContext::error(format!(
+                    "failed to codegen function prototype: {}",
+                    fn_prototype.name
+                )),
+            )
+        })?;
+    }
+
+    for global_var in &bc.global_vars {
+        let id = declare_global(&mut global_state, global_var)?;
+        global_state.global_ids.push(id);
+    }
+
+    for (global_var, id) in bc.global_vars.iter().zip(&global_state.global_ids.clone()) {
+        define_global(&mut global_state, *id, global_var)?;
+    }
+
+    for func in bc.fn_defs.iter() {
+        let Some(func_id) = global_state
+            .function_ids
+            .get(func.prototype.name.as_str())
+            .cloned()
+        else {
+            return Err(CHLError::new(
+                raw(
+                    &MISSING_ENTITY,
+                    (
+                        format!("function '{}'", func.prototype.name),
+                        "Cranelift function map".into(),
+                    ),
+                ),
+                CHLNoSourceContext::error("failed to look up function during codegen"),
+            ));
+        };
+
+        let func_sig = global_state
+            .function_sigs
+            .remove(&func_id)
+            .unwrap_or_else(|| {
+                panic!("Function prototype not found for: {}", func.prototype.name);
+            });
+
+        codegen_function(&mut global_state, func_id, func_sig, func)?;
+    }
+
+    global_state.object_module.finish().emit().map_err(|err| {
+        CHLError::new(
+            raw(&OPERATION_FAILED, ("emit object file".into(), Some(err.to_string()))),
+            CHLNoSourceContext::error("failed to finalize Cranelift object module"),
+        )
+    })
+}

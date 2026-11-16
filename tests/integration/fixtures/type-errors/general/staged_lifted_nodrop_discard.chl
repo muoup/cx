@@ -1,0 +1,4 @@
+struct Resource : @nodrop { int value; };
+Resource make(int x) { Resource r = { .value = x }; return move r; }
+comptime ^void drop_it(fn f(^int) -> ^void) => f(emit 1);
+int main() { drop_it(make); return 0; }

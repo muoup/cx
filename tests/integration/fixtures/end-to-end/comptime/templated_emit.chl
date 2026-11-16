@@ -1,0 +1,23 @@
+/* CHL-STDOUT: int 37 */
+/* CHL-STDOUT-NEXT: float 4.5 */
+/* CHL-STDOUT-NEXT: selected 9 */
+
+#include <stdio.h>
+
+comptime ^T pass(comptime type T, ^T value) {
+    return emit value;
+}
+
+comptime ^T choose_first(comptime type T, ^T lhs, ^T rhs) {
+    return emit lhs;
+}
+
+int main() {
+    int int_value = pass(int, emit 37);
+    float float_value = pass(float, emit 4.5);
+    int selected = choose_first(int, emit 9, emit 100);
+
+    printf("int %d\n", int_value);
+    printf("float %.1f\n", float_value);
+    printf("selected %d\n", selected);
+}

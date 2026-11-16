@@ -1,5 +1,3 @@
-/* CX-STDOUT: 7 */
-
 #include <stdio.h>
 
 struct color {

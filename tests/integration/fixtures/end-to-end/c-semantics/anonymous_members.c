@@ -1,5 +1,3 @@
-/* CX-STDOUT: 1 2 16 */
-
 #include <stdio.h>
 
 struct tagged {

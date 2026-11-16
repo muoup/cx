@@ -1,4 +1,4 @@
-use cx_test_support::{expected_stdout, CompilerBackend, ProjectBinary};
+use chl_test_support::{expected_stdout, CompilerBackend, ProjectBinary};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 pub struct Case {
     pub label: String,
     pub sources: Sources,
-    /// The cx backends able to build the case.
+    /// The chl backends able to build the case.
     pub backends: Vec<CompilerBackend>,
     pub workloads: Vec<Workload>,
 }
@@ -27,7 +27,7 @@ pub struct Workload {
     pub expected_stdout: String,
 }
 
-/// A `cx.toml` project that is benchmarked where it lives in the repository.
+/// A `chl.lua` project that is benchmarked where it lives in the repository.
 struct Project {
     name: &'static str,
     /// Relative to the repository root.
@@ -46,7 +46,7 @@ enum Run {
     /// stdout.
     Alone { expectation: &'static str },
     /// Run once for each `workloads/<name>/*.<extension>`, passed as the only argument and
-    /// checked against its `.cx-output` sidecar.
+    /// checked against its `.chl-output` sidecar.
     Scripts { extension: &'static str },
 }
 
@@ -58,7 +58,7 @@ const PROJECTS: &[Project] = &[
         // The interpreter loop takes the addresses of labels, which Cranelift lowering lacks.
         backends: &[CompilerBackend::LLVM],
         skipped_sources: &[],
-        // TODO: The cx-built interpreter fails upstream's `testes/all.lua` at calls.lua:541
+        // TODO: The chl-built interpreter fails upstream's `testes/all.lua` at calls.lua:541
         // (binary chunks). Once that passes, run it here as a workload too.
         run: Run::Scripts { extension: "lua" },
     },
@@ -196,7 +196,7 @@ fn script_workloads(project: &str, extension: &str) -> Result<Vec<Workload>, Str
     scripts
         .into_iter()
         .map(|script| {
-            let sidecar = script.with_extension("cx-output");
+            let sidecar = script.with_extension("chl-output");
             let expected_stdout = fs::read_to_string(&sidecar)
                 .map_err(|error| format!("failed to read {}: {error}", sidecar.display()))?;
             let name = script.file_name().expect("a script has a file name");
@@ -227,7 +227,7 @@ fn discover_files(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
         }
         if matches!(
             path.extension().and_then(|extension| extension.to_str()),
-            Some("cx") | Some("c")
+            Some("chl") | Some("c")
         ) {
             files.push(path);
         }

@@ -1,0 +1,116 @@
+import std::{span, optional, panic} as std;
+
+extern "C":
+
+#include <stdlib.h>
+#include <string.h>
+
+public:
+
+comptime bool valid_vector_inner(comptime type T) => !@type.is_reference(T) && !@type.is_const(T);
+
+comptime type vector(comptime type T)
+where
+    pre: (@unsafe(valid_vector_inner(T)))
+    => struct : @nodrop {
+        T* data;
+        usize length;
+        usize capacity;
+    };
+
+vector(T) vector::new(comptime type T) {
+    return (vector(T)) {
+        .data = malloc(4 * sizeof(T)),
+        .length = 0,
+        .capacity = 4
+    };
+}
+
+vector(T) vector::with_capacity(comptime type T, usize capacity) {
+    return (vector(T)) {
+        .data = malloc(capacity * sizeof(T)),
+        .length = 0,
+        .capacity = capacity
+    };
+}
+
+void vector::drop(comptime type T = _, vector(T) this) 
+where
+    pre: (!@type.is_nodrop(T))
+{
+    @unsafe {
+        free(this.data);
+        @leak(this);
+    };
+}
+
+comptime ^void vector::drop_with(type T = _, ^vector(T) this, fn destructor(^T) -> ^void)
+    => emit .{
+        vector(T) owned = this;
+        
+        for (usize i = 0; i < owned.length; i++) {
+            T value = @adopt(owned.data[i]);
+            move value |> destructor();
+        }
+
+        free(owned.data);
+        @leak(owned);
+    };
+
+usize vector::length(comptime type T = _, vector(T)& this)
+    => this.length;
+
+void vector::push(comptime type T = _, vector(T)& this, T object) {
+    if (this.length == this.capacity) {
+        this.capacity = this.capacity * 2 + 1;
+        this.data = realloc(this.data, this.capacity * sizeof(T));
+    }
+
+    this.data[this.length] = move object;
+    this.length++;
+}
+
+std::opt(T) vector::pop(comptime type T = _, vector(T)& this) {
+    if (this.length == 0) return std::optional::opt(T)::none();
+
+    T buffer;
+    T* data_ptr = &this.data[this.length - 1];
+    memcpy(&buffer, data_ptr, sizeof(T));
+ 
+    this.length--;
+    return _::some(move buffer);
+}
+
+std::opt(T&) vector::get(comptime type T = _, vector(T)& this, usize index) {
+    if (index >= this.length) {
+        return _::none();
+    }
+
+    return _::some(this.data[index]);
+}
+
+T& vector::at(comptime type T = _, vector(T)& this, usize index) {
+    // REVIEW: It would be nicer if this could just be a vector::get + an expect, but that doesn't current seem possible
+    // due to reference collapse rules. We can't seem to consistently unwrap an opt(T&)
+
+    if (index >= this.length) {
+        std::panic("Attempted to index out of vector bounds");
+    }
+
+    return this.data[index];
+}
+
+std::span(T) vector::span(comptime type T = _, vector(T)& this)
+    => std::span::new(this.data, this.length);
+
+vector(@type.unqualify(T)) vector::from_span(comptime type T = _, std::span(T) this) 
+where
+    pre: (!@type.is_unsafe_move(T))
+{
+    const usize length = this |> std::span::length();
+    auto vector = vector::with_capacity(@type.unqualify(T), length);
+    
+    vector.length = length;
+    memcpy(vector.data, this.data, sizeof(T) * length);
+    return move vector;
+}

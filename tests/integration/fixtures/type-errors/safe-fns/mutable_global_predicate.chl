@@ -1,0 +1,5 @@
+int mutable = 1;
+
+int bad(int value) safe where pre: (mutable == value) {
+    return value;
+}

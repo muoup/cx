@@ -1,0 +1,20 @@
+/* CHL-STDOUT: value 42 */
+/* CHL-STDOUT-NEXT: chained 18 */
+
+#include <stdio.h>
+
+comptime ^T twice(comptime type T, ^T value) {
+    return emit value * 2;
+}
+
+comptime ^T add_ten(comptime type T, ^T value) {
+    return emit value + 10;
+}
+
+int main() {
+    int value = twice(int, emit 21);
+    int chained = add_ten(int, emit twice(int, emit 4));
+
+    printf("value %d\n", value);
+    printf("chained %d\n", chained);
+}

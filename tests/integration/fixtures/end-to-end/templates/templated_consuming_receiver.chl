@@ -1,0 +1,20 @@
+/* CHL-STDOUT: drop templated_object */
+
+#include <stdio.h>
+
+comptime type templated_object(comptime type T) =>
+    struct : @nodrop {
+        T value;
+    };
+
+void templated_object::drop(comptime type T, templated_object(T) this) {
+    printf("drop templated_object\n");
+    @leak(this);
+}
+
+int main() {
+    templated_object(int) object = (templated_object(int)) {
+        .value = 3
+    };
+    move object |>(1) templated_object::drop(int);
+}

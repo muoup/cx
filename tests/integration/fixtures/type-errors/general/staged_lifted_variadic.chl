@@ -1,0 +1,6 @@
+void variadic(int first, ...) {}
+comptime ^void invoke(fn callback(^int, ...) -> ^void) => emit .{};
+int main() {
+    invoke(variadic);
+    return 0;
+}

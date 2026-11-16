@@ -1,0 +1,12 @@
+struct Resource : @nodrop {
+    int value;
+};
+
+Resource make(int value) {
+    return (Resource) { .value = value };
+}
+
+int main() {
+    make(1);
+    return 0;
+}

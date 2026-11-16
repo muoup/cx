@@ -1,0 +1,8 @@
+enum union Maybe {
+    none :: void,
+    some :: int
+};
+int main() {
+    Maybe value = Maybe::none();
+    return value is other(_);
+}

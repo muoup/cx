@@ -1,0 +1,25 @@
+/* CHL-STDOUT: Vector length: 3 */
+/* CHL-STDOUT-NEXT: Vector capacity: 4 */
+/* CHL-STDOUT-NEXT: vec[0]: 1 */
+
+import std::vector;
+import std::optional;
+
+#include <stdio.h>
+
+int main() {
+    std::vector::vector(int) vec = std::vector::vector::new(int);
+    
+    vec |> std::vector::vector::push(1);
+    vec |> std::vector::vector::push(2);
+    vec |> std::vector::vector::push(3);
+
+    printf("Vector length: %zu\n", vec.length);
+    printf("Vector capacity: %zu\n", vec.capacity);
+    
+    std::optional::opt(int&) maybe_value = vec |> std::vector::vector::get(0);
+    int value = move maybe_value |> std::optional::opt::unwrap();
+    
+    printf("vec[0]: %d\n", value);
+    move vec |> std::vector::vector::drop();
+}

@@ -1,14 +1,3 @@
-/* CX-STDOUT: size 8 4 */
-/* CX-STDOUT-NEXT: init 5 3 9 1 */
-/* CX-STDOUT-NEXT: neighbours 6 3 9 1 */
-/* CX-STDOUT-NEXT: signed -3 7 -8 -1 */
-/* CX-STDOUT-NEXT: compound 0 1 4 */
-/* CX-STDOUT-NEXT: chained 3 3 */
-/* CX-STDOUT-NEXT: copy 6 3 9 */
-/* CX-STDOUT-NEXT: pointer 2 3 9 */
-/* CX-STDOUT-NEXT: global 7 2 5 */
-/* CX-STDOUT-NEXT: arg 11 */
-
 #include <stdint.h>
 #include <stdio.h>
 

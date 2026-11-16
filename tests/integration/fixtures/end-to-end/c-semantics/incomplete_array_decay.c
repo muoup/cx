@@ -1,5 +1,3 @@
-/* CX-STDOUT: ok */
-
 #include <stdio.h>
 
 extern char *environ[];

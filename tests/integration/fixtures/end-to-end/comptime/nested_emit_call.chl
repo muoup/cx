@@ -1,0 +1,15 @@
+#include <stdio.h>
+
+comptime ^int add_one(^int value) {
+    return emit value + 1;
+}
+
+comptime ^int add_two(^int value) {
+    return emit add_one(emit value) + 1;
+}
+
+int main() {
+    int value = 40;
+    printf("nested %d\n", add_two(emit value));
+    return 0;
+}

@@ -1,0 +1,300 @@
+use chl_lmir::types::LMIRIntegerType;
+use chl_lmir::{
+    LMIRGlobalInitializer, LMIRGlobalState, LMIRGlobalType, LMIRGlobalValue, LinkageType,
+};
+use chl_mir::ty::interface::MTRegistry;
+use chl_mir::immediate::{MIRAddressable, MIRImmediate};
+use chl_mir::{
+    MIRField, MIRGlobalState, MIRGlobalVariable, MIRIntType, MIRTypeID, MIRTypeKind,
+};
+
+use crate::context::GlobalContext;
+
+use super::typing::{
+    StructMember, convert_float_type, convert_integer_type, convert_linkage, convert_type,
+    storage_type, struct_members,
+};
+
+pub(super) fn lower_globals(context: &mut GlobalContext<'_>) {
+    for (index, id) in context.unit.global_order().iter().copied().enumerate() {
+        context.global_indices.insert(id, index as u32);
+        let global = context.unit.global(id).expect("missing ordered MIR global");
+        context.globals.push(LMIRGlobalValue {
+            name: global.name().clone(),
+            ty: LMIRGlobalType::Variable {
+                ty: storage_type(global.ty(), context.unit.types()),
+                state: LMIRGlobalState::External,
+            },
+            linkage: convert_linkage(global.linkage()),
+        });
+    }
+    for (index, id) in context.unit.global_order().iter().copied().enumerate() {
+        let global = context.unit.global(id).expect("missing ordered MIR global");
+        context.globals[index] = lower_global(context, global);
+    }
+}
+
+fn lower_global(context: &mut GlobalContext<'_>, global: &MIRGlobalVariable) -> LMIRGlobalValue {
+    let linkage = if matches!(global.state(), MIRGlobalState::External) {
+        LinkageType::External
+    } else {
+        convert_linkage(global.linkage())
+    };
+    let state = match global.state() {
+        MIRGlobalState::External => LMIRGlobalState::External,
+        MIRGlobalState::ZeroInitialized | MIRGlobalState::Initialized(MIRImmediate::Unit) => {
+            LMIRGlobalState::ZeroInitialized
+        }
+        MIRGlobalState::Initialized(value) => {
+            LMIRGlobalState::Initialized(lower_initializer(context, value, global.ty()))
+        }
+    };
+    LMIRGlobalValue {
+        name: global.name().clone(),
+        ty: LMIRGlobalType::Variable {
+            ty: storage_type(global.ty(), context.unit.types()),
+            state,
+        },
+        linkage,
+    }
+}
+
+fn lower_initializer(
+    context: &mut GlobalContext<'_>,
+    value: &MIRImmediate,
+    destination_ty: MIRTypeID,
+) -> LMIRGlobalInitializer {
+    let destination_kind = context
+        .unit
+        .types()
+        .definition(destination_ty)
+        .expect("global initializer has an invalid destination type")
+        .kind()
+        .clone();
+
+    match value {
+        MIRImmediate::Integer { value, ty } => LMIRGlobalInitializer::Integer {
+            value: *value,
+            ty: convert_integer_type(*ty),
+        },
+        MIRImmediate::Float { value, ty } => LMIRGlobalInitializer::Float {
+            value: *value,
+            ty: convert_float_type(*ty),
+        },
+        MIRImmediate::Aggregate { fields, .. } => {
+            if matches!(destination_kind, MIRTypeKind::Union { .. }) {
+                let Some((index, value)) = fields.iter().rev().find(|(_, value)| !zero(value))
+                else {
+                    return LMIRGlobalInitializer::Null;
+                };
+                let variant_ty = aggregate_field_type(context, destination_ty, *index);
+                return LMIRGlobalInitializer::Overlay {
+                    ty: convert_type(variant_ty, context.unit.types()),
+                    value: Box::new(lower_initializer(context, value, variant_ty)),
+                };
+            }
+            if matches!(destination_kind, MIRTypeKind::TaggedUnion { .. }) {
+                let Some((index, value)) = fields.last() else {
+                    return LMIRGlobalInitializer::Null;
+                };
+                let variant_ty = aggregate_field_type(context, destination_ty, *index);
+                let data = if zero(value) {
+                    LMIRGlobalInitializer::Null
+                } else {
+                    LMIRGlobalInitializer::Overlay {
+                        ty: convert_type(variant_ty, context.unit.types()),
+                        value: Box::new(lower_initializer(context, value, variant_ty)),
+                    }
+                };
+                let tag = LMIRGlobalInitializer::Integer {
+                    value: *index as i128,
+                    ty: LMIRIntegerType::I8,
+                };
+                return LMIRGlobalInitializer::Aggregate {
+                    fields: vec![(0, data), (1, tag)],
+                };
+            }
+            if let MIRTypeKind::Structured { fields: members } = &destination_kind {
+                return lower_struct_initializer(context, fields, destination_ty, members);
+            }
+            LMIRGlobalInitializer::Aggregate {
+                fields: fields
+                    .iter()
+                    .map(|(index, value)| {
+                        let field_ty = aggregate_field_type(context, destination_ty, *index);
+                        (*index, lower_initializer(context, value, field_ty))
+                    })
+                    .collect(),
+            }
+        }
+        MIRImmediate::Address { base, offset } => {
+            match base {
+                MIRAddressable::Global(id) => LMIRGlobalInitializer::Global {
+                    global: context.global_indices[id],
+                    offset: *offset,
+                },
+                MIRAddressable::Function(id) if *offset == 0 => LMIRGlobalInitializer::Function(
+                    context
+                        .unit
+                        .function(*id)
+                        .expect("missing function in global initializer")
+                        .prototype()
+                        .symbol_name
+                        .to_string(),
+                ),
+                MIRAddressable::Block { function, label } if *offset == 0 => {
+                    let (function, block) = context.block_address(*function, label);
+                    LMIRGlobalInitializer::BlockAddress {
+                        function: function.to_string(),
+                        block,
+                    }
+                }
+                _ => panic!("invalid global address initializer"),
+            }
+        }
+        MIRImmediate::String { value, offset } => match destination_kind {
+            MIRTypeKind::Array { length, inner } if is_character_type(context, inner) => {
+                assert_eq!(*offset, 0, "an array is initialized from a whole string");
+                let bytes = value.as_bytes();
+                assert!(
+                    bytes.len() <= length,
+                    "string initializer is larger than its destination array"
+                );
+                LMIRGlobalInitializer::Aggregate {
+                    fields: (0..length)
+                        .map(|index| {
+                            let byte = bytes.get(index).copied().unwrap_or(0);
+                            (
+                                index,
+                                LMIRGlobalInitializer::Integer {
+                                    value: i128::from(byte),
+                                    ty: convert_integer_type(MIRIntType::I8),
+                                },
+                            )
+                        })
+                        .collect(),
+                }
+            }
+            MIRTypeKind::PointerTo { .. } | MIRTypeKind::MemoryReference { .. } => {
+                LMIRGlobalInitializer::Global {
+                    global: context.string(value),
+                    offset: *offset,
+                }
+            }
+            _ => panic!("string initializer has an invalid destination type"),
+        },
+        MIRImmediate::Nullptr { .. } | MIRImmediate::Unit => LMIRGlobalInitializer::Null,
+        MIRImmediate::Undefined => panic!("undefined MIR global initializer"),
+    }
+}
+
+/// Lowers a struct initializer onto the struct's LMIR fields, spreading each bitfield's bits over
+/// the byte fields it occupies.
+fn lower_struct_initializer(
+    context: &mut GlobalContext<'_>,
+    values: &[(usize, MIRImmediate)],
+    struct_ty: MIRTypeID,
+    fields: &[MIRField],
+) -> LMIRGlobalInitializer {
+    let members = struct_members(struct_ty, fields, context.unit.types());
+    let mut lowered: Vec<(usize, LMIRGlobalInitializer)> = Vec::new();
+    for (index, value) in values {
+        match members.members[*index] {
+            None => {}
+            Some(StructMember::Field(field)) => {
+                lowered.push((
+                    field,
+                    lower_initializer(context, value, fields[*index].ty()),
+                ));
+            }
+            Some(StructMember::Bitfield { bit, width }) => {
+                let MIRImmediate::Integer { value, .. } = value else {
+                    panic!("bitfield initializer is not an integer constant")
+                };
+                let bits = *value as u128 & low_bits(width);
+                for byte in bit / 8..(bit + width).div_ceil(8) {
+                    let shift = byte as isize * 8 - bit as isize;
+                    let part = if shift >= 0 {
+                        bits >> shift
+                    } else {
+                        bits << -shift
+                    } & 0xFF;
+                    let field = members.bitfield_bytes[&byte];
+                    match lowered.iter_mut().find(|(index, _)| *index == field) {
+                        Some((_, LMIRGlobalInitializer::Integer { value, .. })) => {
+                            *value |= part as i128;
+                        }
+                        _ => lowered.push((
+                            field,
+                            LMIRGlobalInitializer::Integer {
+                                value: part as i128,
+                                ty: LMIRIntegerType::I8,
+                            },
+                        )),
+                    }
+                }
+            }
+        }
+    }
+    LMIRGlobalInitializer::Aggregate { fields: lowered }
+}
+
+fn low_bits(width: usize) -> u128 {
+    if width >= 128 {
+        u128::MAX
+    } else {
+        (1u128 << width) - 1
+    }
+}
+
+fn aggregate_field_type(
+    context: &GlobalContext<'_>,
+    aggregate_ty: MIRTypeID,
+    index: usize,
+) -> MIRTypeID {
+    match context
+        .unit
+        .types()
+        .definition(aggregate_ty)
+        .expect("aggregate initializer has an invalid destination type")
+        .kind()
+    {
+        MIRTypeKind::Array { length, inner } => {
+            assert!(index < *length, "array initializer index is out of bounds");
+            *inner
+        }
+        MIRTypeKind::Structured { fields } => fields
+            .get(index)
+            .expect("struct initializer index is out of bounds")
+            .ty(),
+        MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => variants
+            .get(index)
+            .expect("union initializer index is out of bounds")
+            .ty(),
+        _ => panic!("aggregate initializer has a non-aggregate destination type"),
+    }
+}
+
+fn is_character_type(context: &GlobalContext<'_>, ty: MIRTypeID) -> bool {
+    matches!(
+        context
+            .unit
+            .types()
+            .definition(ty)
+            .expect("array initializer has an invalid element type")
+            .kind(),
+        MIRTypeKind::Integer {
+            ty: MIRIntType::I8,
+            ..
+        }
+    )
+}
+
+fn zero(value: &MIRImmediate) -> bool {
+    match value {
+        MIRImmediate::Integer { value, .. } => *value == 0,
+        MIRImmediate::Nullptr { .. } | MIRImmediate::Unit => true,
+        MIRImmediate::Aggregate { fields, .. } => fields.iter().all(|(_, value)| zero(value)),
+        _ => false,
+    }
+}

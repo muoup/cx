@@ -1,4 +1,0 @@
-name = "CX"
-grammar = "cx"
-path_suffixes = ["cx", "cxh"]
-line_comments = ["//"]

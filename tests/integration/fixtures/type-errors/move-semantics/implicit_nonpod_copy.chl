@@ -1,0 +1,9 @@
+struct Data : @nocopy {
+    int value;
+};
+
+int main() {
+    Data source = (Data) { .value = 1 };
+    Data copy = source;
+    return 0;
+}

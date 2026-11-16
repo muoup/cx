@@ -1,0 +1,499 @@
+==================
+fn declarator variables
+==================
+int add_one(int v);
+int main() {
+    fn* cb(int) -> int = add_one;
+    fn* table[2](int) -> int;
+    fn** pp(int) -> int;
+    fn plain(int) -> int = add_one;
+    return 0;
+}
+
+---
+
+(source_file
+  (function_declaration
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (declaration
+          (variable_declaration
+            (function_type_declarator
+              (keyword)
+              (pointer_modifier
+                (operator))
+              (identifier)
+              (parameter_list
+                (parameter
+                  (type
+                    (builtin_type_sequence
+                      (builtin_type)))))
+              (operator)
+              (type
+                (builtin_type_sequence
+                  (builtin_type))))
+            (operator)
+            (expression
+              (primary_expression
+                (qualified_name
+                  (identifier))))))
+        (declaration
+          (variable_declaration
+            (function_type_declarator
+              (keyword)
+              (pointer_modifier
+                (operator))
+              (identifier)
+              (array_modifier
+                (expression
+                  (primary_expression
+                    (literal
+                      (number_literal)))))
+              (parameter_list
+                (parameter
+                  (type
+                    (builtin_type_sequence
+                      (builtin_type)))))
+              (operator)
+              (type
+                (builtin_type_sequence
+                  (builtin_type))))))
+        (declaration
+          (variable_declaration
+            (function_type_declarator
+              (keyword)
+              (pointer_modifier
+                (operator))
+              (pointer_modifier
+                (operator))
+              (identifier)
+              (parameter_list
+                (parameter
+                  (type
+                    (builtin_type_sequence
+                      (builtin_type)))))
+              (operator)
+              (type
+                (builtin_type_sequence
+                  (builtin_type))))))
+        (declaration
+          (variable_declaration
+            (function_type_declarator
+              (keyword)
+              (identifier)
+              (parameter_list
+                (parameter
+                  (type
+                    (builtin_type_sequence
+                      (builtin_type)))))
+              (operator)
+              (type
+                (builtin_type_sequence
+                  (builtin_type))))
+            (operator)
+            (expression
+              (primary_expression
+                (qualified_name
+                  (identifier))))))
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (literal
+                (number_literal)))))))))
+
+==================
+fn declarator fields and parameters
+==================
+struct Ops {
+    fn* op(int) -> int;
+};
+
+int apply(fn* f(int) -> int, int v) {
+    return f(v);
+}
+
+---
+
+(source_file
+  (type_definition
+    (struct_definition
+      (keyword)
+      (identifier)
+      (field_declaration
+        (function_type_declarator
+          (keyword)
+          (pointer_modifier
+            (operator))
+          (identifier)
+          (parameter_list
+            (parameter
+              (type
+                (builtin_type_sequence
+                  (builtin_type)))))
+          (operator)
+          (type
+            (builtin_type_sequence
+              (builtin_type)))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (function_type_declarator
+            (keyword)
+            (pointer_modifier
+              (operator))
+            (identifier)
+            (parameter_list
+              (parameter
+                (type
+                  (builtin_type_sequence
+                    (builtin_type)))))
+            (operator)
+            (type
+              (builtin_type_sequence
+                (builtin_type)))))
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (argument_list
+                (expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier))))))))))))
+
+==================
+fn declarator staged closure parameter
+==================
+void run() {
+    each(emit |fn sink(^T) -> ^void| { sink(1); });
+}
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (expression_statement
+          (expression
+            (postfix_expression
+              (primary_expression
+                (qualified_name
+                  (identifier)))
+              (argument_list
+                (expression
+                  (primary_expression
+                    (emit_expression
+                      (keyword)
+                      (expression
+                        (primary_expression
+                          (staged_lambda
+                            (function_type_declarator
+                              (keyword)
+                              (identifier)
+                              (parameter_list
+                                (parameter
+                                  (type
+                                    (staged_type
+                                      (operator)
+                                      (type
+                                        (qualified_name
+                                          (identifier)))))))
+                              (operator)
+                              (type
+                                (staged_type
+                                  (operator)
+                                  (type
+                                    (builtin_type_sequence
+                                      (builtin_type))))))
+                            (compound_statement
+                              (expression_statement
+                                (expression
+                                  (postfix_expression
+                                    (primary_expression
+                                      (qualified_name
+                                        (identifier)))
+                                    (argument_list
+                                      (expression
+                                        (primary_expression
+                                          (literal
+                                            (number_literal)))))))))))))))))))))))
+
+==================
+anonymous fn types
+==================
+int apply(fn*(int) -> int, int v);
+auto callback() -> fn*(int) -> int { return add_one; }
+void run() {
+    int r = apply((fn*(int) -> int) add_one, 1);
+}
+
+---
+
+(source_file
+  (function_declaration
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (function_type
+              (keyword)
+              (pointer_modifier
+                (operator))
+              (parameter_list
+                (parameter
+                  (type
+                    (builtin_type_sequence
+                      (builtin_type)))))
+              (operator)
+              (type
+                (builtin_type_sequence
+                  (builtin_type))))))
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier))))))
+  (function_definition
+    (builtin_type)
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (operator)
+    (type
+      (function_type
+        (keyword)
+        (pointer_modifier
+          (operator))
+        (parameter_list
+          (parameter
+            (type
+              (builtin_type_sequence
+                (builtin_type)))))
+        (operator)
+        (type
+          (builtin_type_sequence
+            (builtin_type)))))
+    (function_body
+      (compound_statement
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier))))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier)))
+                  (argument_list
+                    (expression
+                      (primary_expression
+                        (cast_expression
+                          (type
+                            (function_type
+                              (keyword)
+                              (pointer_modifier
+                                (operator))
+                              (parameter_list
+                                (parameter
+                                  (type
+                                    (builtin_type_sequence
+                                      (builtin_type)))))
+                              (operator)
+                              (type
+                                (builtin_type_sequence
+                                  (builtin_type)))))
+                          (expression
+                            (primary_expression
+                              (qualified_name
+                                (identifier)))))))
+                    (expression
+                      (primary_expression
+                        (literal
+                          (number_literal))))))))))))))
+
+==================
+function returning fn pointer
+==================
+fn*(int) -> int pick(int which) {
+    if (which == 0) return add_one;
+    return triple;
+}
+
+fn*(int) -> int pick_decl(int which);
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (function_type
+        (keyword)
+        (pointer_modifier
+          (operator))
+        (parameter_list
+          (parameter
+            (type
+              (builtin_type_sequence
+                (builtin_type)))))
+        (operator)
+        (type
+          (builtin_type_sequence
+            (builtin_type)))))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (compound_statement
+        (if_statement
+          (keyword)
+          (expression
+            (binary_expression
+              (expression
+                (primary_expression
+                  (qualified_name
+                    (identifier))))
+              (operator)
+              (expression
+                (primary_expression
+                  (literal
+                    (number_literal))))))
+          (return_statement
+            (keyword)
+            (expression
+              (primary_expression
+                (qualified_name
+                  (identifier))))))
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier))))))))
+  (function_declaration
+    (type
+      (function_type
+        (keyword)
+        (pointer_modifier
+          (operator))
+        (parameter_list
+          (parameter
+            (type
+              (builtin_type_sequence
+                (builtin_type)))))
+        (operator)
+        (type
+          (builtin_type_sequence
+            (builtin_type)))))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))))
+
+==================
+trailing name after anonymous fn rejected
+:error
+==================
+void run() {
+    fn(int, int) -> int& f = add;
+}
+
+---
+
+

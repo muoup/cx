@@ -1,5 +1,3 @@
-/* CX-STDOUT: */
-
 int main(void) {
     int count = 0;
 loop:

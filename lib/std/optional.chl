@@ -1,0 +1,75 @@
+import std::panic as std;
+
+extern "C":
+
+#include <stdlib.h>
+
+public:
+
+comptime type opt(comptime type T) =>
+    enum union : @copy_traits(T) {
+        none :: void,
+        some :: T
+    };
+
+comptime ^opt(T) opt::if_then(type T = _, ^bool condition, ^T value) 
+    => emit .{
+        if (condition) yield _::some(value);
+        yield _::none();
+    }; 
+    
+bool opt::is_some(comptime type T = _, opt(T)& this) {
+    return this is some(_);
+}
+
+bool opt::is_none(comptime type T = _, opt(T)& this) {
+    return this is none();
+}
+
+comptime ^opt(U) opt::map(comptime type T = _, comptime type U = _, ^opt(T) this, fn func(^T) -> ^U)
+    => emit match (this) {
+        some(auto value) => _::some(func(emit move value)),
+        none() => _::none(),
+    };
+
+//comptime ^opt(U) opt::and_then(comptime type T = _, comptime type U = _, ^opt(T) this, fn func(^T) -> opt(^U))
+//    => emit match (this) {
+//        some(auto value) => func(emit move value),
+//        non() => _::none(),
+//    };
+
+T opt::unwrap(comptime type T = _, opt(T) this) {
+    match (move this) {
+        some(auto val) => return move val,
+        none() => {
+            std::panic("Called `opt::unwrap()` on a `None` value");
+        }
+    }
+}
+
+comptime ^T opt::unwrap_or(type T = _, ^opt(T) self, ^T default_value) =>
+    emit match (self) {
+        some(auto val) => move val,
+        none() => default_value,
+    };
+
+comptime ^T opt::expect(type T = _, ^opt(T) self, ^_str& error) =>
+    emit match (self) {
+        some(auto value) => move value,
+        none() => std::panic(error)
+    };
+    
+comptime ^T opt::try(type T = _, ^opt(T) self) =>
+    emit match (self) {
+        some(auto value) => move value,
+        none() => return _::none(),
+    };
+
+comptime ^T opt::try_or(type T = _, ^opt(T) self, ^void on_none) =>
+    emit match (self) {
+        some(auto value) => move value,
+        none() => {
+            on_none;
+            return _::none();
+        }
+    };

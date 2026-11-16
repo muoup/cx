@@ -1,0 +1,10 @@
+[package]
+name = "chl-util"
+version = "0.0.0"
+edition = "2021"
+autotests = false
+
+[dependencies]
+rustc-hash = { workspace = true }
+index_vec = { workspace = true }
+speedy = { version = "0.8.7" }

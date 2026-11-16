@@ -1,0 +1,3 @@
+struct S { int x; };
+comptime struct S bad() { return 42; }
+int value = bad();

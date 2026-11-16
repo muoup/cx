@@ -1,8 +1,0 @@
-/* CX-STDOUT: public extern */
-
-import _public_extern_c as ffi;
-
-i32 main() {
-    ffi::puts("public extern");
-    return 0;
-}

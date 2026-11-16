@@ -5,13 +5,13 @@ description: "Variant tests, and exhaustive match statements and expressions."
 
 # Pattern Matching
 
-CX provides `is` for testing one tagged-union variant and `match` for branching over integer values or tagged-union variants.
+Chloro provides `is` for testing one tagged-union variant and `match` for branching over integer values or tagged-union variants.
 
 ## Patterns
 
 Patterns are value skeletons that may be applied to a given value of the appropriate type to determine if it matches the given 'pattern'. They take on the following shapes:
 
-```cx
+```chl
 T::variant(val)     // A pattern to match against a given variant of a tagged union, 
                     // and a named capture over its inner value
 1                   // A single number to match an integer against
@@ -26,7 +26,7 @@ The simplest method to determine whether a tagged union contains a given variant
 
 The binding is created regardless of whether the comparison succeeds, but using it after the comparison evaluates to false is undefined behavior. The idiomatic way to keep the binding valid is to use the `is` operator as an `if` condition:
 
-```cx
+```chl
 float get_rectangle_area(shape& s) {
     if (s is shape::rectangle(r)) {
         return r.width * r.height;
@@ -40,7 +40,7 @@ float get_rectangle_area(shape& s) {
 
 Match statements are an alternative to C's `switch` statements that forbid fall-through. Each arm contains a pattern on the left and a single statement or scoped block on the right. Integer matches use integer-literal patterns, while tagged-union matches use variant patterns with an optional payload binding. A bare name is a catch-all pattern that binds the whole matched value within its arm; use `_` when the binding is intentionally unused. Bindings borrow an existing value or own an owned match subject, including one passed with `move`. Discarding a binding does not waive ownership or `@nodrop` requirements.
 
-```cx
+```chl
 void print_number(int i) {
     match (i) {
         1 => printf("i = 1\n");
@@ -55,12 +55,12 @@ void print_number(int i) {
 
 Tagged-union patterns name the variant and may bind its payload inside the corresponding arm. Every match must be exhaustive. A tagged-union match must list every variant or end with a catch-all binding; an integer match must end with a catch-all binding. Arms after a catch-all or complete variant coverage are unreachable and rejected, as are duplicate literal or variant patterns. Only top-level variants and payload bindings are supported.
 
-```cx
+```chl
 float get_area(shape& s) {
     match (s) {
-        shape::circle(radius) => return radius * radius * 3.14;
-        shape::rectangle(r) => return r.width * r.height;
-        shape::point() => return 0;
+        circle(f64 radius) => return radius * radius * 3.14;
+        rectangle(auto r) => return r.width * r.height;
+        point() => return 0;
     }
 }
 ```
@@ -69,7 +69,7 @@ float get_area(shape& s) {
 
 A `match` can produce a value. `yield` supplies that value from an arm and exits the match expression, including from inside a nested block:
 
-```cx
+```chl
 int value = match (maybe) {
     MaybeInt::some(inner) => {
         if (use_inner) yield inner;

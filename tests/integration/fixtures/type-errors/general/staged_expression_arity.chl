@@ -1,0 +1,12 @@
+comptime ^void invoke(fn proc(^int&, ^int&) -> ^void) {
+    return emit .{};
+}
+
+void consume(int& value) {
+    value += 1;
+}
+
+int main() {
+    invoke(|auto value| => consume(value));
+    return 0;
+}

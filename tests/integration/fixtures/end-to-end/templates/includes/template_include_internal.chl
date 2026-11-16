@@ -1,0 +1,3 @@
+public:
+
+comptime type TemplateType(comptime type T) => T;

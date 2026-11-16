@@ -1,0 +1,22 @@
+struct Resource : @nodrop {
+    int data;
+};
+
+enum union MaybeResource : @nodrop {
+    none :: void,
+    some :: Resource
+};
+
+int peek(MaybeResource& value) {
+    if (value is some(auto resource)) {
+        return resource.data;
+    }
+    return 0;
+}
+
+int main() {
+    MaybeResource value = MaybeResource::none();
+    int data = peek(value);
+    @leak(value);
+    return data;
+}

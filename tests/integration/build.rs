@@ -28,7 +28,7 @@ fn main() {
         let root_path = fixture_dir.join(root);
         println!("cargo:rerun-if-changed={}", root_path.display());
         if root_path.exists() {
-            write_module(&mut output, &sanitize_ident(root), &root_path, kind, 0);
+            write_module(&mut output, &sanitize_ident(root), &root_path, kind, 0, false);
         }
     }
 
@@ -42,6 +42,7 @@ fn write_module(
     current: &Path,
     kind: TestKind,
     depth: usize,
+    llvm_only: bool,
 ) {
     let indent = "    ".repeat(depth);
     output.push_str(&format!(
@@ -64,18 +65,26 @@ fn write_module(
         }
 
         if path.is_dir() {
-            write_module(output, &sanitize_ident(&file_name), &path, kind, depth + 1);
+            let gated = matches!(kind, TestKind::EndToEnd) && file_name == "llvm-only";
+            if gated {
+                output.push_str(&format!("{indent}    #[cfg(feature = \"backend-llvm\")]\n"));
+            }
+            let llvm_only = llvm_only || gated;
+            write_module(output, &sanitize_ident(&file_name), &path, kind, depth + 1, llvm_only);
             continue;
         }
 
         let extension = path.extension().and_then(|ext| ext.to_str());
-        if !matches!(extension, Some("cx") | Some("c")) {
+        if !matches!(extension, Some("chl") | Some("c")) {
             continue;
         }
 
         println!("cargo:rerun-if-changed={}", path.display());
 
-        if matches!(kind, TestKind::EndToEnd) && !has_stdout_expectation(&path) {
+        if matches!(kind, TestKind::EndToEnd)
+            && extension == Some("chl")
+            && !has_stdout_expectation(&path)
+        {
             continue;
         }
 
@@ -90,7 +99,7 @@ fn write_module(
 
         match kind {
             TestKind::EndToEnd => output.push_str(&format!(
-                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_end_to_end_test(std::path::Path::new({path_literal})); }}\n"
+                "{indent}#[test]\n{indent}fn r#{test_name}() {{ crate::run_end_to_end_test(std::path::Path::new({path_literal}), {llvm_only}); }}\n"
             )),
             TestKind::CompileOnly => {
                 output.push_str(&format!(
@@ -113,12 +122,12 @@ fn write_module(
 }
 
 fn has_stdout_expectation(path: &Path) -> bool {
-    if path.with_extension("cx-output").exists() {
+    if path.with_extension("chl-output").exists() {
         return true;
     }
 
     fs::read_to_string(path)
-        .map(|source| source.contains("CX-STDOUT:"))
+        .map(|source| source.contains("CHL-STDOUT:"))
         .unwrap_or(false)
 }
 

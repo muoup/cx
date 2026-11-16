@@ -1,0 +1,14 @@
+comptime ^void invoke(fn proc(^int&) -> ^int) {
+    return emit .{
+        int value = 1;
+        proc(value);
+    };
+}
+
+int main() {
+    invoke(|auto value| {
+        value += 1;
+        yield;
+    });
+    return 0;
+}

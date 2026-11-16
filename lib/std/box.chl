@@ -1,0 +1,56 @@
+extern "C":
+#include <stdlib.h>
+
+public:
+
+comptime type box(comptime type T) safe =>
+    struct : @nodrop {
+        T* ptr;
+    };
+
+box(T) box::new(comptime type T = _, T value) safe {
+    @unsafe {
+        box(T) b = (box(T)) {
+            .ptr = malloc(sizeof(T))
+        };
+        *(b.ptr) = move value;
+        return (move b);
+    };
+}
+
+const T& box::deref(comptime type T = _, const box(T)& this) {
+    return *(this.ptr);
+}
+
+T& box::deref_mut(comptime type T = _, box(T)& this) {
+    return *(this.ptr);
+}
+
+// TODO: Bound this type as not @pinned when that feature is added
+T box::unwrap(comptime type T = _, box(T) this) safe {
+    T inner = @adopt(*this.ptr);
+    @leak(this);
+    return move inner;
+}
+
+T* box::leak(comptime type T = _, box(T) this) {
+    T* ptr = this.ptr;
+    @leak(this);
+    return ptr;
+}
+
+void box::drop_with(comptime type T = _, box(T) this, fn* drop_value(T) -> void) {
+    @unsafe {
+        T value = @adopt(*this.ptr);
+        drop_value(move value);
+    };
+
+    move this |> box::drop();
+}
+
+void box::drop(comptime type T = _, box(T) this) safe {
+    @unsafe {
+        free(this.ptr);
+        @leak(this);
+    };
+}

@@ -1,0 +1,10 @@
+[package]
+name = "chl-c-header"
+version = "0.0.0"
+edition = "2024"
+autotests = false
+
+[dependencies]
+chl-mir = { path = "../chl-mir" }
+chl-pipeline-data = { path = "../chl-pipeline-data" }
+chl-util = { path = "../chl-util" }

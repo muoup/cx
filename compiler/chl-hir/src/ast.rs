@@ -1,0 +1,69 @@
+
+use chl_namespace::module::{ModulePath, NamespacePath};
+pub use chl_preparse_data::Import as HIRImport;
+use chl_preparse_data::NamespaceAliases;
+use chl_tokens::TokenRange;
+use chl_util::{identifier::CHLIdent};
+
+use crate::ast::{
+    function::{HIRFunctionBody, HIRFunctionPrototype},
+    global_var::HIRGlobalVariable,
+    modifiers::VisibilityMode,
+    types::{HIRTagKind, HIRType},
+};
+
+pub mod expression;
+pub mod function;
+pub mod global_var;
+pub mod modifiers;
+pub mod pattern;
+pub mod types;
+
+#[derive(Debug)]
+pub struct HIR {
+    pub module_path: ModulePath,
+    pub imports: Vec<HIRImport>,
+    pub definition_stmts: Vec<HIRDefinition>,
+    pub namespace_aliases: NamespaceAliases,
+}
+
+#[derive(Debug)]
+pub struct HIRDefinition {
+    pub ordered: bool,
+    pub namespace: NamespacePath,
+    pub stmt: HIRStmt,
+}
+
+#[derive(Debug)]
+pub enum HIRStmt {
+    TypeDefinition {
+        name: Option<CHLIdent>,
+        visibility: VisibilityMode,
+        symbol_naming: modifiers::HIRSymbolNameScheme,
+        ty: HIRType,
+        tag: Option<HIRTagKind>,
+        range: TokenRange,
+    },
+
+    FunctionDefinition {
+        prototype: HIRFunctionPrototype,
+        visibility: VisibilityMode,
+        body: Option<HIRFunctionBody>,
+    },
+
+    GlobalVariableDefinition {
+        visibility: VisibilityMode,
+        variable: HIRGlobalVariable,
+    },
+}
+
+impl HIR {
+    pub fn new(module_path: ModulePath, imports: Vec<HIRImport>) -> Self {
+        Self {
+            module_path,
+            imports,
+            definition_stmts: Vec::new(),
+            namespace_aliases: NamespaceAliases::default(),
+        }
+    }
+}

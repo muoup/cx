@@ -1,0 +1,31 @@
+use crate::token::{IntrinsicType, KeywordType, Token, TokenKind};
+use std::fmt::{Display, Formatter};
+
+impl Display for Token {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl Display for TokenKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenKind::Identifier(name) => write!(f, "{name}"),
+            TokenKind::CompilerIdentifier(name) => write!(f, "@{name}"),
+            TokenKind::Intrinsic(intrin) => write!(f, "{intrin}"),
+            TokenKind::Attribute(attribute) => {
+                write!(f, "__attribute__(({}))", attribute.as_str())
+            }
+            TokenKind::Keyword(KeywordType::Hole) => write!(f, "_"),
+            TokenKind::Keyword(keyword) => write!(f, "{}", format!("{keyword:?}").to_lowercase()),
+
+            _ => write!(f, "{self:?}"),
+        }
+    }
+}
+
+impl Display for IntrinsicType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}

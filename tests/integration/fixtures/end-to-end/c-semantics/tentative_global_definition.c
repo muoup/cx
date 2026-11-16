@@ -1,5 +1,3 @@
-/* CX-STDOUT: 3 */
-
 #include <stdio.h>
 
 int value;

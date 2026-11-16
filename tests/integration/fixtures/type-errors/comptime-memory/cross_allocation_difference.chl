@@ -1,0 +1,9 @@
+comptime int distance() {
+    int first = 1;
+    int second = 2;
+    return &second - &first;
+}
+
+comptime int result = distance();
+
+int main() { return result; }

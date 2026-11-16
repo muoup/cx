@@ -1,0 +1,26 @@
+/* CHL-STDOUT: Incremented value: 1 */
+/* CHL-STDOUT-NEXT: Incremented value: 2 */
+
+extern "C":
+
+int printf(char* fmt, ...);
+
+private:
+
+int x;
+
+T increment(comptime type T) {
+    x++;
+    return x;
+}
+
+void procedure() {
+    int result = increment(int);
+    printf("Incremented value: %d\n", result);
+}
+
+int main() {
+    procedure();
+    procedure();
+    return 0;
+}

@@ -1,0 +1,3 @@
+void bad(int* pointer) safe {
+    defer .{ *pointer = 1; };
+}

@@ -1,0 +1,11 @@
+/* CHL-STDOUT: result: 8.14 */
+
+import std::io as std;
+
+void test(comptime type T, comptime type U, T a, U b) {
+    std::printf("result: %.2f\n", (U) a + b);
+}
+
+int main() {
+    test(int, float, 5, 3.14);
+}

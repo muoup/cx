@@ -1,0 +1,7 @@
+int positive(int value) safe where pre: (value > 0) {
+    return value;
+}
+
+int caller() safe {
+    return positive(0);
+}

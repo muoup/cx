@@ -1,0 +1,5 @@
+int offset(comptime int amount, int value) => value + amount;
+int main() {
+    int amount = 3;
+    return offset(amount, 1);
+}

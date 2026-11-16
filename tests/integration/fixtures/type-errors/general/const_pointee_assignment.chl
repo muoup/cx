@@ -1,0 +1,1 @@
+int main() { int y = 1; const int* p = &y; @unsafe(*p = 2); return y; }

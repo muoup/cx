@@ -1,0 +1,2 @@
+comptime void bad() => 123;
+int main() { bad(); return 0; }

@@ -1,0 +1,8 @@
+struct Data : @nocopy {
+    int value;
+};
+
+int main() {
+    Data data;
+    return data.value;
+}

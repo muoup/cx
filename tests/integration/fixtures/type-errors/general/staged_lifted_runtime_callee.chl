@@ -1,0 +1,5 @@
+comptime ^void invoke(fn callback(^int) -> ^void) => callback(emit 1);
+void indirect(fn& callback(int) -> void) {
+    invoke(callback);
+}
+int main() { return 0; }

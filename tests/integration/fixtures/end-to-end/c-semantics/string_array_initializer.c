@@ -1,5 +1,3 @@
-/* CX-STDOUT: cx */
-
 #include <stdio.h>
 
 struct Banner {

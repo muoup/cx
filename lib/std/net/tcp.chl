@@ -1,0 +1,103 @@
+import std::{span, optional} as std;
+import std::net::{socket, address} as std::net;
+
+extern "C":
+
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+public:
+
+struct tcp_server : @nodrop {
+    std::net::socket socket;
+};
+
+struct tcp_connection : @nodrop {
+    std::net::socket socket;
+    std::net::endpoint remote;
+};
+
+std::opt(tcp_server) tcp_server::new() {
+    auto server_socket = std::net::socket::open()
+        |> std::opt::try()!;
+
+    int enabled = 1;
+    server_socket 
+        |> std::net::socket::set_opt(SOL_SOCKET, SO_REUSEADDR, &enabled, (u32) sizeof(int));
+
+    return _::some((tcp_server) { .socket = move server_socket });
+}
+
+std::opt(tcp_connection) tcp_connection::connect_to(std::net::endpoint address) {
+    auto client_socket = std::net::socket::open()
+        |> std::opt::try()!;
+
+    client_socket
+        |> std::net::socket::connect(move address)
+        |> std::opt::try_or(emit .{ move client_socket |> std::net::socket::close(); })!;
+
+    return _::some((tcp_connection) { .socket = move client_socket });
+}
+
+void tcp_server::drop(tcp_server server) {
+    @unpack(move server) {
+        socket: socket
+    };
+
+    move socket |> std::net::socket::close();
+}
+
+void tcp_connection::drop(tcp_connection connection) {
+    @unpack(move connection) {
+        socket: socket
+    };
+    
+    move socket |> std::net::socket::close();
+}
+
+std::opt(void) tcp_server::bind(tcp_server& server, std::net::endpoint address) {
+    server.socket
+        |> std::net::socket::bind(move address)
+        |> std::opt::try()!;
+
+    server.socket
+        |> std::net::socket::listen(10)
+        |> std::opt::try()!;
+
+    return _::some();
+}
+
+std::opt(tcp_connection) tcp_server::accept(tcp_server& server)
+    => server.socket
+        |> std::net::socket::accept()
+        |> std::opt::map(|auto details| {
+            @unpack(details) {
+                socket: socket,
+                remote: remote
+            };
+
+            yield (tcp_connection) { .socket = move socket, .remote = move remote };
+        });
+
+std::opt(void) tcp_server::set_blocking(tcp_server& server, bool blocking) {
+    server.socket
+        |> std::net::socket::set_blocking(blocking);
+
+    return _::some();
+}
+
+std::opt(void) tcp_connection::send(tcp_connection& connection, std::span(const u8) message) {
+    connection.socket
+        |> std::net::socket::write(message |> std::span::as_const())
+        |> std::opt::try()!;
+
+    return _::some();
+}
+
+std::opt(std::span(u8)) tcp_connection::read(tcp_connection& connection, std::span(u8) buffer)
+    => connection.socket
+        |> std::net::socket::read(buffer);
+
+std::net::endpoint& tcp_connection::remote(tcp_connection& connection) => connection.remote;

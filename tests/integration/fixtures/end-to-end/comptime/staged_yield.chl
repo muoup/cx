@@ -1,0 +1,14 @@
+/* CHL-STDOUT: yielded 42 */
+
+#include <stdio.h>
+
+import std::optional as std;
+
+int main() {
+    std::opt(int) value = std::opt(int)::none();
+    int result = move value |> std::opt::unwrap_or(emit .{
+        yield 42;
+    });
+    printf("yielded %d\n", result);
+    return 0;
+}

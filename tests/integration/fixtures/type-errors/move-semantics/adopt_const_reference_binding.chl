@@ -1,0 +1,6 @@
+struct Pair { int value; };
+int main() {
+    const Pair source = { 1 };
+    Pair& borrowed = @unsafe(@adopt(source));
+    return borrowed.value;
+}

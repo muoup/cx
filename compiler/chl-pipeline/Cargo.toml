@@ -1,0 +1,33 @@
+[package]
+name = "chl-pipeline"
+version = "0.0.0"
+edition = "2024"
+
+[features]
+default = []
+ignore-system-headers = ["chl-lexer/ignore-system-headers"]
+backend-llvm = ["dep:chl-backend-llvm"]
+
+[dependencies]
+rustc-hash = { workspace = true }
+speedy = { workspace = true }
+fs2 = { workspace = true }
+
+chl-lexer = { path = "../chl-lexer", default-features = false }
+chl-parsing = { path = "../chl-parsing" }
+chl-mir = { path = "../chl-mir" }
+chl-mir-analysis = { path = "../chl-mir-analysis" }
+chl-mir-lowering = { path = "../chl-mir-lowering" }
+chl-backend-llvm = { path = "../chl-backend-llvm", optional = true }
+chl-backend-cranelift = { path = "../chl-backend-cranelift" }
+chl-log = { path = "../chl-log" }
+chl-pipeline-data = { path = "../chl-pipeline-data" }
+chl-tokens = { path = "../chl-tokens" }
+chl-preparse-data = { path = "../chl-preparse-data" }
+chl-hir = { path = "../chl-hir" }
+chl-hir-lowering = { path = "../chl-hir-lowering" }
+chl-hmir-lowering = { path = "../chl-hmir-lowering" }
+chl-lmir = { path = "../chl-lmir" }
+chl-c-header = { path = "../chl-c-header" }
+chl-util = { path = "../chl-util" }
+chl-namespace = { path = "../chl-namespace" }

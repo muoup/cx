@@ -1,0 +1,9 @@
+comptime int mutate() {
+    char* text = "ab";
+    text[0] = 'x';
+    return text[0];
+}
+
+comptime int result = mutate();
+
+int main() { return result; }

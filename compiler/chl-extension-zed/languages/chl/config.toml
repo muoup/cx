@@ -1,0 +1,4 @@
+name = "Chloro"
+grammar = "chl"
+path_suffixes = ["chl"]
+line_comments = ["//"]

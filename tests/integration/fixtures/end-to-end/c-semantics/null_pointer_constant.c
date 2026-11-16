@@ -1,5 +1,3 @@
-/* CX-STDOUT: */
-
 int *identity(int *value) {
     return value;
 }

@@ -1,0 +1,27 @@
+/* CHL-STDOUT: both some 42 */
+/* CHL-STDOUT-NEXT: left none */
+/* CHL-STDOUT-NEXT: right none */
+
+#include <stdio.h>
+
+import std::optional as std;
+
+std::opt(int) add_optional_pair(std::opt(int) lhs, std::opt(int) rhs) {
+    int lhs_value = lhs |> std::opt::try()!;
+    int rhs_value = rhs |> std::opt::try()!;
+
+    return std::opt(int)::some(lhs_value + rhs_value);
+}
+
+void print_result(const char* label, std::opt(int) value) {
+    match (value) {
+        some(auto inner) => printf("%s some %d\n", label, inner),
+        none() => printf("%s none\n", label),
+    }
+}
+
+int main() {
+    print_result("both", add_optional_pair(std::opt(int)::some(20), std::opt(int)::some(22)));
+    print_result("left", add_optional_pair(std::opt(int)::none(), std::opt(int)::some(22)));
+    print_result("right", add_optional_pair(std::opt(int)::some(20), std::opt(int)::none()));
+}

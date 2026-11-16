@@ -1,0 +1,17 @@
+/* CHL-STDOUT: shared active 8 */
+/* CHL-STDOUT-NEXT: PANIC: Cannot mutably borrow cell while it is currently borrowed */
+
+import std::cell::rcell as std;
+import std::io as std;
+
+int main() {
+    std::rcell(int) cell = std::rcell::new(8);
+    std::rcell::borrow_const(emit cell)! <| |auto shared| then
+
+    std::printf("shared active %d\n", shared);
+    std::rcell::borrow(emit cell) <| |auto value| {
+        std::printf("unreachable mutable %d\n", value);
+    };
+    std::printf("unreachable end\n");
+    return 0;
+}

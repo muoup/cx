@@ -1,6 +1,3 @@
-/* CX-STDOUT: before */
-/* CX-STDOUT-NEXT: after */
-
 #include <stdio.h>
 
 int main(void) {

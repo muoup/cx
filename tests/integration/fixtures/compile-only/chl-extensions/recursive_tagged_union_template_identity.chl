@@ -1,0 +1,22 @@
+comptime type wrapper(comptime type T) =>
+    struct {
+        T* value;
+    };
+
+enum union node {
+    link :: wrapper(node),
+    end :: void
+};
+
+void consume(wrapper(node) value) {}
+
+void inspect(node value) {
+    match (value) {
+        link(auto link) => consume(link),
+        end() => {}
+    }
+}
+
+int main() {
+    return 0;
+}

@@ -1,0 +1,3 @@
+float* bad(int* pointer) safe {
+    return (float*) pointer;
+}

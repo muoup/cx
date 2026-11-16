@@ -1,7 +1,7 @@
-/* CX-STDOUT: input bytes=6291456 adler32=caff04a8 crc32=5e52e1b7 */
-/* CX-STDOUT-NEXT: level=1 packed=2269486 crc32=2ebf68fb restored=yes */
-/* CX-STDOUT-NEXT: level=6 packed=1885517 crc32=6f983f08 restored=yes */
-/* CX-STDOUT-NEXT: level=9 packed=1840374 crc32=aaa621e9 restored=yes */
+/* CHL-STDOUT: input bytes=6291456 adler32=caff04a8 crc32=5e52e1b7 */
+/* CHL-STDOUT-NEXT: level=1 packed=2269486 crc32=2ebf68fb restored=yes */
+/* CHL-STDOUT-NEXT: level=6 packed=1885517 crc32=6f983f08 restored=yes */
+/* CHL-STDOUT-NEXT: level=9 packed=1840374 crc32=aaa621e9 restored=yes */
 
 /*
  * Compresses a deterministic buffer of word-like data at several levels, restores it and

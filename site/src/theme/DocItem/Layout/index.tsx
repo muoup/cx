@@ -30,10 +30,10 @@ export default function LayoutWrapper(props: Props): ReactNode {
         return layout;
     }
 
-    const style: CSSProperties = {counterReset: `cx-chapter ${chapter} cx-sec cx-toc`};
+    const style: CSSProperties = {counterReset: `chl-chapter ${chapter} chl-sec chl-toc`};
 
     return (
-        <div className="cx-chapter" style={style}>
+        <div className="chl-chapter" style={style}>
             {layout}
         </div>
     );

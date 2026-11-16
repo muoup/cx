@@ -1,0 +1,6 @@
+void touch(int value) where post(result): (value > 0) {}
+
+int main() {
+    touch(1);
+    return 0;
+}

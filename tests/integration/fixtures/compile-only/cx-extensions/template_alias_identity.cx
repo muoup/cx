@@ -1,9 +1,0 @@
-struct Box<T> {
-    T value;
-};
-
-typedef<T> Box<T> Alias;
-
-Box<int> unwrap_alias(Alias<int> value) {
-    return value;
-}

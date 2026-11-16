@@ -1,0 +1,4 @@
+struct R : @nocopy { int data; };
+void take(R r) { @unsafe(@leak(r)); }
+void f(const R& r) { take(move r); }
+int main() { return 0; }

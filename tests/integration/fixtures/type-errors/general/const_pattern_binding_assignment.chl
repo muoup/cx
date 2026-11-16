@@ -1,0 +1,9 @@
+enum union Choice { none :: void, some :: int };
+int main() {
+    Choice c = Choice::some(1);
+    match (c) {
+        some(const auto& v) => { v = 2; }
+        none() => {}
+    }
+    return 0;
+}

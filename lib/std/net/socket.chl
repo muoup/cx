@@ -1,0 +1,97 @@
+import std::{io, span, optional} as std;
+
+import std::platform::posix as posix;
+import std::net::address as std::net;
+
+public:
+
+struct socket : @nodrop {
+    int fd;
+};
+
+std::opt(socket) socket::open() {
+    i32 fd = posix::socket(posix::ENUM_AF_INET, posix::ENUM_SOCK_STREAM, 0);
+    
+    return std::opt::if_then(emit fd >= 0, emit (socket) { .fd = fd });
+}
+
+void socket::close(socket this) {
+    posix::close(this.fd);
+    @leak(this);
+}
+
+std::opt(std::span(u8)) socket::read(socket& this, std::span(u8) buffer) {
+    i64 received = posix::read(this.fd, buffer.data, buffer.length);
+
+    return std::opt::if_then(emit received >= 0, emit std::span::new(buffer.data, received));
+}
+
+std::opt(u64) socket::write(socket& this, const std::span(const u8) buffer) {
+    i64 sent = posix::write(this.fd, buffer.data, buffer.length);
+
+    return std::opt::if_then(emit sent >= 0, emit (u64) sent);
+}
+
+std::opt(void) socket::bind(socket& this, std::net::endpoint addr) {
+    if (posix::bind(this.fd, (posix::sockaddr*) &addr.address, addr.length) < 0) {
+        return _::none();
+    }
+
+    return _::some();
+}
+
+std::opt(void) socket::listen(socket& this, int backlog) {
+    if (posix::listen(this.fd, backlog) < 0) {
+        return _::none();
+    }
+
+    return _::some();
+}
+
+std::opt(void) socket::connect(socket& this, std::net::endpoint address) {
+    if (posix::connect(this.fd, (posix::sockaddr*) &address.address, sizeof(address.address)) < 0) {
+        return _::none();
+    }
+
+    return _::some();
+}
+
+struct accept_details : @nodrop {
+    socket socket;
+    std::net::endpoint remote;
+};
+
+std::opt(accept_details) socket::accept(socket& this) {
+    std::net::endpoint remote;
+    remote.length = (u32) sizeof(posix::sockaddr_in);
+
+    i32 fd = posix::accept(this.fd, (posix::sockaddr*) &remote.address, &remote.length);
+
+    if (fd < 0) {
+        return _::none();
+    }
+
+    return _::some((accept_details) { .socket = (socket) { .fd = fd }, .remote = remote });
+}
+
+std::opt(void) socket::set_opt(socket& this, int level, int option_name, const void* option_value, usize option_len) {
+    int result = posix::setsockopt(this.fd, level, option_name, option_value, option_len);
+
+    if (result < 0) return _::none();
+    return _::some();
+}
+
+std::opt(void) socket::set_blocking(socket& this, bool is_blocking) {
+    int flags = posix::fcntl(this.fd, posix::ENUM_F_GETFL, 0);
+    
+    if (flags == -1) return _::none();
+
+    if (is_blocking) {
+        flags &= ~posix::ENUM_O_NONBLOCK;
+    } else {
+        flags |= posix::ENUM_O_NONBLOCK;
+    }
+
+    posix::fcntl(this.fd, posix::ENUM_F_SETFL, flags);
+    return _::some();
+}

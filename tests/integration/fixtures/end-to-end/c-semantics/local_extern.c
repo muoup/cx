@@ -1,5 +1,3 @@
-/* CX-STDOUT: */
-
 void declaration_only(void) {
 }
 

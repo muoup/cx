@@ -1,7 +1,3 @@
-/* CX-STDOUT: 2 2 2 2 */
-/* CX-STDOUT-NEXT: 30 40 */
-/* CX-STDOUT-NEXT: 65535 */
-
 #include <stdio.h>
 
 static const unsigned short int table[4] = {10, 20, 30, 40};

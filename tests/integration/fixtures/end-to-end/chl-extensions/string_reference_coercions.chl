@@ -1,0 +1,59 @@
+#include <stdio.h>
+
+struct Text {
+    const u8* data;
+};
+
+const _str& view(const Text& text) => (const _str&) text.data;
+const char* bytes(const _str& text) => text;
+char* mutable_bytes(_str& text) => text;
+
+comptime type SizedText = @type.type_of("hello");
+comptime bool distinct_lengths = !@type.equal(@type.type_of("hi"), SizedText);
+comptime bool pointer_type = @type.equal(@type.type_of((const char*) "hello"), const char*);
+auto global_text = "hello";
+comptime int copy_at_comptime() {
+    auto owned = @copy("hello");
+    char copy[_] = owned;
+    return copy[4];
+}
+comptime int checked_copy = copy_at_comptime();
+comptime type SizedValue = @type.reference_inner(SizedText);
+comptime SizedValue frozen_copy = @copy("hello");
+
+void copy_text(SizedText text) {
+    char exact[5] = text;
+    char padded[8] = text;
+    printf("%c %d %d %d\n", exact[4], padded[5], padded[7], (int)sizeof(text));
+}
+
+int main() {
+    copy_text(global_text);
+    auto embedded = "a\0b";
+    char embedded_copy[_] = embedded;
+    if (sizeof(embedded_copy) != 4 || embedded_copy[1] != 0 || embedded_copy[2] != 'b') return 2;
+    if (!distinct_lengths || !pointer_type || checked_copy != 'o') return 1;
+    char frozen_chars[_] = frozen_copy;
+    if (frozen_chars[4] != 'o') return 5;
+    const _str& erased_owned = @copy("hello");
+    if (bytes(erased_owned)[4] != 'o' || bytes(@copy("hello"))[4] != 'o') return 7;
+    char direct_owned[_] = @copy("hello");
+    if (direct_owned[4] != 'o') return 4;
+    auto owned = @copy("hello");
+    char owned_copy[_] = owned;
+    if (owned_copy[4] != 'o') return 3;
+    auto local_text = "hello";
+    char local_copy[_] = local_text;
+    char global_copy[_] = global_text;
+    local_copy[0] = 'j';
+    printf("%s %s %s %d %d\n", local_text, local_copy, global_copy, (int)sizeof(local_text), (int)sizeof((const char*) "hello"));
+    Text text = { (const u8*) "hello" };
+    const _str& borrowed = view(text);
+    const void* erased = borrowed;
+    char buffer[4] = { 'c', 'a', 't', 0 };
+    _str& mutable_view = (_str&) buffer;
+    mutable_bytes(mutable_view)[0] = 'b';
+    printf("%s %s %s %s %d\n", borrowed, bytes(borrowed), view(text),
+        mutable_view, erased == (const void*) bytes(borrowed));
+    return 0;
+}

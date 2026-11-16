@@ -1,0 +1,12 @@
+comptime type opt(comptime type T) => enum union { none :: void, some :: T };
+comptime ^opt(U) map(comptime type T = _, comptime type U = _, ^opt(T) self, fn func(T) -> U)
+    => emit match (move self) {
+        some(auto value) => yield _::some(func(move value)),
+        none() => yield _::none(),
+    };
+
+int main() {
+    opt(int) input = _::some(1);
+    opt(int) output = input |> map(|auto value| => value + 1);
+    return 0;
+}

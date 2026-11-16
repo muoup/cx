@@ -1,0 +1,23 @@
+/* CHL-STDOUT: twice 5 */
+/* CHL-STDOUT-NEXT: twice 6 */
+/* CHL-STDOUT-NEXT: kept 12 */
+/* CHL-STDOUT-NEXT: twice 7 */
+/* CHL-STDOUT-NEXT: plain 14 */
+/* CHL-STDOUT-NEXT: twice 8 */
+
+#include <stdio.h>
+
+int twice(int x) { printf("twice %d\n", x); return x * 2; }
+
+comptime ^void discard(fn f(^int) -> ^void) => f(emit 5);
+comptime ^int keep(fn f(^int) -> ^int) => f(emit 6);
+comptime ^int plain(fn f(int) -> ^int) => f(7);
+comptime ^void piped(fn f(^int) -> ^void) => emit .{ int y = 8; y |> f(); };
+
+int main() {
+    discard(twice);
+    printf("kept %d\n", keep(twice));
+    printf("plain %d\n", plain(twice));
+    piped(twice);
+    return 0;
+}

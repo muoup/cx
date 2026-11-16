@@ -1,0 +1,8 @@
+comptime ^T pass(comptime type T, ^T value) {
+    return emit value;
+}
+
+int main() {
+    int* p = pass(int*, 4.5);
+    return 0;
+}

@@ -1,5 +1,3 @@
-/* CX-STDOUT: The value of x is: 15 */
-
 #include <stdio.h>
 
 int main() {

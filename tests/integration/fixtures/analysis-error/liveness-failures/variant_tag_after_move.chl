@@ -1,0 +1,19 @@
+struct Token : @nocopy {
+    int id;
+};
+
+enum union Slot : @nocopy {
+    held :: Token,
+    vacant :: void
+};
+
+void consume(Slot slot) {
+    @leak(slot);
+}
+
+int main() {
+    Token token = { .id = 7 };
+    Slot slot = Slot::held(move token);
+    consume(move slot);
+    return slot is held(_);
+}

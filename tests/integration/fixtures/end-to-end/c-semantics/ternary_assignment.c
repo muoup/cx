@@ -1,5 +1,3 @@
-/* CX-STDOUT: 1 8 1 7 */
-
 #include <stdio.h>
 
 int main(void) {

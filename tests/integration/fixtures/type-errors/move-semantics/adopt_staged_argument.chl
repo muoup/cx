@@ -1,0 +1,9 @@
+#include <stdio.h>
+comptime ^int identity(^int value) => value;
+int main() {
+    int source = 1;
+    auto adopted = identity(emit @unsafe(@adopt(source)));
+    adopted = 9;
+    printf("%d\n", source);
+    return 0;
+}

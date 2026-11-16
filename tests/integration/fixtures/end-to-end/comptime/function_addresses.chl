@@ -1,0 +1,23 @@
+#include <stdio.h>
+
+typedef int (*Callback)(int);
+
+int add_one(int value) { return value + 1; }
+int add_two(int value) { return value + 2; }
+
+comptime int evaluate() {
+    Callback callback = &add_one;
+    Callback same = add_one;
+    Callback other = add_two;
+    return (*callback)(11) + (callback == same) * 100 + (callback != other) * 1000;
+}
+
+comptime int result = evaluate();
+comptime Callback saved = &add_one;
+Callback global_callback = &add_two;
+
+int main() {
+    printf("%d %d %d %d %d\n", result % 100, (result / 100) % 10,
+        (result / 1000) % 10, (*global_callback)(11), (*saved)(11));
+    return 0;
+}

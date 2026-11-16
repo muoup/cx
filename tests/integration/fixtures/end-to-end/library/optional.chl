@@ -1,0 +1,39 @@
+/* CHL-STDOUT: a is some: 1 */
+/* CHL-STDOUT-NEXT: b is some: 0 */
+/* CHL-STDOUT-NEXT: a unwrap_or 100: 42 */
+/* CHL-STDOUT-NEXT: b unwrap_or 100: 100 */
+/* CHL-STDOUT-NEXT: c is some: 1 */
+/* CHL-STDOUT-NEXT: d is some: 0 */
+/* CHL-STDOUT-NEXT: c unwrap: 43 */
+/* CHL-STDOUT-NEXT: PANIC: Called `opt::unwrap()` on a `None` value */
+
+import std::optional;
+
+#include <stdio.h>
+
+int add_one(i8 x) {
+    return x + 1;
+}
+
+int main() {
+    std::optional::opt(i8) a = std::optional::opt(i8)::some(42);
+    std::optional::opt(i8) b = std::optional::opt(i8)::none();
+
+    printf("a is some: %b\n", a |> std::optional::opt::is_some());
+    printf("b is some: %b\n", b |> std::optional::opt::is_some());
+
+    printf("a unwrap_or 100: %d\n", move a |> std::optional::opt::unwrap_or(.T = i8, 100));
+    printf("b unwrap_or 100: %d\n", move b |> std::optional::opt::unwrap_or(.T = i8, 100));
+
+    a = std::optional::opt(i8)::some(42);
+    b = std::optional::opt(i8)::none();
+
+    std::optional::opt(int) c = move a |> std::optional::opt::map(add_one);
+    std::optional::opt(int) d = move b |> std::optional::opt::map(add_one);
+
+    printf("c is some: %b\n", c |> std::optional::opt::is_some());
+    printf("d is some: %b\n", d |> std::optional::opt::is_some());
+
+    printf("c unwrap: %d\n", move c |> std::optional::opt::unwrap());
+    printf("d unwrap: %d\n", move d |> std::optional::opt::unwrap());
+}

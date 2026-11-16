@@ -1,0 +1,7 @@
+struct Value {
+    int field;
+};
+
+int bad(volatile struct Value value) safe where pre: (value.field == 1) {
+    return value.field;
+}

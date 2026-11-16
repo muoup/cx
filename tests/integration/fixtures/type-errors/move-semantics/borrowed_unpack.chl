@@ -1,0 +1,25 @@
+struct Pair {
+    int left;
+    int right;
+};
+
+enum union MaybePair {
+    none :: void,
+    some :: Pair
+};
+
+void inspect(MaybePair& value) {
+    match (value) {
+        some(auto& payload) => {
+            @unpack(move payload) {
+                left: left,
+                right: right
+            };
+        }
+        none() => {}
+    }
+}
+
+int main() {
+    return 0;
+}

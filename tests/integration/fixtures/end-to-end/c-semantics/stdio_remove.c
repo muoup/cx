@@ -1,7 +1,5 @@
-/* CX-STDOUT: */
-
 #include <stdio.h>
 
 int main(void) {
-    return remove("/dev/null/cx-parity-nonexistent") == 0 ? 1 : 0;
+    return remove("/dev/null/chl-parity-nonexistent") == 0 ? 1 : 0;
 }

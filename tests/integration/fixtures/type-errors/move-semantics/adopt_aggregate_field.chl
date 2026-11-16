@@ -1,0 +1,9 @@
+#include <stdlib.h>
+struct Resource : @nodrop { int data; };
+struct Holder { Resource& reference; };
+int main() {
+    Resource* ptr = malloc(sizeof(Resource));
+    *ptr = (Resource){ .data = 1 };
+    Holder holder = { .reference = @unsafe(@adopt(*ptr)) };
+    return holder.reference.data;
+}

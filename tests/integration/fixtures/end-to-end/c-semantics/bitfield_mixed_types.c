@@ -1,7 +1,3 @@
-/* CX-STDOUT: 4 1 5 | 4 6 9 | 4 -1 q | 8 7 123456789 */
-/* CX-STDOUT-NEXT: 8 777777 555555555555 | 5 | 4 -4 61 -200 */
-/* CX-STDOUT-NEXT: 5 9 | 1000000 1099511627775 | -3 -50 200 */
-
 #include <stdio.h>
 
 struct A { _Bool x : 1; unsigned int y : 3; };

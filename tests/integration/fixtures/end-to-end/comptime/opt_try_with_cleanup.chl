@@ -1,0 +1,64 @@
+/* CHL-STDOUT: close 7 */
+/* CHL-STDOUT-NEXT: close 7 */
+/* CHL-STDOUT-NEXT: none */
+/* CHL-STDOUT-NEXT: void some 3 */
+/* CHL-STDOUT-NEXT: void none */
+
+#include <stdio.h>
+
+import std::optional as std;
+
+struct resource : @nodrop {
+    int value;
+};
+
+void close(resource this) {
+    printf("close %d\n", this.value);
+    @leak(this);
+}
+
+std::opt(resource) maybe_resource(std::opt(int) probe) {
+    resource res = (resource) { .value = 7 };
+    int value = move probe |> std::opt::try_or(emit .{
+        move res |> close();
+    })!;
+
+    return move res |> std::opt(resource)::some();
+}
+
+std::opt(void) maybe_void(bool ok) {
+    if (ok) {
+        return _::some();
+    }
+
+    return _::none();
+}
+
+std::opt(int) void_then_value(bool ok) {
+    maybe_void(ok) |> std::opt::try_or(emit .{})!;
+    return std::opt(int)::some(3);
+}
+
+int main() {
+    std::opt(resource) some = maybe_resource(std::opt(int)::some(1));
+    match (move some) {
+        some(auto res) => { move res |> close(); }
+        none() => { printf("unexpected none\n"); }
+    }
+
+    std::opt(resource) none = maybe_resource(std::opt(int)::none());
+    match (move none) {
+        some(auto res) => { move res |> close(); }
+        none() => { printf("none\n"); }
+    }
+
+    match (void_then_value(1)) {
+        some(auto value) => printf("void some %d\n", value),
+        none() => printf("unexpected void none\n"),
+    }
+
+    match (void_then_value(0)) {
+        some(auto value) => printf("unexpected void some %d\n", value),
+        none() => printf("void none\n"),
+    }
+}

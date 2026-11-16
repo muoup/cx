@@ -1,7 +1,3 @@
-/* CX-STDOUT: alpha=1 digit=0 punct=0 */
-/* CX-STDOUT-NEXT: alpha=0 digit=1 punct=0 */
-/* CX-STDOUT-NEXT: alpha=0 digit=0 punct=1 */
-
 #include <ctype.h>
 #include <stdio.h>
 

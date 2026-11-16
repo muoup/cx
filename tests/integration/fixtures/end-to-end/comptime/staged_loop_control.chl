@@ -1,0 +1,66 @@
+/* CHL-STDOUT: continue 1 */
+/* CHL-STDOUT-NEXT: cleanup 20 */
+/* CHL-STDOUT-NEXT: cleanup 10 */
+/* CHL-STDOUT-NEXT: continue 2 */
+/* CHL-STDOUT-NEXT: cleanup 20 */
+/* CHL-STDOUT-NEXT: cleanup 10 */
+/* CHL-STDOUT-NEXT: continued */
+/* CHL-STDOUT-NEXT: break */
+/* CHL-STDOUT-NEXT: broken */
+/* CHL-STDOUT-NEXT: switch break */
+/* CHL-STDOUT-NEXT: switched */
+
+#include <stdio.h>
+
+import std::optional as std;
+
+void trace_cleanup(int value) {
+    printf("cleanup %d\n", value);
+}
+
+comptime ^void with_cleanup(^int& value, fn proc(^int&) -> ^void) {
+    return emit .{
+        defer trace_cleanup(20);
+        proc(value);
+    };
+}
+
+int main() {
+    int iteration = 0;
+    while (iteration < 2) {
+        iteration += 1;
+        defer trace_cleanup(10);
+        int value = iteration;
+        with_cleanup(emit value)! <| |auto captured| {
+            printf("continue %d\n", captured);
+            continue;
+        };
+        printf("unreachable continue\n");
+    }
+    printf("continued\n");
+
+    while (1) {
+        std::opt(int) value = std::opt(int)::none();
+        int result = move value |> std::opt::unwrap_or(emit .{
+            printf("break\n");
+            break;
+        })!;
+        printf("unreachable break %d\n", result);
+    }
+    printf("broken\n");
+
+    switch (1) {
+        case 1: {
+            std::opt(int) value = std::opt(int)::none();
+            move value |> std::opt::unwrap_or(emit .{
+                printf("switch break\n");
+                break;
+            })!;
+            printf("unreachable switch\n");
+        }
+        default:
+            printf("unreachable default\n");
+    }
+    printf("switched\n");
+    return 0;
+}

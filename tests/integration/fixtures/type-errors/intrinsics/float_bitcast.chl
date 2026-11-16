@@ -1,0 +1,4 @@
+int main() {
+    unsigned int bits = @internal.bitcast(1.0f, unsigned int);
+    return 0;
+}

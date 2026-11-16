@@ -1,5 +1,3 @@
-/* CX-STDOUT: -7 9 */
-
 #include <stdio.h>
 
 int main() {

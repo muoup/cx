@@ -1,0 +1,3 @@
+public extern "C":
+
+int puts(const char* text);

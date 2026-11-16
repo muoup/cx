@@ -1,0 +1,11 @@
+import std::optional as std;
+
+std::opt(int) increment(std::opt(int) value) {
+    int inner = value |> std::opt::try();
+    return std::opt(int)::some(inner + 1);
+}
+
+int main() {
+    increment(std::opt(int)::some(1));
+    return 0;
+}

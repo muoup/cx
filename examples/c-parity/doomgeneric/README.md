@@ -1,6 +1,6 @@
 # Doomgeneric C parity example
 
-This example builds the upstream Doomgeneric sources with cx in project mode. The unchanged upstream reference is kept in `upstream/`; `doomgeneric_raylib.c` is the example-owned raylib adapter that supplies the platform entry points and window loop.
+This example builds the upstream Doomgeneric sources with chl in project mode. The unchanged upstream reference is kept in `upstream/`; `doomgeneric_raylib.c` is the example-owned raylib adapter that supplies the platform entry points and window loop.
 
 Build the shared raylib artifact once from the examples directory, then build Doomgeneric from this directory:
 
@@ -8,7 +8,7 @@ Build the shared raylib artifact once from the examples directory, then build Do
 cd examples
 ./build-raylib.sh
 cd c-parity/doomgeneric
-cx build
+chl build
 ```
 
-The target uses per-binary `match` patterns to compile the same source set selected by the upstream raylib Makefile into one executable, then links the shared raylib artifact. Patterns beginning with `!` remove previously selected files, so the list stays readable in TOML without a second exclusion field. A binary can also combine `entry = "main.cx"` with `match` when a CX entry module needs to interoperate with matched C sources. The example is intentionally a C-parity exercise; unsupported compiler/backend features encountered while building it are tracked in the main project rather than patched into the upstream Doom sources.
+The target uses per-binary `match` patterns to compile the same source set selected by the upstream raylib Makefile into one executable, then links the shared raylib artifact. Patterns beginning with `!` remove previously selected files, so the list stays readable in TOML without a second exclusion field. A binary can also combine `entry = "main.chl"` with `match` when a Chloro entry module needs to interoperate with matched C sources. The example is intentionally a C-parity exercise; unsupported compiler/backend features encountered while building it are tracked in the main project rather than patched into the upstream Doom sources.

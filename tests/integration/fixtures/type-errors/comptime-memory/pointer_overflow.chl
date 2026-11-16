@@ -1,0 +1,10 @@
+comptime int overflow() {
+    char bytes[4];
+    char* far = bytes + 9223372036854775807;
+    char* further = far + 1;
+    return further == bytes;
+}
+
+comptime int result = overflow();
+
+int main() { return result; }

@@ -1,0 +1,106 @@
+use rustc_hash::{FxHashMap, FxHashSet};
+
+use chl_namespace::module::NamespacePath;
+use chl_util::{identifier::CHLIdent};
+use speedy::{Readable, Writable};
+
+use crate::VisibilityMode;
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Readable, Writable)]
+pub enum PreparseSymbolKind {
+    Type,
+    Tag,
+    // A comptime function returning 'type'; applying it to arguments names a type
+    Generator,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Readable, Writable)]
+pub struct PreparseSymbol {
+    pub name: CHLIdent,
+    pub kind: PreparseSymbolKind,
+    pub visibility: VisibilityMode,
+}
+
+impl PreparseSymbol {
+    pub fn type_name(name: CHLIdent, visibility: VisibilityMode) -> Self {
+        Self {
+            name,
+            kind: PreparseSymbolKind::Type,
+            visibility,
+        }
+    }
+
+    pub fn generator_name(name: CHLIdent, visibility: VisibilityMode) -> Self {
+        Self {
+            name,
+            kind: PreparseSymbolKind::Generator,
+            visibility,
+        }
+    }
+
+    pub fn tag_name(name: CHLIdent, visibility: VisibilityMode) -> Self {
+        Self {
+            name,
+            kind: PreparseSymbolKind::Tag,
+            visibility,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Readable, Writable)]
+pub struct PreparseNamespaceData {
+    symbols: FxHashMap<CHLIdent, PreparseSymbolKind>,
+    children: FxHashSet<CHLIdent>,
+}
+
+impl PreparseNamespaceData {
+    pub fn insert_symbol(&mut self, symbol: PreparseSymbol) {
+        self.symbols.entry(symbol.name).and_modify(|kind| {
+            if symbol.kind != PreparseSymbolKind::Tag {
+                *kind = symbol.kind;
+            }
+        }).or_insert(symbol.kind);
+    }
+
+    pub fn get_symbol(&self, name: &CHLIdent) -> Option<PreparseSymbolKind> {
+        self.symbols.get(name).copied()
+    }
+
+    pub fn add_child(&mut self, name: CHLIdent) {
+        self.children.insert(name);
+    }
+
+    pub fn has_child(&self, name: &CHLIdent) -> bool {
+        self.children.contains(name)
+    }
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct PreparseModuleSymbols {
+    pub namespace: NamespacePath,
+    pub symbols: Vec<PreparseSymbol>,
+}
+
+impl PreparseModuleSymbols {
+    pub fn new(namespace: NamespacePath) -> Self {
+        Self {
+            namespace,
+            symbols: Vec::new(),
+        }
+    }
+
+    pub fn add_type(&mut self, name: CHLIdent, visibility: VisibilityMode) {
+        self.symbols
+            .push(PreparseSymbol::type_name(name, visibility));
+    }
+
+    pub fn add_generator(&mut self, name: CHLIdent, visibility: VisibilityMode) {
+        self.symbols
+            .push(PreparseSymbol::generator_name(name, visibility));
+    }
+
+    pub fn add_tag(&mut self, name: CHLIdent, visibility: VisibilityMode) {
+        self.symbols
+            .push(PreparseSymbol::tag_name(name, visibility));
+    }
+}

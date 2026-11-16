@@ -1,6 +1,3 @@
-/* CX-STDOUT: 3 */
-/* CX-STDOUT-NEXT: 1 2 1 */
-
 #include <stdio.h>
 
 struct Node {

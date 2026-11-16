@@ -1,0 +1,9 @@
+comptime ^void leave() => emit .{
+    goto done;
+};
+
+int main() {
+    leave();
+done:
+    return 0;
+}

@@ -1,5 +1,3 @@
-/* CX-STDOUT: 2147483647 9223372036854775807 1 1 */
-
 #include <float.h>
 #include <limits.h>
 #include <stdio.h>

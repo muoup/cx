@@ -1,0 +1,17 @@
+/* CHL-STDOUT: mutable active 8 */
+/* CHL-STDOUT-NEXT: PANIC: Cannot immutably borrow cell while it is currently mutably borrowed */
+
+import std::cell::rcell as std;
+import std::io as std;
+
+int main() {
+    std::rcell(int) cell = std::rcell::new(8);
+    std::rcell::borrow(emit cell)! <| |auto mutable| then
+
+    std::printf("mutable active %d\n", mutable);
+    std::rcell::borrow_const(emit cell) <| |auto value| {
+        std::printf("unreachable const %d\n", value);
+    };
+    std::printf("unreachable end\n");
+    return 0;
+}

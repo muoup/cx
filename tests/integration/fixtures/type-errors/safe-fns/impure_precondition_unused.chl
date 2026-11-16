@@ -1,0 +1,2 @@
+int helper() { return 1; }
+int bad() safe where pre: (helper() == 1) { return 1; }
