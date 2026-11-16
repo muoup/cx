@@ -1,7 +1,7 @@
 use chl_hmir::{
     HMIRBodyContext,
     expr::HMIRExprID,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext, intrinsic::HMIRIntWidth},
+    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
 };
 use chl_log::{CHLResult, catalogue::typecheck};
 use chl_mir::{MIRFnPrototype, MIRFnSignature, MIRType, MIRTypeKind};
@@ -74,17 +74,6 @@ pub(crate) fn typed(
                         "an unknown type value".into(),
                     )
                 })?
-            }
-            (_, HMIRValueKind::Immediate(HMIRImmValue::Address(_)))
-                if let Some(string) = value::as_literal(&value) =>
-            {
-                let element = types::int(context.env_mut(), HMIRIntWidth::I8, false, &span);
-                let length = (string.len() + 1) as u64;
-                types::realize(
-                    context.env_mut(),
-                    HMIRTypeKind::Array { element, length },
-                    &span,
-                )
             }
             _ if as_is => value.ty(),
             _ => referent,

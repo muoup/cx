@@ -1,0 +1,5 @@
+comptime type Text = @type.type_of("hello");
+int main() {
+    Text text = "hi";
+    return 0;
+}

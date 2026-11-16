@@ -161,19 +161,17 @@ pub(crate) fn element(
     array: HMIRTypeID,
     span: &TokenRange,
 ) -> Option<HMIRTypeID> {
-    let element = context.env().array_inner(array)?;
-    match context.env().semantics(array).constant {
-        true => Some(qualify::specify(
-            context,
-            element,
-            HMIRTypeSemantics {
-                constant: true,
-                ..Default::default()
-            },
-            span,
-        )),
-        false => Some(element),
-    }
+    let element = match context.env().resolve_kind(array) {
+        HMIRTypeKind::Str(_) => int(context.env_mut(), HMIRIntWidth::I8, false, span),
+        _ => context.env().array_inner(array)?,
+    };
+    let semantics = context.env().semantics(array);
+    let qualifiers = HMIRTypeSemantics {
+        constant: semantics.constant,
+        volatile: semantics.volatile,
+        ..Default::default()
+    };
+    Some(qualify::specify(context, element, qualifiers, span))
 }
 
 pub(crate) fn realize(
@@ -266,6 +264,16 @@ pub(crate) fn array(
         .realize_type(HMIRType::new(kind, semantics, span.clone(), None))
 }
 
+pub(crate) fn storage(env: &mut HMIREnvironment, ty: HMIRTypeID, span: &TokenRange) -> HMIRTypeID {
+    match *env.resolve_kind(ty) {
+        HMIRTypeKind::Str(Some(length)) => {
+            let element = int(env, HMIRIntWidth::I8, false, span);
+            realize(env, HMIRTypeKind::Array { element, length }, span)
+        }
+        _ => ty,
+    }
+}
+
 pub(crate) fn owned_semantics(env: &HMIREnvironment, ty: HMIRTypeID) -> HMIRTypeSemantics {
     match env.resolve_kind(ty) {
         HMIRTypeKind::Array { element, .. }
@@ -283,6 +291,7 @@ pub(crate) fn is_aggregate(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     matches!(
         env.resolve_kind(ty),
         HMIRTypeKind::Array { .. }
+            | HMIRTypeKind::Str(Some(_))
             | HMIRTypeKind::Struct { .. }
             | HMIRTypeKind::Union { .. }
             | HMIRTypeKind::TaggedUnion { .. }
@@ -390,7 +399,8 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         HMIRTypeKind::Void => "void".into(),
         HMIRTypeKind::Unreachable => "unreachable".into(),
         HMIRTypeKind::Type => "type".into(),
-        HMIRTypeKind::Str => "str".into(),
+        HMIRTypeKind::Str(Some(length)) => format!("str<{length}>"),
+        HMIRTypeKind::Str(None) => "str".into(),
         HMIRTypeKind::Int(int) => format!(
             "{}{}",
             if int.signed() { "i" } else { "u" },

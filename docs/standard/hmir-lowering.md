@@ -218,7 +218,7 @@ Each node evaluated by kind. Comptime context seeking a selected `case` routes e
 
 *verified 425c5ff1*
 
-Int and float literals: constant of their suffix type. String literal: `str` constant. Unit: `void` constant.
+Int and float literals: constant of their suffix type. A string literal is a reference to `str` with a known byte extent, including its trailing NUL. Bare `_str` has an unknown extent. Unit: `void` constant.
 
 ### Local
 
@@ -832,11 +832,11 @@ Otherwise one step, then retried:
 - `E[n]&` to `E[n]` or `E[]`: same element, length if given, not nocopy, same move semantics: copied, retyped.
 - reference to reference whose source is a reference to a reference: decay step.
 - `rule/bitfield-bind` bitfield reference to compatible non-bitfield reference: T0043. Other reference to reference: fails.
+- `rule/comptime-lift` comptime context, non-code source, `^U` target: converted to U, converged, then retyped `^U`: code yielding that immediate. Fails if U is comptime-only or not convertible.
 - reference source, or array to pointer: decay step.
 - staged to non-staged: decay step.
-- `rule/comptime-lift` comptime context, non-code source, `^U` target: converted to U, converged, then retyped `^U`: code yielding that immediate. Fails if U is comptime-only or not convertible.
-- `rule/reference-binds-temporary` non-reference to `U&`, compatible with U: address taken, of a temporary unless `str` or function designator.
-- `rule/string-to-char-array` `str` constant to `char[n]` or `char[]`: NUL-padded char array constant; `[]` bound is length plus one; longer than bound: T0016.
+- `rule/reference-binds-temporary` non-reference to `U&`, compatible with U: address taken, of a temporary.
+- `rule/string-to-char-array` known-extent `str` reference to `char[n]` or `char[]`: copy its bytes and zero-pad; `[]` bound is the extent. The bound may omit the trailing NUL; a shorter bound gives T0016.
 - move semantics differ: fails.
 - `rule/quirk-null-by-value` int constant 0 to pointer: null. Decided by the value, so any folded 0.
 - int, float, pointer to `bool`: truth.
@@ -847,7 +847,7 @@ Otherwise one step, then retried:
 - `rule/discarding-function-pointer` function pointer to one returning `void`, otherwise alike: retyped; nodrop result: T0048.
 - `rule/quirk-explicit-discard-stricter` same, under explicit conversion: requires nonsafe; implicit does not.
 
-Compatible: same type; or same move semantics, and pairwise staged, pointers (either `void`, or compatible pointees), references (same bitfield, compatible), arrays (same length, compatible), unbounded arrays (compatible). Qualified: pointee or referent const and volatile only gained.
+Compatible: same type; or same move semantics, and pairwise staged, pointers (either `void`, or compatible pointees), references (same bitfield, compatible), arrays (same length, compatible), unbounded arrays (compatible). A known-extent string pointee or referent is compatible with an unknown-extent string; the reverse does not hold. Qualified: pointee or referent const and volatile only gained.
 
 #### Explicit conversion
 
@@ -885,7 +885,7 @@ Type as a value; in runtime emitting context: T0017. Unsettled type forced. `T[]
 
 #### Subject type
 
-Operand evaluated in an unevaluated detached runtime child seeing frozen known values (quotes with their captures shadowed), placeholders for the rest. A placeholder of a comptime-only type is opaque: no storage, its contents unknown. Diverging: `unreachable`. `type` value: that type. `rule/quirk-sizeof-string-literal` `str` constant: `char[len + 1]`. Otherwise referent type.
+Operand evaluated in an unevaluated detached runtime child seeing frozen known values (quotes with their captures shadowed), placeholders for the rest. A placeholder of a comptime-only type is opaque: no storage, its contents unknown. Diverging: `unreachable`. `type` value: that type. Otherwise referent type.
 
 #### Parameter type
 

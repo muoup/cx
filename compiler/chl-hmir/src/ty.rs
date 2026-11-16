@@ -41,7 +41,7 @@ pub enum HMIRGenericTypeKind<T, L> {
     // U_0
     Void,
     Unreachable,
-    Str,
+    Str(Option<u64>),
     Int(HMIRIntType),
     Float(HMIRFloatType),
     PointerTo(T),
@@ -163,7 +163,7 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
             Self::Unreachable => HMIRGenericTypeKind::Unreachable,
             Self::Type => HMIRGenericTypeKind::Type,
             Self::Dependent => HMIRGenericTypeKind::Dependent,
-            Self::Str => HMIRGenericTypeKind::Str,
+            Self::Str(length) => HMIRGenericTypeKind::Str(*length),
             Self::Int(int) => HMIRGenericTypeKind::Int(*int),
             Self::Float(float) => HMIRGenericTypeKind::Float(*float),
             Self::Builtin { name, size, alignment } => HMIRGenericTypeKind::Builtin {

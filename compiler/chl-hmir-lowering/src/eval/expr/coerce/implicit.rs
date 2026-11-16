@@ -8,7 +8,7 @@ use chl_hmir::{
 use chl_log::{CHLResult, catalogue::typecheck};
 use chl_tokens::TokenRange;
 
-use super::{Coercion, compatible, is_char, is_designator, promotion, qualified, truth};
+use super::{Coercion, compatible, is_char, promotion, qualified, truth};
 use crate::{
     emit,
     env::{HMIREnvironment, function::LocalLoweringContext},
@@ -86,7 +86,13 @@ fn step(
         env.resolve_kind(target).clone(),
     );
     match (env.resolve_kind(env.referent(source)), &to) {
-        (HMIRTypeKind::Str, HMIRTypeKind::PointerTo(_)) => {
+        (HMIRTypeKind::Str(Some(length)), HMIRTypeKind::Array { element, length: bound }) => {
+            return string(context, value, target, *element, *length, Some(*bound), span);
+        }
+        (HMIRTypeKind::Str(Some(length)), HMIRTypeKind::Undefined(HMIRUndefined::Array { element })) => {
+            return string(context, value, target, *element, *length, None, span);
+        }
+        (HMIRTypeKind::Str(_), HMIRTypeKind::PointerTo(_)) => {
             return promotion::step(context, value, span);
         }
         (HMIRTypeKind::Function { .. }, HMIRTypeKind::PointerTo(_)) => {
@@ -127,6 +133,11 @@ fn step(
     }
 
     match (&from, &to) {
+        (_, HMIRTypeKind::Staged(inner))
+            if !context.is_runtime() && !staged::is_code(context, source) =>
+        {
+            return lift(context, value, *inner, target, span, explicit);
+        }
         (
             HMIRTypeKind::ReferenceTo { inner, .. },
             HMIRTypeKind::Array { element, .. }
@@ -137,7 +148,11 @@ fn step(
                 length,
             } = *env.resolve_kind(*inner)
             else {
-                return Ok(Coercion::Unapplied(value));
+                return if env.is_reference(*inner) {
+                    promotion::step(context, value, span)
+                } else {
+                    Ok(Coercion::Unapplied(value))
+                };
             };
             let target_length = match &to {
                 HMIRTypeKind::Array { length, .. } => Some(*length),
@@ -186,19 +201,8 @@ fn step(
         (HMIRTypeKind::Staged(_), target) if !matches!(target, HMIRTypeKind::Staged(_)) => {
             return promotion::step(context, value, span);
         }
-        (_, HMIRTypeKind::Staged(inner))
-            if !context.is_runtime() && !staged::is_code(context, source) =>
-        {
-            return lift(context, value, *inner, target, span, explicit);
-        }
         (_, HMIRTypeKind::ReferenceTo { inner, .. }) => {
             return bind(context, value, *inner, target, span);
-        }
-        (HMIRTypeKind::Str, HMIRTypeKind::Array { element, length }) => {
-            return string(context, value, target, *element, Some(*length), span);
-        }
-        (HMIRTypeKind::Str, HMIRTypeKind::Undefined(HMIRUndefined::Array { element })) => {
-            return string(context, value, target, *element, None, span);
         }
         _ => {}
     }
@@ -326,14 +330,13 @@ fn bind(
     target: HMIRTypeID,
     span: &TokenRange,
 ) -> CHLResult<Coercion> {
-    let env = context.env();
-    if !compatible(env, value.ty(), inner) {
-        return Ok(Coercion::Unapplied(value));
+    if !compatible(context.env(), value.ty(), inner) {
+        let source = types::reference(context.env_mut(), value.ty(), None, span);
+        if !compatible(context.env(), source, target) || !qualified(context.env(), source, target) {
+            return Ok(Coercion::Unapplied(value));
+        }
     }
-    let storage = match is_designator(env, value.ty()) {
-        true => value,
-        false => coerce::temporary(context, &value, span)?,
-    };
+    let storage = coerce::temporary(context, &value, span)?;
     Ok(Coercion::Applied(storage.with_ty(target)))
 }
 
@@ -342,32 +345,41 @@ fn string(
     value: HMIRValue,
     target: HMIRTypeID,
     element: HMIRTypeID,
+    extent: u64,
     length: Option<u64>,
     span: &TokenRange,
 ) -> CHLResult<Coercion> {
-    let Some(string) = value::as_literal(&value) else {
-        return Ok(Coercion::Unapplied(value));
-    };
     if !is_char(context.env(), element) {
         return Ok(Coercion::Unapplied(value));
     }
-    let bound = length.unwrap_or(string.len() as u64 + 1);
-    if string.len() as u64 > bound {
+    let bound = length.unwrap_or(extent);
+    if extent - 1 > bound {
         let limit = ("string".into(), usize::try_from(bound).ok());
         return Err(hmir_error(span, &typecheck::INITIALIZER_LIMIT, limit));
-    }
-    let mut items = vec![HMIRImmValue::Int(0); bound as usize];
-    for (item, byte) in items.iter_mut().zip(string.bytes()) {
-        *item = HMIRImmValue::Int(byte as i128);
     }
     let ty = match length {
         None => types::array(context.env_mut(), target, bound, span),
         Some(_) => target,
     };
-    Ok(Coercion::Applied(HMIRValue::new(
-        ty,
-        HMIRImmValue::Aggregate { fields: items },
-    )))
+    let value = if context.env().is_reference(value.ty()) {
+        value
+    } else {
+        coerce::temporary(context, &value, span)?
+    };
+    let copy_ty = types::realize(
+        context.env_mut(),
+        HMIRTypeKind::Array { element, length: bound.min(extent) },
+        span,
+    );
+    let reference = types::reference(context.env_mut(), copy_ty, None, span);
+    let copy = emit::storage::read(context, &value.with_ty(reference), span)?;
+    if bound <= extent {
+        return Ok(Coercion::Applied(copy.with_ty(ty)));
+    }
+    let empty = HMIRValue::new(ty, types::zero(context.env(), ty).expect("a character array has a zero value"));
+    let storage = coerce::temporary(context, &empty, span)?;
+    emit::storage::write(context, &storage.clone().with_ty(reference), &copy, span)?;
+    Ok(Coercion::Applied(emit::storage::read(context, &storage, span)?))
 }
 
 fn discard(

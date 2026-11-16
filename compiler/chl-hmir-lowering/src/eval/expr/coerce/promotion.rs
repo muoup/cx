@@ -1,6 +1,5 @@
 use chl_hmir::ty::{
     HMIRTypeID, HMIRTypeKind, HMIRUndefined,
-    aggregate::HMIRTypeSemantics,
     context::HMIRTypeContext,
     intrinsic::{HMIRFloatType, HMIRFloatWidth, HMIRIntWidth},
 };
@@ -78,7 +77,7 @@ pub(crate) fn step(
             };
             Ok(Coercion::Applied(value))
         }
-        HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) => {
+        HMIRTypeKind::Str(_) | HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) => {
             let element =
                 types::element(context, subject, span).expect("an array has an element type");
             let value = match context.env().is_reference(value.ty()) {
@@ -86,17 +85,6 @@ pub(crate) fn step(
                 false => super::temporary(context, &value, span)?,
             };
             address(context, value, element, span)
-        }
-        HMIRTypeKind::Str => {
-            let semantics = env.semantics(subject);
-            let qualifiers = HMIRTypeSemantics {
-                constant: semantics.constant,
-                volatile: semantics.volatile,
-                ..Default::default()
-            };
-            let char = types::int(context.env_mut(), HMIRIntWidth::I8, false, span);
-            let char = types::qualify::specify(context, char, qualifiers, span);
-            address(context, value, char, span)
         }
         HMIRTypeKind::Function { .. }
             if subject != value.ty() && types::comptime_only(env, subject) =>

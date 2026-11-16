@@ -87,7 +87,7 @@ pub(crate) fn intrinsic_type(
     let kind = match intrinsic(context.env().architecture())? {
         HIRIntrinsicType::Void => HMIRTypeKind::Void,
         HIRIntrinsicType::Unreachable => HMIRTypeKind::Unreachable,
-        HIRIntrinsicType::Str => HMIRTypeKind::Str,
+        HIRIntrinsicType::Str => HMIRTypeKind::Str(None),
         HIRIntrinsicType::Bool => HMIRTypeKind::Int(HMIRIntType::new(HMIRIntWidth::I1, false)),
         HIRIntrinsicType::Integer { signed, bytes } => HMIRTypeKind::Int(HMIRIntType::new(
             HMIRIntWidth::from_bytes(bytes as usize).unwrap(),

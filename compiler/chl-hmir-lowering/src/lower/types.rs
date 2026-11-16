@@ -20,7 +20,7 @@ use crate::{
     env::{HMIREnvironment, resolver::demand},
     eval::{
         symbol,
-        types::{comptime_only, name, validate},
+        types::{self, comptime_only, name, validate},
     },
     log::{hmir_error, log_hmir_error},
     lower::declaration,
@@ -208,7 +208,11 @@ fn lower_underlying(
         HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => {
             unreachable!("comptime-only types are not lowered")
         }
-        HMIRTypeKind::Str => MIRTypeKind::Str,
+        HMIRTypeKind::Str(Some(_)) => {
+            let storage = types::storage(env, ty, span);
+            return lower_type(env, storage, span);
+        }
+        HMIRTypeKind::Str(None) => MIRTypeKind::Str,
         HMIRTypeKind::Int(int) => MIRTypeKind::Integer {
             ty: mir_int(int.width()),
         },

@@ -22,6 +22,7 @@ pub(super) fn key(kind: &HMIRTypeKind, semantics: HMIRTypeSemantics) -> TypeKey 
         names: Vec::new(),
     };
     match kind {
+        HMIRTypeKind::Str(length) => key.scalars.extend(length.iter().copied()),
         HMIRTypeKind::Int(int) => {
             key.scalars.push(int.width() as u64);
             key.scalars.push(int.signed() as u64);
@@ -76,7 +77,6 @@ pub(super) fn key(kind: &HMIRTypeKind, semantics: HMIRTypeSemantics) -> TypeKey 
         }
         HMIRTypeKind::Void
         | HMIRTypeKind::Unreachable
-        | HMIRTypeKind::Str
         | HMIRTypeKind::Type
         | HMIRTypeKind::Dependent => {}
     }

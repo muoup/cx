@@ -257,10 +257,16 @@ fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bool {
     if env.semantics(lhs).move_semantics != env.semantics(rhs).move_semantics {
         return false;
     }
+    let pointees = |lhs, rhs| {
+        compatible(env, lhs, rhs)
+            || matches!((env.resolve_kind(lhs), env.resolve_kind(rhs)),
+                (HMIRTypeKind::Str(Some(_)), HMIRTypeKind::Str(None)))
+                && env.semantics(lhs).move_semantics == env.semantics(rhs).move_semantics
+    };
     match (env.resolve_kind(lhs), env.resolve_kind(rhs)) {
         (HMIRTypeKind::Staged(lhs), HMIRTypeKind::Staged(rhs)) => compatible(env, *lhs, *rhs),
         (HMIRTypeKind::PointerTo(lhs), HMIRTypeKind::PointerTo(rhs)) => {
-            env.is_void(*lhs) || env.is_void(*rhs) || compatible(env, *lhs, *rhs)
+            env.is_void(*lhs) || env.is_void(*rhs) || pointees(*lhs, *rhs)
         }
         (
             HMIRTypeKind::ReferenceTo {
@@ -271,7 +277,7 @@ fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bool {
                 inner: rhs,
                 bitfield: rhs_bitfield,
             },
-        ) => lhs_bitfield == rhs_bitfield && compatible(env, *lhs, *rhs),
+        ) => lhs_bitfield == rhs_bitfield && pointees(*lhs, *rhs),
         (
             HMIRTypeKind::Array {
                 element: lhs,
@@ -299,10 +305,6 @@ fn qualified(env: &HMIREnvironment, from: HMIRTypeID, to: HMIRTypeID) -> bool {
         }
         _ => true,
     }
-}
-
-fn is_designator(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
-    matches!(env.resolve_kind(ty), HMIRTypeKind::Str)
 }
 
 fn is_char(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {

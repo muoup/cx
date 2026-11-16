@@ -56,7 +56,8 @@ pub(super) fn write_generic_type<T, L, M>(
         HMIRGenericTypeKind::Unreachable => f.write_str("never"),
         HMIRGenericTypeKind::Type => f.write_str("type"),
         HMIRGenericTypeKind::Dependent => f.write_str("_"),
-        HMIRGenericTypeKind::Str => f.write_str("str"),
+        HMIRGenericTypeKind::Str(Some(length)) => write!(f, "str<{length}>"),
+        HMIRGenericTypeKind::Str(None) => f.write_str("str"),
         HMIRGenericTypeKind::Int(ty) => write_int_type(f, ty),
         HMIRGenericTypeKind::Float(ty) => write_float_type(f, ty),
         HMIRGenericTypeKind::PointerTo(inner) => {

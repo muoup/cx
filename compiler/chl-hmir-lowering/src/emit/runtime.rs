@@ -128,6 +128,7 @@ pub fn immediate(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CHLResult<MIRImmediate> {
+    let ty = types::storage(context.env_mut(), ty, span);
     Ok(match (immediate, context.env().resolve_kind(ty)) {
         (HMIRImmValue::Unit, _) => MIRImmediate::Unit,
         (HMIRImmValue::Int(0), HMIRTypeKind::PointerTo(_)) => MIRImmediate::Nullptr {

@@ -33,7 +33,8 @@ pub(crate) fn eval_literal(
     match literal {
         HMIRLiteral::Unit => value::unit(context.env()),
         HMIRLiteral::Str(value) => {
-            let ty = types::realize(context.env_mut(), HMIRTypeKind::Str, span);
+            let ty = types::realize(context.env_mut(), HMIRTypeKind::Str(Some(value.len() as u64 + 1)), span);
+            let ty = types::reference(context.env_mut(), ty, None, span);
             let literal = HMIRAddress::new(Addressable::Literal(value.clone()), 0);
             HMIRValue::new(ty, HMIRImmValue::Address(literal))
         }

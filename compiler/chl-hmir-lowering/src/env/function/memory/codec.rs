@@ -210,6 +210,7 @@ fn write(
     offset: usize,
     span: &TokenRange,
 ) -> CHLResult<()> {
+    let ty = types::storage(env, ty, span);
     match (env.resolve_kind(ty).clone(), value) {
         (HMIRTypeKind::Int(int), HMIRImmValue::Int(value)) => {
             image.put(offset, &value.to_le_bytes()[..int.width().bytes()]);
@@ -299,6 +300,7 @@ fn opaque(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
             | HMIRTypeKind::Void
             | HMIRTypeKind::Unreachable
             | HMIRTypeKind::Array { .. }
+            | HMIRTypeKind::Str(Some(_))
             | HMIRTypeKind::Struct { .. }
             | HMIRTypeKind::Union { .. }
             | HMIRTypeKind::TaggedUnion { .. }
@@ -320,6 +322,7 @@ fn immediate(
     span: &TokenRange,
 ) -> CHLResult<HMIRImmValue> {
     let fault = |fault: Fault| fault.error(span);
+    let ty = types::storage(env, ty, span);
     Ok(match env.resolve_kind(ty).clone() {
         HMIRTypeKind::Int(int) => HMIRImmValue::Int(integer(image, offset, int).map_err(fault)?),
         HMIRTypeKind::Float(float) => {

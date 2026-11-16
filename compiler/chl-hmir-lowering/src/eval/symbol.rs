@@ -21,7 +21,7 @@ use crate::{
         function::{ComptimeContext, FnContext, LocalLoweringContext},
         resolver::{SymbolState, demand},
     },
-    eval::{self, coerce, eval_type, flow, name::type_value, types},
+    eval::{self, eval_type, flow, name::type_value, types},
     log::hmir_error,
     lower::declaration,
     value::{
@@ -241,8 +241,13 @@ fn global_type(
             .resolver_mut()
             .set_symbol(id, SymbolState::Evaluating(Some(provisional)));
     }
-    let value = eval::eval_comptime(context, global.body(), initializer, known)?;
-    flow::boundary(declared.complete(context, global.body(), Some(value.ty())))
+    let inferred = match known {
+        Some(_) => eval::eval_comptime(context, global.body(), initializer, known)?.ty(),
+        None => flow::top(flow::boundary(crate::eval::deduce::typed(context, span, true, |child| {
+            eval::eval(child, global.body(), initializer)
+        }))?.description())?,
+    };
+    flow::boundary(declared.complete(context, global.body(), Some(inferred)))
 }
 
 fn address(
@@ -325,28 +330,15 @@ pub(crate) fn initialize(context: &mut LocalLoweringContext, id: HMIRDefID) -> C
     let mut child = context
         .child(None, FnContext::Comptime(ComptimeContext::new()), None)
         .sourced(id.brand());
-    let declared = flow::boundary(eval_type(&mut child, global.body(), global.ty()))?;
-    let Some(expr) = global.initializer() else {
-        if global.linkage() == LinkageMode::Extern {
+    let ty = value_type(child.env_mut(), id)?;
+    match global.initializer() {
+        Some(expr) => eval::eval_comptime(&mut child, global.body(), expr, Some(ty)),
+        None if global.linkage() == LinkageMode::Extern => {
             let subject = format!("initial value of '{}'", def.name());
-            return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, subject));
+            Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, subject))
         }
-        let ty = flow::top(declared.description())?;
-        let ty = match child.env().resolve_kind(ty) {
-            HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) => {
-                types::array(child.env_mut(), ty, 1, span)
-            }
-            _ => ty,
-        };
-        return zero(&mut child, ty, span).map(|value| HMIRValue::new(ty, value));
-    };
-    let value = eval::eval_comptime(&mut child, global.body(), expr, declared.known().copied())?;
-    let ty = flow::boundary(declared.complete(&mut child, global.body(), Some(value.ty())))?;
-    if !types::is_complete(child.env(), ty) {
-        let subject = format!("global of type '{}'", types::name(child.env(), ty));
-        return Err(hmir_error(span, &typecheck::INCOMPLETE_TYPE, subject));
+        None => zero(&mut child, ty, span).map(|value| HMIRValue::new(ty, value)),
     }
-    coerce::implicit::standard(&mut child, value, ty, span)
 }
 
 pub(crate) fn zero(

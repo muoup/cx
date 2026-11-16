@@ -70,7 +70,7 @@ pub trait HMIRTypeContext {
     }
 
     fn is_str(&self, ty: HMIRTypeID) -> bool {
-        matches!(self.resolve_kind(ty), HMIRTypeKind::Str)
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Str(_))
     }
 
     fn is_function(&self, ty: HMIRTypeID) -> bool {

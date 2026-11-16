@@ -1,0 +1,5 @@
+int main() {
+    const _str& text = "hello";
+    char copy[_] = text;
+    return 0;
+}

@@ -74,13 +74,6 @@ pub fn as_function(value: &HMIRValue) -> Option<HMIRDefID> {
     }
 }
 
-pub fn as_literal(value: &HMIRValue) -> Option<&str> {
-    match as_addressable(value)? {
-        Addressable::Literal(string) => Some(string),
-        _ => None,
-    }
-}
-
 pub fn as_place(value: &HMIRValue) -> Option<HMIRPlaceID> {
     match value.kind() {
         HMIRValueKind::Reference(reference) if reference.offset() == 0 => Some(*reference.base()),
