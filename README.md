@@ -65,8 +65,8 @@ ln -s [PROJECT_DIRECTORY]/target/debug/chl ~/.local/bin
 so that your shell can access your compiler directly from its PATH:
 
 ```bash
-chl build [options]
-chl <file.chl> [options]
+chloro build [options]
+chloro <file.chl> [options]
 ```
 
 ### Options
@@ -86,9 +86,9 @@ chl <file.chl> [options]
 Chloro includes a project-oriented build system. Initialize a new project and build it with:
 
 ```bash
-chl init my_project
+chloro init my_project
 cd my_project
-chl build
+chloro build
 ```
 
 See the [build system guide](https://muoup.github.io/cx/docs/getting-started/build-system) for
