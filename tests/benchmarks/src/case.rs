@@ -227,7 +227,7 @@ fn discover_files(root: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
         }
         if matches!(
             path.extension().and_then(|extension| extension.to_str()),
-            Some("cx") | Some("c")
+            Some("chl") | Some("c")
         ) {
             files.push(path);
         }

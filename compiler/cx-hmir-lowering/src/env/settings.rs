@@ -6,6 +6,7 @@ pub struct HMIRSettings {
     require_explicit_return: bool,
     assertions: bool,
     record_types: bool,
+    pub c_interface: bool,
 }
 
 impl HMIRSettings {
@@ -15,6 +16,7 @@ impl HMIRSettings {
             require_explicit_return: true,
             assertions: true,
             record_types: false,
+            c_interface: false,
         }
     }
 

@@ -10,10 +10,10 @@ The test workspace is split into separate crates so fast correctness tests and d
 cargo run --release -p cx-benchmarks --features backend-llvm -- --reference clang
 ```
 
-A case is either a single source file or a `cx.toml` project:
+A case is either a single source file or a `cx.lua` project:
 
-- Every `.c` and `.cx` file under `benchmarks/fixtures` is a case, built at `O2` and run once without arguments. Its stdout expectation lives beside the source, as described below.
-- The projects are the C parity examples under `examples/c-parity`, listed in the `PROJECTS` table of `benchmarks/src/case.rs`. They are built from their `cx.toml` where they live, at the optimization level it names, so the upstream submodules must be checked out (`git submodule update --init`). A project is compiled without linking, run alone, or run once for each script in `benchmarks/workloads/<project>`, whose stdout is checked against the `.cx-output` file beside the script.
+- Every `.c` and `.chl` file under `benchmarks/fixtures` is a case, built at `O2` and run once without arguments. Its stdout expectation lives beside the source, as described below.
+- The projects are the C parity examples under `examples/c-parity`, listed in the `PROJECTS` table of `benchmarks/src/case.rs`. They are built from their `cx.lua` where they live, at the optimization level it names, so the upstream submodules must be checked out (`git submodule update --init`). A project is compiled without linking, run alone, or run once for each script in `benchmarks/workloads/<project>`, whose stdout is checked against the `.cx-output` file beside the script.
 
 Stdout is verified on every run, so a case that computes the wrong answer fails the benchmark instead of reporting a time.
 

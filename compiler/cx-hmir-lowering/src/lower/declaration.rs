@@ -298,6 +298,23 @@ pub(crate) fn link_name(def: &HMIRDef) -> Option<CXIdent> {
     }
 }
 
+pub(crate) fn type_name(def: &HMIRDef) -> CXIdent {
+    use cx_hir::ast::modifiers::HIRSymbolNameScheme;
+    use cx_namespace::mangling::mangle_namespace_symbol;
+
+    let declaration = canonical(def);
+    let mut name = def.name().clone();
+    if let Some(tag) = declaration.tag() {
+        let prefix = format!("{} ", tag.prefix());
+        name.name = CXIdent::new(name.name.as_str().strip_prefix(&prefix).expect("a tag has a prefixed name"));
+    }
+    if declaration.naming() == Some(HIRSymbolNameScheme::Unmangled) || name.namespace.is_root() {
+        name.name
+    } else {
+        CXIdent::new(mangle_namespace_symbol(&name))
+    }
+}
+
 pub(crate) fn incompatible(def: &HMIRDef, declaration: &HMIRDeclaration) -> CXError {
     hmir_error(
         declaration.span(),

@@ -126,8 +126,7 @@ fn assemble(state: State) -> std::result::Result<ProjectConfig, String> {
         for mount in &draft.mounts {
             let clashes = [
                 source_root.join(&mount.prefix),
-                source_root.join(format!("{}.cx", mount.prefix)),
-                source_root.join(format!("{}.cxc", mount.prefix)),
+                source_root.join(format!("{}.chl", mount.prefix)),
             ];
             if let Some(path) = clashes.iter().find(|path| path.exists()) {
                 return Err(format!(

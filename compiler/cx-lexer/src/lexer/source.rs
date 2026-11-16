@@ -21,7 +21,7 @@ impl LanguageMode {
     pub(crate) fn for_include_path(path: &Path, parent: Self) -> Self {
         match path.extension().and_then(|extension| extension.to_str()) {
             Some("c" | "h") => Self::C,
-            Some("cx" | "cxc") => Self::Cx,
+            Some("chl") => Self::Cx,
             _ => parent,
         }
     }

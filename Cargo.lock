@@ -995,6 +995,8 @@ dependencies = [
 name = "integration-tests"
 version = "0.0.0"
 dependencies = [
+ "cx-pipeline",
+ "cx-pipeline-data",
  "cx-test-support",
 ]
 

@@ -4,7 +4,7 @@ AI-generated conversation state, written 2026-10-06. DESIGN, NOT IMPLEMENTED SPE
 
 ## Intent / scope
 
-Read-only brainstorm on branch feat/2ltt. No compiler or library changes were made; this file is the only write. Working sketch is lib/wip/iter.cx (does not compile, predates most decisions below, still uses lifetime parameters on the class which this discussion did not revisit).
+Read-only brainstorm on branch feat/2ltt. No compiler or library changes were made; this file is the only write. Working sketch is lib/wip/iter.chl (does not compile, predates most decisions below, still uses lifetime parameters on the class which this discussion did not revisit).
 
 Goal: one syntax and one semantic reading for typeclasses covering static (monomorphized) dispatch and explicit type erasure, with no implicit allocation and minimal hidden behaviour. All spellings provisional unless marked CONFIRMED. Items marked PROPOSED were suggested by the agent and not explicitly accepted.
 
@@ -159,7 +159,7 @@ Rust-style borrowed `&dyn` only.
   - "Pseudo-allocation" for static vtables is not the general allocator interface (allocate-then-write would write constant memory). It is a narrower source with acquire/release; construction differs by stage, use is uniform.
   - A reference form and a linear owned form, never conditional borrowing. In-place adoption of a stack slot conflicts with the planned move rule in docs/ideas/reference_lifetimes.md ("Move ... invalidates dependencies on the old region") and needs its own invalidation reason; `&x` plus `@leak(x)` is not a substitute. `@adopt` already names the opposite direction.
   - Simplest owned form later: subject in allocator storage, allocator stateless and fixed by the type, mirroring std::box.
-- Aside, unverified intent: `box::unwrap` (lib/std/box.cx:30) adopts the pointee and leaks the box without freeing `ptr`.
+- Aside, unverified intent: `box::unwrap` (lib/std/box.chl:30) adopts the pointee and leaks the box without freeing `ptr`.
 
 ## Superseded
 
@@ -167,7 +167,7 @@ Rust-style borrowed `&dyn` only.
 - Dictionary as a value of a dictionary type `iter(T)(S)`; required a binding step to be usable by bounds.
 - `comptime iter(T) iter` as a monomorphizable typeclass parameter generating implicit runtime parameters.
 - `iter(T)::typed(S)` / `iter(T)::erased()` as surface types; `[type] is [bound]` declarations.
-- Per-value dictionaries built in the factory, as in lib/wip/iter.cx (`subject |> iter(a, index)() { ... }`), and `^iter(a, index)` as a return type.
+- Per-value dictionaries built in the factory, as in lib/wip/iter.chl (`subject |> iter(a, index)() { ... }`), and `^iter(a, index)` as a return type.
 - Array-of-erased-pointers vtable layout; drop slot.
 
 ## Formal reading

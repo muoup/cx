@@ -9,7 +9,7 @@ use crate::help::{self, Topic};
 pub enum Command {
     Help(Topic),
     Version,
-    /// Legacy single-file mode: cx <file.cx> [options]
+    /// Legacy single-file mode: cx <file.chl> [options]
     CompileFile(FileArgs),
     /// Project build mode: cx build [target] [options]
     Build(BuildArgs),
@@ -264,10 +264,10 @@ fn parse_file_args(args: impl IntoIterator<Item = String>) -> CXResult<Command> 
 
     if input_files
         .iter()
-        .any(|file| ![".cx", ".cxc", ".c"].iter().any(|extension| file.ends_with(extension)))
+        .any(|file| ![".chl", ".c"].iter().any(|extension| file.ends_with(extension)))
     {
         return Err(error(
-            "input files must have a .cx, .cxc or .c extension",
+            "input files must have a .chl or .c extension",
             Some(Topic::File),
         ));
     }

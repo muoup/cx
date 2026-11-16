@@ -51,7 +51,7 @@ Basic usage:
 
 ```bash
 cargo run --bin cx -- build [options]
-cargo run --bin cx -- <file.cx> [options]
+cargo run --bin cx -- <file.chl> [options]
 ```
 
 It is also recommended after building to create a symlink to the executable or alias to make invoking the compiler simpler.
@@ -66,7 +66,7 @@ so that your shell can access your compiler directly from its PATH:
 
 ```bash
 cx build [options]
-cx <file.cx> [options]
+cx <file.chl> [options]
 ```
 
 ### Options
@@ -92,7 +92,7 @@ cx build
 ```
 
 See the [build system guide](https://muoup.github.io/cx/docs/getting-started/build-system) for
-`cx.toml` configuration, library compilation, and C interop.
+`cx.lua` configuration, library compilation, and C interop.
 
 ## Testing
 

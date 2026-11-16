@@ -22,7 +22,7 @@ int main() {
 }
 ```
 
-Module paths map to file paths. For example, `std::io` resolves to `lib/std/io.cx`
+Module paths map to file paths. For example, `std::io` resolves to `lib/std/io.chl`
 or the equivalent path relative to the project root.
 
 Related modules can be imported in one statement. Each leaf is expanded into a
@@ -125,7 +125,7 @@ including its nested includes; after the include ends, the previous CX naming an
 visibility configuration is For handwritten declarations, an `extern "C":` section disables namespace-based
 name mangling without moving the declarations out of their CX module.
 
-```cx title="lib/c_stdio.cx"
+```cx title="lib/c_stdio.chl"
 #include <stdio.h>
 
 public extern "C":
@@ -143,7 +143,7 @@ An include inherits the current visibility, so declarations are private when
 included under the default visibility and public when included after a
 `public:` header:
 
-```cx title="lib/c_api.cx"
+```cx title="lib/c_api.chl"
 public:
 
 #include "api.h"
@@ -185,4 +185,4 @@ a private C header to be included and selected declarations to be published
 through `public extern "C"`, as `puts` is in the first example, without creating
 an additional shadow namespace.
 
-Files with the `.cxc` extension serve as library entry points and use the same syntax as `.cx` files. The [Libraries and C Interop](../getting-started/c-interop.md) guide explains how their public declarations become C-compatible library exports.
+Every CX module uses the `.chl` extension. Library targets can request a C header for an ordinary module; the header exposes its public `extern "C"` definitions and named types, together with the types they require. The module remains available through normal imports. See [Libraries and C Interop](../getting-started/c-interop.md).

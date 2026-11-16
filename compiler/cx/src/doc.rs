@@ -148,7 +148,7 @@ fn sources_under(directory: &Path) -> CXResult<Vec<PathBuf>> {
             }
             if path.is_dir() {
                 pending.push(path);
-            } else if path.extension().is_some_and(|extension| extension == "cx") {
+            } else if path.extension().is_some_and(|extension| extension == "chl") {
                 files.push(path);
             }
         }

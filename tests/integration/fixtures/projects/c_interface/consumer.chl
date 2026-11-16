@@ -1,0 +1,6 @@
+import api;
+
+int main() {
+    api::Standalone value = {3};
+    return api::native_only(value.value) + api::chl_add(1, 2) + api::exported_count - 23;
+}

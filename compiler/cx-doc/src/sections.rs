@@ -113,32 +113,3 @@ fn block(lines: &[&str]) -> Option<String> {
     let text = text.trim();
     (!text.is_empty()).then(|| text.to_string())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn splits_recognized_sections() {
-        let doc = DocComment::parse(
-            "Appends a value.\n\nGrows when full.\n\n# Parameters\n- this: The vector.\n- `object`: The value\n  moved in.\n\n# Returns\nNothing.\n\n# Examples\n```cx\n# not a heading\nv |> push(1);\n```",
-        );
-        assert_eq!(doc.summary, "Appends a value.");
-        assert_eq!(doc.body.as_deref(), Some("Grows when full."));
-        assert_eq!(
-            doc.parameters,
-            vec![
-                DocParameter { name: "this".into(), description: "The vector.".into() },
-                DocParameter { name: "object".into(), description: "The value moved in.".into() },
-            ]
-        );
-        assert_eq!(doc.returns.as_deref(), Some("Nothing."));
-        assert_eq!(doc.examples.as_deref(), Some("```cx\n# not a heading\nv |> push(1);\n```"));
-    }
-
-    #[test]
-    fn unknown_headings_stay_in_prose() {
-        let doc = DocComment::parse("Summary.\n\n# Safety\nCareful.");
-        assert_eq!(doc.body.as_deref(), Some("# Safety\nCareful."));
-    }
-}

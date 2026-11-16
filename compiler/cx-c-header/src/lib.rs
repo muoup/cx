@@ -3,7 +3,6 @@ mod definitions;
 
 use cx_mir::{MIRFnPrototype, MIRUnit};
 use cx_pipeline_data::config::LinkEntry;
-use cx_util::linkage::LinkageMode;
 
 use crate::{
     declarator::{declare, parameters},
@@ -12,11 +11,9 @@ use crate::{
 
 pub fn generate_header(unit: &MIRUnit) -> String {
     let types = unit.types();
-    let exported = unit
-        .functions()
-        .filter(|(_, function)| function.body().is_some())
-        .map(|(_, function)| function.prototype())
-        .filter(|prototype| prototype.linkage == LinkageMode::Standard)
+    let interface = unit.c_interface();
+    let exported = interface.functions.iter()
+        .map(|id| unit.function(*id).expect("a C export names a function").prototype())
         .collect::<Vec<_>>();
 
     let mut definitions = Definitions::new(types);
@@ -25,6 +22,12 @@ pub fn generate_header(unit: &MIRUnit) -> String {
         for param in prototype.signature.params() {
             definitions.collect(param.ty());
         }
+    }
+    for id in &interface.globals {
+        definitions.collect(unit.global(*id).expect("a C export names a global").ty());
+    }
+    for declared in &interface.types {
+        definitions.collect(declared.ty);
     }
 
     let mut sections = vec![
@@ -35,6 +38,16 @@ pub fn generate_header(unit: &MIRUnit) -> String {
         sections.push(definitions.forward.iter().map(|decl| format!("{decl};\n")).collect::<String>().trim_end().into());
     }
     sections.extend(definitions.ordered);
+    for (name, value) in &interface.constants {
+        sections.push(format!("#define {name} ({value})"));
+    }
+    for declared in interface.types.iter().filter(|declared| declared.alias) {
+        sections.push(format!("typedef {};", declare(types, declared.ty, declared.name.as_str())));
+    }
+    for id in &interface.globals {
+        let global = unit.global(*id).expect("a C export names a global");
+        sections.push(format!("extern {};", declare(types, global.ty(), global.name().as_str())));
+    }
     if !exported.is_empty() {
         let declarations = exported.iter().map(|prototype| declaration(unit, prototype)).collect::<Vec<_>>();
         sections.push(declarations.join("\n"));

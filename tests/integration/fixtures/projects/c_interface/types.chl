@@ -1,0 +1,9 @@
+public:
+
+struct External {
+    int value;
+};
+
+struct Hidden {
+    long value;
+};

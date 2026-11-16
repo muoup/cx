@@ -6,8 +6,7 @@
       "scope": "source.cx",
       "path": ".",
       "file-types": [
-        "cx",
-        "cxc"
+        "chl"
       ],
       "highlights": "queries/highlights.scm"
     }

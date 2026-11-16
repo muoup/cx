@@ -33,7 +33,7 @@ cargo build --release --features backend-llvm
 During development, you can run the compiler directly through Cargo:
 
 ```bash
-cargo run --release -- <file.cx> [options]
+cargo run --release -- <file.chl> [options]
 ```
 
 For a shorter command, add the built binary to your `PATH` or create a symlink:
@@ -45,7 +45,7 @@ ln -s /path/to/cx/target/release/cx ~/.local/bin/cx
 ## Create a Project
 
 Project mode is the preferred workflow because it enables the CX module system
-and reads build settings from `cx.toml`.
+and reads build settings from `cx.lua`.
 
 ```bash
 cx init hello_cx
@@ -53,15 +53,15 @@ cd hello_cx
 cx build
 ```
 
-This creates a starter project with a `cx.toml` file and a `main.cx`, then writes
+This creates a starter project with a `cx.lua` file and a `main.chl`, then writes
 build output under `.internal/`.
 
 ## Compile a Single File
 
-CX can also compile a single `.cx` file directly:
+CX can also compile a single `.chl` file directly:
 
 ```bash
-cx main.cx -o main
+cx main.chl -o main
 ```
 
 Single-file compilation is intended to behave like a C compiler invocation.

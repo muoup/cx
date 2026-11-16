@@ -135,19 +135,6 @@ fn import_jobs_for_unit(
                 format!("{}", import),
             ));
         }
-        let path = import.module().as_path();
-        let alternate = path.with_extension("cxc");
-        if path.extension().is_some_and(|extension| extension == "cx") && alternate.is_file() {
-            return Err(pipeline_error(
-                &catalogue::AMBIGUOUS_MODULE,
-                (
-                    format!("{}", import.namespace()),
-                    format!("{}", path.display()),
-                    format!("{}", alternate.display()),
-                ),
-            ));
-        }
-
         jobs.push(CompilationJob::new(
             vec![],
             CompilationStep::PreParse,
@@ -457,10 +444,11 @@ pub(crate) fn perform_job(
                 .hmir
                 .get(job.unit.namespace())
                 .expect("HMIR unit not found for its compilation unit");
-            let settings = HMIRSettings::new(context.config.architecture)
+            let mut settings = HMIRSettings::new(context.config.architecture)
                 .with_explicit_return(require_explicit_return(context, &job.unit))
                 .with_assertions(!context.config.unsafe_flags.no_assert)
                 .with_type_recording(context.config.record_types);
+            settings.c_interface = context.config.header_modules.contains(job.unit.module().as_path());
 
             let mut env = HMIREnvironment::new(&context.module_db, hmir.as_ref(), settings);
             let lowered = generate_mir(hmir.as_ref(), &mut env);

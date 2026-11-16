@@ -23,7 +23,6 @@ pub struct ParserData<'a> {
     pub tokens: TokenIter<'a>,
     pub visibility: VisibilityMode,
     pub symbol_naming: HIRSymbolNameScheme,
-    pub default_naming: HIRSymbolNameScheme,
     include_states: Vec<IncludeParserState>,
     pub expr_commas: Vec<bool>,
     pub pp_contents: &'a PreparseContents,
@@ -51,16 +50,11 @@ impl<'a> ParserData<'a> {
     ) -> Self {
         let extension = tokens.file.extension().and_then(|extension| extension.to_str());
         let c_mode = extension == Some("c");
-        let default_naming = match extension {
-            Some("cxc") => HIRSymbolNameScheme::Unmangled,
-            _ => HIRSymbolNameScheme::Namespaced,
-        };
 
         Self {
             tokens,
             visibility: VisibilityMode::Package,
-            symbol_naming: default_naming,
-            default_naming,
+            symbol_naming: HIRSymbolNameScheme::Namespaced,
             include_states: Vec::new(),
             expr_commas: vec![true],
             pp_contents,
@@ -139,6 +133,18 @@ impl<'a> ParserData<'a> {
 
     pub fn in_include(&self) -> bool {
         !self.include_states.is_empty()
+    }
+
+    pub fn naming(&self, linkage: LinkageMode) -> HIRSymbolNameScheme {
+        if self.c_mode {
+            if linkage == LinkageMode::Static {
+                HIRSymbolNameScheme::Namespaced
+            } else {
+                HIRSymbolNameScheme::Unmangled
+            }
+        } else {
+            self.symbol_naming
+        }
     }
 
     pub fn take_ast(mut self) -> HIR {

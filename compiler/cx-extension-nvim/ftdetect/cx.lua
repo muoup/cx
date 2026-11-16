@@ -1,1 +1,1 @@
-vim.filetype.add({ extension = { cx = "cx", cxc = "cx" } })
+vim.filetype.add({ extension = { chl = "cx" } })

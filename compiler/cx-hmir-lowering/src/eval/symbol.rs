@@ -152,8 +152,10 @@ fn tagged(
         declaration.span().clone(),
         declared.debug_name().map(str::to_owned),
     );
+    let name = declaration::type_name(context.unit(id.brand()).resolve_def(id).unwrap());
     let resolver = context.env_mut().resolver_mut();
     let ty = resolver.reserve_type(placeholder);
+    resolver.name_type(ty, name);
     if declaration.role() == HMIRDeclarationRole::Definition {
         resolver.set_pending(ty, Some(id));
     }
@@ -269,7 +271,9 @@ fn comptime_value(
     if !matches!(context.env().resolve_kind(declared), HMIRTypeKind::Type) {
         return eval::eval_comptime(context, global.body(), global.initializer(), Some(declared));
     }
-    let name = context.env().symbols().resolve_definition(id).name().name.to_string();
+    let source = context.env().symbols().resolve_definition(id);
+    let name = source.name().name.to_string();
+    let symbol_name = declaration::type_name(source);
     let publish = |env: &mut HMIREnvironment, value| {
         env.resolver_mut()
             .set_symbol(id, SymbolState::Evaluating(Some(value)))
@@ -277,7 +281,10 @@ fn comptime_value(
     let body = global.body();
     types::alias::define(context, name, span, publish, |context, reserved| {
         match types::aggregate(body, global.initializer()) {
-            Some(declared) => types::construct_type(context, body, declared, Some(reserved)),
+            Some(declared) => {
+                context.env_mut().resolver_mut().name_type(reserved, symbol_name);
+                types::construct_type(context, body, declared, Some(reserved))
+            }
             None => flow::top(
                 flow::boundary(eval_type(context, body, global.initializer()))?.description(),
             ),

@@ -16,6 +16,7 @@ pub trait MTRegistry: Sized {
     fn find(&self, ty: &MIRType) -> Option<MIRTypeID>;
     fn find_kind(&self, kind: &MIRTypeKind) -> Option<MIRTypeID>;
     fn debug_name(&self, id: MIRTypeID) -> Option<&str>;
+    fn symbol_name(&self, id: MIRTypeID) -> Option<&str>;
 
     // --- HELPERS ---
 

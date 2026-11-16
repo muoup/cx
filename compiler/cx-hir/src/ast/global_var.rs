@@ -28,6 +28,7 @@ pub enum HIRGlobalVariable {
 pub struct HIREnumDefinition {
     pub name: Option<CXIdent>,
     pub variants: Vec<HIREnumVariant>,
+    pub symbol_naming: HIRSymbolNameScheme,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

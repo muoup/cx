@@ -39,6 +39,7 @@ pub enum HIRStmt {
     TypeDefinition {
         name: Option<CXIdent>,
         visibility: VisibilityMode,
+        symbol_naming: modifiers::HIRSymbolNameScheme,
         ty: HIRType,
         tag: Option<HIRTagKind>,
         range: TokenRange,

@@ -267,6 +267,7 @@ fn predeclaration_type(
         })
     {
         data.add_stmt(HIRStmt::TypeDefinition {
+            symbol_naming: data.naming(LinkageMode::Standard),
             name: Some(definition_name),
             visibility: data.visibility,
             ty: ty.clone(),
@@ -290,6 +291,7 @@ fn defined_type(
         // the identifier pointer to that type
 
         data.add_stmt(HIRStmt::TypeDefinition {
+            symbol_naming: data.naming(LinkageMode::Standard),
             name: Some(name.clone()),
             visibility: data.visibility,
             ty,
@@ -429,6 +431,7 @@ pub(crate) fn parse_enum_def(data: &mut ParserData) -> CXResult<HIRType> {
         variable: HIRGlobalVariable::EnumDefinition(HIREnumDefinition {
             name: name.clone(),
             variants: variants.clone(),
+            symbol_naming: data.naming(LinkageMode::Standard),
         }),
     });
 

@@ -1,84 +1,81 @@
 ---
 title: Libraries and C Interop
-description: CX library targets, .cxc entry files, generated C headers, and linking from C.
+description: Explicit C exports from ordinary .chl modules, generated headers, and linking from C.
 ---
 
 # Libraries and C Interop
 
-When interfacing a CX codebase with C, or with another language supporting C FFI, a project may define a library target. A library target consists of an object file containing the compiled CX code and a C header generated from its CX header entry file.
+A `.chl` module uses namespace-based symbol names by default. A library target can generate a C header for that same module without changing its naming rules or its availability through normal module imports.
 
-## `.cxc` Library Entry Files
+## Declaring the C Interface
 
-Files with the `.cxc` extension serve as library entry points and use the same syntax as `.cx` files. When a `.cxc` file is compiled as a library target, its non-static, non-external functions become the library's exported symbols and declarations in the generated C header.
+Use a `public extern "C":` section for definitions intended for the C interface:
 
-```c title="mathlib.cxc"
+```cx title="mathlib.chl"
+public extern "C":
+
+struct Point {
+    i32 x;
+    i32 y;
+};
+
+typedef i32 Count;
+
+i32 calls = 0;
+
 i32 add(i32 a, i32 b) {
+    calls += 1;
     return a + b;
 }
 
-i32 multiply(i32 a, i32 b) {
-    return a * b;
+public:
+
+i32 twice(i32 value) {
+    return value * 2;
 }
 ```
+
+The generated header contains `add`, an `extern` declaration for `calls`, and the standalone `Point` and `Count` declarations. `twice` retains its namespaced symbol and is available to module importers, but is absent from the C header.
+
+Public C named types are included even when no exported function uses them. Types required transitively by exported functions, globals, or types are included using their own naming scheme. A dependency declared outside an `extern "C"` section keeps its mangled name in the header, making that dependency visible to the developer. Named aliases are emitted as typedefs; integer enums are represented by an integer typedef and macros for their public C enumerators.
+
+An `extern "C":` section is private unless prefixed with `public`. A later `public:` or `private:` section restores namespace-based naming. A function declaration without a body imports an external symbol; a global without an initializer in an `extern "C"` section does likewise. Define exported globals with an initializer, including `= 0` for zero initialization.
+
+Static definitions and imported declarations are omitted from the generated interface. Generic and compile-time functions cannot be exported in a C header.
 
 ## Library Targets
 
-The entry file is configured in a `libraries` array under a workspace target:
+Request headers explicitly in `cx.lua`:
 
-```toml title="cx.toml"
-[project]
-name = "mathlib"
+```lua title="cx.lua"
+package("mathlib")
+stdlib("std")
 
-[workspace.targets.default]
-libraries = [
-  { name = "mathlib", entry = "mathlib.cxc" },
-]
+local lib = target("mathlib", "library")
+lib:match("mathlib.chl")
+lib:headers("mathlib.chl")
 ```
 
-Building this project with `cx build` performs three steps:
+Run `cx build mathlib`. With the default debug profile, the output is `.internal/debug/mathlib.o` and `.internal/debug/include/mathlib/mathlib.h`.
 
-1. It compiles all source files to object files with per-function ELF sections.
-2. It uses `ld -r --gc-sections` to merge the object files while marking exported symbols as roots, which eliminates unreachable code during the relocatable link.
-3. It generates a C header from the entry file's LMIR data.
+Header selection controls the C interface. The object also retains ordinary namespaced symbols from the library target's source modules.
 
-The result is `.internal/output/default/mathlib.o` and `.internal/output/default/mathlib.h`.
-
-## Calling the Library from C
-
-Compiling the example above will provide a C header file as mentioned in `.internal/output/default/mathlib.h` that looks like so:
-```c title=".internal/output/default/mathlib.h
-#pragma once
-
-#include <stdint.h>
-#include <stdbool.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-extern int32_t add(int32_t a, int32_t b);
-extern int32_t multiply(int32_t a, int32_t b);
-
-#ifdef __cplusplus
-}
-#endif
-```
-
-Include this header in your designated external C header directory, and it may be used as if it was a standard C header:
+## Calling from C
 
 ```c title="main.c"
 #include <stdio.h>
 #include "mathlib.h"
 
 int main(void) {
-    printf("3 + 4 = %d\n", add(3, 4));
-    printf("3 * 4 = %d\n", multiply(3, 4));
+    struct Point point = {3, 4};
+    Count sum = add(point.x, point.y);
+    printf("sum = %d, calls = %d\n", sum, calls);
     return 0;
 }
 ```
 
-Then link the generated object file with the C program:
-
 ```bash
-gcc -o main main.c .internal/output/default/mathlib.o
+cc main.c .internal/debug/mathlib.o -I.internal/debug/include/mathlib -o main
 ```
+
+Generated headers include the types they need and guard function and variable declarations with `extern "C"` when compiled as C++.

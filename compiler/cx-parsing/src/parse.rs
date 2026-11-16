@@ -138,13 +138,13 @@ fn parse_access_mods(data: &mut ParserData) -> CXResult<()> {
         SpecifierType::Public => {
             data.visibility = VisibilityMode::Public;
             if !data.in_include() {
-                data.symbol_naming = data.default_naming;
+                data.symbol_naming = HIRSymbolNameScheme::Namespaced;
             }
         }
         SpecifierType::Private => {
             data.visibility = VisibilityMode::Private;
             if !data.in_include() {
-                data.symbol_naming = data.default_naming;
+                data.symbol_naming = HIRSymbolNameScheme::Namespaced;
             }
         }
 
@@ -197,6 +197,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
             });
         if type_name.namespace.is_root() && type_name.name == name && is_existing_type_alias {
             data.add_stmt(HIRStmt::TypeDefinition {
+                symbol_naming: data.naming(LinkageMode::Standard),
                 name: Some(name),
                 visibility: data.visibility,
                 ty: ty.clone(),
@@ -208,6 +209,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CXResult<()> {
     }
 
     data.add_stmt(HIRStmt::TypeDefinition {
+        symbol_naming: data.naming(LinkageMode::Standard),
         name: Some(name),
         visibility: data.visibility,
         ty: ty.clone(),
@@ -300,18 +302,9 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CXResult<(
     let (name, return_type, specifiers) = parse_initializer(data)?;
     let range = data.token_range(start, data.tokens.index);
     let linkage = specifiers.linkage;
-    let symbol_naming = if data.c_mode {
-        if linkage == LinkageMode::Static {
-            HIRSymbolNameScheme::Namespaced
-        } else {
-            HIRSymbolNameScheme::Unmangled
-        }
-    } else {
-        data.symbol_naming
-    };
+    let symbol_naming = data.naming(linkage);
 
     let inherited_external = !data.c_mode
-        && data.default_naming == HIRSymbolNameScheme::Namespaced
         && symbol_naming == HIRSymbolNameScheme::Unmangled
         && linkage == LinkageMode::Standard;
 

@@ -54,8 +54,8 @@ pub(crate) fn parameters(types: &MIRTypeRegistry, signature: &MIRFnSignature, na
 }
 
 pub(crate) fn aggregate_name(types: &MIRTypeRegistry, ty: MIRTypeID) -> String {
-    match types.debug_name(ty) {
-        Some(name) => name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect(),
+    match types.symbol_name(ty) {
+        Some(name) => name.to_string(),
         None => {
             let canonical = types.find(&MIRType::new(definition_kind(types, ty).clone())).unwrap_or(ty);
             format!("mir_type_{}", canonical.index())

@@ -75,14 +75,14 @@ fn write_module(
         }
 
         let extension = path.extension().and_then(|ext| ext.to_str());
-        if !matches!(extension, Some("cx") | Some("c")) {
+        if !matches!(extension, Some("chl") | Some("c")) {
             continue;
         }
 
         println!("cargo:rerun-if-changed={}", path.display());
 
         if matches!(kind, TestKind::EndToEnd)
-            && extension == Some("cx")
+            && extension == Some("chl")
             && !has_stdout_expectation(&path)
         {
             continue;

@@ -20,7 +20,7 @@ pub fn is_intrinsic_type(name: &str) -> bool {
     false
 }
 
-pub const INTRINSIC_IMPORTS: &[&str] = &["std/intrinsic/assertion.cx"];
+pub const INTRINSIC_IMPORTS: &[&str] = &["std/intrinsic/assertion.chl"];
 
 // TODO: Better architecture-specific handling of integer-like types and other intrinsics
 pub const INTRINSIC_TYPES: &[(&str, fn(&ArchitectureConfig) -> Option<HIRIntrinsicType>)] = &[

@@ -2,6 +2,7 @@ use rustc_hash::FxHashMap;
 
 use cx_target::ArchitectureConfig;
 use index_vec::IndexVec;
+use cx_util::identifier::CXIdent;
 
 use crate::ty::{
     interface::MTRegistry,
@@ -15,6 +16,7 @@ pub struct MIRTypeRegistry {
     architecture: ArchitectureConfig,
     definitions: IndexVec<MIRTypeID, MIRType>,
     debug_names: FxHashMap<MIRTypeID, String>,
+    symbol_names: FxHashMap<MIRTypeID, CXIdent>,
     layouts: MIRLayoutCache,
 }
 
@@ -23,12 +25,14 @@ impl MIRTypeRegistry {
         architecture: ArchitectureConfig,
         definitions: IndexVec<MIRTypeID, MIRType>,
         debug_names: FxHashMap<MIRTypeID, String>,
+        symbol_names: FxHashMap<MIRTypeID, CXIdent>,
     ) -> Self {
         let layouts = MIRLayoutCache::new(definitions.len());
         Self {
             architecture,
             definitions,
             debug_names,
+            symbol_names,
             layouts,
         }
     }
@@ -61,5 +65,9 @@ impl MTRegistry for MIRTypeRegistry {
 
     fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
         self.debug_names.get(&id).map(|s| s.as_str())
+    }
+
+    fn symbol_name(&self, id: MIRTypeID) -> Option<&str> {
+        self.symbol_names.get(&id).map(CXIdent::as_str)
     }
 }

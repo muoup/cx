@@ -136,17 +136,8 @@ impl Packages {
             .fold(self.get(id).source_root.clone(), |path, segment| path.join(segment.as_str()));
         Some(CompilationUnit::new(
             id,
-            ModulePath::new(module_source(&stem)),
+            ModulePath::new(stem.with_extension("chl")),
             namespace.clone(),
         ))
-    }
-}
-
-fn module_source(stem: &Path) -> PathBuf {
-    let source = stem.with_extension("cx");
-    let alternate = stem.with_extension("cxc");
-    match !source.is_file() && alternate.is_file() {
-        true => alternate,
-        false => source,
     }
 }

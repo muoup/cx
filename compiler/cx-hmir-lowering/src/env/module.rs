@@ -17,6 +17,7 @@ use cx_target::ArchitectureConfig;
 use cx_tokens::TokenRange;
 use cx_util::identifier::CXIdent;
 use index_vec::IndexVec;
+use cx_mir::unit::interface::MIRCInterface;
 
 ///
 /// Handles the internals of generating an MIRUnit via an API compatible with HMIR lowering. Used as an internal component
@@ -32,6 +33,8 @@ pub struct MIRModuleBuilder {
     layouts: MIRLayoutCache,
     interned: FxHashMap<MIRType, MIRTypeID>,
     debug_names: FxHashMap<MIRTypeID, String>,
+    symbol_names: FxHashMap<MIRTypeID, CXIdent>,
+    pub c_interface: MIRCInterface,
     qualified: FxHashMap<MIRTypeID, Vec<(MIRTypeMetadata, MIRTypeID)>>,
     functions: BTreeMap<MIRFunctionID, MIRFunction>,
     globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
@@ -50,6 +53,8 @@ impl MIRModuleBuilder {
             layouts: MIRLayoutCache::default(),
             interned: FxHashMap::default(),
             debug_names: FxHashMap::default(),
+            symbol_names: FxHashMap::default(),
+            c_interface: MIRCInterface::default(),
             qualified: FxHashMap::default(),
             functions: BTreeMap::new(),
             globals: BTreeMap::new(),
@@ -89,6 +94,10 @@ impl MIRModuleBuilder {
         self.types[id] = ty.clone();
         self.layouts.reset(id);
         self.interned.entry(ty).or_insert(id);
+    }
+
+    pub fn name_type(&mut self, id: MIRTypeID, name: CXIdent) {
+        self.symbol_names.insert(id, name);
     }
 
     pub fn qualified(&self, base: MIRTypeID, metadata: MIRTypeMetadata) -> Option<MIRTypeID> {
@@ -170,10 +179,11 @@ impl MIRModuleBuilder {
 
     pub fn finish(self) -> MIRUnit {
         MIRUnit::new(
-            MIRTypeRegistry::new(self.architecture, self.types, self.debug_names),
+            MIRTypeRegistry::new(self.architecture, self.types, self.debug_names, self.symbol_names),
             self.functions,
             self.globals,
             self.global_order,
+            self.c_interface,
         )
     }
 }
@@ -197,6 +207,10 @@ impl MTRegistry for MIRModuleBuilder {
 
     fn debug_name(&self, id: MIRTypeID) -> Option<&str> {
         self.debug_names.get(&id).map(String::as_str)
+    }
+
+    fn symbol_name(&self, id: MIRTypeID) -> Option<&str> {
+        self.symbol_names.get(&id).map(CXIdent::as_str)
     }
 
     fn layout(&self, ty: MIRTypeID) -> MIRTypeLayout {

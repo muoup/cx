@@ -3,6 +3,7 @@ pub(crate) mod declaration;
 pub(crate) mod function;
 pub(crate) mod global;
 pub(crate) mod types;
+mod interface;
 
 use crate::{
     env::{HMIREnvironment, generation::Generation},
@@ -23,6 +24,9 @@ pub fn lower_unit<'hmir>(
     env: &mut HMIREnvironment<'_, 'hmir>,
 ) -> CXResult<()> {
     declaration::resolve(env, unit)?;
+    if env.settings().c_interface {
+        interface::collect(env, unit)?;
+    }
 
     while let Some(generation) = env.generation_mut().next() {
         let function = env.generation().function(&generation);

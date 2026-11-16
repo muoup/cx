@@ -4,6 +4,7 @@ use cx_util::{dense_id, identifier::CXIdent, linkage::LinkageMode};
 
 pub mod function;
 pub mod body;
+pub mod interface;
 
 use crate::{
     immediate::MIRImmediate,
@@ -28,6 +29,7 @@ pub struct MIRUnit {
     functions: BTreeMap<MIRFunctionID, MIRFunction>,
     globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
     global_order: Vec<MIRGlobalID>,
+    c_interface: interface::MIRCInterface,
 }
 
 impl MIRUnit {
@@ -36,17 +38,23 @@ impl MIRUnit {
         functions: BTreeMap<MIRFunctionID, MIRFunction>,
         globals: BTreeMap<MIRGlobalID, MIRGlobalVariable>,
         global_order: Vec<MIRGlobalID>,
+        c_interface: interface::MIRCInterface,
     ) -> Self {
         Self {
             types,
             functions,
             globals,
             global_order,
+            c_interface,
         }
     }
 
     pub fn types(&self) -> &MIRTypeRegistry {
         &self.types
+    }
+
+    pub fn c_interface(&self) -> &interface::MIRCInterface {
+        &self.c_interface
     }
 
     pub fn functions(&self) -> impl ExactSizeIterator<Item = (MIRFunctionID, &MIRFunction)> {

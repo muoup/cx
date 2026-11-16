@@ -95,7 +95,11 @@ pub(crate) fn lower_type(
         None => lower_underlying(env, underlying, span)?,
     };
 
-    Ok(qualify(env, base, metadata))
+    let id = qualify(env, base, metadata);
+    if let Some(name) = env.resolver().type_name(underlying).cloned() {
+        env.module_mut().name_type(id, name);
+    }
+    Ok(id)
 }
 
 fn settle(env: &mut HMIREnvironment, ty: HMIRTypeID) -> CXResult<HMIRTypeID> {

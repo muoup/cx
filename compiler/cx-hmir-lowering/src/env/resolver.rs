@@ -10,6 +10,7 @@ use cx_hmir::{
 use cx_mir::MIRTypeID;
 use cx_tokens::TokenRange;
 use index_vec::IndexVec;
+use cx_util::identifier::CXIdent;
 
 use crate::value::{self, HMIRValue};
 
@@ -21,6 +22,7 @@ use key::TypeKey;
 #[derive(Debug)]
 struct TypeState {
     ty: HMIRType,
+    symbol_name: Option<CXIdent>,
     pending: Option<HMIRDefID>,
     prepared: bool,
     lowered: Option<MIRTypeID>,
@@ -101,6 +103,7 @@ impl HMIRResolver {
     pub fn reserve_type(&mut self, ty: HMIRType) -> HMIRTypeID {
         self.types.push(TypeState {
             ty,
+            symbol_name: None,
             pending: None,
             prepared: false,
             lowered: None,
@@ -113,6 +116,15 @@ impl HMIRResolver {
 
     pub fn realized_type(&self, id: HMIRTypeID) -> &HMIRType {
         &self.types[id].ty
+    }
+
+    pub fn type_name(&self, id: HMIRTypeID) -> Option<&CXIdent> {
+        self.types[self.underlying(id)].symbol_name.as_ref()
+    }
+
+    pub fn name_type(&mut self, id: HMIRTypeID, name: CXIdent) {
+        let id = self.underlying(id);
+        self.types[id].symbol_name = Some(name);
     }
 
     pub fn pending(&self, id: HMIRTypeID) -> Option<HMIRDefID> {

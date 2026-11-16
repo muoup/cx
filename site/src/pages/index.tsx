@@ -68,7 +68,7 @@ const principles: Principle[] = [
         ),
         files: [
             {
-                name: "string.cx",
+                name: "string.chl",
                 code: `struct string : @nodrop {
     char* data;
     usize length;
@@ -102,7 +102,7 @@ void use_string(string s) {
         ),
         files: [
             {
-                name: "shape.cx",
+                name: "shape.chl",
                 code: `enum union shape {
     circle :: f64,
     rectangle :: struct { f64 width; f64 height; },
@@ -131,7 +131,7 @@ float get_area(shape& s) {
     //             <p>Placeholder: when code steps outside the safe subset, and how that is made visible.</p>
     //         </>
     //     ),
-    //     files: [{name: "safe.cx", code: "// Placeholder: a short safe function example."}],
+    //     files: [{name: "safe.chl", code: "// Placeholder: a short safe function example."}],
     //     placeholder: true,
     // },
     {
@@ -142,22 +142,27 @@ float get_area(shape& s) {
                     The CX compiler is an in-progress drop-in replacement for compilers like gcc and clang, and due to the backward compatibility of the language, any CX file can directly include a C header and call C functions without any wrappers or bindings.
                 </p>
                 <p>
-                    The build system of the compiler is also designed with first-class support for C interoperability. Files with the '.cxc' extension keep their symbols unmangled, and marking them as exports of a library target in 'cx.lua' has the compiler generate C header artifacts that allow C code to call into CX code.
+                    The build system of the compiler is also designed with first-class support for C interoperability. Ordinary '.chl' modules can expose public extern C definitions through generated C headers, while remaining available through normal module imports. Library targets select their header modules in 'cx.lua'.
                 </p>
             </>
         ),
         files: [
             {
-                name: "mathlib.cxc",
-                code: `i32 add(i32 a, i32 b) {
+                name: "mathlib.chl",
+                code: `public extern "C":
+
+i32 add(i32 a, i32 b) {
     return a + b;
 }`,
             },
             {
                 name: "cx.lua",
-                code: `project {}
+                code: `package("mathlib")
+stdlib("std")
 
-library "mathlib" { exports "mathlib.cxc" }`,
+local lib = target("mathlib", "library")
+lib:match("mathlib.chl")
+lib:headers("mathlib.chl")`,
             },
             {
                 name: "main.c",
@@ -263,7 +268,7 @@ function LeakDiagnostic() {
     return (
         <div className={styles.diagnostic}>
             <span className={styles.error}>error:</span> `client` is marked @nodrop but is leaked without cleanup{"\n"}
-            {"  "}{gutter("-->")} server.cx:12:44{"\n"}
+            {"  "}{gutter("-->")} server.chl:12:44{"\n"}
             {"   "}{gutter("|")}{"\n"}
             {gutter("12 |")}{"             |> std::opt::unwrap_or(.{ continue; });\n"}
             {"   "}{gutter("|")}{" ".repeat(44)}
@@ -280,7 +285,7 @@ function Example() {
         <div className={styles.example}>
             <div className={styles.frame}>
                 <div className={styles.frameHead}>
-                    <span>server.cx</span>
+                    <span>server.chl</span>
                     <div className={styles.pills} role="group" aria-label="Example version">
                         <button aria-pressed={!fixed} onClick={() => setFixed(false)} type="button">
                             Leaks
@@ -294,7 +299,7 @@ function Example() {
             </div>
             {fixed ? (
                 <div className={clsx(styles.diagnostic, styles.ok)}>
-                    <span className={styles.help}>ok:</span> server.cx compiles; every path consumes `client`
+                    <span className={styles.help}>ok:</span> server.chl compiles; every path consumes `client`
                 </div>
             ) : (
                 <LeakDiagnostic />
