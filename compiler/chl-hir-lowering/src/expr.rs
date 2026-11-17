@@ -419,7 +419,7 @@ pub(crate) fn lower_quote<'a>(
             let params = params
                 .iter()
                 .zip(types)
-                .map(|(param, ty)| this.declare(Some(&param.name), ty, false, span))
+                .map(|(param, ty)| this.declare(Some(&param.name), ty, false, &param.range))
                 .collect();
             let body = lower_expr(this, body)?;
 

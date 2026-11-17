@@ -648,11 +648,13 @@ pub(crate) fn parse_expr_val(
         TokenKind::Operator(OperatorType::Bar) => {
             let mut params = Vec::new();
             loop {
+                let param_start = data.tokens.index;
                 let (Some(name), ty, _) = parse_initializer(data)? else {
                     let expected = ("a typed closure parameter".into(), Some("such as 'auto value'".into()));
                     return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, expected);
                 };
-                params.push(HIRClosureParam { name, ty });
+                let range = data.token_range(param_start, data.tokens.index);
+                params.push(HIRClosureParam { name, ty, range });
 
                 if try_next!(data.tokens, operator!(Bar)) {
                     break;

@@ -58,7 +58,7 @@ fn print_general_help() {
     println!("Commands:");
     println!("  build [target]       Build from chloro.lua (default targets or a specific one)");
     println!("  run [target]         Build and run a project executable");
-    println!("  init <project-name>  Create a new chlorooro project");
+    println!("  init <project-name>  Create a new chloro project");
     println!("  doc [path]           Extract documentation from the .chl files under a path as JSON");
     println!();
     println!("Legacy single-file mode:");

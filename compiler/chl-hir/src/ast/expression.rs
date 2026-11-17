@@ -234,6 +234,7 @@ pub enum HIRExprKind {
 pub struct HIRClosureParam {
     pub name: CHLIdent,
     pub ty: HIRType,
+    pub range: TokenRange,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
