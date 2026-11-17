@@ -1,9 +1,11 @@
+use std::any::Any;
+
 use crate::{
     catalogue::is_internal,
     error::{CHLRawError, CHLRawResult},
 };
 
-pub trait CHLErrorMessage: Send {
+pub trait CHLErrorMessage: Send + Any {
     fn code(&self) -> String;
 
     fn message(&self) -> String;

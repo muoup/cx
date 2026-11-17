@@ -197,10 +197,10 @@ pub(crate) fn splice(
         context.env().resolve_kind(value.ty()),
         HMIRTypeKind::Staged(_)
     );
-    match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmValue::Opaque) => Ok(Evaluation::Ready(value)),
-        _ if staged => materialize(context, value, span),
-        _ => Ok(Evaluation::Ready(value)),
+    if staged {
+        materialize(context, value, span)
+    } else {
+        Ok(Evaluation::Ready(value))
     }
 }
 
@@ -295,6 +295,14 @@ pub(crate) fn materialize(
     let HMIRTypeKind::Staged(result) = *context.env().resolve_kind(code.ty()) else {
         unreachable!("materialization requires code");
     };
+    if !context.is_runtime() {
+        return Err(hmir_error(
+            span,
+            &mir::COMPTIME_INVALID_OPERATION,
+            "materializing runtime code at compile time".into(),
+        )
+        .into());
+    }
     let (callee, values) = match value::into_application(code) {
         Ok(application) => {
             let args = application
@@ -318,14 +326,6 @@ pub(crate) fn materialize(
             }
         },
     };
-    if !context.is_runtime() {
-        return Err(hmir_error(
-            span,
-            &mir::COMPTIME_INVALID_OPERATION,
-            "materializing runtime code at compile time".into(),
-        )
-        .into());
-    }
     let evaluated = match callee.kind() {
         HMIRValueKind::Immediate(HMIRImmValue::Quote(node)) => {
             let expected = (!context.env().is_void(result)).then_some(result);

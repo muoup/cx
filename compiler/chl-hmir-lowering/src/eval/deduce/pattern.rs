@@ -93,7 +93,7 @@ pub(crate) fn validate(
 ) -> CHLResult<()> {
     let comptime = FnContext::Comptime(ComptimeContext::new());
     let mut context = LocalLoweringContext::new(env, None, comptime).sourced(id.brand());
-    Validation::default().alias(&mut context, id, span)
+    validate_alias(&mut Validation::default(), &mut context, id, span)
 }
 
 #[derive(Default)]
@@ -102,107 +102,110 @@ struct Validation {
     checked: FxHashSet<HMIRDefID>,
 }
 
-impl Validation {
-    fn alias(
-        &mut self,
-        context: &mut LocalLoweringContext,
-        def: HMIRDefID,
-        span: &TokenRange,
-    ) -> CHLResult<()> {
-        if self.checked.contains(&def) {
-            return Ok(());
-        }
-        let unit = context.unit(def.brand());
-        let source = unit
-            .resolve_def(def)
-            .expect("alias owner contains its definition");
-        let Some(HMIRDefKind::Function(function)) = declaration::canonical(source).kind() else {
-            return Err(invalid(span, "a call to a non-transparent function"));
-        };
-        let Some(root) = function.transparent_body() else {
-            return Err(invalid(span, "a call to a non-transparent function"));
-        };
-        if !self.active.insert(def) {
-            return Err(hmir_error(
-                span,
-                &mir::DEPENDENCY_CYCLE,
-                source.name().to_string(),
-            ));
-        }
-        context.relocated(def.brand(), |context| {
-            self.expr(context, function, root, true)
-        })?;
-        self.active.remove(&def);
-        self.checked.insert(def);
-        Ok(())
+fn validate_alias(
+    validation: &mut Validation,
+    context: &mut LocalLoweringContext,
+    def: HMIRDefID,
+    span: &TokenRange,
+) -> CHLResult<()> {
+    if validation.checked.contains(&def) {
+        return Ok(());
     }
+    let unit = context.unit(def.brand());
+    let source = unit
+        .resolve_def(def)
+        .expect("alias owner contains its definition");
+    let Some(HMIRDefKind::Function(function)) = declaration::canonical(source).kind() else {
+        return Err(invalid(span, "a call to a non-transparent function"));
+    };
+    let Some(root) = function.transparent_body() else {
+        return Err(invalid(span, "a call to a non-transparent function"));
+    };
+    if !validation.active.insert(def) {
+        return Err(hmir_error(
+            span,
+            &mir::DEPENDENCY_CYCLE,
+            source.name().to_string(),
+        ));
+    }
+    let result = context.relocated(def.brand(), |context| {
+        validate_expr(validation, context, function, root, true)
+    });
+    validation.active.remove(&def);
+    result?;
+    validation.checked.insert(def);
+    Ok(())
+}
 
-    fn expr(
-        &mut self,
-        context: &mut LocalLoweringContext,
-        function: &HMIRFunction,
-        expr: HMIRExprID,
-        type_position: bool,
-    ) -> CHLResult<()> {
-        let body = function.body();
-        let expression = body.expr(expr);
-        match expression.kind() {
-            HMIRExprKind::Local(local)
-                if !type_position || body.is_type_kind(body.local(*local).ty()) =>
-            {
-                Ok(())
-            }
-            HMIRExprKind::Literal(_) if !type_position => Ok(()),
-            HMIRExprKind::Def(_) | HMIRExprKind::Name { .. } if type_position => {
-                flow::top(eval_type(context, body, expr).and_then(|ty| ty.description())).map(drop)
-            }
-            HMIRExprKind::Def(_) | HMIRExprKind::Name { .. } => Ok(()),
-            HMIRExprKind::Type(ty)
-                if !matches!(
-                    ty.kind(),
-                    HMIRExprTypeKind::Struct { .. }
-                        | HMIRExprTypeKind::Union { .. }
-                        | HMIRExprTypeKind::TaggedUnion { .. }
-                        | HMIRExprTypeKind::Dependent
-                ) && !matches!(
-                    ty.semantics().move_semantics,
-                    HMIRDeclaredMove::CopyTraits(_)
-                ) =>
-            {
-                ty.kind().map(
-                    &mut (self, context),
-                    |(this, context), expr| this.expr(context, function, *expr, true),
-                    |(this, context), expr| this.expr(context, function, *expr, false),
-                )?;
-                Ok(())
-            }
-            HMIRExprKind::Call {
-                callee,
-                args,
-                named,
-            } => {
-                let callee = body.expr(*callee);
-                let def = match callee.kind() {
-                    HMIRExprKind::Def(def) => Some(*def),
-                    HMIRExprKind::Name { name, tag } => {
-                        name::resolve(context, callee.span(), name, *tag)?
-                    }
-                    _ => None,
-                };
-                let Some(def) = def else {
-                    return Err(invalid(
-                        callee.span(),
-                        "a call to a non-transparent function",
-                    ));
-                };
-                self.alias(context, def, callee.span())?;
-                for arg in args.iter().chain(named.iter().map(|(_, arg)| arg)) {
-                    self.expr(context, function, *arg, false)?;
-                }
-                Ok(())
-            }
-            _ => Err(invalid(expression.span(), "this expression")),
+fn validate_expr(
+    validation: &mut Validation,
+    context: &mut LocalLoweringContext,
+    function: &HMIRFunction,
+    expr: HMIRExprID,
+    type_position: bool,
+) -> CHLResult<()> {
+    let body = function.body();
+    let expression = body.expr(expr);
+    match expression.kind() {
+        HMIRExprKind::Local(local)
+            if !type_position || body.is_type_kind(body.local(*local).ty()) =>
+        {
+            Ok(())
         }
+        HMIRExprKind::Literal(_) if !type_position => Ok(()),
+        HMIRExprKind::Def(_) | HMIRExprKind::Name { .. } if type_position => {
+            flow::top(eval_type(context, body, expr).and_then(|ty| ty.description())).map(drop)
+        }
+        HMIRExprKind::Def(_) | HMIRExprKind::Name { .. } => Ok(()),
+        HMIRExprKind::Type(ty)
+            if !matches!(
+                ty.kind(),
+                HMIRExprTypeKind::Struct { .. }
+                    | HMIRExprTypeKind::Union { .. }
+                    | HMIRExprTypeKind::TaggedUnion { .. }
+                    | HMIRExprTypeKind::Dependent
+            ) && !matches!(
+                ty.semantics().move_semantics,
+                HMIRDeclaredMove::CopyTraits(_)
+            ) =>
+        {
+            ty.kind().map(
+                &mut (validation, context),
+                |(validation, context), expr| {
+                    validate_expr(validation, context, function, *expr, true)
+                },
+                |(validation, context), expr| {
+                    validate_expr(validation, context, function, *expr, false)
+                },
+            )?;
+            Ok(())
+        }
+        HMIRExprKind::Call {
+            callee,
+            args,
+            named,
+        } => {
+            let callee = body.expr(*callee);
+            let def = match callee.kind() {
+                HMIRExprKind::Def(def) => Some(*def),
+                HMIRExprKind::Name { name, tag } => {
+                    name::resolve(context, callee.span(), name, *tag)?
+                }
+                _ => None,
+            };
+            let Some(def) = def else {
+                return Err(invalid(
+                    callee.span(),
+                    "a call to a non-transparent function",
+                ));
+            };
+            validate_alias(validation, context, def, callee.span())?;
+            for arg in args.iter().chain(named.iter().map(|(_, arg)| arg)) {
+                validate_expr(validation, context, function, *arg, false)?;
+            }
+            Ok(())
+        }
+        _ => Err(invalid(expression.span(), "this expression")),
     }
 }
 

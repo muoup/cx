@@ -3,6 +3,7 @@ pub(crate) mod flow;
 pub(crate) mod symbol;
 
 mod expr;
+mod subject;
 
 pub(crate) use expr::{
     aggregate, arithmetic, binding, call, coerce, comptime, control, name, place, staged, types,

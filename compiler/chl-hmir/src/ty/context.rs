@@ -69,6 +69,10 @@ pub trait HMIRTypeContext {
         matches!(self.resolve_kind(ty), HMIRTypeKind::Void)
     }
 
+    fn is_unreachable(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Unreachable)
+    }
+    
     fn is_str(&self, ty: HMIRTypeID) -> bool {
         matches!(self.resolve_kind(ty), HMIRTypeKind::Str(_))
     }

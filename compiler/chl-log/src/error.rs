@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::catalogue::{ISSUE_TRACKER, is_internal};
 use crate::error::context::{CHLErrorContextTrait, CHLSourceSpan};
 use crate::error::message::CHLErrorMessage;
@@ -57,6 +59,11 @@ impl CHLError {
 
     pub fn message(&self) -> String {
         self.error.message()
+    }
+
+    pub fn message_as<M: CHLErrorMessage>(&self) -> Option<&M> {
+        let message: &dyn Any = self.error.0.as_ref();
+        message.downcast_ref()
     }
 
     pub fn code(&self) -> String {

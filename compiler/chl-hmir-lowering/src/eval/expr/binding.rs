@@ -6,14 +6,15 @@ use chl_hmir::{
 };
 use chl_log::{
     CHLResult,
-    catalogue::{self, typecheck},
+    catalogue::{mir, typecheck},
+    error::{CHLError, CHLRawError, context::from_token_range, message::CHLErrorMessage},
 };
 use chl_tokens::TokenRange;
 
 use crate::{
     emit,
     env::{
-        function::{FnContext, LocalLoweringContext},
+        function::{EvaluationID, FnContext, LocalLoweringContext},
         resolver::demand,
     },
     eval::{
@@ -59,7 +60,37 @@ pub(crate) fn lookup(
         Some(name) => format!("variable '{name}'"),
         None => "this variable".into(),
     };
-    Err(hmir_error(span, &catalogue::mir::COMPTIME_UNAVAILABLE, subject))
+    Err(unbound(context, local, span, subject))
+}
+
+pub(crate) struct UnboundLocal {
+    pub(crate) local: HMIRLocalID,
+    pub(crate) evaluation: EvaluationID,
+    subject: String,
+}
+
+impl CHLErrorMessage for UnboundLocal {
+    fn code(&self) -> String {
+        mir::COMPTIME_UNAVAILABLE.code.into()
+    }
+
+    fn message(&self) -> String {
+        (mir::COMPTIME_UNAVAILABLE.message)(self.subject.clone())
+    }
+}
+
+pub(crate) fn unbound(
+    context: &LocalLoweringContext,
+    local: HMIRLocalID,
+    span: &TokenRange,
+    subject: String,
+) -> CHLError {
+    let message = UnboundLocal {
+        local,
+        evaluation: context.evaluation(),
+        subject,
+    };
+    CHLError::new(CHLRawError(Box::new(message)), from_token_range(span))
 }
 
 // A declaration is a statement, and evaluates to unit. Each evaluation binds a fresh instance of the local, so a

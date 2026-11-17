@@ -429,12 +429,14 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         }
         HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag))) => tag.prefix().into(),
         HMIRTypeKind::Undefined(HMIRUndefined::Forward(None)) => "undefined".into(),
+
+        HMIRTypeKind::Staged(ty) => format!("^{}", name(env, *ty)),
+        
         HMIRTypeKind::Builtin { name, .. } => name.clone(),
         HMIRTypeKind::Struct { .. } => "struct".into(),
         HMIRTypeKind::Union { .. } => "union".into(),
         HMIRTypeKind::TaggedUnion { .. } => "enum union".into(),
         HMIRTypeKind::Function { .. } => "function".into(),
-        HMIRTypeKind::Staged(_) => "staged".into(),
         HMIRTypeKind::Dependent => "_".into(),
     };
     match constant {

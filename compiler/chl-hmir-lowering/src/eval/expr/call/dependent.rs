@@ -2,6 +2,7 @@ use std::mem;
 
 use chl_hmir::{
     HMIRBodyContext, HMIRDefID, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
+    body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
     unit::function::HMIRFnParam,
@@ -23,7 +24,7 @@ use crate::{
     },
     eval::{
         EvalResult, coerce, comptime, control,
-        deduce::{self, Deduction},
+        deduce::{self, Deduction, Pending},
         eval, eval_type,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
         staged, symbol, types,
@@ -178,6 +179,10 @@ impl<'a> Frame<'a> {
         ))
     }
 
+    pub(crate) fn params(&self) -> &'a [HMIRLocalID] {
+        self.function.params()
+    }
+
     pub(crate) fn enter<T>(
         &mut self,
         caller: &mut LocalLoweringContext,
@@ -188,11 +193,10 @@ impl<'a> Frame<'a> {
         let mut child = caller
             .child(Some(self.function.signature()), state, None)
             .sourced(self.def.brand());
-        child.enter_call(span)?;
         if let Some(ty) = self.return_type {
             child = child.with_return_type(ty);
         }
-        let result = evaluate(&mut child);
+        let result = child.enter_call(span).and_then(|()| evaluate(&mut child));
         self.state = child.into_comptime();
         result
     }
@@ -235,12 +239,10 @@ pub(crate) fn call(
     let default = |index: usize| prototype.params()[index].default().filter(|_| !partial);
     let mut values = vec![None; params.len()];
     for index in 0..params.len() {
-        if deduction.blocking(index).is_some() {
-            for (bound, value) in deduction.infer(context, &mut frame, body, args, index, span)? {
-                values[bound] = Some(value);
-            }
-            if let Some(hole) = deduction.blocking(index) {
-                return Err(deduction.undeduced(context, hole, span).into());
+        if deduce::blocking(&deduction, index).is_some() {
+            deduce::infer(&mut deduction, context, &mut frame, body, args, &mut values, index, span)?;
+            if let Some(hole) = deduce::blocking(&deduction, index) {
+                return Err(deduce::undeduced(&deduction, context, hole, span).into());
             }
         }
         if let Some(value) = applied.get_mut(index).and_then(Option::take) {
@@ -265,7 +267,7 @@ pub(crate) fn call(
             && function.signature().is_comptime_param(index)
             && !matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type)
         {
-            deduction.defer(index, None, arg.is_none());
+            deduction.defer(index, Pending::Value);
             continue;
         }
         let evaluation = match arg {
@@ -292,7 +294,12 @@ pub(crate) fn call(
             Evaluation::Incomplete(pending)
                 if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type) =>
             {
-                deduction.defer(index, Some(pending), arg.is_none());
+                let pending = if arg.is_some() {
+                    Pending::Argument(pending)
+                } else {
+                    Pending::Default(pending)
+                };
+                deduction.defer(index, pending);
                 continue;
             }
             evaluation => evaluation.ready()?,
@@ -300,15 +307,15 @@ pub(crate) fn call(
         values[index] = Some(frame.argument(context, index, value, arg_span)?);
     }
 
-    let Some(index) = deduction.first() else {
+    let Some(index) = deduction.first_open() else {
         return finish(context, frame, values, span);
     };
-    let undeduced = deduction.undeduced(context, index, span);
+    let undeduced = deduce::undeduced(&deduction, context, index, span);
     if partial || !deduce::generates_type(function) {
         return Err(undeduced.into());
     }
     let span = span.clone();
-    deduce::generated(context, def, values, undeduced, &span).and_then(
+    deduce::generated(deduction, context, values, undeduced, &span).and_then(
         context,
         body,
         move |context, _, values| apply(context, def, values, &span),

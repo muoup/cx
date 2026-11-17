@@ -2,8 +2,18 @@ import std::span as std;
 
 public:
 
-comptime type stream(type T)
-    = fn(fn(^T) -> ^void) -> ^void;
+comptime type stream(type T) = fn(fn(^T) -> ^void) -> ^void;
+
+comptime stream(int) stream::range(^int start, ^int stop, ^int step)
+    => |fn sink(^int) -> ^void| {
+        auto from = start;
+        auto to = stop;
+        auto by = step;
+
+        for (int n = from; n < to; n += by) {
+            sink(emit n);
+        }
+    };
 
 comptime stream(U) stream::map(
     type T = _, type U = _, 

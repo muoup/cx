@@ -2,7 +2,7 @@ use chl_hmir::{
     HMIRBodyContext,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::HMIRTypeID,
 };
 use chl_log::{CHLResult, catalogue::typecheck};
 use chl_tokens::TokenRange;
@@ -103,12 +103,8 @@ pub(crate) fn synthesize(
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     deduce::typed(context, span, false, |context| {
         let mut args = Vec::with_capacity(types.len());
-        for param in types {
-            let ty = match context.env().resolve_kind(*param) {
-                HMIRTypeKind::Staged(inner) => *inner,
-                _ => *param,
-            };
-            args.push(deduce::placeholder(context, ty, span)?);
+        for &param in types {
+            args.push(deduce::placeholder(context, param, span)?);
         }
         let quote = deduce::shadowed(context, quote, span)?;
         expand(context, &quote, &args, None)

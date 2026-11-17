@@ -733,6 +733,7 @@ Runs once a param's type names a deferred param, over the arguments from that pa
 2. Each deferred param inferred so far: its pending argument or default completed from the inferred type, or a deferred value taken as inferred; bound in the frame.
 3. Closure literals, in order, then step 2 again after each. Param type must be a function type of the closure's arity, else skipped.
    - declared closure param types unified against the param's, then step 2.
+   - The remaining steps apply if the callback's return type mentions a parameter with a deduction slot.
    - `auto` closure params: the param's parameter type, evaluated in the frame; not yet known: closure skipped.
    - closure body [synthesized](#quote) with those types; result lifted to `^R`, unified against the param's return type.
 
@@ -772,7 +773,7 @@ Captures: free locals of the quoted expression, quote params and inner declarati
 
 Otherwise incomplete, completing without expectation too. Expected staged shape (`^T`, or comptime function to a staged result, any param types): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields a quote of the shape, retaining its lexical parameter locals.
 - `rule/quote-materializes` non-staged expectation: quote materialized in place.
-- `rule/quote-synthesis` nothing expected: typed by itself. Declared param types evaluated as above; an `auto` param: T0052. Body evaluated with a placeholder per param (the carried type for `^T`), captures shadowed, in an unevaluated detached child as [subject type](#subject-type); result R. Type: `^R` without params, else a non-decaying comptime function from the declared types to `^R`.
+- `rule/quote-synthesis` nothing expected: typed by itself. Declared param types evaluated as above. An `auto` param gives T0052. The body is evaluated in an unevaluated detached child with shadowed captures and one placeholder of each parameter's type, including opaque code for `^T`. For body result type `R`, the quote has type `^R` without params, or a non-decaying comptime function from the declared types to `^R`.
 
 ### Splice
 
@@ -780,7 +781,7 @@ Otherwise incomplete, completing without expectation too. Expected staged shape 
 
 Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments typed as [subject type](#subject-type), lifted, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, converged, then [applied](#apply).
 
-A staged value spliced without arguments (a [Local](#local) read at runtime): converged; a `^T` value other than opaque materialized; anything else yields itself.
+A value spliced without arguments (such as a staged [Local](#local) read at runtime) is converged. A `^T` value then materializes. Other values yield themselves.
 
 ### Intrinsic
 
@@ -902,7 +903,7 @@ Code applied to arguments; needs staged shape (T0002), argument count (T0015). `
 
 #### Materialize
 
-Materialization converts `^T` to `T`; argument binding and count diagnostics belong to application. Opaque code: an opaque value of its result, unit for `void`. A fully bound application expands its quoted callee with the bound arguments, or invokes its runtime callee through normal call coercion and contract handling; arguments materialize as required by the underlying parameter types. Pending computations cannot materialize at comptime (M0021). Other `^T` immediates yield themselves, typed as the result. A direct quote has no parameters and expands without arguments. Unavailable code: M0029. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; `rule/sealed-root-quote` the scope is sealed when no quoted scope encloses it (a root quote, inserted into hand-written runtime code) and escaping is not allowed ([Escape](#escape)); quotes materialized inside another are never sealed; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
+Materialization converts `^T` to `T` in a runtime context. At comptime it gives M0021. Opaque code yields a placeholder of its result type, or unit for `void`. A fully bound application expands its quoted callee with the bound arguments, or invokes its runtime callee through normal call coercion and contract handling; arguments materialize as required by the underlying parameter types. Other `^T` immediates yield themselves, typed as the result. A direct quote has no parameters and expands without arguments. Unavailable code: M0029. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; `rule/sealed-root-quote` the scope is sealed when no quoted scope encloses it (a root quote, inserted into hand-written runtime code) and escaping is not allowed ([Escape](#escape)); quotes materialized inside another are never sealed; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
 
 An application has either contextual `HMIRValue` operands or independently well-formed `HMIRImmediate` operands. Export recursively converges the callee and bound arguments into the immediate form without executing the represented code. Invalid escaping storage references are rejected; quote captures retain their existing rules.
 

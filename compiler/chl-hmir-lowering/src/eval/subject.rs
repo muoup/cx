@@ -64,8 +64,8 @@ pub(crate) fn typed(
     let span = span.clone();
     let result = result.map(&mut child, move |context, value| {
         let referent = context.env().referent(value.ty());
-        let ty = match (context.env().resolve_kind(referent), value.kind()) {
-            (HMIRTypeKind::Type, _) => {
+        let ty = match context.env().resolve_kind(referent) {
+            HMIRTypeKind::Type => {
                 let value = coerce::promotion::std_rvalue(context, value, &span)?;
                 value::as_type(&value).ok_or_else(|| {
                     hmir_error(

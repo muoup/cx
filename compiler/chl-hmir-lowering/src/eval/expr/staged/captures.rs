@@ -10,12 +10,11 @@ use chl_hmir::{
     },
     ty::aggregate::HMIRDeclaredMove,
 };
-use chl_log::{CHLResult, catalogue::mir};
+use chl_log::CHLResult;
 
 use crate::{
     env::function::{FnContext, LocalLoweringContext, scope::Bindings},
-    eval::{coerce, comptime},
-    log::hmir_error,
+    eval::{binding, coerce, comptime},
 };
 
 pub(super) fn collect(
@@ -37,9 +36,10 @@ pub(super) fn collect(
     let mut captures = Bindings::default();
     for local in walk.references.difference(&walk.bound) {
         let value = context.get_local(local).cloned().ok_or_else(|| {
-            hmir_error(
+            binding::unbound(
+                context,
+                *local,
                 body.local(*local).span(),
-                &mir::COMPTIME_UNAVAILABLE,
                 "this captured binding".into(),
             )
         })?;
