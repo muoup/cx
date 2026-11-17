@@ -8,7 +8,18 @@ comptime type array(type T, usize len)
         T data[len];
     };
 
-comptime ^array(T, len) array::new(comptime type T = _, comptime usize len = _)
+///
+/// Standard factory for a zero-initialized array of provided length.
+/// 
+/// ### Note
+///
+/// The default constructor produces a comptime code expression to encourage
+/// compiler inlining in the common use case of large buffer arrays. Without optimization, 
+/// this code is able to take advantage of the frontends built-in fast codegen path for 
+/// variable declarations which remove the need for a new allocation if the rhs of a declaration 
+/// is an owned place, which materialization will ensure.
+///
+comptime ^array(T, len) array::new(comptime type T, comptime usize len)
     => emit (array(T, len)) { .length = len, .data = { 0 } };
 
 comptime usize array::length(comptime type T = _, comptime usize len = _, ^array(T, len)& array)

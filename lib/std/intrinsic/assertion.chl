@@ -10,6 +10,4 @@ void __compiler_assert(bool condition, const char* message) {
         printf("Assertion failed: %s\n", message);
         exit(1);
     }
-
-    return;
 }
