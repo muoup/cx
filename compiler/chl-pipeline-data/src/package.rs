@@ -7,6 +7,7 @@ use chl_namespace::{
     scope::ImportScope,
 };
 use chl_util::identifier::CHLIdent;
+use rustc_hash::{FxHashMap, FxHashSet};
 use speedy::{Readable, Writable};
 
 use crate::CompilationUnit;
@@ -24,7 +25,33 @@ pub struct Package {
     pub source_root: PathBuf,
     pub mounts: Vec<(CHLIdent, PackageId)>,
     pub includes: Vec<IncludeRoot>,
+    pub unit_includes: FxHashMap<PathBuf, Vec<IncludeRoot>>,
     pub defines: Vec<(String, String)>,
+    pub exports: Option<FxHashSet<PathBuf>>,
+}
+
+impl Package {
+    pub fn new(name: Option<CHLIdent>, source_root: PathBuf) -> Self {
+        Self {
+            name,
+            source_root,
+            mounts: Vec::new(),
+            includes: Vec::new(),
+            unit_includes: FxHashMap::default(),
+            defines: Vec::new(),
+            exports: None,
+        }
+    }
+
+    pub fn lexer_includes(&self, module: &Path) -> Vec<IncludeRoot> {
+        let unit = self.unit_includes.get(module).into_iter().flatten();
+        self.includes.iter().chain(unit).cloned().collect()
+    }
+
+    pub fn exports(&self, module: &Path) -> bool {
+        let module = module.canonicalize().unwrap_or_else(|_| module.to_path_buf());
+        self.exports.as_ref().is_none_or(|exports| exports.contains(&module))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -37,11 +64,9 @@ impl Packages {
         let std = CHLIdent::new("std");
         Self {
             packages: vec![Package {
-                name: Some(std.clone()),
-                source_root: PathBuf::from(chl_library_directory("std")),
-                mounts: vec![(std, PackageId::STD)],
-                includes: Vec::new(),
+                mounts: vec![(std.clone(), PackageId::STD)],
                 defines,
+                ..Package::new(Some(std), PathBuf::from(chl_library_directory("std")))
             }],
         }
     }
@@ -53,11 +78,10 @@ impl Packages {
     ) -> (Self, PackageId) {
         let mut packages = Self::new(defines.clone());
         let root = packages.push(Package {
-            name: None,
-            source_root,
             mounts: vec![(CHLIdent::new("std"), PackageId::STD)],
             includes,
             defines,
+            ..Package::new(None, source_root)
         });
         (packages, root)
     }

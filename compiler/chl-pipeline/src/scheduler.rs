@@ -25,7 +25,6 @@ use chl_tokens::TokenIter;
 use chl_util::format::{dump_data, dumps_enabled, with_dump_directory, with_dump_file};
 use chl_util::identifier::CHLIdent;
 use fs2::FileExt;
-use chl_lmir::{LMIRGlobalType, LMIRUnit, LinkageType};
 use std::io::Write;
 
 use std::num::NonZeroUsize;
@@ -34,16 +33,11 @@ use std::sync::mpsc;
 
 pub(crate) fn scheduling_loop(
     context: &GlobalCompilationContext,
-    initial_jobs: impl IntoIterator<Item = CompilationJob>,
+    queue: &mut JobQueue,
     final_step: CompilationStep,
     policy: FailurePolicy,
     mut on_start: impl FnMut(&CompilationJob),
 ) -> Result<(), Vec<PipelineFailure>> {
-    let mut queue = JobQueue::new();
-    for initial_job in initial_jobs {
-        queue.push_job(initial_job);
-    }
-
     let workers = std::thread::available_parallelism().map_or(1, NonZeroUsize::get);
     let dumps = dumps_enabled();
     let (sender, receiver) = mpsc::channel();
@@ -120,6 +114,7 @@ pub(crate) fn scheduling_loop(
 
 fn import_jobs_for_unit(
     context: &GlobalCompilationContext,
+    unit: &CompilationUnit,
     imports: &[Import],
 ) -> CHLResult<Vec<CompilationJob>> {
     let mut jobs = Vec::new();
@@ -129,6 +124,11 @@ fn import_jobs_for_unit(
         let Some(import) = context.config.packages.locate(&namespace) else {
             return Err(pipeline_error(&catalogue::UNKNOWN_MODULE, format!("{namespace}")));
         };
+        let owner = context.config.packages.get(import.package());
+        if import.package() != unit.package() && !owner.exports(import.module().as_path()) {
+            let package = owner.name.as_ref().map(|name| name.to_string()).unwrap_or_default();
+            return Err(pipeline_error(&catalogue::UNEXPORTED_MODULE, (format!("{namespace}"), package)));
+        }
         if !context.config.module_mode && !import.is_std_lib() {
             return Err(pipeline_error(
                 &catalogue::SINGLE_FILE_IMPORT,
@@ -243,7 +243,7 @@ pub(crate) fn handle_job(
     match job.step {
         CompilationStep::PreParse => {
             let pp_data = context.module_db.preparse_base.get(job.unit.namespace());
-            let mut new_jobs = import_jobs_for_unit(context, &pp_data.imports)?;
+            let mut new_jobs = import_jobs_for_unit(context, &job.unit, &pp_data.imports)?;
 
             let mut next_job = job.clone();
             next_job.step = CompilationStep::Parse;
@@ -356,7 +356,7 @@ pub(crate) fn perform_job(
             let tokens = chl_lexer::lex_with_context(
                 file_contents.as_str(),
                 &file_path,
-                &package.includes,
+                &package.lexer_includes(&file_path),
                 &package.defines,
             )?;
 
@@ -500,11 +500,6 @@ pub(crate) fn perform_job(
 
         CompilationStep::Codegen => {
             let lmir = context.module_db.lmir.take(job.unit.namespace());
-            context
-                .library_symbols
-                .lock()
-                .expect("Deadlock on library symbols mutex")
-                .insert(job.unit.module().as_path().to_path_buf(), library_symbols(&lmir).collect());
             let internal_directory = resource_path(context, &job.unit, ".o");
             if let Some(parent) = internal_directory.parent() {
                 std::fs::create_dir_all(parent).map_err(|error| {
@@ -550,21 +545,4 @@ pub(crate) fn perform_job(
     }
 
     Ok(JobResult::StandardSuccess)
-}
-
-fn library_symbols(lmir: &LMIRUnit) -> impl Iterator<Item = String> + '_ {
-    let functions = lmir
-        .fn_defs
-        .iter()
-        .filter(|function| function.prototype.linkage == LinkageType::Standard)
-        .map(|function| function.prototype.name.to_string());
-    let globals = lmir
-        .global_vars
-        .iter()
-        .filter(|global| {
-            global.linkage == LinkageType::Standard
-                && matches!(global.ty, LMIRGlobalType::Variable { .. })
-        })
-        .map(|global| global.name.to_string());
-    functions.chain(globals)
 }

@@ -1,6 +1,7 @@
 mod backends;
 mod linker;
 mod log;
+mod objects;
 mod scheduler;
 mod sources;
 
@@ -23,7 +24,8 @@ use chl_pipeline_data::package::PackageId;
 use chl_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
-use std::collections::BTreeSet;
+use crate::scheduler::imported_units;
+use rustc_hash::FxHashSet;
 use std::path::{Path, PathBuf};
 
 // Compilation recurses over source structure, so it runs on threads with a generous stack
@@ -44,8 +46,9 @@ pub fn compile(config: CompilerConfig, package: PackageId, sources: &[PathBuf]) 
         .collect::<CHLResult<Vec<_>>>()?;
 
     reporting(context.config.verbose, |reporter| {
-        run_pipeline(&context, &units, reporter)?;
-        finish_artifact(&context, &units, reporter)
+        let mut pipeline = Pipeline::new(&context, CompilationStep::Codegen);
+        run_pipeline(&mut pipeline, &units, reporter)?;
+        finish_artifact(&context, package, &units, reporter)
     })
 }
 
@@ -63,14 +66,31 @@ pub(crate) fn reporting<T>(
 }
 
 pub(crate) fn run_pipeline(
-    context: &GlobalCompilationContext,
+    pipeline: &mut Pipeline,
     units: &[CompilationUnit],
     reporter: &mut ProgressReporter,
 ) -> CHLResult<()> {
-    Pipeline::new(context, CompilationStep::Codegen)
-        .roots(units.iter().cloned())
-        .run(|job| reporter.start_job(job))
+    pipeline
+        .run(units.iter().cloned(), |job| reporter.start_job(job))
         .map_err(earliest_failure)
+}
+
+pub(crate) fn reachable_units(
+    context: &GlobalCompilationContext,
+    roots: &[CompilationUnit],
+) -> Vec<CompilationUnit> {
+    let mut seen = roots.iter().cloned().collect::<FxHashSet<_>>();
+    let mut reachable = roots.to_vec();
+    let mut index = 0;
+    while index < reachable.len() {
+        for unit in imported_units(context, &reachable[index]) {
+            if seen.insert(unit.clone()) {
+                reachable.push(unit);
+            }
+        }
+        index += 1;
+    }
+    reachable
 }
 
 fn earliest_failure(failures: Vec<PipelineFailure>) -> CHLError {
@@ -83,6 +103,7 @@ fn earliest_failure(failures: Vec<PipelineFailure>) -> CHLError {
 
 fn finish_artifact(
     context: &GlobalCompilationContext,
+    package: PackageId,
     units: &[CompilationUnit],
     reporter: &mut ProgressReporter,
 ) -> CHLResult<()> {
@@ -100,21 +121,18 @@ fn finish_artifact(
         },
         CompilationMode::Library => {
             reporter.link_status("Linking (relocatable)");
-            link_relocatable(&config.output, &objects, &library_roots(context, units))
+            let (own, dependencies): (Vec<_>, Vec<_>) = reachable_units(context, units)
+                .into_iter()
+                .partition(|unit| unit.package() == package);
+            let own = own.iter().map(|unit| resource_path(context, unit, ".o")).collect::<Vec<_>>();
+            let dependencies = dependencies
+                .iter()
+                .map(|unit| resource_path(context, unit, ".o"))
+                .chain(config.native_objects.iter().cloned())
+                .collect::<Vec<_>>();
+            link_relocatable(&config.output, &own, &dependencies, &config.link_entries)
         }
     }
-}
-
-pub(crate) fn library_roots(context: &GlobalCompilationContext, units: &[CompilationUnit]) -> Vec<String> {
-    let symbols = context.library_symbols.lock().unwrap();
-    units
-        .iter()
-        .filter_map(|unit| symbols.get(unit.module().as_path()))
-        .flatten()
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
 }
 
 pub(crate) fn root_unit(

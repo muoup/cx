@@ -5,6 +5,8 @@ description: Build the Chloro compiler and compile your first Chloro source file
 
 # Getting Started
 
+## Installation
+
 Chloro is currently built from source. The compiler is written in Rust and links
 executables with GCC. LLVM is optional; the default backend is Cranelift.
 
@@ -36,49 +38,23 @@ During development, you can run the compiler directly through Cargo:
 cargo run --release -- <file.chl> [options]
 ```
 
-For a shorter command, add the built binary to your `PATH` or create a symlink:
+It is recommended to symlink the produced `chloro` binary to your `$PATH`. Doing such
+allows you to invoke the compiler by name without need for a fully qualified path. To do
+so, run the following command:
 
 ```bash
-ln -s /path/to/chl/target/release/chl ~/.local/bin/chl
+ln -s /path/to/chl/target/release/chloro ~/.local/bin/chloro
+
+# Afterwards, the compiler may be invoked by name:
+chloro run
+chloro build
+chloro init
+chloro main.c
 ```
 
-## Create a Project
+## Additional Resources
 
-Project mode is the preferred workflow because it enables the Chloro module system
-and reads build settings from `chl.lua`.
-
-```bash
-chl init hello_chl
-cd hello_chl
-chl build
-```
-
-This creates a starter project with a `chl.lua` file and a `main.chl`, then writes
-build output under `.internal/`.
-
-## Compile a Single File
-
-Chloro can also compile a single `.chl` file directly:
-
-```bash
-chl main.chl -o main
-```
-
-Single-file compilation is intended to behave like a C compiler invocation.
-Imports are limited to compiler-owned libraries such as the standard library, so
-larger multi-file projects should use project mode.
-
-## Useful Options
-
-- `--backend-cranelift`: use the Cranelift backend
-- `--backend-llvm`: use the LLVM backend when available
-- `-O0`, `-O1`, `-O2`, `-O3`, `-Osize`, `-Ofast`: choose optimization level
-- `-c`: compile without linking
-- `-I <directory>`: add a header search directory
-- `-D <name>[=value]`: define a preprocessor macro
-- `-o <output_file>`: set the output path
-- `--verbose`: print each compilation step
-- `--version`: print the compiler version
+With the compiler built, see [Build System](./build-system.md) for information on 
 
 ## Current Status
 

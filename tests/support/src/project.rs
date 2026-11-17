@@ -1,6 +1,8 @@
 use crate::compilation::{timed_compilation, CompilationFailure, CompilationResult, TestTempDir};
 use chl_pipeline::compile;
-use chl_pipeline::project::{native_inputs, target_sources, ProjectPackages};
+use chl_pipeline::project::link::link_inputs;
+use chl_pipeline::project::packages::ProjectPackages;
+use chl_pipeline::project::sources::target_sources;
 use chl_pipeline_data::config::{
     load_project, IncludeSpecSource, LinkEntry, ProfileConfig, ProjectConfig, DEBUG_PROFILE,
 };
@@ -34,19 +36,22 @@ pub struct ProjectBinary {
 impl ProjectBinary {
     pub fn load(root: &Path, name: &str) -> Result<Self, String> {
         let project = load_project(root).map_err(|error| error.message())?;
-        let target = project
+        let index = project
             .target(name)
             .ok_or_else(|| format!("{} has no target named '{name}'", root.display()))?;
+        let target = &project.targets[index];
         let profile = project
             .profile(PROFILE)
             .or_else(|| project.profile(DEBUG_PROFILE))
             .expect("every project has the debug profile")
             .clone();
-        let sources = target_sources(&project, target).map_err(|error| error.message())?;
-        let packages =
-            ProjectPackages::new(&project, &profile.settings).map_err(|error| error.message())?;
+        let sources = target_sources(&project, index).map_err(|error| error.message())?;
+        let profile_directory = root.join(".internal").join(&profile.name);
+        let packages = ProjectPackages::new(&project, &profile.settings, &profile_directory)
+            .map_err(|error| error.message())?;
         let package = packages.id(target.package);
-        let (native_objects, link_entries) = native_inputs(&project, &all_packages(&project));
+        let inputs = link_inputs(&project, index);
+        let native_objects = inputs.own_objects.iter().chain(&inputs.dependency_objects).cloned().collect();
 
         Ok(Self {
             root: root.to_path_buf(),
@@ -57,7 +62,7 @@ impl ProjectBinary {
             include_dirs: include_dirs(&project, target.package),
             predefined_macros: packages.packages.get(package).defines.clone(),
             native_objects,
-            link_entries,
+            link_entries: inputs.links,
             optimization_level: profile.settings.optimization.unwrap_or_default(),
             profile,
             packages,
@@ -101,13 +106,8 @@ impl ProjectBinary {
     }
 }
 
-fn all_packages(project: &ProjectConfig) -> Vec<usize> {
-    (0..project.packages.len()).collect()
-}
-
 fn include_dirs(project: &ProjectConfig, package: usize) -> Vec<PathBuf> {
     project.packages[package]
-        .usage
         .includes
         .iter()
         .filter_map(|spec| match (&spec.source, &spec.alias) {

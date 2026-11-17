@@ -1,7 +1,7 @@
 package("raylib_test")
 stdlib("std")
-import("../raylib.lua")
+include("../artifacts/raylib/include")
+dep("../raylib.lua")
 
-debug_profile():backend("cranelift")
-
-target("raylib-test", "executable"):match("main.chl")
+local main = target("raylib-test", "executable")
+main:match("main.chl")

@@ -1,4 +1,4 @@
-use chl_pipeline::project::ProjectPackages;
+use chl_pipeline::project::packages::ProjectPackages;
 use chl_pipeline_data::config::{load_project, CONFIG_FILE, DEBUG_PROFILE};
 use chl_pipeline_data::package::{Package, PackageId, Packages};
 use chl_pipeline_data::CompilationUnit;
@@ -81,8 +81,9 @@ pub fn load_project_settings(project_root: &Path) -> Result<ProjectSettings, Str
     let profile = project
         .profile(DEBUG_PROFILE)
         .expect("every project has the debug profile");
-    let packages =
-        ProjectPackages::new(&project, &profile.settings).map_err(|error| error.message())?;
+    let profile_directory = project_root.join(".internal").join(&profile.name);
+    let packages = ProjectPackages::new(&project, &profile.settings, &profile_directory)
+        .map_err(|error| error.message())?;
     Ok(ProjectSettings {
         root: project_root.to_path_buf(),
         fallback: packages.id(0),

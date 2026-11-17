@@ -61,9 +61,8 @@ pub(crate) fn document(args: DocArgs) -> CHLResult<()> {
     });
 
     let failures = Pipeline::new(&context, CompilationStep::HMIR)
-        .roots(units.iter().cloned())
         .policy(FailurePolicy::Continue)
-        .run(|_| {})
+        .run(units.iter().cloned(), |_| {})
         .err()
         .unwrap_or_default();
     if !failures.is_empty() {

@@ -44,9 +44,8 @@ pub fn check(file_path: &Path, project: &ProjectSettings) -> CheckReport {
 
     let mut checked_files = FxHashSet::default();
     let failures = Pipeline::new(&context, CompilationStep::MIR)
-        .roots([unit])
         .policy(FailurePolicy::Continue)
-        .run(|job| {
+        .run([unit], |job| {
             if let Ok(uri) = Url::from_file_path(job.unit.module().as_path()) {
                 checked_files.insert(uri);
             }

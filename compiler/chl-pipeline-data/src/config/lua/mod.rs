@@ -1,3 +1,4 @@
+mod library;
 mod package;
 mod profile;
 mod state;
@@ -13,10 +14,10 @@ use mlua::{
     Value, VmState,
 };
 
-use self::state::{Shared, State};
+use self::state::{FfiIncludeDraft, Shared, State};
 use self::values::{error_message, fail};
 use super::schema::{
-    PackageConfig, ProfileConfig, ProjectConfig, TargetConfig,
+    FfiInclude, PackageConfig, ProfileConfig, ProjectConfig, TargetConfig, TargetKind,
 };
 
 const MEMORY_LIMIT: usize = 64 * 1024 * 1024;
@@ -31,6 +32,7 @@ pub(super) fn evaluate(file: &Path) -> std::result::Result<ProjectConfig, String
     let run = || -> Result<()> {
         let lua = sandbox()?;
         package::register(&lua, &state)?;
+        library::register(&lua, &state)?;
         profile::register(&lua, &state)?;
         target::register(&lua, &state)?;
         package::load(&lua, &state, &file)?;
@@ -96,7 +98,7 @@ where
     )
 }
 
-fn run_file(lua: &Lua, state: &Shared, path: &Path) -> Result<Value> {
+fn run_file(lua: &Lua, path: &Path) -> Result<Value> {
     let name = path.display().to_string();
     let source = std::fs::read_to_string(path)
         .map_err(|error| fail(lua, format!("cannot read '{name}': {error}")))?;
@@ -106,15 +108,11 @@ fn run_file(lua: &Lua, state: &Shared, path: &Path) -> Result<Value> {
     metatable.raw_set("__index", lua.globals())?;
     environment.set_metatable(Some(metatable))?;
 
-    state.borrow_mut().files.push(path.to_path_buf());
-    let result = lua
-        .load(source)
+    lua.load(source)
         .set_name(format!("@{name}"))
         .set_mode(ChunkMode::Text)
         .set_environment(environment)
-        .eval::<Value>();
-    state.borrow_mut().files.pop();
-    result
+        .eval::<Value>()
 }
 
 fn assemble(state: State) -> std::result::Result<ProjectConfig, String> {
@@ -141,7 +139,12 @@ fn assemble(state: State) -> std::result::Result<ProjectConfig, String> {
             root,
             source_root,
             mounts: draft.mounts.clone(),
-            usage: draft.usage.clone(),
+            deps: draft.deps.clone(),
+            library: draft.library.clone(),
+            includes: draft.includes.clone(),
+            defines: draft.defines.clone(),
+            objects: draft.objects.clone(),
+            links: draft.links.clone(),
         });
     }
 
@@ -156,11 +159,19 @@ fn assemble(state: State) -> std::result::Result<ProjectConfig, String> {
     }
 
     let mut targets = Vec::new();
-    for &index in &root.selectable {
-        let draft = &state.targets[index];
-        if draft.matches.is_empty() {
+    for (index, draft) in state.targets.iter().enumerate() {
+        let empty = match draft.kind {
+            TargetKind::Executable => draft.matches.is_empty(),
+            TargetKind::FfiLib => draft.matches.is_empty() && draft.headers.is_empty(),
+        };
+        if empty {
             return Err(format!("target '{}' has no match patterns", draft.name));
         }
+        let ffi_includes = draft
+            .ffi_includes
+            .iter()
+            .map(|include| ffi_include(&state, index, include))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
         targets.push(TargetConfig {
             name: draft.name.clone(),
             kind: draft.kind,
@@ -168,7 +179,11 @@ fn assemble(state: State) -> std::result::Result<ProjectConfig, String> {
             matches: draft.matches.clone(),
             excludes: draft.excludes.clone(),
             headers: draft.headers.clone(),
+            ffi_includes,
         });
+    }
+    for target in 0..targets.len() {
+        ffi_cycle(&targets, target, &mut Vec::new())?;
     }
 
     Ok(ProjectConfig {
@@ -179,3 +194,37 @@ fn assemble(state: State) -> std::result::Result<ProjectConfig, String> {
     })
 }
 
+
+fn ffi_include(
+    state: &State,
+    target: usize,
+    include: &FfiIncludeDraft,
+) -> std::result::Result<FfiInclude, String> {
+    let label = state.packages[include.package].label();
+    let found = state
+        .targets
+        .iter()
+        .position(|other| other.package == include.package && other.name == include.name);
+    let Some(index) = found else {
+        return Err(format!("{label} declares no target '{}'", include.name));
+    };
+    if state.targets[index].kind != TargetKind::FfiLib {
+        return Err(format!("target '{}' of {label} is not an ffi-lib", include.name));
+    }
+    if index == target {
+        return Err(format!("ffi-lib '{}' cannot include its own headers", include.name));
+    }
+    Ok(FfiInclude { target: index, prefix: include.prefix.clone() })
+}
+
+fn ffi_cycle(targets: &[TargetConfig], target: usize, path: &mut Vec<usize>) -> std::result::Result<(), String> {
+    if path.contains(&target) {
+        return Err(format!("ffi_lib_c_include cycle through target '{}'", targets[target].name));
+    }
+    path.push(target);
+    for include in &targets[target].ffi_includes {
+        ffi_cycle(targets, include.target, path)?;
+    }
+    path.pop();
+    Ok(())
+}

@@ -22,15 +22,15 @@ pub(crate) fn run_project(args: RunArgs) -> CHLResult<ExitCode> {
     let selected = match args.build.targets.first() {
         Some(name) => {
             let index = target_index(&project, name, Topic::Run)?;
-            if project.targets[index].kind == TargetKind::Library {
+            if project.targets[index].kind == TargetKind::FfiLib {
                 return Err(error(
-                    format!("'{name}' is a library and cannot be run"),
+                    format!("'{name}' is an ffi-lib and cannot be run"),
                     Some(Topic::Run),
                 ));
             }
             index
         }
-        None => match executables(&project).as_slice() {
+        None => match project.executables().as_slice() {
             [index] => *index,
             [] => {
                 return Err(error(
@@ -69,7 +69,7 @@ pub(crate) fn run_project(args: RunArgs) -> CHLResult<ExitCode> {
 pub fn build_project(args: BuildArgs, topic: Topic) -> CHLResult<Vec<PathBuf>> {
     let project = load(topic)?;
     let selected = match args.targets.is_empty() {
-        true => executables(&project),
+        true => project.executables(),
         false => args
             .targets
             .iter()
@@ -80,16 +80,6 @@ pub fn build_project(args: BuildArgs, topic: Topic) -> CHLResult<Vec<PathBuf>> {
         return Err(error("the project has no executables to build", Some(topic)));
     }
     build(&project, args, &selected)
-}
-
-fn executables(project: &ProjectConfig) -> Vec<usize> {
-    project
-        .targets
-        .iter()
-        .enumerate()
-        .filter(|(_, target)| target.kind == TargetKind::Executable)
-        .map(|(index, _)| index)
-        .collect()
 }
 
 fn load(topic: Topic) -> CHLResult<ProjectConfig> {
@@ -106,9 +96,7 @@ fn load(topic: Topic) -> CHLResult<ProjectConfig> {
 
 fn target_index(project: &ProjectConfig, name: &str, topic: Topic) -> CHLResult<usize> {
     project
-        .targets
-        .iter()
-        .position(|target| target.name == name)
+        .target(name)
         .ok_or_else(|| error(format!("unknown target '{name}'"), Some(topic)))
 }
 

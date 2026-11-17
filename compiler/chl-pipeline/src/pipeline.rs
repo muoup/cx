@@ -1,6 +1,6 @@
 use crate::scheduler::scheduling_loop;
 use chl_log::error::CHLError;
-use chl_pipeline_data::jobs::{CompilationJob, CompilationStep};
+use chl_pipeline_data::jobs::{CompilationJob, CompilationStep, JobQueue};
 use chl_pipeline_data::{CompilationUnit, GlobalCompilationContext};
 use chl_util::format::with_dump_directory;
 
@@ -17,7 +17,7 @@ pub struct PipelineFailure {
 
 pub struct Pipeline<'a> {
     context: &'a GlobalCompilationContext,
-    roots: Vec<CompilationUnit>,
+    queue: JobQueue,
     until: CompilationStep,
     policy: FailurePolicy,
 }
@@ -26,15 +26,10 @@ impl<'a> Pipeline<'a> {
     pub fn new(context: &'a GlobalCompilationContext, until: CompilationStep) -> Self {
         Self {
             context,
-            roots: Vec::new(),
+            queue: JobQueue::new(),
             until,
             policy: FailurePolicy::Halt,
         }
-    }
-
-    pub fn roots(mut self, units: impl IntoIterator<Item = CompilationUnit>) -> Self {
-        self.roots.extend(units);
-        self
     }
 
     pub fn policy(mut self, policy: FailurePolicy) -> Self {
@@ -42,15 +37,18 @@ impl<'a> Pipeline<'a> {
         self
     }
 
-    pub fn run(self, on_start: impl FnMut(&CompilationJob)) -> Result<(), Vec<PipelineFailure>> {
+    pub fn run(
+        &mut self,
+        roots: impl IntoIterator<Item = CompilationUnit>,
+        on_start: impl FnMut(&CompilationJob),
+    ) -> Result<(), Vec<PipelineFailure>> {
         let config = &self.context.config;
-        let jobs = self
-            .roots
-            .into_iter()
-            .map(|unit| CompilationJob::new(vec![], CompilationStep::PreParse, unit));
+        for unit in roots {
+            self.queue.push_new_job(CompilationJob::new(vec![], CompilationStep::PreParse, unit));
+        }
 
         with_dump_directory(config.internal_directory.clone(), config.dump, || {
-            scheduling_loop(self.context, jobs, self.until, self.policy, on_start)
+            scheduling_loop(self.context, &mut self.queue, self.until, self.policy, on_start)
         })
     }
 }

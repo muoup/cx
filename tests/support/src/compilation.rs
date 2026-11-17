@@ -1,3 +1,4 @@
+use chl_log::error::CHLError;
 use chl_log::CHLResult;
 use chl_pipeline::compile;
 use chl_pipeline_data::package::{PackageId, Packages};
@@ -150,18 +151,21 @@ pub(crate) fn timed_compilation(
             output,
             elapsed: start.elapsed(),
         }),
-        Err(error) => {
-            let mut rendered = Vec::new();
-            error
-                .output(&mut rendered)
-                .expect("failed to render compiler error");
+        Err(error) => Err(CompilationFailure::new(&error, start.elapsed())),
+    }
+}
 
-            Err(CompilationFailure {
-                code: error.code(),
-                message: error.message(),
-                rendered: String::from_utf8_lossy(&rendered).into_owned(),
-                elapsed: start.elapsed(),
-            })
+impl CompilationFailure {
+    pub(crate) fn new(error: &CHLError, elapsed: Duration) -> Self {
+        let mut rendered = Vec::new();
+        error
+            .output(&mut rendered)
+            .expect("failed to render compiler error");
+        Self {
+            code: error.code(),
+            message: error.message(),
+            rendered: String::from_utf8_lossy(&rendered).into_owned(),
+            elapsed,
         }
     }
 }

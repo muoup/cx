@@ -1,0 +1,10 @@
+#include <clib/clib.h>
+
+import std::io as io;
+import math::ops as ops;
+import base::base as base;
+
+int main() {
+    io::printf("%d %d %.1f\n", ops::square(3), base::offset(), clib_root(16.0));
+    return 0;
+}

@@ -10,9 +10,9 @@ Project builds enable the module system and read their configuration from `chl.l
 ## Starting a Project
 
 ```bash
-chl init my_project
+chloro init my_project
 cd my_project
-chl build
+chloro build
 ```
 
 The starter project contains `main.chl` and a Lua configuration:
@@ -25,36 +25,81 @@ local main = target("my_project", "executable")
 main:match("main.chl")
 ```
 
-`package` names the package. `stdlib` mounts the compiler's standard library. `source_root("src")` optionally changes the module source directory; otherwise it is the directory containing `chl.lua`.
+`package` names the package. `stdlib` mounts the compiler's standard library with the specified module prefix for use in import statements. `source_root("src")` optionally changes the module source directory; otherwise it is the directory containing `chl.lua`.
 
-## Targets and Headers
+## Profiles
 
-Targets select source files with `:match(...)` and optionally remove matches with `:exclude(...)`. Both accept file paths and glob patterns relative to the project directory.
+A profile defines the flags used to compile a project. While the build system allows for extra flags to be provided per-compilation, e.g. `cx build -O3`, it is recommended to prefer compiling based on profiles, as they allow for incremental compilation -- i.e. the reuse of compiled modules that have been unchanged since last compilation (to be implemented).
+
+By default, every project has a defined `debug` profile. If no profile is provided at compilation time, `debug` will be chosen. If one wants to override the debug profile, it may be accessed via the `debug_profile()` function. You can also create a new custom profile using the `profile(name)` method. Any parameter not explicitly set will default to the base state of `debug`, note that modifying the `debug` profile will NOT change the default values used for other profiles.
+
+Profiles should be modified using `profile:flag(args...)` syntax, supported functions of this shape include:
+
+```lua
+local new_profile = profile("release")
+
+-- Change compilation backend 
+-- Note: the compiler will error if not built with support of the specified backend
+new_profile:backend("cranelift" | "llvm")
+
+-- Change optimization level
+new_profile:optimize("O0" | "O1" | "O2" | "O3" | "Ofast" | "Osize")
+
+-- Disable automatically generated assertions during potentially unsafe operations
+new_profile:no_assert(true | false)
+
+-- Disable automatic compile-time analysis
+new_profile:no_analysis(true | false)
+
+-- Force all .chl files to provide explicit returns on non-void returning functions
+new_profile:explicit_return(true | false)
+
+-- Appends an `#define [symbol] [value]` macro to the preprocessor
+new_profile:define("symbol", "value")
+```
+
+Example:
+
+```lua
+local debug = debug_profile();
+release:backend("cranelift")
+
+local release = profile("release")
+release:backend("llvm")
+release:optimize("O2")
+```
+
+## Targets
+
+A target defines a desired compilation output, defined as a target type along with a list of files that need to be compiled and linked. A target is created, similar to profiles, using the `target(name, target_type)` method, and may be configured similarly.
 
 ```lua title="chl.lua"
 package("mathlib")
 stdlib("std")
 
+local exec = target("cli", "executable")
+
+-- Defines the base of the compilation
+exec:match("main.chl")
+
+exec:match("deps/c-library/*.c")
+
+-- Excludes a file or files from the match
+exec:exclude("src/not_this_file.c")
+
+-- Note: one need not match all Chloro files, any dependency inferrable via 'import' statements
+-- will be included in the final compilation.  
+
 local lib = target("mathlib", "library")
-lib:match("src/**/*.chl")
 lib:headers("src/api.chl")
+-- 
 ```
 
-An `executable` target links a runnable program. A `library` target produces a relocatable object. Its `:headers(...)` patterns select source modules for generated C headers; they must also be target sources.
+### Executable
+
+### Library
 
 Header generation includes public `extern "C"` definitions and standalone named types, together with their required type dependencies. Selecting a module for a header does not change its symbol naming. See [Libraries and C Interop](./c-interop.md).
-
-## Profiles
-
-The default profile is `debug`. Configure it or create another profile in Lua:
-
-```lua
-debug_profile():optimize("O0")
-
-local release = profile("release")
-release:optimize("O2")
-release:backend("cranelift")
-```
 
 ## Building
 

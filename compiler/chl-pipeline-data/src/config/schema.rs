@@ -18,7 +18,18 @@ pub struct PackageConfig {
     pub root: PathBuf,
     pub source_root: PathBuf,
     pub mounts: Vec<Mount>,
-    pub usage: Usage,
+    pub deps: Vec<usize>,
+    pub library: Option<LibraryConfig>,
+    pub includes: Vec<IncludeSpec>,
+    pub defines: Vec<(String, String)>,
+    pub objects: Vec<PathBuf>,
+    pub links: Vec<LinkEntry>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LibraryConfig {
+    pub matches: Vec<String>,
+    pub excludes: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,14 +42,6 @@ pub struct Mount {
 pub enum MountTarget {
     Std,
     Package(usize),
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Usage {
-    pub includes: Vec<IncludeSpec>,
-    pub defines: Vec<(String, String)>,
-    pub objects: Vec<PathBuf>,
-    pub link: Vec<LinkEntry>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,7 +75,7 @@ pub struct ProfileSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetKind {
     Executable,
-    Library,
+    FfiLib,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +86,13 @@ pub struct TargetConfig {
     pub matches: Vec<String>,
     pub excludes: Vec<String>,
     pub headers: Vec<String>,
+    pub ffi_includes: Vec<FfiInclude>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FfiInclude {
+    pub target: usize,
+    pub prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,7 +125,31 @@ impl ProjectConfig {
         self.profiles.iter().find(|profile| profile.name == name)
     }
 
-    pub fn target(&self, name: &str) -> Option<&TargetConfig> {
-        self.targets.iter().find(|target| target.name == name)
+    pub fn target(&self, name: &str) -> Option<usize> {
+        self.selectable().find(|index| self.targets[*index].name == name)
+    }
+
+    pub fn executables(&self) -> Vec<usize> {
+        self.selectable()
+            .filter(|index| self.targets[*index].kind == TargetKind::Executable)
+            .collect()
+    }
+
+    pub fn selectable(&self) -> impl Iterator<Item = usize> + '_ {
+        (0..self.targets.len()).filter(|index| self.targets[*index].package == 0)
+    }
+
+    pub fn dep_closure(&self, package: usize) -> Vec<usize> {
+        let mut closure = vec![package];
+        let mut index = 0;
+        while index < closure.len() {
+            for dep in &self.packages[closure[index]].deps {
+                if !closure.contains(dep) {
+                    closure.push(*dep);
+                }
+            }
+            index += 1;
+        }
+        closure
     }
 }

@@ -1,0 +1,5 @@
+import math::detail as detail;
+
+int main() {
+    return detail::product(2, 3);
+}

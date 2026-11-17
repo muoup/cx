@@ -1,0 +1,5 @@
+[[build]]
+
+[[run]]
+target = "app"
+stdout = "109 100 4.0\n"

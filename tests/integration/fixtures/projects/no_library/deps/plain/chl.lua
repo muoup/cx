@@ -1,0 +1,2 @@
+package("plain")
+stdlib("std")
