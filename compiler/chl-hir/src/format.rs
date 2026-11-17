@@ -115,6 +115,7 @@ impl Display for HIRFunctionBody {
                 writeln!(f, "Function Expression Body =>")?;
                 HIRExprFormatter::new(expression, 1).fmt(f)
             }
+            Self::TypeAlias(ty) => write!(f, "Transparent Type Body = {ty}"),
         }
     }
 }

@@ -738,6 +738,7 @@ Runs once a param's type names a deferred param, over the arguments from that pa
 
 - `rule/conflicting-deductions` two inferred types not alike, or two inferred values unequal once each is converted implicitly to the param type in the callee frame and exported: T0024.
 - `rule/closure-deduction-errors` errors from synthesizing a closure body are reported as-is.
+- A transparent type alias (`comptime type pointer(type T) = T*;`) substitutes its arguments into its body before matching against the actual or expected type. Its body can use existing type names, built-in type constructors, and other transparent aliases. An argument absent from the resulting type provides no deduction evidence.
 
 ### Contracts
 

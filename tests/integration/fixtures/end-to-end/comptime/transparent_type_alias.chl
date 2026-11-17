@@ -1,0 +1,28 @@
+import std::stream as std;
+
+comptime type pointer(type Pointee = int) = Pointee*;
+comptime type indirect(type Element) = pointer(.Pointee = pointer(.Pointee = Element));
+comptime type buffer(type Element, usize Length) = Element[Length];
+comptime type borrow(type T) = T&;
+
+usize pointee_size(comptime type T = _, indirect(T) value) => sizeof(T);
+usize length(comptime type T = _, comptime usize N = _, buffer(T, N)& values) => N;
+bool is_const(comptime type T = _, borrow(T) value) => @type.is_const(T);
+
+comptime fn(fn(^int) -> ^void) -> ^void one()
+    => |fn sink(^int) -> ^void| { sink(7); };
+
+int main() {
+    int** p = 0;
+    indirect(_) q = p;
+    int array[3] = {};
+    buffer(_, _) copy = array;
+    const int constant = 0;
+
+    int observed = 0;
+    one() |> std::stream::for_each(|auto value| { observed = value; });
+
+    return q == p && pointee_size(q) == sizeof(int) && length(copy) == 3
+        && is_const(constant) && observed == 7
+        ? 0 : 1;
+}

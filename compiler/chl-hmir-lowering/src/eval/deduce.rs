@@ -1,4 +1,5 @@
 mod arguments;
+pub(crate) mod pattern;
 mod subject;
 
 pub(crate) use arguments::{Deduction, generated, generates_type};

@@ -1,0 +1,6 @@
+comptime type compute(type T) => T*;
+comptime type alias(type T) = compute(T);
+
+int main() {
+    return 0;
+}

@@ -651,9 +651,11 @@ module.exports = grammar({
                             field("return_type", $.type),
                         ),
                     ),
-                    $.function_body,
+                    choice($.function_body, $.transparent_type_body),
                 ),
             ),
+
+        transparent_type_body: ($) => seq(op($, "="), $.type, ";"),
 
         function_body: ($) => choice(
             $.compound_statement,

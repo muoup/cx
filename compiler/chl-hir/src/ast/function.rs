@@ -15,6 +15,7 @@ pub enum HIRFunctionBody {
         range: TokenRange,
     },
     Expression(HIRExpression),
+    TypeAlias(HIRType),
 }
 
 impl HIRFunctionBody {
@@ -22,6 +23,7 @@ impl HIRFunctionBody {
         match self {
             Self::Block { range, .. } => range,
             Self::Expression(expression) => &expression.range,
+            Self::TypeAlias(ty) => &ty.range,
         }
     }
 }

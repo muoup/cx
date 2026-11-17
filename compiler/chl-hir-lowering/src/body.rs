@@ -161,9 +161,13 @@ impl<'a> BodyLowering<'a> {
             .collect()
     }
 
-    pub(crate) fn finish_definition(&mut self, root: HMIRExprID) -> HMIRFnDefinition {
+    pub(crate) fn finish_definition(
+        &mut self,
+        root: HMIRExprID,
+        transparent: bool,
+    ) -> HMIRFnDefinition {
         let labels = mem::take(&mut self.address_labels);
-        HMIRFnDefinition::new(root, labels)
+        HMIRFnDefinition::new(root, labels, transparent)
     }
 
     pub(crate) fn push(&mut self, kind: HMIRExprKind, span: &TokenRange) -> HMIRExprID {
@@ -454,7 +458,7 @@ pub(crate) fn lower_reify(
     let defaults = HMIRBodyContext::new();
     let prototype =
         HMIRFnPrototype::new(name.clone(), LinkageMode::Static, signature, decls, defaults);
-    let def = anon.finish_definition(root);
+    let def = anon.finish_definition(root, false);
     let function = HMIRFunction::new(anon.finish(), prototype, params.into(), Some(def));
 
     context.unit.push_static(

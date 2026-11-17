@@ -22,8 +22,11 @@ use crate::{
         functions::try_function_parse,
         parser::ParserData,
         statement::parse_stmt,
-        types::{parse_base_mods, parse_initializer, parse_typedef_initializer},
-    }, peek_next_kind, try_next,
+        types::{
+            parse_abstract_type, parse_base_mods, parse_initializer, parse_typedef_initializer,
+        },
+    },
+    peek_next_kind, try_next,
 };
 
 pub(crate) mod parser;
@@ -237,7 +240,7 @@ fn parse_fn_merge(
             body: None,
         });
     } else {
-        let body = parse_function_body(data)?;
+        let body = parse_function_body(data, &prototype)?;
 
         data.add_stmt(HIRStmt::FunctionDefinition {
             prototype,
@@ -500,7 +503,10 @@ fn parse_block_statements(data: &mut ParserData) -> CHLResult<Box<[HIRExpression
     Ok(body.into())
 }
 
-fn parse_function_body(data: &mut ParserData) -> CHLResult<HIRFunctionBody> {
+fn parse_function_body(
+    data: &mut ParserData,
+    prototype: &HIRFunctionPrototype,
+) -> CHLResult<HIRFunctionBody> {
     let start_index = data.tokens.index;
     if try_next!(data.tokens, punctuator!(OpenBrace)) {
         let statements = parse_block_statements(data)?;
@@ -518,6 +524,16 @@ fn parse_function_body(data: &mut ParserData) -> CHLResult<HIRFunctionBody> {
             "';' after function expression"
         );
         return Ok(HIRFunctionBody::Expression(expression));
+    }
+
+    if !data.c_mode
+        && prototype.comptime
+        && matches!(prototype.return_type.kind, HIRTypeKind::Universe)
+        && try_next!(data.tokens, TokenKind::Assignment(None))
+    {
+        let ty = parse_abstract_type(data)?;
+        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';' after type alias");
+        return Ok(HIRFunctionBody::TypeAlias(ty));
     }
 
     parse_point_error(

@@ -17,6 +17,7 @@ pub struct HMIRFunction {
 pub struct HMIRFnDefinition {
     root: HMIRExprID,
     address_labels: Vec<CHLIdent>,
+    transparent: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +103,12 @@ impl HMIRFunction {
 
     pub fn def(&self) -> Option<&HMIRFnDefinition> {
         self.def.as_ref()
+    }
+
+    pub fn transparent_body(&self) -> Option<HMIRExprID> {
+        self.def()
+            .filter(|def| def.transparent)
+            .map(HMIRFnDefinition::root)
     }
 
     pub fn returns_type(&self) -> bool {
@@ -272,10 +279,11 @@ impl Default for HMIRContract {
 }
 
 impl HMIRFnDefinition {
-    pub fn new(root: HMIRExprID, address_labels: Vec<CHLIdent>) -> Self {
+    pub fn new(root: HMIRExprID, address_labels: Vec<CHLIdent>, transparent: bool) -> Self {
         Self {
             root,
             address_labels,
+            transparent,
         }
     }
 

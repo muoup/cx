@@ -395,8 +395,10 @@ fn finish(
         true => {
             let generated = generated_name(context, def, &args);
             let provisional = args.clone();
+            let track_origin = function.transparent_body().is_none();
             let publish = |env: &mut HMIREnvironment, value| {
-                env.resolver_mut().record_generated(def, provisional, value)
+                env.resolver_mut()
+                    .record_generated(def, provisional, value, track_origin)
             };
             let result = types::alias::define(context, generated, span, publish, |context, reserved| {
                 let value = run(context, Some(reserved))?;
@@ -407,7 +409,7 @@ fn finish(
             }
             let value = result?;
             let resolver = context.env_mut().resolver_mut();
-            resolver.record_generated(def, args.clone(), value.clone());
+            resolver.record_generated(def, args.clone(), value.clone(), track_origin);
             value
         }
     };

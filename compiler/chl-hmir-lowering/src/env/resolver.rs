@@ -175,8 +175,14 @@ impl HMIRResolver {
     pub fn generated(&self, def: HMIRDefID, args: &[HMIRValue]) -> Option<&HMIRValue> {
         self.generated.get(&def)?.get(args)
     }
-    pub fn record_generated(&mut self, def: HMIRDefID, args: Vec<HMIRValue>, value: HMIRValue) {
-        if let Some(ty) = value::as_type(&value) {
+    pub fn record_generated(
+        &mut self,
+        def: HMIRDefID,
+        args: Vec<HMIRValue>,
+        value: HMIRValue,
+        track_origin: bool,
+    ) {
+        if track_origin && let Some(ty) = value::as_type(&value) {
             let ty = self.underlying(ty);
             self.origins.entry(ty).or_insert((def, args.clone()));
         }

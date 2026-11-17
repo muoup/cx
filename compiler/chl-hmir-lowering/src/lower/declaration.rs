@@ -14,7 +14,7 @@ use crate::{
         generation::Generation,
         resolver::demand,
     },
-    eval::{eval_type, flow, symbol, types},
+    eval::{deduce::pattern, eval_type, flow, symbol, types},
     log::hmir_error,
     value::{self, HMIRValue},
 };
@@ -28,6 +28,12 @@ pub(crate) fn resolve(env: &mut HMIREnvironment, unit: &HMIRUnit) -> CHLResult<(
         declarations(def)?;
         agreement(def)?;
         linkage_agreement(def)?;
+        let chosen = canonical(def);
+        if let Some(HMIRDefKind::Function(function)) = chosen.kind()
+            && function.transparent_body().is_some()
+        {
+            pattern::validate(env, *id, chosen.span())?;
+        }
         evaluate(env, *id, def)?;
         request(env, *id, def);
     }

@@ -1619,3 +1619,31 @@ int main() {
                     (type
                       (builtin_type_sequence
                         (builtin_type)))))))))))))
+
+==================
+transparent type alias
+==================
+comptime type pointer(type T) = T*;
+---
+
+(source_file
+  (comptime_function_definition
+    (keyword)
+    (type
+      (keyword))
+    (callable_name
+      (qualified_name
+        (identifier)))
+    (parameter_list
+      (parameter
+        (type
+          (keyword))
+        (declarator
+          (identifier))))
+    (transparent_type_body
+      (operator)
+      (type
+        (qualified_name
+          (identifier))
+        (pointer_modifier
+          (operator))))))

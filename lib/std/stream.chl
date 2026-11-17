@@ -3,7 +3,7 @@ import std::span as std;
 public:
 
 comptime type stream(type T)
-    => fn(fn(^T) -> ^void) -> ^void;
+    = fn(fn(^T) -> ^void) -> ^void;
 
 comptime stream(U) stream::map(
     type T = _, type U = _, 

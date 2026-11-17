@@ -129,9 +129,9 @@ fn apply(
 //   - 'args' bind the parameters that have none, in order, less those that 'applied' has bound.
 // A call that leaves one of the latter unbound is partial, which only a call whose every argument binds a comptime
 // parameter may be
-fn bind(
+pub(crate) fn bind<T>(
     function: Option<&HMIRFunction>,
-    signature: &HMIRFnSignature<HMIRTypeID>,
+    signature: &HMIRFnSignature<T>,
     applied: &[Option<HMIRValue>],
     body: &HMIRBodyContext,
     args: &[HMIRExprID],

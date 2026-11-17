@@ -73,7 +73,7 @@ declaration = specifiers type-base declarator
 function-tail = [ "::" name ] "(" params ")" contract ["->" abstract-type] ( ";" | body ) ;
 params   = [ param { "," param } ] [ "," "..." ] | "..." ;
 param    = ["comptime"] specifiers type-base declarator [ "=" expr ] ;
-body     = "{" { statement } "}" | "=>" expr ";" ;
+body     = "{" { statement } "}" | "=>" expr ";" | "=" abstract-type ";" ;
 contract = suffixes ["safe"] [ "where" condition { "," condition } suffixes ] ;
 condition = "precondition" ":" "(" expr ")"
           | "postcondition" ["(" name ")"] ":" "(" expr ")" ;
@@ -82,6 +82,7 @@ condition = "precondition" ":" "(" expr ")"
 - a declarator followed by `(` is a function; else backtracks to a variable.
 - `A::f` declares an associated function of A; more segments: P0021.
 - trailing `-> T` only when the written return type is `auto` and not C mode; it keeps auto's qualifiers.
+- A body written `= T;` defines a transparent type alias. It requires a `comptime` function returning `type` outside C mode.
 - `noreturn` attributes, before the type or after the parameters, make the return type `unreachable`.
 - second precondition or postcondition: P0008.
 - `rule/quirk-c-suffix-skip` identifiers `__asm__`, `__asm`, `asm`, `__declspec`, `__nonnull`, `__nonnull__`, `__wur` and an optional parenthesized group after each are skipped, with attributes, before and after `where`.

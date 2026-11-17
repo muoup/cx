@@ -152,7 +152,8 @@ fn lower_function<'a>(
     let decls = context.fn_param_decls(&params, default_exprs);
     let prototype =
         HMIRFnPrototype::new(symbol_name, prototype.linkage, signature, decls, defaults);
-    let def = root.map(|root| context.finish_definition(root));
+    let transparent = matches!(body, Some(HIRFunctionBody::TypeAlias(_)));
+    let def = root.map(|root| context.finish_definition(root, transparent));
 
     Ok(HMIRDefKind::Function(Box::new(HMIRFunction::new(
         context.finish(),
@@ -293,5 +294,6 @@ fn lower_function_body<'a>(
             Ok(context.block(statements, true, false, range))
         }
         HIRFunctionBody::Expression(expr) => lower_expr(context, expr),
+        HIRFunctionBody::TypeAlias(ty) => lower_type(context, ty),
     }
 }
