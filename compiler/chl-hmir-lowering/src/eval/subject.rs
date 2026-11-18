@@ -23,7 +23,7 @@ use crate::{
         self, HMIRValue, HMIRValueKind,
         immediate::HMIRImmValue,
         place::HMIRPlaceBrand,
-        staged::{Quote, QuoteRef},
+        staged::Quote,
     },
 };
 
@@ -146,9 +146,9 @@ fn shadow(
         Err(value) => value,
     };
     match value.kind() {
-        HMIRValueKind::Immediate(HMIRImmValue::Quote(node)) => {
-            let quote = QuoteRef::new(shadowed(context, node.get(), span)?);
-            Ok(HMIRValue::new(value.ty(), HMIRImmValue::Quote(quote)))
+        HMIRValueKind::Quote(node) => {
+            let quote = shadowed(context, node.get(), span)?;
+            Ok(HMIRValue::new(value.ty(), quote.into_kind()))
         }
         HMIRValueKind::Immediate(_) => Ok(value),
         _ => placeholder(context, value.ty(), span),
@@ -161,16 +161,7 @@ pub(crate) fn shadowed(
     quote: &Quote,
     span: &TokenRange,
 ) -> CHLResult<Quote> {
-    let mut captures = Bindings::default();
-    for (local, captured) in quote.captures() {
-        captures.insert(*local, shadow(context, captured.clone(), span)?);
-    }
-    Ok(Quote::new(
-        quote.source(),
-        quote.root(),
-        quote.params().to_vec(),
-        captures,
-    ))
+    quote.map_captures(|captured| shadow(context, captured.clone(), span))
 }
 
 // Unevaluated storage standing in for a value of type 'ty' whose contents are unknown

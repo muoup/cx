@@ -1,5 +1,5 @@
 use chl_hmir::{
-    HMIRBodyContext,
+    HMIRBodyContext, HMIRUnitID,
     body::HMIRLocalID,
     expr::HMIRExprID,
     ty::{HMIRTypeID, context::HMIRTypeContext},
@@ -19,10 +19,7 @@ use crate::{
         name::type_value,
     },
     log::hmir_error,
-    value::{
-        self, HMIRValue, HMIRValueKind,
-        immediate::{HMIRImmValue, HMIRImmediate},
-    },
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmediate},
 };
 
 // Evaluates an expression in a comptime child that sees only the known values of the visible locals
@@ -101,7 +98,6 @@ fn evaluate(
     })
 }
 
-// Brings a compile-time result into its independently well-formed form, which is valid in any context
 pub(crate) fn converge(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
@@ -117,22 +113,18 @@ pub(crate) fn converge(
         true => emit::comptime::storage::contents(context, &value, span)?,
         false => value,
     };
-    if let HMIRValueKind::Application(application) = value.kind() {
-        let application = application.clone().try_map(|operand| {
-            let value = converge(context, operand, span)?;
-            Ok::<_, chl_log::error::CHLError>(
-                HMIRImmediate::try_from(value).expect("a converged operand is immediate"),
-            )
-        })?;
-        return Ok(HMIRValue::new(
-            value.ty(),
-            HMIRImmValue::Application(application),
-        ));
+    let ty = value.ty();
+    match value.take_kind() {
+        HMIRValueKind::Application(application) => {
+            let application = application.try_map(|operand| converge(context, operand, span))?;
+            return Ok(value::application(ty, application));
+        }
+        kind @ (HMIRValueKind::Immediate(_) | HMIRValueKind::Quote(_)) => {
+            return Ok(HMIRValue::new(ty, kind));
+        }
+        _ => {}
     }
-    if let HMIRValueKind::Immediate(_) = value.kind() {
-        return Ok(value);
-    }
-    let subject = match context.env().is_reference(value.ty()) {
+    let subject = match context.env().is_reference(ty) {
         true => ("a reference to compile-time storage", "an exported value"),
         false => (
             "the address of compile-time storage",
@@ -141,6 +133,51 @@ pub(crate) fn converge(
     };
     let subject = (subject.0.into(), subject.1.into());
     Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject))
+}
+
+pub(crate) fn independent(
+    context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    destination: &str,
+    span: &TokenRange,
+) -> CHLResult<HMIRImmediate> {
+    HMIRImmediate::try_from(value).map_err(|value| {
+        let subject = (
+            "a value that depends on the caller's runtime context".into(),
+            destination.into(),
+        );
+        let error = hmir_error(span, &typecheck::INVALID_CONTEXT, subject);
+        let Some((source, local)) = runtime_capture(&value) else {
+            return error;
+        };
+        let unit = context.unit(source);
+        let body = unit.body(local.body()).expect("a captured local has a body");
+        let local = body.local(local);
+        let note = match local.name() {
+            Some(name) => format!("runtime binding '{name}' captured here"),
+            None => "runtime binding captured here".into(),
+        };
+        error.with_note(note, Some(local.span()))
+    })
+}
+
+fn runtime_capture(value: &HMIRValue) -> Option<(HMIRUnitID, HMIRLocalID)> {
+    match value.kind() {
+        HMIRValueKind::Quote(quote) => {
+            let quote = quote.get();
+            let (&local, value) = quote
+                .captures()
+                .iter()
+                .filter(|(_, value)| !matches!(value.kind(), HMIRValueKind::Immediate(_)))
+                .min_by_key(|(local, _)| local.index())?;
+            runtime_capture(value).or(Some((quote.source(), local)))
+        }
+        HMIRValueKind::Application(application) => {
+            runtime_capture(&application.callee)
+                .or_else(|| application.args.iter().flatten().find_map(runtime_capture))
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn known(context: &mut LocalLoweringContext, value: &HMIRValue) -> Option<HMIRValue> {

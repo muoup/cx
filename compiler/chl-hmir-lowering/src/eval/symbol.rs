@@ -21,7 +21,7 @@ use crate::{
         function::{ComptimeContext, FnContext, LocalLoweringContext},
         resolver::{SymbolState, demand},
     },
-    eval::{self, eval_type, flow, name::type_value, types},
+    eval::{self, comptime, eval_type, flow, name::type_value, types},
     log::hmir_error,
     lower::declaration,
     value::{
@@ -274,7 +274,8 @@ fn comptime_value(
         flow::boundary(eval_type(context, global.body(), global.ty()))?.description(),
     )?;
     if !matches!(context.env().resolve_kind(declared), HMIRTypeKind::Type) {
-        return eval::eval_comptime(context, global.body(), global.initializer(), Some(declared));
+        let value = eval::eval_comptime(context, global.body(), global.initializer(), Some(declared))?;
+        return comptime::independent(context, value, "a comptime global initializer", span).map(Into::into);
     }
     let source = context.env().symbols().resolve_definition(id);
     let name = source.name().name.to_string();

@@ -34,6 +34,14 @@ vector(T) vector::with_capacity(comptime type T, usize capacity) {
     };
 }
 
+vector(T) vector::from_data(comptime type T = _, T* data, usize length) {
+    return (vector(T)) {
+        .data = data,
+        .length = length,
+        .capacity = capacity
+    };
+}
+
 void vector::drop(comptime type T = _, vector(T) this) 
 where
     pre: (!@type.is_nodrop(T))

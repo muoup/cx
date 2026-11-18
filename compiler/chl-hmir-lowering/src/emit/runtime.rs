@@ -3,7 +3,7 @@ pub mod intrinsics;
 pub mod storage;
 
 use chl_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
-use chl_log::CHLResult;
+use chl_log::{CHLResult, catalogue::typecheck};
 use chl_mir::{
     MIRFunctionID, MIRInstructionKind, MIRIntType, MIRInternalIntrinsic, MIRPlaceDecl,
     MIRPtrIntrinsic, MIRRegisterDecl, MIRTarget, MIRValue,
@@ -16,6 +16,7 @@ use chl_util::identifier::CHLIdent;
 use crate::{
     env::function::{LocalLoweringContext, runtime::RuntimeScope, scope::Bindings},
     eval::{aggregate::variant, call, symbol, types},
+    log::hmir_error,
     lower::{
         declaration, global,
         types::{lower_prototype, lower_type, mir_float, mir_int},
@@ -73,6 +74,13 @@ pub fn value(
                 span,
             )?;
             MIRValue::Immediate(self::function(function))
+        }
+        HMIRValueKind::Quote(_) => {
+            return Err(hmir_error(
+                span,
+                &typecheck::COMPTIME_ONLY_TYPE,
+                types::name(context.env(), value.ty()),
+            ));
         }
         HMIRValueKind::Register(register) => {
             MIRValue::Register(context.runtime().register(*register))

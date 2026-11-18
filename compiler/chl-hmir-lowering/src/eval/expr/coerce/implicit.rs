@@ -14,7 +14,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
         coerce::{self, applied},
-        comptime, expr, staged,
+        comptime, expr, flow, staged,
         types::{self, signatures_alike},
     },
     log::hmir_error,
@@ -198,8 +198,14 @@ fn step(
         | (HMIRTypeKind::Array { .. }, HMIRTypeKind::PointerTo(_)) => {
             return promotion::step(context, value, span);
         }
-        (HMIRTypeKind::Staged(_), target) if !matches!(target, HMIRTypeKind::Staged(_)) => {
-            return promotion::step(context, value, span);
+        (HMIRTypeKind::Staged(_), _) if !staged::is_code(context, target) => {
+            return match context.is_comptime() {
+                true => {
+                    let value = flow::top(staged::materialize(context, value, span))?;
+                    Ok(Coercion::Applied(value))
+                }
+                false => promotion::step(context, value, span),
+            };
         }
         (_, HMIRTypeKind::ReferenceTo { inner, .. }) => {
             return bind(context, value, *inner, target, span);

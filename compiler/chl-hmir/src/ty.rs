@@ -47,7 +47,6 @@ pub enum HMIRGenericTypeKind<T, L> {
     PointerTo(T),
     ReferenceTo { inner: T, bitfield: Option<HMIRBitfield> },
     Array { element: T, length: L },
-    // A decaying function type adjusts to a pointer as a runtime parameter, as C function types do
     Function { signature: HMIRFnSignature<T>, decays: bool },
     Struct { fields: Vec<HMIRFieldDef<T>> },
     Union { fields: Vec<HMIRFieldDef<T>> },

@@ -1,0 +1,8 @@
+comptime int force(^int code) {
+    return code;
+}
+
+int main() {
+    int local = 3;
+    return force(emit local);
+}

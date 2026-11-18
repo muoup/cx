@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use chl_hmir::{
     HMIRBodyContext, HMIRDefID, HMIRFunction,
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::{HMIRTypeID, context::HMIRTypeContext},
 };
 use chl_log::{CHLResult, catalogue::typecheck, error::CHLError};
 use chl_tokens::TokenRange;

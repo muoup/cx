@@ -118,6 +118,9 @@ pub(super) fn contained(
         FnContext::Runtime(runtime) if !context.is_unevaluated() && runtime.sealed_past(depth) => {
             Err(hmir_error(span, &typecheck::ESCAPING_SPLICE, jump.into()))
         }
+        FnContext::Comptime(comptime) if comptime.quoting() => {
+            Err(hmir_error(span, &catalogue::mir::COMPTIME_CONTROL_ESCAPE, ()))
+        }
         _ => Ok(()),
     }
 }

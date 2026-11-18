@@ -33,6 +33,7 @@ pub fn lower_unit<'hmir>(
         match (generation, function) {
             (Generation::Definition(def), _) => generate(def, env, None)?,
             (Generation::Template { def, comptime_bindings }, Some(function)) => {
+                let comptime_bindings = comptime_bindings.into_iter().map(Into::into).collect::<Vec<_>>();
                 generate(def, env, Some((function, &comptime_bindings)))?
             }
             (Generation::Constructor { ty, variant }, Some(function)) => {

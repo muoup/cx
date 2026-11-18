@@ -182,7 +182,7 @@ pub fn lift(
         HMIRValueKind::Register(register) => {
             MIRBindable::Register(context.runtime().register(*register))
         }
-        HMIRValueKind::Immediate(_) | HMIRValueKind::Application(_) => {
+        HMIRValueKind::Immediate(_) | HMIRValueKind::Application(_) | HMIRValueKind::Quote(_) => {
             unreachable!("a lift reads out of local storage")
         }
     };

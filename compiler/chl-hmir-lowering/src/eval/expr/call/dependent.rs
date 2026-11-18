@@ -84,9 +84,13 @@ impl<'a> Frame<'a> {
             )?;
             let comptime = function.signature().is_comptime_param(index);
             let ty = types::parameter(child, ty, comptime, span)?;
-            if runtime && staged::is_code(child, ty) {
-                let operation = "a reference or staged-expression parameter".into();
-                return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation));
+            if runtime && !comptime && staged::is_code(child, ty) {
+                let requirement = (
+                    "a staged-expression parameter".into(),
+                    "'comptime' on a runtime function".into(),
+                    None,
+                );
+                return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
             }
             Ok(ty)
         })?;
@@ -114,6 +118,11 @@ impl<'a> Frame<'a> {
         let value = match caller.is_runtime() {
             true => value,
             false => comptime::converge(caller, value, span)?,
+        };
+        let value = if self.runtime {
+            comptime::independent(caller, value, "a runtime specialization", span)?.into()
+        } else {
+            value
         };
         let function = self.function;
         self.enter(caller, span, |child| {
@@ -463,7 +472,12 @@ pub(crate) fn template(
         let name = types::name(context.env(), function);
         return Err(hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, name));
     }
-    let comptime_bindings = comptime_bindings.iter().flatten().cloned().collect();
+    let comptime_bindings = comptime_bindings
+        .iter()
+        .flatten()
+        .cloned()
+        .map(|value| comptime::independent(context, value, "a runtime specialization", span))
+        .collect::<CHLResult<_>>()?;
     let generation = Generation::Template { def, comptime_bindings };
     lower::declare(context.env_mut(), generation, &signature, span)
 }

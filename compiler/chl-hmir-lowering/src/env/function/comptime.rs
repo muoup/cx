@@ -76,14 +76,15 @@ impl ComptimeContext {
     }
 
     pub(crate) fn yielding(&self) -> bool {
-        self.scopes.controls().any(|(_, scope)| scope.yields)
+        self.controls().any(|(_, scope)| scope.yields)
+    }
+
+    pub(crate) fn quoting(&self) -> bool {
+        self.scopes.controls().any(|(_, scope)| scope.quoted)
     }
 
     pub(crate) fn switch(&self) -> Option<Switch> {
-        self.scopes
-            .controls()
-            .rev()
-            .find_map(|(_, scope)| scope.switch)
+        self.controls().find_map(|(_, scope)| scope.switch)
     }
 
     pub(crate) fn selected_case(&self) -> Option<HMIRExprID> {
@@ -95,12 +96,17 @@ impl ComptimeContext {
 
     pub(crate) fn activate_case(&mut self) {
         let (index, _) = self
-            .scopes
             .controls()
-            .rev()
             .find(|(_, scope)| scope.switch.is_some())
             .expect("a switch is open");
         self.scopes.control_mut(index).switch = Some(Switch::Active);
+    }
+
+    fn controls(&self) -> impl Iterator<Item = (usize, &ComptimeScope)> {
+        self.scopes
+            .controls()
+            .rev()
+            .take_while(|(_, scope)| !scope.quoted)
     }
 
     pub fn slot(&self, place: HMIRPlaceID) -> Option<&ComptimeSlot> {
@@ -143,11 +149,19 @@ pub(crate) enum Switch {
 
 #[derive(Debug, Default)]
 pub(crate) struct ComptimeScope {
+    quoted: bool,
     yields: bool,
     switch: Option<Switch>,
 }
 
 impl ComptimeScope {
+    pub(crate) fn quoted() -> Self {
+        Self {
+            quoted: true,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn begin_yield(&mut self) {
         self.yields = true;
     }

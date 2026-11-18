@@ -1,0 +1,33 @@
+/* CHL-STDOUT: 12 5 5 */
+
+#include <stdio.h>
+
+int dropped = 0;
+
+void drop_int(int value) {
+    dropped += value;
+}
+
+void drop_with(int value, comptime fn destructor(^int) -> ^void) {
+    value |> destructor();
+}
+
+int run(comptime ^void action) {
+    action!;
+    return 0;
+}
+
+comptime ^int finish(fn callback(^int) -> ^int) => callback(2);
+
+int main() {
+    drop_with(7, drop_int);
+    drop_with(4, |auto value| => drop_int(value + 1));
+
+    int result = run(emit .{ return 5; });
+
+    int local = 3;
+    fn add(^int, ^int) -> ^int = |auto x, auto y| => x + y;
+    fn partial(^int) -> ^int = add(emit local);
+    printf("%d %d %d\n", dropped, result, finish(partial));
+    return 0;
+}

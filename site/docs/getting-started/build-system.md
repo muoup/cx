@@ -3,7 +3,7 @@ title: Build System
 description: Project builds, chl.lua configuration, library targets, and C header generation.
 ---
 
-# Single-File Compilation
+## Single-File Compilation
 
 One may compile without Chloro's built-in build system just as one would use `gcc` or `clang`. This makes the compiler an
 experimental drop-in replacement for said compilers if desired, as the compiler can compile directly `.c` files.

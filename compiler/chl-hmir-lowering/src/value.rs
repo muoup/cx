@@ -15,6 +15,7 @@ use crate::{
         address::{Addressable, HMIRAddress},
         immediate::{HMIRImmValue, HMIRImmediate},
         place::HMIRPlaceID,
+        staged::QuoteRef,
     },
 };
 
@@ -140,11 +141,11 @@ pub struct HMIRValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HMIRValueKind {
-    /// Well-formed representation of a full value in any context, which is the form a comptime evaluation
-    /// converges to when it hands its value back to runtime
+    /// Well-formed representation of a full value in any context
     Immediate(HMIRImmValue),
 
     Application(HMIRApplication<HMIRValue>),
+    Quote(QuoteRef<HMIRValue>),
 
     /// An address into storage local to the function evaluating it, whether runtime or comptime; it is never
     /// well-formed outside of that function, so a comptime value holding one cannot converge

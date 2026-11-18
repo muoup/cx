@@ -1,0 +1,10 @@
+void use_code(comptime fn callback(^int) -> ^int) {}
+
+int main() {
+    int local = 3;
+    fn add(^int, ^int) -> ^int = |auto x, auto y| => x + y;
+    fn partial(^int) -> ^int = add(emit local);
+    fn wrapped(^int) -> ^int = |auto x| => partial(x);
+    use_code(wrapped);
+    return 0;
+}

@@ -1,4 +1,4 @@
-import std::{optional, io, span} as std;
+import std::{optional, io, span, vector} as std;
 
 extern "C":
 
@@ -74,8 +74,12 @@ const _str& string::as_str(const string& this) {
     return @unsafe((const _str&) this.data);
 }
 
-std::span(char) string::as_bytes(string& this) {
-    return std::span::new(this.data, this.length);
+std::vector(u8) string::into_bytes(string this) {
+    auto result = std::vector::from_data(this.data, this.length);
+ 
+    @leak(this);
+ 
+    return result;
 }
 
 void string::append_str(string& this, const _str& s) {
@@ -129,7 +133,7 @@ string str::substring(const _str& this, usize start, usize end) {
     }
     return move result;
 }
-
+    
 bool str::equals(const _str& this, const _str& other) {
     return strcmp(this, other) == 0;
 }

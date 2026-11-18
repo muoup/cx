@@ -1,17 +1,30 @@
 public:
 
 comptime type result(comptime type T, comptime type Err) =>
-    enum union : @copy_traits(T) {
+    enum union : @copy_traits(T), @copy_traits(Err) {
         err :: Err,
         ok :: T
     };
     
-bool result::is_ok(comptime type T = _, result(T)& this) {
+bool result::is_ok(comptime type T = _, comptime type Err = _, result(T, Err)& this) {
     return this is ok(_);
 }
 
-bool result::is_err(comptime type T = _, result(T)& this) {
+bool result::is_err(comptime type T = _, comptime type Err = _, result(T, Err)& this) {
     return this is err();
+}
+
+void result::drop_with(
+    comptime type T = _, 
+    comptime type Err = _, 
+    result(T, Err) this,
+    comptime fn drop_ok(^T) -> ^void,
+    comptime fn drop_err(^Err) -> ^void,
+) {
+    match (move this) {
+        ok(auto value) => move value |> drop_ok(),
+        err(auto value) => move value |> drop_err()
+    }
 }
 
 comptime ^result(U, Err) result::map(

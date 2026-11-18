@@ -119,6 +119,7 @@ pub(crate) fn applies(context: &LocalLoweringContext, value: &HMIRValue) -> bool
                 || applies(context, &application.callee);
         }
         HMIRValueKind::Immediate(immediate) => immediate,
+        HMIRValueKind::Quote(_) => return true,
         _ => return false,
     };
     let mut ty = value.ty();
@@ -295,14 +296,11 @@ pub(crate) fn materialize(
     let HMIRTypeKind::Staged(result) = *context.env().resolve_kind(code.ty()) else {
         unreachable!("materialization requires code");
     };
-    if !context.is_runtime() {
-        return Err(hmir_error(
-            span,
-            &mir::COMPTIME_INVALID_OPERATION,
-            "materializing runtime code at compile time".into(),
-        )
-        .into());
-    }
+    let code = if context.is_comptime() {
+        comptime::independent(context, code, "comptime materialization", span)?.into()
+    } else {
+        code
+    };
     let (callee, values) = match value::into_application(code) {
         Ok(application) => {
             let args = application
@@ -313,8 +311,19 @@ pub(crate) fn materialize(
             (*application.callee, args)
         }
         Err(code) => match code.kind() {
-            HMIRValueKind::Immediate(HMIRImmValue::Quote(_)) => (code, Vec::new()),
-            HMIRValueKind::Immediate(HMIRImmValue::Opaque) => return opaque(context, result),
+            HMIRValueKind::Immediate(HMIRImmValue::Quote(_)) | HMIRValueKind::Quote(_) => {
+                (code, Vec::new())
+            }
+            HMIRValueKind::Immediate(HMIRImmValue::Opaque) if context.is_runtime() => {
+                return opaque(context, result)
+            }
+            HMIRValueKind::Immediate(HMIRImmValue::Opaque) => {
+                return Err(hmir_error(
+                    span,
+                    &mir::COMPTIME_UNAVAILABLE,
+                    "this staged value".into(),
+                ).into());
+            }
             HMIRValueKind::Immediate(_) => return Ok(Evaluation::Ready(code.with_ty(result))),
             _ => {
                 return Err(hmir_error(
@@ -326,9 +335,12 @@ pub(crate) fn materialize(
             }
         },
     };
+    let expected = (!context.env().is_void(result)).then_some(result);
     let evaluated = match callee.kind() {
         HMIRValueKind::Immediate(HMIRImmValue::Quote(node)) => {
-            let expected = (!context.env().is_void(result)).then_some(result);
+            quote::expand(context, node.get(), &values, expected)?
+        }
+        HMIRValueKind::Quote(node) => {
             quote::expand(context, node.get(), &values, expected)?
         }
         _ => super::call::hmir_call(context, span, callee, values)?,
