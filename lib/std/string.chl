@@ -79,7 +79,7 @@ std::vector(u8) string::into_bytes(string this) {
  
     @leak(this);
  
-    return result;
+    return move result;
 }
 
 void string::append_str(string& this, const _str& s) {

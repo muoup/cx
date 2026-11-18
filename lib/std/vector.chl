@@ -38,7 +38,7 @@ vector(T) vector::from_data(comptime type T = _, T* data, usize length) {
     return (vector(T)) {
         .data = data,
         .length = length,
-        .capacity = capacity
+        .capacity = length
     };
 }
 
