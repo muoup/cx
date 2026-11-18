@@ -73,6 +73,7 @@ impl BodyPrinter<'_> {
             }
             HMIROp::AddressOf(operand) => ("op.address_of".to_string(), vec![Arg::Place(*operand)]),
             HMIROp::Dereference(operand) => ("op.dereference".to_string(), values(&[*operand])),
+            HMIROp::StrConcat { lhs, rhs } => ("str.concat".to_string(), values(&[*lhs, *rhs])),
             HMIROp::Type(op) => self.type_parts(op),
             HMIROp::Control(op) => control_parts(op),
             HMIROp::OwnershipOp(op) => {

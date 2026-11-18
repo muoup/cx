@@ -111,6 +111,7 @@ pub(crate) fn eval(
             }
             HMIROp::AddressOf(operand) => place::eval_address_of(context, body, span, *operand),
             HMIROp::Dereference(pointer) => place::eval_dereference(context, body, span, *pointer),
+            HMIROp::StrConcat { lhs, rhs } => expr::string::concat(context, body, span, *lhs, *rhs),
             HMIROp::OwnershipOp(op) => place::eval_ownership(context, body, span, op),
             HMIROp::Type(op) => types::query::eval_type_op(context, body, span, op),
             HMIROp::AggregateOp(aggregate) => {

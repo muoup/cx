@@ -37,6 +37,11 @@ pub fn float(env: &HMIREnvironment, value: f64, ty: HMIRTypeID) -> HMIRValue {
     HMIRValue::new(ty, HMIRImmValue::Float(FloatWrapper::from(value)))
 }
 
+pub fn string(ty: HMIRTypeID, value: String) -> HMIRValue {
+    let address = HMIRAddress::new(Addressable::Literal(value), 0);
+    HMIRValue::new(ty, HMIRImmValue::Address(address))
+}
+
 pub fn as_type(value: &HMIRValue) -> Option<HMIRTypeID> {
     match value.kind() {
         HMIRValueKind::Immediate(HMIRImmValue::Type(ty)) => Some(*ty),
@@ -64,6 +69,13 @@ fn as_addressable(value: &HMIRValue) -> Option<&Addressable> {
         HMIRValueKind::Immediate(HMIRImmValue::Address(address)) if address.offset() == 0 => {
             Some(address.base())
         }
+        _ => None,
+    }
+}
+
+pub fn as_string(value: &HMIRValue) -> Option<&str> {
+    match as_addressable(value)? {
+        Addressable::Literal(text) => Some(text),
         _ => None,
     }
 }

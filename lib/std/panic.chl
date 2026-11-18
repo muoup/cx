@@ -10,5 +10,6 @@ unreachable panic(const _str& message) {
 }
 
 unreachable todo(const _str& message) {
-    std::io::printf("TODO: %s\n", message); 
+    std::io::printf("TODO: %s\n", message);
+    exit(1);
 }

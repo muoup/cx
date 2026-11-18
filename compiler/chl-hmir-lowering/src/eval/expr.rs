@@ -9,6 +9,7 @@ pub(crate) mod intrinsic;
 pub(crate) mod name;
 pub(crate) mod place;
 pub(crate) mod staged;
+pub(crate) mod string;
 pub(crate) mod types;
 
 use chl_hmir::{expr::literal::HMIRLiteral, ty::HMIRTypeKind};
@@ -18,11 +19,7 @@ use chl_tokens::TokenRange;
 use crate::{
     env::function::{LocalLoweringContext, Permission},
     log::hmir_error,
-    value::{
-        self, HMIRValue,
-        address::{Addressable, HMIRAddress},
-        immediate::HMIRImmValue,
-    },
+    value::{self, HMIRValue},
 };
 
 pub(crate) fn eval_literal(
@@ -35,8 +32,7 @@ pub(crate) fn eval_literal(
         HMIRLiteral::Str(value) => {
             let ty = types::realize(context.env_mut(), HMIRTypeKind::Str(Some(value.len() as u64 + 1)), span);
             let ty = types::reference(context.env_mut(), ty, None, span);
-            let literal = HMIRAddress::new(Addressable::Literal(value.clone()), 0);
-            HMIRValue::new(ty, HMIRImmValue::Address(literal))
+            value::string(ty, value.clone())
         }
         HMIRLiteral::Int { value, ty } => {
             let ty = types::int(context.env_mut(), ty.width(), ty.signed(), span);

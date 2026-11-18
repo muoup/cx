@@ -29,6 +29,10 @@ pub enum HMIROp {
     },
     AddressOf(HMIRExprID),
     Dereference(HMIRExprID),
+    StrConcat {
+        lhs: HMIRExprID,
+        rhs: HMIRExprID,
+    },
 
     Type(HMIRTypeOp),
     Control(HMIRControlOp),

@@ -201,7 +201,9 @@ impl Locals<'_> {
                 children.extend(ids.into_inner());
             }
             HMIRExprKind::Op(op) => match op {
-                HMIROp::BinOp { lhs, rhs, .. } => children.extend([*lhs, *rhs]),
+                HMIROp::BinOp { lhs, rhs, .. } | HMIROp::StrConcat { lhs, rhs } => {
+                    children.extend([*lhs, *rhs]);
+                }
                 HMIROp::UnOp { operand, .. }
                 | HMIROp::AddressOf(operand)
                 | HMIROp::Dereference(operand) => children.push(*operand),
