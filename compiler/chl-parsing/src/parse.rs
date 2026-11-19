@@ -3,7 +3,7 @@ use chl_hir::ast::{
     function::{HIRFunctionBody, HIRFunctionPrototype},
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
-    types::{HIRType, HIRTypeKind, HIRTypeLookup},
+    types::{HIRType, HIRTypeKind},
     HIRStmt,
 };
 use chl_log::catalogue::parse::*;
@@ -20,8 +20,8 @@ use crate::{
     assert_token_matches, log::parse_point_error, next_kind, parse::{
         expressions::parse_expr,
         functions::try_function_parse,
-        parser::ParserData,
-        statement::parse_stmt,
+        parser::{LocalName, ParserData},
+        statement::parse_block_item,
         types::{
             parse_abstract_type, parse_base_mods, parse_initializer, parse_typedef_initializer,
             TagScope,
@@ -183,40 +183,11 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CHLResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
-    if let HIRTypeKind::Identifier {
-        name: type_name,
-        lookup,
-        args: None,
-    } = &ty.kind
-    {
-        let is_existing_type_alias = *lookup == HIRTypeLookup::Standard
-            || data.ast.definition_stmts.iter().any(|definition| {
-                matches!(
-                    &definition.stmt,
-                    HIRStmt::TypeDefinition {
-                        name: Some(existing),
-                        ..
-                    } if existing == &name
-                )
-            });
-        if type_name.namespace.is_root() && type_name.name == name && is_existing_type_alias {
-            data.add_stmt(HIRStmt::TypeDefinition {
-                symbol_naming: data.naming(LinkageMode::Standard),
-                name: Some(name),
-                visibility: data.visibility,
-                ty: ty.clone(),
-                tag: None,
-                range,
-            });
-            return Ok(());
-        }
-    }
-
     data.add_stmt(HIRStmt::TypeDefinition {
         symbol_naming: data.naming(LinkageMode::Standard),
         name: Some(name),
         visibility: data.visibility,
-        ty: ty.clone(),
+        ty,
         tag: None,
         range,
     });
@@ -241,7 +212,12 @@ fn parse_fn_merge(
             body: None,
         });
     } else {
-        let body = parse_function_body(data, &prototype)?;
+        let body = data.with_name_scope(|data| {
+            for parameter in &prototype.params {
+                data.note_parameter(parameter);
+            }
+            parse_function_body(data, &prototype)
+        })?;
 
         data.add_stmt(HIRStmt::FunctionDefinition {
             prototype,
@@ -287,18 +263,12 @@ fn scan_type_binders(data: &ParserData) -> Vec<CHLIdent> {
 }
 
 fn parse_global_expr(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
-    let binders = scan_type_binders(data);
-    for binder in &binders {
-        data.note_type_name(binder.clone());
-    }
-
-    let result = parse_global_declaration(data, comptime);
-
-    for binder in &binders {
-        data.unnote_type_name(binder);
-    }
-
-    result
+    data.with_name_scope(|data| {
+        for binder in scan_type_binders(data) {
+            data.note_local_name(binder, LocalName::Type);
+        }
+        parse_global_declaration(data, comptime)
+    })
 }
 
 fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
@@ -496,13 +466,13 @@ fn parse_block_kind(data: &mut ParserData, kind: HIRBlockKind) -> CHLResult<HIRE
 }
 
 fn parse_block_statements(data: &mut ParserData) -> CHLResult<Box<[HIRExpression]>> {
-    let mut body = Vec::new();
-
-    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        body.push(parse_stmt(data)?);
-    }
-
-    Ok(body.into())
+    data.with_name_scope(|data| {
+        let mut body = Vec::new();
+        while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+            body.push(parse_block_item(data)?);
+        }
+        Ok(body.into())
+    })
 }
 
 fn parse_function_body(

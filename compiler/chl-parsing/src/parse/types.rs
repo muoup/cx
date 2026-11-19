@@ -17,14 +17,14 @@ use chl_log::catalogue::parse::*;
 use chl_log::CHLResult;
 use chl_namespace::module::QualifiedName;
 use chl_hir::intrinsic_types::is_intrinsic_type;
-use chl_tokens::token::{AttributeType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
+use chl_tokens::token::{AttributeType, PunctuatorType, SpecifierType, TokenKind};
 use chl_tokens::{
     identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,
 };
 use chl_util::identifier::CHLIdent;
 
 use crate::parse::functions::{parse_params, ParseParamsResult};
-use crate::parse::{parse_intrinsic, try_parse_qualified_name};
+use crate::parse::{parse_intrinsic, parser::LocalName, try_parse_qualified_name};
 
 pub(super) enum TypePosition {
     Statement,
@@ -32,19 +32,6 @@ pub(super) enum TypePosition {
 }
 
 pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLResult<bool> {
-    fn is_used_as_value(data: &ParserData) -> bool {
-        matches!(
-            data.tokens
-                .slice
-                .get(data.tokens.index + 1)
-                .map(|token| &token.kind),
-            Some(
-                TokenKind::Assignment(_)
-                    | TokenKind::Operator(OperatorType::Access | OperatorType::Arrow)
-            )
-        )
-    }
-
     let Some(token) = data.tokens.peek() else {
         return Ok(false);
     };
@@ -56,21 +43,31 @@ pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLR
         TokenKind::CompilerIdentifier(name) if name == "strong" => !data.c_mode && !data.in_include(),
         operator!(Caret) => !data.c_mode,
 
-        identifier!(name) if is_intrinsic_type(name) => !is_used_as_value(data),
-
         identifier!() => {
             let start = data.tokens.index;
             let name = try_parse_qualified_name(&mut data.tokens);
             let end = std::mem::replace(&mut data.tokens.index, start);
             let name = name?.expect("an identifier starts a qualified name");
+            let following = data.tokens.slice.get(end).map(|token| &token.kind);
 
+            if matches!(following, Some(TokenKind::Assignment(_) | operator!(Access) | operator!(Arrow))) {
+                return Ok(false);
+            }
+            if type_application_before_declarator(data, end) {
+                return Ok(true);
+            }
+            if let Some(kind) = data.local_name(&name) {
+                return Ok(kind == LocalName::Type);
+            }
+            if name.root_name_ref().is_some_and(|root| is_intrinsic_type(root.as_str())) {
+                return Ok(true);
+            }
             if data.is_generator(&name)? {
                 let scoped = matches!(position, TypePosition::Statement)
                     && matches!(application_suffix(&data.tokens, end), Some(operator!(ScopeRes)));
-                !scoped && matches!(data.tokens.slice.get(end).map(|token| &token.kind), Some(punctuator!(OpenParen)))
+                !scoped && matches!(following, Some(punctuator!(OpenParen)))
             } else {
-                is_unimported_generator(data, &name, end)?
-                    || (data.is_type_ident(&name)? && !is_used_as_value(data))
+                data.is_module_type(&name)?
             }
         }
 
@@ -78,12 +75,21 @@ pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLR
     })
 }
 
-// No expression applies a name and then names another, so an undeclared name applied before a
-// name is a generator from a module that was not imported
-fn is_unimported_generator(data: &ParserData, name: &QualifiedName, end: usize) -> CHLResult<bool> {
-    Ok(!data.c_mode
-        && data.is_undeclared(name)?
-        && matches!(application_suffix(&data.tokens, end), Some(identifier!())))
+fn type_application_before_declarator(data: &ParserData, end: usize) -> bool {
+    !data.c_mode && matches!(application_suffix(&data.tokens, end), Some(identifier!()))
+}
+
+fn is_type_application(data: &ParserData, name: &QualifiedName) -> CHLResult<bool> {
+    if data.is_generator(name)? {
+        return Ok(true);
+    }
+    if !type_application_before_declarator(data, data.tokens.index) {
+        return Ok(false);
+    }
+    match data.local_name(name) {
+        Some(kind) => Ok(kind == LocalName::Value),
+        None => Ok(!data.is_module_type(name)?),
+    }
 }
 
 pub(super) fn application_suffix<'a>(tokens: &TokenIter<'a>, open: usize) -> Option<&'a TokenKind> {
@@ -159,7 +165,6 @@ pub(crate) fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers 
     }
 }
 
-// With 'named' unset only the pointer and reference suffixes of an abstract type are read
 fn parse_declarator_mods(
     data: &mut ParserData,
     acc_type: HIRType,
@@ -241,9 +246,9 @@ fn parse_declarator_mods(
             parse_declarator_mods(data, ref_type, named, scope)
         }
 
-        punctuator!(OpenParen) if named => {
+        punctuator!(OpenParen) => {
             data.tokens.next();
-            if peek_kind!(data.tokens, identifier!())
+            if named && peek_kind!(data.tokens, identifier!())
                 && matches!(
                     data.tokens
                         .slice
@@ -260,7 +265,7 @@ fn parse_declarator_mods(
                 data.tokens.index = start_index;
                 return Ok((None, acc_type));
             }
-            let name = try_parse_simple_identifier(&mut data.tokens);
+            let name = if named { try_parse_simple_identifier(&mut data.tokens) } else { None };
 
             let bounds = parse_array_bounds(data)?;
 
@@ -350,9 +355,8 @@ pub(crate) fn parse_type_base(data: &mut ParserData, scope: TagScope) -> CHLResu
                 unreachable!();
             };
 
-            let end = data.tokens.index;
             let args = if peek_kind!(data.tokens, punctuator!(OpenParen))
-                && (data.is_generator(&name)? || is_unimported_generator(data, &name, end)?)
+                && is_type_application(data, &name)?
             {
                 Some(parse_args(data)?)
             } else {
@@ -570,6 +574,7 @@ fn parse_fn_declarator(
 pub(crate) fn parse_abstract_type(data: &mut ParserData, scope: TagScope) -> CHLResult<HIRType> {
     let specifiers = parse_decl_specifiers(&mut data.tokens);
     let base = parse_type_base(data, scope)?.add_specifier(specifiers.qualifiers);
+    parse_noreturn(&mut data.tokens);
 
     if is_fn_declarator_marker(&base) {
         let indirections = parse_fn_indirections(data);

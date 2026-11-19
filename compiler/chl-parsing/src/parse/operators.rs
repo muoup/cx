@@ -8,7 +8,7 @@ use chl_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use chl_tokens::{operator, punctuator};
 
 use crate::parse::expressions::parse_pattern;
-use crate::parse::types::{parse_initializer, starts_type, TypePosition};
+use crate::parse::types::{parse_abstract_type, starts_type, TypePosition};
 
 #[derive(Debug, Clone)]
 pub(crate) enum PrecOperator {
@@ -96,7 +96,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CHLResult<Option<HIRUn
                 return Ok(None);
             }
 
-            let Some((None, ty, _)) = parse_initializer(data, TagScope::Module).ok() else {
+            let Ok(ty) = parse_abstract_type(data, TagScope::Module) else {
                 data.tokens.index = pre_index;
                 return Ok(None);
             };
@@ -142,7 +142,6 @@ pub(crate) fn parse_postfix_unop(data: &mut ParserData) -> CHLResult<Option<HIRU
     Ok(match &token.kind {
         operator!(Is) => {
             let pattern = parse_pattern(data)?;
-
             Some(HIRUnOp::Is(Box::new(pattern)))
         }
 

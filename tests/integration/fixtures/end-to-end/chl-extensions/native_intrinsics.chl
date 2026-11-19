@@ -8,6 +8,8 @@
 
 #include <stdio.h>
 
+typedef int (*Callback)(int);
+
 int main() {
     int x = 40;
     int y = 2;
@@ -17,6 +19,7 @@ int main() {
     int truncated = @float.to_int(2.75, int, true);
     bool equal = @int.eq(@copy(sum), 42);
     @internal.assert(@copy(equal), "sum is 42");
+    @internal.assert(@type.equal(int (*)(int), Callback), "abstract C function-pointer type");
     @internal.assume(@copy(equal));
 
     int* p = &x;

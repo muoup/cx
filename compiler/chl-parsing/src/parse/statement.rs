@@ -6,7 +6,7 @@ use chl_log::catalogue::parse::*;
 use chl_log::CHLResult;
 use chl_tokens::{
     identifier, keyword, operator, punctuator,
-    token::{IntegerBase, IntegerSuffix, KeywordType, OperatorType, TokenKind},
+    token::{KeywordType, OperatorType, TokenKind},
 };
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
         expressions::{parse_expr, parse_keyword_expr},
         functions::try_function_parse,
         parse_block,
-        parser::ParserData,
+        parser::{LocalName, ParserData},
         try_parse_simple_identifier,
         types::{parse_named_declarator, parse_type_base, starts_type, TypePosition},
     },
@@ -25,39 +25,46 @@ use crate::{
 };
 use chl_util::identifier::CHLIdent;
 
-pub(crate) fn parse_stmt(data: &mut ParserData) -> CHLResult<HIRExpression> {
+pub(super) fn parse_block_item(data: &mut ParserData) -> CHLResult<HIRExpression> {
+    parse_item(data, true)
+}
+
+fn parse_stmt(data: &mut ParserData) -> CHLResult<HIRExpression> {
+    data.with_name_scope(|data| parse_item(data, false))
+}
+
+fn parse_item(data: &mut ParserData, allow_declaration: bool) -> CHLResult<HIRExpression> {
     let start = data.tokens.index;
 
     let stmt = match next_kind!(data.tokens)? {
         punctuator!(Semicolon) => return Ok(data.expr_from(start, HIRExprKind::Void)),
         punctuator!(OpenBrace) => {
             data.tokens.back();
-            parse_block(data)?
+            return parse_block(data);
         }
         identifier!(name) if try_next!(data.tokens, punctuator!(Colon)) => {
             let name = CHLIdent::new(name.clone());
-            let statement = parse_labelled_stmt(data)?;
-            data.expr_from(start, HIRExprKind::Label { name, statement })
+            let statement = parse_labelled_stmt(data, allow_declaration)?;
+            return Ok(data.expr_from(start, HIRExprKind::Label { name, statement }));
         }
         keyword!(Case) => {
             let value = Some(Box::new(parse_expr(data)?));
             assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
-            let statement = parse_labelled_stmt(data)?;
-            data.expr_from(start, HIRExprKind::Case { value, statement })
+            let statement = parse_labelled_stmt(data, allow_declaration)?;
+            return Ok(data.expr_from(start, HIRExprKind::Case { value, statement }));
         }
         keyword!(Default) => {
             assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
-            let statement = parse_labelled_stmt(data)?;
-            data.expr_from(start, HIRExprKind::Case { value: None, statement })
+            let statement = parse_labelled_stmt(data, allow_declaration)?;
+            return Ok(data.expr_from(start, HIRExprKind::Case { value: None, statement }));
         }
 
-        keyword!(If) => parse_if(data, start)?,
-        keyword!(Switch) => parse_switch(data, start)?,
-        // Parsed here rather than by the fallback so that it ends at its closing brace.
-        keyword!(Match) => parse_keyword_expr(data, KeywordType::Match)?,
-        keyword!(While) => parse_while(data, start)?,
-        keyword!(Do) => parse_do_while(data, start)?,
-        keyword!(For) => parse_for(data, start)?,
+        keyword!(If) => return parse_if(data, start),
+        keyword!(Switch) => return parse_switch(data, start),
+        keyword!(Match) => return parse_keyword_expr(data, KeywordType::Match),
+        keyword!(While) => return data.with_name_scope(|data| parse_while(data, start)),
+        keyword!(Do) => return data.with_name_scope(|data| parse_do_while(data, start)),
+        keyword!(For) => return data.with_name_scope(|data| parse_for(data, start)),
         keyword!(Goto) => parse_goto(data, start)?,
         keyword!(Defer) => {
             let expr = Box::new(parse_expr(data)?);
@@ -68,7 +75,7 @@ pub(crate) fn parse_stmt(data: &mut ParserData) -> CHLResult<HIRExpression> {
 
         _ => {
             data.tokens.back();
-            parse_declaration_or_expr(data)?
+            parse_simple_clause(data, allow_declaration)?
         }
     };
 
@@ -76,7 +83,7 @@ pub(crate) fn parse_stmt(data: &mut ParserData) -> CHLResult<HIRExpression> {
         data.tokens.prev().map(|token| &token.kind),
         Some(keyword!(Then))
     );
-    if !ends_with_then && expects_semicolon(&stmt) {
+    if !ends_with_then {
         assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
     }
 
@@ -100,35 +107,18 @@ pub(crate) fn parse_arm(data: &mut ParserData) -> CHLResult<HIRExpression> {
     })
 }
 
-fn expects_semicolon(stmt: &HIRExpression) -> bool {
-    !matches!(
-        stmt.kind,
-        HIRExprKind::If { .. }
-            | HIRExprKind::Switch { .. }
-            | HIRExprKind::Match { .. }
-            | HIRExprKind::For { .. }
-            | HIRExprKind::While { pre_eval: true, .. }
-            | HIRExprKind::Label { .. }
-            | HIRExprKind::Case { .. }
-            | HIRExprKind::Block {
-                kind: HIRBlockKind::Statement,
-                ..
-            }
-    )
-}
-
 /// The statement a label applies to. A label may also end a block, where it labels nothing.
-fn parse_labelled_stmt(data: &mut ParserData) -> CHLResult<Box<HIRExpression>> {
+fn parse_labelled_stmt(data: &mut ParserData, allow_declaration: bool) -> CHLResult<Box<HIRExpression>> {
     if peek_kind!(data.tokens, punctuator!(CloseBrace)) {
         return Ok(Box::new(data.expr_from(data.tokens.index, HIRExprKind::Void)));
     }
 
-    Ok(Box::new(parse_stmt(data)?))
+    Ok(Box::new(parse_item(data, allow_declaration)?))
 }
 
-fn parse_declaration_or_expr(data: &mut ParserData) -> CHLResult<HIRExpression> {
-    if starts_type(data, TypePosition::Statement)? {
-        parse_declaration_stmt(data)
+fn parse_simple_clause(data: &mut ParserData, allow_declaration: bool) -> CHLResult<HIRExpression> {
+    if allow_declaration && starts_type(data, TypePosition::Statement)? {
+        parse_declaration(data)
     } else {
         parse_expr(data)
     }
@@ -143,8 +133,9 @@ fn parse_condition(data: &mut ParserData) -> CHLResult<Box<HIRExpression>> {
 }
 
 fn parse_if(data: &mut ParserData, start: usize) -> CHLResult<HIRExpression> {
-    let condition = parse_condition(data)?;
-    let then_branch = Box::new(parse_stmt(data)?);
+    let (condition, then_branch) = data.with_name_scope(|data| {
+        Ok((parse_condition(data)?, Box::new(parse_stmt(data)?)))
+    })?;
     let else_branch = if try_next!(data.tokens, keyword!(Else)) {
         Some(Box::new(parse_stmt(data)?))
     } else {
@@ -186,6 +177,7 @@ fn parse_do_while(data: &mut ParserData, start: usize) -> CHLResult<HIRExpressio
     let body = Box::new(parse_stmt(data)?);
     assert_token_matches!(data.tokens, keyword!(While), "'while'");
     let condition = parse_condition(data)?;
+    assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
     Ok(data.expr_from(
         start,
@@ -203,19 +195,12 @@ fn parse_for(data: &mut ParserData, start: usize) -> CHLResult<HIRExpression> {
     let init = if peek_kind!(data.tokens, punctuator!(Semicolon)) {
         data.expr_from(data.tokens.index, HIRExprKind::Void)
     } else {
-        parse_declaration_or_expr(data)?
+        parse_simple_clause(data, true)?
     };
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
     let condition = if peek_kind!(data.tokens, punctuator!(Semicolon)) {
-        data.expr_from(
-            data.tokens.index,
-            HIRExprKind::IntLiteral {
-                magnitude: 1,
-                base: IntegerBase::Decimal,
-                suffix: IntegerSuffix::default(),
-            },
-        )
+        data.expr_from(data.tokens.index, HIRExprKind::Void)
     } else {
         parse_expr(data)?
     };
@@ -258,7 +243,7 @@ fn parse_goto(data: &mut ParserData, start: usize) -> CHLResult<HIRExpression> {
     Ok(data.expr_from(start, HIRExprKind::Goto { name }))
 }
 
-pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CHLResult<HIRExpression> {
+fn parse_declaration(data: &mut ParserData) -> CHLResult<HIRExpression> {
     let start_index = data.tokens.index;
 
     try_next!(data.tokens, keyword!(Register));
@@ -290,6 +275,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CHLResult<HIRExpr
                     super::types::ParsedSpecifiers { linkage, ..specifiers },
                     data.symbol_naming,
                 )? {
+                    data.note_local_name(name, LocalName::Value);
                     super::functions::linkage::resolve(data, &mut prototype, false);
                     data.add_stmt(HIRStmt::FunctionDefinition {
                         prototype,
@@ -305,7 +291,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CHLResult<HIRExpr
                 }
             }
 
-            // Check for initializer after variable name
+            data.note_local_name(name.clone(), LocalName::Value);
             let initial_value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
                 data.change_comma_mode(false);
                 let init_expr = parse_expr(data)?;

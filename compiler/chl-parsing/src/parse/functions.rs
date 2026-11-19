@@ -219,21 +219,18 @@ pub(crate) struct ParseParamsResult {
 
 pub(crate) fn parse_params(data: &mut ParserData, scope: TagScope) -> CHLResult<ParseParamsResult> {
     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+    data.with_name_scope(|data| parse_parameter_list(data, scope))
+}
 
+fn parse_parameter_list(data: &mut ParserData, scope: TagScope) -> CHLResult<ParseParamsResult> {
     let mut params = Vec::new();
-    let mut noreturn = false;
-
-    while !try_next!(data.tokens, punctuator!(CloseParen)) {
+    let var_args = loop {
+        if try_next!(data.tokens, punctuator!(CloseParen)) {
+            break false;
+        }
         if try_next!(data.tokens, punctuator!(Ellipsis)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            let contract = parse_function_contract(data, &mut noreturn)?;
-
-            return Ok(ParseParamsResult {
-                params,
-                var_args: true,
-                contract,
-                noreturn,
-            });
+            break true;
         }
 
         let start = data.tokens.index;
@@ -250,19 +247,22 @@ pub(crate) fn parse_params(data: &mut ParserData, scope: TagScope) -> CHLResult<
             false => None,
         };
 
-        params.push(HIRParameter { name, ty, comptime, default, range });
+        let parameter = HIRParameter { name, ty, comptime, default, range };
+        data.note_parameter(&parameter);
+        params.push(parameter);
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            break;
+            break false;
         }
-    }
+    };
 
+    let mut noreturn = false;
     let contract = parse_function_contract(data, &mut noreturn)?;
 
     Ok(ParseParamsResult {
         params,
-        var_args: false,
+        var_args,
         contract,
         noreturn,
     })

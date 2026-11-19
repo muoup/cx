@@ -203,7 +203,7 @@ module.exports = grammar({
     conflicts: ($) => [
         [$.declaration_specifier, $.access_section],
         [$.compiler_attribute, $.primary_expression],
-        [$._top_level_item, $._statement],
+        [$._top_level_item, $._unlabeled_statement],
         [$.type, $.primary_expression],
         [$.type],
         [$.type, $.type_application],
@@ -758,6 +758,16 @@ module.exports = grammar({
             ),
 
         _statement: ($) =>
+            choice($._unlabeled_statement, $.labeled_statement),
+
+        _block_item: ($) =>
+            choice(
+                $._unlabeled_statement,
+                $.declaration,
+                alias($._labeled_block_item, $.labeled_statement),
+            ),
+
+        _unlabeled_statement: ($) =>
             choice(
                 $.compound_statement,
                 $.if_statement,
@@ -774,14 +784,12 @@ module.exports = grammar({
                 $.goto_statement,
                 $.unpack_statement,
                 $.compiler_statement,
-                $.labeled_statement,
-                $.declaration,
                 $.staged_continuation_statement,
                 $.expression_statement,
                 $.preprocessor_directive,
             ),
 
-        compound_statement: ($) => seq("{", repeat($._statement), "}"),
+        compound_statement: ($) => seq("{", repeat($._block_item), "}"),
 
         if_statement: ($) =>
             prec.right(
@@ -846,7 +854,7 @@ module.exports = grammar({
                     keyword($, "default"),
                 ),
                 ":",
-                repeat($._statement),
+                repeat($._block_item),
             ),
 
         match_statement: ($) =>
@@ -990,6 +998,9 @@ module.exports = grammar({
 
         labeled_statement: ($) =>
             prec.right(seq($.identifier, ":", optional($._statement))),
+
+        _labeled_block_item: ($) =>
+            prec.right(seq($.identifier, ":", optional($._block_item))),
 
         staged_continuation_statement: ($) => $.staged_continuation_expression,
 
