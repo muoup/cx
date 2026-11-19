@@ -1367,11 +1367,11 @@ void jump(int* target) {
           (variable_declaration
             (type
               (builtin_type_sequence
-                (builtin_type))
-              (pointer_modifier
-                (operator)))
+                (builtin_type)))
             (declarator_with_initializer
               (declarator
+                (pointer_modifier
+                  (operator))
                 (identifier))
               (operator)
               (expression

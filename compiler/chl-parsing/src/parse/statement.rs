@@ -19,7 +19,10 @@ use crate::{
         parse_block,
         parser::{LocalName, ParserData},
         try_parse_simple_identifier,
-        types::{parse_named_declarator, parse_type_base, starts_type, TypePosition},
+        types::{
+            parse_declaration_head, parse_declarator, parse_variable_initializer, starts_type,
+            DeclaratorKind, TypePosition,
+        },
     },
     peek_kind, try_next,
 };
@@ -247,15 +250,13 @@ fn parse_declaration(data: &mut ParserData) -> CHLResult<HIRExpression> {
     let start_index = data.tokens.index;
 
     try_next!(data.tokens, keyword!(Register));
-    let mut specifiers = super::types::parse_decl_specifiers(&mut data.tokens);
-    let base_type = parse_type_base(data, TagScope::Module)?.add_specifier(specifiers.qualifiers);
-    specifiers.noreturn |= super::types::parse_noreturn(&mut data.tokens);
+    let (base, specifiers) = parse_declaration_head(data, TagScope::Module)?;
 
     let mut decls = Vec::new();
     data.change_comma_mode(false);
 
     loop {
-        let (name, ty) = parse_named_declarator(data, base_type.clone(), TagScope::Module)?;
+        let (name, ty) = parse_declarator(data, &base, TagScope::Module, DeclaratorKind::Named)?;
 
         if let Some(name) = name {
             if data.c_mode || specifiers.linkage == LinkageMode::Extern {
@@ -292,14 +293,7 @@ fn parse_declaration(data: &mut ParserData) -> CHLResult<HIRExpression> {
             }
 
             data.note_local_name(name.clone(), LocalName::Value);
-            let initial_value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
-                data.change_comma_mode(false);
-                let init_expr = parse_expr(data)?;
-                data.pop_comma_mode();
-                Some(Box::new(init_expr))
-            } else {
-                None
-            };
+            let initial_value = parse_variable_initializer(data)?.map(Box::new);
 
             decls.push(
                 HIRExprKind::VarDeclaration {

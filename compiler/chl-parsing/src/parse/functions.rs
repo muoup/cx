@@ -18,7 +18,7 @@ use chl_util::identifier::CHLIdent;
 use crate::parse::{
     expressions::parse_expr,
     parser::ParserData,
-    types::{parse_abstract_type, parse_initializer, parse_noreturn, ParsedSpecifiers, TagScope},
+    types::{parse_abstract_type, parse_noreturn, parse_typed_declarator, ParsedSpecifiers, TagScope},
 };
 
 pub(crate) mod linkage;
@@ -235,7 +235,7 @@ fn parse_parameter_list(data: &mut ParserData, scope: TagScope) -> CHLResult<Par
 
         let start = data.tokens.index;
         let comptime = try_next!(data.tokens, keyword!(Comptime));
-        let (name, ty, _) = parse_initializer(data, scope)?;
+        let (name, ty, _) = parse_typed_declarator(data, scope)?;
         let range = data.token_range(start, data.tokens.index);
         let default = match try_next!(data.tokens, TokenKind::Assignment(None)) {
             true => {

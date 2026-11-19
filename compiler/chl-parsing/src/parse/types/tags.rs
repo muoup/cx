@@ -1,4 +1,4 @@
-use super::{parse_base_mods, parse_decl_specifiers, parse_initializer, parse_type_base};
+use super::{parse_declaration_head, parse_declarator, parse_typed_declarator, DeclaratorKind};
 use crate::{
     assert_token_matches,
     log::{parse_point_error, parse_underline_error},
@@ -117,10 +117,9 @@ fn aggregate_field_from_decl(
 fn parse_aggregate_fields(data: &mut ParserData, scope: TagScope) -> CHLResult<Vec<HIRField>> {
     let mut fields = Vec::new();
     while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        let specifiers = parse_decl_specifiers(&mut data.tokens);
-        let base = parse_type_base(data, scope)?.add_specifier(specifiers.qualifiers);
+        let (base, _) = parse_declaration_head(data, scope)?;
         loop {
-            let (name, ty) = parse_base_mods(data, base.clone(), scope)?;
+            let (name, ty) = parse_declarator(data, &base, scope, DeclaratorKind::Field)?;
             fields.push(aggregate_field_from_decl(data, name, ty)?);
             if !try_next!(data.tokens, operator!(Comma)) {
                 break;
@@ -339,7 +338,7 @@ fn parse_tagged_variants(data: &mut ParserData, scope: TagScope) -> CHLResult<Ve
             );
         };
         assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
-        let (None, ty, _) = parse_initializer(data, scope)? else {
+        let (None, ty, _) = parse_typed_declarator(data, scope)? else {
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,

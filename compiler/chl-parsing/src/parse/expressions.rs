@@ -25,7 +25,8 @@ use crate::parse::operators::{
 };
 use crate::parse::statement::parse_arm;
 use crate::parse::types::{
-    application_suffix, parse_abstract_type, parse_args, parse_initializer, starts_type, TypePosition,
+    application_suffix, parse_abstract_type, parse_args, parse_typed_declarator, starts_type,
+    TypePosition,
 };
 use crate::parse::{
     parse_block, parse_expression_block, parse_intrinsic, try_parse_qualified_name,
@@ -150,7 +151,10 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CHLResult<HIRExpression> {
             return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression".into(), Some("before '?'".into())));
         };
 
-        let then_branch = parse_expr(data)?;
+        data.change_comma_mode(true);
+        let then_branch = parse_expr(data);
+        data.pop_comma_mode();
+        let then_branch = then_branch?;
         assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         let else_branch = parse_expr(data)?;
         let range = condition.range.cover(&else_branch.range);
@@ -309,7 +313,7 @@ fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>)
     let list = parse_expr(data)?;
     data.pop_comma_mode();
     assert_token_matches!(data.tokens, operator!(Comma), "','");
-    let (_, ty, _) = parse_initializer(data, TagScope::Module)?;
+    let (_, ty, _) = parse_typed_declarator(data, TagScope::Module)?;
     assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
     expr_stack.push(
@@ -593,7 +597,7 @@ pub(crate) fn parse_expr_val(
             let mut params = Vec::new();
             loop {
                 let param_start = data.tokens.index;
-                let (Some(name), ty, _) = parse_initializer(data, TagScope::Module)? else {
+                let (Some(name), ty, _) = parse_typed_declarator(data, TagScope::Module)? else {
                     let expected = ("a typed closure parameter".into(), Some("such as 'auto value'".into()));
                     return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, expected);
                 };
@@ -907,7 +911,7 @@ pub(crate) fn parse_keyword_expr(
 
         KeywordType::Offsetof => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let (None, ty, _) = parse_initializer(data, TagScope::Module)? else {
+            let (None, ty, _) = parse_typed_declarator(data, TagScope::Module)? else {
                 return parse_point_error(
                     &data.tokens,
                     &EXPECTED_SYNTAX,

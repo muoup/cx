@@ -3,7 +3,7 @@ use chl_hir::ast::{
     function::{HIRFunctionBody, HIRFunctionPrototype},
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
-    types::{HIRType, HIRTypeKind},
+    types::HIRTypeKind,
     HIRStmt,
 };
 use chl_log::catalogue::parse::*;
@@ -11,20 +11,22 @@ use chl_log::CHLResult;
 use chl_preparse_data::VisibilityMode;
 use chl_tokens::{
     keyword, operator, punctuator, specifier,
-    token::{OperatorType, PunctuatorType, SpecifierType, TokenKind},
-    TokenIter, TokenRange,
+    token::{SpecifierType, TokenKind},
+    TokenIter,
 };
 use chl_util::identifier::CHLIdent;
 
 use crate::{
-    assert_token_matches, log::parse_point_error, next_kind, parse::{
+    assert_token_matches,
+    log::parse_point_error,
+    parse::{
         expressions::parse_expr,
         functions::try_function_parse,
         parser::{LocalName, ParserData},
         statement::parse_block_item,
         types::{
-            parse_abstract_type, parse_base_mods, parse_initializer, parse_typedef_initializer,
-            TagScope,
+            parse_abstract_type, parse_declaration_head, parse_declarator, parse_typedef_declarator,
+            parse_variable_initializer, DeclaratorKind, TagScope,
         },
     },
     peek_next_kind, try_next,
@@ -170,7 +172,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CHLResult<()> {
     assert_token_matches!(data.tokens, keyword!(Typedef), "'typedef'");
     let start_index = data.tokens.index;
 
-    let (name, ty) = parse_typedef_initializer(data)?;
+    let (name, ty) = parse_typedef_declarator(data)?;
     let range = data.token_range(start_index - 1, data.tokens.index);
 
     let Some(name) = name else {
@@ -273,179 +275,68 @@ fn parse_global_expr(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
 
 fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
     let start = data.tokens.index - usize::from(comptime);
-    let (name, return_type, specifiers) = parse_initializer(data, TagScope::Module)?;
-    let range = data.token_range(start, data.tokens.index);
+    let (base, specifiers) = parse_declaration_head(data, TagScope::Module)?;
     let linkage = specifiers.linkage;
     let symbol_naming = data.naming(linkage);
-
     let inherited_external = !data.c_mode
         && symbol_naming == HIRSymbolNameScheme::Unmangled
         && linkage == LinkageMode::Standard;
 
-    let Some(name) = name else {
-        // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
-
-        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-        return Ok(());
-    };
-
-    if !data.tokens.has_next() {
-        return parse_point_error(
-            &data.tokens,
-            &UNEXPECTED_END,
-            Some("global declaration".into()),
-        );
-    }
-
-    if let Some(prototype) = try_function_parse(
-        data,
-        start,
-        return_type.clone(),
-        name.clone(),
-        comptime,
-        specifiers,
-        symbol_naming,
-    )? {
-        return parse_fn_merge(data, prototype, inherited_external);
-    }
-
-    match next_kind!(data.tokens)? {
-        TokenKind::Assignment(_) => {
-            let initial_value = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-            
-            data.add_stmt(HIRStmt::GlobalVariableDefinition {
-                visibility: data.visibility,
-                variable: HIRGlobalVariable::Standard {
-                    comptime,
-                    name: name.clone(),
-                    ty: return_type.clone(),
-                    is_mutable: true,
-                    linkage,
-                    symbol_name_scheme: symbol_naming,
-                    initializer: Some(initial_value.clone()),
-                    range,
-                },
-            });
-        }
-
-        punctuator!(Semicolon) => {
-            add_global_variable(
-                data,
-                name,
-                return_type.clone(),
-                linkage,
-                symbol_naming,
-                inherited_external,
-                comptime,
-                None,
-                range,
-            );
-        }
-
-        operator!(Comma) => {
-            add_global_variable(
-                data,
-                name,
-                return_type.clone(),
-                linkage,
-                symbol_naming,
-                inherited_external,
-                comptime,
-                None,
-                range,
-            );
-
-            loop {
-                let next_start = data.tokens.index;
-                let (next_name, next_type) =
-                    parse_base_mods(data, return_type.clone(), TagScope::Module)?;
-                let next_range = data.token_range(next_start, data.tokens.index);
-                let Some(next_name) = next_name else {
-                    return parse_point_error(
-                        &data.tokens,
-                        &EXPECTED_SYNTAX,
-                        (
-                            "a variable declaration".into(),
-                            Some("after ','".into()),
-                        ),
-                    );
-                };
-                let initializer = if try_next!(data.tokens, TokenKind::Assignment(_)) {
-                    Some(parse_expr(data)?)
-                } else {
-                    None
-                };
-
-                add_global_variable(
-                    data,
-                    next_name,
-                    next_type,
-                    linkage,
-                    symbol_naming,
-                    inherited_external,
-                    comptime,
-                    initializer,
-                    next_range,
-                );
-
-                match next_kind!(data.tokens)? {
-                    TokenKind::Operator(OperatorType::Comma) => {}
-                    TokenKind::Punctuator(PunctuatorType::Semicolon) => break,
-                    _ => {
-                        return parse_point_error(
-                            &data.tokens,
-                            &EXPECTED_SYNTAX,
-                            ("a global separator".into(), None),
-                        );
-                    }
-                }
+    let mut declarator_start = start;
+    loop {
+        let (name, ty) = parse_declarator(data, &base, TagScope::Module, DeclaratorKind::Named)?;
+        let range = data.token_range(declarator_start, data.tokens.index);
+        let Some(name) = name else {
+            if declarator_start == start {
+                assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+                return Ok(());
             }
-        }
-
-        _ => {
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
-                (
-                    "a global declaration".into(),
-                    None,
-                ),
+                ("a variable declaration".into(), Some("after ','".into())),
             );
+        };
+
+        if declarator_start == start {
+            if let Some(prototype) = try_function_parse(
+                data,
+                start,
+                ty.clone(),
+                name.clone(),
+                comptime,
+                specifiers,
+                symbol_naming,
+            )? {
+                return parse_fn_merge(data, prototype, inherited_external);
+            }
         }
-    }
 
-    Ok(())
-}
-
-fn add_global_variable(
-    data: &mut ParserData,
-    name: CHLIdent,
-    ty: HIRType,
-    linkage: LinkageMode,
-    symbol_naming: HIRSymbolNameScheme,
-    inherited_external: bool,
-    comptime: bool,
-    initializer: Option<HIRExpression>,
-    range: TokenRange,
-) {
-    data.add_stmt(HIRStmt::GlobalVariableDefinition {
-        visibility: data.visibility,
-        variable: HIRGlobalVariable::Standard {
-            comptime,
-            name,
-            ty,
-            is_mutable: true,
-            linkage: if inherited_external {
-                LinkageMode::Extern
-            } else {
-                linkage
+        let initializer = parse_variable_initializer(data)?;
+        data.add_stmt(HIRStmt::GlobalVariableDefinition {
+            visibility: data.visibility,
+            variable: HIRGlobalVariable::Standard {
+                comptime,
+                name,
+                ty,
+                is_mutable: true,
+                linkage: if inherited_external && initializer.is_none() {
+                    LinkageMode::Extern
+                } else {
+                    linkage
+                },
+                symbol_name_scheme: symbol_naming,
+                initializer,
+                range,
             },
-            symbol_name_scheme: symbol_naming,
-            initializer,
-            range,
-        },
-    });
+        });
+
+        if !try_next!(data.tokens, operator!(Comma)) {
+            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+            return Ok(());
+        }
+        declarator_start = data.tokens.index;
+    }
 }
 
 pub(crate) fn parse_block(data: &mut ParserData) -> CHLResult<HIRExpression> {

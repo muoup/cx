@@ -157,7 +157,7 @@ const commaSep1 = (rule) => seq(rule, repeat(seq(",", rule)), optional(","));
 const keyword = ($, value) => alias(value, $.keyword);
 const op = ($, value) => alias(value, $.operator);
 
-const typeRule = ($, allowFunction) =>
+const typeRule = ($, allowFunction, allowModifiers = true) =>
     seq(
         repeat($.type_qualifier),
         choice(
@@ -174,13 +174,7 @@ const typeRule = ($, allowFunction) =>
             $.enum_type,
             $.enum_union_type,
         ),
-        repeat(
-            choice(
-                $.pointer_modifier,
-                $.reference_modifier,
-                $.array_modifier,
-            ),
-        ),
+        ...(allowModifiers ? [repeat(choice($._function_indirection, $.array_modifier))] : []),
     );
 
 module.exports = grammar({
@@ -193,7 +187,9 @@ module.exports = grammar({
 
     word: ($) => $.identifier,
 
-    inline: ($) => [$._decl_type, $._fn_decl_type, $._declared_type],
+    inline: ($) => [
+        $._decl_type, $._decl_base_type, $._fn_decl_type, $._declared_type,
+    ],
 
     reserved: {
         global: (_) => [],
@@ -210,8 +206,14 @@ module.exports = grammar({
         [$.decl_type, $.primary_expression],
         [$.decl_type, $.type_literal],
         [$.type, $.type_literal],
-        [$.decl_type, $.type_application, $.primary_expression],
         [$.decl_type, $.type_application],
+        [$.decl_type, $.decl_base_type],
+        [$.decl_type, $.decl_base_type, $.primary_expression],
+        [$.decl_type, $.decl_base_type, $.type_literal],
+        [$.decl_base_type, $.primary_expression],
+        [$.decl_base_type, $.type_literal],
+        [$.decl_base_type, $.type_application],
+        [$.decl_base_type, $.type_application, $.primary_expression],
         [$.type_application, $.primary_expression],
         [$.builtin_type, $.variable_declaration],
         [$.builtin_type, $.function_declaration],
@@ -292,6 +294,10 @@ module.exports = grammar({
         type: ($) => typeRule($, true),
 
         decl_type: ($) => typeRule($, false),
+
+        decl_base_type: ($) => typeRule($, false, false),
+
+        _decl_base_type: ($) => alias($.decl_base_type, $.type),
 
         fn_decl_type: ($) => seq(repeat($.type_qualifier), $.function_type),
 
@@ -504,7 +510,7 @@ module.exports = grammar({
         field_declaration: ($) =>
             seq(
                 choice(
-                    seq($._decl_type, commaSep1($.field_declarator)),
+                    seq($._decl_base_type, commaSep1($.field_declarator)),
                     $.function_type_declarator,
                 ),
                 ";",
@@ -546,7 +552,7 @@ module.exports = grammar({
 
         variable_declaration: ($) =>
             choice(
-                seq($._decl_type, commaSep1($.declarator_with_initializer)),
+                seq($._decl_base_type, commaSep1($.declarator_with_initializer)),
                 seq(
                     $.function_type_declarator,
                     optional(seq(op($, "="), $.expression)),
@@ -567,7 +573,9 @@ module.exports = grammar({
                 optional(seq(op($, "="), $.expression)),
             ),
 
-        declarator: ($) =>
+        declarator: ($) => seq(repeat($._function_indirection), $._direct_declarator),
+
+        _direct_declarator: ($) =>
             choice(
                 $.function_pointer_declarator,
                 seq(
@@ -686,7 +694,7 @@ module.exports = grammar({
                 seq(
                     optional(keyword($, "comptime")),
                     choice(
-                        seq($._decl_type, optional($.declarator)),
+                        seq($._decl_type, optional(alias($._direct_declarator, $.declarator))),
                         $._fn_decl_type,
                     ),
                     optional($.parameter_default),
@@ -1066,6 +1074,7 @@ module.exports = grammar({
                     $.conditional_condition,
                     "?",
                     $.expression,
+                    repeat(seq(",", $.expression)),
                     ":",
                     $.expression,
                 ),
