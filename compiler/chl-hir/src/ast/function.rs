@@ -42,6 +42,7 @@ pub struct HIRFunctionPrototype {
     pub comptime: bool,
 
     pub return_type: HIRType,
+    pub noreturn: bool,
     pub params: Vec<HIRParameter>,
     pub var_args: bool,
     pub contract: HIRFunctionContract,

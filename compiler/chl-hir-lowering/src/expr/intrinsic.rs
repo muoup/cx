@@ -4,7 +4,7 @@ use chl_hir::ast::expression::{HIRExprKind, HIRExpression};
 use chl_hmir::expr::{
     HMIRExprID, HMIRExprKind,
     literal::HMIRLiteral,
-    op::{HMIROp, HMIRTypeOp},
+    op::{HMIROp, HMIROwnershipOp::{Adopt, Copy, Leak}, HMIRTypeOp},
 };
 use chl_intrinsics::{Intrinsic, IntrinsicSource};
 use chl_log::{
@@ -32,6 +32,9 @@ pub(crate) fn lower_intrinsic<'a>(
         span,
     };
     let kind = match path.as_str() {
+        "adopt" => Some(HMIRExprKind::Op(HMIROp::OwnershipOp(Adopt(source.value()?)))),
+        "copy" => Some(HMIRExprKind::Op(HMIROp::OwnershipOp(Copy(source.value()?)))),
+        "leak" => Some(HMIRExprKind::Op(HMIROp::OwnershipOp(Leak(source.value()?)))),
         "str.concat" => Some(HMIRExprKind::Op(HMIROp::StrConcat {
             lhs: source.value()?,
             rhs: source.value()?,

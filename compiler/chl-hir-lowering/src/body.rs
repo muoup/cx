@@ -26,7 +26,7 @@ use crate::{
     def::declared_params,
     expr::{lower_expr, lower_initial_value},
     log::log_hir_error,
-    ty::lower_type,
+    ty::{lower_return_type, lower_type},
     unit::UnitContext,
 };
 
@@ -455,7 +455,7 @@ pub(crate) fn lower_reify(
         let ty = lower_type(&mut anon, &param.ty)?;
         params.push(anon.declare(param.name.as_ref(), ty, false, &param.range));
     }
-    let return_type = lower_type(&mut anon, &prototype.return_type)?;
+    let return_type = lower_return_type(&mut anon, prototype)?;
 
     let quote = anon.with_stage(true, |anon| lower_expr(anon, value))?;
     let quote = anon.push(HMIRExprKind::Comptime(quote), &value.range);

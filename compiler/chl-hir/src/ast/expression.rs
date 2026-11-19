@@ -191,15 +191,6 @@ pub enum HIRExprKind {
     Unsafe {
         expr: Box<HIRExpression>,
     },
-    Leak {
-        expr: Box<HIRExpression>,
-    },
-    Copy {
-        expr: Box<HIRExpression>,
-    },
-    Adopt {
-        expr: Box<HIRExpression>,
-    },
     Unpack {
         expr: Box<HIRExpression>,
         bindings: Vec<HIRUnpackBinding>,

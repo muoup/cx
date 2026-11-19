@@ -530,6 +530,7 @@ fn parse_function_body(
 
     if !data.c_mode
         && prototype.comptime
+        && !prototype.noreturn
         && matches!(prototype.return_type.kind, HIRTypeKind::Universe)
         && try_next!(data.tokens, TokenKind::Assignment(None))
     {

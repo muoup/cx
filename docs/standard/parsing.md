@@ -84,7 +84,7 @@ condition = "precondition" ":" "(" expr ")"
 - trailing `-> T` only when the written return type is `auto` and not C mode; it keeps auto's qualifiers.
 - A body written `= T;` defines a transparent type alias. It requires a `comptime` function returning `type` outside C mode. A named aggregate in the RHS has a tag local to the RHS and a strong identity per specialization. In ordinary type-value expressions, a named aggregate definition produces P0009.
 - `@strong T` introduces a strong type identity over the abstract type `T`. For example, `typedef @strong int meters;` binds `meters` to that type.
-- `noreturn` attributes, before the type or after the parameters, make the return type `unreachable`.
+- `noreturn` attributes before the type or after the parameters are recorded on the function prototype. Lowering gives marked prototypes the return type `unreachable`.
 - second precondition or postcondition: P0008.
 - `rule/quirk-c-suffix-skip` identifiers `__asm__`, `__asm`, `asm`, `__declspec`, `__nonnull`, `__nonnull__`, `__wur` and an optional parenthesized group after each are skipped, with attributes, before and after `where`.
 - `rule/c-static-linkage` C mode: a function first declared `static` at file scope stays static at later non-static declarations; static functions are namespaced, others unmangled. Block-scope declarations follow but do not record.
@@ -406,7 +406,7 @@ Call, pipe and backward pipe lower in an arguments scope.
 
 #### Intrinsic lowering
 
-- `rule/intrinsic-path` `@type.` paths lower to a type operator, other dotted paths to the intrinsic of that path. Unknown: P0006. Aggregate and variadic intrinsics have no path.
+- `rule/intrinsic-path` `@type.` paths lower to a type operator. `@leak`, `@copy`, and `@adopt` each take one argument and lower to an ownership operation. Other dotted paths lower to the intrinsic of that path. Unknown: P0006. Aggregate and variadic intrinsics have no path.
 - `rule/intrinsic-arguments-as-written` arguments lowered in order, nothing inserted or converted. Count other than the path takes: T0015. Named argument: T0017.
 - `rule/intrinsic-literal-flags` the flag of `int.cast`, `int.to_ptr` (sign-extend), `int.to_float`, `float.to_int` (signed) must be a `true`/`false` literal; the optional trailing message of `internal.assert` a string literal. Else T0002.
 

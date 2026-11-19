@@ -264,7 +264,7 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CHLResult<HIRExpr
     try_next!(data.tokens, keyword!(Register));
     let mut specifiers = super::types::parse_decl_specifiers(&mut data.tokens);
     let base_type = parse_type_base(data, TagScope::Module)?.add_specifier(specifiers.qualifiers);
-    super::types::parse_attributes(&mut data.tokens, &mut specifiers.attributes);
+    specifiers.noreturn |= super::types::parse_noreturn(&mut data.tokens);
 
     let mut decls = Vec::new();
     data.change_comma_mode(false);

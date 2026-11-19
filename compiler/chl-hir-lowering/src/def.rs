@@ -23,7 +23,7 @@ use crate::{
     body::BodyLowering,
     expr::{lower_expr, lower_initial_value, lower_scope_statements},
     plan::{DefSource, PlannedSymbol},
-    ty::lower_type,
+    ty::{lower_return_type, lower_type},
     unit::{UnitContext, def_name},
 };
 
@@ -127,7 +127,7 @@ fn lower_function<'a>(
                 let ty = lower_type(this, &param.ty)?;
                 params.push(this.declare(param.name.as_ref(), ty, param.comptime, &param.range));
             }
-            let return_type = lower_type(this, &prototype.return_type)?;
+            let return_type = lower_return_type(this, prototype)?;
             let contract = lower_contract(this, prototype)?;
             let root = body
                 .map(|body| lower_function_body(this, body))

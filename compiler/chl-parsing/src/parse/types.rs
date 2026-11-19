@@ -118,57 +118,21 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> HIRTypeQualifiers {
 pub(crate) struct ParsedSpecifiers {
     pub(crate) qualifiers: HIRTypeQualifiers,
     pub(crate) linkage: LinkageMode,
-    pub(crate) attributes: DeclarationAttributes,
-}
-
-/// Attributes attached to a declaration, gathered from `TokenKind::Attribute` tokens.
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct DeclarationAttributes {
     pub(crate) noreturn: bool,
 }
 
-impl DeclarationAttributes {
-    pub(crate) fn record(&mut self, attribute: AttributeType) {
-        match attribute {
-            AttributeType::Noreturn => self.noreturn = true,
-        }
+pub(crate) fn parse_noreturn(tokens: &mut TokenIter) -> bool {
+    let mut noreturn = false;
+    while try_next!(tokens, TokenKind::Attribute(AttributeType::Noreturn)) {
+        noreturn = true;
     }
-
-    pub(crate) fn merge(self, other: DeclarationAttributes) -> DeclarationAttributes {
-        DeclarationAttributes {
-            noreturn: self.noreturn || other.noreturn,
-        }
-    }
-
-    /// A function that never returns is declared as returning `unreachable`,
-    /// regardless of the return type written in the source.
-    pub(crate) fn apply_to_return_type(&self, return_type: HIRType) -> HIRType {
-        if !self.noreturn {
-            return return_type;
-        }
-
-        let mut unreachable = HIRTypeKind::Identifier {
-            name: QualifiedName::root(CHLIdent::new("unreachable")),
-            lookup: HIRTypeLookup::Standard,
-            args: None,
-        }
-        .to_type();
-        unreachable.range = return_type.range;
-        unreachable
-    }
-}
-
-pub(crate) fn parse_attributes(tokens: &mut TokenIter, attributes: &mut DeclarationAttributes) {
-    while let Some(TokenKind::Attribute(attribute)) = tokens.peek().map(|token| &token.kind) {
-        attributes.record(*attribute);
-        tokens.next();
-    }
+    noreturn
 }
 
 pub(crate) fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
     let mut spec_acc: HIRTypeQualifiers = 0;
     let mut linkage = LinkageMode::Standard;
-    let mut attributes = DeclarationAttributes::default();
+    let mut noreturn = false;
 
     loop {
         match next_kind!(tokens) {
@@ -182,7 +146,7 @@ pub(crate) fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers 
 
                 SpecifierType::Public | SpecifierType::Private => break,
             },
-            Ok(TokenKind::Attribute(attribute)) => attributes.record(*attribute),
+            Ok(TokenKind::Attribute(AttributeType::Noreturn)) => noreturn = true,
             _ => break,
         }
     }
@@ -191,7 +155,7 @@ pub(crate) fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers 
     ParsedSpecifiers {
         qualifiers: spec_acc,
         linkage,
-        attributes,
+        noreturn,
     }
 }
 
@@ -310,13 +274,14 @@ fn parse_declarator_mods(
                 params,
                 var_args,
                 contract,
-                ..
+                noreturn,
             } = parse_params(data, scope)?;
 
             let prototype = HIRFunctionPrototype {
                 kind: HIRFunctionKind::Standard(CHLIdent::new("__internal_fnptr")),
                 comptime: false,
                 return_type: acc_type,
+                noreturn,
                 params,
                 var_args,
                 contract,
@@ -502,7 +467,7 @@ fn parse_fn_signature(data: &mut ParserData, scope: TagScope) -> CHLResult<HIRTy
         params,
         var_args,
         contract,
-        ..
+        noreturn,
     } = parse_params(data, scope)?;
     assert_token_matches!(data.tokens, operator!(Arrow), "'->' after 'fn' parameters");
     let return_type = parse_abstract_type(data, scope)?;
@@ -511,6 +476,7 @@ fn parse_fn_signature(data: &mut ParserData, scope: TagScope) -> CHLResult<HIRTy
         kind: HIRFunctionKind::Standard(CHLIdent::new("__internal_fnptr")),
         comptime: false,
         return_type,
+        noreturn,
         params,
         var_args,
         contract,
@@ -634,7 +600,7 @@ pub(crate) fn parse_initializer(
 ) -> CHLResult<(Option<CHLIdent>, HIRType, ParsedSpecifiers)> {
     let mut prefix_specs = parse_decl_specifiers(&mut data.tokens);
     let type_base = parse_type_base(data, scope)?;
-    parse_attributes(&mut data.tokens, &mut prefix_specs.attributes);
+    prefix_specs.noreturn |= parse_noreturn(&mut data.tokens);
 
     let (name, ty) = parse_named_declarator(
         data,
@@ -671,16 +637,14 @@ pub(crate) fn parse_typedef_initializer(
         params,
         var_args,
         contract,
-        attributes,
+        noreturn,
     } = parse_params(data, TagScope::Module)?;
 
     let prototype = HIRFunctionPrototype {
         kind: HIRFunctionKind::Standard(CHLIdent::new("__internal_fnptr")),
         comptime: false,
-        return_type: specifiers
-            .attributes
-            .merge(attributes)
-            .apply_to_return_type(return_type),
+        return_type,
+        noreturn: specifiers.noreturn || noreturn,
         params,
         var_args,
         contract,

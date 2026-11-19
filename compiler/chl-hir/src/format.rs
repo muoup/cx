@@ -337,18 +337,6 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 writeln!(f, "Unsafe")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
-            HIRExprKind::Leak { expr } => {
-                writeln!(f, "Leak")?;
-                HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
-            HIRExprKind::Copy { expr } => {
-                writeln!(f, "Copy")?;
-                HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
-            HIRExprKind::Adopt { expr } => {
-                writeln!(f, "Adopt")?;
-                HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
             HIRExprKind::Reify { signature, value } => {
                 writeln!(f, "Reify")?;
                 HIRExprFormatter::new(signature, self.depth + 1).fmt(f)?;
@@ -683,7 +671,12 @@ impl Display for HIRFunctionPrototype {
         }));
 
         let params_str = params.join(", ");
-        write!(f, "{} :: {}({})", self.return_type, self.kind, params_str)
+        let noreturn = if self.noreturn { "noreturn " } else { "" };
+        write!(
+            f,
+            "{noreturn}{} :: {}({params_str})",
+            self.return_type, self.kind
+        )
     }
 }
 

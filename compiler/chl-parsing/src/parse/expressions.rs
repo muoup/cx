@@ -58,51 +58,6 @@ fn parse_at_intrinsic_expr(
             ))
         }
 
-        "leak" => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-
-            Ok(HIRExprKind::Leak {
-                expr: Box::new(expr),
-            }
-            .into_expr(
-                start_index,
-                data.tokens.index,
-                data.token_range(start_index, data.tokens.index),
-            ))
-        }
-
-        "copy" => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-
-            Ok(HIRExprKind::Copy {
-                expr: Box::new(expr),
-            }
-            .into_expr(
-                start_index,
-                data.tokens.index,
-                data.token_range(start_index, data.tokens.index),
-            ))
-        }
-
-        "adopt" => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-
-            Ok(HIRExprKind::Adopt {
-                expr: Box::new(expr),
-            }
-            .into_expr(
-                start_index,
-                data.tokens.index,
-                data.token_range(start_index, data.tokens.index),
-            ))
-        }
-
         "reify" => {
             let mut args = parse_args(data)?.into_iter();
             let (Some(signature), Some(value), None) = (args.next(), args.next(), args.next())

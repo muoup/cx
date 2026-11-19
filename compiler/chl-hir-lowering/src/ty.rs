@@ -45,6 +45,16 @@ pub(crate) fn lower_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) ->
     Ok(context.expr_type(kind, semantics, None, &ty.range))
 }
 
+pub(crate) fn lower_return_type<'a>(
+    context: &mut BodyLowering<'a>,
+    prototype: &'a HIRFunctionPrototype,
+) -> CHLResult<HMIRExprID> {
+    if prototype.noreturn {
+        return Ok(context.type_ref(HMIRExprTypeKind::Unreachable, &prototype.return_type.range));
+    }
+    lower_type(context, &prototype.return_type)
+}
+
 fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -> CHLResult<HMIRExprID> {
     let span = &ty.range;
     if let Some((params, result)) = staged_signature(ty) {
@@ -153,7 +163,7 @@ fn lower_type_name(
 fn staged_signature(ty: &HIRType) -> Option<(Vec<&HIRType>, &HIRType)> {
     match &ty.kind {
         HIRTypeKind::Staged(result) => Some((Vec::new(), result)),
-        HIRTypeKind::Function { prototype, .. } => {
+        HIRTypeKind::Function { prototype, .. } if !prototype.noreturn => {
             let HIRTypeKind::Staged(result) = &prototype.return_type.kind else {
                 return None;
             };
@@ -203,7 +213,7 @@ fn lower_function_type<'a>(
             Ok(HMIRFnParam::new(param.comptime, ty))
         })
         .collect::<CHLResult<_>>()?;
-    let return_type = lower_type(context, &prototype.return_type)?;
+    let return_type = lower_return_type(context, prototype)?;
     let stage = if prototype.comptime {
         HMIRFunctionStage::Comptime
     } else {

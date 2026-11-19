@@ -1,0 +1,3 @@
+int main() {
+    return @copy(1, 2);
+}
