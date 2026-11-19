@@ -41,7 +41,7 @@ pub(crate) fn lower_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) ->
     if !semantics.constant && !semantics.volatile {
         return Ok(lowered);
     }
-    let kind = HMIRExprTypeKind::Nominal(lowered);
+    let kind = HMIRExprTypeKind::Nominal { inner: lowered, strong_identifier: None };
     Ok(context.expr_type(kind, semantics, None, &ty.range))
 }
 
@@ -63,6 +63,7 @@ fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -
         }
         HIRTypeKind::Universe => return Ok(context.type_of_types(span)),
         HIRTypeKind::Auto => return Ok(context.hole(span)),
+        HIRTypeKind::Strong(inner) => HMIRExprTypeKind::Strong(lower_type(context, inner)?),
         HIRTypeKind::Staged(_) => unreachable!("handled as a staged signature above"),
         HIRTypeKind::ExplicitSizedArray(element, length) => {
             let element = lower_type(context, element)?;

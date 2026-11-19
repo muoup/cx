@@ -64,8 +64,9 @@ pub(crate) fn step(
 ) -> CHLResult<Coercion> {
     let env = context.env();
     let subject = env.referent(value.ty());
+    let strong = env.strong_identifier(subject).is_some();
     match env.resolve_kind(subject) {
-        HMIRTypeKind::Staged(_) if context.is_runtime() && subject == value.ty() => {
+        HMIRTypeKind::Staged(_) if !strong && context.is_runtime() && subject == value.ty() => {
             let value = match flow::top(flow::catch_diverged(staged::materialize(
                 context, value, span,
             )))? {
@@ -77,7 +78,9 @@ pub(crate) fn step(
             };
             Ok(Coercion::Applied(value))
         }
-        HMIRTypeKind::Str(_) | HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) => {
+        HMIRTypeKind::Str(_)
+        | HMIRTypeKind::Array { .. }
+        | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) if !strong => {
             let element =
                 types::element(context, subject, span).expect("an array has an element type");
             let value = match context.env().is_reference(value.ty()) {
@@ -153,7 +156,7 @@ pub(super) fn integer(
     span: &TokenRange,
 ) -> HMIRTypeID {
     match context.env().resolve_kind(ty) {
-        HMIRTypeKind::Int(int) if int.width() < HMIRIntWidth::I32 => {
+        HMIRTypeKind::Int(int) if int.width() < HMIRIntWidth::I32 && context.env().strong_identifier(ty).is_none() => {
             types::int(context.env_mut(), HMIRIntWidth::I32, true, span)
         }
         _ => ty,
@@ -181,6 +184,11 @@ pub(crate) fn common(
     rhs: HMIRTypeID,
     span: &TokenRange,
 ) -> Option<HMIRTypeID> {
+    let env = context.env();
+    let identities = (env.strong_identifier(lhs), env.strong_identifier(rhs));
+    if identities.0.is_some() || identities.1.is_some() {
+        return (identities.0 == identities.1 && (env.is_int(lhs) || env.is_float(lhs))).then_some(lhs);
+    }
     let lhs = integer(context, lhs, span);
     let rhs = integer(context, rhs, span);
     let kinds = (

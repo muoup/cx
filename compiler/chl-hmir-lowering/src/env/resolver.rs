@@ -1,9 +1,10 @@
 use rustc_hash::FxHashMap;
 
 use chl_hmir::{
-    HMIRDefID,
+    HMIRDefID, HMIRUnitID,
+    expr::HMIRExprID,
     ty::{
-        HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
+        HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, NominalID,
         aggregate::{HMIRMoveSemantics, HMIRTypeSemantics},
     },
 };
@@ -36,6 +37,14 @@ pub(crate) enum SymbolState {
     Ready(HMIRValue),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct NominalSite {
+    pub unit: HMIRUnitID,
+    pub expression: HMIRExprID,
+    pub specialization: Option<HMIRTypeID>,
+    pub inner: HMIRTypeID,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct HMIRResolver {
     types: IndexVec<HMIRTypeID, TypeState>,
@@ -45,6 +54,8 @@ pub(crate) struct HMIRResolver {
     deferred: Vec<HMIRTypeID>,
     generated: FxHashMap<HMIRDefID, FxHashMap<Vec<HMIRValue>, HMIRValue>>,
     origins: FxHashMap<HMIRTypeID, (HMIRDefID, Vec<HMIRValue>)>,
+    next_nominal: u64,
+    nominal_sites: FxHashMap<NominalSite, HMIRTypeID>,
 }
 
 impl HMIRResolver {
@@ -61,10 +72,9 @@ impl HMIRResolver {
         resolver
     }
 
-    // A named aggregate is a type of its own; any other type is the one type of its structure
     pub fn realize_type(&mut self, ty: HMIRType) -> HMIRTypeID {
         let semantics = *ty.semantics();
-        if let HMIRTypeKind::Nominal(inner) = *ty.kind() {
+        if let HMIRTypeKind::Nominal { inner, strong_identifier: None } = *ty.kind() {
             let full = semantics.apply(self.semantics(inner));
             return self.qualified(self.underlying(inner), full, ty.decl_span());
         }
@@ -76,11 +86,6 @@ impl HMIRResolver {
                 | HMIRTypeKind::TaggedUnion { .. }
                 | HMIRTypeKind::Undefined(HMIRUndefined::Forward(_))
         );
-        // REVIEW: debug_name is not the correct proxy for strong identifiers, we need both a strong_identifier, and a debug_name,
-        // the former dictates equality, the latter just for prettied formats and need not be identifier-shaped (e.g. foo::type_name).
-        if aggregate && ty.debug_name().is_some() {
-            return self.reserve_type(ty);
-        }
         let own = match aggregate {
             true => HMIRTypeSemantics {
                 constant: false,
@@ -94,10 +99,54 @@ impl HMIRResolver {
                 ty.kind().clone(),
                 own,
                 ty.decl_span().clone(),
-                ty.debug_name().map(str::to_owned),
+                ty.debug_name().filter(|_| !aggregate).map(str::to_owned),
             )
         });
         self.qualified(base, semantics, ty.decl_span())
+    }
+
+    fn nominal(&mut self, inner: HMIRTypeID, span: &TokenRange, name: Option<String>) -> HMIRTypeID {
+        let strong_identifier = Some(NominalID(self.next_nominal));
+        self.next_nominal = self.next_nominal.checked_add(1).expect("nominal identifiers exhausted");
+        let kind = HMIRTypeKind::Nominal { inner, strong_identifier };
+        self.reserve_type(HMIRType::new(kind, HMIRTypeSemantics::default(), span.clone(), name))
+    }
+
+    pub fn nominal_at(&mut self, site: NominalSite, span: &TokenRange) -> HMIRTypeID {
+        if let Some(&id) = self.nominal_sites.get(&site) {
+            return id;
+        }
+        let id = self.nominal(site.inner, span, None);
+        self.nominal_sites.insert(site, id);
+        id
+    }
+
+    pub fn reserve_nominal(&mut self, representation: HMIRType) -> HMIRTypeID {
+        let span = representation.decl_span().clone();
+        let name = representation.debug_name().map(str::to_owned);
+        let inner = self.reserve_type(representation);
+        self.nominal(inner, &span, name)
+    }
+
+    pub fn set_nominal_placeholder(&mut self, id: HMIRTypeID, ty: HMIRType) {
+        let HMIRTypeKind::Nominal { inner, .. } = *self.realized_type(id).kind() else {
+            unreachable!("a reserved nominal type has a representation");
+        };
+        self.complete_type(inner, ty);
+    }
+
+    pub fn complete_nominal(&mut self, id: HMIRTypeID, inner: HMIRTypeID) {
+        let ty = self.realized_type(id);
+        let HMIRTypeKind::Nominal { strong_identifier: Some(strong), .. } = *ty.kind() else {
+            unreachable!("a reserved nominal type has a strong identifier");
+        };
+        let ty = HMIRType::new(
+            HMIRTypeKind::Nominal { inner, strong_identifier: Some(strong) },
+            *ty.semantics(),
+            ty.decl_span().clone(),
+            ty.debug_name().map(str::to_owned),
+        );
+        self.complete_type(id, ty);
     }
 
     pub fn reserve_type(&mut self, ty: HMIRType) -> HMIRTypeID {
@@ -110,7 +159,7 @@ impl HMIRResolver {
         })
     }
 
-    pub fn complete_type(&mut self, id: HMIRTypeID, ty: HMIRType) {
+    fn complete_type(&mut self, id: HMIRTypeID, ty: HMIRType) {
         self.types[id].ty = ty;
     }
 
@@ -209,7 +258,7 @@ impl HMIRResolver {
 
     // 'base' with only the specifiers of 'full' it does not carry itself
     fn qualified(&mut self, base: HMIRTypeID, full: HMIRTypeSemantics, span: &TokenRange) -> HMIRTypeID {
-        let own = *self.types[base].ty.semantics();
+        let own = self.semantics(base);
         let added = HMIRTypeSemantics {
             constant: full.constant && !own.constant,
             volatile: full.volatile && !own.volatile,
@@ -222,7 +271,7 @@ impl HMIRResolver {
         if added == HMIRTypeSemantics::default() {
             return base;
         }
-        let kind = HMIRTypeKind::Nominal(base);
+        let kind = HMIRTypeKind::Nominal { inner: base, strong_identifier: None };
         self.intern(key::key(&kind, added), || {
             HMIRType::new(kind, added, span.clone(), None)
         })
@@ -230,7 +279,7 @@ impl HMIRResolver {
 
     fn underlying(&self, id: HMIRTypeID) -> HMIRTypeID {
         match self.types[id].ty.kind() {
-            HMIRTypeKind::Nominal(inner) => self.underlying(*inner),
+            HMIRTypeKind::Nominal { inner, strong_identifier: None } => self.underlying(*inner),
             _ => id,
         }
     }
@@ -238,7 +287,7 @@ impl HMIRResolver {
     fn semantics(&self, id: HMIRTypeID) -> HMIRTypeSemantics {
         let ty = &self.types[id].ty;
         match ty.kind() {
-            HMIRTypeKind::Nominal(inner) => ty.semantics().apply(self.semantics(*inner)),
+            HMIRTypeKind::Nominal { inner, .. } => ty.semantics().apply(self.semantics(*inner)),
             _ => *ty.semantics(),
         }
     }

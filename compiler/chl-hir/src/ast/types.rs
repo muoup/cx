@@ -80,6 +80,7 @@ pub enum HIRTypeKind {
     Auto,
     // '^T', code producing a 'T'
     Staged(Box<HIRType>),
+    Strong(Box<HIRType>),
 
     ExplicitSizedArray(Box<HIRType>, Box<HIRExpression>),
     ImplicitSizedArray(Box<HIRType>),

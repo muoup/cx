@@ -20,20 +20,23 @@ use crate::log::parse_point_error;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
+    pub registry: &'a GlobalPreparseRegistry,
+    pub pp_contents: &'a PreparseContents,
     pub tokens: TokenIter<'a>,
+
+    include_states: Vec<IncludeParserState>,
+    
     pub visibility: VisibilityMode,
     pub symbol_naming: HIRSymbolNameScheme,
-    include_states: Vec<IncludeParserState>,
     pub expr_commas: Vec<bool>,
-    pub pp_contents: &'a PreparseContents,
     // uses u8 mapping instead of a set to prevent problems with shadowing
     pub temporary_type_names: FxHashMap<CHLIdent, u8>,
     namespace_aliases: NamespaceAliases,
     pub(super) c_function_linkages: FxHashMap<QualifiedName, LinkageMode>,
 
-    pub registry: &'a GlobalPreparseRegistry,
     pub ast: HIR,
     pub c_mode: bool,
+    pub(super) type_expression: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -67,7 +70,18 @@ impl<'a> ParserData<'a> {
                 pp_contents.imports.clone(),
             ),
             c_mode,
+            type_expression: false,
         }
+    }
+
+    pub(super) fn in_type_expression<T>(
+        &mut self,
+        parse: impl FnOnce(&mut Self) -> CHLResult<T>,
+    ) -> CHLResult<T> {
+        let previous = std::mem::replace(&mut self.type_expression, true);
+        let result = parse(self);
+        self.type_expression = previous;
+        result
     }
 
     pub fn back(&mut self) -> &mut Self {

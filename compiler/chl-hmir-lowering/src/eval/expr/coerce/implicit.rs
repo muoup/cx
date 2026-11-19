@@ -41,6 +41,7 @@ pub(super) fn convert(
 ) -> CHLResult<Coercion> {
     let env = context.env();
     let source = value.ty();
+    let same_identity = env.strong_identifier(source) == env.strong_identifier(target);
     if let (
         HMIRTypeKind::Array {
             element: from,
@@ -48,6 +49,7 @@ pub(super) fn convert(
         },
         HMIRTypeKind::Undefined(HMIRUndefined::Array { element: to }),
     ) = (env.resolve_kind(source), env.resolve_kind(target))
+        && same_identity
         && env.same_type(*from, *to)
         && env.semantics(source).move_semantics == env.semantics(target).move_semantics
     {
@@ -56,7 +58,7 @@ pub(super) fn convert(
         return Ok(Coercion::Applied(value.with_ty(ty)));
     }
     let unreachable = |ty| matches!(env.resolve_kind(ty), HMIRTypeKind::Unreachable);
-    let staged_unreachable = matches!(
+    let staged_unreachable = same_identity && matches!(
         (env.resolve_kind(source), env.resolve_kind(target)),
         (HMIRTypeKind::Staged(inner), HMIRTypeKind::Staged(_)) if unreachable(*inner)
     );
@@ -81,6 +83,24 @@ fn step(
 ) -> CHLResult<Coercion> {
     let env = context.env();
     let source = value.ty();
+    let source_identity = env.strong_identifier(source);
+    let target_identity = env.strong_identifier(target);
+    let carries_value = |ty| {
+        matches!(env.resolve_kind(ty), HMIRTypeKind::Staged(_) | HMIRTypeKind::ReferenceTo { .. })
+    };
+    if source_identity != target_identity && !explicit
+        && !(source_identity.is_none() && carries_value(source))
+        && !(target_identity.is_none() && carries_value(target))
+    {
+        return Ok(Coercion::Unapplied(value));
+    }
+    if explicit && source_identity != target_identity
+        && env.representation(source) == env.representation(target)
+        && env.semantics(source).move_semantics == env.semantics(target).move_semantics
+        && !env.is_reference(source)
+    {
+        return Ok(Coercion::Applied(value.with_ty(target)));
+    }
     let (from, to) = (
         env.resolve_kind(source).clone(),
         env.resolve_kind(target).clone(),
@@ -355,7 +375,7 @@ fn string(
     length: Option<u64>,
     span: &TokenRange,
 ) -> CHLResult<Coercion> {
-    if !is_char(context.env(), element) {
+    if !is_char(context.env(), element) || context.env().strong_identifier(element).is_some() {
         return Ok(Coercion::Unapplied(value));
     }
     let bound = length.unwrap_or(extent);

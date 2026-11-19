@@ -38,7 +38,7 @@ pub(crate) fn specify(
         return ty;
     }
 
-    let kind = HMIRTypeKind::Nominal(env.underlying(ty));
+    let kind = HMIRTypeKind::Nominal { inner: env.underlying(ty), strong_identifier: None };
     env.resolver_mut()
         .realize_type(HMIRType::new(kind, semantics, span.clone(), None))
 }
@@ -65,7 +65,7 @@ pub(crate) fn remove(
     let base = resolved.semantics();
     let kind = match resolved.kind() {
         _ if (!base.constant || semantics.constant) && (!base.volatile || semantics.volatile) => {
-            HMIRTypeKind::Nominal(underlying)
+            HMIRTypeKind::Nominal { inner: underlying, strong_identifier: None }
         }
         kind @ (HMIRTypeKind::Int(_) | HMIRTypeKind::Float(_) | HMIRTypeKind::PointerTo(_)) => {
             kind.clone()

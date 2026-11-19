@@ -531,7 +531,7 @@ fn parse_function_body(
         && matches!(prototype.return_type.kind, HIRTypeKind::Universe)
         && try_next!(data.tokens, TokenKind::Assignment(None))
     {
-        let ty = parse_abstract_type(data)?;
+        let ty = data.in_type_expression(parse_abstract_type)?;
         assert_token_matches!(data.tokens, punctuator!(Semicolon), "';' after type alias");
         return Ok(HIRFunctionBody::TypeAlias(ty));
     }

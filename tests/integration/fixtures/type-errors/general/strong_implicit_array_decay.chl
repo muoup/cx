@@ -1,0 +1,7 @@
+typedef @strong int[4] quad;
+
+int main() {
+    quad values = {};
+    int* pointer = values;
+    return 0;
+}

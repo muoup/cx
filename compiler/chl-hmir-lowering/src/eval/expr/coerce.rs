@@ -254,7 +254,9 @@ fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bool {
     if env.same_type(lhs, rhs) {
         return true;
     }
-    if env.semantics(lhs).move_semantics != env.semantics(rhs).move_semantics {
+    if env.strong_identifier(lhs) != env.strong_identifier(rhs)
+        || env.semantics(lhs).move_semantics != env.semantics(rhs).move_semantics
+    {
         return false;
     }
     let pointees = |lhs, rhs| {

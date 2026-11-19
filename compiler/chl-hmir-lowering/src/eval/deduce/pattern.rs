@@ -160,10 +160,7 @@ fn validate_expr(
         HMIRExprKind::Type(ty)
             if !matches!(
                 ty.kind(),
-                HMIRExprTypeKind::Struct { .. }
-                    | HMIRExprTypeKind::Union { .. }
-                    | HMIRExprTypeKind::TaggedUnion { .. }
-                    | HMIRExprTypeKind::Dependent
+                HMIRExprTypeKind::Dependent
             ) && !matches!(
                 ty.semantics().move_semantics,
                 HMIRDeclaredMove::CopyTraits(_)

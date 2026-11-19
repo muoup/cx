@@ -165,6 +165,7 @@ const typeRule = ($, allowFunction) =>
             keyword($, "type"),
             ...(allowFunction ? [$.function_type] : []),
             $.staged_type,
+            $.strong_type,
             $.type_application,
             $.templated_name,
             $.qualified_name,
@@ -207,6 +208,8 @@ module.exports = grammar({
         [$.type],
         [$.type, $.type_application],
         [$.decl_type, $.primary_expression],
+        [$.decl_type, $.type_literal],
+        [$.type, $.type_literal],
         [$.decl_type, $.type_application, $.primary_expression],
         [$.decl_type, $.type_application],
         [$.type_application, $.primary_expression],
@@ -226,6 +229,7 @@ module.exports = grammar({
         [$.primary_expression, $.emit_expression],
         [$.expression, $.conditional_condition],
         [$.templated_name, $.primary_expression],
+        [$.templated_name, $.type],
     ],
 
     rules: {
@@ -318,6 +322,8 @@ module.exports = grammar({
             ),
 
         _function_indirection: ($) => choice($.pointer_modifier, $.reference_modifier),
+
+        strong_type: ($) => prec.right(seq(keyword($, "@strong"), $.type)),
 
         staged_type: ($) => prec.right(seq(op($, "^"), $.type)),
 
@@ -1142,6 +1148,7 @@ module.exports = grammar({
             ),
 
         type_literal: ($) => choice(
+            $.strong_type,
             seq(keyword($, "struct"), $.anonymous_struct_body),
             seq(keyword($, "union"), $.anonymous_union_body),
         ),

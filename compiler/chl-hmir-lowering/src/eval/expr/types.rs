@@ -394,8 +394,11 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
     let constant = env.semantics(ty).constant;
     let ty = env.resolve_type_id(env.underlying(ty));
     let base = match ty.kind() {
-        HMIRTypeKind::Nominal(_) => unreachable!("underlying type is not nominal"),
         _ if let Some(name) = ty.debug_name() => name.to_owned(),
+        HMIRTypeKind::Nominal { inner, strong_identifier: Some(id) } => {
+            format!("@strong#{} {}", id.0, name(env, *inner))
+        }
+        HMIRTypeKind::Nominal { .. } | HMIRTypeKind::Strong(_) => unreachable!("not an underlying type"),
         HMIRTypeKind::Void => "void".into(),
         HMIRTypeKind::Unreachable => "unreachable".into(),
         HMIRTypeKind::Type => "type".into(),

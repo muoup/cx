@@ -235,7 +235,7 @@ pub(crate) fn generated(
             let expected = context.env().referent(expected);
             let unit = context.unit(def.brand());
             let function = declaration::function(unit.resolve_def(def).expect("function exists"));
-            if let Some(root) = function.transparent_body() {
+            if let Some(root) = function.structural_body() {
                 let mut values = values;
                 let mut frame = Frame::new(function, def, ComptimeContext::of(def), false);
                 for (index, value) in values.iter().enumerate() {

@@ -62,6 +62,11 @@ impl<'global, 'hmir> HMIREnvironment<'global, 'hmir> {
             return true;
         }
 
+        let strong = (self.strong_identifier(a), self.strong_identifier(b));
+        if strong.0.is_some() || strong.1.is_some() {
+            return strong.0 == strong.1;
+        }
+
         match (self.resolve_kind(a), self.resolve_kind(b)) {
             (HMIRTypeKind::PointerTo(a), HMIRTypeKind::PointerTo(b))
             | (HMIRTypeKind::Staged(a), HMIRTypeKind::Staged(b))

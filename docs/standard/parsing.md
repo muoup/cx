@@ -82,7 +82,8 @@ condition = "precondition" ":" "(" expr ")"
 - a declarator followed by `(` is a function; else backtracks to a variable.
 - `A::f` declares an associated function of A; more segments: P0021.
 - trailing `-> T` only when the written return type is `auto` and not C mode; it keeps auto's qualifiers.
-- A body written `= T;` defines a transparent type alias. It requires a `comptime` function returning `type` outside C mode.
+- A body written `= T;` defines a transparent type alias. It requires a `comptime` function returning `type` outside C mode. A named aggregate definition in a type expression is rejected with P0009.
+- `@strong T` introduces a strong type identity over the abstract type `T`. For example, `typedef @strong int meters;` binds `meters` to that type.
 - `noreturn` attributes, before the type or after the parameters, make the return type `unreachable`.
 - second precondition or postcondition: P0008.
 - `rule/quirk-c-suffix-skip` identifiers `__asm__`, `__asm`, `asm`, `__declspec`, `__nonnull`, `__nonnull__`, `__wur` and an optional parenthesized group after each are skipped, with attributes, before and after `where`.
@@ -143,7 +144,7 @@ fields = specifiers type-base declarator [":" int-literal] { "," declarator [":"
 ```
 
 - named definition: adds a tagged type definition and yields a tag reference to it; anonymous: the type in place.
-- `rule/quirk-hoisted-aggregate` definitions are added as global statements wherever written: a struct, union or enum defined in a function body, nested block included, is a global type seen from the whole unit.
+- `rule/quirk-hoisted-aggregate` definitions in declaration positions are added as global statements. This includes declarations inside a function body or nested block.
 - `rule/quirk-union-attributes` plain unions take no attributes.
 - unknown attribute: P0006. Qualified definition name: P0001.
 - bitfield width must be an integer literal token.

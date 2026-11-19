@@ -105,6 +105,21 @@ impl HMIRFunction {
         self.def.as_ref()
     }
 
+    pub fn structural_body(&self) -> Option<HMIRExprID> {
+        let root = self.transparent_body()?;
+        let mut operand = root;
+        while let crate::expr::HMIRExprKind::Type(ty) = self.body().expr(operand).kind() {
+            match ty.kind() {
+                crate::ty::HMIRExprTypeKind::Nominal { inner, strong_identifier: None } => {
+                    operand = *inner;
+                }
+                crate::ty::HMIRExprTypeKind::Strong(_) => return None,
+                _ => break,
+            }
+        }
+        Some(root)
+    }
+
     pub fn transparent_body(&self) -> Option<HMIRExprID> {
         self.def()
             .filter(|def| def.transparent)

@@ -13,13 +13,16 @@ pub(crate) use flow::EvalResult;
 use chl_hmir::{
     HMIRBodyContext, HMIROp,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::HMIRTypeID,
+    ty::{HMIRExprTypeKind, HMIRTypeID},
 };
 use chl_log::{CHLResult, catalogue::mir};
 use chl_pipeline_data::hmir::facts::HMIRTypeSubject;
 
 use crate::{
-    env::function::{FnContext, LocalLoweringContext, runtime::Emission},
+    env::{
+        function::{FnContext, LocalLoweringContext, runtime::Emission},
+        resolver::NominalSite,
+    },
     eval::flow::Evaluation,
     log::hmir_error,
     value::HMIRValue,
@@ -43,6 +46,20 @@ pub(crate) fn eval(
         ))),
         HMIRExprKind::Type(ty) if let Some(element) = types::hole_bounded(body, ty) => {
             deduce::hole_bound(context, body, ty, element, span)
+        }
+        HMIRExprKind::Type(ty) if let HMIRExprTypeKind::Strong(inner) = ty.kind() => {
+            let inner = eval_type(context, body, *inner)?.description()?;
+            let span = span.clone();
+            inner.and_then(context, body, move |context, _, inner| {
+                let site = NominalSite {
+                    unit: context.source(),
+                    expression: id,
+                    specialization: context.nominal_scope(),
+                    inner,
+                };
+                let ty = context.env_mut().resolver_mut().nominal_at(site, &span);
+                deduce::type_result(context, ty, &span)
+            })
         }
         HMIRExprKind::Type(ty) => {
             let ty = types::construct_type(context, body, ty, None)?;

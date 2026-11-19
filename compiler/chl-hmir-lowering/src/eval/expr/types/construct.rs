@@ -43,21 +43,12 @@ pub(crate) fn construct_type(
         }
         _ => None,
     };
-    let named = aggregate
-        .filter(|_| reserved.is_some() || ty.debug_name().is_some())
-        .map(|tag| {
-            let kind = HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag)));
-            let name = ty.debug_name().map(str::to_owned);
-            let placeholder = HMIRType::new(kind, semantics, ty.decl_span().clone(), name);
-            let resolver = context.env_mut().resolver_mut();
-            match reserved {
-                Some(id) => {
-                    resolver.complete_type(id, placeholder);
-                    id
-                }
-                None => resolver.reserve_type(placeholder),
-            }
-        });
+    let nominal = aggregate.zip(reserved).map(|(tag, id)| {
+        let kind = HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag)));
+        let placeholder = HMIRType::new(kind, semantics, ty.decl_span().clone(), None);
+        context.env_mut().resolver_mut().set_nominal_placeholder(id, placeholder);
+        id
+    });
     let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
     let complete = match ty.kind() {
         HMIRExprTypeKind::Function { signature: source, decays } => {
@@ -73,11 +64,11 @@ pub(crate) fn construct_type(
                 complete.debug_name().map(str::to_owned),
             )
         }
-        HMIRExprTypeKind::Nominal(inner) => {
+        HMIRExprTypeKind::Nominal { inner, .. } => {
             let inner =
                 flow::top(eval_type(context, body, *inner).and_then(|ty| ty.description()))?;
             HMIRType::new(
-                HMIRTypeKind::Nominal(inner),
+                HMIRTypeKind::Nominal { inner, strong_identifier: None },
                 semantics,
                 ty.decl_span().clone(),
                 None,
@@ -100,12 +91,13 @@ pub(crate) fn construct_type(
     };
     types::validate(context.env(), &complete)?;
     let resolver = context.env_mut().resolver_mut();
-    Ok(match named {
+    let inner = resolver.realize_type(complete);
+    Ok(match nominal {
         Some(id) => {
-            resolver.complete_type(id, complete);
+            resolver.complete_nominal(id, inner);
             id
         }
-        None => resolver.realize_type(complete),
+        None => inner,
     })
 }
 
@@ -114,6 +106,13 @@ pub(crate) fn aggregate(body: &HMIRBodyContext, expr: HMIRExprID) -> Option<&HMI
     let HMIRExprKind::Type(declared) = body.expr(expr).kind() else {
         return None;
     };
+    let mut declared = declared;
+    if let HMIRExprTypeKind::Strong(inner) = declared.kind() {
+        let HMIRExprKind::Type(inner) = body.expr(*inner).kind() else {
+            return None;
+        };
+        declared = inner;
+    }
     matches!(
         declared.kind(),
         HMIRExprTypeKind::Struct { .. }

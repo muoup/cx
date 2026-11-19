@@ -411,7 +411,7 @@ fn finish(
         true => {
             let generated = generated_name(context, def, &args);
             let provisional = args.clone();
-            let track_origin = function.transparent_body().is_none();
+            let track_origin = function.structural_body().is_none();
             let publish = |env: &mut HMIREnvironment, value| {
                 env.resolver_mut()
                     .record_generated(def, provisional, value, track_origin)
@@ -519,6 +519,9 @@ fn execute(
     defining: Option<HMIRTypeID>,
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
+    if let Some(scope) = defining {
+        context.set_nominal_scope(scope);
+    }
     contract::check(context, signature.contract(), args, None, def, span)?;
     let value = match body(context, function, defining) {
         Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Return(value)))) => value,
@@ -571,7 +574,9 @@ pub(crate) fn body(
     let body = function.body();
     let root = body.expr(definition.root());
     if !matches!(root.kind(), HMIRExprKind::Block { yields: false, .. }) {
-        let value = match defining.zip(types::aggregate(body, definition.root())) {
+        let aggregate = defining.filter(|_| function.structural_body().is_none())
+            .zip(types::aggregate(body, definition.root()));
+        let value = match aggregate {
             Some((reserved, declared)) => {
                 let ty = types::construct_type(context, body, declared, Some(reserved))?;
                 deduce::type_result(context, ty, root.span())?

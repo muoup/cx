@@ -74,7 +74,7 @@ pub(super) fn unify(
                 args,
                 named,
             };
-            match function.transparent_body() {
+            match function.structural_body() {
                 Some(root) => unfold(deduction, context, frame, pattern, root, actual, span),
                 None => match_instance(deduction, context, frame, pattern, actual, span),
             }
@@ -279,7 +279,37 @@ fn structure(
         HMIRExprTypeKind::Undefined(HMIRUndefined::Array { element }) if transparent => {
             (*element, env.array_inner(actual))
         }
-        HMIRExprTypeKind::Nominal(inner) => {
+        HMIRExprTypeKind::Struct { fields }
+        | HMIRExprTypeKind::Union { fields }
+        | HMIRExprTypeKind::TaggedUnion { fields } if transparent => {
+            let actual_fields = match (ty.kind(), env.resolve_kind(actual)) {
+                (HMIRExprTypeKind::Struct { .. }, HMIRTypeKind::Struct { fields })
+                | (HMIRExprTypeKind::Union { .. }, HMIRTypeKind::Union { fields })
+                | (HMIRExprTypeKind::TaggedUnion { .. }, HMIRTypeKind::TaggedUnion { fields }) => fields,
+                _ => return Ok(()),
+            };
+            let HMIRDeclaredMove::Explicit(move_semantics) = ty.semantics().move_semantics else {
+                return Ok(());
+            };
+            let actual_semantics = env.semantics(actual);
+            if env.strong_identifier(actual).is_some()
+                || move_semantics != actual_semantics.move_semantics
+                || ty.semantics().unsafe_move != actual_semantics.unsafe_move
+                || fields.len() != actual_fields.len()
+                || fields.iter().zip(actual_fields).any(|(pattern, actual)| {
+                    pattern.name() != actual.name() || pattern.bit_width() != actual.bit_width()
+                })
+            {
+                return Ok(());
+            }
+
+            let actual_types = actual_fields.iter().map(|field| *field.ty()).collect::<Vec<_>>();
+            for (pattern, actual) in fields.iter().zip(actual_types) {
+                unify(deduction, context, frame, form.at(*pattern.ty()), actual, span)?;
+            }
+            return Ok(());
+        }
+        HMIRExprTypeKind::Nominal { inner, .. } => {
             let declared = ty.semantics();
             if declared.unsafe_move || declared.move_semantics != HMIRDeclaredMove::default() {
                 return Ok(());

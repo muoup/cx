@@ -69,7 +69,7 @@ fn lower_binding_type(
                 constant: true,
                 ..semantics
             };
-            let inner = context.expr_type(HMIRExprTypeKind::Nominal(hole), constant, None, span);
+            let inner = context.expr_type(HMIRExprTypeKind::Nominal { inner: hole, strong_identifier: None }, constant, None, span);
             let kind = HMIRExprTypeKind::ReferenceTo {
                 inner,
                 bitfield: None,

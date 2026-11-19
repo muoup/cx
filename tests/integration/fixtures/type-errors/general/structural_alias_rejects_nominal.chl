@@ -1,0 +1,9 @@
+comptime type record(type T) = struct { T value; };
+comptime type payload(type T) = @strong struct { T value; };
+
+int consume(comptime type T = _, record(T)* value) => (int)sizeof(T);
+
+int main() {
+    payload(int)* value = (payload(int)*)0;
+    return consume(value);
+}

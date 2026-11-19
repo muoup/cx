@@ -28,9 +28,14 @@ pub(super) fn key(kind: &HMIRTypeKind, semantics: HMIRTypeSemantics) -> TypeKey 
             key.scalars.push(int.signed() as u64);
         }
         HMIRTypeKind::Float(float) => key.scalars.push(float.width().bytes() as u64),
-        HMIRTypeKind::PointerTo(inner) | HMIRTypeKind::Nominal(inner) | HMIRTypeKind::Staged(inner) => {
+        HMIRTypeKind::PointerTo(inner) | HMIRTypeKind::Staged(inner) => {
             key.types.push(*inner)
         }
+        HMIRTypeKind::Nominal { inner, strong_identifier } => {
+            key.types.push(*inner);
+            key.scalars.extend(strong_identifier.map(|id| id.0));
+        }
+        HMIRTypeKind::Strong(_) => unreachable!("an unevaluated strong type has no key"),
         HMIRTypeKind::ReferenceTo { inner, bitfield } => {
             key.types.push(*inner);
             if let Some(bitfield) = bitfield {

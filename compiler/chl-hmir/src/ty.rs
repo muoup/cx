@@ -17,7 +17,8 @@ use chl_tokens::TokenRange;
 use chl_util::dense_id;
 
 dense_id!(HMIRTypeID, "ty");
-dense_id!(NominalID, "nominal");
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NominalID(pub u64);
 
 // An evaluated type, which refers to the types it is built from by their IDs
 pub type HMIRType = HMIRGenericType<HMIRTypeID, u64, HMIRMoveSemantics>;
@@ -53,7 +54,8 @@ pub enum HMIRGenericTypeKind<T, L> {
     TaggedUnion { fields: Vec<HMIRFieldDef<T>> },
     Undefined(HMIRUndefined<T>),
     Builtin { name: String, size: usize, alignment: usize }, // A complete type whose structure only intrinsics interpret
-    Nominal(T), // A transparent reference to another type, whose semantics only ever add specifiers to it
+    Nominal { inner: T, strong_identifier: Option<NominalID> },
+    Strong(T),
 
     // U_1
     Type,
@@ -180,7 +182,11 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
                 inner: ty(state, inner)?,
                 bitfield: *bitfield,
             },
-            Self::Nominal(inner) => HMIRGenericTypeKind::Nominal(ty(state, inner)?),
+            Self::Nominal { inner, strong_identifier } => HMIRGenericTypeKind::Nominal {
+                inner: ty(state, inner)?,
+                strong_identifier: *strong_identifier,
+            },
+            Self::Strong(inner) => HMIRGenericTypeKind::Strong(ty(state, inner)?),
             Self::Array {
                 element,
                 length: declared,

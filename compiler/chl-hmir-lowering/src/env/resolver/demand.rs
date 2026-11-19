@@ -13,7 +13,8 @@ pub(crate) fn force(env: &mut HMIREnvironment, ty: HMIRTypeID) -> CHLResult<()> 
     if let Some(def) = env.resolver().pending(ty) {
         symbol::complete(env, def, ty)?;
     }
-    match *env.resolve_kind(ty) {
+    match *env.resolve_type_id(ty).kind() {
+        HMIRTypeKind::Nominal { inner, .. } => force(env, inner),
         HMIRTypeKind::Array { element, .. }
         | HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => force(env, element),
         _ => Ok(()),
@@ -68,7 +69,6 @@ fn walk(
         HMIRTypeKind::Undefined(HMIRUndefined::Forward(_)) => return Ok(false),
         HMIRTypeKind::PointerTo(inner)
         | HMIRTypeKind::ReferenceTo { inner, .. }
-        | HMIRTypeKind::Nominal(inner)
         | HMIRTypeKind::Staged(inner)
         | HMIRTypeKind::Array { element: inner, .. }
         | HMIRTypeKind::Undefined(HMIRUndefined::Array { element: inner }) => vec![*inner],

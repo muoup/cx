@@ -597,7 +597,7 @@ pub(crate) fn parse_expr_val(
     // A type in value position, 'opt(int)' as a comptime argument or the head of 'T::member'
     let acc = if !data.c_mode && !data.in_include() && is_type_decl(data)? {
         let type_start = data.tokens.index;
-        let (name, ty, _) = parse_initializer(data)?;
+        let (name, ty, _) = data.in_type_expression(parse_initializer)?;
         if name.is_some() {
             return parse_point_error(
                 &data.tokens,

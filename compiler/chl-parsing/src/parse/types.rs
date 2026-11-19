@@ -1,6 +1,10 @@
 use crate::parse::expressions::{parse_argument, parse_expr};
 use crate::parse::{try_parse_simple_identifier, ParserData};
-use crate::{assert_token_matches, log::parse_point_error, next_kind, peek_kind, try_next};
+use crate::{
+    assert_token_matches,
+    log::{parse_point_error, parse_underline_error},
+    next_kind, peek_kind, try_next,
+};
 use chl_hir::ast::expression::HIRExpression;
 use chl_hir::ast::global_var::HIREnumDefinition;
 use chl_hir::ast::types::HIRMoveSemantics;
@@ -53,6 +57,7 @@ pub fn is_type_decl(data: &mut ParserData) -> CHLResult<bool> {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum, Register) => true,
 
         keyword!(Type, Fn) => true,
+        TokenKind::CompilerIdentifier(name) if name == "strong" => !data.c_mode && !data.in_include(),
         operator!(Caret) => !data.c_mode,
 
         identifier!(name) if is_intrinsic_type(name) => !is_used_as_value(data),
@@ -287,6 +292,13 @@ fn defined_type(
     header: TokenRange,
 ) -> CHLResult<HIRType> {
     if let Some(name) = name {
+        if data.type_expression && !data.c_mode && !data.in_include() {
+            return parse_underline_error(
+                &INVALID_CONTEXT,
+                (format!("a named {} definition", predeclaration.prefix()), "a type expression".into()),
+                &header,
+            );
+        }
         // If structure definition has a name, add it to the type map and return
         // the identifier pointer to that type
 
@@ -897,6 +909,11 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CHLResult<HIRType> {
         keyword!(Fn) => {
             data.tokens.next();
             Ok(fn_declarator_marker())
+        }
+
+        TokenKind::CompilerIdentifier(name) if name == "strong" && !data.c_mode && !data.in_include() => {
+            data.tokens.next();
+            Ok(HIRTypeKind::Strong(Box::new(parse_abstract_type(data)?)).to_type())
         }
 
         // '^' takes the whole abstract type after it, so '^const T&' stages a 'const T&'
