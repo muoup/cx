@@ -57,7 +57,7 @@ pub(crate) enum ScopeKind<'a> {
 }
 
 struct Scope<'a> {
-    symbols: FxHashMap<CHLIdent, ScopeEntry>,
+    symbols: FxHashMap<(Option<HIRTagKind>, CHLIdent), ScopeEntry>,
     kind: ScopeKind<'a>,
 }
 
@@ -122,7 +122,7 @@ impl<'a> BodyLowering<'a> {
             .last_mut()
             .expect("body lowering always has a root scope")
             .symbols
-            .insert(name.clone(), ScopeEntry::Static(def));
+            .insert((None, name.clone()), ScopeEntry::Static(def));
     }
 
     pub(crate) fn finish(self) -> HMIRBodyContext {
@@ -303,7 +303,7 @@ impl<'a> BodyLowering<'a> {
                 .last_mut()
                 .expect("body lowering always has a root scope")
                 .symbols
-                .insert(name.clone(), ScopeEntry::Local(local));
+                .insert((None, name.clone()), ScopeEntry::Local(local));
         }
         local
     }
@@ -317,22 +317,46 @@ impl<'a> BodyLowering<'a> {
         self.declare(name, ty, self.comptime, span)
     }
 
-    pub(crate) fn lookup(&self, name: &QualifiedName, tag: Option<HIRTagKind>) -> Symbol {
-        if tag.is_none()
-            && let Some(root) = name.root_name_ref()
-            && let Some(entry) = self
-                .scopes
-                .iter()
-                .rev()
-                .find_map(|scope| scope.symbols.get(root))
-        {
-            return match *entry {
-                ScopeEntry::Local(local) => Symbol::Local(local),
-                ScopeEntry::Static(def) => Symbol::Def(def),
-            };
+    pub(crate) fn declare_tag(
+        &mut self,
+        tag: HIRTagKind,
+        name: &CHLIdent,
+        span: &TokenRange,
+    ) -> CHLResult<(HMIRLocalID, bool)> {
+        let key = (Some(tag), name.clone());
+        if let Some(&ScopeEntry::Local(local)) = self.scopes.last().unwrap().symbols.get(&key) {
+            if self.body.local(local).span() == span {
+                return Ok((local, false));
+            }
+            return log_hir_error(
+                span,
+                &chl_log::catalogue::typecheck::DUPLICATE_ITEM,
+                (
+                    format!("{} '{name}'", tag.prefix()),
+                    "this type expression".into(),
+                ),
+            );
         }
+        let ty = self.type_of_types(span);
+        let local = self.declare(None, ty, true, span);
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .symbols
+            .insert(key, ScopeEntry::Local(local));
+        Ok((local, true))
+    }
 
-        Symbol::Name
+    pub(crate) fn lookup(&self, name: &QualifiedName, tag: Option<HIRTagKind>) -> Symbol {
+        let Some(root) = name.root_name_ref() else {
+            return Symbol::Name;
+        };
+        let key = (tag, root.clone());
+        match self.scopes.iter().rev().find_map(|scope| scope.symbols.get(&key)) {
+            Some(ScopeEntry::Local(local)) => Symbol::Local(*local),
+            Some(ScopeEntry::Static(def)) => Symbol::Def(*def),
+            None => Symbol::Name,
+        }
     }
 
     pub(crate) fn returning_block(&mut self, value: HMIRExprID, span: &TokenRange) -> HMIRExprID {

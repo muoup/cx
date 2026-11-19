@@ -20,7 +20,7 @@ use crate::parse::{
     parser::ParserData,
     types::{
         parse_abstract_type, parse_attributes, parse_initializer, DeclarationAttributes,
-        ParsedSpecifiers,
+        ParsedSpecifiers, TagScope,
     },
 };
 
@@ -65,12 +65,12 @@ pub fn try_function_parse(
         return Ok(None);
     };
 
-    let args = parse_params(data)?;
+    let args = parse_params(data, TagScope::Module)?;
     let return_type = if !data.c_mode
         && matches!(return_type.kind, HIRTypeKind::Auto)
         && try_next!(data.tokens, operator!(Arrow))
     {
-        parse_abstract_type(data)?.add_specifier(return_type.specifiers)
+        parse_abstract_type(data, TagScope::Module)?.add_specifier(return_type.specifiers)
     } else {
         return_type
     };
@@ -222,7 +222,7 @@ pub(crate) struct ParseParamsResult {
     pub(crate) attributes: DeclarationAttributes,
 }
 
-pub(crate) fn parse_params(data: &mut ParserData) -> CHLResult<ParseParamsResult> {
+pub(crate) fn parse_params(data: &mut ParserData, scope: TagScope) -> CHLResult<ParseParamsResult> {
     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
 
     let mut params = Vec::new();
@@ -243,7 +243,7 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CHLResult<ParseParamsResult
 
         let start = data.tokens.index;
         let comptime = try_next!(data.tokens, keyword!(Comptime));
-        let (name, ty, _) = parse_initializer(data)?;
+        let (name, ty, _) = parse_initializer(data, scope)?;
         let range = data.token_range(start, data.tokens.index);
         let default = match try_next!(data.tokens, TokenKind::Assignment(None)) {
             true => {

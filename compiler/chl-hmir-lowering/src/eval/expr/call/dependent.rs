@@ -578,7 +578,7 @@ pub(crate) fn body(
             .zip(types::aggregate(body, definition.root()));
         let value = match aggregate {
             Some((reserved, declared)) => {
-                let ty = types::construct_type(context, body, declared, Some(reserved))?;
+                let ty = types::define_aggregate(context, body, declared, Some(reserved))?;
                 deduce::type_result(context, ty, root.span())?
             }
             None => eval(context, body, definition.root())?,

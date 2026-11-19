@@ -1,6 +1,7 @@
 use chl_hir::ast::types::HIRTagKind;
 use chl_hmir::{
     HMIRBodyContext,
+    body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
@@ -14,9 +15,9 @@ use chl_log::{
 };
 
 use crate::{
-    emit::comptime::int,
+    emit::{comptime::int, storage},
     env::{function::LocalLoweringContext, resolver::demand},
-    eval::{eval_comptime, eval_type, flow, staged, types},
+    eval::{eval_comptime, eval_type, flow, name::type_value, staged, types},
     log::hmir_error,
     value,
 };
@@ -101,26 +102,63 @@ pub(crate) fn construct_type(
     })
 }
 
-// The aggregate 'expr' declares, when it is one
-pub(crate) fn aggregate(body: &HMIRBodyContext, expr: HMIRExprID) -> Option<&HMIRExprType> {
-    let HMIRExprKind::Type(declared) = body.expr(expr).kind() else {
+pub(crate) struct Aggregate<'a> {
+    pub ty: &'a HMIRExprType,
+    binding: Option<HMIRLocalID>,
+}
+
+pub(crate) fn aggregate(body: &HMIRBodyContext, expr: HMIRExprID) -> Option<Aggregate<'_>> {
+    let HMIRExprKind::Type(ty) = body.expr(expr).kind() else {
         return None;
     };
-    let mut declared = declared;
-    if let HMIRExprTypeKind::Strong(inner) = declared.kind() {
-        let HMIRExprKind::Type(inner) = body.expr(*inner).kind() else {
-            return None;
-        };
-        declared = inner;
-    }
+    let (ty, binding) = match ty.kind() {
+        HMIRExprTypeKind::Strong { inner, binding } => {
+            let HMIRExprKind::Type(inner) = body.expr(*inner).kind() else {
+                return None;
+            };
+            (inner, *binding)
+        }
+        _ => (ty, None),
+    };
     matches!(
-        declared.kind(),
+        ty.kind(),
         HMIRExprTypeKind::Struct { .. }
             | HMIRExprTypeKind::Union { .. }
             | HMIRExprTypeKind::TaggedUnion { .. }
             | HMIRExprTypeKind::Undefined(HMIRUndefined::Forward(_))
     )
-    .then_some(declared)
+    .then_some(Aggregate { ty, binding })
+}
+
+pub(crate) fn define_aggregate(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    aggregate: Aggregate<'_>,
+    mut reserved: Option<HMIRTypeID>,
+) -> CHLResult<HMIRTypeID> {
+    if let Some(local) = aggregate.binding {
+        if let Some(ty) = context.get_local(&local).and_then(value::as_type) {
+            return Ok(ty);
+        }
+        let ty = aggregate.ty;
+        let span = ty.decl_span();
+        let reserved = *reserved.get_or_insert_with(|| {
+            let forward = HMIRTypeKind::Undefined(HMIRUndefined::Forward(None));
+            let placeholder = HMIRType::new(
+                forward,
+                Default::default(),
+                span.clone(),
+                ty.debug_name().map(str::to_owned),
+            );
+            context
+                .env_mut()
+                .resolver_mut()
+                .reserve_nominal(placeholder)
+        });
+        let value = type_value(context, reserved, span)?;
+        storage::bind_local(context, local, value);
+    }
+    construct_type(context, body, aggregate.ty, reserved)
 }
 
 // An array bounded by '_' has no type of its own, only one an expected array type completes

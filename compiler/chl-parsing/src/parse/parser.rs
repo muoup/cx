@@ -36,7 +36,6 @@ pub struct ParserData<'a> {
 
     pub ast: HIR,
     pub c_mode: bool,
-    pub(super) type_expression: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -70,18 +69,7 @@ impl<'a> ParserData<'a> {
                 pp_contents.imports.clone(),
             ),
             c_mode,
-            type_expression: false,
         }
-    }
-
-    pub(super) fn in_type_expression<T>(
-        &mut self,
-        parse: impl FnOnce(&mut Self) -> CHLResult<T>,
-    ) -> CHLResult<T> {
-        let previous = std::mem::replace(&mut self.type_expression, true);
-        let result = parse(self);
-        self.type_expression = previous;
-        result
     }
 
     pub fn back(&mut self) -> &mut Self {

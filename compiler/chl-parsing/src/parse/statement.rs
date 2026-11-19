@@ -1,3 +1,4 @@
+use super::types::TagScope;
 use chl_hir::ast::expression::{HIRBlockKind, HIRExprKind, HIRExpression};
 use chl_hir::ast::modifiers::LinkageMode;
 use chl_hir::ast::HIRStmt;
@@ -17,8 +18,8 @@ use crate::{
         functions::try_function_parse,
         parse_block,
         parser::ParserData,
-        try_parse_qualified_name, try_parse_simple_identifier,
-        types::{application_end, is_type_decl, parse_named_declarator, parse_type_base},
+        try_parse_simple_identifier,
+        types::{parse_named_declarator, parse_type_base, starts_type, TypePosition},
     },
     peek_kind, try_next,
 };
@@ -126,32 +127,11 @@ fn parse_labelled_stmt(data: &mut ParserData) -> CHLResult<Box<HIRExpression>> {
 }
 
 fn parse_declaration_or_expr(data: &mut ParserData) -> CHLResult<HIRExpression> {
-    if is_type_decl(data)? && !is_scoped_type_expression(data)? {
+    if starts_type(data, TypePosition::Statement)? {
         parse_declaration_stmt(data)
     } else {
         parse_expr(data)
     }
-}
-
-// 'opt(int)::some(5);' opens with a type but is an expression
-fn is_scoped_type_expression(data: &mut ParserData) -> CHLResult<bool> {
-    let start = data.tokens.index;
-    let Some(name) = try_parse_qualified_name(&mut data.tokens)? else {
-        return Ok(false);
-    };
-    let end = data.tokens.index;
-    data.tokens.index = start;
-
-    if !data.is_generator(&name)? {
-        return Ok(false);
-    }
-
-    Ok(application_end(data, end).is_some_and(|after| {
-        matches!(
-            data.tokens.slice.get(after).map(|token| &token.kind),
-            Some(TokenKind::Operator(OperatorType::ScopeRes))
-        )
-    }))
 }
 
 fn parse_condition(data: &mut ParserData) -> CHLResult<Box<HIRExpression>> {
@@ -283,14 +263,14 @@ pub(crate) fn parse_declaration_stmt(data: &mut ParserData) -> CHLResult<HIRExpr
 
     try_next!(data.tokens, keyword!(Register));
     let mut specifiers = super::types::parse_decl_specifiers(&mut data.tokens);
-    let base_type = parse_type_base(data)?.add_specifier(specifiers.qualifiers);
+    let base_type = parse_type_base(data, TagScope::Module)?.add_specifier(specifiers.qualifiers);
     super::types::parse_attributes(&mut data.tokens, &mut specifiers.attributes);
 
     let mut decls = Vec::new();
     data.change_comma_mode(false);
 
     loop {
-        let (name, ty) = parse_named_declarator(data, base_type.clone())?;
+        let (name, ty) = parse_named_declarator(data, base_type.clone(), TagScope::Module)?;
 
         if let Some(name) = name {
             if data.c_mode || specifiers.linkage == LinkageMode::Extern {

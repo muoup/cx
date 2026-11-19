@@ -530,6 +530,7 @@ impl Display for HIRTypeKind {
             HIRTypeKind::Auto => write!(f, "auto"),
             HIRTypeKind::Staged(inner) => write!(f, "^{inner}"),
             HIRTypeKind::Strong(inner) => write!(f, "@strong {inner}"),
+            HIRTypeKind::ScopedTag(_, inner) => write!(f, "{inner}"),
             HIRTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             HIRTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
             HIRTypeKind::MemoryReference {

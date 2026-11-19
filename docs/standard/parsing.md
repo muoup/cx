@@ -82,7 +82,7 @@ condition = "precondition" ":" "(" expr ")"
 - a declarator followed by `(` is a function; else backtracks to a variable.
 - `A::f` declares an associated function of A; more segments: P0021.
 - trailing `-> T` only when the written return type is `auto` and not C mode; it keeps auto's qualifiers.
-- A body written `= T;` defines a transparent type alias. It requires a `comptime` function returning `type` outside C mode. A named aggregate definition in a type expression is rejected with P0009.
+- A body written `= T;` defines a transparent type alias. It requires a `comptime` function returning `type` outside C mode. A named aggregate in the RHS has a tag local to the RHS and a strong identity per specialization. In ordinary type-value expressions, a named aggregate definition produces P0009.
 - `@strong T` introduces a strong type identity over the abstract type `T`. For example, `typedef @strong int meters;` binds `meters` to that type.
 - `noreturn` attributes, before the type or after the parameters, make the return type `unreachable`.
 - second precondition or postcondition: P0008.
@@ -143,7 +143,7 @@ attrs  = "@nocopy" | "@nodrop" | "@unsafe_move" | "@copy_traits" "(" name ")" { 
 fields = specifiers type-base declarator [":" int-literal] { "," declarator [":" int-literal] } ;
 ```
 
-- named definition: adds a tagged type definition and yields a tag reference to it; anonymous: the type in place.
+- A named definition in a declaration position adds a tagged type definition and yields a tag reference. In a type alias RHS, the tag is visible from its definition through the end of the RHS, including inside its own fields. Anonymous definitions yield the type in place.
 - `rule/quirk-hoisted-aggregate` definitions in declaration positions are added as global statements. This includes declarations inside a function body or nested block.
 - `rule/quirk-union-attributes` plain unions take no attributes.
 - unknown attribute: P0006. Qualified definition name: P0001.

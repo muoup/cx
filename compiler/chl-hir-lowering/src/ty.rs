@@ -63,7 +63,21 @@ fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -
         }
         HIRTypeKind::Universe => return Ok(context.type_of_types(span)),
         HIRTypeKind::Auto => return Ok(context.hole(span)),
-        HIRTypeKind::Strong(inner) => HMIRExprTypeKind::Strong(lower_type(context, inner)?),
+        HIRTypeKind::Strong(inner) => HMIRExprTypeKind::Strong {
+            inner: lower_type(context, inner)?,
+            binding: None,
+        },
+        HIRTypeKind::ScopedTag(tag, ty) => {
+            let name = ty.get_name().expect("a scoped tag has a name");
+            let (local, new) = context.declare_tag(*tag, name, &ty.range)?;
+            if !new {
+                return Ok(context.push(HMIRExprKind::Local(local), span));
+            }
+            HMIRExprTypeKind::Strong {
+                inner: lower_type(context, ty)?,
+                binding: Some(local),
+            }
+        }
         HIRTypeKind::Staged(_) => unreachable!("handled as a staged signature above"),
         HIRTypeKind::ExplicitSizedArray(element, length) => {
             let element = lower_type(context, element)?;

@@ -47,7 +47,13 @@ pub(crate) fn eval(
         HMIRExprKind::Type(ty) if let Some(element) = types::hole_bounded(body, ty) => {
             deduce::hole_bound(context, body, ty, element, span)
         }
-        HMIRExprKind::Type(ty) if let HMIRExprTypeKind::Strong(inner) = ty.kind() => {
+        HMIRExprKind::Type(ty) if let HMIRExprTypeKind::Strong { inner, binding } = ty.kind() => {
+            if binding.is_some() {
+                let aggregate =
+                    types::aggregate(body, id).expect("a scoped tag defines an aggregate");
+                let ty = types::define_aggregate(context, body, aggregate, None)?;
+                return deduce::type_result(context, ty, span);
+            }
             let inner = eval_type(context, body, *inner)?.description()?;
             let span = span.clone();
             inner.and_then(context, body, move |context, _, inner| {

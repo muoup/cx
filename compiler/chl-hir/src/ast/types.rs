@@ -81,6 +81,7 @@ pub enum HIRTypeKind {
     // '^T', code producing a 'T'
     Staged(Box<HIRType>),
     Strong(Box<HIRType>),
+    ScopedTag(HIRTagKind, Box<HIRType>),
 
     ExplicitSizedArray(Box<HIRType>, Box<HIRExpression>),
     ImplicitSizedArray(Box<HIRType>),

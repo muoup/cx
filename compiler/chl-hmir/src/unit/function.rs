@@ -113,7 +113,7 @@ impl HMIRFunction {
                 crate::ty::HMIRExprTypeKind::Nominal { inner, strong_identifier: None } => {
                     operand = *inner;
                 }
-                crate::ty::HMIRExprTypeKind::Strong(_) => return None,
+                crate::ty::HMIRExprTypeKind::Strong { .. } => return None,
                 _ => break,
             }
         }

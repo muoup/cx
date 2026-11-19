@@ -6,7 +6,9 @@ pub(crate) mod alias;
 pub(crate) mod qualify;
 pub(crate) mod query;
 
-pub(crate) use construct::{aggregate, construct_type, hole_bounded, undefined_array};
+pub(crate) use construct::{
+    aggregate, construct_type, define_aggregate, hole_bounded, undefined_array,
+};
 
 use chl_hmir::{
     HMIRBodyContext, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
@@ -398,7 +400,9 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         HMIRTypeKind::Nominal { inner, strong_identifier: Some(id) } => {
             format!("@strong#{} {}", id.0, name(env, *inner))
         }
-        HMIRTypeKind::Nominal { .. } | HMIRTypeKind::Strong(_) => unreachable!("not an underlying type"),
+        HMIRTypeKind::Nominal { .. } | HMIRTypeKind::Strong { .. } => {
+            unreachable!("not an underlying type")
+        }
         HMIRTypeKind::Void => "void".into(),
         HMIRTypeKind::Unreachable => "unreachable".into(),
         HMIRTypeKind::Type => "type".into(),

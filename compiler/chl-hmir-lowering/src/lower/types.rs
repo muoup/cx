@@ -202,7 +202,9 @@ fn lower_underlying(
             let debug_name = env.resolve_type_id(ty).debug_name().map(str::to_string);
             return Ok(lower_named(env, ty, undefined, debug_name));
         }
-        HMIRTypeKind::Nominal { .. } | HMIRTypeKind::Strong(_) => unreachable!("not a representation type"),
+        HMIRTypeKind::Nominal { .. } | HMIRTypeKind::Strong { .. } => {
+            unreachable!("not a representation type")
+        }
 
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
         HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => {

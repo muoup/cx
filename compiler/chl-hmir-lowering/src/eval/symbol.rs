@@ -117,7 +117,7 @@ fn evaluate(context: &mut LocalLoweringContext, id: HMIRDefID) -> CHLResult<HMIR
             if let Some(tag) = declaration.tag()
                 && let Some(declared) = types::aggregate(global.body(), global.initializer()) =>
         {
-            tagged(context, id, declaration, tag, declared)
+            tagged(context, id, declaration, tag, declared.ty)
         }
         HMIRDefKind::Function(function) => function_value(context, id, function, span),
         HMIRDefKind::Global(_) => global_value(context, id, def, declaration),
@@ -134,7 +134,7 @@ fn body(context: &mut LocalLoweringContext, id: HMIRDefID, ty: HMIRTypeID) -> CH
     };
     let declared = types::aggregate(global.body(), global.initializer())
         .expect("a pending type declares an aggregate");
-    types::construct_type(context, global.body(), declared, Some(ty))?;
+    types::define_aggregate(context, global.body(), declared, Some(ty))?;
     Ok(())
 }
 
@@ -289,7 +289,7 @@ fn comptime_value(
         match types::aggregate(body, global.initializer()) {
             Some(declared) => {
                 context.env_mut().resolver_mut().name_type(reserved, symbol_name);
-                types::construct_type(context, body, declared, Some(reserved))
+                types::define_aggregate(context, body, declared, Some(reserved))
             }
             None => flow::top(
                 flow::boundary(eval_type(context, body, global.initializer()))?.description(),

@@ -73,11 +73,33 @@ fn consume_token(data: &mut PreparseData) -> CHLResult<()> {
         }
 
         keyword!(Comptime) => {
-            if let Some((name, kind)) = scan_comptime_type(&data.tokens) {
-                match kind {
-                    ComptimeType::Alias => data.contents.module_symbols.add_type(name, data.visibility_mode),
-                    ComptimeType::Generator => data.contents.module_symbols
-                        .add_generator(name, data.visibility_mode),
+            if let Some((name, kind, rhs)) = scan_comptime_type(&data.tokens) {
+                if let Some(name) = name {
+                    let symbols = &mut data.contents.module_symbols;
+                    match kind {
+                        ComptimeType::Alias => symbols.add_type(name, data.visibility_mode),
+                        ComptimeType::Generator => {
+                            symbols.add_generator(name, data.visibility_mode)
+                        }
+                    }
+                }
+                if let Some(rhs) = rhs {
+                    while data.tokens.index < rhs {
+                        consume_token(data)?;
+                    }
+                    let mut end = data.tokens.with_index(rhs);
+                    scan_boundary(&mut end, 0, |kind| matches!(kind, punctuator!(Semicolon)));
+                    while data.tokens.index < end.index {
+                        let include_marker = matches!(
+                            data.tokens.peek().map(|token| &token.kind),
+                            Some(TokenKind::IncludeBegin | TokenKind::IncludeEnd)
+                        );
+                        if include_marker || !data.include_states.is_empty() {
+                            consume_token(data)?;
+                        } else {
+                            data.tokens.index += 1;
+                        }
+                    }
                 }
             }
         }
@@ -184,55 +206,72 @@ enum ComptimeType {
     Generator,
 }
 
-fn scan_comptime_type(tokens: &TokenIter) -> Option<(CHLIdent, ComptimeType)> {
+fn scan_comptime_type(
+    tokens: &TokenIter,
+) -> Option<(Option<CHLIdent>, ComptimeType, Option<usize>)> {
     let mut tokens = tokens.clone();
     let trailing = match &tokens.next()?.kind {
         intrinsic!(Auto) => true,
         keyword!(Type) => false,
         _ => return None,
     };
-    let identifier!(name) = &tokens.next()?.kind else {
-        return None;
-    };
-    let name = CHLIdent::new(name.as_str());
-    let kind = match &tokens.next()?.kind {
-        punctuator!(OpenParen) => ComptimeType::Generator,
-        punctuator!(Colon) if trailing => ComptimeType::Alias,
-        TokenKind::Assignment(_) if !trailing => return Some((name, ComptimeType::Alias)),
+    let name = try_parse_qualified_name(&mut tokens).ok()??.root_name();
+    match &tokens.next()?.kind {
+        punctuator!(OpenParen) => {}
+        punctuator!(Colon)
+            if trailing
+                && matches!(&tokens.next()?.kind, keyword!(Type))
+                && matches!(&tokens.next()?.kind, TokenKind::Assignment(None)) =>
+        {
+            return Some((name, ComptimeType::Alias, None));
+        }
+        TokenKind::Assignment(None) if !trailing => return Some((name, ComptimeType::Alias, None)),
         _ => return None,
+    }
+
+    let body_start = |kind: &TokenKind| {
+        matches!(
+            kind,
+            punctuator!(Semicolon)
+                | punctuator!(OpenBrace)
+                | punctuator!(ThickArrow)
+                | operator!(Arrow)
+                | TokenKind::Assignment(_)
+        )
     };
-    if !trailing {
-        return Some((name, kind));
-    }
-    if matches!(kind, ComptimeType::Generator) {
-        let mut depth = 1usize;
-        while depth > 0 {
-            match &tokens.next()?.kind {
-                punctuator!(OpenParen) => depth += 1,
-                punctuator!(CloseParen) => depth -= 1,
-                _ => {}
-            }
+    let mut delimiter = scan_boundary(&mut tokens, 1, body_start);
+    if trailing {
+        if !matches!(delimiter, Some(operator!(Arrow)))
+            || !matches!(&tokens.next()?.kind, keyword!(Type))
+        {
+            return None;
         }
-        loop {
-            match &tokens.next()?.kind {
-                punctuator!(OpenParen) => depth += 1,
-                punctuator!(CloseParen) if depth > 0 => depth -= 1,
-                operator!(Arrow) if depth == 0 => break,
-                punctuator!(Semicolon) | punctuator!(OpenBrace) | punctuator!(ThickArrow)
-                    if depth == 0 => return None,
-                _ => {}
+        delimiter = scan_boundary(&mut tokens, 0, body_start);
+    }
+    let rhs = matches!(delimiter, Some(TokenKind::Assignment(None))).then_some(tokens.index);
+    Some((name, ComptimeType::Generator, rhs))
+}
+
+fn scan_boundary<'a>(
+    tokens: &mut TokenIter<'a>,
+    mut depth: usize,
+    stop: impl Fn(&TokenKind) -> bool,
+) -> Option<&'a TokenKind> {
+    while let Some(token) = tokens.next() {
+        if depth == 0 && stop(&token.kind) {
+            return Some(&token.kind);
+        }
+        match token.kind {
+            punctuator!(OpenParen) | punctuator!(OpenBrace) | punctuator!(OpenBracket) => {
+                depth += 1
             }
+            punctuator!(CloseParen) | punctuator!(CloseBrace) | punctuator!(CloseBracket) => {
+                depth = depth.saturating_sub(1);
+            }
+            _ => {}
         }
     }
-    if !matches!(&tokens.next()?.kind, keyword!(Type)) {
-        return None;
-    }
-    if matches!(kind, ComptimeType::Alias)
-        && !matches!(&tokens.next()?.kind, TokenKind::Assignment(_))
-    {
-        return None;
-    }
-    Some((name, kind))
+    None
 }
 
 fn is_extern_c_section_after_access(data: &PreparseData) -> bool {

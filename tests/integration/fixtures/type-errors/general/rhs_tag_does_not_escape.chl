@@ -1,0 +1,5 @@
+comptime type payload(type T) = struct Local { T content; };
+
+int main() {
+    return sizeof(struct Local);
+}

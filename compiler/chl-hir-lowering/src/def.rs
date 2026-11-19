@@ -294,6 +294,6 @@ fn lower_function_body<'a>(
             Ok(context.block(statements, true, false, range))
         }
         HIRFunctionBody::Expression(expr) => lower_expr(context, expr),
-        HIRFunctionBody::TypeAlias(ty) => lower_type(context, ty),
+        HIRFunctionBody::TypeAlias(ty) => context.scoped(|context| lower_type(context, ty)),
     }
 }

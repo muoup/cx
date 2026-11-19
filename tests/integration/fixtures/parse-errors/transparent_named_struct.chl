@@ -1,1 +1,1 @@
-comptime type payload(type T) = struct Payload { T content; };
+comptime type payload(type T) => struct Payload { T content; };

@@ -35,7 +35,7 @@ pub(super) fn key(kind: &HMIRTypeKind, semantics: HMIRTypeSemantics) -> TypeKey 
             key.types.push(*inner);
             key.scalars.extend(strong_identifier.map(|id| id.0));
         }
-        HMIRTypeKind::Strong(_) => unreachable!("an unevaluated strong type has no key"),
+        HMIRTypeKind::Strong { .. } => unreachable!("an unevaluated strong type has no key"),
         HMIRTypeKind::ReferenceTo { inner, bitfield } => {
             key.types.push(*inner);
             if let Some(bitfield) = bitfield {

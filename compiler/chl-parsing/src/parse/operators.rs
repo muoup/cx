@@ -1,3 +1,4 @@
+use super::types::TagScope;
 use crate::parse::ParserData;
 use crate::{log::parse_point_error, next_kind};
 use chl_hir::ast::expression::{HIRBinOp, HIRUnOp};
@@ -7,7 +8,7 @@ use chl_tokens::token::{OperatorType, PunctuatorType, TokenKind};
 use chl_tokens::{operator, punctuator};
 
 use crate::parse::expressions::parse_pattern;
-use crate::parse::types::{is_type_decl, parse_initializer};
+use crate::parse::types::{parse_initializer, starts_type, TypePosition};
 
 #[derive(Debug, Clone)]
 pub(crate) enum PrecOperator {
@@ -90,12 +91,12 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CHLResult<Option<HIRUn
         punctuator!(OpenParen) => {
             let pre_index = data.tokens.index - 1;
 
-            if !is_type_decl(data)? {
+            if !starts_type(data, TypePosition::Expression)? {
                 data.tokens.index = pre_index;
                 return Ok(None);
             }
 
-            let Some((None, ty, _)) = parse_initializer(data).ok() else {
+            let Some((None, ty, _)) = parse_initializer(data, TagScope::Module).ok() else {
                 data.tokens.index = pre_index;
                 return Ok(None);
             };

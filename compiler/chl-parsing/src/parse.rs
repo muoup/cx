@@ -24,6 +24,7 @@ use crate::{
         statement::parse_stmt,
         types::{
             parse_abstract_type, parse_base_mods, parse_initializer, parse_typedef_initializer,
+            TagScope,
         },
     },
     peek_next_kind, try_next,
@@ -302,7 +303,7 @@ fn parse_global_expr(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
 
 fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
     let start = data.tokens.index - usize::from(comptime);
-    let (name, return_type, specifiers) = parse_initializer(data)?;
+    let (name, return_type, specifiers) = parse_initializer(data, TagScope::Module)?;
     let range = data.token_range(start, data.tokens.index);
     let linkage = specifiers.linkage;
     let symbol_naming = data.naming(linkage);
@@ -387,7 +388,8 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CHLResult<
 
             loop {
                 let next_start = data.tokens.index;
-                let (next_name, next_type) = parse_base_mods(data, return_type.clone())?;
+                let (next_name, next_type) =
+                    parse_base_mods(data, return_type.clone(), TagScope::Module)?;
                 let next_range = data.token_range(next_start, data.tokens.index);
                 let Some(next_name) = next_name else {
                     return parse_point_error(
@@ -531,7 +533,7 @@ fn parse_function_body(
         && matches!(prototype.return_type.kind, HIRTypeKind::Universe)
         && try_next!(data.tokens, TokenKind::Assignment(None))
     {
-        let ty = data.in_type_expression(parse_abstract_type)?;
+        let ty = parse_abstract_type(data, TagScope::Alias)?;
         assert_token_matches!(data.tokens, punctuator!(Semicolon), "';' after type alias");
         return Ok(HIRFunctionBody::TypeAlias(ty));
     }

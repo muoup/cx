@@ -4,6 +4,7 @@ pub mod intrinsic;
 
 use crate::{
     HMIRFnSignature,
+    body::HMIRLocalID,
     expr::HMIRExprID,
     ty::{
         aggregate::{
@@ -55,7 +56,7 @@ pub enum HMIRGenericTypeKind<T, L> {
     Undefined(HMIRUndefined<T>),
     Builtin { name: String, size: usize, alignment: usize }, // A complete type whose structure only intrinsics interpret
     Nominal { inner: T, strong_identifier: Option<NominalID> },
-    Strong(T),
+    Strong { inner: T, binding: Option<HMIRLocalID> },
 
     // U_1
     Type,
@@ -186,7 +187,10 @@ impl<T, L> HMIRGenericTypeKind<T, L> {
                 inner: ty(state, inner)?,
                 strong_identifier: *strong_identifier,
             },
-            Self::Strong(inner) => HMIRGenericTypeKind::Strong(ty(state, inner)?),
+            Self::Strong { inner, binding } => HMIRGenericTypeKind::Strong {
+                inner: ty(state, inner)?,
+                binding: *binding,
+            },
             Self::Array {
                 element,
                 length: declared,
