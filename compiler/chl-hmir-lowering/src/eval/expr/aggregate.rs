@@ -93,7 +93,7 @@ pub(crate) fn eval_member(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let mut value = eval(context, body, base)?
         .ready()
-        .and_then(|value| coerce::aggregate(context, value, &span).map_err(EvalExit::from))?;
+        .and_then(|value| coerce::aggregate(context, value, span).map_err(EvalExit::from))?;
 
     let Some(aggregate_type) = context.env().reference_inner(value.ty()) else {
         unreachable!("coerce::aggregate did not return a reference type")

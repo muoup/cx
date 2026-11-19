@@ -9,7 +9,7 @@ use crate::{
 };
 
 thread_local! {
-    static NEXT_BODY: Cell<u32> = Cell::new(0);
+    static NEXT_BODY: Cell<u32> = const { Cell::new(0) };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
