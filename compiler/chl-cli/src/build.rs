@@ -69,7 +69,7 @@ pub(crate) fn run_project(args: RunArgs) -> CHLResult<ExitCode> {
 pub fn build_project(args: BuildArgs, topic: Topic) -> CHLResult<Vec<PathBuf>> {
     let project = load(topic)?;
     let selected = match args.targets.is_empty() {
-        true => project.executables(),
+        true => project.selectable().collect(),
         false => args
             .targets
             .iter()
@@ -77,7 +77,7 @@ pub fn build_project(args: BuildArgs, topic: Topic) -> CHLResult<Vec<PathBuf>> {
             .collect::<CHLResult<Vec<_>>>()?,
     };
     if selected.is_empty() {
-        return Err(error("the project has no executables to build", Some(topic)));
+        return Err(error("the project has no targets to build", Some(topic)));
     }
     build(&project, args, &selected)
 }

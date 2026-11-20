@@ -24,7 +24,7 @@ pub struct FfiLibArtifact {
     pub links: Vec<LinkEntry>,
 }
 
-/// Builds `targets` (every executable when empty) of the project at `root` into `temp_dir`.
+/// Builds `targets` (all root package targets when empty) of the project at `root` into `temp_dir`.
 pub fn build_project(
     root: &Path,
     targets: &[String],
@@ -68,7 +68,7 @@ fn build(
         .ok_or_else(|| invalid(format!("unknown profile '{name}'")))?
         .clone();
     let selected = match targets.is_empty() {
-        true => project.executables(),
+        true => project.selectable().collect(),
         false => targets
             .iter()
             .map(|target| project.target(target).ok_or_else(|| invalid(format!("unknown target '{target}'"))))
