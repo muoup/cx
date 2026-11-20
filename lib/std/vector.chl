@@ -71,7 +71,11 @@ usize vector::length(comptime type T = _, vector(T)& this)
 void vector::push(comptime type T = _, vector(T)& this, T object) {
     if (this.length == this.capacity) {
         this.capacity = this.capacity * 2 + 1;
-        this.data = realloc(this.data, this.capacity * sizeof(T));
+
+        void* buffer = malloc(this.capacity * sizeof(T));
+        memcpy(buffer, this.data, this.length * sizeof(T));
+        free(this.data);
+        this.data = buffer;
     }
 
     this.data[this.length] = move object;
