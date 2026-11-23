@@ -1,5 +1,6 @@
 extern "C":
 #include <stdlib.h>
+#include <string.h>
 
 public:
 
@@ -13,7 +14,8 @@ box(T) box::new(comptime type T = _, T value) safe {
         box(T) b = (box(T)) {
             .ptr = malloc(sizeof(T))
         };
-        *(b.ptr) = move value;
+        memcpy(b.ptr, &value, sizeof(T));
+        @leak(value);
         return (move b);
     };
 }

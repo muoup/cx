@@ -1,41 +1,73 @@
 #include <stdlib.h>
+#include <string.h>
 
-import std::optional as std;
-import std::io as std;
+import std::{optional, io, math} as std;
 
 public:
 
 comptime type raw_allocation = struct : @nodrop { void* data; usize size; };
 
 comptime type fn_alloc = fn(^usize) -> ^raw_allocation;
+comptime type fn_realloc = fn(^raw_allocation, ^usize) -> ^raw_allocation;
 comptime type fn_free = fn(^raw_allocation) -> ^void;
 
 comptime type allocator = struct : @comptime {
     fn_alloc allocate;
     fn_free deallocate;
+
+    std::opt(fn_realloc) realloc;
 };
 comptime type allocation(comptime allocator A) = @strong raw_allocation;
 
-comptime allocator alloc::new_allocator(fn_alloc A, fn_free F)
-    => { .allocate = A, .deallocate = F };
+comptime allocator allocator::new(fn_alloc A, fn_free F, std::opt(fn_realloc) R = _::none())
+    => { .allocate = A, .deallocate = F, .realloc = R };
 
-auto allocate(comptime allocator A, usize len) -> allocation(A) {
-    return (allocation(A)) A.allocate(emit len);
+auto allocate(comptime allocator A, usize len) -> allocation(A)
+    => (allocation(A)) A.allocate(emit len);
+
+void deallocate(comptime allocator A = _, allocation(A) alloc)
+    => A.deallocate(emit (raw_allocation) move alloc);
+
+comptime auto reallocate(comptime allocator A, ^allocation(A) alloc, ^usize new_size) -> ^allocation(A)
+    => match (A.realloc) {
+        some(auto& R) => emit (allocation(A)) R(emit (raw_allocation) alloc, new_size),
+        none() => reallocate_fallback(A, alloc, new_size),
+    };
+
+void reallocate_inplace(comptime allocator A, allocation(A)& alloc, usize new_size) {
+    auto old_alloc = @adopt(alloc);
+    auto new_alloc = reallocate(A, emit move old_alloc, emit new_size);
+    alloc = move new_alloc;
 }
 
-void deallocate(comptime allocator A = _, allocation(A) alloc) {
-    A.deallocate(emit { .data = alloc.data, .size = alloc.size });
-    @leak(alloc);
-}
-    
-comptime auto heap_allocator : allocator = alloc::new_allocator(alloc::malloc, alloc::free);
+comptime auto reallocate_fallback(comptime allocator A, ^allocation(A) alloc, ^usize new_size) -> ^allocation(A)
+    => emit .{
+        auto old_alloc = alloc;
+        auto buffer = allocate(A, new_size);
+        memcpy(buffer.data, old_alloc.data, std::min(buffer.size, old_alloc.size));
 
-raw_allocation alloc::malloc(usize size) {
+        move old_alloc |> deallocate();
+        yield move buffer;
+    };
+
+comptime allocator heap_allocator = allocator::new(
+    heap_allocator::allocate,
+    heap_allocator::deallocate,
+    .R = _::some(heap_allocator::reallocate)
+);
+
+raw_allocation heap_allocator::allocate(usize size) {
     void* data = malloc(size);
     return { data, size };
 }
 
-void alloc::free(raw_allocation alloc) {
+raw_allocation heap_allocator::reallocate(raw_allocation alloc, usize new_size) {
+    alloc.data = realloc(alloc.data, new_size);
+    alloc.size = new_size;
+    return move alloc;
+}
+
+void heap_allocator::deallocate(raw_allocation alloc) {
     free(alloc.data);
     @leak(alloc);
 }

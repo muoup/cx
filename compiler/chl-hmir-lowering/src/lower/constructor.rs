@@ -32,7 +32,7 @@ pub(crate) fn lower(
         Some(payload) => {
             let param = runtime::storage::parameter(&mut context, payload, None, &span)?;
             let moved = emit::storage::lift(&mut context, &param, &span)?;
-            emit::storage::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span);
+            emit::storage::invalidate(&mut context, &param, MIRInvalidationKind::Move, &span)?;
             Some(moved)
         }
         None => None,

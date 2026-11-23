@@ -215,6 +215,7 @@ fn bind_arm(
         true => subject.clone().with_ty(types::reference(context.env_mut(), ty, None, span)),
         false => subject.clone(),
     };
+    
     let consumes = match pattern {
         HMIRPattern::Binding(local) => pattern::bind(context, body, *local, source, owned, span)?,
         HMIRPattern::Variant { inner, .. } => {
@@ -229,9 +230,11 @@ fn bind_arm(
         }
         _ => false,
     };
+    
     if owned && consumes {
-        emit::storage::invalidate(context, subject, MIRInvalidationKind::Move, span);
+        emit::storage::invalidate(context, subject, MIRInvalidationKind::Move, span)?;
     }
+    
     Ok(())
 }
 
@@ -274,7 +277,7 @@ fn lower_arms(
     let span = state.span.clone();
     let result = flow::finally(context, body, result, move |context, _, _| {
         if let Some(source) = source {
-            emit::storage::invalidate(context, &source, MIRInvalidationKind::Drop, &span);
+            emit::storage::invalidate(context, &source, MIRInvalidationKind::Drop, &span)?;
         }
         Ok(())
     });

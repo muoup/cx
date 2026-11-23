@@ -56,7 +56,7 @@ pub(crate) fn eval_assign(
         None => eval(context, body, value)?.complete(context, body, Some(inner))?,
     };
     let value = coerce::implicit::standard(context, value, inner, span)?;
-    emit::storage::invalidate(context, &target, MIRInvalidationKind::Drop, span);
+    
     emit::storage::initialize(context, &target, Some(&value), span)?;
     Ok(Evaluation::Ready(target))
 }
@@ -121,7 +121,7 @@ fn eval_move(
         require_nonsafe(context, span, "move of a type declared as @unsafe_move")?;
     }
     let moved = emit::storage::lift(context, &binding, span)?;
-    emit::storage::invalidate(context, &binding, MIRInvalidationKind::Move, span);
+    emit::storage::invalidate(context, &binding, MIRInvalidationKind::Move, span)?;
     Ok(Evaluation::Ready(moved))
 }
 
@@ -141,7 +141,7 @@ fn eval_leak(
         return Ok(Evaluation::Ready(value));
     }
 
-    emit::storage::invalidate(context, &value, MIRInvalidationKind::Leak, span);
+    emit::storage::invalidate(context, &value, MIRInvalidationKind::Leak, span)?;
     Ok(Evaluation::Ready(value::unit(context.env())))
 }
 

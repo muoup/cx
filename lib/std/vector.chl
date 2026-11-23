@@ -148,9 +148,5 @@ void try_realloc(comptime type T = _, comptime std::allocator A = _, vector(T, A
     if (this.length < this.capacity) return;
  
     this.capacity *= 2;
-    auto buffer = std::allocate(A, this.capacity * sizeof(T));
-    memcpy(buffer.data, this.alloc.data, this.length * sizeof(T)); 
-
-    std::swap(buffer, this.alloc);
-    move buffer |> std::deallocate();
+    std::reallocate_inplace(A, this.alloc, this.capacity * sizeof(T));
 }

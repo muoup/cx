@@ -144,30 +144,31 @@ pub fn parameter(
         unreachable!("a parameter is allocated as a place")
     };
     context.runtime_mut().builder_mut().add_parameter(place);
-    initialize(context, &target, span);
+    initialize(context, target, span);
 
     Ok(target)
 }
 
-pub fn initialize(context: &mut LocalLoweringContext, target: &HMIRValue, span: &TokenRange) {
-    if let Some(place) = place(context, target) {
-        context
-            .runtime_mut()
-            .emit(MIRInstructionKind::Initialize { place }, span.clone());
-    }
+pub fn initialize(context: &mut LocalLoweringContext, target: HMIRPlaceID, span: &TokenRange) {
+    let place = context.runtime().place(target);
+
+    context
+        .runtime_mut()
+        .emit(MIRInstructionKind::Initialize { place }, span.clone());
 }
 
 pub fn invalidate(
     context: &mut LocalLoweringContext,
-    target: &HMIRValue,
+    target: HMIRPlaceID,
     kind: MIRInvalidationKind,
     span: &TokenRange,
-) {
-    if let Some(place) = place(context, target) {
-        context
-            .runtime_mut()
-            .emit(MIRInstructionKind::Invalidate { place, kind }, span.clone());
-    }
+) -> CHLResult<()> {
+    let place = context.runtime().place(target);
+    context
+        .runtime_mut()
+        .emit(MIRInstructionKind::Invalidate { place, kind }, span.clone());
+    
+    Ok(())
 }
 
 pub fn lift(

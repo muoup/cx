@@ -1,0 +1,8 @@
+struct Resource : @nodrop { int value; };
+
+int main() {
+    Resource resource = { 1 };
+    resource = (Resource) { 2 };
+    @leak(resource);
+    return 0;
+}

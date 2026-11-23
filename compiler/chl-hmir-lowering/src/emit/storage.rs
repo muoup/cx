@@ -8,7 +8,7 @@ use chl_util::identifier::CHLIdent;
 use crate::{
     emit::{comptime, runtime, unsupported},
     env::function::{FnContext, LocalLoweringContext},
-    value::{HMIRValue, HMIRValueKind},
+    value::{HMIRValue, HMIRValueKind, place::HMIRPlaceID},
 };
 
 pub fn require_live(
@@ -75,7 +75,9 @@ pub fn adopt(
 // Binds a local to an existing value; the value is not copied, moved or consumed, and the local is not marked
 pub fn bind_local(context: &mut LocalLoweringContext, local: HMIRLocalID, value: HMIRValue) {
     if context.is_runtime() {
-        context.env_mut().record_type(HMIRTypeSubject::Local(local), &value);
+        context
+            .env_mut()
+            .record_type(HMIRTypeSubject::Local(local), &value);
     }
     match context.context_mut() {
         FnContext::Runtime(context) => context.scopes_mut().bind(local, value),
@@ -128,31 +130,26 @@ pub fn write(
 // were never written stay unreadable
 pub fn initialize(
     context: &mut LocalLoweringContext,
-    target: &HMIRValue,
-    value: Option<&HMIRValue>,
+    target: HMIRPlaceID,
     span: &TokenRange,
 ) -> CHLResult<()> {
-    if let Some(value) = value {
-        write(context, target, value, span)?;
-    }
     match context.context() {
         FnContext::Runtime(_) => runtime::storage::initialize(context, target, span),
-        FnContext::Comptime(_) => comptime::storage::initialize(context, target, span),
+        FnContext::Comptime(_) => comptime::storage::initialize(context, target),
     }
+
     Ok(())
 }
 
 // Ends the liveness of the place a reference names as a move, drop or leak; storage behind a pointer is untracked.
-// Comptime records this on the concrete slot only: there is no flow analysis over it and a dropped nodrop value is
-// not reported
 pub fn invalidate(
     context: &mut LocalLoweringContext,
-    target: &HMIRValue,
+    target: HMIRPlaceID,
     kind: MIRInvalidationKind,
     span: &TokenRange,
-) {
+) -> CHLResult<()> {
     match context.context() {
         FnContext::Runtime(_) => runtime::storage::invalidate(context, target, kind, span),
-        FnContext::Comptime(_) => comptime::storage::invalidate(context, target, kind, span),
+        FnContext::Comptime(_) => comptime::storage::invalidate(context, target, kind),
     }
 }

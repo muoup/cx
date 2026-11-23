@@ -1,0 +1,33 @@
+/* CHL-STDOUT: 2 3 */
+#include <stdio.h>
+
+struct Resource : @nodrop { int value; };
+
+comptime int replace_local() {
+    Resource resource;
+    resource = (Resource) { 1 };
+    Resource old = move resource;
+    resource = (Resource) { old.value + 1 };
+    int value = resource.value;
+    @leak(old);
+    @leak(resource);
+    return value;
+}
+
+void replace_adopted(Resource& borrowed) {
+    auto resource = @adopt(borrowed);
+    Resource old = move resource;
+    resource = (Resource) { old.value + 1 };
+    @leak(old);
+    @leak(resource);
+}
+
+int main() {
+    Resource resource;
+    resource = (Resource) { replace_local() };
+    printf("%d ", resource.value);
+    replace_adopted(resource);
+    printf("%d\n", resource.value);
+    @leak(resource);
+    return 0;
+}

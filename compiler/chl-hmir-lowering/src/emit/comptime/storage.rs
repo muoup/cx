@@ -180,32 +180,28 @@ fn is_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
         && !context.env().is_pointer(value.ty())
 }
 
-fn mark(
-    context: &mut LocalLoweringContext,
-    target: &HMIRValue,
-    state: ComptimeSlotState,
-    span: &TokenRange,
-) {
-    if let Ok(Some(place)) = tracked(context, target, span)
-        && let Some(slot) = context.comptime_mut().slot_mut(place)
-    {
-        slot.set_state(state);
-    }
-}
-
-pub fn initialize(context: &mut LocalLoweringContext, target: &HMIRValue, span: &TokenRange) {
-    mark(context, target, ComptimeSlotState::Live, span);
+pub fn initialize(context: &mut LocalLoweringContext, target: HMIRPlaceID) {
+    context.comptime_mut()
+        .slot_mut(target)
+        .unwrap()
+        .set_state(ComptimeSlotState::Live);
 }
 
 pub fn invalidate(
     context: &mut LocalLoweringContext,
-    target: &HMIRValue,
-    kind: MIRInvalidationKind,
-    span: &TokenRange,
-) {
+    target: HMIRPlaceID,
+    kind: MIRInvalidationKind
+) -> CHLResult<()> {
     let state = match kind {
         MIRInvalidationKind::Drop => ComptimeSlotState::Uninitialized,
         MIRInvalidationKind::Move | MIRInvalidationKind::Leak => ComptimeSlotState::Invalidated,
     };
-    mark(context, target, state, span);
+    
+    context
+        .comptime_mut()
+        .slot_mut(target)
+        .expect("a tracked place has a slot")
+        .set_state(state);
+    
+    Ok(())
 }
