@@ -64,7 +64,7 @@ fn tracked(
     Ok(whole.then_some(place))
 }
 
-fn live(
+pub(in crate::emit) fn live(
     context: &LocalLoweringContext,
     place: HMIRPlaceID,
     writing: bool,

@@ -434,6 +434,10 @@ fn write_instruction<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match &instruction.kind {
+        MIRInstructionKind::RequireLive { place } => {
+            f.write_str("require_live ")?;
+            write_place_name(f, unit, function, *place)
+        }
         MIRInstructionKind::Initialize { place } => {
             f.write_str("initialize ")?;
             write_place_name(f, unit, function, *place)

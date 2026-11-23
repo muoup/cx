@@ -270,6 +270,7 @@ pub(crate) fn eval_address_of(
                 if context.is_runtime() && !types::runtime_function(context.env(), inner) {
                     types::require_runtime(context.env(), inner, span)?;
                 }
+                emit::storage::require_live(context, &value, span)?;
                 let ty = types::pointer(context.env_mut(), inner, span);
                 value.with_ty(ty)
             }

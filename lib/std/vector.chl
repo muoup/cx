@@ -1,40 +1,43 @@
-import std::{span, optional, panic} as std;
+//import std::{allocation, span, optional, panic, memory} as std;
+import std::{allocation, panic, memory} as std;
 
 extern "C":
 
 #include <stdlib.h>
 #include <string.h>
 
+comptime usize initialization_size = 4;
+
 public:
 
 comptime bool valid_vector_inner(comptime type T) => !@type.is_reference(T) && !@type.is_const(T);
 
-comptime type vector(comptime type T)
+comptime type vector(comptime type T, comptime std::allocator A)
 where
     pre: (@unsafe(valid_vector_inner(T)))
     => struct : @nodrop {
-        T* data;
+        std::allocation(A) alloc;
         usize length;
         usize capacity;
     };
 
-vector(T) vector::new(comptime type T) {
-    return (vector(T)) {
-        .data = malloc(4 * sizeof(T)),
+vector(T, A) vector::new(comptime type T, comptime std::allocator A = std::heap_allocator) {
+    return {
+        .alloc = std::allocate(A, initialization_size * sizeof(T)),
         .length = 0,
-        .capacity = 4
+        .capacity = initialization_size,
     };
 }
 
-vector(T) vector::with_capacity(comptime type T, usize capacity) {
-    return (vector(T)) {
-        .data = malloc(capacity * sizeof(T)),
+vector(T) vector::with_capacity(comptime type T, comptime std::allocator A = std::heap_allocator, usize capacity) {
+    return (vector(T, A)) {
+        .data = std::allocate(A, capacity * sizeof(T)),
         .length = 0,
         .capacity = capacity
     };
 }
 
-vector(T) vector::from_data(comptime type T = _, T* data, usize length) {
+vector(T) vector::from_data(comptime type T = _, std::allocation(_) data, usize length) {
     return (vector(T)) {
         .data = data,
         .length = length,
@@ -42,66 +45,78 @@ vector(T) vector::from_data(comptime type T = _, T* data, usize length) {
     };
 }
 
-void vector::drop(comptime type T = _, vector(T) this) 
+void vector::drop(comptime type T = _, comptime std::allocator A = _, vector(T, A) this)
 where
     pre: (!@type.is_nodrop(T))
 {
-    @unsafe {
-        free(this.data);
-        @leak(this);
+    @unpack(move this) {
+        alloc: alloc
+    };
+
+    move alloc |> std::deallocate();
+}
+
+void vector::drop_with(comptime type T = _, vector(T, _) this, comptime fn destructor(^T) -> ^void) {
+    auto owned = this;
+    
+    for (usize i = 0; i < owned.length; i++) {
+        T value = @adopt(owned.data[i]);
+        move value |> destructor();
+    }
+
+    @unpack(move this) {
+        data: data
+    };
+
+    move data |> std::deallocate();
+}
+
+//usize vector::length(vector(_)& this) => this.length;
+
+void vector::push(
+    comptime type T = _, comptime std::allocator A = _, 
+    vector(T, A)& this, 
+    T object
+) {
+    try_realloc(this);
+    memcpy((T*) this.alloc.data + this.length++, &object, sizeof(T));
+    @leak(object);
+}
+
+//std::opt(T) vector::pop(comptime type T = _, vector(T)& this) {
+//    if (this.length == 0) return std::optional::opt(T)::none();
+//
+//    T buffer;
+//    T* data_ptr = &this.data[this.length - 1];
+//    memcpy(&buffer, data_ptr, sizeof(T));
+// 
+//    this.length--;
+//    return _::some(move buffer);
+//}
+
+vector(U, A) vector::reinterpret(comptime type A = _, comptime type U, vector(_, A) this) {
+    @unpack(move this) {
+        data: data,
+        length: length,
+        capacity: capacity
+    };
+    
+    return (vector(U)) {
+        .data = data,
+        .length = length,
+        .capacity = capacity
     };
 }
 
-comptime ^void vector::drop_with(type T = _, ^vector(T) this, fn destructor(^T) -> ^void)
-    => emit .{
-        vector(T) owned = this;
-        
-        for (usize i = 0; i < owned.length; i++) {
-            T value = @adopt(owned.data[i]);
-            move value |> destructor();
-        }
+//std::opt(T&) vector::get(comptime type T = _, vector(T)& this, usize index) {
+//    if (index >= this.length) {
+//        return _::none();
+//    }
+//
+//    return _::some(this.data[index]);
+//}
 
-        free(owned.data);
-        @leak(owned);
-    };
-
-usize vector::length(comptime type T = _, vector(T)& this)
-    => this.length;
-
-void vector::push(comptime type T = _, vector(T)& this, T object) {
-    if (this.length == this.capacity) {
-        this.capacity = this.capacity * 2 + 1;
-
-        void* buffer = malloc(this.capacity * sizeof(T));
-        memcpy(buffer, this.data, this.length * sizeof(T));
-        free(this.data);
-        this.data = buffer;
-    }
-
-    this.data[this.length] = move object;
-    this.length++;
-}
-
-std::opt(T) vector::pop(comptime type T = _, vector(T)& this) {
-    if (this.length == 0) return std::optional::opt(T)::none();
-
-    T buffer;
-    T* data_ptr = &this.data[this.length - 1];
-    memcpy(&buffer, data_ptr, sizeof(T));
- 
-    this.length--;
-    return _::some(move buffer);
-}
-
-std::opt(T&) vector::get(comptime type T = _, vector(T)& this, usize index) {
-    if (index >= this.length) {
-        return _::none();
-    }
-
-    return _::some(this.data[index]);
-}
-
-T& vector::at(comptime type T = _, vector(T)& this, usize index) {
+T& vector::at(comptime type T = _, comptime std::allocator A = _, vector(T, A)& this, usize index) {
     // REVIEW: It would be nicer if this could just be a vector::get + an expect, but that doesn't current seem possible
     // due to reference collapse rules. We can't seem to consistently unwrap an opt(T&)
 
@@ -109,20 +124,33 @@ T& vector::at(comptime type T = _, vector(T)& this, usize index) {
         std::panic("Attempted to index out of vector bounds");
     }
 
-    return this.data[index];
+    return ((T*) this.alloc.data)[index];
 }
 
-std::span(T) vector::span(comptime type T = _, vector(T)& this)
-    => std::span::new(this.data, this.length);
+//std::span(T) vector::span(comptime type T = _, vector(T)& this)
+//    => std::span::new(this.data, this.length);
+//
+//vector(@type.unqualify(T)) vector::from_span(comptime type T = _, std::span(T) this) 
+//where
+//    pre: (!@type.is_unsafe_move(T))
+//{
+//    const usize length = this |> std::span::length();
+//    auto vector = vector::with_capacity(@type.unqualify(T), length);
+//    
+//    vector.length = length;
+//    memcpy(vector.data, this.data, sizeof(T) * length);
+//    return move vector;
+//}
 
-vector(@type.unqualify(T)) vector::from_span(comptime type T = _, std::span(T) this) 
-where
-    pre: (!@type.is_unsafe_move(T))
-{
-    const usize length = this |> std::span::length();
-    auto vector = vector::with_capacity(@type.unqualify(T), length);
-    
-    vector.length = length;
-    memcpy(vector.data, this.data, sizeof(T) * length);
-    return move vector;
+private:
+
+void try_realloc(comptime type T = _, comptime std::allocator A = _, vector(T, A)& this) {
+    if (this.length < this.capacity) return;
+ 
+    this.capacity *= 2;
+    auto buffer = std::allocate(A, this.capacity * sizeof(T));
+    memcpy(buffer.data, this.alloc.data, this.length * sizeof(T)); 
+
+    std::swap(buffer, this.alloc);
+    move buffer |> std::deallocate();
 }

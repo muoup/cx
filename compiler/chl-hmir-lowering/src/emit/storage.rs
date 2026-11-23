@@ -1,6 +1,6 @@
 use chl_hmir::{body::HMIRLocalID, ty::HMIRTypeID};
 use chl_log::CHLResult;
-use chl_mir::expr::instruction::MIRInvalidationKind;
+use chl_mir::expr::instruction::{MIRInstructionKind, MIRInvalidationKind};
 use chl_pipeline_data::hmir::facts::HMIRTypeSubject;
 use chl_tokens::TokenRange;
 use chl_util::identifier::CHLIdent;
@@ -8,8 +8,27 @@ use chl_util::identifier::CHLIdent;
 use crate::{
     emit::{comptime, runtime, unsupported},
     env::function::{FnContext, LocalLoweringContext},
-    value::HMIRValue,
+    value::{HMIRValue, HMIRValueKind},
 };
+
+pub fn require_live(
+    context: &mut LocalLoweringContext,
+    value: &HMIRValue,
+    span: &TokenRange,
+) -> CHLResult<()> {
+    let HMIRValueKind::Reference(address) = value.kind() else {
+        return Ok(());
+    };
+    let place = *address.base();
+    if context.is_comptime() {
+        return comptime::storage::live(context, place, false, span);
+    }
+    let place = context.runtime().place(place);
+    context
+        .runtime_mut()
+        .emit(MIRInstructionKind::RequireLive { place }, span.clone());
+    Ok(())
+}
 
 // Fresh, uninitialized storage of type 'ty' declared in the current scope, referenced as 'ty&'; it carries the drop
 // obligations of its type once initialized, and binds no local

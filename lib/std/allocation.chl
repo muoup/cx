@@ -1,0 +1,41 @@
+#include <stdlib.h>
+
+import std::optional as std;
+import std::io as std;
+
+public:
+
+comptime type raw_allocation = struct : @nodrop { void* data; usize size; };
+
+comptime type fn_alloc = fn(^usize) -> ^raw_allocation;
+comptime type fn_free = fn(^raw_allocation) -> ^void;
+
+comptime type allocator = struct : @comptime {
+    fn_alloc allocate;
+    fn_free deallocate;
+};
+comptime type allocation(comptime allocator A) = @strong raw_allocation;
+
+comptime allocator alloc::new_allocator(fn_alloc A, fn_free F)
+    => { .allocate = A, .deallocate = F };
+
+auto allocate(comptime allocator A, usize len) -> allocation(A) {
+    return (allocation(A)) A.allocate(emit len);
+}
+
+void deallocate(comptime allocator A = _, allocation(A) alloc) {
+    A.deallocate(emit { .data = alloc.data, .size = alloc.size });
+    @leak(alloc);
+}
+    
+comptime auto heap_allocator : allocator = alloc::new_allocator(alloc::malloc, alloc::free);
+
+raw_allocation alloc::malloc(usize size) {
+    void* data = malloc(size);
+    return { data, size };
+}
+
+void alloc::free(raw_allocation alloc) {
+    free(alloc.data);
+    @leak(alloc);
+}

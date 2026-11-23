@@ -94,8 +94,6 @@ pub fn value(
     })
 }
 
-// The address of a place of this frame at the type of 'value', which is a pointer that leaves the place untouched
-// or a reference that uses it
 pub(super) fn local(
     context: &mut LocalLoweringContext,
     value: &HMIRValue,

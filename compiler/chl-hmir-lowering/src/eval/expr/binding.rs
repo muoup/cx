@@ -139,8 +139,7 @@ pub(crate) fn eval_let(
     let initialized = storage.is_some()
         && declared
             .known()
-            .is_some_and(|ty| !context.env().is_nocopy(*ty))
-        && context.is_runtime();
+            .is_some_and(|ty| !context.env().is_nocopy(*ty));
     if initialized && let Some(storage) = &storage {
         emit::storage::initialize(context, storage, None, span)?;
     }

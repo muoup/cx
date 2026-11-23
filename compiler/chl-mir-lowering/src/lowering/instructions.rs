@@ -16,7 +16,8 @@ pub(super) fn lower_instruction(
     instruction: &MIRInstruction,
 ) {
     match &instruction.kind {
-        MIRInstructionKind::Initialize { .. }
+        MIRInstructionKind::RequireLive { .. }
+        | MIRInstructionKind::Initialize { .. }
         | MIRInstructionKind::Invalidate { .. }
         | MIRInstructionKind::BindLifetime { .. } => {}
         MIRInstructionKind::Lift { out, source, .. } => lifts::lower(context, *out, source),

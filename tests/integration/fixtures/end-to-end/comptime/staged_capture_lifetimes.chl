@@ -57,8 +57,10 @@ int main() {
     printf("returned %d\n", with_cleanup());
     Pair a = {10, 10};
     Pair b = {10, 12};
-    int left = take(move a, value ? rewrite(&a) : 0);
-    int right = take(move b, value && rewrite(&b));
+    Pair* a_address = &a;
+    Pair* b_address = &b;
+    int left = take(move a, value ? rewrite(a_address) : 0);
+    int right = take(move b, value && rewrite(b_address));
     printf("snapshot %d %d\n", left, right);
     ^int code = emit lib::value();
     int imported = code;

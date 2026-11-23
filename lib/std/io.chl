@@ -1,4 +1,4 @@
-import std::span as std;
+//import std::span as std;
 
 #include <stdio.h>
 
@@ -30,6 +30,6 @@ void print_char(i32 c) {
 ///
 /// Writes the provided ASCII character span to stdout
 ///
-void print_span(const std::span(char) data_str) {
-    fwrite(data_str |> std::span::data(), data_str |> std::span::length(), 1, stdout); 
-}
+//void print_span(const std::span(char) data_str) {
+//    fwrite(data_str |> std::span::data(), data_str |> std::span::length(), 1, stdout); 
+//}

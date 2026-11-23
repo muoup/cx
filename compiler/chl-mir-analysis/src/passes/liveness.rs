@@ -1,9 +1,8 @@
 use chl_log::{CHLMaybeRawResult, CHLResult, catalogue::analysis};
 use chl_mir::{
-    MIRBasicBlockID, MIRBindable, MIRBody, MIRInstruction, MIRInstructionKind,
-    MIRInternalIntrinsic, MIRIntrinsic, MIRPlaceID, MIRRegisterID, MIRTarget, MIRTypeKind,
+    MIRBasicBlockID, MIRBindable, MIRBody, MIRInstruction, MIRInstructionKind, MIRPlaceID,
+    MIRRegisterID, MIRTarget,
     expr::{instruction::MIRInvalidationKind, visit::visit_bindable_uses},
-    ty::interface::MTRegistry,
 };
 use chl_tokens::TokenRange;
 
@@ -129,22 +128,6 @@ impl Liveness {
     }
 }
 
-// A pointer may be taken to storage in any state, but a reference to a place uses it
-fn raw_address(env: &AnalysisEnvironment, kind: &MIRInstructionKind) -> bool {
-    let MIRInstructionKind::IntrinsicOp(MIRIntrinsic::Internal(
-        MIRInternalIntrinsic::PlaceAddress {
-            out: MIRTarget::Register(out),
-            ..
-        },
-    )) = kind
-    else {
-        return false;
-    };
-    let ty = env.body().register(*out).ty();
-    let kind = env.unit().types().definition(ty).map(|ty| ty.kind());
-    !matches!(kind, Some(MIRTypeKind::MemoryReference { .. }))
-}
-
 impl AnalysisPass for Liveness {
     fn function_entry(&mut self, env: &AnalysisEnvironment) -> CHLResult<()> {
         let body = env.body();
@@ -163,13 +146,11 @@ impl AnalysisPass for Liveness {
         instruction: &MIRInstruction,
     ) -> CHLResult<()> {
         let mut unavailable = None;
-        if !raw_address(env, &instruction.kind) {
-            visit_bindable_uses(&instruction.kind, |bindable| {
-                if unavailable.is_none() && !self.available(env, &bindable) {
-                    unavailable = Some(bindable);
-                }
-            });
-        }
+        visit_bindable_uses(&instruction.kind, |bindable| {
+            if unavailable.is_none() && !self.available(env, &bindable) {
+                unavailable = Some(bindable);
+            }
+        });
         if let Some(bindable) = unavailable {
             self.require_available(env, &bindable, "was used", &instruction.token_range)?;
         }

@@ -133,6 +133,7 @@ fn address(
     pointee: HMIRTypeID,
     span: &TokenRange,
 ) -> CHLResult<Coercion> {
+    emit::storage::require_live(context, &value, span)?;
     let pointer = types::pointer(context.env_mut(), pointee, span);
     Ok(Coercion::Applied(value.with_ty(pointer)))
 }

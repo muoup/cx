@@ -67,6 +67,15 @@ where
     return memcmp(first |> span::data(), second |> span::data(), sizeof(T) * span::length(first)) == 0;
 }
 
+bool span::starts_with(comptime type T = _, comptime type U = _, span(T) string, span(U) prefix)
+where
+    pre: (@type.equal(@type.unqualify(T), @type.unqualify(U)))
+{
+    if (span::length(string) < span::length(prefix)) return false;
+    
+    return memcmp(string |> span::data(), prefix |> span::data(), sizeof(T) * span::length(prefix)) == 0;
+}
+    
 span(U) span::reinterpret(comptime type T = _, comptime type U = _, span(T) this) {
     return span::new(.T = U, (U*) this.data, this.length * sizeof(T) / sizeof(U));
 }

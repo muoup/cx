@@ -1,0 +1,15 @@
+#include <string.h>
+
+public:
+
+void swap(comptime type T = _, comptime type U = _, T& val1, U& val2)
+where
+    pre: (@type.equal(@type.unqualify(T), @type.unqualify(U)))
+{
+    if (&val1 == &val2) return;
+
+    u8 buffer[sizeof(T)];
+    memcpy(buffer, &val1, sizeof(T));
+    memcpy(&val1, &val2, sizeof(T));
+    memcpy(&val2, &buffer, sizeof(T));
+}

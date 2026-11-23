@@ -1,0 +1,22 @@
+#include <stdio.h>
+import std::memory as std;
+
+struct Resource : @nodrop {
+    int value;
+};
+
+int main() {
+    int a = 1;
+    int b = 2;
+    std::swap(a, b);
+    printf("%d %d\n", a, b);
+
+    Resource first = { .value = 3 };
+    Resource second = { .value = 7 };
+    std::swap(first, second);
+    std::swap(second, second);
+    printf("%d %d\n", first.value, second.value);
+    @leak(first);
+    @leak(second);
+    return 0;
+}

@@ -74,14 +74,12 @@ const _str& string::as_str(const string& this) {
     return @unsafe((const _str&) this.data);
 }
 
-std::span(u8) string::as_ascii(string& this)
+std::span(char) string::as_ascii(string& this)
     => std::span::new(this.data, this.length);
 
-std::vector(u8) string::into_ascii(string this) {
+std::vector(char) string::into_ascii(string this) {
     auto result = std::vector::from_data(this.data, this.length);
- 
     @leak(this);
- 
     return move result;
 }
 
@@ -145,7 +143,7 @@ usize str::length(const _str& this) {
     return strlen(this);
 }
 
-std::span(char) str::as_bytes(_str& this) {
+std::span(u8) str::as_bytes(_str& this) {
     usize len = str::length(this);
 
     return std::span::new(.T = char, (char*) this, len);
