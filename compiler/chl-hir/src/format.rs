@@ -8,7 +8,7 @@ use crate::ast::{
     function::{HIRFunctionBody, HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
     pattern::{HIRBindingMode, HIRPattern},
-    types::{HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
+    types::{HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
     HIRDefinition, HIRStmt, HIR,
 };
 
@@ -561,31 +561,19 @@ impl Display for HIRTypeKind {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                let mut attrs = Vec::new();
-
-                match attributes.semantics {
-                    HIRMoveSemantics::POD => {}
-                    HIRMoveSemantics::Nocopy => attrs.push("@nocopy"),
-                    HIRMoveSemantics::Nodrop => attrs.push("@nodrop"),
-                }
-                if attributes.unsafe_move {
-                    attrs.push("@unsafe_move");
-                }
-
-                let attr_str = if attrs.is_empty() {
-                    String::new()
-                } else {
-                    format!(" : {}", attrs.join(", "))
-                };
                 write!(
                     f,
                     "struct {}{} {{ {} }}",
                     name.as_ref().map(|n| n.as_str()).unwrap_or("__anonymous__"),
-                    attr_str,
+                    aggregate_attributes(attributes),
                     fields_str
                 )
             }
-            HIRTypeKind::Union { name, fields } => {
+            HIRTypeKind::Union {
+                name,
+                fields,
+                attributes,
+            } => {
                 let fields_str = fields
                     .iter()
                     .map(|field| match field {
@@ -607,8 +595,9 @@ impl Display for HIRTypeKind {
                     .join(", ");
                 write!(
                     f,
-                    "union {} {{ {} }}",
+                    "union {}{} {{ {} }}",
                     name.as_ref().map(|n| n.as_str()).unwrap_or(""),
+                    aggregate_attributes(attributes),
                     fields_str
                 )
             }
@@ -627,29 +616,36 @@ impl Display for HIRTypeKind {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                let mut attrs = Vec::new();
-                match attributes.semantics {
-                    HIRMoveSemantics::POD => {}
-                    HIRMoveSemantics::Nocopy => attrs.push("@nocopy"),
-                    HIRMoveSemantics::Nodrop => attrs.push("@nodrop"),
-                }
-                if attributes.unsafe_move {
-                    attrs.push("@unsafe_move");
-                }
                 write!(
                     f,
                     "union class {}{} {{ {variants_str} }}",
                     name.as_ref().map(|n| n.as_str()).unwrap_or("__anonymous__"),
-                    if attrs.is_empty() {
-                        "".to_string()
-                    } else {
-                        format!(" : {}", attrs.join(", "))
-                    }
+                    aggregate_attributes(attributes)
                 )
             }
             HIRTypeKind::Function { prototype, c_form: true } => write!(f, "Function({prototype})"),
             HIRTypeKind::Function { prototype, c_form: false } => write!(f, "fn({prototype})"),
         }
+    }
+}
+
+fn aggregate_attributes(attributes: &HIRAggregateAttributes) -> String {
+    let mut attrs = Vec::new();
+    match attributes.semantics {
+        HIRMoveSemantics::POD => {}
+        HIRMoveSemantics::Nocopy => attrs.push("@nocopy"),
+        HIRMoveSemantics::Nodrop => attrs.push("@nodrop"),
+    }
+    if attributes.unsafe_move {
+        attrs.push("@unsafe_move");
+    }
+    if attributes.comptime {
+        attrs.push("@comptime");
+    }
+    if attrs.is_empty() {
+        String::new()
+    } else {
+        format!(" : {}", attrs.join(", "))
     }
 }
 

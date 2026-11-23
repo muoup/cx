@@ -265,29 +265,11 @@ pub(crate) fn eval_address_of(
 
     Ok(Evaluation::Ready(
         match context.env().resolve_kind(value.ty()) {
-            HMIRTypeKind::ReferenceTo { inner, .. }
-                if context.env().is_function(*inner)
-                    && types::comptime_only(context.env(), *inner) =>
-            {
-                return Err(hmir_error(
-                    span,
-                    &typecheck::COMPTIME_ONLY_TYPE,
-                    "take the address of".into(),
-                )
-                .into());
-            }
-
-            HMIRTypeKind::ReferenceTo { inner, bitfield } => {
-                if bitfield.is_some() {
-                    return Err(hmir_error(
-                        span,
-                        &typecheck::BITFIELD_REFERENCE,
-                        "take the address of".into(),
-                    )
-                    .into());
-                }
-
+            HMIRTypeKind::ReferenceTo { inner, .. } => {
                 let inner = *inner;
+                if context.is_runtime() && !types::runtime_function(context.env(), inner) {
+                    types::require_runtime(context.env(), inner, span)?;
+                }
                 let ty = types::pointer(context.env_mut(), inner, span);
                 value.with_ty(ty)
             }
@@ -330,6 +312,9 @@ pub(crate) fn dereference(
         let kind = (types::name(context.env(), pointer.ty()), "a pointer".into());
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
     };
+    if context.is_runtime() && !types::runtime_function(context.env(), inner) {
+        types::require_runtime(context.env(), inner, span)?;
+    }
 
     require_nonsafe(context, span, "dereferencing a pointer")?;
     null_check(context, base.unwrap_or(&pointer), span)?;

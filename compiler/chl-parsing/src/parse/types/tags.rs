@@ -40,6 +40,7 @@ fn parse_type_attributes(
                 "nocopy" => attributes.semantics = HIRMoveSemantics::Nocopy,
                 "nodrop" => attributes.semantics = HIRMoveSemantics::Nodrop,
                 "unsafe_move" => attributes.unsafe_move = true,
+                "comptime" => attributes.comptime = true,
                 "copy_traits" => {
                     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                     assert_token_matches!(
@@ -182,7 +183,7 @@ pub(super) fn parse_tag(data: &mut ParserData, scope: TagScope) -> CHLResult<HIR
     let header = data.token_range(start, data.tokens.index);
     let label = if tagged { "enum union" } else { tag.prefix() };
     
-    let attributes = if tag == HIRTagKind::Struct || tagged {
+    let attributes = if tag != HIRTagKind::Enum {
         parse_type_attributes(data, label)?
     } else {
         HIRAggregateAttributes::default()
@@ -277,6 +278,7 @@ pub(super) fn parse_tag(data: &mut ParserData, scope: TagScope) -> CHLResult<HIR
         } else {
             HIRTypeKind::Union {
                 name: name.clone(),
+                attributes,
                 fields,
             }
         }

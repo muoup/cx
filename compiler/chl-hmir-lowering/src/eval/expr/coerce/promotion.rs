@@ -19,11 +19,20 @@ use crate::{
 
 pub(crate) fn std_rvalue(
     context: &mut LocalLoweringContext,
+    value: HMIRValue,
+    span: &TokenRange,
+) -> CHLResult<HMIRValue> {
+    rvalue(context, value, false, span)
+}
+
+fn rvalue(
+    context: &mut LocalLoweringContext,
     mut value: HMIRValue,
+    decay_comptime_arrays: bool,
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
     loop {
-        match step(context, value, span)? {
+        match step(context, value, decay_comptime_arrays, span)? {
             Coercion::Applied(promoted) => value = promoted,
             Coercion::Unapplied(value) => return Ok(value),
         }
@@ -36,7 +45,7 @@ pub(crate) fn operand(
     value: HMIRValue,
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
-    let value = std_rvalue(context, value, span)?;
+    let value = rvalue(context, value, true, span)?;
     match function_pointer(context, value, span)? {
         Coercion::Applied(value) | Coercion::Unapplied(value) => Ok(value),
     }
@@ -50,7 +59,7 @@ pub(crate) fn function_pointer(
 ) -> CHLResult<Coercion> {
     let env = context.env();
     match env.reference_inner(value.ty()) {
-        Some(function) if env.is_function(function) && !types::comptime_only(env, function) => {
+        Some(function) if env.is_function(function) && types::runtime_function(env, function) => {
             address(context, value, function, span)
         }
         _ => Ok(Coercion::Unapplied(value)),
@@ -60,6 +69,7 @@ pub(crate) fn function_pointer(
 pub(crate) fn step(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
+    decay_comptime_arrays: bool,
     span: &TokenRange,
 ) -> CHLResult<Coercion> {
     let env = context.env();
@@ -80,7 +90,9 @@ pub(crate) fn step(
         }
         HMIRTypeKind::Str(_)
         | HMIRTypeKind::Array { .. }
-        | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) if !strong => {
+        | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })
+            if !strong && (decay_comptime_arrays || !types::comptime_only(env, subject)) =>
+        {
             let element =
                 types::element(context, subject, span).expect("an array has an element type");
             let value = match context.env().is_reference(value.ty()) {
@@ -90,7 +102,7 @@ pub(crate) fn step(
             address(context, value, element, span)
         }
         HMIRTypeKind::Function { .. }
-            if subject != value.ty() && types::comptime_only(env, subject) =>
+            if subject != value.ty() && !types::runtime_function(env, subject) =>
         {
             function(context, value, subject, span).map(Coercion::Applied)
         }
@@ -103,7 +115,7 @@ pub(crate) fn step(
 }
 
 // A comptime function read through its reference: a definition is the function itself, storage holds one
-fn function(
+pub(super) fn function(
     context: &mut LocalLoweringContext,
     value: HMIRValue,
     subject: HMIRTypeID,

@@ -1,3 +1,4 @@
+mod access;
 mod codec;
 
 use rustc_hash::FxHashMap;
@@ -5,14 +6,14 @@ use std::{cell::RefCell, collections::BTreeMap, fmt, ops::Range, rc::Rc};
 
 use chl_hmir::{
     HMIRDefID,
-    ty::{HMIRTypeID, HMIRTypeKind, aggregate::HMIRBitfield, context::HMIRTypeContext},
+    ty::{HMIRTypeID, aggregate::HMIRBitfield},
 };
 use chl_log::{CHLResult, catalogue::mir, error::CHLError};
 use chl_tokens::TokenRange;
 
 use crate::{
     env::function::LocalLoweringContext,
-    eval::symbol,
+    eval::{symbol, types},
     log::hmir_error,
     lower::declaration,
     value::{
@@ -23,7 +24,7 @@ use crate::{
     },
 };
 
-pub(crate) use codec::{field_offset, layout, placement};
+pub(crate) use codec::{layout, member_layout};
 
 // Comptime storage is kept in pages, each place a region of one. Globals and literals read at comptime live in the
 // static page, which is never released
@@ -48,11 +49,13 @@ struct Image {
     bytes: Vec<u8>,
     init: Vec<bool>,
     cells: BTreeMap<usize, Cell>,
+    storage_type: Option<HMIRTypeID>,
 }
 
 #[derive(Debug, Clone)]
 struct Cell {
     size: usize,
+    opaque_type: Option<HMIRTypeID>,
     value: HMIRValueKind,
 }
 
@@ -85,7 +88,7 @@ impl Fault {
             ),
             Self::Uninitialized => "reading uninitialized bytes".into(),
             Self::Fragment => "reading part of a stored address".into(),
-            Self::Opaque => "reading a stored address as plain bytes".into(),
+            Self::Opaque => "accessing an opaque value through an incompatible type".into(),
             Self::Forged => "reading plain bytes as an address".into(),
             Self::Discriminant => "reading an invalid tagged union discriminant".into(),
             Self::Nested => "reading an address of comptime storage as part of a value".into(),
@@ -100,6 +103,7 @@ impl Image {
             bytes: vec![0; size],
             init: vec![true; size],
             cells: BTreeMap::new(),
+            storage_type: None,
         }
     }
 
@@ -108,6 +112,7 @@ impl Image {
             bytes: vec![0; size],
             init: vec![false; size],
             cells: BTreeMap::new(),
+            storage_type: None,
         }
     }
 
@@ -137,15 +142,31 @@ impl Image {
         self.bytes[offset..offset + bytes.len()].copy_from_slice(bytes);
     }
 
-    fn cell(&self, offset: usize, size: usize) -> Option<&HMIRValueKind> {
-        self.cells
-            .get(&offset)
-            .filter(|cell| cell.size == size)
-            .map(|cell| &cell.value)
+    fn cell(
+        &self,
+        offset: usize,
+        size: usize,
+        opaque_type: Option<HMIRTypeID>,
+    ) -> Option<&HMIRValueKind> {
+        let cell = self.cells.get(&offset)?;
+        (cell.size == size && cell.opaque_type == opaque_type).then_some(&cell.value)
     }
 
-    fn put_cell(&mut self, offset: usize, size: usize, value: HMIRValueKind) {
-        self.cells.insert(offset, Cell { size, value });
+    fn put_cell(
+        &mut self,
+        offset: usize,
+        size: usize,
+        opaque_type: Option<HMIRTypeID>,
+        value: HMIRValueKind,
+    ) {
+        self.cells.insert(
+            offset,
+            Cell {
+                size,
+                opaque_type,
+                value,
+            },
+        );
     }
 
     fn slice(&self, range: Range<usize>) -> Result<Image, Fault> {
@@ -160,6 +181,7 @@ impl Image {
             bytes: self.bytes[range.clone()].to_vec(),
             init: self.init[range].to_vec(),
             cells,
+            storage_type: None,
         })
     }
 
@@ -286,7 +308,8 @@ impl fmt::Debug for Page {
 impl LocalLoweringContext<'_, '_, '_> {
     pub(crate) fn allocate(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CHLResult<HMIRPlaceID> {
         let size = layout(self.env_mut(), ty, span)?.size();
-        let image = Image::uninitialized(size);
+        let mut image = Image::uninitialized(size);
+        image.storage_type = types::comptime_only(self.env(), ty).then_some(ty);
         let page = self.comptime().page();
         Ok(self.memory.borrow_mut().allocate(page, image))
     }
@@ -336,11 +359,11 @@ impl LocalLoweringContext<'_, '_, '_> {
         bitfield: Option<HMIRBitfield>,
         span: &TokenRange,
     ) -> CHLResult<HMIRValueKind> {
-        let size = layout(self.env_mut(), ty, span)?.size();
+        let (location, size, bitfield) = self.access(location, ty, bitfield, span)?;
         let image = self
             .memory
             .borrow()
-            .load(location, size)
+            .load(&location, size)
             .map_err(|fault| fault.error(span))?;
         match bitfield {
             Some(bitfield) => codec::extract(self.env(), ty, &image, bitfield, span),
@@ -356,13 +379,13 @@ impl LocalLoweringContext<'_, '_, '_> {
         bitfield: Option<HMIRBitfield>,
         span: &TokenRange,
     ) -> CHLResult<()> {
+        let (location, size, bitfield) = self.access(location, ty, bitfield, span)?;
         let image = match bitfield {
             Some(bitfield) => {
-                let size = layout(self.env_mut(), ty, span)?.size();
                 let unit = self
                     .memory
                     .borrow()
-                    .load(location, size)
+                    .load(&location, size)
                     .map_err(|fault| fault.error(span))?;
                 codec::insert(&unit, value, bitfield)
             }
@@ -370,7 +393,7 @@ impl LocalLoweringContext<'_, '_, '_> {
         };
         self.memory
             .borrow_mut()
-            .store(location, &image)
+            .store(&location, &image)
             .map_err(|fault| fault.error(span))
     }
 
@@ -381,12 +404,62 @@ impl LocalLoweringContext<'_, '_, '_> {
         ty: HMIRTypeID,
         span: &TokenRange,
     ) -> CHLResult<()> {
-        let size = layout(self.env_mut(), ty, span)?.size();
+        let (_, size, _) = self.access(source, ty, None, span)?;
+        self.access(target, ty, None, span)?;
         let mut memory = self.memory.borrow_mut();
         memory
             .load(source, size)
             .and_then(|image| memory.store(target, &image))
             .map_err(|fault| fault.error(span))
+    }
+
+    fn access(
+        &mut self,
+        location: &HMIRAddress<HMIRPlaceID>,
+        ty: HMIRTypeID,
+        bitfield: Option<HMIRBitfield>,
+        span: &TokenRange,
+    ) -> CHLResult<(HMIRAddress<HMIRPlaceID>, usize, Option<HMIRBitfield>)> {
+        let (location, size, bitfield) = match bitfield {
+            Some(bitfield) => {
+                let (window, field) = codec::bitfield_window(bitfield);
+                let location = location
+                    .offset_by(window.start as i64)
+                    .ok_or_else(|| hmir_error(span, &mir::COMPTIME_POINTER_OVERFLOW, ()))?;
+                (location, window.len(), Some(field))
+            }
+            None => (
+                location.clone(),
+                layout(self.env_mut(), ty, span)?.size(),
+                None,
+            ),
+        };
+        if size == 0 {
+            return Ok((location, size, bitfield));
+        }
+        let owner = self
+            .memory
+            .borrow()
+            .region(*location.base())
+            .map_err(|fault| fault.error(span))?
+            .storage_type;
+        let comptime_only = types::comptime_only(self.env(), ty);
+        let allowed = match owner {
+            Some(owner) => {
+                let range = self
+                    .memory
+                    .borrow()
+                    .range(*location.base(), location.offset(), size)
+                    .map_err(|fault| fault.error(span))?;
+                let (declared, overlaps) =
+                    access::inspect(self.env_mut(), owner, 0, ty, &range, span)?;
+                declared || (!comptime_only && !overlaps)
+            }
+            None => !comptime_only,
+        };
+        allowed
+            .then_some((location, size, bitfield))
+            .ok_or_else(|| Fault::Opaque.error(span))
     }
 
     // The variant the tagged union of type 'ty' at 'location' holds
@@ -396,16 +469,13 @@ impl LocalLoweringContext<'_, '_, '_> {
         ty: HMIRTypeID,
         span: &TokenRange,
     ) -> CHLResult<usize> {
-        let HMIRTypeKind::TaggedUnion { fields } = self.env().resolve_kind(ty).clone() else {
-            unreachable!("only a tagged union holds a variant")
-        };
-        let size = layout(self.env_mut(), ty, span)?.size();
+        let (_, size, _) = self.access(location, ty, None, span)?;
         let image = self
             .memory
             .borrow()
             .load(location, size)
             .map_err(|fault| fault.error(span))?;
-        codec::discriminant(self.env_mut(), &fields, &image, 0, span)
+        codec::discriminant(self.env_mut(), ty, &image, 0, span)
     }
 
     fn global(&mut self, def: HMIRDefID, span: &TokenRange) -> CHLResult<HMIRPlaceID> {
@@ -413,7 +483,9 @@ impl LocalLoweringContext<'_, '_, '_> {
             return Ok(*region);
         }
         let value = symbol::initialize(self, def)?;
-        let image = codec::encode(self.env_mut(), value.ty(), value.kind(), span)?;
+        let ty = value.ty();
+        let mut image = codec::encode(self.env_mut(), ty, value.kind(), span)?;
+        image.storage_type = types::comptime_only(self.env(), ty).then_some(ty);
         let mut memory = self.memory.borrow_mut();
         let region = memory.allocate(STATICS, image);
         memory.globals.insert(def, region);

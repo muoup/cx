@@ -1572,7 +1572,7 @@ void f() {
 dotted intrinsics
 ==================
 int main() {
-    return @int.add(@copy(x), 1) + @type.size_of(int);
+    return @int.add(@copy(x), 1) + @type.c_sizeof(int);
 }
 ---
 

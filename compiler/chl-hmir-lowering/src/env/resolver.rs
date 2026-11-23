@@ -263,6 +263,7 @@ impl HMIRResolver {
             constant: full.constant && !own.constant,
             volatile: full.volatile && !own.volatile,
             unsafe_move: full.unsafe_move && !own.unsafe_move,
+            comptime: full.comptime && !own.comptime,
             move_semantics: match full.move_semantics > own.move_semantics {
                 true => full.move_semantics,
                 false => HMIRMoveSemantics::POD,

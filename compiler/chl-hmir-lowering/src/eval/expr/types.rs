@@ -1,6 +1,7 @@
 mod construct;
 mod flexible;
 mod layout;
+mod properties;
 
 pub(crate) mod alias;
 pub(crate) mod qualify;
@@ -10,8 +11,10 @@ pub(crate) use construct::{
     aggregate, construct_type, define_aggregate, hole_bounded, undefined_array,
 };
 
+pub(crate) use properties::{comptime_only, opaque_slot, require_runtime, runtime_function};
+
 use chl_hmir::{
-    HMIRBodyContext, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
+    HMIRBodyContext, HMIRFnSignature, HMIRFunction,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
@@ -140,10 +143,14 @@ pub(crate) fn parameter(
             );
             return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind));
         }
-        HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }) => {
+        HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })
+            if !comptime_only(context.env(), ty) =>
+        {
             element(context, ty, span).unwrap()
         }
-        HMIRTypeKind::Function { decays: false, .. } if !comptime_only(context.env(), ty) => {
+        HMIRTypeKind::Function { decays: false, .. }
+            if !comptime && runtime_function(context.env(), ty) =>
+        {
             let requirement = (
                 "a function parameter".into(),
                 "an explicit 'fn*' or 'fn&'".into(),
@@ -151,7 +158,7 @@ pub(crate) fn parameter(
             );
             return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
         }
-        HMIRTypeKind::Function { .. } if !comptime_only(context.env(), ty) => ty,
+        HMIRTypeKind::Function { .. } if !comptime && runtime_function(context.env(), ty) => ty,
         _ => return Ok(ty),
     };
 
@@ -375,23 +382,6 @@ pub(crate) fn bitfield(env: &HMIREnvironment, reference: HMIRTypeID) -> Option<H
     }
 }
 
-pub(crate) fn comptime_only(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
-    match env.resolve_kind(ty) {
-        HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => true,
-        HMIRTypeKind::ReferenceTo { inner, .. } => comptime_only(env, *inner),
-
-        HMIRTypeKind::Function { signature, .. } => {
-            signature.stage() == HMIRFunctionStage::Comptime
-                || signature
-                    .params()
-                    .iter()
-                    .any(|param| param.comptime() || comptime_only(env, *param.ty()))
-                || comptime_only(env, *signature.return_type())
-        }
-        _ => false,
-    }
-}
-
 pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
     let constant = env.semantics(ty).constant;
     let ty = env.resolve_type_id(env.underlying(ty));
@@ -443,7 +433,20 @@ pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
         HMIRTypeKind::Struct { .. } => "struct".into(),
         HMIRTypeKind::Union { .. } => "union".into(),
         HMIRTypeKind::TaggedUnion { .. } => "enum union".into(),
-        HMIRTypeKind::Function { .. } => "function".into(),
+        HMIRTypeKind::Function { signature, .. } => {
+            let mut s = String::new();
+
+            if signature.params().is_empty() {
+                s.push_str("() -> ");
+            }
+            
+            for a in signature.params().iter() {
+                s.push_str(format!("{} -> ", name(env, *a.ty())).as_str());
+            }
+
+            s.push_str(name(env, *signature.return_type()).as_str());
+            s
+        },
         HMIRTypeKind::Dependent => "_".into(),
     };
     match constant {

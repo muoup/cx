@@ -1,20 +1,18 @@
 use chl_hmir::ty::{
-    HMIRTypeID, HMIRTypeKind,
-    aggregate::{HMIRBitfield, HMIRFieldDef},
+    HMIRTypeID, HMIRTypeKind, HMIRUndefined,
+    aggregate::HMIRBitfield,
     context::HMIRTypeContext,
     intrinsic::{HMIRFloatWidth, HMIRIntType},
 };
 use chl_log::{CHLResult, catalogue::mir};
-use chl_mir::ty::layout::{
-    MIRFieldLayout, MIRTypeLayout, calculate_field_layouts, calculate_type_layout,
-};
+use chl_mir::ty::layout::{MIRFieldLayout, MIRTypeLayout, calculate_type_layout, layout_fields};
 use chl_tokens::TokenRange;
 use chl_util::unsafe_float::FloatWrapper;
 
 use super::{Fault, Image};
 use crate::{
     emit::comptime::int,
-    env::HMIREnvironment,
+    env::{HMIREnvironment, resolver::demand},
     eval::types,
     log::hmir_error,
     lower::types::lower_type,
@@ -26,14 +24,8 @@ pub(crate) fn layout(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CHLResult<MIRTypeLayout> {
-    match *env.resolve_kind(ty) {
-        _ if types::comptime_only(env, ty) => {
-            let architecture = env.architecture();
-            Ok(MIRTypeLayout::new(
-                architecture.pointer_size(),
-                architecture.pointer_alignment(),
-            ))
-        }
+    demand::force(env, ty)?;
+    match env.resolve_kind(ty).clone() {
         HMIRTypeKind::Array { element, length } => {
             let element = layout(env, element, span)?;
             let size = usize::try_from(length)
@@ -47,6 +39,21 @@ pub(crate) fn layout(
             &mir::COMPTIME_INVALID_OPERATION,
             format!("storage of the incomplete type '{}'", types::name(env, ty)),
         )),
+        _ if types::opaque_slot(env, ty) => Ok(MIRTypeLayout::new(1, 1)),
+        HMIRTypeKind::Struct { .. }
+        | HMIRTypeKind::Union { .. }
+        | HMIRTypeKind::TaggedUnion { .. }
+            if types::comptime_only(env, ty) =>
+        {
+            let (_, payload) = record_layout(env, ty, span)?;
+            Ok(
+                if matches!(env.resolve_kind(ty), HMIRTypeKind::TaggedUnion { .. }) {
+                    payload.with_tag()
+                } else {
+                    payload
+                },
+            )
+        }
         _ => {
             let lowered = lower_type(env, ty, span)?;
             Ok(calculate_type_layout(env.module(), lowered))
@@ -54,58 +61,73 @@ pub(crate) fn layout(
     }
 }
 
-fn fields(
+pub(super) fn record_layout(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
     span: &TokenRange,
-) -> CHLResult<Vec<MIRFieldLayout>> {
-    let lowered = lower_type(env, ty, span)?;
-    Ok(calculate_field_layouts(env.module(), lowered).expect("an aggregate has field layouts"))
+) -> CHLResult<(Vec<MIRFieldLayout<HMIRTypeID>>, MIRTypeLayout)> {
+    let kind = env.resolve_kind(ty).clone();
+    let (fields, is_union) = match kind {
+        HMIRTypeKind::Struct { fields } => (fields, false),
+        HMIRTypeKind::Union { fields } | HMIRTypeKind::TaggedUnion { fields } => (fields, true),
+        _ => unreachable!("only records have field layouts"),
+    };
+    let mut input = Vec::with_capacity(fields.len());
+    for field in fields {
+        let ty = *field.ty();
+        let storage = match *env.resolve_kind(ty) {
+            HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
+                MIRTypeLayout::new(0, layout(env, element, span)?.alignment())
+            }
+            _ => layout(env, ty, span)?,
+        };
+        input.push((
+            ty,
+            storage,
+            field
+                .bit_width()
+                .map(|width| (width, field.name().is_some())),
+        ));
+    }
+    Ok(layout_fields(input.into_iter(), is_union))
 }
 
-pub(crate) fn field_offset(
+pub(crate) fn member_layout(
     env: &mut HMIREnvironment,
     ty: HMIRTypeID,
     index: usize,
     span: &TokenRange,
-) -> CHLResult<usize> {
-    match env.resolve_kind(ty) {
-        HMIRTypeKind::Struct { .. } => Ok(fields(env, ty, span)?.swap_remove(index).offset()),
+) -> CHLResult<(usize, Option<HMIRBitfield>)> {
+    match *env.resolve_kind(ty) {
+        HMIRTypeKind::Struct { .. } | HMIRTypeKind::Union { .. } => {
+            let field = record_layout(env, ty, span)?.0[index];
+            let bitfield = match field {
+                MIRFieldLayout::Bitfield {
+                    bit_offset: offset,
+                    bit_width: width,
+                    ..
+                } => Some(HMIRBitfield { offset, width }),
+                _ => None,
+            };
+            Ok((field.offset(), bitfield))
+        }
         HMIRTypeKind::Array { element, .. } => {
-            let element = *element;
-            Ok(index * layout(env, element, span)?.size())
+            Ok((index * layout(env, element, span)?.size(), None))
         }
-        _ => Ok(0),
+        _ => Ok((0, None)),
     }
 }
 
-pub(crate) fn placement(
-    env: &mut HMIREnvironment,
-    ty: HMIRTypeID,
-    index: usize,
-    span: &TokenRange,
-) -> CHLResult<Option<HMIRBitfield>> {
-    let declared = match env.resolve_kind(ty) {
-        HMIRTypeKind::Struct { fields } | HMIRTypeKind::Union { fields } => {
-            fields.get(index).and_then(HMIRFieldDef::bit_width)
-        }
-        _ => None,
-    };
-    if declared.is_none() {
-        return Ok(None);
-    }
-    let MIRFieldLayout::Bitfield {
-        bit_offset,
-        bit_width,
-        ..
-    } = fields(env, ty, span)?.swap_remove(index)
-    else {
-        unreachable!("a declared bitfield is laid out as one")
-    };
-    Ok(Some(HMIRBitfield {
-        offset: bit_offset,
-        width: bit_width,
-    }))
+pub(super) fn bitfield_window(bitfield: HMIRBitfield) -> (std::ops::Range<usize>, HMIRBitfield) {
+    let start = bitfield.offset / 8;
+    let end = (bitfield.offset + bitfield.width).div_ceil(8);
+    (
+        start..end,
+        HMIRBitfield {
+            offset: bitfield.offset % 8,
+            ..bitfield
+        },
+    )
 }
 
 pub(super) fn extract(
@@ -132,29 +154,16 @@ pub(super) fn insert(unit: &Image, value: &HMIRValueKind, bitfield: HMIRBitfield
     image
 }
 
-fn tag_offset(
-    env: &mut HMIREnvironment,
-    variants: &[HMIRFieldDef<HMIRTypeID>],
-    span: &TokenRange,
-) -> CHLResult<usize> {
-    let (mut size, mut alignment) = (0, 1);
-    for variant in variants {
-        let layout = layout(env, *variant.ty(), span)?;
-        size = size.max(layout.size());
-        alignment = alignment.max(layout.alignment());
-    }
-    Ok(size.div_ceil(alignment) * alignment)
-}
-
 // The variant a tagged union at 'offset' holds
 pub(super) fn discriminant(
     env: &mut HMIREnvironment,
-    variants: &[HMIRFieldDef<HMIRTypeID>],
+    ty: HMIRTypeID,
     image: &Image,
     offset: usize,
     span: &TokenRange,
 ) -> CHLResult<usize> {
-    let tag = offset + tag_offset(env, variants, span)?;
+    let (variants, payload) = record_layout(env, ty, span)?;
+    let tag = offset + payload.size();
     let variant = image.bytes(tag..tag + 1).map_err(|fault| fault.error(span))?[0] as usize;
     match variant < variants.len() {
         true => Ok(variant),
@@ -170,6 +179,9 @@ fn word(bytes: &[u8], bitfield: HMIRBitfield) -> (u128, u128) {
 }
 
 fn bits(bytes: &[u8], signed: bool, bitfield: HMIRBitfield) -> i128 {
+    if bitfield.width == 0 {
+        return 0;
+    }
     let (word, mask) = word(bytes, bitfield);
     let bits = ((word & mask) >> bitfield.offset) as i128;
     let shift = 128 - bitfield.width;
@@ -180,6 +192,9 @@ fn bits(bytes: &[u8], signed: bool, bitfield: HMIRBitfield) -> i128 {
 }
 
 fn set_bits(bytes: &mut [u8], value: i128, bitfield: HMIRBitfield) {
+    if bitfield.width == 0 {
+        return;
+    }
     let (current, mask) = word(bytes, bitfield);
     let word = (current & !mask) | ((value as u128) << bitfield.offset & mask);
     let length = bytes.len();
@@ -197,7 +212,7 @@ pub(super) fn encode(
     let mut image = Image::zeroed(size);
     match value {
         HMIRValueKind::Immediate(value) => write(env, ty, value, &mut image, 0, span)?,
-        value => image.put_cell(0, size, value.clone()),
+        value => image.put_cell(0, size, opaque_type(env, ty), value.clone()),
     }
     Ok(image)
 }
@@ -230,7 +245,7 @@ fn write(
             }
         }
         (HMIRTypeKind::Struct { fields }, HMIRImmValue::Aggregate { fields: items }) => {
-            let layouts = self::fields(env, ty, span)?;
+            let layouts = self::record_layout(env, ty, span)?.0;
             for ((field, layout), item) in fields.iter().zip(layouts).zip(items) {
                 let MIRFieldLayout::Bitfield {
                     offset: unit,
@@ -249,17 +264,19 @@ fn write(
                     )?;
                     continue;
                 };
-                let (HMIRTypeKind::Int(int), HMIRImmValue::Int(value)) =
-                    (env.resolve_kind(*field.ty()), item)
-                else {
+                let HMIRImmValue::Int(value) = item else {
                     unreachable!("a bitfield holds an integer")
                 };
-                let range = offset + unit..offset + unit + int.width().bytes();
-                let bitfield = HMIRBitfield {
+                let (window, bitfield) = bitfield_window(HMIRBitfield {
                     offset: bit_offset,
                     width: bit_width,
-                };
-                set_bits(&mut image.bytes[range], *value, bitfield);
+                });
+                let base = offset + unit;
+                set_bits(
+                    &mut image.bytes[base + window.start..base + window.end],
+                    *value,
+                    bitfield,
+                );
             }
         }
         (HMIRTypeKind::Union { fields }, HMIRImmValue::Union { variant, payload }) => {
@@ -267,12 +284,12 @@ fn write(
         }
         (HMIRTypeKind::TaggedUnion { fields }, HMIRImmValue::Union { variant, payload }) => {
             write(env, *fields[*variant].ty(), payload, image, offset, span)?;
-            let tag = offset + tag_offset(env, &fields, span)?;
+            let tag = offset + record_layout(env, ty, span)?.1.size();
             image.put(tag, &[*variant as u8]);
         }
         (_, value) => {
             let size = layout(env, ty, span)?.size();
-            image.put_cell(offset, size, value.clone().into());
+            image.put_cell(offset, size, opaque_type(env, ty), value.clone().into());
         }
     }
     Ok(())
@@ -285,7 +302,10 @@ pub(super) fn decode(
     span: &TokenRange,
 ) -> CHLResult<HMIRValueKind> {
     let size = layout(env, ty, span)?.size();
-    if let Some(value) = image.cell(0, size).filter(|_| opaque(env, ty)) {
+    if let Some(value) = image
+        .cell(0, size, opaque_type(env, ty))
+        .filter(|_| opaque(env, ty))
+    {
         return Ok(value.clone());
     }
     immediate(env, ty, image, 0, span).map(HMIRValueKind::Immediate)
@@ -307,11 +327,8 @@ fn opaque(env: &HMIREnvironment, ty: HMIRTypeID) -> bool {
     )
 }
 
-fn cell(image: &Image, offset: usize, size: usize) -> Option<Result<HMIRImmValue, Fault>> {
-    image.cell(offset, size).map(|value| match value {
-        HMIRValueKind::Immediate(value) => Ok(value.clone()),
-        _ => Err(Fault::Nested),
-    })
+fn opaque_type(env: &HMIREnvironment, ty: HMIRTypeID) -> Option<HMIRTypeID> {
+    types::opaque_slot(env, ty).then(|| env.underlying(ty))
 }
 
 fn immediate(
@@ -345,7 +362,7 @@ fn immediate(
             }
         }
         HMIRTypeKind::Struct { fields } => {
-            let layouts = self::fields(env, ty, span)?;
+            let layouts = self::record_layout(env, ty, span)?.0;
             let mut items = Vec::with_capacity(fields.len());
             for (field, layout) in fields.iter().zip(layouts) {
                 let MIRFieldLayout::Bitfield {
@@ -364,13 +381,15 @@ fn immediate(
                     )?);
                     continue;
                 };
-                let int = types::int_type(env, *field.ty());
-                let range = offset + unit..offset + unit + int.width().bytes();
-                let bitfield = HMIRBitfield {
+                let (window, bitfield) = bitfield_window(HMIRBitfield {
                     offset: bit_offset,
                     width: bit_width,
-                };
-                let bytes = image.bytes(range).map_err(fault)?;
+                });
+                let base = offset + unit;
+                let bytes = image
+                    .bytes(base + window.start..base + window.end)
+                    .map_err(fault)?;
+                let int = types::int_type(env, *field.ty());
                 items.push(HMIRImmValue::Int(bits(bytes, int::signed(int), bitfield)));
             }
             HMIRImmValue::Aggregate { fields: items }
@@ -396,14 +415,20 @@ fn immediate(
             return Err(failure.unwrap_or_else(|| fault(Fault::Uninitialized)));
         }
         HMIRTypeKind::TaggedUnion { fields } => {
-            let variant = discriminant(env, &fields, image, offset, span)?;
+            let variant = discriminant(env, ty, image, offset, span)?;
             let payload = Box::new(immediate(env, *fields[variant].ty(), image, offset, span)?);
             HMIRImmValue::Union { variant, payload }
         }
         kind => {
             let size = layout(env, ty, span)?.size();
-            if let Some(value) = cell(image, offset, size) {
-                return value.map_err(fault);
+            if let Some(value) = image.cell(offset, size, opaque_type(env, ty)) {
+                return match value {
+                    HMIRValueKind::Immediate(value) => Ok(value.clone()),
+                    _ => Err(fault(Fault::Nested)),
+                };
+            }
+            if types::opaque_slot(env, ty) {
+                return Err(fault(Fault::Uninitialized));
             }
             let bytes = image.bytes(offset..offset + size).map_err(fault)?;
             match kind {

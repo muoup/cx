@@ -7,6 +7,7 @@ pub struct HMIRTypeSemantics<M = HMIRMoveSemantics> {
     pub constant: bool,
     pub volatile: bool,
     pub unsafe_move: bool,
+    pub comptime: bool,
     pub move_semantics: M,
 }
 
@@ -54,6 +55,7 @@ impl HMIRTypeSemantics {
             constant: self.constant || specifiers.constant,
             volatile: self.volatile || specifiers.volatile,
             unsafe_move: self.unsafe_move || specifiers.unsafe_move,
+            comptime: self.comptime || specifiers.comptime,
             move_semantics: self.move_semantics.max(specifiers.move_semantics),
         }
     }
@@ -68,6 +70,7 @@ impl<M> HMIRTypeSemantics<M> {
             constant: self.constant,
             volatile: self.volatile,
             unsafe_move: self.unsafe_move,
+            comptime: self.comptime,
             move_semantics: move_semantics(&self.move_semantics)?,
         })
     }

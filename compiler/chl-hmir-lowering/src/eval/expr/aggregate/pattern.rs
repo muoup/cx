@@ -161,7 +161,9 @@ pub(crate) fn eval_is(
     let expected = value::int(context.env(), index as i128, tag.ty());
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = arithmetic::binary(context, HMIRBinaryOp::Eq, &tag, &expected, boolean, span)?;
-    if let Some(HMIRPattern::Binding(local)) = inner.as_deref() {
+    if let Some(HMIRPattern::Binding(local)) = inner.as_deref()
+        && !(context.is_comptime() && value::as_int(&result) == Some(0))
+    {
         let owned = !context.env().is_reference(subject.ty());
         let subject = match owned {
             true => coerce::temporary(context, &subject, span)?,

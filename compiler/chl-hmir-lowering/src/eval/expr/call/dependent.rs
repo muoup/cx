@@ -213,7 +213,7 @@ impl<'a> Frame<'a> {
 
 // Whether a call to a function of type 'ty' is applied to its arguments here, rather than emitted as it is
 pub(crate) fn applies(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {
-    !context.is_runtime() || types::comptime_only(context.env(), ty)
+    !context.is_runtime() || !types::runtime_function(context.env(), ty)
 }
 
 // Whether a call to 'function' executes it here for the code that it produces, which is emitted in its place
@@ -264,10 +264,6 @@ pub(crate) fn call(
         }
         let arg_span = arg.map_or(span, |arg| body.expr(arg).span());
         let ty = frame.parameter(context, index, span)?;
-        if !runtime && context.env().is_reference(ty) {
-            let operation = "a reference parameter".into();
-            return Err(hmir_error(arg_span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
-        }
         let given = match arg {
             Some(arg) => body.expr(arg),
             None => prototype.defaults().expr(default(index).expect("a default is given")),

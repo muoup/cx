@@ -1,0 +1,11 @@
+struct Record : @comptime {
+    int value;
+};
+
+int get(Record* pointer) {
+    return (*pointer).value;
+}
+
+int main() {
+    return get(0);
+}

@@ -11,7 +11,7 @@ int main(void) {
     PublicHidden hidden = {12};
     Constructed constructed = {13};
     Values values = {1, 2, 3};
-    Callback callback = 0;
+    Callback callback = (Handler*)0;
     if (chl_add(1, 2) != 10 || exported_constant != 11 || mode != 4 || Ready != 3) return 1;
     exported_count = 10;
     if (chl_add(1, 2) != 13) return 2;

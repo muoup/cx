@@ -187,7 +187,7 @@ pub(crate) fn eval_let(
                 let function = context.env().referent(ty);
                 if is_runtime
                     && context.env().is_function(function)
-                    && types::comptime_only(context.env(), function)
+                    && !types::runtime_function(context.env(), function)
                 {
                     emit::storage::bind_local(context, local_id, value);
                     return Ok(Evaluation::Ready(value::unit(context.env())));
@@ -229,9 +229,7 @@ fn declare(
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
     let local = body.local(local_id);
-    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function { .. })
-        && !(!context.is_runtime() && types::comptime_only(context.env(), ty))
-    {
+    if context.is_runtime() && context.env().is_function(ty) {
         let requirement = (
             "local variable".into(),
             "an object type".into(),

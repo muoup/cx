@@ -170,7 +170,9 @@ pub(crate) fn placeholder(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
-    if types::comptime_only(context.env(), ty) {
+    let inner = context.env().referent(ty);
+    if types::comptime_only(context.env(), inner) && !types::runtime_function(context.env(), inner)
+    {
         return Ok(HMIRValue::new(ty, HMIRImmValue::Opaque));
     }
     match context.env().reference_inner(ty) {

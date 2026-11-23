@@ -20,7 +20,7 @@ HMIR unit to MIR unit. Evaluation interprets comptime code, elaborates types, an
 - **collapse**: `T& ... &` read until a single `T&`.
 - **value type** of T: referent of T, unqualified.
 - **integer promotion**: int narrower than 32 bits, `bool` included, to `i32`.
-- **comptime-only type**: `type`, staged `^T`, dependent `_`, or a function that is comptime-stage, has a comptime parameter, or a comptime-only parameter or return type.
+- **comptime-only type**: `type`, staged `^T`, dependent `_`, a bare function, or an aggregate marked `@comptime`. An array or aggregate inherits this property from its by-value contents. Pointers and references have their own storage and layout.
 - **declaration point**: position of a declaration in its unit. A context *at* a point sees declarations of its own unit up to it, and all of other units.
 - **def**: one symbol; holds every redeclaration of it, each a *declaration* (role declaration, tentative, or definition) with optional content and tag.
 
@@ -203,7 +203,7 @@ HMIR type to MIR type, cached per underlying type.
 - struct, union, tagged union: distinct per type, never shape-interned; undefined while fields lower, so self-reference works. Bitfields keep width. Forward-declared tag: undefined of that tag.
 - `void`, `unreachable`: void. Reference: memory reference. `T[]`: undefined array.
 - `inv/flexible-array-layout` `T[]` as a struct member lowers flagged flexible: zero-sized, aligned as `T`. Any other `T[]` has no layout.
-- comptime-only types laid out pointer-sized in comptime memory.
+- Comptime storage uses the target layout for ordinary objects. An opaque comptime leaf occupies one typed slot. Aggregates and arrays use the same layout rules as runtime objects. Typed pointers into those slots remain within comptime evaluation.
 
 ## Expression evaluation
 
@@ -554,6 +554,7 @@ Runtime context evaluates types frozen. A type expression is memoized; a comptim
 
 Construction:
 - struct, union, tagged union declared forward first, so members may refer to it.
+- An explicit comptime-only record uses `struct Name : @comptime { ... }`. Declaring storage for a comptime-only type at runtime is an error even when the declaration omits an initializer.
 - member and element types must be complete and visible: T0009. A struct member may be `T[]`: a flexible array.
 - array bound frozen: `void` is unbounded `T[]`; int, non-negative, within `u64` (T0011); otherwise M0001. `_` bound while constructing: T0052.
 - function type parameters adjusted as [Parameter type](#parameter-type).
@@ -570,9 +571,10 @@ Construction:
 *verified uncommitted*
 
 `sizeof`, `alignof`, `offsetof`: subject [deduced](#subject-type); then yields constant of unsigned pointer-width int.
-- `sizeof`, `alignof`: complete object required, T0009.
+- `sizeof`, `alignof`: complete type required, T0009.
 - `offsetof(T, a.b[i])`: complete object required; fields followed through anonymous members (T0003), bitfield T0019; index requires array (T0012), frozen int (M0001), adds element size times index.
-- `@type.size_of(T)`, `@type.align_of(T)`: as `sizeof`, `alignof`.
+- `@type.c_sizeof(T)` and `sizeof` report storage extent, with zero for `void` and one unit for an opaque comptime leaf such as a bare function. Arrays use the element extent as stride. Comptime aggregates use the ordinary field placement and padding rules.
+- `@type.align_of(T)` is equivalent to `alignof`. Typed access to an opaque comptime slot reads or writes its whole value. A raw byte access overlapping the slot fails.
 - `rule/type-query-operand` other type operators evaluate their type operands as [type expressions](#type-expression), nothing deduced.
 - `is_int`, `is_float`, `is_pointer`, `is_reference`: kind of the type; `is_signed`: a signed int. `rule/is-const-top-level` `is_const`: the type's own const only, so `const T&` is not const. Never fail; yield `bool`.
 - `equal(A, B)`: alike.

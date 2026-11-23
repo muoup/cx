@@ -148,8 +148,12 @@ pub(crate) fn aggregate(
         HMIRTypeKind::ReferenceTo { inner, bitfield: _ } => {
             let env = context.env();
             match *inner {
-                inner if env.is_reference(inner) => promotion::reference_load(context, value, inner, span)?,
-                inner if env.is_pointer(inner) || env.is_array(inner) => promotion::std_rvalue(context, value, span)?,
+                inner if env.is_reference(inner) => {
+                    promotion::reference_load(context, value, inner, span)?
+                }
+                inner if env.is_pointer(inner) || env.is_array(inner) => {
+                    promotion::operand(context, value, span)?
+                }
                 _ => return Ok(value),
             }
         },

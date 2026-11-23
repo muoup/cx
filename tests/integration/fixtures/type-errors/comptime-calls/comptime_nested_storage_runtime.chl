@@ -1,0 +1,12 @@
+struct Inner : @comptime {
+    int value;
+};
+
+struct Outer {
+    Inner value;
+};
+
+int main() {
+    Outer value;
+    return 0;
+}

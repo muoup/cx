@@ -367,7 +367,14 @@ fn coerce_callee(
         let kind = (types::name(context.env(), callee.ty()), "callable".into());
         return Err(hmir_error(span, &typecheck::UNEXPECTED_KIND, kind));
     };
-    Ok((callee.with_ty(ty), signature.clone()))
+    let signature = signature.clone();
+    let callee = callee.with_ty(ty);
+    let callee = if context.is_comptime() && matches!(callee.kind(), HMIRValueKind::Reference(_)) {
+        emit::storage::read(context, &callee, span)?.with_ty(ty)
+    } else {
+        callee
+    };
+    Ok((callee, signature))
 }
 
 fn name(context: &LocalLoweringContext, callee: &HMIRValue) -> String {

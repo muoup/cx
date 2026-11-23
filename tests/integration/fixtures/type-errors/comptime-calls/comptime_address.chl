@@ -1,0 +1,15 @@
+struct Record {
+    fn callback(^int) -> ^int;
+    int value;
+};
+
+comptime int attempt() {
+    Record value;
+    char* pointer = (char*)&value;
+    *pointer = 2;
+    return value.value;
+}
+
+int main() {
+    return attempt();
+}

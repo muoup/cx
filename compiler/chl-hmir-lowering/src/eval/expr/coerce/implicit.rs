@@ -113,7 +113,7 @@ fn step(
             return string(context, value, target, *element, *length, None, span);
         }
         (HMIRTypeKind::Str(_), HMIRTypeKind::PointerTo(_)) => {
-            return promotion::step(context, value, span);
+            return promotion::step(context, value, true, span);
         }
         (HMIRTypeKind::Function { .. }, HMIRTypeKind::PointerTo(_)) => {
             return promotion::function_pointer(context, value, span);
@@ -149,6 +149,12 @@ fn step(
             let (from, to) = (from.clone(), to.clone());
             return eta(context, value, &from, &to, target, span);
         }
+        (HMIRTypeKind::Function { .. }, HMIRTypeKind::Function { .. })
+            if context.is_comptime() && source != env.referent(source) =>
+        {
+            let function = env.referent(source);
+            return promotion::function(context, value, function, span).map(Coercion::Applied);
+        }
         _ => {}
     }
 
@@ -169,7 +175,7 @@ fn step(
             } = *env.resolve_kind(*inner)
             else {
                 return if env.is_reference(*inner) {
-                    promotion::step(context, value, span)
+                    promotion::step(context, value, false, span)
                 } else {
                     Ok(Coercion::Unapplied(value))
                 };
@@ -196,7 +202,7 @@ fn step(
         (HMIRTypeKind::ReferenceTo { inner, .. }, HMIRTypeKind::ReferenceTo { .. })
             if env.is_reference(*inner) =>
         {
-            return promotion::step(context, value, span);
+            return promotion::step(context, value, false, span);
         }
         (
             HMIRTypeKind::ReferenceTo {
@@ -215,8 +221,12 @@ fn step(
             return Ok(Coercion::Unapplied(value));
         }
         (HMIRTypeKind::ReferenceTo { .. }, _)
-        | (HMIRTypeKind::Array { .. }, HMIRTypeKind::PointerTo(_)) => {
-            return promotion::step(context, value, span);
+        | (
+            HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }),
+            HMIRTypeKind::PointerTo(_),
+        ) => {
+            let decay_comptime_arrays = matches!(to, HMIRTypeKind::PointerTo(_));
+            return promotion::step(context, value, decay_comptime_arrays, span);
         }
         (HMIRTypeKind::Staged(_), _) if !staged::is_code(context, target) => {
             return match context.is_comptime() {
@@ -224,7 +234,7 @@ fn step(
                     let value = flow::top(staged::materialize(context, value, span))?;
                     Ok(Coercion::Applied(value))
                 }
-                false => promotion::step(context, value, span),
+                false => promotion::step(context, value, false, span),
             };
         }
         (_, HMIRTypeKind::ReferenceTo { inner, .. }) => {

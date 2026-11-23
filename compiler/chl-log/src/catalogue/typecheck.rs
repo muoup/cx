@@ -19,7 +19,7 @@ define_errors! {
         message
     };
     TYPE_MISMATCH: (String, String, String) = "T0012" => |(context, expected, found)| format!("type mismatch in {context}: expected {expected}, found {found}");
-    INVALID_CONVERSION: (String, String) = "T0013" => |(from, to)| format!("cannot convert {from} to '{to}'");
+    INVALID_CONVERSION: (String, String) = "T0013" => |(from, to)| format!("cannot convert '{from}' to '{to}'");
     INVALID_BINARY_OPERANDS: (String, String, String) = "T0014" => |(operation, left, right)| format!("no operator '{operation}' for '{left}' and '{right}'");
     ARGUMENT_COUNT: (String, usize, usize, bool) = "T0015" => |(subject, expected, found, var_args)| {
         let qualifier = if var_args { "at least " } else { "" };

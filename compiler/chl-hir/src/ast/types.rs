@@ -42,6 +42,7 @@ pub struct HIRAggregateAttributes {
     pub semantics: HIRMoveSemantics,
     pub copy_traits: Option<String>,
     pub unsafe_move: bool,
+    pub comptime: bool,
 }
 
 #[derive(Debug, Default, Clone, Hash, PartialEq, Eq)]
@@ -101,6 +102,7 @@ pub enum HIRTypeKind {
     },
     Union {
         name: Option<CHLIdent>,
+        attributes: HIRAggregateAttributes,
         fields: Vec<HIRField>,
     },
     TaggedUnion {

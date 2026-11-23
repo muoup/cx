@@ -1,11 +1,17 @@
 use std::cmp::Ordering;
 
-use chl_hmir::ty::{HMIRTypeID, context::HMIRTypeContext};
+use rustc_hash::FxHashMap;
+
+use chl_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use chl_intrinsics::{
     AggregateIntrinsic, FloatIntrinsic, IntIntrinsic, InternalIntrinsic, PointerCompareOp,
     PointerIntrinsic, PointerOffsetOp, VAIntrinsic,
 };
-use chl_log::{CHLResult, catalogue::mir, error::CHLError};
+use chl_log::{
+    CHLResult,
+    catalogue::{mir, typecheck},
+    error::CHLError,
+};
 use chl_tokens::TokenRange;
 
 use crate::{
@@ -15,11 +21,10 @@ use crate::{
     },
     env::function::{
         LocalLoweringContext,
-        memory::{field_offset, layout, placement},
+        memory::{layout, member_layout},
     },
     eval::types,
     log::hmir_error,
-    lower::declaration,
     value::{
         self, HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
@@ -136,14 +141,11 @@ pub fn float(
 }
 
 // Whether an address designates storage that pointer arithmetic may move within
-fn arithmetic(context: &LocalLoweringContext, address: &HMIRValueKind) -> bool {
+fn arithmetic(address: &HMIRValueKind) -> bool {
     match address {
         HMIRValueKind::Reference(_) => true,
         HMIRValueKind::Immediate(HMIRImmValue::Address(address)) => match address.base() {
-            Addressable::Def(def) => {
-                !declaration::is_function(context.env().symbols().resolve_definition(*def))
-            }
-            Addressable::Literal(_) => true,
+            Addressable::Def(_) | Addressable::Literal(_) => true,
             Addressable::Label { .. } => false,
         },
         _ => false,
@@ -203,7 +205,7 @@ pub fn pointer(
                 HMIRValueKind::Immediate(HMIRImmValue::Int(0)) => {
                     return Err(undefined(span, "pointer arithmetic"));
                 }
-                address if arithmetic(context, address) => {
+                address if arithmetic(address) => {
                     shifted(address, bytes).ok_or_else(|| overflow(span))?
                 }
                 _ => return unsupported(span, "arithmetic on this address"),
@@ -215,7 +217,7 @@ pub fn pointer(
             let (lhs, rhs) = (lhs.kind(), rhs.kind());
             let bytes = match distance(lhs, rhs) {
                 Some(bytes) => bytes as i128,
-                None if arithmetic(context, lhs) && arithmetic(context, rhs) => {
+                None if arithmetic(lhs) && arithmetic(rhs) => {
                     return Err(undefined(span, "pointer difference across allocations"));
                 }
                 None => return unsupported(span, "the difference of these addresses"),
@@ -289,7 +291,7 @@ pub fn aggregate(
             field,
             aggregate,
         } => {
-            let offset = field_offset(context.env_mut(), *aggregate, *field, span)?;
+            let (offset, _) = member_layout(context.env_mut(), *aggregate, *field, span)?;
             project(context, base, offset, result, span)
         }
         AggregateIntrinsic::ArrayIndex {
@@ -316,20 +318,45 @@ fn init(
     fields: &[(usize, HMIRValue)],
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
-    let zero = |context: &LocalLoweringContext, ty| {
-        types::zero(context.env(), ty).expect("an initialized aggregate has a zero value")
+    let selected = fields.last().map_or(0, |(index, _)| *index);
+    let (members, initial) = match context.env().resolve_kind(ty) {
+        HMIRTypeKind::Array { length, .. } => (0..*length as usize, HMIRImmValue::Unit),
+        HMIRTypeKind::Struct { fields } => (0..fields.len(), HMIRImmValue::Unit),
+        HMIRTypeKind::Union { .. } => (selected..selected + 1, HMIRImmValue::Unit),
+        HMIRTypeKind::TaggedUnion { .. } => (
+            selected..selected + 1,
+            HMIRImmValue::Union {
+                variant: selected,
+                payload: Box::new(HMIRImmValue::Unit),
+            },
+        ),
+        _ => unreachable!("an aggregate initializer has an aggregate type"),
     };
-    let mut constant = zero(context, ty);
-    if let (HMIRImmValue::Union { variant, payload }, Some((index, _))) = (&mut constant, fields.last()) {
-        (*variant, **payload) = (*index, zero(context, types::member(context.env(), ty, *index)));
-    }
     let storage = HMIRAddress::new(context.allocate(ty, span)?, 0);
-    context.store(&storage, ty, &constant.into(), None, span)?;
-    for (index, value) in fields {
-        let offset = field_offset(context.env_mut(), ty, *index, span)?;
+    context.store(&storage, ty, &initial.into(), None, span)?;
+    let fields: FxHashMap<_, _> = fields
+        .iter()
+        .map(|(index, value)| (*index, value))
+        .collect();
+    for index in members {
+        let member = types::member(context.env(), ty, index);
+        let Some(value) = fields.get(&index) else {
+            if context.env().is_unbounded_array(member)
+                || types::zero(context.env(), member).is_some()
+            {
+                continue;
+            }
+            let kind = (
+                format!(
+                    "an omitted field of type '{}'",
+                    types::name(context.env(), member)
+                ),
+                "an initializer list".into(),
+            );
+            return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, kind));
+        };
+        let (offset, bitfield) = member_layout(context.env_mut(), ty, index, span)?;
         let offset = i64::try_from(offset).map_err(|_| overflow(span))?;
-        let bitfield = placement(context.env_mut(), ty, *index, span)?;
-        let member = types::member(context.env(), ty, *index);
         let reference = types::reference(context.env_mut(), member, bitfield, span);
         let address = storage.offset_by(offset).ok_or_else(|| overflow(span))?;
         storage::write(context, &HMIRValue::new(reference, address), value, span)?;

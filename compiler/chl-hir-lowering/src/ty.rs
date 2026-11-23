@@ -115,11 +115,14 @@ fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -
             let kind = HMIRExprTypeKind::Struct { fields };
             return lower_aggregate_type(context, name.as_ref(), kind, attributes, span);
         }
-        HIRTypeKind::Union { name, fields } => {
+        HIRTypeKind::Union {
+            name,
+            fields,
+            attributes,
+        } => {
             let fields = lower_fields(context, fields)?;
             let kind = HMIRExprTypeKind::Union { fields };
-            let attributes = HIRAggregateAttributes::default();
-            return lower_aggregate_type(context, name.as_ref(), kind, &attributes, span);
+            return lower_aggregate_type(context, name.as_ref(), kind, attributes, span);
         }
         HIRTypeKind::TaggedUnion {
             name,
@@ -281,6 +284,7 @@ fn lower_aggregate_type(
         constant: false,
         volatile: false,
         unsafe_move: attributes.unsafe_move,
+        comptime: attributes.comptime,
         move_semantics,
     };
 

@@ -1,0 +1,6 @@
+comptime type Function = fn(int) -> int;
+
+int main() {
+    Function values[10];
+    return 0;
+}
