@@ -1,15 +1,13 @@
-struct Record {
-    fn callback(^int) -> ^int;
-    int value;
+union Overlay : @comptime {
+    type value;
+    unsigned char byte;
 };
 
-comptime int attempt() {
-    Record value;
-    char* pointer = (char*)&value;
-    *pointer = 2;
+comptime type attempt() {
+    Overlay value;
+    value.value = int;
+    value.byte = 2;
     return value.value;
 }
 
-int main() {
-    return attempt();
-}
+comptime type result = attempt();

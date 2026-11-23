@@ -1,0 +1,83 @@
+#include <stdio.h>
+
+struct Half {
+    unsigned char bytes[sizeof(int*) / 2];
+};
+
+union Address {
+    int* value;
+    Half halves[2];
+    unsigned char bytes[sizeof(int*)];
+};
+
+union Relocation {
+    usize bits;
+    int* value;
+};
+
+struct Raw {
+    unsigned char bytes[4];
+};
+
+struct Payload : @comptime {
+    unsigned char prefix;
+    type value;
+};
+
+union Overlay : @comptime {
+    Raw raw[2];
+    Payload payload;
+    unsigned int word;
+};
+
+int global_values[2] = { 43, 67 };
+int* next = global_values + 1;
+
+comptime int pointer_bytes() {
+    int values[2] = { 31, 59 };
+    Address source = { .value = &values[0] };
+    Address result;
+    result.halves[0] = source.halves[0];
+    result.halves[1] = source.halves[1];
+    int first = *result.value;
+    source.value = &values[1];
+    for (int i = 0; i < sizeof(int*); ++i) {
+        if (source.bytes[i] != result.bytes[i]) result.bytes[i] = source.bytes[i];
+    }
+    int second = *result.value;
+    source.value = next;
+    result.halves[0] = source.halves[0];
+    result.halves[1] = source.halves[1];
+    return first + second + *result.value;
+}
+
+comptime Relocation union_relocation() {
+    Address source = { .value = next };
+    Relocation result;
+    Half* halves = (Half*)&result;
+    halves[0] = source.halves[0];
+    halves[1] = source.halves[1];
+    return result;
+}
+
+comptime bool opaque_bytes() {
+    Overlay source;
+    source.word = 0;
+    source.payload.value = int;
+    Overlay target;
+    target.raw[1] = source.raw[0];
+    target.raw[0] = target.raw[1];
+    bool copied = @type.equal(target.payload.value, int);
+    target.word = 123;
+    return copied && target.word == 123;
+}
+
+comptime int sum = pointer_bytes();
+comptime bool copied = opaque_bytes();
+
+Relocation relocated = union_relocation();
+
+int main() {
+    printf("%d %d %d\n", sum, copied, relocated.value == global_values + 1);
+    return 0;
+}

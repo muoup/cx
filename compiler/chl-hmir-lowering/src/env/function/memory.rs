@@ -1,4 +1,4 @@
-mod access;
+mod address;
 mod codec;
 
 use rustc_hash::FxHashMap;
@@ -11,9 +11,11 @@ use chl_hmir::{
 use chl_log::{CHLResult, catalogue::mir, error::CHLError};
 use chl_tokens::TokenRange;
 
+use self::{address::AddressSpace, codec::Codec};
+
 use crate::{
     env::function::LocalLoweringContext,
-    eval::{symbol, types},
+    eval::symbol,
     log::hmir_error,
     lower::declaration,
     value::{
@@ -30,7 +32,8 @@ pub(crate) use codec::{layout, member_layout};
 // static page, which is never released
 #[derive(Debug)]
 pub(crate) struct Memory {
-    pages: FxHashMap<HMIRPageID, Vec<Image>>,
+    pages: FxHashMap<HMIRPageID, Vec<Region>>,
+    addresses: AddressSpace,
     globals: FxHashMap<HMIRDefID, HMIRPlaceID>,
     literals: FxHashMap<String, HMIRPlaceID>,
     next: usize,
@@ -44,18 +47,29 @@ pub(crate) struct Page {
     memory: Rc<RefCell<Memory>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+struct Region {
+    image: Image,
+    alignment: usize,
+}
+
+#[derive(Debug)]
 struct Image {
     bytes: Vec<u8>,
-    init: Vec<bool>,
+    states: Vec<ByteState>,
     cells: BTreeMap<usize, Cell>,
-    storage_type: Option<HMIRTypeID>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ByteState {
+    Uninitialized,
+    Data,
+    Address,
 }
 
 #[derive(Debug, Clone)]
 struct Cell {
-    size: usize,
-    opaque_type: Option<HMIRTypeID>,
+    ty: HMIRTypeID,
     value: HMIRValueKind,
 }
 
@@ -68,11 +82,12 @@ enum Fault {
         capacity: usize,
     },
     Uninitialized,
-    Fragment,
     Opaque,
-    Forged,
+    InvalidAddress,
+    AddressSpaceFull,
     Discriminant,
     Nested,
+    Relocation,
 }
 
 impl Fault {
@@ -87,32 +102,23 @@ impl Fault {
                 "{size} bytes at offset {offset} are outside of the {capacity}-byte allocation"
             ),
             Self::Uninitialized => "reading uninitialized bytes".into(),
-            Self::Fragment => "reading part of a stored address".into(),
             Self::Opaque => "accessing an opaque value through an incompatible type".into(),
-            Self::Forged => "reading plain bytes as an address".into(),
+            Self::InvalidAddress => "the bytes do not encode a known address".into(),
+            Self::AddressSpaceFull => "the virtual address space is exhausted".into(),
             Self::Discriminant => "reading an invalid tagged union discriminant".into(),
             Self::Nested => "reading an address of comptime storage as part of a value".into(),
+            Self::Relocation => "materializing a union without its stored address".into(),
         };
         hmir_error(span, &mir::COMPTIME_INVALID_ACCESS, reason)
     }
 }
 
 impl Image {
-    fn zeroed(size: usize) -> Self {
+    fn new(size: usize, state: ByteState) -> Self {
         Self {
             bytes: vec![0; size],
-            init: vec![true; size],
+            states: vec![state; size],
             cells: BTreeMap::new(),
-            storage_type: None,
-        }
-    }
-
-    fn uninitialized(size: usize) -> Self {
-        Self {
-            bytes: vec![0; size],
-            init: vec![false; size],
-            cells: BTreeMap::new(),
-            storage_type: None,
         }
     }
 
@@ -120,19 +126,11 @@ impl Image {
         self.bytes.len()
     }
 
-    fn intersecting(&self, range: Range<usize>) -> impl Iterator<Item = (usize, &Cell)> {
-        self.cells
-            .range(..range.end)
-            .rev()
-            .take_while(move |(start, cell)| *start + cell.size > range.start)
-            .map(|(start, cell)| (*start, cell))
-    }
-
     fn bytes(&self, range: Range<usize>) -> Result<&[u8], Fault> {
-        if self.intersecting(range.clone()).next().is_some() {
+        if self.cells.range(range.clone()).next().is_some() {
             return Err(Fault::Opaque);
         }
-        if !self.init[range.clone()].iter().all(|init| *init) {
+        if self.states[range.clone()].contains(&ByteState::Uninitialized) {
             return Err(Fault::Uninitialized);
         }
         Ok(&self.bytes[range])
@@ -142,66 +140,36 @@ impl Image {
         self.bytes[offset..offset + bytes.len()].copy_from_slice(bytes);
     }
 
-    fn cell(
-        &self,
-        offset: usize,
-        size: usize,
-        opaque_type: Option<HMIRTypeID>,
-    ) -> Option<&HMIRValueKind> {
-        let cell = self.cells.get(&offset)?;
-        (cell.size == size && cell.opaque_type == opaque_type).then_some(&cell.value)
-    }
-
-    fn put_cell(
-        &mut self,
-        offset: usize,
-        size: usize,
-        opaque_type: Option<HMIRTypeID>,
-        value: HMIRValueKind,
-    ) {
-        self.cells.insert(
-            offset,
-            Cell {
-                size,
-                opaque_type,
-                value,
-            },
-        );
-    }
-
-    fn slice(&self, range: Range<usize>) -> Result<Image, Fault> {
-        let mut cells = BTreeMap::new();
-        for (start, cell) in self.intersecting(range.clone()) {
-            if start < range.start || start + cell.size > range.end {
-                return Err(Fault::Fragment);
-            }
-            cells.insert(start - range.start, cell.clone());
-        }
-        Ok(Image {
+    fn slice(&self, range: Range<usize>) -> Image {
+        Image {
             bytes: self.bytes[range.clone()].to_vec(),
-            init: self.init[range].to_vec(),
-            cells,
-            storage_type: None,
-        })
+            states: self.states[range.clone()].to_vec(),
+            cells: self
+                .cells
+                .range(range.clone())
+                .map(|(offset, cell)| (offset - range.start, cell.clone()))
+                .collect(),
+        }
     }
 
-    fn overwrite(&mut self, offset: usize, source: &Image) {
+    fn overwrite(&mut self, offset: usize, source: Image) {
         let range = offset..offset + source.len();
         let stale = self
-            .intersecting(range.clone())
-            .map(|(start, cell)| (start, cell.size))
+            .cells
+            .range(range.clone())
+            .map(|(start, _)| *start)
             .collect::<Vec<_>>();
-        for (start, size) in stale {
+        for start in stale {
             self.cells.remove(&start);
-            for byte in (start..start + size).filter(|byte| !range.contains(byte)) {
-                self.init[byte] = false;
-            }
         }
         self.bytes[range.clone()].copy_from_slice(&source.bytes);
-        self.init[range].copy_from_slice(&source.init);
-        for (start, cell) in &source.cells {
-            self.cells.insert(offset + start, cell.clone());
-        }
+        self.states[range].copy_from_slice(&source.states);
+        self.cells.extend(
+            source
+                .cells
+                .into_iter()
+                .map(|(start, cell)| (offset + start, cell)),
+        );
     }
 }
 
@@ -209,6 +177,7 @@ impl Default for Memory {
     fn default() -> Self {
         Self {
             pages: FxHashMap::from_iter([(STATICS, Vec::new())]),
+            addresses: AddressSpace::default(),
             globals: FxHashMap::default(),
             literals: FxHashMap::default(),
             next: STATICS.index() + 1,
@@ -225,19 +194,22 @@ impl Memory {
         page
     }
 
-    fn allocate(&mut self, page: HMIRPageID, image: Image) -> HMIRPlaceID {
-        let regions = self.pages.get_mut(&page).expect("allocating in a released page");
-        regions.push(image);
+    fn allocate(&mut self, page: HMIRPageID, image: Image, alignment: usize) -> HMIRPlaceID {
+        let regions = self
+            .pages
+            .get_mut(&page)
+            .expect("allocating in a released page");
+        regions.push(Region { image, alignment });
         HMIRPlaceID::new(HMIRPlaceBrand::comptime(page), regions.len() - 1)
     }
 
-    fn region(&self, place: HMIRPlaceID) -> Result<&Image, Fault> {
+    fn region(&self, place: HMIRPlaceID) -> Result<&Region, Fault> {
         let page = place.brand().page().ok_or(Fault::Dangling)?;
         let regions = self.pages.get(&page).ok_or(Fault::Dangling)?;
         regions.get(place.index()).ok_or(Fault::Dangling)
     }
 
-    fn region_mut(&mut self, place: HMIRPlaceID) -> Result<&mut Image, Fault> {
+    fn region_mut(&mut self, place: HMIRPlaceID) -> Result<&mut Region, Fault> {
         let page = place.brand().page().ok_or(Fault::Dangling)?;
         let regions = self.pages.get_mut(&page).ok_or(Fault::Dangling)?;
         regions.get_mut(place.index()).ok_or(Fault::Dangling)
@@ -247,15 +219,15 @@ impl Memory {
         if let Some(region) = self.literals.get(text) {
             return *region;
         }
-        let mut image = Image::zeroed(text.len() + 1);
+        let mut image = Image::new(text.len() + 1, ByteState::Data);
         image.put(0, text.as_bytes());
-        let region = self.allocate(STATICS, image);
+        let region = self.allocate(STATICS, image, 1);
         self.literals.insert(text.to_string(), region);
         region
     }
 
     fn range(&self, region: HMIRPlaceID, offset: i64, size: usize) -> Result<Range<usize>, Fault> {
-        let capacity = self.region(region)?.len();
+        let capacity = self.region(region)?.image.len();
         usize::try_from(offset)
             .ok()
             .filter(|start| start.checked_add(size).is_some_and(|end| end <= capacity))
@@ -269,12 +241,14 @@ impl Memory {
 
     fn load(&self, location: &HMIRAddress<HMIRPlaceID>, size: usize) -> Result<Image, Fault> {
         let range = self.range(*location.base(), location.offset(), size)?;
-        self.region(*location.base())?.slice(range)
+        Ok(self.region(*location.base())?.image.slice(range))
     }
 
-    fn store(&mut self, location: &HMIRAddress<HMIRPlaceID>, image: &Image) -> Result<(), Fault> {
+    fn store(&mut self, location: &HMIRAddress<HMIRPlaceID>, image: Image) -> Result<(), Fault> {
         let range = self.range(*location.base(), location.offset(), image.len())?;
-        self.region_mut(*location.base())?.overwrite(range.start, image);
+        self.region_mut(*location.base())?
+            .image
+            .overwrite(range.start, image);
         Ok(())
     }
 }
@@ -295,7 +269,13 @@ impl Page {
 
 impl Drop for Page {
     fn drop(&mut self) {
-        self.memory.borrow_mut().pages.remove(&self.id);
+        let mut memory = self.memory.borrow_mut();
+        if let Some(regions) = memory.pages.remove(&self.id) {
+            let brand = HMIRPlaceBrand::comptime(self.id);
+            for index in 0..regions.len() {
+                memory.addresses.release(HMIRPlaceID::new(brand, index));
+            }
+        }
     }
 }
 
@@ -307,11 +287,12 @@ impl fmt::Debug for Page {
 
 impl LocalLoweringContext<'_, '_, '_> {
     pub(crate) fn allocate(&mut self, ty: HMIRTypeID, span: &TokenRange) -> CHLResult<HMIRPlaceID> {
-        let size = layout(self.env_mut(), ty, span)?.size();
-        let mut image = Image::uninitialized(size);
-        image.storage_type = types::comptime_only(self.env(), ty).then_some(ty);
-        let page = self.comptime().page();
-        Ok(self.memory.borrow_mut().allocate(page, image))
+        let layout = layout(self.env_mut(), ty, span)?;
+        let image = Image::new(layout.size(), ByteState::Uninitialized);
+        Ok(self
+            .memory
+            .borrow_mut()
+            .allocate(self.comptime().page(), image, layout.alignment()))
     }
 
     // The region and offset an address designates; a static address is only read through
@@ -332,7 +313,11 @@ impl LocalLoweringContext<'_, '_, '_> {
             HMIRValueKind::Reference(local) => return Ok(local.clone()),
             HMIRValueKind::Immediate(HMIRImmValue::Int(0)) => {
                 let operation = "dereference".into();
-                return Err(hmir_error(span, &mir::COMPTIME_UNDEFINED_ARITHMETIC, operation));
+                return Err(hmir_error(
+                    span,
+                    &mir::COMPTIME_UNDEFINED_ARITHMETIC,
+                    operation,
+                ));
             }
             HMIRValueKind::Immediate(HMIRImmValue::Address(address)) => address,
             _ => return invalid("accessing storage through this address"),
@@ -367,7 +352,7 @@ impl LocalLoweringContext<'_, '_, '_> {
             .map_err(|fault| fault.error(span))?;
         match bitfield {
             Some(bitfield) => codec::extract(self.env(), ty, &image, bitfield, span),
-            None => codec::decode(self.env_mut(), ty, &image, span),
+            None => Codec::new(self.env, &self.memory, span).decode(ty, &image),
         }
     }
 
@@ -387,13 +372,13 @@ impl LocalLoweringContext<'_, '_, '_> {
                     .borrow()
                     .load(&location, size)
                     .map_err(|fault| fault.error(span))?;
-                codec::insert(&unit, value, bitfield)
+                codec::insert(unit, value, bitfield)
             }
-            None => codec::encode(self.env_mut(), ty, value, span)?,
+            None => Codec::new(self.env, &self.memory, span).encode(ty, value)?,
         };
         self.memory
             .borrow_mut()
-            .store(&location, &image)
+            .store(&location, image)
             .map_err(|fault| fault.error(span))
     }
 
@@ -404,12 +389,11 @@ impl LocalLoweringContext<'_, '_, '_> {
         ty: HMIRTypeID,
         span: &TokenRange,
     ) -> CHLResult<()> {
-        let (_, size, _) = self.access(source, ty, None, span)?;
-        self.access(target, ty, None, span)?;
+        let size = layout(self.env_mut(), ty, span)?.size();
         let mut memory = self.memory.borrow_mut();
         memory
             .load(source, size)
-            .and_then(|image| memory.store(target, &image))
+            .and_then(|image| memory.store(target, image))
             .map_err(|fault| fault.error(span))
     }
 
@@ -420,7 +404,7 @@ impl LocalLoweringContext<'_, '_, '_> {
         bitfield: Option<HMIRBitfield>,
         span: &TokenRange,
     ) -> CHLResult<(HMIRAddress<HMIRPlaceID>, usize, Option<HMIRBitfield>)> {
-        let (location, size, bitfield) = match bitfield {
+        Ok(match bitfield {
             Some(bitfield) => {
                 let (window, field) = codec::bitfield_window(bitfield);
                 let location = location
@@ -433,33 +417,7 @@ impl LocalLoweringContext<'_, '_, '_> {
                 layout(self.env_mut(), ty, span)?.size(),
                 None,
             ),
-        };
-        if size == 0 {
-            return Ok((location, size, bitfield));
-        }
-        let owner = self
-            .memory
-            .borrow()
-            .region(*location.base())
-            .map_err(|fault| fault.error(span))?
-            .storage_type;
-        let comptime_only = types::comptime_only(self.env(), ty);
-        let allowed = match owner {
-            Some(owner) => {
-                let range = self
-                    .memory
-                    .borrow()
-                    .range(*location.base(), location.offset(), size)
-                    .map_err(|fault| fault.error(span))?;
-                let (declared, overlaps) =
-                    access::inspect(self.env_mut(), owner, 0, ty, &range, span)?;
-                declared || (!comptime_only && !overlaps)
-            }
-            None => !comptime_only,
-        };
-        allowed
-            .then_some((location, size, bitfield))
-            .ok_or_else(|| Fault::Opaque.error(span))
+        })
     }
 
     // The variant the tagged union of type 'ty' at 'location' holds
@@ -469,13 +427,13 @@ impl LocalLoweringContext<'_, '_, '_> {
         ty: HMIRTypeID,
         span: &TokenRange,
     ) -> CHLResult<usize> {
-        let (_, size, _) = self.access(location, ty, None, span)?;
+        let size = layout(self.env_mut(), ty, span)?.size();
         let image = self
             .memory
             .borrow()
             .load(location, size)
             .map_err(|fault| fault.error(span))?;
-        codec::discriminant(self.env_mut(), ty, &image, 0, span)
+        Codec::new(self.env, &self.memory, span).discriminant(ty, &image, 0)
     }
 
     fn global(&mut self, def: HMIRDefID, span: &TokenRange) -> CHLResult<HMIRPlaceID> {
@@ -484,10 +442,10 @@ impl LocalLoweringContext<'_, '_, '_> {
         }
         let value = symbol::initialize(self, def)?;
         let ty = value.ty();
-        let mut image = codec::encode(self.env_mut(), ty, value.kind(), span)?;
-        image.storage_type = types::comptime_only(self.env(), ty).then_some(ty);
+        let alignment = layout(self.env_mut(), ty, span)?.alignment();
+        let image = Codec::new(self.env, &self.memory, span).encode(ty, value.kind())?;
         let mut memory = self.memory.borrow_mut();
-        let region = memory.allocate(STATICS, image);
+        let region = memory.allocate(STATICS, image, alignment);
         memory.globals.insert(def, region);
         Ok(region)
     }
