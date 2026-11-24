@@ -86,7 +86,7 @@ fn evaluate(
                     Ok(Evaluation::Ready(type_value(context, ty, &span)?))
                 })?
         }
-        None => deduce::complete(context, body, value, expected)?,
+        None => deduce::complete(context, body, value, expected, span)?,
     };
     let span = span.clone();
     value.and_then(context, body, move |context, _, value| {

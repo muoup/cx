@@ -18,7 +18,7 @@ use chl_tokens::TokenRange;
 
 use crate::{
     env::{function::LocalLoweringContext, resolver::demand},
-    eval::{EvalResult, coerce, flow::Evaluation, name::type_value, types},
+    eval::{EvalResult, call, coerce, flow::Evaluation, name::type_value, types},
     log::hmir_error,
     value::{self, HMIRValue, immediate::HMIRImmValue},
 };
@@ -129,13 +129,30 @@ pub(crate) fn complete(
     body: &HMIRBodyContext,
     evaluation: Evaluation<HMIRValue>,
     expected: Option<HMIRTypeID>,
+    span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     match expected {
         Some(expected) if matches!(context.env().resolve_kind(expected), HMIRTypeKind::Type) => {
-            Ok(evaluation)
+            apply_type(context, body, evaluation, span)
         }
         _ => evaluation.try_complete(context, body, expected),
     }
+}
+
+fn apply_type(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    evaluation: Evaluation<HMIRValue>,
+    span: &TokenRange,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let span = span.clone();
+    evaluation.chain(
+        context,
+        body,
+        None,
+        |value| Some(value.clone()),
+        move |context, body, value, _| call::apply_type(context, body, &span, value),
+    )
 }
 
 // The type a value describes, completed from the type expected of it where it is an unbounded array
@@ -145,6 +162,7 @@ pub(crate) fn described_type(
     value: Evaluation<HMIRValue>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
+    let value = apply_type(context, body, value, span)?;
     let span = span.clone();
     value.chain(
         context,

@@ -109,7 +109,26 @@ pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLR
                         application_suffix(&data.tokens, end),
                         Some(operator!(ScopeRes))
                     );
-                !scoped && matches!(following, Some(punctuator!(OpenParen)))
+                if matches!(following, Some(punctuator!(OpenParen))) {
+                    return Ok(!scoped);
+                }
+                let declarator = matches!(
+                    following,
+                    Some(specifier!() | operator!(Asterisk) | operator!(Ampersand))
+                );
+                match position {
+                    TypePosition::Statement => {
+                        declarator || matches!(following, Some(identifier!()))
+                    }
+                    TypePosition::Cast => match following {
+                        Some(punctuator!(CloseParen)) => !matches!(
+                            data.tokens.slice.get(end + 1).map(|token| &token.kind),
+                            Some(punctuator!(OpenParen))
+                        ),
+                        _ => declarator,
+                    },
+                    TypePosition::Expression => false,
+                }
             } else {
                 data.is_module_type(&name)?
             }

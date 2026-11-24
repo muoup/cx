@@ -16,7 +16,7 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
     },
-    eval::{eval_type, expr::name, flow},
+    eval::{eval_type, expr::name, flow, symbol},
     log::hmir_error,
     lower::declaration,
 };
@@ -115,9 +115,10 @@ fn validate_alias(
     let source = unit
         .resolve_def(def)
         .expect("alias owner contains its definition");
-    let Some(HMIRDefKind::Function(function)) = declaration::canonical(source).kind() else {
+    let Some(HMIRDefKind::Function(_)) = declaration::canonical(source).kind() else {
         return Err(invalid(span, "a call to a non-transparent function"));
     };
+    let function = symbol::function(context.env_mut(), def)?;
     let Some(root) = function.transparent_body() else {
         return Err(invalid(span, "a call to a non-transparent function"));
     };
@@ -129,7 +130,7 @@ fn validate_alias(
         ));
     }
     let result = context.relocated(def.brand(), |context| {
-        validate_expr(validation, context, function, root, true)
+        validate_expr(validation, context, &function, root, true)
     });
     validation.active.remove(&def);
     result?;

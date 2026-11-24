@@ -158,7 +158,7 @@ pub(crate) fn eval_let(
 
     let is_runtime = context.is_runtime();
     let value = eval(context, body, initializer)?;
-    let value = deduce::complete(context, body, value, declared.known().copied())?;
+    let value = deduce::complete(context, body, value, declared.known().copied(), &span)?;
     let span = span.clone();
     let as_is = matches!(body.expr(local.ty()).kind(), HMIRExprKind::Hole(_)) || referent.is_some();
     value.and_then(context, body, move |context, body, value| {

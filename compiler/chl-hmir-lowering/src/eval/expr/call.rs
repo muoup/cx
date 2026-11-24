@@ -53,6 +53,70 @@ pub(crate) fn eval_call(
     )
 }
 
+pub(crate) fn apply_type(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    span: &TokenRange,
+    callee: HMIRValue,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    let env = context.env();
+    let mut ty = callee.ty();
+    while let Some(inner) = env.reference_inner(ty) {
+        ty = inner;
+    }
+    let ty = env.pointer_inner(ty).unwrap_or(ty);
+    let HMIRTypeKind::Function { signature, .. } = env.resolve_kind(ty) else {
+        return Ok(Evaluation::Ready(callee));
+    };
+    if !context.is_comptime()
+        || signature.is_variadic()
+        || !matches!(
+            env.resolve_kind(*signature.return_type()),
+            HMIRTypeKind::Type
+        )
+    {
+        return Ok(Evaluation::Ready(callee));
+    }
+    if !signature.params().is_empty() {
+        let (base, applied) = match value::into_application(callee.clone()) {
+            Ok(application) => (*application.callee, application.args),
+            Err(callee) => (callee, Vec::new()),
+        };
+        let Some(def) = value::as_function(&base) else {
+            return Ok(Evaluation::Ready(callee));
+        };
+        let function = symbol::function(context.env_mut(), def)?;
+        if !accepts_empty(&function, &applied) {
+            return Ok(Evaluation::Ready(callee));
+        }
+    }
+    let callee = coerce::collapse(context, callee, span)?;
+    apply(context, body, span, callee, &[], &[])
+}
+
+fn defaulted(function: Option<&HMIRFunction>, index: usize) -> bool {
+    function
+        .and_then(|function| function.prototype().params().get(index))
+        .is_some_and(|param| param.default().is_some())
+}
+
+fn required<'a>(
+    function: Option<&'a HMIRFunction>,
+    applied: &'a [Option<HMIRValue>],
+    count: usize,
+) -> impl Iterator<Item = usize> + 'a {
+    (0..count).filter(move |&index| {
+        !applied.get(index).is_some_and(Option::is_some) && !defaulted(function, index)
+    })
+}
+
+pub(crate) fn accepts_empty(function: &HMIRFunction, applied: &[Option<HMIRValue>]) -> bool {
+    !function.signature().is_variadic()
+        && required(Some(function), applied, function.signature().params().len())
+            .next()
+            .is_none()
+}
+
 // Binds the arguments of a call to the parameters of its callee, evaluates them, and calls the callee with the
 // values, or curries it with them where the call is partial
 fn apply(
@@ -133,12 +197,8 @@ pub(crate) fn bind<T>(
 ) -> CHLResult<(Vec<Option<HMIRExprID>>, bool)> {
     let params = signature.params();
     let declared = function.map_or(&[][..], |function| function.prototype().params());
-    let defaulted = |index: usize| {
-        declared
-            .get(index)
-            .is_some_and(|param| param.default().is_some())
-    };
-    let applied = |index: usize| applied.get(index).is_some_and(Option::is_some);
+    let defaulted = |index| defaulted(function, index);
+    let is_applied = |index: usize| applied.get(index).is_some_and(Option::is_some);
 
     let mut bound = vec![None; params.len()];
     for (argument, expr) in named {
@@ -148,7 +208,7 @@ pub(crate) fn bind<T>(
             let unknown = (format!("'{name}'"), argument.to_string());
             return Err(hmir_error(arg_span, &typecheck::UNKNOWN_PARAMETER, unknown));
         };
-        if applied(index) || bound[index].is_some() {
+        if is_applied(index) || bound[index].is_some() {
             let duplicate = (
                 format!("argument '{argument}'"),
                 format!("call to '{name}'"),
@@ -158,7 +218,7 @@ pub(crate) fn bind<T>(
         bound[index] = Some(*expr);
     }
 
-    let positional = (0..params.len()).filter(|index| !applied(*index) && !defaulted(*index));
+    let positional = required(function, applied, params.len());
     let positional = positional.collect::<Vec<_>>();
     for (index, expr) in positional.iter().zip(args) {
         bound[*index] = Some(*expr);
@@ -177,7 +237,7 @@ pub(crate) fn bind<T>(
         let mut error = hmir_error(span, &typecheck::ARGUMENT_COUNT, counts);
         if args.len() == positional.len() + 1 {
             let mut available = (0..params.len())
-                .filter(|&index| defaulted(index) && !applied(index) && bound[index].is_none());
+                .filter(|&index| defaulted(index) && !is_applied(index) && bound[index].is_none());
             if let (Some(index), None) = (available.next(), available.next())
                 && let Some(name) = declared[index].name()
             {

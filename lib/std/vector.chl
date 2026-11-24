@@ -133,11 +133,14 @@ where
     return move vector;
 }
 
+void force_grow(vector(_: T, .A = _: A)& this) {
+    this.capacity *= 2;
+    std::reallocate_inplace(A, this.alloc, this.capacity * sizeof(T));
+}
+
 private:
 
 void try_realloc(vector(_: T, .A = _: A)& this) {
     if (this.length < this.capacity) return;
- 
-    this.capacity *= 2;
-    std::reallocate_inplace(A, this.alloc, this.capacity * sizeof(T));
+    this |> force_grow();
 }

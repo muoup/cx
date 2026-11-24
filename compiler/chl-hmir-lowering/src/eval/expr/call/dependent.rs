@@ -289,8 +289,9 @@ pub(crate) fn call(
             Some(arg) if (runtime && params[index].comptime()) || spliced => {
                 comptime::freeze(context, body, arg, Some(ty))
             }
-            Some(arg) => eval(context, body, arg)
-                .and_then(|evaluated| deduce::complete(context, body, evaluated, Some(ty))),
+            Some(arg) => eval(context, body, arg).and_then(|evaluated| {
+                deduce::complete(context, body, evaluated, Some(ty), arg_span)
+            }),
             None => super::default(context, def, function, index, ty),
         }
         .map_err(|exit| match exit {

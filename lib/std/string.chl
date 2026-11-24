@@ -9,75 +9,46 @@ extern "C":
 
 public:
 
-struct string : @nodrop {
-    char* data;
-    u64 length;
-    u64 capacity;
-};
+comptime type string(std::allocator A = std::heap_allocator) 
+    => @strong std::vector(u8, .A = A);
 
 // std::string implementations
 
-string string::new() {
-    match (string::try_new_string()) {
-        some(auto val) => return move val,
-        none() => {
-            std::io::println("Failed to allocate memory for string");
-            @unsafe(exit(1));
-        }
-    }
-}
+string(.A = A) string::new(comptime std::allocator A = std::heap_allocator)
+    => (string(.A = A)) std::vector::new(u8);
 
-std::opt(string) string::try_new_string() {
-    @unsafe {
-        void* base_buffer = calloc(1, 16);
+string(.A = A) string::clone(const string(.A = _: A)& this) => this |> string::as_str() |> string::from_str();
 
-        if (base_buffer == NULL) {
-            return _::none();
-        }
+void string::drop(string(.A = _: A) this)
+    => move this |> string::underlying() |> std::vector::drop();
 
-        return _::some((string) {
-            .data = base_buffer,
-            .length = 0,
-            .capacity = 16
-        });
-    };
-}
-
-string string::clone(const string& this) {
-    string new_string = string::new();
-    new_string |> string::append_str(this |> string::as_str());
-    return move new_string;
-}
-
-void string::drop(string this) {
-    @unsafe {
-        free(this.data);
-        @leak(this);
-    };
-}
-
-string string::from_str(const _str& s) {
+string(.A = A) string::from_str(comptime std::allocator A = std::heap_allocator, const _str& s) {
     string new_string = string::new();
     new_string |> string::append_str(s);
     return move new_string;
 }
 
-string string::from_ascii(std::span(const char) this) {
+string(.A = A) string::from_ascii(comptime std::allocator A = std::heap_allocator, std::span(const char) this) {
     string str = string::new();
     string::append_span(str, this);
     return move str;
 }
 
-const _str& string::as_str(const string& this) {
+const _str& string::as_str(const string(.A = _)& this) {
     // SAFETY: We ensure via our API that our internal const char* is a valid c-string with null-termination,
     // so this cast is safe as long as the caller does not mutate the string data through the returned reference.
-    return @unsafe((const _str&) this.data);
+    return @unsafe((const _str&) (char*) this.alloc.data);
 }
 
-std::span(char) string::as_ascii(string& this)
+_str& string::as_str_mut(string(.A = _)& this) {
+    // SAFETY: See string::as_str above
+    return @unsafe((_str&) (char*) this.alloc.data);
+}
+
+std::span(char) string::as_ascii(string(.A = _)& this)
     => std::span::new(this.data, this.length);
 
-std::vector(char, .A = std::heap_allocator) string::into_ascii(string this) {
+std::vector(char, .A = A) string::into_ascii(string(.A = _: A) this) {
     auto allocator = (std::allocation(std::heap_allocator)) {
         .data = this.data,
         .size = this.capacity
@@ -88,39 +59,34 @@ std::vector(char, .A = std::heap_allocator) string::into_ascii(string this) {
     return move result;
 }
 
-void string::append_str(string& this, const _str& s) {
+void string::append_str(string(.A = _)& this, const _str& s) {
     usize str_length = str::length(s);
     auto span = std::span::new(.T = const char, (const char*) s, str_length);
     string::append_span(this, span);
 }
 
-void string::append_span(string& this, std::span(const char) span) {
+void string::append_span(string(.A = _)& this, std::span(const char) span) {
     u64 length = span |> std::span::length();
 
     while (this.length + span.length + 1 >= this.capacity) {
         this |> string::_realloc();
     }
     
-    memcpy(this.data + this.length, span |> std::span::data(), length);
+    memcpy(this.alloc.data + this.length, span |> std::span::data(), length);
     this.length = length + this.length;
-    this.data[this.length] = 0;
+    (this |> string::as_str_mut())[this.length] = 0;
 }
 
-void string::append_char(string& this, char c) {
+void string::append_char(string(.A = _)& this, char c) {
     if (this.length + 1 >= this.capacity) {
         this |> string::_realloc();
     }
 
-    this.data[this.length++] = c;
-    this.data[this.length] = 0;
+    (this |> string::as_str_mut())[this.length++] = c;
+    (this |> string::as_str_mut())[this.length] = 0;
 }
 
-_str& string::as_str_mut(string& this) {
-    // SAFETY: See string::as_str above
-    return @unsafe((_str&) this.data);
-}
-
-bool string::equals(const string& this, const string& other) {
+bool string::equals(const string(.A = _)& this, const string& other) {
     if (this.length != other.length) {
         return false;
     }
@@ -162,7 +128,14 @@ std::span(const u8) str::as_const_bytes(const _str& this) {
 
 private:
 
-void string::_realloc(string& this) {
-    this.capacity = this.capacity * 2;
-    this.data = realloc(this.data, this.capacity);
+std::vector(u8, .A = A)& string::underlying_ref(string(.A = _: A)& this)
+    => *(std::vector(u8, .A = A)*) &this;
+
+std::vector(u8, .A = A) string::underlying(string(.A = _: A) this)
+    => (std::vector(u8, .A = A)) move this;
+    
+void string::_realloc(string(.A = _: A)& this) {
+    this 
+        |> string::underlying_ref() 
+        |> std::vector::force_grow();
 }

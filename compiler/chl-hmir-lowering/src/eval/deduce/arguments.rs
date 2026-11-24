@@ -214,7 +214,7 @@ pub(crate) fn generates_type(function: &HMIRFunction) -> bool {
     let signature = function.signature();
     function.returns_type()
         && (function.transparent_body().is_some()
-            || signature.params().iter().all(|param| param.comptime()))
+            || (0..signature.params().len()).all(|index| signature.is_comptime_param(index)))
 }
 
 pub(crate) fn generated(

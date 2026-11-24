@@ -195,11 +195,13 @@ pub(crate) fn eval_type(
     if context.is_runtime() {
         return comptime::frozen(context, span, |child| eval_type(child, body, id));
     }
-    match eval(context, body, id) {
+    match eval(context, body, id)
+        .and_then(|value| deduce::described_type(context, body, value, span))
+    {
         Err(flow::EvalExit::Stop(_)) => {
             Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into())
         }
-        value => deduce::described_type(context, body, value?, span),
+        result => result,
     }
 }
 

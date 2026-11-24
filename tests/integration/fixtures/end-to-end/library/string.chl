@@ -10,6 +10,6 @@ int main() {
     s |> std::string::append_str("Hello, worl");
     s |> std::string::append_char('d');
     s |> std::string::append_char('!');
-    printf("%s\n", s.data);
+    printf("%s\n", s |> std::string::as_str());
     move s |> std::string::string::drop();
 }

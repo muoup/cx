@@ -1,0 +1,2 @@
+comptime type Opaque() => int;
+comptime type Alias() = Opaque;
