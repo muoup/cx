@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
 use rustc_hash::FxHashMap;
 
 use chl_hmir::{
-    HMIRDefID, HMIRUnitID,
+    HMIRDefID, HMIRFunction, HMIRUnitID,
     expr::HMIRExprID,
     ty::{
         HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, NominalID,
@@ -54,6 +56,7 @@ pub(crate) struct HMIRResolver {
     deferred: Vec<HMIRTypeID>,
     generated: FxHashMap<HMIRDefID, FxHashMap<Vec<HMIRValue>, HMIRValue>>,
     origins: FxHashMap<HMIRTypeID, (HMIRDefID, Vec<HMIRValue>)>,
+    pub(crate) elaborated_functions: FxHashMap<HMIRDefID, Option<Rc<HMIRFunction>>>,
     next_nominal: u64,
     nominal_sites: FxHashMap<NominalSite, HMIRTypeID>,
 }

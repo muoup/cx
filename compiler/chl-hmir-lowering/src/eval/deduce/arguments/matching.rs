@@ -23,7 +23,6 @@ use crate::{
         eval, symbol, types,
     },
     log::hmir_error,
-    lower::declaration,
     value::{self, HMIRValue},
 };
 
@@ -64,12 +63,11 @@ pub(super) fn unify(
             let Some(def) = value::as_function(&callee) else {
                 return Ok(());
             };
-            let unit = context.unit(def.brand());
-            let function = declaration::function(unit.resolve_def(def).expect("function exists"));
+            let function = symbol::function(context.env_mut(), def)?;
             let pattern = CallPattern {
                 form,
                 def,
-                function,
+                function: &function,
                 curried,
                 args,
                 named,
@@ -123,7 +121,7 @@ fn unfold(
         return Err(hmir_error(span, &mir::DEPENDENCY_CYCLE, subject));
     }
 
-    let Some(arguments) = try_align(context, &pattern, span)? else {
+    let Some(arguments) = try_align(context, &pattern)? else {
         return Ok(());
     };
     let arguments = arguments
@@ -173,7 +171,7 @@ fn match_instance(
     let Some(instance) = instance(context, pattern.def, actual) else {
         return Ok(());
     };
-    let Some(arguments) = try_align(context, &pattern, span)? else {
+    let Some(arguments) = try_align(context, &pattern)? else {
         return Ok(());
     };
     for (arg, actual) in arguments.into_iter().zip(instance) {
@@ -196,8 +194,8 @@ fn match_instance(
 fn try_align(
     context: &LocalLoweringContext,
     pattern: &CallPattern<'_>,
-    span: &TokenRange,
 ) -> CHLResult<Option<Vec<Option<HMIRExprID>>>> {
+    let span = pattern.form.body.expr(pattern.form.expr).span();
     let (arguments, partial) = call::bind(
         Some(pattern.function),
         pattern.function.signature(),

@@ -280,7 +280,7 @@ pub(crate) fn parse_argument(data: &mut ParserData) -> CHLResult<HIRExpression> 
     if try_next!(data.tokens, operator!(Access)) {
         if let Some(name) = try_parse_simple_identifier(&mut data.tokens) {
             assert_token_matches!(data.tokens, TokenKind::Assignment(None), "'='");
-            let value = parse_expr(data)?;
+            let value = parse_argument_value(data)?;
             return Ok(HIRExprKind::NamedArgument {
                 name,
                 value: Box::new(value),
@@ -292,6 +292,29 @@ pub(crate) fn parse_argument(data: &mut ParserData) -> CHLResult<HIRExpression> 
             ));
         }
         data.tokens.back();
+    }
+    parse_argument_value(data)
+}
+
+fn parse_argument_value(data: &mut ParserData) -> CHLResult<HIRExpression> {
+    let start = data.tokens.index;
+    if !data.c_mode
+        && !data.in_include()
+        && matches!(
+            data.tokens.slice.get(start..start + 2),
+            Some([hole, colon])
+                if matches!(hole.kind, keyword!(Hole)) && matches!(colon.kind, punctuator!(Colon))
+        )
+    {
+        data.tokens.index += 2;
+        let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("a hole binding name".into(), None),
+            );
+        };
+        return Ok(data.expr_from(start, HIRExprKind::HoleBinding(name)));
     }
     parse_expr(data)
 }
@@ -832,8 +855,17 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CHLResult<HIRExpre
     path.push(name.name.clone());
 
     let head = QualifiedName::root(path[0].clone());
-    if path.len() == 1 || data.local_name(&head) != Some(LocalName::Type) {
-        return Ok(HIRExprKind::Identifier { name }.into_expr(start_index, data.tokens.index, range));
+    if path.len() == 1
+        || !matches!(
+            data.local_name(&head),
+            Some(LocalName::Type | LocalName::Inferred)
+        )
+    {
+        return Ok(HIRExprKind::Identifier { name }.into_expr(
+            start_index,
+            data.tokens.index,
+            range,
+        ));
     }
     let base = HIRExprKind::Type(
         HIRTypeKind::Identifier {

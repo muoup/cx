@@ -42,6 +42,7 @@ pub struct ParserData<'a> {
 pub(super) enum LocalName {
     Type,
     Value,
+    Inferred,
 }
 
 #[derive(Debug, Clone, Copy)]

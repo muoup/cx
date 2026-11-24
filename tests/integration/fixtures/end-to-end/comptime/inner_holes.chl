@@ -1,0 +1,29 @@
+#include <stdio.h>
+
+comptime type Buffer(comptime type T, comptime int N = _) => struct { T data[N]; };
+comptime type Fixed(comptime int N = 2) => struct { int data[N]; };
+comptime type Array(comptime type T, comptime int N = _) = T[N];
+
+usize length(Buffer(int)& value) => sizeof(value.data) / sizeof(int);
+usize explicit_hole(comptime type T = _, Buffer(T, .N = _)& value)
+    => sizeof(value.data) / sizeof(T);
+T first(Buffer(_: T)& value) => (T) value.data[0];
+int doubled(Buffer(_: T, .N = _: N)& value)
+where pre: (sizeof(T) == sizeof(int))
+    => N * 2;
+usize both(Buffer(int)& left, Buffer(int)& right) => length(left) + length(right);
+usize ordinary_default(Fixed()& value) => sizeof(value.data) / sizeof(int);
+usize override_default(Fixed(.N = _)& value) => sizeof(value.data) / sizeof(int);
+usize array_length(Array(int)& value) => sizeof(value) / sizeof(int);
+
+int main() {
+    Buffer(int, .N = 3) a = { .data = { 11 } };
+    Buffer(int, .N = 5) b = { .data = { 13 } };
+    Fixed() fixed;
+    Fixed(.N = 4) override;
+    int array[7];
+    printf("%d %d %d %d\n", (int)length(a), (int)length(b), (int)explicit_hole(a), first(b));
+    printf("%d %d %d %d %d\n", doubled(a), (int)both(a, b),
+           (int)ordinary_default(fixed), (int)override_default(override), (int)array_length(array));
+    return 0;
+}

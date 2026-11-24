@@ -17,6 +17,7 @@ use crate::parse::{parse_intrinsic, parser::LocalName, try_parse_qualified_name}
 pub(super) enum TypePosition {
     Statement,
     Expression,
+    Cast,
 }
 
 pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLResult<bool> {
@@ -50,7 +51,51 @@ pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLR
                 return Ok(true);
             }
             if let Some(kind) = data.local_name(&name) {
-                return Ok(kind == LocalName::Type);
+                return Ok(match kind {
+                    LocalName::Type => true,
+                    LocalName::Value => false,
+                    LocalName::Inferred => {
+                        let tail = &data.tokens.slice[end..];
+                        let mut tail = tail.iter().skip_while(|token| {
+                            matches!(
+                                token.kind,
+                                operator!(Asterisk) | operator!(Ampersand) | specifier!()
+                            )
+                        });
+                        let next = tail.next().map(|token| &token.kind);
+                        let indirect =
+                            matches!(following, Some(operator!(Asterisk) | operator!(Ampersand)));
+                        match position {
+                            TypePosition::Statement => matches!(next, Some(identifier!())),
+                            TypePosition::Expression => {
+                                indirect
+                                    && matches!(
+                                        next,
+                                        Some(
+                                            punctuator!(CloseParen)
+                                                | punctuator!(CloseBracket)
+                                                | operator!(Comma)
+                                        )
+                                    )
+                            }
+                            TypePosition::Cast => {
+                                matches!(next, Some(punctuator!(CloseParen)))
+                                    && (indirect
+                                        || matches!(
+                                            tail.next().map(|token| &token.kind),
+                                            Some(
+                                                identifier!()
+                                                    | TokenKind::IntLiteral(_)
+                                                    | TokenKind::FloatLiteral(_)
+                                                    | TokenKind::StringLiteral(_)
+                                                    | TokenKind::CompilerIdentifier(_)
+                                                    | punctuator!(OpenBrace)
+                                            )
+                                        ))
+                            }
+                        }
+                    }
+                });
             }
             if name
                 .root_name_ref()

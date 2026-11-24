@@ -27,10 +27,10 @@ use crate::{
         deduce::{self, Deduction, Pending},
         eval, eval_type,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
-        staged, symbol, types,
+        staged, storage, symbol, types,
     },
     log::hmir_error,
-    lower::{self, declaration},
+    lower,
     value::{self, HMIRValue},
 };
 
@@ -106,7 +106,12 @@ impl<'a> Frame<'a> {
         value: HMIRValue,
         span: &TokenRange,
     ) -> CHLResult<HMIRValue> {
-        let ty = self.parameter(caller, index, span)?;
+        let ty = if self.function.prototype().params()[index].inferred() {
+            self.types[index] = Some(value.ty());
+            value.ty()
+        } else {
+            self.parameter(caller, index, span)?
+        };
         if let Some(ty) = value::as_type(&value) {
             demand::prepare(caller.env_mut(), ty)?;
         }
@@ -130,7 +135,7 @@ impl<'a> Frame<'a> {
             let declaration = function.body().local(local);
             let span = declaration.span();
             let target = emit::storage::allocate(child, ty, declaration.name().cloned(), span)?;
-            emit::storage::initialize(child, &target, Some(&value), span)?;
+            storage::initialize(child, &target, Some(&value), span)?;
             emit::storage::bind_local(child, local, target);
             Ok(())
         })?;
@@ -262,6 +267,10 @@ pub(crate) fn call(
         if arg.is_none() && default(index).is_none() {
             continue;
         }
+        if prototype.params()[index].inferred() {
+            deduction.defer(index, Pending::Value);
+            continue;
+        }
         let arg_span = arg.map_or(span, |arg| body.expr(arg).span());
         let ty = frame.parameter(context, index, span)?;
         let given = match arg {
@@ -334,15 +343,10 @@ pub(crate) fn apply(
     values: Vec<Option<HMIRValue>>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let unit = context
-        .env_mut()
-        .symbols_mut()
-        .owner(def.brand())
-        .expect("function owner exists");
-    let function = declaration::function(unit.resolve_def(def).expect("function exists"));
-    let runtime = context.is_runtime() && !is_spliced(context, function);
+    let function = symbol::function(context.env_mut(), def)?;
+    let runtime = context.is_runtime() && !is_spliced(context, &function);
     let state = ComptimeContext::of(def);
-    let mut frame = Frame::new(function, def, state, runtime);
+    let mut frame = Frame::new(&function, def, state, runtime);
     let values = frame.instantiate(context, values, span)?;
     finish(context, frame, values, span)
 }

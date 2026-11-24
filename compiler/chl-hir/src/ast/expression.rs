@@ -55,6 +55,7 @@ pub enum HIRExprKind {
     Type(HIRType),
     // '_', a comptime argument left for the compiler to fill in
     Hole,
+    HoleBinding(CHLIdent),
     // 'base::member' where the base is computed, 'opt(int)::some'
     ScopeAccess {
         base: Box<HIRExpression>,

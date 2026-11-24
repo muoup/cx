@@ -1,0 +1,14 @@
+struct Resource : @nodrop { int value; };
+
+comptime void write_after_move() {
+    Resource resource = { 1 };
+    Resource moved = move resource;
+    @leak(moved);
+    resource.value = 2;
+    @leak(resource);
+}
+
+int main() {
+    write_after_move();
+    return 0;
+}

@@ -17,7 +17,7 @@ use chl_tokens::TokenRange;
 use crate::{
     emit::{self, intrinsics},
     env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{EvalResult, arithmetic, eval, eval_type, flow::Evaluation, place, types},
+    eval::{EvalResult, arithmetic, eval, eval_type, flow::Evaluation, place, storage, types},
     log::hmir_error,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
@@ -91,7 +91,11 @@ pub(crate) fn temporary(
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
     let storage = emit::storage::scratch(context, value.ty(), span)?;
-    emit::storage::initialize(context, &storage, Some(value), span)?;
+    if context.is_runtime() {
+        let place = value::as_place(&storage).expect("scratch storage has a place");
+        storage::drop(context, place, span)?;
+    }
+    storage::initialize(context, &storage, Some(value), span)?;
 
     Ok(storage)
 }

@@ -1,4 +1,4 @@
-import std::{optional, io, span, vector} as std;
+import std::{optional, io, span, vector, allocation} as std;
 
 extern "C":
 
@@ -77,8 +77,13 @@ const _str& string::as_str(const string& this) {
 std::span(char) string::as_ascii(string& this)
     => std::span::new(this.data, this.length);
 
-std::vector(char) string::into_ascii(string this) {
-    auto result = std::vector::from_data(this.data, this.length);
+std::vector(char, .A = std::heap_allocator) string::into_ascii(string this) {
+    auto allocator = (std::allocation(std::heap_allocator)) {
+        .data = this.data,
+        .size = this.capacity
+    };
+ 
+    auto result = std::vector::from_data(char, move allocator, this.length);
     @leak(this);
     return move result;
 }

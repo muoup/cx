@@ -30,7 +30,7 @@ use crate::{
         arithmetic::{binary_operands, eval_operand},
         coerce, comptime, deduce, eval, expr,
         flow::Evaluation,
-        place, types,
+        place, storage, types,
     },
     log::hmir_error,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
@@ -269,7 +269,7 @@ pub(crate) fn eval_unpack(
             emit::storage::lift(context, &projected, span)?
         };
         let target = emit::storage::allocate(context, ty, Some(name), span)?;
-        emit::storage::initialize(context, &target, Some(&value), span)?;
+        storage::initialize(context, &target, Some(&value), span)?;
         emit::storage::bind_local(context, local, target);
     }
     Ok(Evaluation::Ready(value::unit(context.env())))

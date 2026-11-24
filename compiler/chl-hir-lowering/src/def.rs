@@ -15,13 +15,14 @@ use chl_hmir::{
     },
     unit::function::HMIRFnPrototype,
 };
-use chl_log::CHLResult;
+use chl_log::{CHLResult, catalogue::typecheck};
 use chl_namespace::module::QualifiedName;
 use chl_tokens::TokenRange;
 
 use crate::{
     body::BodyLowering,
     expr::{lower_expr, lower_initial_value, lower_scope_statements},
+    log::log_hir_error,
     plan::{DefSource, PlannedSymbol},
     ty::{lower_return_type, lower_type},
     unit::{UnitContext, def_name},
@@ -120,20 +121,39 @@ fn lower_function<'a>(
     body: Option<&'a HIRFunctionBody>,
 ) -> CHLResult<HMIRDefKind> {
     let (defaults, default_exprs) = lower_defaults(&mut context, prototype)?;
-    let (params, return_type, contract, root) =
+    let (params, holes, return_type, contract, root) =
         context.with_stage(prototype.comptime, |this| -> CHLResult<_> {
             let mut params = Vec::new();
+            this.parameter_holes = Some(Vec::new());
             for param in declared_params(prototype) {
                 let ty = lower_type(this, &param.ty)?;
+                if let Some(name) = &param.name
+                    && this
+                        .parameter_holes
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .any(|&local| this.local(local).name() == Some(name))
+                {
+                    return log_hir_error(
+                        &param.range,
+                        &typecheck::DUPLICATE_ITEM,
+                        (
+                            format!("binding '{name}'"),
+                            "this function signature".into(),
+                        ),
+                    );
+                }
                 params.push(this.declare(param.name.as_ref(), ty, param.comptime, &param.range));
             }
+            let holes = this.parameter_holes.take().unwrap();
             let return_type = lower_return_type(this, prototype)?;
-            let contract = lower_contract(this, prototype)?;
+            let contract = lower_contract(this, prototype, &holes)?;
             let root = body
                 .map(|body| lower_function_body(this, body))
                 .transpose()?;
 
-            Ok((params, return_type, contract, root))
+            Ok((params, holes, return_type, contract, root))
         })?;
 
     let stage = if prototype.comptime {
@@ -155,12 +175,9 @@ fn lower_function<'a>(
     let transparent = matches!(body, Some(HIRFunctionBody::TypeAlias(_)));
     let def = root.map(|root| context.finish_definition(root, transparent));
 
-    Ok(HMIRDefKind::Function(Box::new(HMIRFunction::new(
-        context.finish(),
-        prototype,
-        params.into(),
-        def,
-    ))))
+    let mut function = HMIRFunction::new(context.finish(), prototype, params.into(), def);
+    function.prepend_inferred_parameters(&holes);
+    Ok(HMIRDefKind::Function(Box::new(function)))
 }
 
 // A parameter list of a lone unnamed 'void' declares no parameters
@@ -238,6 +255,7 @@ fn lower_enum_variant<'a>(
 fn lower_contract(
     context: &mut BodyLowering<'_>,
     prototype: &HIRFunctionPrototype,
+    holes: &[chl_hmir::body::HMIRLocalID],
 ) -> CHLResult<HMIRContract> {
     let contract = &prototype.contract;
     let span = &prototype.range;
@@ -246,15 +264,21 @@ fn lower_contract(
         return Ok(HMIRContract::new(body, params, contract.safe, None, None));
     }
 
+    let holes = holes
+        .iter()
+        .map(|&local| context.local(local).clone())
+        .collect::<Vec<_>>();
     let declared = declared_params(prototype);
     let mut conditions = context.detached(prototype.comptime);
-    let params = declared
-        .iter()
-        .map(|param| {
-            let ty = conditions.hole(&param.ty.range);
-            conditions.declare(param.name.as_ref(), ty, param.comptime, &param.range)
-        })
-        .collect();
+    let mut params = Vec::new();
+    for hole in holes {
+        let ty = conditions.hole(hole.span());
+        params.push(conditions.declare(hole.name(), ty, true, hole.span()));
+    }
+    for param in declared {
+        let ty = conditions.hole(&param.ty.range);
+        params.push(conditions.declare(param.name.as_ref(), ty, param.comptime, &param.range));
+    }
 
     let precondition = contract
         .precondition
@@ -277,7 +301,7 @@ fn lower_contract(
 
     Ok(HMIRContract::new(
         conditions.finish(),
-        params,
+        params.into(),
         contract.safe,
         precondition,
         postcondition,

@@ -172,6 +172,9 @@ pub fn visit_bindable_uses(kind: &MIRInstructionKind, mut visit: impl FnMut(MIRB
             value: input,
             ..
         } => {
+            if let MIRTarget::Place(place) = destination {
+                visit(MIRBindable::Place(*place));
+            }
             visit_target(destination, &mut visit);
             visit_value(input, &mut visit);
         }

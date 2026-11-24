@@ -264,6 +264,8 @@ fn project(
         true => base.clone(),
         false => {
             let temporary = storage::allocate(context, base.ty(), None, span)?;
+            let place = value::as_place(&temporary).expect("temporary storage has a place");
+            storage::initialize(context, place, span)?;
             storage::write(context, &temporary, base, span)?;
             temporary
         }

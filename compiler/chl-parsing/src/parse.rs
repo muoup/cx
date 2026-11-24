@@ -11,7 +11,7 @@ use chl_log::CHLResult;
 use chl_preparse_data::VisibilityMode;
 use chl_tokens::{
     keyword, operator, punctuator, specifier,
-    token::{SpecifierType, TokenKind},
+    token::{SpecifierType, Token, TokenKind},
     TokenIter,
 };
 use chl_util::identifier::CHLIdent;
@@ -233,7 +233,7 @@ fn parse_fn_merge(
 
 // The names bound by 'type' parameters of the declaration ahead. They are types from the
 // return type onwards, which is written before the parameter list that binds them.
-fn scan_type_binders(data: &ParserData) -> Vec<CHLIdent> {
+fn scan_type_binders(data: &ParserData) -> Vec<(CHLIdent, LocalName)> {
     let mut names = Vec::new();
     let mut depth = 0usize;
 
@@ -254,7 +254,26 @@ fn scan_type_binders(data: &ParserData) -> Vec<CHLIdent> {
                     .get(data.tokens.index + offset + 1)
                     .map(|token| &token.kind)
                 {
-                    names.push(CHLIdent::new(binder.clone()));
+                    names.push((CHLIdent::new(binder.clone()), LocalName::Type));
+                }
+            }
+            keyword!(Hole) if depth > 0 && !data.c_mode && !data.in_include() => {
+                let start = data.tokens.index + offset + 1;
+                if let Some(
+                    [Token {
+                        kind:
+                            punctuator!(OpenParen) | operator!(Comma) | TokenKind::Assignment(None),
+                        ..
+                    }, _, Token {
+                        kind: punctuator!(Colon),
+                        ..
+                    }, Token {
+                        kind: TokenKind::Identifier(name),
+                        ..
+                    }],
+                ) = data.tokens.slice.get(start - 2..start + 2)
+                {
+                    names.push((CHLIdent::new(name.clone()), LocalName::Inferred));
                 }
             }
             _ => {}
@@ -266,8 +285,8 @@ fn scan_type_binders(data: &ParserData) -> Vec<CHLIdent> {
 
 fn parse_global_expr(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
     data.with_name_scope(|data| {
-        for binder in scan_type_binders(data) {
-            data.note_local_name(binder, LocalName::Type);
+        for (binder, kind) in scan_type_binders(data) {
+            data.note_local_name(binder, kind);
         }
         parse_global_declaration(data, comptime)
     })

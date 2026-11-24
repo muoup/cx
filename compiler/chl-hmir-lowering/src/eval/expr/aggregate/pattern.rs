@@ -17,7 +17,7 @@ use crate::{
     eval::{
         EvalResult, arithmetic, coerce, eval, eval_type,
         flow::{self, Evaluation},
-        types,
+        storage, types,
     },
     log::hmir_error,
     value::{self, HMIRValue},
@@ -130,7 +130,7 @@ pub(crate) fn bind(
         }
     };
     let destination = emit::storage::allocate(context, binding_ty, local_info.name().cloned(), span)?;
-    emit::storage::initialize(context, &destination, Some(&value), span)?;
+    storage::initialize(context, &destination, Some(&value), span)?;
     emit::storage::bind_local(context, local, destination);
     Ok(reference.is_none())
 }

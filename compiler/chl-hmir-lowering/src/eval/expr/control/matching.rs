@@ -24,7 +24,7 @@ use crate::{
         },
         coerce, eval, eval_comptime,
         flow::{self, Evaluation},
-        types,
+        storage, types,
     },
     log::hmir_error,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
@@ -70,7 +70,7 @@ pub(crate) fn eval_match(
     let (subject, dispatch) = if owned {
         let name = body.local(local).name().cloned();
         let storage = emit::storage::allocate(context, ty, name, span)?;
-        emit::storage::initialize(context, &storage, Some(&subject), span)?;
+        storage::initialize(context, &storage, Some(&subject), span)?;
         emit::storage::bind_local(context, local, storage.clone());
         (storage.with_ty(ty), subject)
     } else {
@@ -232,7 +232,8 @@ fn bind_arm(
     };
     
     if owned && consumes {
-        emit::storage::invalidate(context, subject, MIRInvalidationKind::Move, span)?;
+        let place = value::as_place(subject).expect("an owned match subject has a place");
+        emit::storage::invalidate(context, place, MIRInvalidationKind::Move, span)?;
     }
     
     Ok(())
@@ -273,11 +274,12 @@ fn lower_arms(
     bind_arm(context, body, &state.subject, &pattern, &state.span)?;
     let result = arm_value(context, body, arm, &state.span, declared);
     let result = closing(context, body, result, &state.span);
-    let source = (!context.env().is_reference(state.subject.ty())).then(|| state.subject.clone());
+    let source = (!context.env().is_reference(state.subject.ty()))
+        .then(|| value::as_place(&state.subject).expect("an owned match subject has a place"));
     let span = state.span.clone();
     let result = flow::finally(context, body, result, move |context, _, _| {
         if let Some(source) = source {
-            emit::storage::invalidate(context, &source, MIRInvalidationKind::Drop, &span)?;
+            storage::drop(context, source, &span)?;
         }
         Ok(())
     });

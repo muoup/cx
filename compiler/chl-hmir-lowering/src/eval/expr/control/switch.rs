@@ -22,7 +22,7 @@ use crate::{
         binding::{eval_block, eval_scoped},
         coerce, eval, eval_comptime,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
-        types,
+        storage, types,
     },
     log::hmir_error,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
@@ -226,7 +226,7 @@ fn runtime_switch(
     let completion = eval_scoped(context, body, switch_body, false);
     let finish = span.clone();
     let completion = flow::finally(context, body, completion, move |context, _, _| {
-        emit::close_scope(context, &finish);
+        storage::close_scope(context, &finish)?;
         if context.runtime().emission() == Emission::Enabled {
             emit::runtime::flow::jump(context, exit, &finish);
         }

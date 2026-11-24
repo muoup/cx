@@ -212,6 +212,7 @@ impl<'a> Display for HIRExprFormatter<'a> {
             HIRExprKind::Identifier { name } => writeln!(f, "Identifier {}", name),
             HIRExprKind::Type(ty) => writeln!(f, "Type {ty}"),
             HIRExprKind::Hole => writeln!(f, "Hole"),
+            HIRExprKind::HoleBinding(name) => writeln!(f, "HoleBinding {name}"),
             HIRExprKind::ScopeAccess { base, member } => {
                 writeln!(f, "ScopeAccess {member}")?;
                 HIRExprFormatter::new(base, self.depth + 1).fmt(f)

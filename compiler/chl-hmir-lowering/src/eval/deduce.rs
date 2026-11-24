@@ -1,5 +1,6 @@
 mod arguments;
 pub(crate) mod pattern;
+pub(crate) mod signature;
 
 pub(crate) use super::flow::{Incomplete, IncompleteReason};
 pub(crate) use super::subject::{detached, placeholder, shadowed, subject, typed};
@@ -151,11 +152,19 @@ pub(crate) fn described_type(
         None,
         value::as_type,
         move |context, _, value, _| {
-            let value = coerce::promotion::std_rvalue(context, value, &span)?;
-            let Some(ty) = value::as_type(&value) else {
+            let subject = context.env().referent(value.ty());
+            let described = match context.env().resolve_kind(subject) {
+                HMIRTypeKind::Type if subject != value.ty() => {
+                    let value = coerce::promotion::reference_load(context, value, subject, &span)?;
+                    value::as_type(&value)
+                }
+                HMIRTypeKind::Type => value::as_type(&value),
+                _ => None,
+            };
+            let Some(ty) = described else {
                 let found = format!(
                     "expression of type '{}'",
-                    types::name(context.env(), value.ty())
+                    types::name(context.env(), subject)
                 );
                 return Err(hmir_error(&span, &typecheck::EXPECTED_TYPE, found).into());
             };

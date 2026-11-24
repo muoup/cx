@@ -20,6 +20,8 @@ pub enum MIRLivenessState {
 
 pub struct Liveness {
     table: StateTable<MIRLivenessState>,
+    block: MIRBasicBlockID,
+    reinitializations: Vec<Option<(MIRPlaceID, TokenRange)>>,
 
     // Registers occupy the first `register_count` table slots, places the rest
     register_count: usize,
@@ -49,6 +51,8 @@ impl Liveness {
     pub fn new() -> Self {
         Self {
             table: StateTable::new(),
+            block: MIRBasicBlockID::new(0),
+            reinitializations: Vec::new(),
             register_count: 0,
         }
     }
@@ -128,16 +132,57 @@ impl Liveness {
     }
 }
 
+fn require_droppable(
+    env: &AnalysisEnvironment,
+    bindable: &MIRBindable,
+    span: &TokenRange,
+) -> CHLResult<()> {
+    if nodrop(env, bindable) {
+        let (name, discarded) = debug_name(env.body(), bindable);
+        let args = (
+            env.function().prototype().display_name().to_string(),
+            "value".to_owned(),
+            name,
+            "lifetime".to_owned(),
+            discarded,
+        );
+        return log_analysis_error(span, (&analysis::VALUE_NOT_CONSUMED, args));
+    }
+    Ok(())
+}
+
 impl AnalysisPass for Liveness {
     fn function_entry(&mut self, env: &AnalysisEnvironment) -> CHLResult<()> {
         let body = env.body();
         self.register_count = body.registers().count();
+        self.reinitializations = vec![None; body.blocks().count()];
         self.table.reset(
             MIRLivenessState::Uninitialized,
             self.register_count + body.places().count(),
             body.blocks().count(),
         );
         Ok(())
+    }
+
+    fn block_entry(&mut self, _: &AnalysisEnvironment, block: MIRBasicBlockID) -> CHLResult<()> {
+        self.block = block;
+        self.reinitializations[block.index()] = None;
+        Ok(())
+    }
+
+    fn finish(&mut self, env: &AnalysisEnvironment) -> CHLResult<()> {
+        let Some((place, span)) = self.reinitializations.iter().flatten().next() else {
+            return Ok(());
+        };
+        let place = MIRBindable::Place(*place);
+        require_droppable(env, &place, span)?;
+        let (name, discarded) = debug_name(env.body(), &place);
+        let args = (
+            env.function().prototype().display_name().to_string(),
+            name,
+            discarded,
+        );
+        log_analysis_error(span, (&analysis::ALREADY_INITIALIZED, args))
     }
 
     fn analyze_instruction(
@@ -157,28 +202,20 @@ impl AnalysisPass for Liveness {
 
         match &instruction.kind {
             MIRInstructionKind::Initialize { place } => {
-                self.set(&MIRBindable::Place(*place), MIRLivenessState::Available);
+                let bindable = MIRBindable::Place(*place);
+                if self.available(env, &bindable) {
+                    self.reinitializations[self.block.index()]
+                        .get_or_insert_with(|| (*place, instruction.token_range.clone()));
+                }
+                self.set(&bindable, MIRLivenessState::Available);
             }
             MIRInstructionKind::Invalidate { place, kind } => {
                 let place = &MIRBindable::Place(*place);
                 if *kind == MIRInvalidationKind::Drop {
-                    if self.get(place) == Some(MIRLivenessState::Available) && nodrop(env, place) {
-                        let (name, discarded) = debug_name(env.body(), place);
-                        return log_analysis_error(
-                            &instruction.token_range,
-                            (
-                                &analysis::VALUE_NOT_CONSUMED,
-                                (
-                                    env.function().prototype().display_name().to_string(),
-                                    "value".to_owned(),
-                                    name,
-                                    "lifetime".to_owned(),
-                                    discarded,
-                                ),
-                            ),
-                        );
+                    if self.available(env, place) {
+                        require_droppable(env, place, &instruction.token_range)?;
+                        self.set(place, MIRLivenessState::Uninitialized);
                     }
-                    self.set(place, MIRLivenessState::Uninitialized);
                 } else {
                     self.require_available(
                         env,

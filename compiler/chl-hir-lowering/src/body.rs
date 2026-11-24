@@ -70,6 +70,7 @@ pub(crate) struct BodyLowering<'a> {
     // The def whose labels are in scope
     owner: Option<HMIRDefID>,
     address_labels: Vec<CHLIdent>,
+    pub(crate) parameter_holes: Option<Vec<HMIRLocalID>>,
 }
 
 impl<'a> Scope<'a> {
@@ -91,6 +92,7 @@ impl<'a> BodyLowering<'a> {
             comptime,
             owner: None,
             address_labels: Vec::new(),
+            parameter_holes: None,
         }
     }
 
@@ -181,6 +183,45 @@ impl<'a> BodyLowering<'a> {
     pub(crate) fn hole(&mut self, span: &TokenRange) -> HMIRExprID {
         let hole = self.body.declare_hole(HMIRHole::new(span.clone()));
         self.push(HMIRExprKind::Hole(hole), span)
+    }
+
+    pub(crate) fn bind_parameter_hole(
+        &mut self,
+        name: &CHLIdent,
+        span: &TokenRange,
+    ) -> CHLResult<HMIRExprID> {
+        if self.parameter_holes.is_none() {
+            return log_hir_error(
+                span,
+                &typecheck::INVALID_CONTEXT,
+                (
+                    "a hole binding".into(),
+                    "an expression outside a parameter type".into(),
+                ),
+            );
+        }
+        let key = (None, name.clone());
+        if self.scopes[0].symbols.contains_key(&key) {
+            return log_hir_error(
+                span,
+                &typecheck::DUPLICATE_ITEM,
+                (
+                    format!("binding '{name}'"),
+                    "this function signature".into(),
+                ),
+            );
+        }
+        let ty = self.hole(span);
+        let local =
+            self.body
+                .declare_local(HMIRLocal::new(Some(name.clone()), ty, span.clone(), true));
+        self.scopes[0].symbols.insert(key, ScopeEntry::Local(local));
+        self.parameter_holes.as_mut().unwrap().push(local);
+        Ok(self.push(HMIRExprKind::Local(local), span))
+    }
+
+    pub(crate) fn local(&self, local: HMIRLocalID) -> &HMIRLocal {
+        self.body.local(local)
     }
 
     pub(crate) fn block(

@@ -22,10 +22,9 @@ use crate::{
         aggregate::variant,
         coerce, comptime, eval, expr,
         flow::{self, Evaluation},
-        place, staged, types,
+        place, staged, symbol, types,
     },
     log::hmir_error,
-    lower::declaration,
     value::{
         self, HMIRApplication, HMIRValue, HMIRValueKind, address::Addressable,
         immediate::HMIRImmValue,
@@ -86,17 +85,10 @@ fn apply(
     let def = value::as_function(&callee);
 
     // Only a callee that names a function knows the names and the defaults of its parameters
-    let unit = def.map(|def| {
-        let symbols = context.env_mut().symbols_mut();
-        symbols.owner(def.brand()).expect("function owner exists")
-    });
-    let declared = match (def, &unit) {
-        (Some(def), Some(unit)) => {
-            let source = unit.resolve_def(def).expect("function exists");
-            Some((def, declaration::function(source)))
-        }
-        _ => None,
-    };
+    let function = def
+        .map(|def| symbol::function(context.env_mut(), def))
+        .transpose()?;
+    let declared = def.zip(function.as_deref());
     let function = declared.map(|(_, function)| function);
     let name = name(context, &callee);
     let (args, partial) = bind(
@@ -182,7 +174,20 @@ pub(crate) fn bind<T>(
             args.len(),
             signature.is_variadic(),
         );
-        return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, counts));
+        let mut error = hmir_error(span, &typecheck::ARGUMENT_COUNT, counts);
+        if args.len() == positional.len() + 1 {
+            let mut available = (0..params.len())
+                .filter(|&index| defaulted(index) && !applied(index) && bound[index].is_none());
+            if let (Some(index), None) = (available.next(), available.next())
+                && let Some(name) = declared[index].name()
+            {
+                error = error.with_note(
+                    format!("'{name}' has a default and can be supplied by name as '.{name} = …'"),
+                    None,
+                );
+            }
+        }
+        return Err(error);
     }
     bound.extend(args.iter().skip(positional.len()).map(|arg| Some(*arg)));
     Ok((bound, partial))

@@ -37,7 +37,8 @@ comptime auto reallocate(comptime allocator A, ^allocation(A) alloc, ^usize new_
 void reallocate_inplace(comptime allocator A, allocation(A)& alloc, usize new_size) {
     auto old_alloc = @adopt(alloc);
     auto new_alloc = reallocate(A, emit move old_alloc, emit new_size);
-    alloc = move new_alloc;
+    old_alloc = move new_alloc;
+    @leak(old_alloc);
 }
 
 comptime auto reallocate_fallback(comptime allocator A, ^allocation(A) alloc, ^usize new_size) -> ^allocation(A)

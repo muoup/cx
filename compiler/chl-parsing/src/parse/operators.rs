@@ -91,7 +91,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CHLResult<Option<HIRUn
         punctuator!(OpenParen) => {
             let pre_index = data.tokens.index - 1;
 
-            if !starts_type(data, TypePosition::Expression)? {
+            if !starts_type(data, TypePosition::Cast)? {
                 data.tokens.index = pre_index;
                 return Ok(None);
             }

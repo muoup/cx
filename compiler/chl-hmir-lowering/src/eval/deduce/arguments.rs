@@ -23,7 +23,6 @@ use crate::{
         types::{self, alike},
     },
     log::hmir_error,
-    lower::declaration,
     value::{self, HMIRValue},
 };
 
@@ -139,6 +138,7 @@ fn record(
             return Ok(());
         }
         Some(_) => actual,
+        None if deduction.function.prototype().params()[index].inferred() => actual,
         None => {
             let ty = frame.parameter(context, index, span)?;
             frame.enter(context, span, |child| {
@@ -233,18 +233,17 @@ pub(crate) fn generated(
         None,
         move |context, body, expected| {
             let expected = context.env().referent(expected);
-            let unit = context.unit(def.brand());
-            let function = declaration::function(unit.resolve_def(def).expect("function exists"));
+            let function = symbol::function(context.env_mut(), def)?;
             if let Some(root) = function.structural_body() {
                 let mut values = values;
-                let mut frame = Frame::new(function, def, ComptimeContext::of(def), false);
+                let mut frame = Frame::new(&function, def, ComptimeContext::of(def), false);
                 for (index, value) in values.iter().enumerate() {
                     if let Some(value) = value {
                         frame.argument(context, index, value.clone(), &span)?;
                     }
                 }
                 let mut deduction = Deduction {
-                    function,
+                    function: &function,
                     def,
                     slots,
                 };

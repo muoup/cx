@@ -5,9 +5,8 @@ pub mod storage;
 use chl_hmir::ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext};
 use chl_log::{CHLResult, catalogue::typecheck};
 use chl_mir::{
-    MIRFunctionID, MIRInstructionKind, MIRIntType, MIRInternalIntrinsic, MIRPlaceDecl,
+    MIRFunctionID, MIRIntType, MIRInternalIntrinsic, MIRPlaceDecl,
     MIRPtrIntrinsic, MIRRegisterDecl, MIRTarget, MIRValue,
-    expr::instruction::MIRInvalidationKind,
     immediate::{MIRAddressable, MIRImmediate},
 };
 use chl_tokens::TokenRange;
@@ -34,24 +33,6 @@ pub fn open_scope(context: &mut LocalLoweringContext) -> usize {
     let parent = scopes.top();
 
     scopes.push(RuntimeScope::new(false), Some(parent), Bindings::default())
-}
-
-pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
-    let index = context.runtime().scopes().top();
-    drop_scope(context, index, span);
-    context.runtime_mut().scopes_mut().pop();
-}
-
-pub fn drop_scope(context: &mut LocalLoweringContext, index: usize, span: &TokenRange) {
-    let places = context.runtime().scopes().control(index).places().to_vec();
-    for place in places.into_iter().rev() {
-        let place = context.runtime().place(place);
-        let invalidate = MIRInstructionKind::Invalidate {
-            place,
-            kind: MIRInvalidationKind::Drop,
-        };
-        context.runtime_mut().emit(invalidate, span.clone());
-    }
 }
 
 // The operand a value is at its own type: a reference or pointer is the address it holds, and a reference to a

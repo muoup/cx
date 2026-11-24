@@ -32,9 +32,11 @@ pub fn open_scope(context: &mut LocalLoweringContext) -> usize {
     }
 }
 
-pub fn close_scope(context: &mut LocalLoweringContext, span: &TokenRange) {
+pub fn close_scope(context: &mut LocalLoweringContext) {
     match context.context_mut() {
-        FnContext::Runtime(_) => runtime::close_scope(context, span),
+        FnContext::Runtime(runtime) => {
+            runtime.scopes_mut().pop();
+        }
         FnContext::Comptime(comptime) => {
             comptime.scopes_mut().pop();
         }

@@ -64,7 +64,15 @@ pub(crate) fn eval_signature(
         .iter()
         .enumerate()
         .map(|(index, param)| {
-            let ty = slot(context, *param.ty())?;
+            let ty = if function.prototype().params()[index].inferred() {
+                realize(
+                    context.env_mut(),
+                    HMIRTypeKind::Dependent,
+                    body.expr(*param.ty()).span(),
+                )
+            } else {
+                slot(context, *param.ty())?
+            };
             let comptime = signature.is_comptime_param(index);
             let ty = parameter(context, ty, comptime, body.expr(*param.ty()).span())?;
             Ok(HMIRFnParam::new(param.comptime(), ty))

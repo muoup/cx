@@ -36,7 +36,7 @@ pub(crate) fn collect(env: &mut HMIREnvironment, unit: &HMIRUnit) -> CHLResult<(
                     continue;
                 }
                 if function.signature().stage() != HMIRFunctionStage::Runtime
-                    || declaration::needs_specialization(function)
+                    || declaration::needs_specialization(&*symbol::function(env, *id)?)
                 {
                     return Err(hmir_error(
                         span,

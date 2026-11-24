@@ -21,7 +21,7 @@ pub fn require_live(
     };
     let place = *address.base();
     if context.is_comptime() {
-        return comptime::storage::live(context, place, false, span);
+        return comptime::storage::require_live(context, place, "was used", span);
     }
     let place = context.runtime().place(place);
     context
@@ -125,9 +125,6 @@ pub fn write(
     }
 }
 
-// Writes 'value', when given, into 'target' and marks the storage as holding a live value. Storage behind a
-// pointer is untracked, so it is not marked; a comptime slot tracks byte initialization separately, so bytes that
-// were never written stay unreadable
 pub fn initialize(
     context: &mut LocalLoweringContext,
     target: HMIRPlaceID,
@@ -135,13 +132,11 @@ pub fn initialize(
 ) -> CHLResult<()> {
     match context.context() {
         FnContext::Runtime(_) => runtime::storage::initialize(context, target, span),
-        FnContext::Comptime(_) => comptime::storage::initialize(context, target),
+        FnContext::Comptime(_) => comptime::storage::initialize(context, target, span)?,
     }
-
     Ok(())
 }
 
-// Ends the liveness of the place a reference names as a move, drop or leak; storage behind a pointer is untracked.
 pub fn invalidate(
     context: &mut LocalLoweringContext,
     target: HMIRPlaceID,
@@ -150,6 +145,7 @@ pub fn invalidate(
 ) -> CHLResult<()> {
     match context.context() {
         FnContext::Runtime(_) => runtime::storage::invalidate(context, target, kind, span),
-        FnContext::Comptime(_) => comptime::storage::invalidate(context, target, kind),
+        FnContext::Comptime(_) => comptime::storage::invalidate(context, target, kind, span)?,
     }
+    Ok(())
 }

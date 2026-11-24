@@ -27,7 +27,6 @@ use crate::{
         symbol, types,
     },
     log::hmir_error,
-    lower::declaration,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
@@ -108,12 +107,7 @@ pub(crate) fn call(
     span: &TokenRange,
     emit: impl FnOnce(&mut LocalLoweringContext) -> EvalResult<Evaluation<HMIRValue>>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let unit = context
-        .env_mut()
-        .symbols_mut()
-        .owner(def.brand())
-        .expect("function owner exists");
-    let function = declaration::function(unit.resolve_def(def).expect("function exists"));
+    let function = symbol::function(context.env_mut(), def)?;
     let contract = function.signature().contract();
     if contract.precondition().is_none() && contract.postcondition().is_none() {
         return emit(context);

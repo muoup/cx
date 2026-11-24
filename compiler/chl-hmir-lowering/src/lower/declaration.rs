@@ -14,7 +14,7 @@ use crate::{
         generation::Generation,
         resolver::demand,
     },
-    eval::{deduce::pattern, eval_type, flow, symbol, types},
+    eval::{deduce, eval_type, flow, symbol, types},
     log::hmir_error,
     value::{self, HMIRValue},
 };
@@ -32,10 +32,10 @@ pub(crate) fn resolve(env: &mut HMIREnvironment, unit: &HMIRUnit) -> CHLResult<(
         if let Some(HMIRDefKind::Function(function)) = chosen.kind()
             && function.transparent_body().is_some()
         {
-            pattern::validate(env, *id, chosen.span())?;
+            deduce::pattern::validate(env, *id, chosen.span())?;
         }
         evaluate(env, *id, def)?;
-        request(env, *id, def);
+        request(env, *id, def)?;
     }
     Ok(())
 }
@@ -163,6 +163,17 @@ fn signature_agreement(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) 
         let Some(HMIRDefKind::Function(function)) = declaration.kind() else {
             continue;
         };
+        if deduce::signature::elaborate(context.env_mut(), id, function)?.is_some() {
+            let subject = (
+                format!("declaration of '{}'", def.name()),
+                "this unit".into(),
+            );
+            return Err(hmir_error(
+                declaration.span(),
+                &typecheck::DUPLICATE_ITEM,
+                subject,
+            ));
+        }
         let signature = flow::top(types::eval_signature(&mut context, function))?;
         if !types::signatures_alike(context.env(), &canonical, &signature) {
             return Err(incompatible(def, declaration));
@@ -197,14 +208,15 @@ fn comptime_agreement(
     Ok(())
 }
 
-fn request(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) {
+fn request(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) -> CHLResult<()> {
     let linkage = linkage(def);
     let root = linkage != LinkageMode::Static
         && match canonical(def).kind() {
             Some(HMIRDefKind::Function(function)) => {
                 function.signature().stage() == HMIRFunctionStage::Runtime
-                    && !needs_specialization(function)
                     && function.def().is_some()
+                    && !needs_specialization(function)
+                    && !needs_specialization(&*symbol::function(env, id)?)
             }
             Some(HMIRDefKind::Global(global)) => {
                 global.initializer().is_some() || linkage != LinkageMode::Extern
@@ -214,6 +226,7 @@ fn request(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) {
     if root {
         env.generation_mut().request(Generation::Definition(id), None);
     }
+    Ok(())
 }
 
 // Requests the definition of a symbol that is referenced; one of the local unit or a static one is only generated

@@ -28,6 +28,7 @@ use crate::{
         binding::eval_scoped,
         coerce, eval,
         flow::{self, ComptimeStop, Evaluation},
+        storage,
         types::{self, alike},
     },
     value::{self, HMIRValue},
@@ -193,16 +194,27 @@ pub(crate) fn merge(
         emit::runtime::flow::switch_to(context, block);
         if let Some((ty, result)) = ty.zip(result.as_ref()) {
             let value = coerce::implicit::standard(context, value, ty, span)?;
-            emit::storage::initialize(context, result, Some(&value), span)?;
+            storage::initialize(context, result, Some(&value), span)?;
         }
         emit::runtime::flow::jump(context, merge, span);
     }
     emit::runtime::flow::switch_to(context, merge);
     let result = match result {
-        Some(result) => emit::storage::read(context, &result, span)?,
+        Some(result) => read_scratch(context, &result, span)?,
         None => value::unit(context.env()),
     };
     Ok(Evaluation::Ready(result))
+}
+
+fn read_scratch(
+    context: &mut LocalLoweringContext,
+    scratch: &HMIRValue,
+    span: &TokenRange,
+) -> chl_log::CHLResult<HMIRValue> {
+    let value = emit::storage::read(context, scratch, span)?;
+    let place = value::as_place(scratch).expect("scratch storage has a place");
+    storage::drop(context, place, span)?;
+    Ok(value)
 }
 
 fn merged_type(
@@ -291,15 +303,13 @@ pub(crate) fn eval_short_circuit(
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = emit::storage::scratch(context, ty, span)?;
     if let Some(right) = right {
-        emit::storage::initialize(context, &result, Some(&right), span)?;
+        storage::initialize(context, &result, Some(&right), span)?;
         emit::runtime::flow::jump(context, merge, span);
     }
 
     emit::runtime::flow::switch_to(context, short_block);
-    emit::storage::initialize(context, &result, Some(&left), span)?;
+    storage::initialize(context, &result, Some(&left), span)?;
     emit::runtime::flow::jump(context, merge, span);
     emit::runtime::flow::switch_to(context, merge);
-    Ok(Evaluation::Ready(emit::storage::read(
-        context, &result, span,
-    )?))
+    Ok(Evaluation::Ready(read_scratch(context, &result, span)?))
 }

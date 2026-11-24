@@ -23,7 +23,8 @@ define_errors! {
     INVALID_BINARY_OPERANDS: (String, String, String) = "T0014" => |(operation, left, right)| format!("no operator '{operation}' for '{left}' and '{right}'");
     ARGUMENT_COUNT: (String, usize, usize, bool) = "T0015" => |(subject, expected, found, var_args)| {
         let qualifier = if var_args { "at least " } else { "" };
-        format!("{subject} expects {qualifier}{expected} arguments, found {found}")
+        let noun = if expected == 1 { "argument" } else { "arguments" };
+        format!("{subject} expects {qualifier}{expected} positional {noun}, found {found}")
     };
     INITIALIZER_LIMIT: (String, Option<usize>) = "T0016" => |(subject, limit)| {
         let mut message = format!("too many elements in {subject} initializer");

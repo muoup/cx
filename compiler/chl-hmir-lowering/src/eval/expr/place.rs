@@ -22,6 +22,7 @@ use crate::{
         eval,
         expr::{binding, require_impure, require_nonsafe},
         flow::{self, EvalExit, Evaluation},
+        storage,
         types::{self, qualify},
     },
     log::{hmir_error, log_hmir_error},
@@ -56,8 +57,21 @@ pub(crate) fn eval_assign(
         None => eval(context, body, value)?.complete(context, body, Some(inner))?,
     };
     let value = coerce::implicit::standard(context, value, inner, span)?;
-    
-    emit::storage::initialize(context, &target, Some(&value), span)?;
+    let nodrop = context.env().is_nodrop(inner);
+    if let Some(place) = storage::tracked(context, &target, span)? {
+        if !nodrop {
+            storage::drop(context, place, span)?;
+        }
+        emit::storage::initialize(context, place, span)?;
+    } else if nodrop {
+        return Err(hmir_error(
+            span,
+            &typecheck::UNTRACKED_NODROP_DROP,
+            types::name(context.env(), inner),
+        )
+        .into());
+    }
+    emit::storage::write(context, &target, &value, span)?;
     Ok(Evaluation::Ready(target))
 }
 
@@ -106,7 +120,7 @@ fn eval_move(
     require_impure(context, span, "move")?;
     let local = require_local(body, operand, span, "move")?;
     let binding = binding::lookup(context, body, span, local)?;
-    let (Some(_), Some(inner)) = (
+    let (Some(place), Some(inner)) = (
         value::as_place(&binding),
         context.env().reference_inner(binding.ty()),
     ) else {
@@ -121,7 +135,7 @@ fn eval_move(
         require_nonsafe(context, span, "move of a type declared as @unsafe_move")?;
     }
     let moved = emit::storage::lift(context, &binding, span)?;
-    emit::storage::invalidate(context, &binding, MIRInvalidationKind::Move, span)?;
+    emit::storage::invalidate(context, place, MIRInvalidationKind::Move, span)?;
     Ok(Evaluation::Ready(moved))
 }
 
@@ -141,7 +155,14 @@ fn eval_leak(
         return Ok(Evaluation::Ready(value));
     }
 
-    emit::storage::invalidate(context, &value, MIRInvalidationKind::Leak, span)?;
+    let Some(place) = storage::tracked(context, &value, span)? else {
+        let invalid = (
+            "value without tracked liveness".into(),
+            "'@leak' expression".into(),
+        );
+        return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid).into());
+    };
+    emit::storage::invalidate(context, place, MIRInvalidationKind::Leak, span)?;
     Ok(Evaluation::Ready(value::unit(context.env())))
 }
 

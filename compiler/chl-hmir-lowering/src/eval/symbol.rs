@@ -1,3 +1,5 @@
+use std::{ops::Deref, rc::Rc};
+
 use chl_hir::ast::types::HIRTagKind;
 use chl_hmir::{
     HMIRComptimeGlobal, HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind,
@@ -20,8 +22,9 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
         resolver::{SymbolState, demand},
+        symbols::HMIRUnitHandle,
     },
-    eval::{self, comptime, eval_type, flow, name::type_value, types},
+    eval::{self, comptime, deduce, eval_type, flow, name::type_value, types},
     log::hmir_error,
     lower::declaration,
     value::{
@@ -74,6 +77,46 @@ pub(crate) fn value_type(env: &mut HMIREnvironment, def: HMIRDefID) -> CHLResult
     Ok(env.referent(value.ty()))
 }
 
+pub(crate) enum Function<'hmir> {
+    Source(HMIRUnitHandle<'hmir>, HMIRDefID),
+    Elaborated(Rc<HMIRFunction>),
+}
+
+impl Deref for Function<'_> {
+    type Target = HMIRFunction;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Source(unit, def) => {
+                declaration::function(unit.resolve_def(*def).expect("function exists"))
+            }
+            Self::Elaborated(function) => function,
+        }
+    }
+}
+
+pub(crate) fn function<'hmir>(
+    env: &mut HMIREnvironment<'_, 'hmir>,
+    def: HMIRDefID,
+) -> CHLResult<Function<'hmir>> {
+    let unit = env
+        .symbols_mut()
+        .owner(def.brand())
+        .expect("function owner exists");
+    let source = Function::Source(unit, def);
+    let expanded = match env.resolver().elaborated_functions.get(&def) {
+        Some(expanded) => expanded.clone(),
+        None => {
+            let expanded = deduce::signature::elaborate(env, def, &source)?.map(Rc::new);
+            env.resolver_mut()
+                .elaborated_functions
+                .insert(def, expanded.clone());
+            expanded
+        }
+    };
+    Ok(expanded.map_or(source, Function::Elaborated))
+}
+
 fn evaluating<T>(
     env: &mut HMIREnvironment,
     def: HMIRDefID,
@@ -119,7 +162,10 @@ fn evaluate(context: &mut LocalLoweringContext, id: HMIRDefID) -> CHLResult<HMIR
         {
             tagged(context, id, declaration, tag, declared.ty)
         }
-        HMIRDefKind::Function(function) => function_value(context, id, function, span),
+        HMIRDefKind::Function(_) => {
+            let function = function(context.env_mut(), id)?;
+            function_value(context, id, &function, span)
+        }
         HMIRDefKind::Global(_) => global_value(context, id, def, declaration),
         HMIRDefKind::ComptimeGlobal(global) => comptime_value(context, id, global, span),
     }

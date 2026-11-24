@@ -23,7 +23,7 @@ use crate::{
         deduce, eval, eval_type,
         expr::place,
         flow::{self, ComptimeStop, EvalExit, Evaluation, RuntimeStop, StopReason},
-        staged, types,
+        staged, storage, types,
     },
     log::hmir_error,
     value::{self, HMIRValue},
@@ -141,7 +141,7 @@ pub(crate) fn eval_let(
             .known()
             .is_some_and(|ty| !context.env().is_nocopy(*ty));
     if initialized && let Some(storage) = &storage {
-        emit::storage::initialize(context, storage, None, span)?;
+        storage::initialize(context, storage, None, span)?;
     }
 
     let Some(initializer) = initializer else {
@@ -151,7 +151,7 @@ pub(crate) fn eval_let(
             None => declare(context, body, local_id, ty, span)?,
         };
         if !initialized && !context.env().is_nocopy(ty) {
-            emit::storage::initialize(context, &storage, None, span)?;
+            storage::initialize(context, &storage, None, span)?;
         }
         return Ok(Evaluation::Ready(value::unit(context.env())));
     };
@@ -198,7 +198,7 @@ pub(crate) fn eval_let(
                 if initialized {
                     emit::storage::write(context, &storage, &value, &span)?;
                 } else {
-                    emit::storage::initialize(context, &storage, Some(&value), &span)?;
+                    storage::initialize(context, &storage, Some(&value), &span)?;
                 }
                 Ok(Evaluation::Ready(value::unit(context.env())))
             })

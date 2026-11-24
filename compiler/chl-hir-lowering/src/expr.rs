@@ -67,6 +67,7 @@ pub(crate) fn lower_expr<'a>(
         HIRExprKind::Identifier { name } => lower_identifier(context, name, span)?,
         HIRExprKind::Type(ty) => lower_type(context, ty)?,
         HIRExprKind::Hole => context.hole(span),
+        HIRExprKind::HoleBinding(name) => context.bind_parameter_hole(name, span)?,
         HIRExprKind::ScopeAccess { base, member } => {
             let base = lower_scope_base(context, base)?;
             let member = member.clone();
