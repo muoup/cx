@@ -10,21 +10,21 @@ struct endpoint {
 std::opt(endpoint) endpoint::ipv4(const _str& text, u16 port) {
     u32 address = 0;
     usize index = 0;
-    
+
     for (usize part = 0; part < 4; part++) {
         u32 value = 0;
         usize digits = 0;
-        
+
         while (text[index] >= '0' && text[index] <= '9') {
             value = value * 10 + (u32) (text[index++] - '0');
             if (value > 255 || ++digits > 3) return _::none();
         }
-        
+
         if (digits == 0) return _::none();
         if (part < 3 && text[index++] != '.') return _::none();
 
         address = (address << 8) | value;
     }
 
-    return std::opt::if_then(text[index] == 0, (endpoint) { address, port });
+    return std::opt::if_then(emit text[index] == 0, emit (endpoint) { address, port });
 }

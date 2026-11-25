@@ -2,7 +2,7 @@
 /* CHL-STDOUT-NEXT: PANIC: Cannot immutably borrow cell while it is currently mutably borrowed */
 
 import std::cell::rcell as std;
-import std::io as std;
+import std::io::stdio as std;
 
 int main() {
     std::rcell(int) cell = std::rcell::new(8);

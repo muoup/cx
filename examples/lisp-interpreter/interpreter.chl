@@ -1,9 +1,9 @@
 import std::memory::box as std;
 import std::collections::vector as std;
-import std::io as std;
-import std::string as std;
+import std::io::stdio as std;
+import std::collections::string as std;
 import std::functional as std;
-import std::memory::span as std;
+import std::collections::span as std;
 
 import ast as _;
 import parser;

@@ -1,4 +1,4 @@
-import std::{memory::allocation, memory::span, optional, panic} as std;
+import std::{memory::allocation, collections::span, optional, panic} as std;
 
 #include <string.h>
 

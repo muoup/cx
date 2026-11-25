@@ -1,8 +1,8 @@
 /* CHL-STDOUT: qualified io */
 
-import std::io;
+import std::io::stdio;
 
 int main() {
-    std::io::println("qualified io");
+    std::io::stdio::println("qualified io");
     return 0;
 }

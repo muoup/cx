@@ -2,7 +2,7 @@
 /* CHL-STDOUT-NEXT: Backward pipe: 6 */
 /* CHL-STDOUT-NEXT: Combined pipes: 15 */
 
-import std::io as std;
+import std::io::stdio as std;
 
 struct IntWrapper { int x; };
 

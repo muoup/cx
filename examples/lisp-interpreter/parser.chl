@@ -1,7 +1,7 @@
 import std::memory::box as std;
 import std::collections::vector as std;
-import std::string as std;
-import std::io as std;
+import std::collections::string as std;
+import std::io::stdio as std;
 
 import ast as _;
 

@@ -1,7 +1,7 @@
 /* CHL-STDOUT: 6 0 7 9 0 7 */
 /* CHL-STDOUT-NEXT: 100% */
 
-import std::{collections::vector, io, memory::{allocation, span}, panic, string} as std;
+import std::{collections::vector, io::stdio, memory::allocation, collections::span, panic, collections::string} as std;
 
 #include <stdio.h>
 

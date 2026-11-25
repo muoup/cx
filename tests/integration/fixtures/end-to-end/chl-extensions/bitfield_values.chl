@@ -1,6 +1,6 @@
 /* CHL-STDOUT: 5 18 -3 */
 /* CHL-STDOUT-NEXT: 3 */
-import std::io as std;
+import std::io::stdio as std;
 
 struct flags {
     u32 low : 3;

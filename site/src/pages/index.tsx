@@ -8,7 +8,7 @@ import Foliage from "../components/Foliage";
 import {chlLines} from "../lib/chl-lines";
 import styles from "./index.module.css";
 
-const leakingServer = `import std::{memory::span, net::tcp, result, string} as std;
+const leakingServer = `import std::{collections::{span, string}, net::tcp, result} as std;
 
 void serve(std::tcp_server& server) {
     while (true) {
@@ -24,7 +24,7 @@ void serve(std::tcp_server& server) {
     }
 }`;
 
-const fixedServer = `import std::{memory::span, net::tcp, result, string} as std;
+const fixedServer = `import std::{collections::{span, string}, net::tcp, result} as std;
 
 void serve(std::tcp_server& server) {
     while (true) {

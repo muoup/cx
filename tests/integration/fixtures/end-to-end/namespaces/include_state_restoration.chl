@@ -1,7 +1,7 @@
 /* CHL-STDOUT: 12 */
 
 import _include_state as state;
-import std::io as std;
+import std::io::stdio as std;
 
 int main() {
     std::printf("%d\n", state::restored_public());

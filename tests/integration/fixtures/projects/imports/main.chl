@@ -1,6 +1,6 @@
 #include <clib/clib.h>
 
-import std::io as io;
+import std::io::stdio as io;
 import math::ops as ops;
 import base::base as base;
 

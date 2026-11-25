@@ -1,4 +1,4 @@
-import std::memory::span as std;
+import std::collections::span as std;
 
 #include <stdio.h>
 
@@ -7,14 +7,14 @@ public extern "C": int printf(const char *__restrict format, ...);
 public:
 
 ///
-/// Writes the provided ASCII string to stdout
+/// Writes the provided C string to stdout
 ///
 void print(const _str& s) {
     fputs(s, stdout);
 }
 
 ///
-/// Writes the provided ASCII string follwed by a new line to stddout
+/// Writes the provided C string followed by a newline to stdout
 ///
 void println(const _str& s) {
     puts(s);

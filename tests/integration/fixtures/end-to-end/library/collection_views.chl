@@ -1,6 +1,6 @@
 /* CHL-STDOUT: 42 42 42 1 1 */
 
-import std::{collections::{array, vector}, memory::span, optional} as std;
+import std::{collections::{array, vector}, collections::span, optional} as std;
 
 #include <stdio.h>
 

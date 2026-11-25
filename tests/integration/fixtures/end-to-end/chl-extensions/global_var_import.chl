@@ -1,7 +1,7 @@
 /* CHL-STDOUT: x: 15, y: 25 */
 
 import includes::global_variables;
-import std::io as std;
+import std::io::stdio as std;
 
 int main() {
     int* y_ptr = &includes::global_variables::y;

@@ -1,4 +1,4 @@
-import std::{memory::span, net::{address, udp, error}, optional, result, string} as std;
+import std::{collections::span, net::{address, udp, error}, optional, result, collections::string} as std;
 
 std::result(std::udp_socket, std::socket_error) try_serve(u16 port) {
     auto address = std::endpoint::ipv4("0.0.0.0", port) |> std::opt::unwrap();

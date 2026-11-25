@@ -1,3 +1,27 @@
+import std::{collections::span, result} as std;
+import std::platform::posix::error as std::posix;
+
 public:
 
-comptime type socket_error = @strong int;
+typedef @strong int socket_error;
+
+bool socket_error::is_would_block(socket_error error)
+    => std::posix::errno_code::is_would_block((std::posix::errno_code) (int) error);
+
+usize socket_error::format(socket_error error, std::span(u8) output)
+    => std::posix::errno_code::format((std::posix::errno_code) (int) error, output);
+
+comptime ^std::result(T, socket_error) socket_result(type T = _, ^std::result(T, std::posix::errno_code) value) {
+    if (@type.equal(T, void)) {
+        return emit match (value) {
+            ok() => _::ok(),
+            err(auto error) => _::err((socket_error) (int) error),
+        };
+    }
+    return emit match (value) {
+        ok(auto payload) => _::ok(move payload),
+        err(auto error) => _::err((socket_error) (int) error),
+    };
+}
+
+socket_error socket_error::write_zero() => (socket_error) 0;

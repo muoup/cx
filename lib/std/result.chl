@@ -10,11 +10,12 @@ comptime type result(comptime type T, comptime type Err) {
     return enum union : @copy_traits(traits) { err :: Err, ok :: T };
 }
 
-comptime ^result(T, Err) opt::if_then_else(type T = _, type Err = _, ^bool condition, ^T value, ^Err else) 
-    => emit .{
-        if (condition) yield _::ok(value);
-        yield _::err();
-    }; 
+comptime ^result(T, Err) result::if_then_else(
+    type T = _, type Err = _, ^bool condition, ^T value, ^Err error
+) => emit .{
+    if (condition) yield ok_branch(T, Err, value);
+    yield err_branch(T, Err, error);
+};
 
 bool result::is_ok(comptime type T = _, comptime type Err = _, result(T, Err)& this) {
     return this is ok(_);
@@ -81,3 +82,15 @@ comptime ^T result::try_or(type T = _, type Err = _, ^result(T, Err) self, ^void
             return _::err(move err);
         }
     };
+
+private:
+
+comptime ^result(T, Err) ok_branch(type T, type Err, ^T value) {
+    if (@type.equal(T, void)) return emit .{ value; yield _::ok(); };
+    return emit _::ok(value);
+}
+
+comptime ^result(T, Err) err_branch(type T, type Err, ^Err error) {
+    if (@type.equal(Err, void)) return emit .{ error; yield _::err(); };
+    return emit _::err(error);
+}

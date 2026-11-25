@@ -1,21 +1,21 @@
-import std::{memory::span, result, net::{address, error, handle}} as std;
+import std::{collections::span, result, net::{address, error}} as std;
 import std::platform::posix::socket as std::posix;
 
 public:
 
 struct tcp_server : @nodrop {
-    std::socket_handle backend;
+    std::posix::socket backend;
 };
 
 struct tcp_connection : @nodrop {
-    std::socket_handle backend;
+    std::posix::socket backend;
     std::endpoint peer;
 };
 
 std::result(tcp_server, std::socket_error) tcp_server::new() {
     auto backend = std::posix::socket::open(std::posix::stream_socket)
         |> std::socket_result() |> std::result::try()!;
-        
+
     std::posix::socket::set_reuse_address(backend, true)
         |> std::socket_result()
         |> std::result::try_or(emit .{ std::posix::socket::close(move backend); })!;

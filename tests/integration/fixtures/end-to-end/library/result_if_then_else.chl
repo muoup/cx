@@ -1,0 +1,54 @@
+/* CHL-STDOUT: 1 12 112 113 */
+
+import std::result as std;
+
+#include <stdio.h>
+
+struct owned : @nodrop {
+    int value;
+};
+
+owned make_owned(int& calls) {
+    calls++;
+    return { 7 };
+}
+
+int make_error(int& calls) {
+    calls += 10;
+    return 12;
+}
+
+void mark_failure(int& calls) {
+    calls += 100;
+}
+
+void select(bool condition) {
+    int calls = 0;
+    auto value = std::result::if_then_else(emit condition, emit make_owned(calls), emit make_error(calls))
+        |> std::result::unwrap();
+    int payload = value.value;
+    @leak(value);
+    if (payload != 7) return;
+    printf("%d ", calls);
+
+    auto failed = std::result::if_then_else(emit !condition, emit (void) make_error(calls), emit make_error(calls));
+    if (failed is err(auto error)) {
+        if (error != 12) return;
+    } else {
+        return;
+    }
+    calls++;
+    printf("%d ", calls);
+
+    auto no_payload = std::result::if_then_else(emit !condition, emit make_error(calls), emit mark_failure(calls));
+    if (!(no_payload is err())) return;
+    printf("%d ", calls);
+
+    auto empty = std::result::if_then_else(emit condition, emit (void) ++calls, emit mark_failure(calls));
+    if (empty is ok()) printf("%d\n", calls);
+}
+
+int main() {
+    select(true);
+    return 0;
+}

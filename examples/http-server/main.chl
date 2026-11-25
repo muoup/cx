@@ -1,4 +1,4 @@
-import std::{io, optional, result, memory::span, string, net::{tcp, address}} as std;
+import std::{io::stdio, optional, result, collections::span, collections::string, net::{tcp, address}} as std;
 
 int main() {
     auto address = std::endpoint::ipv4("0.0.0.0", 8080) |> std::opt::expect("Invalid endpoint")!;

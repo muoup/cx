@@ -1,7 +1,7 @@
 /* CHL-STDOUT: a.i: 42 */
 /* CHL-STDOUT-NEXT: b.i: 43 */
 
-import std::io as std;
+import std::io::stdio as std;
 
 comptime type test(comptime type T) =>
     struct {

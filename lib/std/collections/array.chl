@@ -1,4 +1,4 @@
-import std::{optional, memory::span, panic} as std;
+import std::{optional, collections::span, panic} as std;
 
 public:
 

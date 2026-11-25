@@ -1,7 +1,7 @@
 /* CHL-STDOUT: drop 7 */
 /* CHL-STDOUT-NEXT: done */
 
-import std::io as std;
+import std::io::stdio as std;
 
 struct Resource : @nodrop {
     int data;

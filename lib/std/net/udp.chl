@@ -1,4 +1,4 @@
-import std::{memory::span, result, net::{address, error, handle}} as std;
+import std::{collections::span, result, net::{address, error}} as std;
 import std::platform::posix::socket as std::posix;
 
 public:
@@ -9,7 +9,7 @@ struct datagram {
 };
 
 struct udp_socket : @nodrop {
-    std::socket_handle backend;
+    std::posix::socket backend;
 };
 
 std::result(udp_socket, std::socket_error) udp_socket::open() {

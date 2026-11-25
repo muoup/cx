@@ -1,4 +1,4 @@
-import std::memory::span as std;
+import std::collections::span as std;
 
 public:
 

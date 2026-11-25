@@ -39,7 +39,7 @@ Native `T&` references are safe in a narrow case: a `T&` may be returned from a
 safe function and used with an rvalue lifetime in the caller's context.
 
 ```chl
-import std::io;
+import std::io::stdio;
 
 struct Data {
     int value;

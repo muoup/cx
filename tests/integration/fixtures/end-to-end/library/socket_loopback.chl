@@ -1,9 +1,10 @@
 /* CHL-STDOUT: socket checks passed */
 
-import std::{memory::span, net::{address, error, tcp, udp}, optional, result, string, panic} as std;
+import std::{collections::span, net::{address, error, tcp, udp}, optional, result, collections::string, panic} as std;
 import std::platform::posix::socket as std::posix;
-import std::platform::posix::base as std::posix::base;
+import std::platform::posix as std::posix::raw;
 
+#include <errno.h>
 #include <stdio.h>
 
 void check(bool passed) {
@@ -22,6 +23,7 @@ void tcp(std::endpoint address) {
             std::panic("Accepted an unexpected connection");
         }
         err(auto error) => {
+            check(std::socket_error::is_would_block(error));
             u8 output[128];
             check(std::socket_error::format(error, std::span::new(output, sizeof(output))) > 0);
         }
@@ -32,10 +34,12 @@ void tcp(std::endpoint address) {
     auto accepted = std::tcp_server::accept(server) |> std::result::unwrap();
     defer std::tcp_connection::drop(move accepted);
     check(std::tcp_connection::remote(client).port == local.port);
+    check(std::posix::raw::close(-1) < 0 && errno == EBADF);
     std::tcp_connection::send(client, std::str::as_const_bytes("x")) |> std::result::unwrap();
     std::tcp_connection::drop(move client);
 
     u8 buffer[16];
+    check(std::posix::raw::close(-1) < 0 && errno == EBADF);
     auto received = std::tcp_connection::read(accepted, std::span::new(buffer, sizeof(buffer)))
         |> std::result::unwrap();
     check(received.length == 1 && received.data[0] == 'x');

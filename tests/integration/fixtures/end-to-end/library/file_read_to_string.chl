@@ -2,7 +2,7 @@
 /* CHL-STDOUT-NEXT: beta */
 /* CHL-STDOUT-NEXT: line bytes: 6 */
 
-import std::{io::file, memory::allocation, optional, string} as std;
+import std::{io::file, memory::allocation, optional, collections::string} as std;
 
 #include <stdio.h>
 

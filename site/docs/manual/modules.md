@@ -13,16 +13,16 @@ Chloro uses explicit imports and visibility sections.
 module. Imported declarations can be referenced through their module namespace.
 
 ```chl
-import std::io;
+import std::io::stdio;
 import math::vec;
 
 int main() {
-    std::io::println("hello");
+    std::io::stdio::println("hello");
     return 0;
 }
 ```
 
-Module paths map to file paths. For example, `std::io` resolves to `lib/std/io.chl`
+Module paths map to file paths. For example, `std::io::stdio` resolves to `lib/std/io/stdio.chl`
 or the equivalent path relative to the project root.
 
 Related modules can be imported in one statement. Each leaf is expanded into a
@@ -90,7 +90,7 @@ for the underlying C bindings.
 ```chl
 import std::{collections::vector, io::file, net::{address, tcp}} as std;
 import std::platform::posix::socket as std::posix;
-import std::platform::posix::base as std::posix::base;
+import std::platform::posix as std::posix::raw;
 ```
 
 ## Visibility
