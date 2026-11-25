@@ -9,3 +9,4 @@ speedy = { workspace = true }
 
 chl-util = { path = "../chl-util" }
 chl-namespace = { path = "../chl-namespace" }
+chl-tokens = { path = "../chl-tokens" }

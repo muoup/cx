@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 
-use chl_namespace::module::{NamespacePath, QualifiedName};
+use chl_namespace::module::NamespacePath;
+use chl_tokens::TokenRange;
 use speedy::{Readable, Writable};
 
 use crate::symbol_data::PreparseModuleSymbols;
@@ -12,8 +13,15 @@ pub type NamespaceAliases = FxHashMap<NamespacePath, Vec<NamespacePath>>;
 
 #[derive(Debug, Clone, Readable, Writable)]
 pub struct Import {
-    pub names: Vec<QualifiedName>,
+    pub paths: Vec<ImportPath>,
     pub alias: Option<NamespacePath>,
+}
+
+#[derive(Debug, Clone, Readable, Writable)]
+pub struct ImportPath {
+    pub written: NamespacePath,
+    pub resolved: NamespacePath,
+    pub span: TokenRange,
 }
 
 #[derive(Debug, Clone, Readable, Writable)]

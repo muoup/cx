@@ -1,6 +1,6 @@
 use chl_util::identifier::CHLIdent;
 
-use crate::module::{NamespacePath, QualifiedName};
+use crate::module::NamespacePath;
 
 #[derive(Debug, Clone)]
 pub struct ImportScope {
@@ -21,14 +21,6 @@ impl ImportScope {
                 .map(|(_, target)| target.clone().join(NamespacePath::new(rest.to_vec())))
         });
         mounted.unwrap_or_else(|| self.local.clone().join(written.clone()))
-    }
-
-    pub fn resolve_name(&self, written: &QualifiedName) -> QualifiedName {
-        let (namespace, name) = self
-            .resolve(&written.namespace.clone().child(written.name.clone()))
-            .parent_and_name()
-            .expect("a resolved module path keeps its name");
-        QualifiedName::new(namespace, name)
     }
 
     pub fn aliases(&self) -> impl Iterator<Item = (NamespacePath, NamespacePath)> + '_ {

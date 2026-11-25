@@ -15,6 +15,7 @@ use log::pipeline_error;
 use crate::linker::{link_executable, link_relocatable};
 use crate::pipeline::{Pipeline, PipelineFailure};
 use crate::progress::ProgressReporter;
+use crate::scheduler::import_units_for_unit;
 use chl_log::error::CHLError;
 use chl_log::CHLResult;
 use chl_namespace::module::{ModulePath, NamespacePath};
@@ -24,7 +25,6 @@ use chl_pipeline_data::package::PackageId;
 use chl_pipeline_data::{
     CompilationMode, CompilationUnit, CompilerConfig, GlobalCompilationContext,
 };
-use crate::scheduler::imported_units;
 use rustc_hash::FxHashSet;
 use std::path::{Path, PathBuf};
 
@@ -83,7 +83,7 @@ pub(crate) fn reachable_units(
     let mut reachable = roots.to_vec();
     let mut index = 0;
     while index < reachable.len() {
-        for unit in imported_units(context, &reachable[index]) {
+        for unit in import_units_for_unit(context, &reachable[index]).unwrap_or_default() {
             if seen.insert(unit.clone()) {
                 reachable.push(unit);
             }

@@ -7,12 +7,15 @@ use chl_hmir_lowering::{
     env::{HMIREnvironment, settings::HMIRSettings},
     generate_mir,
 };
-use chl_log::catalogue::driver as catalogue;
-use chl_log::CHLResult;
+use chl_log::{
+    CHLResult,
+    catalogue::driver as catalogue,
+    error::{CHLError, context::from_token_range},
+};
 use chl_mir_analysis::{MIRAnalysisOptions, analyze};
 
 use chl_mir_lowering::generate_lmir;
-use chl_namespace::module::{ModulePath, NamespacePath, QualifiedName};
+use chl_namespace::module::{ModulePath, NamespacePath};
 use chl_parsing::preparse::PreparseConfig;
 use chl_parsing::{parse_ast, preparse};
 use chl_pipeline_data::internal_storage::resource_path;
@@ -20,12 +23,12 @@ use chl_pipeline_data::jobs::{
     CompilationJob, CompilationJobRequirement, CompilationStep, JobQueue,
 };
 use chl_pipeline_data::{CompilationUnit, CompilerBackend, GlobalCompilationContext};
-use chl_preparse_data::Import;
-use chl_tokens::TokenIter;
+use chl_preparse_data::{Import, ImportPath};
+use chl_tokens::{TokenIter, TokenRange};
 use chl_util::format::{dump_data, dumps_enabled, with_dump_directory, with_dump_file};
 use chl_util::identifier::CHLIdent;
 use fs2::FileExt;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 
 use std::num::NonZeroUsize;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -112,55 +115,59 @@ pub(crate) fn scheduling_loop(
     })
 }
 
-fn import_jobs_for_unit(
+fn resolve_import(
     context: &GlobalCompilationContext,
-    unit: &CompilationUnit,
-    imports: &[Import],
-) -> CHLResult<Vec<CompilationJob>> {
-    let mut jobs = Vec::new();
-
-    for name in imports.iter().flat_map(|import| &import.names) {
-        let namespace = name.namespace.clone().child(name.name.clone());
-        let Some(import) = context.config.packages.locate(&namespace) else {
-            return Err(pipeline_error(&catalogue::UNKNOWN_MODULE, format!("{namespace}")));
-        };
-        let owner = context.config.packages.get(import.package());
-        if import.package() != unit.package() && !owner.exports(import.module().as_path()) {
-            let package = owner.name.as_ref().map(|name| name.to_string()).unwrap_or_default();
-            return Err(pipeline_error(&catalogue::UNEXPORTED_MODULE, (format!("{namespace}"), package)));
-        }
-        if !context.config.module_mode && !import.is_std_lib() {
-            return Err(pipeline_error(
-                &catalogue::SINGLE_FILE_IMPORT,
-                format!("{}", import),
-            ));
-        }
-        jobs.push(CompilationJob::new(
-            vec![],
-            CompilationStep::PreParse,
-            import,
+    importer: &CompilationUnit,
+    path: &ImportPath,
+) -> CHLResult<CompilationUnit> {
+    let unknown_module = || {
+        CHLError::new(
+            catalogue::UNKNOWN_MODULE.bind(path.written.to_string()),
+            from_token_range(&path.span),
+        )
+    };
+    let packages = &context.config.packages;
+    let imported = packages.locate(&path.resolved).ok_or_else(unknown_module)?;
+    if !context.config.module_mode && !imported.is_std_lib() {
+        return Err(CHLError::new(
+            catalogue::SINGLE_FILE_IMPORT.bind(path.written.to_string()),
+            from_token_range(&path.span),
         ));
     }
 
-    Ok(jobs)
+    let source = imported.module().as_path();
+    match std::fs::metadata(source) {
+        Ok(metadata) if metadata.is_file() => {}
+        Err(error) if !matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
+            return Err(CHLError::new(
+                catalogue::FILE_OPERATION.bind((
+                    "inspect".into(),
+                    "source file".into(),
+                    Some(source.display().to_string()),
+                    error.to_string(),
+                )),
+                from_token_range(&path.span),
+            ));
+        }
+        _ => return Err(unknown_module()),
+    }
+
+    let owner = packages.get(imported.package());
+    if imported.package() != importer.package() && !owner.exports(source) {
+        let package = owner
+            .name
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        return Err(CHLError::new(
+            catalogue::UNEXPORTED_MODULE.bind((path.written.to_string(), package)),
+            from_token_range(&path.span),
+        ));
+    }
+    Ok(imported)
 }
 
-fn import_requirements_for_unit(
-    context: &GlobalCompilationContext,
-    imports: &[Import],
-    step: CompilationStep,
-    shallow: bool,
-) -> Vec<CompilationJobRequirement> {
-    import_units(context, imports)
-        .map(|import| CompilationJobRequirement {
-            unit: import,
-            step,
-            shallow,
-        })
-        .collect()
-}
-
-fn import_units_for_unit(
+pub fn import_units_for_unit(
     context: &GlobalCompilationContext,
     unit: &CompilationUnit,
 ) -> Option<Vec<CompilationUnit>> {
@@ -172,26 +179,14 @@ fn import_units_for_unit(
         .map(|preparse| import_units(context, &preparse.imports).collect())
 }
 
-pub(crate) fn imported_units(
-    context: &GlobalCompilationContext,
-    unit: &CompilationUnit,
-) -> Vec<CompilationUnit> {
-    import_units_for_unit(context, unit).unwrap_or_default()
-}
-
 fn import_units<'a>(
     context: &'a GlobalCompilationContext,
     imports: &'a [Import],
 ) -> impl Iterator<Item = CompilationUnit> + 'a {
     imports
         .iter()
-        .flat_map(|import| &import.names)
-        .filter_map(|name| {
-            context
-                .config
-                .packages
-                .locate(&name.namespace.clone().child(name.name.clone()))
-        })
+        .flat_map(|import| &import.paths)
+        .filter_map(|path| context.config.packages.locate(&path.resolved))
 }
 
 fn import_from_module_path(path: ModulePath) -> Import {
@@ -200,12 +195,13 @@ fn import_from_module_path(path: ModulePath) -> Import {
         .components()
         .map(|component| CHLIdent::new(component.as_os_str().to_string_lossy().as_ref()))
         .collect::<Vec<_>>();
-    let (namespace, name) = NamespacePath::new(segments)
-        .parent_and_name()
-        .expect("compiler-injected import path should have a name");
-
+    let namespace = NamespacePath::new(segments);
     Import {
-        names: vec![QualifiedName::new(namespace, name)],
+        paths: vec![ImportPath {
+            written: namespace.clone(),
+            resolved: namespace,
+            span: TokenRange::internal(),
+        }],
         alias: None,
     }
 }
@@ -243,16 +239,29 @@ pub(crate) fn handle_job(
     match job.step {
         CompilationStep::PreParse => {
             let pp_data = context.module_db.preparse_base.get(job.unit.namespace());
-            let mut new_jobs = import_jobs_for_unit(context, &job.unit, &pp_data.imports)?;
+            let mut new_jobs = pp_data
+                .imports
+                .iter()
+                .flat_map(|import| &import.paths)
+                .map(|path| {
+                    let imported = resolve_import(context, &job.unit, path)?;
+                    Ok(CompilationJob::new(
+                        vec![],
+                        CompilationStep::PreParse,
+                        imported,
+                    ))
+                })
+                .collect::<CHLResult<Vec<_>>>()?;
 
             let mut next_job = job.clone();
             next_job.step = CompilationStep::Parse;
-            next_job.requirements = import_requirements_for_unit(
-                context,
-                &pp_data.imports,
-                CompilationStep::PreParse,
-                true,
-            );
+            next_job.requirements = import_units(context, &pp_data.imports)
+                .map(|import| CompilationJobRequirement {
+                    unit: import,
+                    step: CompilationStep::PreParse,
+                    shallow: true,
+                })
+                .collect();
             next_job.compilation_exists =
                 matches!(result, JobResult::UnchangedSinceLastCompilation);
             new_jobs.push(next_job);
@@ -448,7 +457,10 @@ pub(crate) fn perform_job(
                 .with_explicit_return(require_explicit_return(context, &job.unit))
                 .with_assertions(!context.config.unsafe_flags.no_assert)
                 .with_type_recording(context.config.record_types);
-            settings.c_interface = context.config.header_modules.contains(job.unit.module().as_path());
+            settings.c_interface = context
+                .config
+                .header_modules
+                .contains(job.unit.module().as_path());
 
             let mut env = HMIREnvironment::new(&context.module_db, hmir.as_ref(), settings);
             let lowered = generate_mir(hmir.as_ref(), &mut env);

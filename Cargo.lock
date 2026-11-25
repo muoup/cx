@@ -398,6 +398,7 @@ name = "chl-preparse-data"
 version = "0.0.0"
 dependencies = [
  "chl-namespace",
+ "chl-tokens",
  "chl-util",
  "rustc-hash",
  "speedy",
