@@ -200,7 +200,7 @@ fn tagged(
     );
     let name = declaration::type_name(context.unit(id.brand()).resolve_def(id).unwrap());
     let resolver = context.env_mut().resolver_mut();
-    let ty = resolver.reserve_nominal(placeholder);
+    let ty = resolver.reserve_nominal(placeholder, None);
     resolver.name_type(ty, name);
     if declaration.role() == HMIRDeclarationRole::Definition {
         resolver.set_pending(ty, Some(id));

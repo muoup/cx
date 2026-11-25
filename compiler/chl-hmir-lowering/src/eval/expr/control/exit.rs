@@ -20,8 +20,9 @@ use crate::{
     eval::{
         EvalResult,
         call::contract,
-        coerce, eval, eval_type,
+        coerce, deduce, eval, eval_type,
         flow::{self, ComptimeStop, EvalExit, Evaluation},
+        types,
     },
     log::hmir_error,
     value::{self, HMIRValue},
@@ -40,8 +41,23 @@ pub(super) fn eval_return(
         return flow::diverged();
     }
     contained(context, 0, span, "return")?;
-    let value = value.map(|value| eval(context, body, value)).transpose()?;
+    let value = value.map(|value| eval_return_operand(context, body, value)).transpose()?;
     return_value(context, body, value, true, span)
+}
+
+pub(crate) fn eval_return_operand(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    value: HMIRExprID,
+) -> EvalResult<Evaluation<HMIRValue>> {
+    if let FnContext::Comptime(frame) = context.context()
+        && let Some(reserved) = frame.aggregate_result
+        && let Some(aggregate) = types::aggregate(body, value)
+    {
+        let ty = types::define_aggregate(context, body, aggregate, Some(reserved))?;
+        return deduce::type_result(context, ty, body.expr(value).span());
+    }
+    eval(context, body, value)
 }
 
 pub(super) fn eval_yield(

@@ -1,6 +1,9 @@
-comptime type compute(type T) => T*;
+comptime type compute(type T) => int;
 comptime type alias(type T) = compute(T);
 
+usize original_size(comptime type T = _, alias(T) value) => sizeof(T);
+
 int main() {
-    return 0;
+    compute(double) value = 0;
+    return (int) original_size(value);
 }

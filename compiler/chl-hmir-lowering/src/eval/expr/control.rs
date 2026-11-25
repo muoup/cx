@@ -6,7 +6,7 @@ mod matching;
 mod switch;
 
 pub(crate) use defer::closing;
-pub(crate) use exit::{fallthrough, return_value};
+pub(crate) use exit::{eval_return_operand, fallthrough, return_value};
 pub(crate) use label::eval_label;
 pub(crate) use loops::{eval_for, eval_while};
 pub(crate) use matching::eval_match;

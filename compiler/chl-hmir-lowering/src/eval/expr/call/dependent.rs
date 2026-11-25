@@ -415,7 +415,7 @@ fn finish(
             let track_origin = function.structural_body().is_none();
             let publish = |env: &mut HMIREnvironment, value| {
                 env.resolver_mut()
-                    .record_generated(def, provisional, value, track_origin)
+                    .reserve_generated(def, provisional, value, track_origin)
             };
             let result = types::alias::define(context, generated, span, publish, |context, reserved| {
                 let value = run(context, Some(reserved))?;
@@ -426,7 +426,7 @@ fn finish(
             }
             let value = result?;
             let resolver = context.env_mut().resolver_mut();
-            resolver.record_generated(def, args.clone(), value.clone(), track_origin);
+            resolver.complete_generated(def, &args, value.clone());
             value
         }
     };
@@ -522,9 +522,12 @@ fn execute(
 ) -> CHLResult<HMIRValue> {
     if let Some(scope) = defining {
         context.set_nominal_scope(scope);
+        if function.structural_body().is_none() {
+            context.comptime_mut().aggregate_result = Some(scope);
+        }
     }
     contract::check(context, signature.contract(), args, None, def, span)?;
-    let value = match body(context, function, defining) {
+    let value = match body(context, function) {
         Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Return(value)))) => value,
         Err(EvalExit::Stop(StopReason::Comptime(_))) => {
             return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()));
@@ -565,25 +568,15 @@ fn execute(
     Ok(value)
 }
 
-// 'defining' is the type reserved for the type a generator defines, which an aggregate it yields is built into
 pub(crate) fn body(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
-    defining: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let definition = function.def().expect("an executed function has a body");
     let body = function.body();
     let root = body.expr(definition.root());
     if !matches!(root.kind(), HMIRExprKind::Block { yields: false, .. }) {
-        let aggregate = defining.filter(|_| function.structural_body().is_none())
-            .zip(types::aggregate(body, definition.root()));
-        let value = match aggregate {
-            Some((reserved, declared)) => {
-                let ty = types::define_aggregate(context, body, declared, Some(reserved))?;
-                deduce::type_result(context, ty, root.span())?
-            }
-            None => eval(context, body, definition.root())?,
-        };
+        let value = control::eval_return_operand(context, body, definition.root())?;
         return control::return_value(context, body, Some(value), false, root.span());
     }
     (eval(context, body, definition.root()))?.ready()?;

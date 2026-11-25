@@ -13,6 +13,7 @@ comptime type record(type T) = struct { T value; };
 comptime type ignored(type T) = struct { int value; };
 comptime type payload(type T) = @strong struct { int value; };
 comptime type legacy(type T) => struct { int value; };
+comptime type returned(type T) { return struct { int value; }; }
 comptime type boxed(type T) => .{ yield @strong struct { int value; }; };
 comptime type Node(type T) => @strong struct { Node(T)* next; T value; };
 comptime type scalar(type T) = @strong int;
@@ -34,7 +35,8 @@ int main() {
     printf("%d %d %d %d\n", !@type.equal(meters, int), @type.equal(meters, distance),
         !@type.equal(meters, seconds), !@type.equal(std::vector(int), std::vector(meters)));
     printf("%d %d %d %d\n", @type.equal(ignored(int), ignored(float)),
-        !@type.equal(payload(int), payload(float)), !@type.equal(legacy(int), legacy(float)),
+        !@type.equal(payload(int), payload(float)),
+        !@type.equal(legacy(int), legacy(float)) && !@type.equal(returned(int), returned(float)),
         !@type.equal(boxed(int), boxed(float)));
     printf("%d %d %d\n", (int)d, width(&anonymous) == sizeof(int) && head.next->value == 1, argument_width(p));
     const meters qualified = m;

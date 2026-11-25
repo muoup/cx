@@ -30,7 +30,7 @@ pub(crate) fn define(
         span.clone(),
         Some(name.clone()),
     );
-    let reserved = context.env_mut().resolver_mut().reserve_nominal(placeholder);
+    let reserved = context.env_mut().resolver_mut().reserve_nominal(placeholder, None);
     let provisional = type_value(context, reserved, span)?;
     publish(context.env_mut(), provisional);
     let defined = evaluate(context, reserved)?;

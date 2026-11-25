@@ -26,6 +26,7 @@ use key::TypeKey;
 struct TypeState {
     ty: HMIRType,
     symbol_name: Option<CHLIdent>,
+    specialization: Option<HMIRTypeID>,
     pending: Option<HMIRDefID>,
     prepared: bool,
     lowered: Option<MIRTypeID>,
@@ -108,27 +109,40 @@ impl HMIRResolver {
         self.qualified(base, semantics, ty.decl_span())
     }
 
-    fn nominal(&mut self, inner: HMIRTypeID, span: &TokenRange, name: Option<String>) -> HMIRTypeID {
+    fn nominal(
+        &mut self,
+        inner: HMIRTypeID,
+        span: &TokenRange,
+        name: Option<String>,
+        specialization: Option<HMIRTypeID>,
+    ) -> HMIRTypeID {
         let strong_identifier = Some(NominalID(self.next_nominal));
         self.next_nominal = self.next_nominal.checked_add(1).expect("nominal identifiers exhausted");
         let kind = HMIRTypeKind::Nominal { inner, strong_identifier };
-        self.reserve_type(HMIRType::new(kind, HMIRTypeSemantics::default(), span.clone(), name))
+        let ty = HMIRType::new(kind, HMIRTypeSemantics::default(), span.clone(), name);
+        let id = self.reserve_type(ty);
+        self.types[id].specialization = specialization;
+        id
     }
 
     pub fn nominal_at(&mut self, site: NominalSite, span: &TokenRange) -> HMIRTypeID {
         if let Some(&id) = self.nominal_sites.get(&site) {
             return id;
         }
-        let id = self.nominal(site.inner, span, None);
+        let id = self.nominal(site.inner, span, None, site.specialization);
         self.nominal_sites.insert(site, id);
         id
     }
 
-    pub fn reserve_nominal(&mut self, representation: HMIRType) -> HMIRTypeID {
+    pub fn reserve_nominal(
+        &mut self,
+        representation: HMIRType,
+        specialization: Option<HMIRTypeID>,
+    ) -> HMIRTypeID {
         let span = representation.decl_span().clone();
         let name = representation.debug_name().map(str::to_owned);
         let inner = self.reserve_type(representation);
-        self.nominal(inner, &span, name)
+        self.nominal(inner, &span, name, specialization)
     }
 
     pub fn set_nominal_placeholder(&mut self, id: HMIRTypeID, ty: HMIRType) {
@@ -156,6 +170,7 @@ impl HMIRResolver {
         self.types.push(TypeState {
             ty,
             symbol_name: None,
+            specialization: None,
             pending: None,
             prepared: false,
             lowered: None,
@@ -227,22 +242,38 @@ impl HMIRResolver {
     pub fn generated(&self, def: HMIRDefID, args: &[HMIRValue]) -> Option<&HMIRValue> {
         self.generated.get(&def)?.get(args)
     }
-    pub fn record_generated(
+    pub fn reserve_generated(
         &mut self,
         def: HMIRDefID,
         args: Vec<HMIRValue>,
         value: HMIRValue,
         track_origin: bool,
     ) {
-        if track_origin && let Some(ty) = value::as_type(&value) {
-            let ty = self.underlying(ty);
-            self.origins.entry(ty).or_insert((def, args.clone()));
+        if track_origin {
+            let ty = value::as_type(&value).expect("a type reservation has a type");
+            self.origins.insert(ty, (def, args.clone()));
         }
         self.generated.entry(def).or_default().insert(args, value);
     }
+
+    pub fn complete_generated(&mut self, def: HMIRDefID, args: &[HMIRValue], value: HMIRValue) {
+        let ty = self.underlying(value::as_type(&value).expect("a type generator returns a type"));
+        let pending = self.generated.get_mut(&def)
+            .and_then(|calls| calls.get_mut(args))
+            .expect("the generated type has a reservation");
+        let reserved = value::as_type(pending).expect("a type reservation has a type");
+        *pending = value;
+        if let Some(origin) = self.origins.remove(&reserved)
+            && (ty == reserved || self.types[ty].specialization == Some(reserved))
+        {
+            self.origins.insert(ty, origin);
+        }
+    }
+
     pub fn forget_generated(&mut self, def: HMIRDefID, args: &[HMIRValue]) {
-        if let Some(generated) = self.generated.get_mut(&def) {
-            generated.remove(args);
+        if let Some(value) = self.generated.get_mut(&def).and_then(|calls| calls.remove(args)) {
+            let reserved = value::as_type(&value).expect("a type reservation has a type");
+            self.origins.remove(&reserved);
         }
     }
     pub fn origin(&self, ty: HMIRTypeID) -> Option<(HMIRDefID, &[HMIRValue])> {

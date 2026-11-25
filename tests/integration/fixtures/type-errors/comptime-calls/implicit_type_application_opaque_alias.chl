@@ -1,2 +1,9 @@
-comptime type Opaque() => int;
-comptime type Alias() = Opaque;
+comptime type Opaque() => @strong int;
+comptime type Alias(type T) = struct { Opaque header; T body; };
+
+usize body_size(comptime type T = _, Alias(T)* value) => sizeof(T);
+
+int main() {
+    struct { int header; double body; }* value = 0;
+    return (int) body_size(value);
+}

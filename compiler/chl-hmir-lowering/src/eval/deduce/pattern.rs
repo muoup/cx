@@ -93,7 +93,7 @@ pub(crate) fn validate(
 ) -> CHLResult<()> {
     let comptime = FnContext::Comptime(ComptimeContext::new());
     let mut context = LocalLoweringContext::new(env, None, comptime).sourced(id.brand());
-    validate_alias(&mut Validation::default(), &mut context, id, span)
+    validate_factory(&mut Validation::default(), &mut context, id, span).map(drop)
 }
 
 #[derive(Default)]
@@ -102,25 +102,31 @@ struct Validation {
     checked: FxHashSet<HMIRDefID>,
 }
 
-fn validate_alias(
+fn validate_factory(
     validation: &mut Validation,
     context: &mut LocalLoweringContext,
     def: HMIRDefID,
     span: &TokenRange,
-) -> CHLResult<()> {
+) -> CHLResult<bool> {
     if validation.checked.contains(&def) {
-        return Ok(());
+        return Ok(true);
     }
     let unit = context.unit(def.brand());
     let source = unit
         .resolve_def(def)
         .expect("alias owner contains its definition");
     let Some(HMIRDefKind::Function(_)) = declaration::canonical(source).kind() else {
-        return Err(invalid(span, "a call to a non-transparent function"));
+        return Err(invalid(span, "a call without a named type factory"));
     };
     let function = symbol::function(context.env_mut(), def)?;
+    if !function.returns_type() {
+        return Err(invalid(
+            span,
+            "a call to a function that does not return a type",
+        ));
+    }
     let Some(root) = function.transparent_body() else {
-        return Err(invalid(span, "a call to a non-transparent function"));
+        return Ok(false);
     };
     if !validation.active.insert(def) {
         return Err(hmir_error(
@@ -135,7 +141,7 @@ fn validate_alias(
     validation.active.remove(&def);
     result?;
     validation.checked.insert(def);
-    Ok(())
+    Ok(true)
 }
 
 fn validate_expr(
@@ -194,12 +200,14 @@ fn validate_expr(
             let Some(def) = def else {
                 return Err(invalid(
                     callee.span(),
-                    "a call to a non-transparent function",
+                    "a call without a named type factory",
                 ));
             };
-            validate_alias(validation, context, def, callee.span())?;
-            for arg in args.iter().chain(named.iter().map(|(_, arg)| arg)) {
-                validate_expr(validation, context, function, *arg, false)?;
+            let transparent = validate_factory(validation, context, def, callee.span())?;
+            if transparent {
+                for arg in args.iter().chain(named.iter().map(|(_, arg)| arg)) {
+                    validate_expr(validation, context, function, *arg, false)?;
+                }
             }
             Ok(())
         }

@@ -150,10 +150,11 @@ pub(crate) fn define_aggregate(
                 span.clone(),
                 ty.debug_name().map(str::to_owned),
             );
+            let specialization = context.nominal_scope();
             context
                 .env_mut()
                 .resolver_mut()
-                .reserve_nominal(placeholder)
+                .reserve_nominal(placeholder, specialization)
         });
         let value = type_value(context, reserved, span)?;
         storage::bind_local(context, local, value);

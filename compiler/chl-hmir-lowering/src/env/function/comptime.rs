@@ -17,6 +17,7 @@ pub struct ComptimeContext {
     scopes: Scopes<ComptimeScope>,
     slots: FxHashMap<HMIRPlaceID, ComptimeSlot>,
     function: Option<HMIRDefID>,
+    pub(crate) aggregate_result: Option<HMIRTypeID>,
     // The page the places of this frame are allocated in, from the memory of the context it is installed in
     page: Option<Page>,
 }

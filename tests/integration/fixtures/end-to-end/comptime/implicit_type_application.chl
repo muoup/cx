@@ -3,6 +3,7 @@
 comptime type Defaulted(comptime int N = 2) => struct { int data[N]; };
 comptime type Scalar() = int;
 comptime type Alias() = Scalar;
+comptime type DefaultedAlias() = Defaulted;
 comptime type Array(comptime int N = _) = int[N];
 comptime type Box(comptime type T) => struct { T value; };
 
@@ -21,8 +22,9 @@ int main() {
     Array inferred = array;
     Box(Array(.N = 4)) boxed_array;
     bool callable = !@type.equal(@type.type_of(Scalar), Scalar);
+    bool same_alias = @type.equal(DefaultedAlias, Defaulted());
     printf("%d %d %d %d %d %d %d\n", scalar, boxed.value.data[0],
            (int)(sizeof(override.data) / sizeof(int)), (int)length(array), (int)length(inferred),
-           (int)boxed_length(boxed_array), (int)callable);
+           (int)boxed_length(boxed_array), (int)(callable && same_alias));
     return 0;
 }
