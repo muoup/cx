@@ -1,0 +1,13 @@
+#include "_typed_c.h"
+
+public:
+
+enum legacy { Zero, Legacy = 2 };
+enum fixed : int { Fixed = 3, Next };
+enum value : @strong int { Zero, THREE = 3, FOUR, FIVE = (int) value::FOUR + 1 };
+enum index : @strong int { Zero, THREE = 3 };
+
+public extern "C":
+
+@overwrite value abs(value input);
+@overwrite extern index optind;

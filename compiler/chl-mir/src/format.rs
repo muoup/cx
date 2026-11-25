@@ -434,6 +434,10 @@ fn write_instruction<T: MTRegistry>(
     types: &mut TypePrinter<'_, T>,
 ) -> fmt::Result {
     match &instruction.kind {
+        MIRInstructionKind::RequireLive { place } => {
+            f.write_str("require_live ")?;
+            write_place_name(f, unit, function, *place)
+        }
         MIRInstructionKind::Initialize { place } => {
             f.write_str("initialize ")?;
             write_place_name(f, unit, function, *place)
@@ -915,22 +919,18 @@ fn write_pointer_intrinsic<T: MTRegistry>(
             write_intrinsic_binary(f, unit, function, types, "pointer.sub", ptr, offset)
         }
         MIRPtrIntrinsic::Diff {
-            lhs,
-            rhs,
-            element_ty,
-            ..
+            lhs, rhs, stride, ..
         } => write_intrinsic_call(
             f,
             unit,
             function,
             types,
             "pointer.diff",
-            |f, unit, function, types| {
+            |f, unit, function, _| {
                 write_value(f, unit, function, lhs)?;
                 f.write_str(", ")?;
                 write_value(f, unit, function, rhs)?;
-                f.write_str(", ")?;
-                types.write(f, *element_ty)
+                write!(f, ", {stride}")
             },
         ),
         MIRPtrIntrinsic::Eq { lhs, rhs, .. } => {

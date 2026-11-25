@@ -10,10 +10,9 @@ pub(crate) fn symbol_table(
     planned: &[PlannedSymbol],
 ) -> HMIRSymbolTable {
     let mut imports = Vec::<NamespacePath>::new();
-    for name in hir.imports.iter().flat_map(|import| &import.names) {
-        let module = name.namespace.clone().child(name.name.clone());
-        if !imports.contains(&module) {
-            imports.push(module);
+    for path in hir.imports.iter().flat_map(|import| &import.paths) {
+        if !imports.contains(&path.resolved) {
+            imports.push(path.resolved.clone());
         }
     }
 

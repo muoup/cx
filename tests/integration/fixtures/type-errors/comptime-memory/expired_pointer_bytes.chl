@@ -1,0 +1,12 @@
+comptime void save_address(int** result) {
+    int temporary = 7;
+    *result = &temporary;
+}
+
+comptime int attempt() {
+    int* saved = 0;
+    save_address(&saved);
+    return *saved;
+}
+
+comptime int result = attempt();

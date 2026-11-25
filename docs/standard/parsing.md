@@ -1,6 +1,6 @@
 # Parsing
 
-Token stream to HIR, then HIR unit to HMIR unit. The parser consults the [preparse](preparsing.md) registry to tell type names from values; desugaring plans one def per symbol and lowers every declaration into it. No name is resolved here except locals and function-level statics.
+Token stream to HIR, then HIR unit to HMIR unit. The parser uses scoped type/value name hints and the [preparse](preparsing.md) registry to distinguish types from values; desugaring plans one def per symbol and lowers every declaration into it. No name is resolved here except locals and function-level statics.
 
 ## Terms
 
@@ -73,7 +73,7 @@ declaration = specifiers type-base declarator
 function-tail = [ "::" name ] "(" params ")" contract ["->" abstract-type] ( ";" | body ) ;
 params   = [ param { "," param } ] [ "," "..." ] | "..." ;
 param    = ["comptime"] specifiers type-base declarator [ "=" expr ] ;
-body     = "{" { statement } "}" | "=>" expr ";" ;
+body     = "{" { block-item } "}" | "=>" expr ";" | "=" abstract-type ";" ;
 contract = suffixes ["safe"] [ "where" condition { "," condition } suffixes ] ;
 condition = "precondition" ":" "(" expr ")"
           | "postcondition" ["(" name ")"] ":" "(" expr ")" ;
@@ -82,7 +82,9 @@ condition = "precondition" ":" "(" expr ")"
 - a declarator followed by `(` is a function; else backtracks to a variable.
 - `A::f` declares an associated function of A; more segments: P0021.
 - trailing `-> T` only when the written return type is `auto` and not C mode; it keeps auto's qualifiers.
-- `noreturn` attributes, before the type or after the parameters, make the return type `unreachable`.
+- A body written `= T;` defines a transparent type alias. It requires a `comptime` function returning `type` outside C mode. A named struct, union, or tagged union in the RHS has a tag local to the RHS and a strong identity per specialization. Enum definitions in the RHS and named aggregate definitions in ordinary type-value expressions produce P0009.
+- `@strong T` introduces a strong type identity over the abstract type `T`. For example, `typedef @strong int meters;` binds `meters` to that type.
+- `noreturn` attributes before the type or after the parameters are recorded on the function prototype. Lowering gives marked prototypes the return type `unreachable`.
 - second precondition or postcondition: P0008.
 - `rule/quirk-c-suffix-skip` identifiers `__asm__`, `__asm`, `asm`, `__declspec`, `__nonnull`, `__nonnull__`, `__wur` and an optional parenthesized group after each are skipped, with attributes, before and after `where`.
 - `rule/c-static-linkage` C mode: a function first declared `static` at file scope stays static at later non-static declarations; static functions are namespaced, others unmangled. Block-scope declarations follow but do not record.
@@ -93,9 +95,9 @@ condition = "precondition" ":" "(" expr ")"
 
 #### Type start
 
-Yields whether a type begins at the current token. True for: builtin type keyword, any specifier, `struct`, `union`, `enum`, `register`, `type`, `fn`, and `^` outside C mode. A qualified identifier: if a generator, only when `(` follows the name; else when a temporary type name or a registry symbol (in C mode, tag symbols excluded).
-- `rule/unimported-generator` outside C mode, a name no registry symbol or temporary type declares is a type start when parenthesized arguments follow it and then an identifier, since no value applies a name and then names another: `std::span(int) s` without the import. Its lookup then fails where the type is resolved.
-- `rule/quirk-value-use-lookahead` an identifier type (builtin type names included) is not a type start when the token right after its *first segment* is `=`, `.` or `->`.
+Yields whether a type begins at the current token. True for: builtin type keyword, any specifier, `struct`, `union`, `enum`, `register`, `type`, `fn`, and `^` outside C mode; `@strong` outside C mode and include regions. For a root identifier, the innermost scoped type or value hint takes precedence over builtins and registry symbols. Otherwise a generator starts a type only when `(` follows the name; other registry symbols start types (in C mode, tag symbols excluded).
+- Parameters, local declarations, and match arm bindings add hints. A value name can shadow a type name, and a `type` parameter adds a type hint. Assignment and member-access operators after the full qualified name select expression syntax.
+- Outside C mode, `name(args) declarator-name` can start a type application when `name` is a local value or has no type binding. This covers local type-producing functions and lets an unimported `std::span(int) s` reach name resolution.
 - registry ambiguity among equally ranked candidates of differing kinds: P0007. Rank: lexical namespace first, then type kind.
 
 #### Type base
@@ -104,7 +106,7 @@ Yields whether a type begins at the current token. True for: builtin type keywor
 specifiers = { "const" | "volatile" | "restrict" | "extern" | "static"
              | "inline" | "thread_local" | attribute } ;
 type-base  = ( qualified-name [ "(" args ")" ] | "auto" | "type" | "fn"
-             | "^" abstract-type | builtin-words
+             | "^" abstract-type | "@strong" abstract-type | builtin-words
              | struct | union | enum ) { qualifier } ;
 ```
 
@@ -128,7 +130,7 @@ array      = "[" [expr] "]" ;
 - `: T` after a name replaces an `auto` type (not C mode).
 - `fn {"*" {qualifier} | "&"} [name] {array} (params) -> R`: function type R, wrapped by each `*` (pointer) and `&` (reference) innermost first; `fn* f(int) -> int` is a pointer. Without a name or array: the function type itself, whose return type has already taken any `*`, `&`, `[]`; a name then directly followed by `(` is a function declarator returning it (`fn*(int) -> int pick(int which)`), any other name: P0022. No `(`: P0001.
 - `fn` function types are marked not decaying; C declarators (`R (*f)(params)`, `typedef R f(params)`) make decaying ones. See [Type lowering](#type-lowering).
-- abstract type: specifiers, base, pointer and reference suffixes, arrays; no name. A `fn` base reads its indirections and signature.
+- abstract type: specifiers, base, pointer and reference suffixes, arrays, and unnamed parenthesized C function-pointer declarators; no name. A `fn` base reads its indirections and signature.
 
 #### Aggregates
 
@@ -141,8 +143,8 @@ attrs  = "@nocopy" | "@nodrop" | "@unsafe_move" | "@copy_traits" "(" name ")" { 
 fields = specifiers type-base declarator [":" int-literal] { "," declarator [":" int-literal] } ;
 ```
 
-- named definition: adds a tagged type definition and yields a tag reference to it; anonymous: the type in place.
-- `rule/quirk-hoisted-aggregate` definitions are added as global statements wherever written: a struct, union or enum defined in a function body, nested block included, is a global type seen from the whole unit.
+- A named definition in a declaration position adds a tagged type definition and yields a tag reference. In a type alias RHS, the tag is visible from its definition through the end of the RHS, including inside its own fields. Anonymous definitions yield the type in place.
+- `rule/quirk-hoisted-aggregate` definitions in declaration positions are added as global statements. This includes declarations inside a function body or nested block.
 - `rule/quirk-union-attributes` plain unions take no attributes.
 - unknown attribute: P0006. Qualified definition name: P0001.
 - bitfield width must be an integer literal token.
@@ -156,21 +158,24 @@ fields = specifiers type-base declarator [":" int-literal] { "," declarator [":"
 
 ### Statements
 
-*verified 425c5ff1*
+*verified uncommitted*
 
 ```ebnf
+block     = "{" { block-item } "}" ;
+block-item = declaration-stmt ";" | statement ;
 statement = ";" | block | name ":" labelled | "case" expr ":" labelled
           | "default" ":" labelled | "if" cond statement ["else" statement]
           | "switch" cond statement | "match" ... | "while" cond statement
           | "do" statement "while" cond ";" | "for" "(" [decl-or-expr] ";" [expr] ";" [expr] ")" statement
           | "goto" name ";" | "goto" "*" expr ";" | "defer" expr ";"
-          | "break" ";" | "continue" ";" | decl-or-expr ";" ;
+          | "break" ";" | "continue" ";" | expr ";" ;
 labelled  = "}"-lookahead | statement ;
 ```
 
 - `;` not required after if, switch, match, for, while, labels, cases, `{}` blocks, nor after a statement ending in `then`.
-- a label or case directly before `}` labels an empty statement.
-- omitted `for` condition is `1`; omitted init and increment are void.
+- a label or case directly before `}` labels an empty statement. A label or case in a block-item position may also attach a declaration; this allowance propagates through nested labels.
+- Control-flow bodies take statements; declarations appear as block items or as the initializer of a `for`.
+- The `for` initializer has a scope that covers the whole loop. The omitted condition is always true; omitted init and increment are void.
 - `rule/scoped-type-expression` a statement opening with a generator applied and followed by `::` (`opt(int)::some(5);`) is an expression, not a declaration.
 - `rule/quirk-register-skipped` `register` ignored.
 
@@ -222,7 +227,7 @@ cparam  = specifiers type-base declarator ;
 initializer = "{" [ ["." name "="] expr { "," ["." name "="] expr } [","] ] "}" ;
 ```
 
-- `rule/type-in-value` outside C mode and include regions, a type start parses a type as a value; a declarator name there: P0009.
+- `rule/type-in-value` outside C mode and include regions, a type start parses an abstract type as a value; a following declarator name: P0009.
 - `rule/quirk-prefix-cast` `(T)` after a type start is a cast unless followed by `;` `)` `]` `}` `,` `::`; then it backtracks to a parenthesized value.
 - `&&name` in value position is a label address.
 - `.{ ... }` is an expression block (yields); `.` followed by anything else: P0001.
@@ -404,7 +409,7 @@ Call, pipe and backward pipe lower in an arguments scope.
 
 #### Intrinsic lowering
 
-- `rule/intrinsic-path` `@type.` paths lower to a type operator, other dotted paths to the intrinsic of that path. Unknown: P0006. Aggregate and variadic intrinsics have no path.
+- `rule/intrinsic-path` `@type.` paths lower to a type operator. `@leak`, `@copy`, and `@adopt` each take one argument and lower to an ownership operation. Other dotted paths lower to the intrinsic of that path. Unknown: P0006. Aggregate and variadic intrinsics have no path.
 - `rule/intrinsic-arguments-as-written` arguments lowered in order, nothing inserted or converted. Count other than the path takes: T0015. Named argument: T0017.
 - `rule/intrinsic-literal-flags` the flag of `int.cast`, `int.to_ptr` (sign-extend), `int.to_float`, `float.to_int` (signed) must be a `true`/`false` literal; the optional trailing message of `internal.assert` a string literal. Else T0002.
 

@@ -1,0 +1,47 @@
+#include <stdio.h>
+
+import std::stream as std;
+import std::collections::{string, vector} as std;
+
+comptime type pointer(type Pointee = int) = Pointee*;
+comptime type indirect(type Element) = pointer(.Pointee = pointer(.Pointee = Element));
+comptime type buffer(type Element, usize Length) = Element[Length];
+comptime type borrow(type T) = T&;
+comptime type header_pointer(type T) => T*;
+comptime type payload(type T) = struct : @nodrop { std::string header; T body; };
+comptime type dependent_payload(type T) = struct { header_pointer(T) header; T body; };
+comptime type vector_payload(type T) = struct : @nodrop { std::vector(T) body; };
+
+usize pointee_size(comptime type T = _, indirect(T) value) => sizeof(T);
+usize length(comptime type T = _, comptime usize N = _, buffer(T, N)& values) => N;
+bool is_const(comptime type T = _, borrow(T) value) => @type.is_const(T);
+usize payload_size(comptime type T = _, payload(T)* value) => sizeof(T);
+usize dependent_size(comptime type T = _, dependent_payload(T)* value) => sizeof(T);
+usize vector_payload_size(comptime type T = _, vector_payload(T)* value) => sizeof(T);
+
+comptime fn(fn(^int) -> ^void) -> ^void one()
+    => |fn sink(^int) -> ^void| { sink(7); };
+
+int main() {
+    int** p = 0;
+    indirect(_) q = p;
+    int array[3] = {};
+    buffer(_, _) copy = array;
+    const int constant = 0;
+    struct : @nodrop { std::string header; double body; }* record = 0;
+    struct { double* header; double body; }* dependent = 0;
+    struct : @nodrop { std::vector(long) body; }* vector = 0;
+
+    int observed = 0;
+    one() |> std::stream::for_each(|auto value| { observed = value; });
+
+    bool payloads_match =
+        payload_size(record) == sizeof(double)
+        && dependent_size(dependent) == sizeof(double)
+        && vector_payload_size(vector) == sizeof(long);
+    printf("%d\n", (int) payloads_match);
+
+    return q == p && pointee_size(q) == sizeof(int) && length(copy) == 3
+        && is_const(constant) && observed == 7 && payloads_match
+        ? 0 : 1;
+}

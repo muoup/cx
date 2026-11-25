@@ -2,7 +2,7 @@
 /* CHL-STDOUT-NEXT: after pass_through */
 /* CHL-STDOUT-NEXT: drop 42 */
 
-import std::io as std;
+import std::io::stdio as std;
 
 struct Resource : @nodrop {
     int data;

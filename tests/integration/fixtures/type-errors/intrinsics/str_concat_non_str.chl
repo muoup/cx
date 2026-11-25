@@ -1,0 +1,4 @@
+int main() {
+    @str.concat("prefix", (const char*) "suffix");
+    return 0;
+}

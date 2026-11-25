@@ -1367,11 +1367,11 @@ void jump(int* target) {
           (variable_declaration
             (type
               (builtin_type_sequence
-                (builtin_type))
-              (pointer_modifier
-                (operator)))
+                (builtin_type)))
             (declarator_with_initializer
               (declarator
+                (pointer_modifier
+                  (operator))
                 (identifier))
               (operator)
               (expression
@@ -1572,7 +1572,7 @@ void f() {
 dotted intrinsics
 ==================
 int main() {
-    return @int.add(@copy(x), 1) + @type.size_of(int);
+    return @int.add(@copy(x), 1) + @type.c_sizeof(int);
 }
 ---
 
@@ -1619,3 +1619,31 @@ int main() {
                     (type
                       (builtin_type_sequence
                         (builtin_type)))))))))))))
+
+==================
+transparent type alias
+==================
+comptime type pointer(type T) = T*;
+---
+
+(source_file
+  (comptime_function_definition
+    (keyword)
+    (type
+      (keyword))
+    (callable_name
+      (qualified_name
+        (identifier)))
+    (parameter_list
+      (parameter
+        (type
+          (keyword))
+        (declarator
+          (identifier))))
+    (transparent_type_body
+      (operator)
+      (type
+        (qualified_name
+          (identifier))
+        (pointer_modifier
+          (operator))))))

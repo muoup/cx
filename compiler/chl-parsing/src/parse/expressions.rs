@@ -1,3 +1,5 @@
+use super::types::TagScope;
+use super::parser::LocalName;
 use crate::parse::{try_parse_simple_identifier, ParserData};
 use crate::{
     assert_token_matches,
@@ -12,7 +14,7 @@ use chl_hir::ast::pattern::{HIRBindingMode, HIRPattern};
 use chl_hir::ast::types::{HIRTypeKind, HIRTypeLookup};
 use chl_log::catalogue::parse::*;
 use chl_log::CHLResult;
-use chl_namespace::module::{NamespacePath, QualifiedName};
+use chl_namespace::module::QualifiedName;
 use chl_tokens::token::{KeywordType, OperatorType, PunctuatorType, TokenKind};
 use chl_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier};
 use chl_util::identifier::CHLIdent;
@@ -22,7 +24,10 @@ use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
 use crate::parse::statement::parse_arm;
-use crate::parse::types::{is_type_decl, parse_args, parse_initializer};
+use crate::parse::types::{
+    application_suffix, parse_abstract_type, parse_args, parse_typed_declarator, starts_type,
+    TypePosition,
+};
 use crate::parse::{
     parse_block, parse_expression_block, parse_intrinsic, try_parse_qualified_name,
 };
@@ -46,51 +51,6 @@ fn parse_at_intrinsic_expr(
             };
 
             Ok(HIRExprKind::Unsafe {
-                expr: Box::new(expr),
-            }
-            .into_expr(
-                start_index,
-                data.tokens.index,
-                data.token_range(start_index, data.tokens.index),
-            ))
-        }
-
-        "leak" => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-
-            Ok(HIRExprKind::Leak {
-                expr: Box::new(expr),
-            }
-            .into_expr(
-                start_index,
-                data.tokens.index,
-                data.token_range(start_index, data.tokens.index),
-            ))
-        }
-
-        "copy" => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-
-            Ok(HIRExprKind::Copy {
-                expr: Box::new(expr),
-            }
-            .into_expr(
-                start_index,
-                data.tokens.index,
-                data.token_range(start_index, data.tokens.index),
-            ))
-        }
-
-        "adopt" => {
-            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let expr = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-
-            Ok(HIRExprKind::Adopt {
                 expr: Box::new(expr),
             }
             .into_expr(
@@ -141,6 +101,9 @@ fn parse_at_intrinsic_expr(
                     break;
                 }
             }
+            for binding in &bindings {
+                data.note_local_name(binding.binding.clone(), LocalName::Value);
+            }
 
             Ok(HIRExprKind::Unpack {
                 expr: Box::new(expr),
@@ -188,7 +151,10 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CHLResult<HIRExpression> {
             return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("an expression".into(), Some("before '?'".into())));
         };
 
-        let then_branch = parse_expr(data)?;
+        data.change_comma_mode(true);
+        let then_branch = parse_expr(data);
+        data.pop_comma_mode();
+        let then_branch = then_branch?;
         assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
         let else_branch = parse_expr(data)?;
         let range = condition.range.cover(&else_branch.range);
@@ -314,7 +280,7 @@ pub(crate) fn parse_argument(data: &mut ParserData) -> CHLResult<HIRExpression> 
     if try_next!(data.tokens, operator!(Access)) {
         if let Some(name) = try_parse_simple_identifier(&mut data.tokens) {
             assert_token_matches!(data.tokens, TokenKind::Assignment(None), "'='");
-            let value = parse_expr(data)?;
+            let value = parse_argument_value(data)?;
             return Ok(HIRExprKind::NamedArgument {
                 name,
                 value: Box::new(value),
@@ -326,6 +292,29 @@ pub(crate) fn parse_argument(data: &mut ParserData) -> CHLResult<HIRExpression> 
             ));
         }
         data.tokens.back();
+    }
+    parse_argument_value(data)
+}
+
+fn parse_argument_value(data: &mut ParserData) -> CHLResult<HIRExpression> {
+    let start = data.tokens.index;
+    if !data.c_mode
+        && !data.in_include()
+        && matches!(
+            data.tokens.slice.get(start..start + 2),
+            Some([hole, colon])
+                if matches!(hole.kind, keyword!(Hole)) && matches!(colon.kind, punctuator!(Colon))
+        )
+    {
+        data.tokens.index += 2;
+        let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
+            return parse_point_error(
+                &data.tokens,
+                &EXPECTED_SYNTAX,
+                ("a hole binding name".into(), None),
+            );
+        };
+        return Ok(data.expr_from(start, HIRExprKind::HoleBinding(name)));
     }
     parse_expr(data)
 }
@@ -347,7 +336,7 @@ fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>)
     let list = parse_expr(data)?;
     data.pop_comma_mode();
     assert_token_matches!(data.tokens, operator!(Comma), "','");
-    let (_, ty, _) = parse_initializer(data)?;
+    let (_, ty, _) = parse_typed_declarator(data, TagScope::Module)?;
     assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
     expr_stack.push(
@@ -431,24 +420,16 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CHLResult<HIRPattern> {
             let Some(path) = try_parse_qualified_name(&mut data.tokens)? else {
                 unreachable!()
             };
-            let applied = peek_next_kind!(data.tokens)
-                .is_ok_and(|kind| matches!(kind, punctuator!(OpenParen)));
+            let end = data.tokens.index;
+            if !peek_kind!(data.tokens, punctuator!(OpenParen)) {
+                let kind = HIRExprKind::Identifier { name: path };
+                return Ok(HIRPattern::Value(data.expr_from(start_index, kind)));
+            }
 
-            let (qualifier, name) = if applied && data.is_generator(&path)? {
+            let scoped = matches!(application_suffix(&data.tokens, end), Some(operator!(ScopeRes)));
+            let (sum, name, qualifier_end) = if scoped {
                 let args = parse_args(data)?;
-                let sum = HIRTypeKind::Identifier {
-                    name: path,
-                    lookup: HIRTypeLookup::Standard,
-                    args: Some(args),
-                }
-                .to_type()
-                .with_range(data.token_range(start_index, data.tokens.index));
-                let qualifier = HIRExprKind::Type(sum).into_expr(
-                    start_index,
-                    data.tokens.index,
-                    data.token_range(start_index, data.tokens.index),
-                );
-
+                let end = data.tokens.index;
                 assert_token_matches!(data.tokens, operator!(ScopeRes), "'::' after the sum type");
                 let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
                     return parse_point_error(
@@ -457,41 +438,31 @@ pub(crate) fn parse_pattern(data: &mut ParserData) -> CHLResult<HIRPattern> {
                         ("a variant name".into(), None),
                     );
                 };
-
-                (Some(Box::new(qualifier)), name)
-            } else if !applied {
-                // A reference to an existing value, never a binding
-                return Ok(HIRPattern::Value(HIRExprKind::Identifier { name: path }.into_expr(
-                    start_index,
-                    data.tokens.index,
-                    data.token_range(start_index, data.tokens.index),
-                )));
+                (Some((path, Some(args))), name, end)
             } else {
-                let mut segments = path.namespace.segments().to_vec();
-                let qualifier = match segments.pop() {
-                    None => None,
-                    Some(sum) => {
-                        let sum = HIRTypeKind::Identifier {
-                            name: QualifiedName::new(NamespacePath::new(segments), sum),
-                            lookup: HIRTypeLookup::Standard,
-                            args: None,
-                        }
-                        .to_type();
-                        Some(Box::new(HIRExprKind::Type(sum).into_expr(
-                            start_index,
-                            data.tokens.index,
-                            data.token_range(start_index, data.tokens.index),
-                        )))
-                    }
-                };
-
-                (qualifier, path.name)
+                let sum = path.namespace.parent_and_name()
+                    .map(|(namespace, name)| (QualifiedName::new(namespace, name), None));
+                (sum, path.name, end)
             };
 
+            let qualifier = sum.map(|(name, args)| {
+                let range = data.token_range(start_index, qualifier_end);
+                let kind = HIRTypeKind::Identifier { name, lookup: HIRTypeLookup::Standard, args };
+                let ty = kind.to_type().with_range(range.clone());
+                Box::new(HIRExprKind::Type(ty).into_expr(start_index, qualifier_end, range))
+            });
             parse_variant_pattern(data, qualifier, name)
         }
 
         _ => parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a pattern value".into(), None)),
+    }
+}
+
+fn note_pattern_binding(data: &mut ParserData, pattern: &HIRPattern) {
+    match pattern {
+        HIRPattern::Binding { name, .. } => data.note_local_name(name.clone(), LocalName::Value),
+        HIRPattern::Variant { inner: Some(inner), .. } => note_pattern_binding(data, inner),
+        _ => {}
     }
 }
 
@@ -595,10 +566,10 @@ pub(crate) fn parse_expr_val(
     }
 
     // A type in value position, 'opt(int)' as a comptime argument or the head of 'T::member'
-    let acc = if !data.c_mode && !data.in_include() && is_type_decl(data)? {
+    let acc = if !data.c_mode && !data.in_include() && starts_type(data, TypePosition::Expression)? {
         let type_start = data.tokens.index;
-        let (name, ty, _) = parse_initializer(data)?;
-        if name.is_some() {
+        let ty = parse_abstract_type(data, TagScope::Value)?;
+        if peek_kind!(data.tokens, identifier!()) {
             return parse_point_error(
                 &data.tokens,
                 &INVALID_CONTEXT,
@@ -648,11 +619,13 @@ pub(crate) fn parse_expr_val(
         TokenKind::Operator(OperatorType::Bar) => {
             let mut params = Vec::new();
             loop {
-                let (Some(name), ty, _) = parse_initializer(data)? else {
+                let param_start = data.tokens.index;
+                let (Some(name), ty, _) = parse_typed_declarator(data, TagScope::Module)? else {
                     let expected = ("a typed closure parameter".into(), Some("such as 'auto value'".into()));
                     return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, expected);
                 };
-                params.push(HIRClosureParam { name, ty });
+                let range = data.token_range(param_start, data.tokens.index);
+                params.push(HIRClosureParam { name, ty, range });
 
                 if try_next!(data.tokens, operator!(Bar)) {
                     break;
@@ -660,22 +633,27 @@ pub(crate) fn parse_expr_val(
                 assert_token_matches!(data.tokens, operator!(Comma), "',' or '|'");
             }
 
-            let body = if try_next!(data.tokens, keyword!(Then)) {
-                data.expr_from(data.tokens.index - 1, HIRExprKind::Then)
-            } else if peek_kind!(data.tokens, punctuator!(OpenBrace)) {
-                parse_expression_block(data)?
-            } else if try_next!(data.tokens, punctuator!(ThickArrow)) {
-                data.change_comma_mode(false);
-                let body = parse_expr(data);
-                data.pop_comma_mode();
-                body?
-            } else {
-                return parse_point_error(
-                    &data.tokens,
-                    &EXPECTED_SYNTAX,
-                    ("'=>', '{' or 'then'".into(), Some("after closure parameters".into())),
-                );
-            };
+            let body = data.with_name_scope(|data| {
+                for parameter in &params {
+                    data.note_local_name(parameter.name.clone(), LocalName::Value);
+                }
+                if try_next!(data.tokens, keyword!(Then)) {
+                    Ok(data.expr_from(data.tokens.index - 1, HIRExprKind::Then))
+                } else if peek_kind!(data.tokens, punctuator!(OpenBrace)) {
+                    parse_expression_block(data)
+                } else if try_next!(data.tokens, punctuator!(ThickArrow)) {
+                    data.change_comma_mode(false);
+                    let body = parse_expr(data);
+                    data.pop_comma_mode();
+                    body
+                } else {
+                    parse_point_error(
+                        &data.tokens,
+                        &EXPECTED_SYNTAX,
+                        ("'=>', '{' or 'then'".into(), Some("after closure parameters".into())),
+                    )
+                }
+            })?;
 
             HIRExprKind::Closure {
                 params,
@@ -877,8 +855,17 @@ pub(crate) fn parse_expr_identifier(data: &mut ParserData) -> CHLResult<HIRExpre
     path.push(name.name.clone());
 
     let head = QualifiedName::root(path[0].clone());
-    if path.len() == 1 || !data.is_temporary_type(&head) {
-        return Ok(HIRExprKind::Identifier { name }.into_expr(start_index, data.tokens.index, range));
+    if path.len() == 1
+        || !matches!(
+            data.local_name(&head),
+            Some(LocalName::Type | LocalName::Inferred)
+        )
+    {
+        return Ok(HIRExprKind::Identifier { name }.into_expr(
+            start_index,
+            data.tokens.index,
+            range,
+        ));
     }
     let base = HIRExprKind::Type(
         HIRTypeKind::Identifier {
@@ -923,21 +910,8 @@ pub(crate) fn parse_keyword_expr(
                 "'('"
             );
 
-            let return_type = if is_type_decl(data)? {
-                let (None, ty, _) = parse_initializer(data)? else {
-                    return parse_point_error(
-                        &data.tokens,
-                        &EXPECTED_SYNTAX,
-                        (match keyword_type {
-                            KeywordType::Sizeof => "sizeof",
-                            KeywordType::Alignof => "alignof",
-                            _ => unreachable!(),
-                        }
-                        .to_string(),
-                        Some("unnamed type".into()),
-                    ),
-                    );
-                };
+            let return_type = if starts_type(data, TypePosition::Expression)? {
+                let ty = parse_abstract_type(data, TagScope::Module)?;
 
                 match keyword_type {
                     KeywordType::Sizeof => HIRExprKind::SizeOfType { ty },
@@ -969,7 +943,7 @@ pub(crate) fn parse_keyword_expr(
 
         KeywordType::Offsetof => {
             assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-            let (None, ty, _) = parse_initializer(data)? else {
+            let (None, ty, _) = parse_typed_declarator(data, TagScope::Module)? else {
                 return parse_point_error(
                     &data.tokens,
                     &EXPECTED_SYNTAX,
@@ -1039,7 +1013,10 @@ pub(crate) fn parse_keyword_expr(
 
                 let value = parse_pattern(data)?;
                 assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
-                let body = parse_arm(data)?;
+                let body = data.with_name_scope(|data| {
+                    note_pattern_binding(data, &value);
+                    parse_arm(data)
+                })?;
                 arms.push((value, body));
 
                 let braced = matches!(

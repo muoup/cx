@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 use chl_hmir::{HMIRDefID, ty::HMIRTypeID};
 use chl_mir::MIRFunctionID;
 
-use crate::value::HMIRValue;
+use crate::value::immediate::HMIRImmediate;
 
 /// Something the unit has to generate, as whatever refers to it asks for it
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -14,7 +14,7 @@ pub enum Generation {
     /// A function definition completed with the arguments of its comptime parameters, in their order
     Template {
         def: HMIRDefID,
-        comptime_bindings: Vec<HMIRValue>,
+        comptime_bindings: Vec<HMIRImmediate>,
     },
     /// The function constructing a variant of a tagged union from its payload
     Constructor { ty: HMIRTypeID, variant: usize },

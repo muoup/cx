@@ -1,16 +1,17 @@
 use crate::{
-    assert_token_matches, log::parse_point_error, next_kind, parse::try_parse_qualified_name,
-    try_next,
+    assert_token_matches,
+    log::{parse_point_error, parse_underline_error},
+    next_kind, parse::try_parse_qualified_name, try_next,
 };
 use chl_log::catalogue::parse::*;
 use chl_log::CHLResult;
-use chl_namespace::module::{NamespacePath, QualifiedName};
+use chl_namespace::module::NamespacePath;
 use chl_namespace::scope::ImportScope;
-use chl_preparse_data::{Import, PreparseContents};
+use chl_preparse_data::{Import, ImportPath, PreparseContents};
 use chl_tokens::{
     identifier, intrinsic, keyword, operator, punctuator, specifier,
-    token::{KeywordType, PunctuatorType, SpecifierType, TokenKind},
-    TokenIter,
+    token::{KeywordType, PunctuatorType, SpecifierType, Token, TokenKind},
+    TokenIter, TokenRange,
 };
 use chl_util::identifier::CHLIdent;
 
@@ -73,11 +74,33 @@ fn consume_token(data: &mut PreparseData) -> CHLResult<()> {
         }
 
         keyword!(Comptime) => {
-            if let Some((name, kind)) = scan_comptime_type(&data.tokens) {
-                match kind {
-                    ComptimeType::Alias => data.contents.module_symbols.add_type(name, data.visibility_mode),
-                    ComptimeType::Generator => data.contents.module_symbols
-                        .add_generator(name, data.visibility_mode),
+            if let Some((name, kind, rhs)) = scan_comptime_type(&data.tokens) {
+                if let Some(name) = name {
+                    let symbols = &mut data.contents.module_symbols;
+                    match kind {
+                        ComptimeType::Alias => symbols.add_type(name, data.visibility_mode),
+                        ComptimeType::Generator => {
+                            symbols.add_generator(name, data.visibility_mode)
+                        }
+                    }
+                }
+                if let Some(rhs) = rhs {
+                    while data.tokens.index < rhs {
+                        consume_token(data)?;
+                    }
+                    let mut end = data.tokens.with_index(rhs);
+                    scan_boundary(&mut end, 0, |kind| matches!(kind, punctuator!(Semicolon)));
+                    while data.tokens.index < end.index {
+                        let include_marker = matches!(
+                            data.tokens.peek().map(|token| &token.kind),
+                            Some(TokenKind::IncludeBegin | TokenKind::IncludeEnd)
+                        );
+                        if include_marker || !data.include_states.is_empty() {
+                            consume_token(data)?;
+                        } else {
+                            data.tokens.index += 1;
+                        }
+                    }
                 }
             }
         }
@@ -124,25 +147,19 @@ fn consume_token(data: &mut PreparseData) -> CHLResult<()> {
 
         keyword!(Import) => {
             data.tokens.back();
-            let mut import = parse_import(&mut data.tokens)?;
-            for name in &mut import.names {
-                *name = data.config.scope.resolve_name(name);
-            }
-
-            for name in &import.names {
-                let import_namespace = name.namespace.clone().child(name.name.clone());
-
-                if import_namespace == data.contents.module_symbols.namespace {
-                    return parse_point_error(
-                        &data.tokens,
+            let import = parse_import(&mut data.tokens, &data.config.scope)?;
+            for path in &import.paths {
+                if path.resolved == data.contents.module_symbols.namespace {
+                    return parse_underline_error(
                         &CANNOT_IMPORT_CURRENT_MODULE,
-                        (name.to_string(),),
+                        (path.written.to_string(),),
+                        &path.span,
                     );
                 }
 
                 if let Some(alias) = &import.alias {
                     data.contents
-                        .add_namespace_alias(alias.clone(), import_namespace);
+                        .add_namespace_alias(alias.clone(), path.resolved.clone());
                 }
             }
 
@@ -184,55 +201,72 @@ enum ComptimeType {
     Generator,
 }
 
-fn scan_comptime_type(tokens: &TokenIter) -> Option<(CHLIdent, ComptimeType)> {
+fn scan_comptime_type(
+    tokens: &TokenIter,
+) -> Option<(Option<CHLIdent>, ComptimeType, Option<usize>)> {
     let mut tokens = tokens.clone();
     let trailing = match &tokens.next()?.kind {
         intrinsic!(Auto) => true,
         keyword!(Type) => false,
         _ => return None,
     };
-    let identifier!(name) = &tokens.next()?.kind else {
-        return None;
-    };
-    let name = CHLIdent::new(name.as_str());
-    let kind = match &tokens.next()?.kind {
-        punctuator!(OpenParen) => ComptimeType::Generator,
-        punctuator!(Colon) if trailing => ComptimeType::Alias,
-        TokenKind::Assignment(_) if !trailing => return Some((name, ComptimeType::Alias)),
+    let name = try_parse_qualified_name(&mut tokens).ok()??.root_name();
+    match &tokens.next()?.kind {
+        punctuator!(OpenParen) => {}
+        punctuator!(Colon)
+            if trailing
+                && matches!(&tokens.next()?.kind, keyword!(Type))
+                && matches!(&tokens.next()?.kind, TokenKind::Assignment(None)) =>
+        {
+            return Some((name, ComptimeType::Alias, None));
+        }
+        TokenKind::Assignment(None) if !trailing => return Some((name, ComptimeType::Alias, None)),
         _ => return None,
+    }
+
+    let body_start = |kind: &TokenKind| {
+        matches!(
+            kind,
+            punctuator!(Semicolon)
+                | punctuator!(OpenBrace)
+                | punctuator!(ThickArrow)
+                | operator!(Arrow)
+                | TokenKind::Assignment(_)
+        )
     };
-    if !trailing {
-        return Some((name, kind));
-    }
-    if matches!(kind, ComptimeType::Generator) {
-        let mut depth = 1usize;
-        while depth > 0 {
-            match &tokens.next()?.kind {
-                punctuator!(OpenParen) => depth += 1,
-                punctuator!(CloseParen) => depth -= 1,
-                _ => {}
-            }
+    let mut delimiter = scan_boundary(&mut tokens, 1, body_start);
+    if trailing {
+        if !matches!(delimiter, Some(operator!(Arrow)))
+            || !matches!(&tokens.next()?.kind, keyword!(Type))
+        {
+            return None;
         }
-        loop {
-            match &tokens.next()?.kind {
-                punctuator!(OpenParen) => depth += 1,
-                punctuator!(CloseParen) if depth > 0 => depth -= 1,
-                operator!(Arrow) if depth == 0 => break,
-                punctuator!(Semicolon) | punctuator!(OpenBrace) | punctuator!(ThickArrow)
-                    if depth == 0 => return None,
-                _ => {}
+        delimiter = scan_boundary(&mut tokens, 0, body_start);
+    }
+    let rhs = matches!(delimiter, Some(TokenKind::Assignment(None))).then_some(tokens.index);
+    Some((name, ComptimeType::Generator, rhs))
+}
+
+fn scan_boundary<'a>(
+    tokens: &mut TokenIter<'a>,
+    mut depth: usize,
+    stop: impl Fn(&TokenKind) -> bool,
+) -> Option<&'a TokenKind> {
+    while let Some(token) = tokens.next() {
+        if depth == 0 && stop(&token.kind) {
+            return Some(&token.kind);
+        }
+        match token.kind {
+            punctuator!(OpenParen) | punctuator!(OpenBrace) | punctuator!(OpenBracket) => {
+                depth += 1
             }
+            punctuator!(CloseParen) | punctuator!(CloseBrace) | punctuator!(CloseBracket) => {
+                depth = depth.saturating_sub(1);
+            }
+            _ => {}
         }
     }
-    if !matches!(&tokens.next()?.kind, keyword!(Type)) {
-        return None;
-    }
-    if matches!(kind, ComptimeType::Alias)
-        && !matches!(&tokens.next()?.kind, TokenKind::Assignment(_))
-    {
-        return None;
-    }
-    Some((name, kind))
+    None
 }
 
 fn is_extern_c_section_after_access(data: &PreparseData) -> bool {
@@ -305,14 +339,28 @@ enum ImportFrameState {
 struct ImportFrame {
     prefix: Vec<CHLIdent>,
     item: Vec<CHLIdent>,
+    item_start: usize,
     state: ImportFrameState,
     saw_item: bool,
 }
 
-fn parse_import(tokens: &mut TokenIter) -> CHLResult<Import> {
+impl ImportFrame {
+    fn path(&self, scope: &ImportScope, tokens: &[Token], end: usize) -> ImportPath {
+        let mut segments = self.prefix.clone();
+        segments.extend(self.item.iter().cloned());
+        let written = NamespacePath::new(segments);
+        ImportPath {
+            resolved: scope.resolve(&written),
+            written,
+            span: TokenRange::from_tokens(self.item_start, end, tokens),
+        }
+    }
+}
+
+fn parse_import(tokens: &mut TokenIter, scope: &ImportScope) -> CHLResult<Import> {
     assert_token_matches!(tokens, keyword!(Import), "'import'");
 
-    let names = parse_import_tree(tokens)?;
+    let paths = parse_import_tree(tokens, scope)?;
     let alias = if try_next!(tokens, keyword!(As)) {
         Some(parse_import_alias(tokens)?)
     } else {
@@ -321,19 +369,21 @@ fn parse_import(tokens: &mut TokenIter) -> CHLResult<Import> {
 
     assert_token_matches!(tokens, punctuator!(Semicolon), "';'");
 
-    Ok(Import { names, alias })
+    Ok(Import { paths, alias })
 }
 
-fn parse_import_tree(tokens: &mut TokenIter) -> CHLResult<Vec<QualifiedName>> {
-    let mut names = Vec::new();
+fn parse_import_tree(tokens: &mut TokenIter, scope: &ImportScope) -> CHLResult<Vec<ImportPath>> {
+    let mut paths = Vec::new();
     let mut frames = vec![ImportFrame {
         prefix: Vec::new(),
         item: Vec::new(),
+        item_start: tokens.index,
         state: ImportFrameState::ExpectItem,
         saw_item: false,
     }];
 
     loop {
+        let token_index = tokens.index;
         let Some(next_token) = tokens.peek() else {
             return parse_point_error(tokens, &UNEXPECTED_END, Some("import".into()));
         };
@@ -349,17 +399,16 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CHLResult<Vec<QualifiedName>> {
                 .first()
                 .expect("import parser should have a root frame");
             match frame.state {
-                ImportFrameState::AfterPath => push_import_name(&mut names, frame, tokens),
-                ImportFrameState::AfterGroup => Ok(()),
-                ImportFrameState::ExpectItem if !frame.saw_item => {
-                    parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path segment".into(), Some("in import path".into())))
+                ImportFrameState::AfterPath => {
+                    paths.push(frame.path(scope, tokens.slice, token_index));
                 }
+                ImportFrameState::AfterGroup => {}
                 ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
-                    parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path segment".into(), Some("in import path".into())))
+                    return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path segment".into(), Some("in import path".into())));
                 }
-            }?;
+            }
 
-            return Ok(names);
+            return Ok(paths);
         }
 
         let Some(tok) = tokens.next().cloned() else {
@@ -378,6 +427,9 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CHLResult<Vec<QualifiedName>> {
                     let frame = frames
                         .last_mut()
                         .expect("import parser should have an active frame");
+                    if frame.item.is_empty() {
+                        frame.item_start = token_index;
+                    }
                     frame.item.push(CHLIdent::new(ident.as_str()));
                     frame.state = ImportFrameState::AfterPath;
                     frame.saw_item = true;
@@ -407,6 +459,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CHLResult<Vec<QualifiedName>> {
                 frames.push(ImportFrame {
                     prefix,
                     item: Vec::new(),
+                    item_start: tokens.index,
                     state: ImportFrameState::ExpectItem,
                     saw_item: false,
                 });
@@ -423,7 +476,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CHLResult<Vec<QualifiedName>> {
 
                 match frame_state {
                     ImportFrameState::AfterPath => {
-                        push_import_name(&mut names, frame, tokens)?;
+                        paths.push(frame.path(scope, tokens.slice, token_index));
                     }
                     ImportFrameState::AfterGroup => {}
                     ImportFrameState::ExpectItem | ImportFrameState::ExpectPathContinuation => {
@@ -446,7 +499,7 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CHLResult<Vec<QualifiedName>> {
 
                 match frame_state {
                     ImportFrameState::AfterPath => {
-                        push_import_name(&mut names, &frame, tokens)?;
+                        paths.push(frame.path(scope, tokens.slice, token_index));
                     }
                     ImportFrameState::AfterGroup => {}
                     ImportFrameState::ExpectItem if frame.saw_item => {}
@@ -467,22 +520,6 @@ fn parse_import_tree(tokens: &mut TokenIter) -> CHLResult<Vec<QualifiedName>> {
             }
         }
     }
-}
-
-fn push_import_name(
-    names: &mut Vec<QualifiedName>,
-    frame: &ImportFrame,
-    tokens: &TokenIter,
-) -> CHLResult<()> {
-    if frame.item.is_empty() {
-        return parse_point_error(tokens, &EXPECTED_SYNTAX, ("an import path".into(), None));
-    }
-
-    let mut segments = frame.prefix.clone();
-    segments.extend(frame.item.iter().cloned());
-    let name = segments.pop().expect("import path should have a name");
-    names.push(QualifiedName::new(NamespacePath::new(segments), name));
-    Ok(())
 }
 
 fn parse_import_alias(tokens: &mut TokenIter) -> CHLResult<NamespacePath> {

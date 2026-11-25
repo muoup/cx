@@ -13,8 +13,9 @@ use crate::{
     emit,
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
+        call::dependent,
         coerce::{self, applied},
-        comptime, expr, staged,
+        comptime, expr, flow, staged,
         types::{self, signatures_alike},
     },
     log::hmir_error,
@@ -41,6 +42,7 @@ pub(super) fn convert(
 ) -> CHLResult<Coercion> {
     let env = context.env();
     let source = value.ty();
+    let same_identity = env.strong_identifier(source) == env.strong_identifier(target);
     if let (
         HMIRTypeKind::Array {
             element: from,
@@ -48,6 +50,7 @@ pub(super) fn convert(
         },
         HMIRTypeKind::Undefined(HMIRUndefined::Array { element: to }),
     ) = (env.resolve_kind(source), env.resolve_kind(target))
+        && same_identity
         && env.same_type(*from, *to)
         && env.semantics(source).move_semantics == env.semantics(target).move_semantics
     {
@@ -56,7 +59,7 @@ pub(super) fn convert(
         return Ok(Coercion::Applied(value.with_ty(ty)));
     }
     let unreachable = |ty| matches!(env.resolve_kind(ty), HMIRTypeKind::Unreachable);
-    let staged_unreachable = matches!(
+    let staged_unreachable = same_identity && matches!(
         (env.resolve_kind(source), env.resolve_kind(target)),
         (HMIRTypeKind::Staged(inner), HMIRTypeKind::Staged(_)) if unreachable(*inner)
     );
@@ -81,6 +84,24 @@ fn step(
 ) -> CHLResult<Coercion> {
     let env = context.env();
     let source = value.ty();
+    let source_identity = env.strong_identifier(source);
+    let target_identity = env.strong_identifier(target);
+    let carries_value = |ty| {
+        matches!(env.resolve_kind(ty), HMIRTypeKind::Staged(_) | HMIRTypeKind::ReferenceTo { .. })
+    };
+    if source_identity != target_identity && !explicit
+        && !(source_identity.is_none() && carries_value(source))
+        && !(target_identity.is_none() && carries_value(target))
+    {
+        return Ok(Coercion::Unapplied(value));
+    }
+    if explicit && source_identity != target_identity
+        && env.representation(source) == env.representation(target)
+        && env.semantics(source).move_semantics == env.semantics(target).move_semantics
+        && !env.is_reference(source)
+    {
+        return Ok(Coercion::Applied(value.with_ty(target)));
+    }
     let (from, to) = (
         env.resolve_kind(source).clone(),
         env.resolve_kind(target).clone(),
@@ -93,7 +114,7 @@ fn step(
             return string(context, value, target, *element, *length, None, span);
         }
         (HMIRTypeKind::Str(_), HMIRTypeKind::PointerTo(_)) => {
-            return promotion::step(context, value, span);
+            return promotion::step(context, value, true, span);
         }
         (HMIRTypeKind::Function { .. }, HMIRTypeKind::PointerTo(_)) => {
             return promotion::function_pointer(context, value, span);
@@ -129,6 +150,12 @@ fn step(
             let (from, to) = (from.clone(), to.clone());
             return eta(context, value, &from, &to, target, span);
         }
+        (HMIRTypeKind::Function { .. }, HMIRTypeKind::Function { .. })
+            if context.is_comptime() && source != env.referent(source) =>
+        {
+            let function = env.referent(source);
+            return promotion::function(context, value, function, span).map(Coercion::Applied);
+        }
         _ => {}
     }
 
@@ -149,7 +176,7 @@ fn step(
             } = *env.resolve_kind(*inner)
             else {
                 return if env.is_reference(*inner) {
-                    promotion::step(context, value, span)
+                    promotion::step(context, value, false, span)
                 } else {
                     Ok(Coercion::Unapplied(value))
                 };
@@ -176,7 +203,7 @@ fn step(
         (HMIRTypeKind::ReferenceTo { inner, .. }, HMIRTypeKind::ReferenceTo { .. })
             if env.is_reference(*inner) =>
         {
-            return promotion::step(context, value, span);
+            return promotion::step(context, value, false, span);
         }
         (
             HMIRTypeKind::ReferenceTo {
@@ -195,11 +222,21 @@ fn step(
             return Ok(Coercion::Unapplied(value));
         }
         (HMIRTypeKind::ReferenceTo { .. }, _)
-        | (HMIRTypeKind::Array { .. }, HMIRTypeKind::PointerTo(_)) => {
-            return promotion::step(context, value, span);
+        | (
+            HMIRTypeKind::Array { .. } | HMIRTypeKind::Undefined(HMIRUndefined::Array { .. }),
+            HMIRTypeKind::PointerTo(_),
+        ) => {
+            let decay_comptime_arrays = matches!(to, HMIRTypeKind::PointerTo(_));
+            return promotion::step(context, value, decay_comptime_arrays, span);
         }
-        (HMIRTypeKind::Staged(_), target) if !matches!(target, HMIRTypeKind::Staged(_)) => {
-            return promotion::step(context, value, span);
+        (HMIRTypeKind::Staged(_), _) if !staged::is_code(context, target) => {
+            return match context.is_comptime() {
+                true => {
+                    let value = flow::top(staged::materialize(context, value, span))?;
+                    Ok(Coercion::Applied(value))
+                }
+                false => promotion::step(context, value, false, span),
+            };
         }
         (_, HMIRTypeKind::ReferenceTo { inner, .. }) => {
             return bind(context, value, *inner, target, span);
@@ -277,11 +314,35 @@ fn eta(
     let HMIRTypeKind::Staged(result) = *env.resolve_kind(*to.return_type()) else {
         return Ok(Coercion::Unapplied(value));
     };
-    if types::comptime_only(env, *from.return_type())
-        || from.is_variadic()
-        || from.params().len() != to.params().len()
-        || from.params().iter().any(|param| param.comptime())
-    {
+    if from.is_variadic() {
+        return Ok(Coercion::Unapplied(value));
+    }
+    let specialization = if from.params().iter().any(|param| param.comptime()) {
+        let Some(callee) = comptime::known(context, &value) else {
+            return Ok(Coercion::Unapplied(value));
+        };
+        let expected = to
+            .params()
+            .iter()
+            .map(|param| match context.env().resolve_kind(*param.ty()) {
+                HMIRTypeKind::Staged(inner) => *inner,
+                _ => *param.ty(),
+            })
+            .collect::<Vec<_>>();
+        let Some(specialization) =
+            dependent::specialize_callback(context, callee, &expected, span)?
+        else {
+            return Ok(Coercion::Unapplied(value));
+        };
+        Some(specialization)
+    } else {
+        None
+    };
+    let from = specialization
+        .as_ref()
+        .map_or(from, |(signature, _)| signature);
+    let env = context.env();
+    if types::comptime_only(env, *from.return_type()) || from.params().len() != to.params().len() {
         return Ok(Coercion::Unapplied(value));
     }
     let returned = *from.return_type();
@@ -312,13 +373,18 @@ fn eta(
     if discarding {
         discarded(context, returned, value.ty(), target, span)?;
     }
-    let Some(callee) = comptime::known(context, &value) else {
-        return Ok(Coercion::Unapplied(value));
+    let application = match specialization {
+        Some((_, application)) => application,
+        None => {
+            let Some(callee) = comptime::known(context, &value) else {
+                return Ok(Coercion::Unapplied(value));
+            };
+            value::into_application(callee).unwrap_or_else(|callee| HMIRApplication {
+                callee: Box::new(callee),
+                args: vec![None; from.params().len()],
+            })
+        }
     };
-    let application = value::into_application(callee).unwrap_or_else(|callee| HMIRApplication {
-        callee: Box::new(callee),
-        args: vec![None; from.params().len()],
-    });
     let lifted = value::application(target, application);
     Ok(Coercion::Applied(lifted))
 }
@@ -349,7 +415,7 @@ fn string(
     length: Option<u64>,
     span: &TokenRange,
 ) -> CHLResult<Coercion> {
-    if !is_char(context.env(), element) {
+    if !is_char(context.env(), element) || context.env().strong_identifier(element).is_some() {
         return Ok(Coercion::Unapplied(value));
     }
     let bound = length.unwrap_or(extent);

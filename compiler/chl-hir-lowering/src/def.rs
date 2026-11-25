@@ -1,13 +1,13 @@
 use chl_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
     function::{HIRFunctionBody, HIRFunctionPrototype, HIRParameter},
-    global_var::HIREnumVariant,
-    types::{HIRType, HIRTypeKind, HIRTypeLookup},
+    global_var::HIREnumDefinition,
+    types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use chl_hmir::{
-    HMIRBinaryOp, HMIRBodyContext, HMIRComptimeGlobal, HMIRContract, HMIRDef, HMIRDefID, HMIRDefKind,
-    HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
-    expr::HMIRExprID,
+    HMIRBinaryOp, HMIRBodyContext, HMIRCoerceMode, HMIRComptimeGlobal, HMIRContract, HMIRDef,
+    HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
+    expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprTypeKind, HMIRUndefined,
         aggregate::HMIRTypeSemantics,
@@ -15,15 +15,16 @@ use chl_hmir::{
     },
     unit::function::HMIRFnPrototype,
 };
-use chl_log::CHLResult;
+use chl_log::{CHLResult, catalogue::typecheck};
 use chl_namespace::module::QualifiedName;
 use chl_tokens::TokenRange;
 
 use crate::{
     body::BodyLowering,
     expr::{lower_expr, lower_initial_value, lower_scope_statements},
+    log::log_hir_error,
     plan::{DefSource, PlannedSymbol},
-    ty::lower_type,
+    ty::{lower_return_type, lower_type},
     unit::{UnitContext, def_name},
 };
 
@@ -71,11 +72,18 @@ fn lower_def<'a>(
     source: &DefSource<'a>,
 ) -> CHLResult<HMIRDefKind> {
     match source {
-        DefSource::Type { ty } => {
+        DefSource::Type { ty } | DefSource::EnumType { underlying: Some(ty) } => {
             let ty_of = context.type_of_types(&ty.range);
             let initializer = lower_type(&mut context, ty)?;
             let global = HMIRComptimeGlobal::new(context.finish(), ty_of, initializer);
 
+            Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)))
+        }
+        DefSource::EnumType { underlying: None } => {
+            let span = &TokenRange::internal();
+            let ty = context.type_of_types(span);
+            let initializer = context.type_ref(HMIRExprTypeKind::Int(ENUM_INT), span);
+            let global = HMIRComptimeGlobal::new(context.finish(), ty, initializer);
             Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)))
         }
         DefSource::Function { prototype, body } => lower_function(context, name, prototype, *body),
@@ -84,6 +92,7 @@ fn lower_def<'a>(
             ty,
             initializer,
             linkage,
+            explicit_extern,
             naming,
         } => {
             let link_name = context.unit().link_name(name, *naming);
@@ -103,13 +112,22 @@ fn lower_def<'a>(
                 let global = HMIRComptimeGlobal::new(context.finish(), ty, initializer);
                 return Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)));
             }
-            let global = HMIRGlobal::new(context.finish(), ty, initializer, *linkage, link_name);
+            let global = HMIRGlobal::new(
+                context.finish(),
+                ty,
+                initializer,
+                *linkage,
+                link_name,
+                *explicit_extern,
+            );
 
             Ok(HMIRDefKind::Global(Box::new(global)))
         }
-        DefSource::EnumVariant { variants, index } => {
-            lower_enum_variant(context, name, variants, *index)
-        }
+        DefSource::EnumVariant {
+            enumeration,
+            index,
+            scoped_type,
+        } => lower_enum_variant(context, name, enumeration, *index, scoped_type.as_ref()),
     }
 }
 
@@ -120,20 +138,39 @@ fn lower_function<'a>(
     body: Option<&'a HIRFunctionBody>,
 ) -> CHLResult<HMIRDefKind> {
     let (defaults, default_exprs) = lower_defaults(&mut context, prototype)?;
-    let (params, return_type, contract, root) =
+    let (params, holes, return_type, contract, root) =
         context.with_stage(prototype.comptime, |this| -> CHLResult<_> {
             let mut params = Vec::new();
+            this.parameter_holes = Some(Vec::new());
             for param in declared_params(prototype) {
                 let ty = lower_type(this, &param.ty)?;
+                if let Some(name) = &param.name
+                    && this
+                        .parameter_holes
+                        .as_ref()
+                        .unwrap()
+                        .iter()
+                        .any(|&local| this.local(local).name() == Some(name))
+                {
+                    return log_hir_error(
+                        &param.range,
+                        &typecheck::DUPLICATE_ITEM,
+                        (
+                            format!("binding '{name}'"),
+                            "this function signature".into(),
+                        ),
+                    );
+                }
                 params.push(this.declare(param.name.as_ref(), ty, param.comptime, &param.range));
             }
-            let return_type = lower_type(this, &prototype.return_type)?;
-            let contract = lower_contract(this, prototype)?;
+            let holes = this.parameter_holes.take().unwrap();
+            let return_type = lower_return_type(this, prototype)?;
+            let contract = lower_contract(this, prototype, &holes)?;
             let root = body
                 .map(|body| lower_function_body(this, body))
                 .transpose()?;
 
-            Ok((params, return_type, contract, root))
+            Ok((params, holes, return_type, contract, root))
         })?;
 
     let stage = if prototype.comptime {
@@ -152,14 +189,12 @@ fn lower_function<'a>(
     let decls = context.fn_param_decls(&params, default_exprs);
     let prototype =
         HMIRFnPrototype::new(symbol_name, prototype.linkage, signature, decls, defaults);
-    let def = root.map(|root| context.finish_definition(root));
+    let transparent = matches!(body, Some(HIRFunctionBody::TypeAlias(_)));
+    let def = root.map(|root| context.finish_definition(root, transparent));
 
-    Ok(HMIRDefKind::Function(Box::new(HMIRFunction::new(
-        context.finish(),
-        prototype,
-        params.into(),
-        def,
-    ))))
+    let mut function = HMIRFunction::new(context.finish(), prototype, params.into(), def);
+    function.prepend_inferred_parameters(&holes);
+    Ok(HMIRDefKind::Function(Box::new(function)))
 }
 
 // A parameter list of a lone unnamed 'void' declares no parameters
@@ -202,15 +237,18 @@ fn is_void(ty: &HIRType) -> bool {
         .is_some_and(|name| name.as_str() == "void")
 }
 
+const ENUM_INT: HMIRIntType = HMIRIntType::new(HMIRIntWidth::I32, true);
+
 fn lower_enum_variant<'a>(
     mut context: BodyLowering<'a>,
     name: &QualifiedName,
-    variants: &'a [HIREnumVariant],
+    enumeration: &'a HIREnumDefinition,
     index: usize,
+    scoped_type: Option<&QualifiedName>,
 ) -> CHLResult<HMIRDefKind> {
-    let span = TokenRange::internal();
-    let int = HMIRIntType::new(HMIRIntWidth::I32, true);
-    let ty = context.type_ref(HMIRExprTypeKind::Int(int), &span);
+    let variants = &enumeration.variants;
+    let span = &variants[index].range;
+    let fixed = enumeration.underlying.is_some();
     // Implicit values count from the nearest explicit one rather than the previous variant, so
     // evaluating a long enum does not recurse through every variant before it
     let explicit = variants[..index]
@@ -218,14 +256,40 @@ fn lower_enum_variant<'a>(
         .rposition(|variant| variant.value.is_some());
     let initializer = match (&variants[index].value, explicit) {
         (Some(value), _) => lower_expr(&mut context, value)?,
-        (None, None) => context.int_literal(int, index as i128, &span),
+        (None, None) => context.int_literal(ENUM_INT, index as i128, span),
         (None, Some(explicit)) => {
             let base = QualifiedName::new(name.namespace.clone(), variants[explicit].name.clone());
-            let lhs = context.def_expr(base, &span);
-            let rhs = context.int_literal(int, (index - explicit) as i128, &span);
+            let mut lhs = context.def_expr(base, span);
+            let sum_type = if fixed {
+                let wide = HMIRIntType::new(HMIRIntWidth::I64, true);
+                let target = context.type_ref(HMIRExprTypeKind::Int(wide), span);
+                lhs = context.coerce(HMIRCoerceMode::CCast, lhs, target, span);
+                wide
+            } else {
+                ENUM_INT
+            };
+            let rhs = context.int_literal(sum_type, (index - explicit) as i128, span);
             let op = HMIRBinaryOp::Add;
-            context.op(HMIROp::BinOp { op, lhs, rhs }, &span)
+            context.op(HMIROp::BinOp { op, lhs, rhs }, span)
         }
+    };
+    let ty = if let Some(name) = scoped_type {
+        context.push(
+            HMIRExprKind::Name {
+                name: name.clone(),
+                tag: Some(HIRTagKind::Enum),
+            },
+            span,
+        )
+    } else if let Some(base) = &enumeration.underlying {
+        lower_type(&mut context, base)?
+    } else {
+        context.type_ref(HMIRExprTypeKind::Int(ENUM_INT), span)
+    };
+    let initializer = if fixed {
+        context.coerce(HMIRCoerceMode::EnumMember, initializer, ty, span)
+    } else {
+        initializer
     };
     let global = HMIRComptimeGlobal::new(context.finish(), ty, initializer);
 
@@ -237,6 +301,7 @@ fn lower_enum_variant<'a>(
 fn lower_contract(
     context: &mut BodyLowering<'_>,
     prototype: &HIRFunctionPrototype,
+    holes: &[chl_hmir::body::HMIRLocalID],
 ) -> CHLResult<HMIRContract> {
     let contract = &prototype.contract;
     let span = &prototype.range;
@@ -245,15 +310,21 @@ fn lower_contract(
         return Ok(HMIRContract::new(body, params, contract.safe, None, None));
     }
 
+    let holes = holes
+        .iter()
+        .map(|&local| context.local(local).clone())
+        .collect::<Vec<_>>();
     let declared = declared_params(prototype);
     let mut conditions = context.detached(prototype.comptime);
-    let params = declared
-        .iter()
-        .map(|param| {
-            let ty = conditions.hole(&param.ty.range);
-            conditions.declare(param.name.as_ref(), ty, param.comptime, &param.range)
-        })
-        .collect();
+    let mut params = Vec::new();
+    for hole in holes {
+        let ty = conditions.hole(hole.span());
+        params.push(conditions.declare(hole.name(), ty, true, hole.span()));
+    }
+    for param in declared {
+        let ty = conditions.hole(&param.ty.range);
+        params.push(conditions.declare(param.name.as_ref(), ty, param.comptime, &param.range));
+    }
 
     let precondition = contract
         .precondition
@@ -276,7 +347,7 @@ fn lower_contract(
 
     Ok(HMIRContract::new(
         conditions.finish(),
-        params,
+        params.into(),
         contract.safe,
         precondition,
         postcondition,
@@ -293,5 +364,6 @@ fn lower_function_body<'a>(
             Ok(context.block(statements, true, false, range))
         }
         HIRFunctionBody::Expression(expr) => lower_expr(context, expr),
+        HIRFunctionBody::TypeAlias(ty) => context.scoped(|context| lower_type(context, ty)),
     }
 }

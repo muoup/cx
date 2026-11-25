@@ -3,12 +3,17 @@
 /* CHL-STDOUT-NEXT: call6 pre */
 /* CHL-STDOUT-NEXT: call6 6 */
 /* CHL-STDOUT-NEXT: transform 4.5 */
+/* CHL-STDOUT-NEXT: forwarded 5 */
+/* CHL-STDOUT-NEXT: conditional 7 */
 #include <stdio.h>
 
 comptime ^void call(type T = _, fn f(^T) -> ^void) => f(emit 1);
 comptime ^void call4(type T = _, ^T v, fn f(^T) -> ^void) => f(v);
 comptime ^void call6(type T = _, ^T v, fn f(^T) -> ^void) => emit .{ printf("call6 pre\n"); f(v); };
 comptime ^U transform(type T = _, type U = _, ^T v, fn f(^T) -> ^U) => f(v);
+comptime ^int forward(^int value) => value;
+comptime type identity(type T) => T;
+comptime ^T conditional(type T = _, fn f(^identity(true ? int : T)) -> ^T) => f(emit 7);
 
 int main() {
     call(|^int x| => printf("call %d\n", x));
@@ -16,5 +21,7 @@ int main() {
     call6(emit 6, |^int x| => printf("call6 %d\n", x));
     double d = transform(emit 3, |auto x| => x * 1.5);
     printf("transform %.1f\n", d);
+    printf("forwarded %d\n", transform(emit 5, |auto x| => forward(x)));
+    printf("conditional %d\n", conditional(|auto x| => x));
     return 0;
 }

@@ -1,0 +1,13 @@
+union Overlay : @comptime {
+    type value;
+    unsigned char byte;
+};
+
+comptime type attempt() {
+    Overlay value;
+    value.value = int;
+    value.byte = 2;
+    return value.value;
+}
+
+comptime type result = attempt();

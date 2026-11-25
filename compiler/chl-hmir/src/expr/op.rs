@@ -29,6 +29,10 @@ pub enum HMIROp {
     },
     AddressOf(HMIRExprID),
     Dereference(HMIRExprID),
+    StrConcat {
+        lhs: HMIRExprID,
+        rhs: HMIRExprID,
+    },
 
     Type(HMIRTypeOp),
     Control(HMIRControlOp),
@@ -77,6 +81,7 @@ pub enum HMIRCoerceMode {
     Implicit,
     Convert,
     CCast,
+    EnumMember,
     Truthy,
 }
 
@@ -195,6 +200,7 @@ impl HMIRCoerceMode {
             Self::Implicit => "op.coerce",
             Self::Convert => "op.convert",
             Self::CCast => "op.c_cast",
+            Self::EnumMember => "op.enum_member",
             Self::Truthy => "op.truthy",
         }
     }
@@ -239,7 +245,7 @@ impl HMIRTypeOp {
             Self::Decay(_) => "type.decay",
             Self::Unqualify(_) => "type.unqualify",
             Self::Aggregate { .. } => "type.aggregate",
-            Self::SizeOf(_) => "type.size_of",
+            Self::SizeOf(_) => "type.c_sizeof",
             Self::AlignOf(_) => "type.align_of",
             Self::OffsetOf { .. } => "type.offset_of",
             Self::IsInt(_) => "type.is_int",
@@ -266,7 +272,7 @@ impl HMIRTypeOp {
             "type.type_of" => Self::TypeOf(source.value()?),
             "type.decay" => Self::Decay(source.ty()?),
             "type.unqualify" => Self::Unqualify(source.ty()?),
-            "type.size_of" => Self::SizeOf(source.ty()?),
+            "type.c_sizeof" => Self::SizeOf(source.ty()?),
             "type.align_of" => Self::AlignOf(source.ty()?),
             "type.is_int" => Self::IsInt(source.ty()?),
             "type.is_float" => Self::IsFloat(source.ty()?),

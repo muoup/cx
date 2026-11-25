@@ -26,7 +26,7 @@ use crate::{
     def::declared_params,
     expr::{lower_expr, lower_initial_value},
     log::log_hir_error,
-    ty::lower_type,
+    ty::{lower_return_type, lower_type},
     unit::UnitContext,
 };
 
@@ -57,7 +57,7 @@ pub(crate) enum ScopeKind<'a> {
 }
 
 struct Scope<'a> {
-    symbols: FxHashMap<CHLIdent, ScopeEntry>,
+    symbols: FxHashMap<(Option<HIRTagKind>, CHLIdent), ScopeEntry>,
     kind: ScopeKind<'a>,
 }
 
@@ -70,6 +70,7 @@ pub(crate) struct BodyLowering<'a> {
     // The def whose labels are in scope
     owner: Option<HMIRDefID>,
     address_labels: Vec<CHLIdent>,
+    pub(crate) parameter_holes: Option<Vec<HMIRLocalID>>,
 }
 
 impl<'a> Scope<'a> {
@@ -91,6 +92,7 @@ impl<'a> BodyLowering<'a> {
             comptime,
             owner: None,
             address_labels: Vec::new(),
+            parameter_holes: None,
         }
     }
 
@@ -122,7 +124,7 @@ impl<'a> BodyLowering<'a> {
             .last_mut()
             .expect("body lowering always has a root scope")
             .symbols
-            .insert(name.clone(), ScopeEntry::Static(def));
+            .insert((None, name.clone()), ScopeEntry::Static(def));
     }
 
     pub(crate) fn finish(self) -> HMIRBodyContext {
@@ -161,9 +163,13 @@ impl<'a> BodyLowering<'a> {
             .collect()
     }
 
-    pub(crate) fn finish_definition(&mut self, root: HMIRExprID) -> HMIRFnDefinition {
+    pub(crate) fn finish_definition(
+        &mut self,
+        root: HMIRExprID,
+        transparent: bool,
+    ) -> HMIRFnDefinition {
         let labels = mem::take(&mut self.address_labels);
-        HMIRFnDefinition::new(root, labels)
+        HMIRFnDefinition::new(root, labels, transparent)
     }
 
     pub(crate) fn push(&mut self, kind: HMIRExprKind, span: &TokenRange) -> HMIRExprID {
@@ -177,6 +183,45 @@ impl<'a> BodyLowering<'a> {
     pub(crate) fn hole(&mut self, span: &TokenRange) -> HMIRExprID {
         let hole = self.body.declare_hole(HMIRHole::new(span.clone()));
         self.push(HMIRExprKind::Hole(hole), span)
+    }
+
+    pub(crate) fn bind_parameter_hole(
+        &mut self,
+        name: &CHLIdent,
+        span: &TokenRange,
+    ) -> CHLResult<HMIRExprID> {
+        if self.parameter_holes.is_none() {
+            return log_hir_error(
+                span,
+                &typecheck::INVALID_CONTEXT,
+                (
+                    "a hole binding".into(),
+                    "an expression outside a parameter type".into(),
+                ),
+            );
+        }
+        let key = (None, name.clone());
+        if self.scopes[0].symbols.contains_key(&key) {
+            return log_hir_error(
+                span,
+                &typecheck::DUPLICATE_ITEM,
+                (
+                    format!("binding '{name}'"),
+                    "this function signature".into(),
+                ),
+            );
+        }
+        let ty = self.hole(span);
+        let local =
+            self.body
+                .declare_local(HMIRLocal::new(Some(name.clone()), ty, span.clone(), true));
+        self.scopes[0].symbols.insert(key, ScopeEntry::Local(local));
+        self.parameter_holes.as_mut().unwrap().push(local);
+        Ok(self.push(HMIRExprKind::Local(local), span))
+    }
+
+    pub(crate) fn local(&self, local: HMIRLocalID) -> &HMIRLocal {
+        self.body.local(local)
     }
 
     pub(crate) fn block(
@@ -299,7 +344,7 @@ impl<'a> BodyLowering<'a> {
                 .last_mut()
                 .expect("body lowering always has a root scope")
                 .symbols
-                .insert(name.clone(), ScopeEntry::Local(local));
+                .insert((None, name.clone()), ScopeEntry::Local(local));
         }
         local
     }
@@ -313,22 +358,46 @@ impl<'a> BodyLowering<'a> {
         self.declare(name, ty, self.comptime, span)
     }
 
-    pub(crate) fn lookup(&self, name: &QualifiedName, tag: Option<HIRTagKind>) -> Symbol {
-        if tag.is_none()
-            && let Some(root) = name.root_name_ref()
-            && let Some(entry) = self
-                .scopes
-                .iter()
-                .rev()
-                .find_map(|scope| scope.symbols.get(root))
-        {
-            return match *entry {
-                ScopeEntry::Local(local) => Symbol::Local(local),
-                ScopeEntry::Static(def) => Symbol::Def(def),
-            };
+    pub(crate) fn declare_tag(
+        &mut self,
+        tag: HIRTagKind,
+        name: &CHLIdent,
+        span: &TokenRange,
+    ) -> CHLResult<(HMIRLocalID, bool)> {
+        let key = (Some(tag), name.clone());
+        if let Some(&ScopeEntry::Local(local)) = self.scopes.last().unwrap().symbols.get(&key) {
+            if self.body.local(local).span() == span {
+                return Ok((local, false));
+            }
+            return log_hir_error(
+                span,
+                &chl_log::catalogue::typecheck::DUPLICATE_ITEM,
+                (
+                    format!("{} '{name}'", tag.prefix()),
+                    "this type expression".into(),
+                ),
+            );
         }
+        let ty = self.type_of_types(span);
+        let local = self.declare(None, ty, true, span);
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .symbols
+            .insert(key, ScopeEntry::Local(local));
+        Ok((local, true))
+    }
 
-        Symbol::Name
+    pub(crate) fn lookup(&self, name: &QualifiedName, tag: Option<HIRTagKind>) -> Symbol {
+        let Some(root) = name.root_name_ref() else {
+            return Symbol::Name;
+        };
+        let key = (tag, root.clone());
+        match self.scopes.iter().rev().find_map(|scope| scope.symbols.get(&key)) {
+            Some(ScopeEntry::Local(local)) => Symbol::Local(*local),
+            Some(ScopeEntry::Static(def)) => Symbol::Def(*def),
+            None => Symbol::Name,
+        }
     }
 
     pub(crate) fn returning_block(&mut self, value: HMIRExprID, span: &TokenRange) -> HMIRExprID {
@@ -427,7 +496,7 @@ pub(crate) fn lower_reify(
         let ty = lower_type(&mut anon, &param.ty)?;
         params.push(anon.declare(param.name.as_ref(), ty, false, &param.range));
     }
-    let return_type = lower_type(&mut anon, &prototype.return_type)?;
+    let return_type = lower_return_type(&mut anon, prototype)?;
 
     let quote = anon.with_stage(true, |anon| lower_expr(anon, value))?;
     let quote = anon.push(HMIRExprKind::Comptime(quote), &value.range);
@@ -454,7 +523,7 @@ pub(crate) fn lower_reify(
     let defaults = HMIRBodyContext::new();
     let prototype =
         HMIRFnPrototype::new(name.clone(), LinkageMode::Static, signature, decls, defaults);
-    let def = anon.finish_definition(root);
+    let def = anon.finish_definition(root, false);
     let function = HMIRFunction::new(anon.finish(), prototype, params.into(), Some(def));
 
     context.unit.push_static(
@@ -490,7 +559,14 @@ pub(crate) fn lower_static(
         LinkageMode::Extern => name.clone(),
         _ => CHLIdent::from(format!("{name}.{}", id.index()).as_str()),
     };
-    let global = HMIRGlobal::new(global.finish(), global_ty, initializer, linkage, link_name);
+    let global = HMIRGlobal::new(
+        global.finish(),
+        global_ty,
+        initializer,
+        linkage,
+        link_name,
+        false,
+    );
 
     let qualified = QualifiedName::new(context.namespace.clone(), name.clone());
     let kind = HMIRDefKind::Global(Box::new(global));

@@ -116,7 +116,13 @@ pub(super) fn write_generic_type<T, L, M>(
             write_inner(f, inner)
         }
         HMIRGenericTypeKind::Builtin { name, .. } => f.write_str(name),
-        HMIRGenericTypeKind::Nominal(inner) => {
+        HMIRGenericTypeKind::Strong { inner, binding } => {
+            if binding.is_none() {
+                f.write_str("@strong ")?;
+            }
+            write_inner(f, inner)
+        }
+        HMIRGenericTypeKind::Nominal { inner, .. } => {
             if ty.semantics().constant {
                 f.write_str("const ")?;
             }

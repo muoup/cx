@@ -1,0 +1,10 @@
+struct Resource : @nocopy {
+    int value;
+};
+
+comptime bool attempt() {
+    Resource pending;
+    return &pending != 0;
+}
+
+comptime bool result = attempt();

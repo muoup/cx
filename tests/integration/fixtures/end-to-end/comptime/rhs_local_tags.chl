@@ -1,0 +1,31 @@
+/* CHL-STDOUT: 7 8 1 1 1 */
+#include <stdio.h>
+
+struct Node { int outer; };
+int Link = 2;
+
+comptime type node(type T) = struct Node {
+    struct Link { struct Node* next; } link;
+    struct Link* parent;
+    T content;
+};
+
+comptime type pair(type T) = struct Pair {
+    struct Item { T value; } first, second;
+};
+
+comptime auto label(type T) -> type = struct Label { int id; };
+
+int width(comptime type T = _, node(T)* value) => sizeof(T);
+
+int main() {
+    node(int) tail = { .content = 7 };
+    node(int) head = { .link = { .next = &tail }, .parent = &tail.link };
+    node(long)* wider = (node(long)*)0;
+    pair(int) p = { .first = { .value = 1 } };
+    p.second = p.first;
+    struct Node global = { .outer = 1 };
+    printf("%d %d %d %d %d\n", head.link.next->content, width(wider), p.second.value,
+        Link * 2 + global.outer - 4, @type.equal(label(int), label(int)) && !@type.equal(label(int), label(float)));
+    return 0;
+}

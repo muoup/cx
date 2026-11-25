@@ -17,7 +17,7 @@ use chl_tokens::TokenRange;
 use crate::{
     emit::{self, intrinsics},
     env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{EvalResult, arithmetic, eval, eval_type, flow::Evaluation, place, types},
+    eval::{EvalResult, arithmetic, eval, eval_type, flow::Evaluation, place, storage, types},
     log::hmir_error,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
@@ -60,6 +60,24 @@ pub(crate) fn eval_coerce(
     Ok(Evaluation::Ready(match mode {
         HMIRCoerceMode::Implicit => implicit::standard(context, value, target, span)?,
         HMIRCoerceMode::CCast => explicit::standard(context, value, target, span)?,
+        HMIRCoerceMode::EnumMember => {
+            let Some(number) = value::as_int(&value) else {
+                let subject = ("enum member".into(), "a compile-time integer".into(), None);
+                return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, subject).into());
+            };
+            let typed = value::int(context.env(), number, target);
+            if number < 0 && !types::int_type(context.env(), value.ty()).signed() {
+                return Err(
+                    hmir_error(span, &typecheck::ENUM_MEMBER_RANGE, (number as u128).to_string()).into(),
+                );
+            }
+            if value::as_int(&typed) != Some(number) {
+                return Err(
+                    hmir_error(span, &typecheck::ENUM_MEMBER_RANGE, number.to_string()).into(),
+                );
+            }
+            typed
+        }
 
         // REVIEW: This is a temporary solution to allow for the use of explicit casts in the compiler. It should be removed once the compiler is fully implemented.
         _ => explicit::standard(context, value, target, span)?,
@@ -91,7 +109,11 @@ pub(crate) fn temporary(
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
     let storage = emit::storage::scratch(context, value.ty(), span)?;
-    emit::storage::initialize(context, &storage, Some(value), span)?;
+    if context.is_runtime() {
+        let place = value::as_place(&storage).expect("scratch storage has a place");
+        storage::drop(context, place, span)?;
+    }
+    storage::initialize(context, &storage, Some(value), span)?;
 
     Ok(storage)
 }
@@ -148,8 +170,12 @@ pub(crate) fn aggregate(
         HMIRTypeKind::ReferenceTo { inner, bitfield: _ } => {
             let env = context.env();
             match *inner {
-                inner if env.is_reference(inner) => promotion::reference_load(context, value, inner, span)?,
-                inner if env.is_pointer(inner) || env.is_array(inner) => promotion::std_rvalue(context, value, span)?,
+                inner if env.is_reference(inner) => {
+                    promotion::reference_load(context, value, inner, span)?
+                }
+                inner if env.is_pointer(inner) || env.is_array(inner) => {
+                    promotion::operand(context, value, span)?
+                }
                 _ => return Ok(value),
             }
         },
@@ -254,7 +280,9 @@ fn compatible(env: &HMIREnvironment, lhs: HMIRTypeID, rhs: HMIRTypeID) -> bool {
     if env.same_type(lhs, rhs) {
         return true;
     }
-    if env.semantics(lhs).move_semantics != env.semantics(rhs).move_semantics {
+    if env.strong_identifier(lhs) != env.strong_identifier(rhs)
+        || env.semantics(lhs).move_semantics != env.semantics(rhs).move_semantics
+    {
         return false;
     }
     let pointees = |lhs, rhs| {

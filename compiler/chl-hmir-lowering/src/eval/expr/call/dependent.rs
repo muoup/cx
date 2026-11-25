@@ -2,6 +2,7 @@ use std::mem;
 
 use chl_hmir::{
     HMIRBodyContext, HMIRDefID, HMIRFnSignature, HMIRFunction, HMIRFunctionStage,
+    body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
     unit::function::HMIRFnParam,
@@ -23,14 +24,14 @@ use crate::{
     },
     eval::{
         EvalResult, coerce, comptime, control,
-        deduce::{self, Deduction},
+        deduce::{self, Deduction, Pending},
         eval, eval_type,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
-        staged, symbol, types,
+        staged, storage, symbol, types,
     },
     log::hmir_error,
-    lower::{self, declaration},
-    value::{self, HMIRValue},
+    lower,
+    value::{self, HMIRApplication, HMIRValue},
 };
 
 use super::contract;
@@ -83,9 +84,13 @@ impl<'a> Frame<'a> {
             )?;
             let comptime = function.signature().is_comptime_param(index);
             let ty = types::parameter(child, ty, comptime, span)?;
-            if runtime && staged::is_code(child, ty) {
-                let operation = "a reference or staged-expression parameter".into();
-                return Err(hmir_error(span, &mir::COMPTIME_INVALID_OPERATION, operation));
+            if runtime && !comptime && staged::is_code(child, ty) {
+                let requirement = (
+                    "a staged-expression parameter".into(),
+                    "'comptime' on a runtime function".into(),
+                    None,
+                );
+                return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, requirement));
             }
             Ok(ty)
         })?;
@@ -101,7 +106,12 @@ impl<'a> Frame<'a> {
         value: HMIRValue,
         span: &TokenRange,
     ) -> CHLResult<HMIRValue> {
-        let ty = self.parameter(caller, index, span)?;
+        let ty = if self.function.prototype().params()[index].inferred() {
+            self.types[index] = Some(value.ty());
+            value.ty()
+        } else {
+            self.parameter(caller, index, span)?
+        };
         if let Some(ty) = value::as_type(&value) {
             demand::prepare(caller.env_mut(), ty)?;
         }
@@ -114,13 +124,18 @@ impl<'a> Frame<'a> {
             true => value,
             false => comptime::converge(caller, value, span)?,
         };
+        let value = if self.runtime {
+            comptime::independent(caller, value, "a runtime specialization", span)?.into()
+        } else {
+            value
+        };
         let function = self.function;
         self.enter(caller, span, |child| {
             let local = function.params()[index];
             let declaration = function.body().local(local);
             let span = declaration.span();
             let target = emit::storage::allocate(child, ty, declaration.name().cloned(), span)?;
-            emit::storage::initialize(child, &target, Some(&value), span)?;
+            storage::initialize(child, &target, Some(&value), span)?;
             emit::storage::bind_local(child, local, target);
             Ok(())
         })?;
@@ -178,6 +193,10 @@ impl<'a> Frame<'a> {
         ))
     }
 
+    pub(crate) fn params(&self) -> &'a [HMIRLocalID] {
+        self.function.params()
+    }
+
     pub(crate) fn enter<T>(
         &mut self,
         caller: &mut LocalLoweringContext,
@@ -188,11 +207,10 @@ impl<'a> Frame<'a> {
         let mut child = caller
             .child(Some(self.function.signature()), state, None)
             .sourced(self.def.brand());
-        child.enter_call(span)?;
         if let Some(ty) = self.return_type {
             child = child.with_return_type(ty);
         }
-        let result = evaluate(&mut child);
+        let result = child.enter_call(span).and_then(|()| evaluate(&mut child));
         self.state = child.into_comptime();
         result
     }
@@ -200,12 +218,64 @@ impl<'a> Frame<'a> {
 
 // Whether a call to a function of type 'ty' is applied to its arguments here, rather than emitted as it is
 pub(crate) fn applies(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {
-    !context.is_runtime() || types::comptime_only(context.env(), ty)
+    !context.is_runtime() || !types::runtime_function(context.env(), ty)
 }
 
 // Whether a call to 'function' executes it here for the code that it produces, which is emitted in its place
 fn is_spliced(context: &LocalLoweringContext, function: &HMIRFunction) -> bool {
     context.is_runtime() && function.signature().stage() == HMIRFunctionStage::Comptime
+}
+
+pub(crate) fn specialize_callback(
+    context: &mut LocalLoweringContext,
+    callee: HMIRValue,
+    expected: &[HMIRTypeID],
+    span: &TokenRange,
+) -> CHLResult<Option<(HMIRFnSignature<HMIRTypeID>, HMIRApplication<HMIRValue>)>> {
+    let Some(def) = value::as_function(&callee) else {
+        return Ok(None);
+    };
+    let function = symbol::function(context.env_mut(), def)?;
+    let params = function.signature().params();
+    let runtime = params
+        .iter()
+        .enumerate()
+        .filter(|(_, param)| !param.comptime());
+    if runtime.clone().count() != expected.len() {
+        return Ok(None);
+    }
+    let prototype = function.prototype();
+    let mut deduction = Deduction::new(&function, def);
+    for (index, _) in params
+        .iter()
+        .enumerate()
+        .filter(|(_, param)| param.comptime())
+    {
+        let default = prototype.params()[index].default();
+        if !default.is_some_and(|expr| {
+            matches!(
+                prototype.defaults().expr(expr).kind(),
+                HMIRExprKind::Hole(_)
+            )
+        }) {
+            return Ok(None);
+        }
+        deduction.defer(index, Pending::Value);
+    }
+    let mut frame = Frame::new(&function, def, ComptimeContext::of(def), true);
+    let param_types = runtime.zip(expected).map(|((index, _), &ty)| (index, ty));
+    let Some(args) =
+        deduce::infer_from_types(&mut deduction, context, &mut frame, param_types, span)?
+    else {
+        return Ok(None);
+    };
+    let signature = frame.signature(context, span)?;
+    let signature = types::residual(&signature, |index| args[index].is_some());
+    let application = HMIRApplication {
+        callee: Box::new(callee),
+        args,
+    };
+    Ok(Some((signature, application)))
 }
 
 // Calls the function 'def' with 'args', each evaluated as the type of its parameter has it, which the arguments
@@ -235,12 +305,10 @@ pub(crate) fn call(
     let default = |index: usize| prototype.params()[index].default().filter(|_| !partial);
     let mut values = vec![None; params.len()];
     for index in 0..params.len() {
-        if deduction.blocking(index).is_some() {
-            for (bound, value) in deduction.infer(context, &mut frame, body, args, index, span)? {
-                values[bound] = Some(value);
-            }
-            if let Some(hole) = deduction.blocking(index) {
-                return Err(deduction.undeduced(context, hole, span).into());
+        if deduce::blocking(&deduction, index).is_some() {
+            deduce::infer(&mut deduction, context, &mut frame, body, args, &mut values, index, span)?;
+            if let Some(hole) = deduce::blocking(&deduction, index) {
+                return Err(deduce::undeduced(&deduction, context, hole, span).into());
             }
         }
         if let Some(value) = applied.get_mut(index).and_then(Option::take) {
@@ -251,12 +319,12 @@ pub(crate) fn call(
         if arg.is_none() && default(index).is_none() {
             continue;
         }
+        if prototype.params()[index].inferred() {
+            deduction.defer(index, Pending::Value);
+            continue;
+        }
         let arg_span = arg.map_or(span, |arg| body.expr(arg).span());
         let ty = frame.parameter(context, index, span)?;
-        if !runtime && context.env().is_reference(ty) {
-            let operation = "a reference parameter".into();
-            return Err(hmir_error(arg_span, &mir::COMPTIME_INVALID_OPERATION, operation).into());
-        }
         let given = match arg {
             Some(arg) => body.expr(arg),
             None => prototype.defaults().expr(default(index).expect("a default is given")),
@@ -265,7 +333,7 @@ pub(crate) fn call(
             && function.signature().is_comptime_param(index)
             && !matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type)
         {
-            deduction.defer(index, None, arg.is_none());
+            deduction.defer(index, Pending::Value);
             continue;
         }
         let evaluation = match arg {
@@ -273,8 +341,9 @@ pub(crate) fn call(
             Some(arg) if (runtime && params[index].comptime()) || spliced => {
                 comptime::freeze(context, body, arg, Some(ty))
             }
-            Some(arg) => eval(context, body, arg)
-                .and_then(|evaluated| deduce::complete(context, body, evaluated, Some(ty))),
+            Some(arg) => eval(context, body, arg).and_then(|evaluated| {
+                deduce::complete(context, body, evaluated, Some(ty), arg_span)
+            }),
             None => super::default(context, def, function, index, ty),
         }
         .map_err(|exit| match exit {
@@ -292,7 +361,12 @@ pub(crate) fn call(
             Evaluation::Incomplete(pending)
                 if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type) =>
             {
-                deduction.defer(index, Some(pending), arg.is_none());
+                let pending = if arg.is_some() {
+                    Pending::Argument(pending)
+                } else {
+                    Pending::Default(pending)
+                };
+                deduction.defer(index, pending);
                 continue;
             }
             evaluation => evaluation.ready()?,
@@ -300,15 +374,15 @@ pub(crate) fn call(
         values[index] = Some(frame.argument(context, index, value, arg_span)?);
     }
 
-    let Some(index) = deduction.first() else {
+    let Some(index) = deduction.first_open() else {
         return finish(context, frame, values, span);
     };
-    let undeduced = deduction.undeduced(context, index, span);
+    let undeduced = deduce::undeduced(&deduction, context, index, span);
     if partial || !deduce::generates_type(function) {
         return Err(undeduced.into());
     }
     let span = span.clone();
-    deduce::generated(context, def, values, undeduced, &span).and_then(
+    deduce::generated(deduction, context, values, undeduced, &span).and_then(
         context,
         body,
         move |context, _, values| apply(context, def, values, &span),
@@ -322,15 +396,10 @@ pub(crate) fn apply(
     values: Vec<Option<HMIRValue>>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let unit = context
-        .env_mut()
-        .symbols_mut()
-        .owner(def.brand())
-        .expect("function owner exists");
-    let function = declaration::function(unit.resolve_def(def).expect("function exists"));
-    let runtime = context.is_runtime() && !is_spliced(context, function);
+    let function = symbol::function(context.env_mut(), def)?;
+    let runtime = context.is_runtime() && !is_spliced(context, &function);
     let state = ComptimeContext::of(def);
-    let mut frame = Frame::new(function, def, state, runtime);
+    let mut frame = Frame::new(&function, def, state, runtime);
     let values = frame.instantiate(context, values, span)?;
     finish(context, frame, values, span)
 }
@@ -395,8 +464,10 @@ fn finish(
         true => {
             let generated = generated_name(context, def, &args);
             let provisional = args.clone();
+            let track_origin = function.structural_body().is_none();
             let publish = |env: &mut HMIREnvironment, value| {
-                env.resolver_mut().record_generated(def, provisional, value)
+                env.resolver_mut()
+                    .reserve_generated(def, provisional, value, track_origin)
             };
             let result = types::alias::define(context, generated, span, publish, |context, reserved| {
                 let value = run(context, Some(reserved))?;
@@ -407,7 +478,7 @@ fn finish(
             }
             let value = result?;
             let resolver = context.env_mut().resolver_mut();
-            resolver.record_generated(def, args.clone(), value.clone());
+            resolver.complete_generated(def, &args, value.clone());
             value
         }
     };
@@ -454,7 +525,12 @@ pub(crate) fn template(
         let name = types::name(context.env(), function);
         return Err(hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, name));
     }
-    let comptime_bindings = comptime_bindings.iter().flatten().cloned().collect();
+    let comptime_bindings = comptime_bindings
+        .iter()
+        .flatten()
+        .cloned()
+        .map(|value| comptime::independent(context, value, "a runtime specialization", span))
+        .collect::<CHLResult<_>>()?;
     let generation = Generation::Template { def, comptime_bindings };
     lower::declare(context.env_mut(), generation, &signature, span)
 }
@@ -496,8 +572,14 @@ fn execute(
     defining: Option<HMIRTypeID>,
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
+    if let Some(scope) = defining {
+        context.set_nominal_scope(scope);
+        if function.structural_body().is_none() {
+            context.comptime_mut().aggregate_result = Some(scope);
+        }
+    }
     contract::check(context, signature.contract(), args, None, def, span)?;
-    let value = match body(context, function, defining) {
+    let value = match body(context, function) {
         Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Return(value)))) => value,
         Err(EvalExit::Stop(StopReason::Comptime(_))) => {
             return Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()));
@@ -538,23 +620,15 @@ fn execute(
     Ok(value)
 }
 
-// 'defining' is the type reserved for the type a generator defines, which an aggregate it yields is built into
 pub(crate) fn body(
     context: &mut LocalLoweringContext,
     function: &HMIRFunction,
-    defining: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let definition = function.def().expect("an executed function has a body");
     let body = function.body();
     let root = body.expr(definition.root());
     if !matches!(root.kind(), HMIRExprKind::Block { yields: false, .. }) {
-        let value = match defining.zip(types::aggregate(body, definition.root())) {
-            Some((reserved, declared)) => {
-                let ty = types::construct_type(context, body, declared, Some(reserved))?;
-                deduce::type_result(context, ty, root.span())?
-            }
-            None => eval(context, body, definition.root())?,
-        };
+        let value = control::eval_return_operand(context, body, definition.root())?;
         return control::return_value(context, body, Some(value), false, root.span());
     }
     (eval(context, body, definition.root()))?.ready()?;

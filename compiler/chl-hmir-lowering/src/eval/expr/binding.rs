@@ -6,14 +6,15 @@ use chl_hmir::{
 };
 use chl_log::{
     CHLResult,
-    catalogue::{self, typecheck},
+    catalogue::{mir, typecheck},
+    error::{CHLError, CHLRawError, context::from_token_range, message::CHLErrorMessage},
 };
 use chl_tokens::TokenRange;
 
 use crate::{
     emit,
     env::{
-        function::{FnContext, LocalLoweringContext},
+        function::{EvaluationID, FnContext, LocalLoweringContext},
         resolver::demand,
     },
     eval::{
@@ -22,7 +23,7 @@ use crate::{
         deduce, eval, eval_type,
         expr::place,
         flow::{self, ComptimeStop, EvalExit, Evaluation, RuntimeStop, StopReason},
-        staged, types,
+        staged, storage, types,
     },
     log::hmir_error,
     value::{self, HMIRValue},
@@ -59,7 +60,37 @@ pub(crate) fn lookup(
         Some(name) => format!("variable '{name}'"),
         None => "this variable".into(),
     };
-    Err(hmir_error(span, &catalogue::mir::COMPTIME_UNAVAILABLE, subject))
+    Err(unbound(context, local, span, subject))
+}
+
+pub(crate) struct UnboundLocal {
+    pub(crate) local: HMIRLocalID,
+    pub(crate) evaluation: EvaluationID,
+    subject: String,
+}
+
+impl CHLErrorMessage for UnboundLocal {
+    fn code(&self) -> String {
+        mir::COMPTIME_UNAVAILABLE.code.into()
+    }
+
+    fn message(&self) -> String {
+        (mir::COMPTIME_UNAVAILABLE.message)(self.subject.clone())
+    }
+}
+
+pub(crate) fn unbound(
+    context: &LocalLoweringContext,
+    local: HMIRLocalID,
+    span: &TokenRange,
+    subject: String,
+) -> CHLError {
+    let message = UnboundLocal {
+        local,
+        evaluation: context.evaluation(),
+        subject,
+    };
+    CHLError::new(CHLRawError(Box::new(message)), from_token_range(span))
 }
 
 // A declaration is a statement, and evaluates to unit. Each evaluation binds a fresh instance of the local, so a
@@ -108,10 +139,9 @@ pub(crate) fn eval_let(
     let initialized = storage.is_some()
         && declared
             .known()
-            .is_some_and(|ty| !context.env().is_nocopy(*ty))
-        && context.is_runtime();
+            .is_some_and(|ty| !context.env().is_nocopy(*ty));
     if initialized && let Some(storage) = &storage {
-        emit::storage::initialize(context, storage, None, span)?;
+        storage::initialize(context, storage, None, span)?;
     }
 
     let Some(initializer) = initializer else {
@@ -121,14 +151,14 @@ pub(crate) fn eval_let(
             None => declare(context, body, local_id, ty, span)?,
         };
         if !initialized && !context.env().is_nocopy(ty) {
-            emit::storage::initialize(context, &storage, None, span)?;
+            storage::initialize(context, &storage, None, span)?;
         }
         return Ok(Evaluation::Ready(value::unit(context.env())));
     };
 
     let is_runtime = context.is_runtime();
     let value = eval(context, body, initializer)?;
-    let value = deduce::complete(context, body, value, declared.known().copied())?;
+    let value = deduce::complete(context, body, value, declared.known().copied(), &span)?;
     let span = span.clone();
     let as_is = matches!(body.expr(local.ty()).kind(), HMIRExprKind::Hole(_)) || referent.is_some();
     value.and_then(context, body, move |context, body, value| {
@@ -156,7 +186,7 @@ pub(crate) fn eval_let(
                 let function = context.env().referent(ty);
                 if is_runtime
                     && context.env().is_function(function)
-                    && types::comptime_only(context.env(), function)
+                    && !types::runtime_function(context.env(), function)
                 {
                     emit::storage::bind_local(context, local_id, value);
                     return Ok(Evaluation::Ready(value::unit(context.env())));
@@ -168,7 +198,7 @@ pub(crate) fn eval_let(
                 if initialized {
                     emit::storage::write(context, &storage, &value, &span)?;
                 } else {
-                    emit::storage::initialize(context, &storage, Some(&value), &span)?;
+                    storage::initialize(context, &storage, Some(&value), &span)?;
                 }
                 Ok(Evaluation::Ready(value::unit(context.env())))
             })
@@ -198,9 +228,7 @@ fn declare(
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
     let local = body.local(local_id);
-    if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Function { .. })
-        && !(!context.is_runtime() && types::comptime_only(context.env(), ty))
-    {
+    if context.is_runtime() && context.env().is_function(ty) {
         let requirement = (
             "local variable".into(),
             "an object type".into(),

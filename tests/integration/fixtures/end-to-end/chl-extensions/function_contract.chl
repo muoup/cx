@@ -5,7 +5,7 @@
 /* CHL-STDOUT-NEXT: postcondition checked */
 /* CHL-STDOUT-NEXT: result: 10 */
 
-import std::io as std;
+import std::io::stdio as std;
 
 int function(int input) where 
     pre: (@unsafe(std::printf("precondition checked\n"))),

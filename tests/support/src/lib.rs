@@ -2,6 +2,7 @@ mod compilation;
 mod format;
 mod process;
 mod project;
+mod project_build;
 mod reference;
 
 pub use compilation::{
@@ -15,6 +16,7 @@ pub use chl_pipeline_data::{
 pub use format::{expected_stdout, parse_file, FormatError, StdoutExpectation, TestSpec};
 pub use process::{run_binary, run_command, ExecutionResult};
 pub use project::ProjectBinary;
+pub use project_build::{build_project, FfiLibArtifact, ProjectBuild};
 pub use reference::ReferenceCompiler;
 
 pub fn assert_stdout(expected: &str, actual: &str, label: &str) -> Result<(), String> {

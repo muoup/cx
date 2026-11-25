@@ -52,6 +52,7 @@ pub struct LocalLoweringContext<'env, 'global, 'hmir> {
 
     source: HMIRUnitID,
     evaluation: EvaluationID,
+    nominal_scope: Option<HMIRTypeID>,
 
     signature: Option<&'env HMIRFnSignature<HMIRExprID>>,
     // REVIEW: Unclear why 'signature' uses the expr form here so we need to track this
@@ -107,6 +108,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             signature,
             context,
             evaluation: EvaluationID::fresh(),
+            nominal_scope: None,
             memory,
             expectations: Expectations::new(match signature {
                 Some(signature) if signature.contract().is_safe() => Permission::Safe,
@@ -128,6 +130,7 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
             child.expectations = self.expectations;
         }
         child.source = self.source;
+        child.nominal_scope = self.nominal_scope;
         child.return_type = self.return_type;
         child.call_depth = self.call_depth;
         child
@@ -244,6 +247,14 @@ impl<'env, 'global, 'hmir> LocalLoweringContext<'env, 'global, 'hmir> {
 
     pub fn is_unevaluated(&self) -> bool {
         matches!(&self.context, FnContext::Runtime(runtime) if runtime.emission() == runtime::Emission::Unevaluated)
+    }
+
+    pub fn nominal_scope(&self) -> Option<HMIRTypeID> {
+        self.nominal_scope
+    }
+
+    pub fn set_nominal_scope(&mut self, scope: HMIRTypeID) {
+        self.nominal_scope = Some(scope);
     }
 
     pub fn evaluation(&self) -> EvaluationID {

@@ -1,0 +1,35 @@
+/* CHL-STDOUT: 14 14 6 */
+
+#include <stdio.h>
+
+int add(int left, int right) {
+    return left + right;
+}
+
+comptime ^int forward(^int code) => code;
+comptime int consume(int value) => value;
+comptime ^int apply_unlifted(fn callback(int) -> ^int) => callback(emit 6);
+comptime int force_return(^int value) { return value; }
+
+comptime int evaluate(^int literal, fn callback(^int, ^int) -> ^int) {
+    int first = literal;
+    ^int block = emit .{
+        int value = 1;
+        while (true) {
+            value += 2;
+            break;
+        }
+        yield value;
+    };
+    int second = consume(forward(block));
+    ^int bound = callback(4, 5);
+    return first + second + consume(bound);
+}
+
+int main() {
+    int eta = evaluate(2, add);
+    int quote = evaluate(2, |auto x, auto y| => add(x, y));
+    int result = force_return(apply_unlifted(|int value| => value));
+    printf("%d %d %d\n", eta, quote, result);
+    return 0;
+}

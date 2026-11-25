@@ -15,7 +15,7 @@ void consume(Resource value) {
 
 int main() {
     Resource* ptr = malloc(sizeof(Resource));
-    *ptr = (Resource) { .data = 7 };
+    ptr->data = 7;
 
     Resource value = @unsafe(@adopt(*ptr));
     value.data = 41;

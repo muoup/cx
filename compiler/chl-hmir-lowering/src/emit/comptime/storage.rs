@@ -8,7 +8,10 @@ use chl_tokens::TokenRange;
 use chl_util::identifier::CHLIdent;
 
 use crate::{
-    env::function::{LocalLoweringContext, comptime::ComptimeSlotState, memory::layout},
+    env::function::{
+        LocalLoweringContext,
+        comptime::{ComptimeSlot, ComptimeSlotState},
+    },
     eval::{symbol, types},
     log::hmir_error,
     value::{
@@ -37,37 +40,16 @@ fn locate(
     span: &TokenRange,
 ) -> CHLResult<HMIRAddress<HMIRPlaceID>> {
     let location = context.locate(reference.kind(), write, span)?;
-    live(context, *location.base(), write, span)?;
+    let operation = if write { "was written" } else { "was read" };
+    require_live(context, *location.base(), operation, span)?;
 
     Ok(location)
 }
 
-// The slot a reference covers whole, which tracks the liveness of what it holds
-fn tracked(
-    context: &mut LocalLoweringContext,
-    reference: &HMIRValue,
-    span: &TokenRange,
-) -> CHLResult<Option<HMIRPlaceID>> {
-    let HMIRValueKind::Reference(address) = reference.kind() else {
-        return Ok(None);
-    };
-    let place = *address.base();
-    let Some(slot) = context.comptime().slot(place).map(|slot| slot.ty()) else {
-        return Ok(None);
-    };
-    if address.offset() != 0 || types::bitfield(context.env(), reference.ty()).is_some() {
-        return Ok(None);
-    }
-    let ty = context.env().referent(reference.ty());
-    let whole = layout(context.env_mut(), ty, span)? == layout(context.env_mut(), slot, span)?;
-
-    Ok(whole.then_some(place))
-}
-
-fn live(
+pub(in crate::emit) fn require_live(
     context: &LocalLoweringContext,
     place: HMIRPlaceID,
-    writing: bool,
+    operation: &str,
     span: &TokenRange,
 ) -> CHLResult<()> {
     let Some(slot) = context.comptime().slot(place) else {
@@ -79,25 +61,47 @@ fn live(
     };
     match slot.state() {
         ComptimeSlotState::Live => Ok(()),
-        ComptimeSlotState::Uninitialized if writing => Ok(()),
         ComptimeSlotState::Uninitialized => Err(hmir_error(span, &mir::COMPTIME_UNSET, subject)),
         ComptimeSlotState::Invalidated => {
-            let function = context
-                .comptime()
-                .function()
-                .map_or_else(String::new, |def| symbol::name(context.env(), def));
-            let place = slot
-                .name()
-                .map_or_else(|| "temporary".into(), |name| name.to_string());
-            let discarded = place == "_";
-            let operation = match writing {
-                true => "is written",
-                false => "is used",
-            };
+            let (function, place, discarded) = ownership_subject(context, slot);
             let args = (function, place, operation.into(), discarded);
             Err(hmir_error(span, &analysis::AFTER_MOVE, args))
         }
     }
+}
+
+fn ownership_subject(
+    context: &LocalLoweringContext,
+    slot: &ComptimeSlot,
+) -> (String, String, bool) {
+    let function = context
+        .comptime()
+        .function()
+        .map_or_else(String::new, |def| symbol::name(context.env(), def));
+    let place = slot
+        .name()
+        .map_or_else(|| "temporary".into(), ToString::to_string);
+    let discarded = place == "_";
+    (function, place, discarded)
+}
+
+fn require_droppable(
+    context: &LocalLoweringContext,
+    slot: &ComptimeSlot,
+    span: &TokenRange,
+) -> CHLResult<()> {
+    if context.env().is_nodrop(slot.ty()) {
+        let (function, place, discarded) = ownership_subject(context, slot);
+        let args = (
+            function,
+            "value".into(),
+            place,
+            "lifetime".into(),
+            discarded,
+        );
+        return Err(hmir_error(span, &analysis::VALUE_NOT_CONSUMED, args));
+    }
+    Ok(())
 }
 
 // The contents of the storage a reference designates in the form they have outside of comptime storage, which
@@ -152,11 +156,7 @@ pub fn write(
     value: &HMIRValue,
     span: &TokenRange,
 ) -> CHLResult<()> {
-    let tracked = tracked(context, target, span)?;
-    let location = match tracked {
-        Some(_) => context.locate(target.kind(), true, span)?,
-        None => locate(context, target, true, span)?,
-    };
+    let location = locate(context, target, true, span)?;
     let ty = context.env().referent(target.ty());
     let bitfield = types::bitfield(context.env(), target.ty());
     match is_held(context, value) {
@@ -166,10 +166,6 @@ pub fn write(
         }
         false => context.store(&location, ty, value.kind(), bitfield, span)?,
     }
-    if let Some(slot) = context.comptime_mut().slot_mut(*location.base()) {
-        slot.set_state(ComptimeSlotState::Live);
-    }
-
     Ok(())
 }
 
@@ -180,32 +176,63 @@ fn is_held(context: &LocalLoweringContext, value: &HMIRValue) -> bool {
         && !context.env().is_pointer(value.ty())
 }
 
-fn mark(
+pub fn initialize(
     context: &mut LocalLoweringContext,
-    target: &HMIRValue,
-    state: ComptimeSlotState,
+    target: HMIRPlaceID,
     span: &TokenRange,
-) {
-    if let Ok(Some(place)) = tracked(context, target, span)
-        && let Some(slot) = context.comptime_mut().slot_mut(place)
-    {
-        slot.set_state(state);
+) -> CHLResult<()> {
+    let slot = context
+        .comptime()
+        .slot(target)
+        .expect("initialization requires a slot");
+    if slot.state() == ComptimeSlotState::Live {
+        require_droppable(context, slot, span)?;
+        return Err(hmir_error(
+            span,
+            &analysis::ALREADY_INITIALIZED,
+            ownership_subject(context, slot),
+        ));
     }
-}
-
-pub fn initialize(context: &mut LocalLoweringContext, target: &HMIRValue, span: &TokenRange) {
-    mark(context, target, ComptimeSlotState::Live, span);
+    context
+        .comptime_mut()
+        .slot_mut(target)
+        .expect("initialization requires a slot")
+        .set_state(ComptimeSlotState::Live);
+    Ok(())
 }
 
 pub fn invalidate(
     context: &mut LocalLoweringContext,
-    target: &HMIRValue,
+    target: HMIRPlaceID,
     kind: MIRInvalidationKind,
     span: &TokenRange,
-) {
+) -> CHLResult<()> {
+    let slot = context
+        .comptime()
+        .slot(target)
+        .expect("invalidation requires a slot");
     let state = match kind {
-        MIRInvalidationKind::Drop => ComptimeSlotState::Uninitialized,
-        MIRInvalidationKind::Move | MIRInvalidationKind::Leak => ComptimeSlotState::Invalidated,
+        MIRInvalidationKind::Drop => {
+            if slot.state() != ComptimeSlotState::Live {
+                return Ok(());
+            }
+            require_droppable(context, slot, span)?;
+            ComptimeSlotState::Uninitialized
+        }
+        MIRInvalidationKind::Move | MIRInvalidationKind::Leak => {
+            let operation = if kind == MIRInvalidationKind::Move {
+                "was moved"
+            } else {
+                "was leaked"
+            };
+            require_live(context, target, operation, span)?;
+            ComptimeSlotState::Invalidated
+        }
     };
-    mark(context, target, state, span);
+    context
+        .comptime_mut()
+        .slot_mut(target)
+        .expect("invalidation requires a slot")
+        .set_state(state);
+    Ok(())
 }

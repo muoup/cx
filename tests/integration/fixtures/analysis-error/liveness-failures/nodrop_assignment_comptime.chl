@@ -1,0 +1,12 @@
+struct Resource : @nodrop { int value; };
+
+comptime int replace() {
+    Resource resource = { 1 };
+    resource = (Resource) { 2 };
+    @leak(resource);
+    return 0;
+}
+
+int main() {
+    return replace();
+}

@@ -7,7 +7,7 @@ mod interface;
 
 use crate::{
     env::{HMIREnvironment, generation::Generation},
-    eval::aggregate::variant,
+    eval::{aggregate::variant, symbol},
     lower::types::lower_signature,
     value::HMIRValue,
 };
@@ -33,6 +33,7 @@ pub fn lower_unit<'hmir>(
         match (generation, function) {
             (Generation::Definition(def), _) => generate(def, env, None)?,
             (Generation::Template { def, comptime_bindings }, Some(function)) => {
+                let comptime_bindings = comptime_bindings.into_iter().map(Into::into).collect::<Vec<_>>();
                 generate(def, env, Some((function, &comptime_bindings)))?
             }
             (Generation::Constructor { ty, variant }, Some(function)) => {
@@ -94,9 +95,10 @@ fn generate(
         .expect("symbol owner is available");
     let source = unit.resolve_def(id).expect("symbol exists");
     match declaration::canonical(source).kind() {
-        Some(HMIRDefKind::Function(function)) => {
+        Some(HMIRDefKind::Function(_)) => {
+            let function = symbol::function(env, id)?;
             let standalone = function.signature().stage() == HMIRFunctionStage::Runtime
-                && !declaration::needs_specialization(function)
+                && !declaration::needs_specialization(&function)
                 && function.def().is_some();
             if template.is_none() && !standalone {
                 return Ok(());
@@ -106,7 +108,7 @@ fn generate(
                 Some(_) => Vec::new(),
             };
             env.record_bodies(recorded);
-            let lowered = function::lower(env, id, function, template);
+            let lowered = function::lower(env, id, &function, template);
             env.record_bodies(Vec::new());
             lowered
         }

@@ -9,7 +9,6 @@ use chl_log::{
 use chl_tokens::TokenRange;
 
 use crate::{
-    emit,
     env::function::{
         FnContext, LocalLoweringContext,
         runtime::{Defer, Emission, RuntimeScope},
@@ -20,6 +19,7 @@ use crate::{
         binding::{eval_block, eval_scoped},
         deduce,
         flow::{self, Evaluation},
+        storage,
     },
     log::hmir_error,
     value::{self, HMIRValue},
@@ -72,8 +72,7 @@ pub(crate) fn closing<T: 'static>(
         if completed && let FnContext::Runtime(runtime) = context.context() {
             expand(context, runtime.scopes().top())?;
         }
-        emit::close_scope(context, &span);
-        Ok(())
+        storage::close_scope(context, &span)
     })
 }
 
@@ -84,7 +83,7 @@ pub(super) fn leave(
 ) -> CHLResult<()> {
     for index in (depth..context.runtime().scopes().len()).rev() {
         expand(context, index)?;
-        emit::runtime::drop_scope(context, index, span);
+        storage::drop_scope(context, index, span)?;
     }
     Ok(())
 }

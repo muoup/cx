@@ -1,6 +1,6 @@
 use chl_target::ArchitectureConfig;
 
-use crate::ty::{HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, aggregate::HMIRTypeSemantics};
+use crate::ty::{HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined, NominalID, aggregate::HMIRTypeSemantics};
 
 pub trait HMIRTypeContext {
     fn architecture(&self) -> &ArchitectureConfig;
@@ -9,17 +9,31 @@ pub trait HMIRTypeContext {
 
     fn underlying(&self, id: HMIRTypeID) -> HMIRTypeID {
         match self.resolve_type_id(id).kind() {
-            HMIRTypeKind::Nominal(inner) => self.underlying(*inner),
+            HMIRTypeKind::Nominal { inner, strong_identifier: None } => self.underlying(*inner),
             _ => id,
         }
     }
 
+    fn representation(&self, id: HMIRTypeID) -> HMIRTypeID {
+        match self.resolve_type_id(id).kind() {
+            HMIRTypeKind::Nominal { inner, .. } => self.representation(*inner),
+            _ => id,
+        }
+    }
+
+    fn strong_identifier(&self, id: HMIRTypeID) -> Option<NominalID> {
+        match self.resolve_type_id(self.underlying(id)).kind() {
+            HMIRTypeKind::Nominal { strong_identifier, .. } => *strong_identifier,
+            _ => None,
+        }
+    }
+
     fn resolve_kind(&self, id: HMIRTypeID) -> &HMIRTypeKind {
-        self.resolve_type_id(self.underlying(id)).kind()
+        self.resolve_type_id(self.representation(id)).kind()
     }
 
     fn pointer_inner(&self, ty: HMIRTypeID) -> Option<HMIRTypeID> {
-        self.resolve_type_id(self.underlying(ty))
+        self.resolve_type_id(self.representation(ty))
             .pointer_inner()
             .copied()
     }
@@ -29,7 +43,7 @@ pub trait HMIRTypeContext {
     }
 
     fn reference_inner(&self, ty: HMIRTypeID) -> Option<HMIRTypeID> {
-        self.resolve_type_id(self.underlying(ty))
+        self.resolve_type_id(self.representation(ty))
             .reference_inner()
             .copied()
     }
@@ -44,7 +58,7 @@ pub trait HMIRTypeContext {
     }
 
     fn array_inner(&self, ty: HMIRTypeID) -> Option<HMIRTypeID> {
-        self.resolve_type_id(self.underlying(ty))
+        self.resolve_type_id(self.representation(ty))
             .array_inner()
             .copied()
     }
@@ -69,6 +83,10 @@ pub trait HMIRTypeContext {
         matches!(self.resolve_kind(ty), HMIRTypeKind::Void)
     }
 
+    fn is_unreachable(&self, ty: HMIRTypeID) -> bool {
+        matches!(self.resolve_kind(ty), HMIRTypeKind::Unreachable)
+    }
+    
     fn is_str(&self, ty: HMIRTypeID) -> bool {
         matches!(self.resolve_kind(ty), HMIRTypeKind::Str(_))
     }
@@ -81,7 +99,7 @@ pub trait HMIRTypeContext {
     fn semantics(&self, ty: HMIRTypeID) -> HMIRTypeSemantics {
         let resolved = self.resolve_type_id(ty);
         match resolved.kind() {
-            HMIRTypeKind::Nominal(inner) => resolved.semantics().apply(self.semantics(*inner)),
+            HMIRTypeKind::Nominal { inner, .. } => resolved.semantics().apply(self.semantics(*inner)),
             _ => *resolved.semantics(),
         }
     }

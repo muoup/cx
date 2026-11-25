@@ -1,9 +1,35 @@
-import std::span as std;
+import std::collections::span as std;
 
 public:
 
-comptime type stream(type T)
-    => fn(fn(^T) -> ^void) -> ^void;
+comptime type stream(type T) = fn(fn(^T) -> ^void) -> ^void;
+
+comptime stream(int) stream::range(^int start, ^int stop, ^int step)
+    => |fn sink(^int) -> ^void| {
+        auto from = start;
+        auto to = stop;
+        auto by = step;
+
+        for (int n = from; n < to; n += by) {
+            sink(emit n);
+        }
+    };
+
+comptime stream(T) stream::filter(
+    type T = _,
+    stream(T) this,
+    fn predicate(^T) -> ^bool
+) => |fn sink(^T) -> ^void| {
+    this(|^T value| {
+        if (predicate(value)) sink(value);
+    });
+};
+
+comptime ^void stream::for_each(
+    type T = _, 
+    stream(T) this, 
+    fn callback(^T) -> ^void
+) => this(|^T value| => callback(value));
 
 comptime stream(U) stream::map(
     type T = _, type U = _, 
@@ -16,23 +42,6 @@ comptime stream(U) stream::map(
             |> sink();
     });
 };
-
-comptime stream(T) stream::filter(
-    type T = _,
-    stream(T) this,
-    fn predicate(^T) -> ^bool
-) => |fn sink(^T) -> ^void| {
-    this(|^T value| {
-        if (predicate(value)) {
-            sink(value);
-        }
-    });
-};
-
-comptime ^void stream::for_each(type T = _, stream(T) this, fn callback(^T) -> ^void)
-    => this(|^T value| {
-        callback(value);
-    });
 
 comptime stream(T) span::stream(type T = _, ^std::span(T) this)
     => |fn sink(^T) -> ^void| {

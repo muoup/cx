@@ -12,7 +12,7 @@ use crate::{
     eval::{
         EvalResult,
         call::{self, contract},
-        flow, symbol, types,
+        flow, storage, symbol, types,
     },
     lower::types::lower_prototype,
     value::{HMIRValue, place::HMIRPlaceBrand},
@@ -62,7 +62,7 @@ pub(crate) fn lower<'hmir>(
     let scopes = context.runtime_mut().scopes_mut();
     scopes.control_mut(root).set_return(id.brand());
     let completion = definition(&mut context, function, &signature, comptime_bindings, span);
-    emit::close_scope(&mut context, span);
+    storage::close_scope(&mut context, span)?;
     flow::top(flow::catch_diverged(completion))?;
 
     let lowered = context.into_runtime().finish();
@@ -94,5 +94,5 @@ fn definition(
     }
     contract::enter(context, function.params(), span)?;
 
-    call::dependent::body(context, function, None)
+    call::dependent::body(context, function)
 }

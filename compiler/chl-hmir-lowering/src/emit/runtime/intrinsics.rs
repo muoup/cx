@@ -3,7 +3,7 @@ use chl_intrinsics::{
     AggregateIntrinsic, FloatBinaryOp, FloatIntrinsic, IntBinaryOp, IntIntrinsic, IntUnaryOp,
     InternalIntrinsic, PointerCompareOp, PointerIntrinsic, PointerOffsetOp, VAIntrinsic,
 };
-use chl_log::CHLResult;
+use chl_log::{CHLResult, catalogue::typecheck};
 use chl_mir::{
     MIRAggregateIntrinsic, MIRFloatIntrinsic, MIRFloatType, MIRIntIntrinsic, MIRIntType,
     MIRInternalIntrinsic, MIRIntrinsic, MIRPtrIntrinsic, MIRTarget, MIRVAIntrinsic, MIRValue,
@@ -12,8 +12,9 @@ use chl_tokens::TokenRange;
 
 use crate::{
     emit::runtime::{self, storage},
-    env::function::LocalLoweringContext,
+    env::function::{LocalLoweringContext, memory::layout},
     eval::types,
+    log::hmir_error,
     lower::types::{lower_type, mir_float, mir_int},
     value::{HMIRValue, immediate::HMIRImmValue},
 };
@@ -220,13 +221,17 @@ pub fn pointer(
             (instruction, output)
         }
         PointerIntrinsic::Diff { lhs, rhs, element } => {
-            let element_ty = lower_type(context.env_mut(), *element, span)?;
+            let stride = layout(context.env_mut(), *element, span)?.size();
+            if stride == 0 {
+                let subject = ("a zero-sized element".into(), "pointer subtraction".into());
+                return Err(hmir_error(span, &typecheck::INVALID_CONTEXT, subject));
+            }
             let ((out, lhs, rhs), output) = binary(context, lhs, rhs, result, span)?;
             let instruction = MIRPtrIntrinsic::Diff {
                 out,
                 lhs,
                 rhs,
-                element_ty,
+                stride,
             };
             (instruction, output)
         }

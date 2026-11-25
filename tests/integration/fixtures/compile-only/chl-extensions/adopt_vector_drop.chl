@@ -1,4 +1,4 @@
-import std::vector;
+import std::collections::vector;
 
 struct Resource : @nodrop {
     int data;
@@ -9,12 +9,12 @@ void destroy(Resource value) {
 }
 
 int main() {
-    std::vector::vector(Resource) values = std::vector::vector::new(Resource);
+    std::collections::vector::vector(Resource) values = std::collections::vector::vector::new(Resource);
     Resource value = (Resource) {
         .data = 11
     };
 
-    values |> std::vector::vector::push(move value);
-    move values |> std::vector::vector::drop_with(destroy);
+    values |> std::collections::vector::vector::push(move value);
+    move values |> std::collections::vector::vector::drop_with(destroy);
     return 0;
 }

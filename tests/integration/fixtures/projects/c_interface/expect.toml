@@ -1,0 +1,12 @@
+[[build]]
+targets = ["api", "consumer", "native"]
+
+[[run]]
+target = "consumer"
+
+[[run]]
+target = "native"
+
+[[cc]]
+sources = ["main.c"]
+ffi_lib = "api"

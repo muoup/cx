@@ -9,7 +9,7 @@
 /* CHL-STDOUT-NEXT: dropped num: 8 */
 /* CHL-STDOUT-NEXT: dropped num: 9 */
 
-import std::vector;
+import std::collections::vector;
 
 #include <stdio.h>
 
@@ -23,11 +23,11 @@ void destructor(test_type t) {
 }
 
 int main() {
-    std::vector::vector(test_type) t = std::vector::vector::new(test_type);
+    std::collections::vector::vector(test_type) t = std::collections::vector::vector::new(test_type);
 
     for (int i = 0; i < 10; i++) {
-        t |> std::vector::vector::push((test_type) { .num = i });
+        t |> std::collections::vector::vector::push((test_type) { .num = i });
     }
 
-    move t |> std::vector::vector::drop_with(destructor);
+    move t |> std::collections::vector::vector::drop_with(destructor);
 }

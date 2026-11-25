@@ -1,0 +1,93 @@
+import std::optional as std;
+import std::panic as std;
+#include <string.h>
+
+public:
+
+comptime type span(comptime type T) =>
+    struct {
+        T* data;
+        usize length;
+    };
+
+span(T) span::new(comptime type T = _, T* data, usize length)
+    => (span(T)) { .data = data, .length = length };
+
+usize span::length(comptime type T = _, span(T) this) {
+    return this.length;
+}
+
+T* span::data(comptime type T = _, span(T) this) {
+    return this.data;
+}
+
+span(const T) span::as_const(comptime type T = _, span(T) this) {
+    return span::new(.T = const T, (const T*) this.data, this.length);
+}
+
+std::opt(T&) span::get(comptime type T = _, span(T)& this, usize index) {
+    if (index >= this.length) {
+        return _::none();
+    }
+
+    return _::some(this.data[index]);
+}
+
+T& span::at(comptime type T = _, span(T)& this, usize index) {
+    if (index >= this.length) {
+        std::panic("Attempted to index out of span bounds");
+    }
+
+    return this.data[index];
+}
+
+std::opt(span(T)) span::subspan(comptime type T = _, span(T) this, usize offset, usize len) {
+    if (offset > this.length || len > this.length - offset) return _::none();
+
+    return _::some((span(T)) {
+        .data = offset == 0 ? this.data : this.data + offset,
+        .length = len
+    });
+}
+
+bool span::equals(comptime type T = _, comptime type U = _, span(T) first, span(U) second)
+where
+    pre: (@type.equal(@type.unqualify(T), @type.unqualify(U)))
+{
+    if (span::length(first) != span::length(second)) return false;
+
+    if (first.length == 0) return true;
+    return memcmp(first |> span::data(), second |> span::data(), sizeof(T) * span::length(first)) == 0;
+}
+
+bool span::starts_with(comptime type T = _, comptime type U = _, span(T) string, span(U) prefix)
+where
+    pre: (@type.equal(@type.unqualify(T), @type.unqualify(U)))
+{
+    if (span::length(string) < span::length(prefix)) return false;
+
+    if (prefix.length == 0) return true;
+    return memcmp(string |> span::data(), prefix |> span::data(), sizeof(T) * span::length(prefix)) == 0;
+}
+
+span(U) span::reinterpret(comptime type T = _, comptime type U = _, span(T) this)
+where pre: (sizeof(T) != 0 && sizeof(U) != 0)
+{
+    if ((usize) this.data % @type.align_of(U) != 0) std::panic("Misaligned span reinterpretation");
+    if (this.length > ((usize) -1) / sizeof(T)) std::panic("Span size overflow");
+    usize bytes = this.length * sizeof(T);
+    if (bytes % sizeof(U) != 0) std::panic("Span size is not a multiple of the element size");
+    return span::new(.T = U, (U*) this.data, bytes / sizeof(U));
+}
+
+std::opt(T&) span::first(comptime type T = _, span(T)& this) {
+    return this |>(1) span::get(T, 0);
+}
+
+std::opt(T&) span::last(comptime type T = _, span(T)& this) {
+    if (this.length == 0) {
+        return _::none();
+    }
+
+    return _::some(this.data[this.length - 1]);
+}

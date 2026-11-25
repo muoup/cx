@@ -20,7 +20,7 @@ HMIR unit to MIR unit. Evaluation interprets comptime code, elaborates types, an
 - **collapse**: `T& ... &` read until a single `T&`.
 - **value type** of T: referent of T, unqualified.
 - **integer promotion**: int narrower than 32 bits, `bool` included, to `i32`.
-- **comptime-only type**: `type`, staged `^T`, dependent `_`, or a function that is comptime-stage, has a comptime parameter, or a comptime-only parameter or return type.
+- **comptime-only type**: `type`, staged `^T`, dependent `_`, a bare function, or an aggregate marked `@comptime`. An array or aggregate inherits this property from its by-value contents. Pointers and references have their own storage and layout.
 - **declaration point**: position of a declaration in its unit. A context *at* a point sees declarations of its own unit up to it, and all of other units.
 - **def**: one symbol; holds every redeclaration of it, each a *declaration* (role declaration, tentative, or definition) with optional content and tag.
 
@@ -203,7 +203,7 @@ HMIR type to MIR type, cached per underlying type.
 - struct, union, tagged union: distinct per type, never shape-interned; undefined while fields lower, so self-reference works. Bitfields keep width. Forward-declared tag: undefined of that tag.
 - `void`, `unreachable`: void. Reference: memory reference. `T[]`: undefined array.
 - `inv/flexible-array-layout` `T[]` as a struct member lowers flagged flexible: zero-sized, aligned as `T`. Any other `T[]` has no layout.
-- comptime-only types laid out pointer-sized in comptime memory.
+- Comptime storage uses the target layout for ordinary objects. An opaque comptime leaf occupies one typed slot. Aggregates and arrays use the same layout rules as runtime objects. Typed pointers into those slots remain within comptime evaluation.
 
 ## Expression evaluation
 
@@ -554,6 +554,7 @@ Runtime context evaluates types frozen. A type expression is memoized; a comptim
 
 Construction:
 - struct, union, tagged union declared forward first, so members may refer to it.
+- An explicit comptime-only record uses `struct Name : @comptime { ... }`. Declaring storage for a comptime-only type at runtime is an error even when the declaration omits an initializer.
 - member and element types must be complete and visible: T0009. A struct member may be `T[]`: a flexible array.
 - array bound frozen: `void` is unbounded `T[]`; int, non-negative, within `u64` (T0011); otherwise M0001. `_` bound while constructing: T0052.
 - function type parameters adjusted as [Parameter type](#parameter-type).
@@ -570,9 +571,10 @@ Construction:
 *verified uncommitted*
 
 `sizeof`, `alignof`, `offsetof`: subject [deduced](#subject-type); then yields constant of unsigned pointer-width int.
-- `sizeof`, `alignof`: complete object required, T0009.
+- `sizeof`, `alignof`: complete type required, T0009.
 - `offsetof(T, a.b[i])`: complete object required; fields followed through anonymous members (T0003), bitfield T0019; index requires array (T0012), frozen int (M0001), adds element size times index.
-- `@type.size_of(T)`, `@type.align_of(T)`: as `sizeof`, `alignof`.
+- `@type.c_sizeof(T)` and `sizeof` report storage extent, with zero for `void` and one unit for an opaque comptime leaf such as a bare function. Arrays use the element extent as stride. Comptime aggregates use the ordinary field placement and padding rules.
+- `@type.align_of(T)` is equivalent to `alignof`. Typed access to an opaque comptime slot reads or writes its whole value. A raw byte access overlapping the slot fails.
 - `rule/type-query-operand` other type operators evaluate their type operands as [type expressions](#type-expression), nothing deduced.
 - `is_int`, `is_float`, `is_pointer`, `is_reference`: kind of the type; `is_signed`: a signed int. `rule/is-const-top-level` `is_const`: the type's own const only, so `const T&` is not const. Never fail; yield `bool`.
 - `equal(A, B)`: alike.
@@ -733,11 +735,14 @@ Runs once a param's type names a deferred param, over the arguments from that pa
 2. Each deferred param inferred so far: its pending argument or default completed from the inferred type, or a deferred value taken as inferred; bound in the frame.
 3. Closure literals, in order, then step 2 again after each. Param type must be a function type of the closure's arity, else skipped.
    - declared closure param types unified against the param's, then step 2.
+   - The remaining steps apply if the callback's return type mentions a parameter with a deduction slot.
    - `auto` closure params: the param's parameter type, evaluated in the frame; not yet known: closure skipped.
    - closure body [synthesized](#quote) with those types; result lifted to `^R`, unified against the param's return type.
 
 - `rule/conflicting-deductions` two inferred types not alike, or two inferred values unequal once each is converted implicitly to the param type in the callee frame and exported: T0024.
 - `rule/closure-deduction-errors` errors from synthesizing a closure body are reported as-is.
+- A transparent type alias (`comptime type pointer(type T) = T*;`) substitutes its arguments into its body before matching against the actual or expected type. Its body can use existing type names, built-in type constructors, anonymous aggregates, and other transparent aliases. An argument absent from the resulting structural type provides no deduction evidence.
+- `@strong T` keeps the representation of `T` and adds a distinct identity. A generator reuses this identity for identical arguments and distinguishes arguments with different strong identities. Named aggregates and direct aggregate definitions in `=>` generators introduce strong identities implicitly. Deduction can recover a nominal generator's specialization arguments from its result. Crossing a user-defined strong identity in a conversion requires a cast.
 
 ### Contracts
 
@@ -771,7 +776,7 @@ Captures: free locals of the quoted expression, quote params and inner declarati
 
 Otherwise incomplete, completing without expectation too. Expected staged shape (`^T`, or comptime function to a staged result, any param types): param count must match (T0015); typed quote params checked identical (T0012), evaluated in a comptime child with captures; yields a quote of the shape, retaining its lexical parameter locals.
 - `rule/quote-materializes` non-staged expectation: quote materialized in place.
-- `rule/quote-synthesis` nothing expected: typed by itself. Declared param types evaluated as above; an `auto` param: T0052. Body evaluated with a placeholder per param (the carried type for `^T`), captures shadowed, in an unevaluated detached child as [subject type](#subject-type); result R. Type: `^R` without params, else a non-decaying comptime function from the declared types to `^R`.
+- `rule/quote-synthesis` nothing expected: typed by itself. Declared param types evaluated as above. An `auto` param gives T0052. The body is evaluated in an unevaluated detached child with shadowed captures and one placeholder of each parameter's type, including opaque code for `^T`. For body result type `R`, the quote has type `^R` without params, or a non-decaying comptime function from the declared types to `^R`.
 
 ### Splice
 
@@ -779,7 +784,7 @@ Otherwise incomplete, completing without expectation too. Expected staged shape 
 
 Quote literal operand, optionally under `comptime`: incomplete; on expectation, arguments typed as [subject type](#subject-type), lifted, the quote completed against that signature, then applied. Otherwise code evaluated, fail if incomplete, converged, then [applied](#apply).
 
-A staged value spliced without arguments (a [Local](#local) read at runtime): converged; a `^T` value other than opaque materialized; anything else yields itself.
+A value spliced without arguments (such as a staged [Local](#local) read at runtime) is converged. A `^T` value then materializes. Other values yield themselves.
 
 ### Intrinsic
 
@@ -901,7 +906,7 @@ Code applied to arguments; needs staged shape (T0002), argument count (T0015). `
 
 #### Materialize
 
-Materialization converts `^T` to `T`; argument binding and count diagnostics belong to application. Opaque code: an opaque value of its result, unit for `void`. A fully bound application expands its quoted callee with the bound arguments, or invokes its runtime callee through normal call coercion and contract handling; arguments materialize as required by the underlying parameter types. Pending computations cannot materialize at comptime (M0021). Other `^T` immediates yield themselves, typed as the result. A direct quote has no parameters and expands without arguments. Unavailable code: M0029. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; `rule/sealed-root-quote` the scope is sealed when no quoted scope encloses it (a root quote, inserted into hand-written runtime code) and escaping is not allowed ([Escape](#escape)); quotes materialized inside another are never sealed; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
+Materialization converts `^T` to `T` in a runtime context. At comptime it gives M0021. Opaque code yields a placeholder of its result type, or unit for `void`. A fully bound application expands its quoted callee with the bound arguments, or invokes its runtime callee through normal call coercion and contract handling; arguments materialize as required by the underlying parameter types. Other `^T` immediates yield themselves, typed as the result. A direct quote has no parameters and expands without arguments. Unavailable code: M0029. Quoted expression evaluated in a fresh quoted scope with captures, at the quote's source and visibility; `rule/sealed-root-quote` the scope is sealed when no quoted scope encloses it (a root quote, inserted into hand-written runtime code) and escaping is not allowed ([Escape](#escape)); quotes materialized inside another are never sealed; params bound to the arguments as-is; result completed expecting result type, converted; `void` result yields unit.
 
 An application has either contextual `HMIRValue` operands or independently well-formed `HMIRImmediate` operands. Export recursively converges the callee and bound arguments into the immediate form without executing the represented code. Invalid escaping storage references are rejected; quote captures retain their existing rules.
 

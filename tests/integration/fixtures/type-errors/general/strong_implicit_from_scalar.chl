@@ -1,0 +1,6 @@
+typedef @strong int meters;
+
+int main() {
+    meters distance = 1;
+    return 0;
+}

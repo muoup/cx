@@ -11,6 +11,7 @@ use crate::{
         binding::eval_scoped,
         eval,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
+        storage,
     },
     value::{self, HMIRValue},
 };
@@ -85,7 +86,7 @@ pub(crate) fn eval_while(
                 .runtime_mut()
                 .emit(MIRInstructionKind::Unreachable, span.clone());
         }
-        emit::close_scope(context, span);
+        storage::close_scope(context, span)?;
         return flow::diverged();
     };
     emit::runtime::flow::branch(context, condition, body_block, exit, span);
@@ -100,7 +101,7 @@ pub(crate) fn eval_while(
 
     emit::runtime::flow::switch_to(context, body_block);
     let completion = flow::catch_diverged(eval_scoped(context, body, loop_body, false));
-    emit::close_scope(context, span);
+    storage::close_scope(context, span)?;
     completion?.ready()?;
     emit::runtime::flow::jump(context, continue_block, span);
 

@@ -1,0 +1,19 @@
+/* CHL-STDOUT: 42 42 42 1 1 */
+
+import std::{collections::{array, vector}, collections::span, optional} as std;
+
+#include <stdio.h>
+
+int main() {
+    auto array = std::array::new(int, 2);
+    std::array::at(array, 1) = 41;
+    if (std::array::get(array, 1) is some(auto element)) element++;
+    auto items = std::array::as_span(array);
+    auto tail = std::span::subspan(items, 1, 1) |> std::opt::unwrap();
+    auto vector = std::vector::from_span(std::span::as_const(tail));
+    printf("%d %d %d %d %d\n", array.data[1], std::span::at(tail, 0),
+        std::vector::at(vector, 0), std::span::subspan(items, (usize) -1, 2) is none(),
+        std::span::subspan(items, 2, 0) is some(_));
+    std::vector::drop(move vector);
+    return 0;
+}

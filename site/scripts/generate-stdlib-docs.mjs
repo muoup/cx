@@ -17,7 +17,7 @@ function readDocumentation() {
     const options = {cwd: repositoryDirectory, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "inherit"]};
     const output = process.env.CHL_BIN
         ? execFileSync(process.env.CHL_BIN, ["doc", libraryDirectory], options)
-        : execFileSync("cargo", ["run", "--quiet", "--release", "-p", "chl", "--", "doc", libraryDirectory], options);
+        : execFileSync("cargo", ["run", "--quiet", "--release", "-p", "chloro", "--", "doc", libraryDirectory], options);
     return JSON.parse(output);
 }
 

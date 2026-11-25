@@ -1,0 +1,2 @@
+enum choice : @strong int { FIRST };
+int main() { return (int) FIRST; }

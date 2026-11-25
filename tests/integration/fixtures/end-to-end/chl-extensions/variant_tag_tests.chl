@@ -4,7 +4,7 @@
 /* CHL-STDOUT-NEXT: once 1 1 */
 /* CHL-STDOUT-NEXT: globals 1 1 1 */
 /* CHL-STDOUT-NEXT: generated 1 0 1 0 */
-/* CHL-STDOUT-NEXT: imported 1 1 1 0 */
+/* CHL-STDOUT-NEXT: imported 1 1 1 0 2 */
 
 import std::optional;
 
@@ -19,6 +19,7 @@ enum union Shape {
 typedef Shape Figure;
 
 comptime type maybe(comptime type T) => enum union { nothing :: void, just :: T };
+comptime type some(type T) = T;
 typedef maybe(int) IntMaybe;
 typedef std::optional::opt(int) OptInt;
 
@@ -50,6 +51,7 @@ int main() {
 
     OptInt o = OptInt::some(7);
     std::optional::opt(int) e = std::optional::opt(int)::none();
-    printf("imported %d %d %d %d\n", o is some(_), o is std::optional::opt(int)::some(_), e is OptInt::none(), e is some(_));
+    std::optional::opt(int)::some(calls++);
+    printf("imported %d %d %d %d %d\n", o is some(_), o is std::optional::opt(some(int))::some(_), e is OptInt::none(), e is some(_), calls);
     return 0;
 }

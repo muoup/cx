@@ -1,8 +1,10 @@
 pub(crate) mod deduce;
 pub(crate) mod flow;
+pub(crate) mod storage;
 pub(crate) mod symbol;
 
 mod expr;
+mod subject;
 
 pub(crate) use expr::{
     aggregate, arithmetic, binding, call, coerce, comptime, control, name, place, staged, types,
@@ -12,13 +14,16 @@ pub(crate) use flow::EvalResult;
 use chl_hmir::{
     HMIRBodyContext, HMIROp,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::HMIRTypeID,
+    ty::{HMIRExprTypeKind, HMIRTypeID},
 };
 use chl_log::{CHLResult, catalogue::mir};
 use chl_pipeline_data::hmir::facts::HMIRTypeSubject;
 
 use crate::{
-    env::function::{FnContext, LocalLoweringContext, runtime::Emission},
+    env::{
+        function::{FnContext, LocalLoweringContext, runtime::Emission},
+        resolver::NominalSite,
+    },
     eval::flow::Evaluation,
     log::hmir_error,
     value::HMIRValue,
@@ -42,6 +47,26 @@ pub(crate) fn eval(
         ))),
         HMIRExprKind::Type(ty) if let Some(element) = types::hole_bounded(body, ty) => {
             deduce::hole_bound(context, body, ty, element, span)
+        }
+        HMIRExprKind::Type(ty) if let HMIRExprTypeKind::Strong { inner, binding } = ty.kind() => {
+            if binding.is_some() {
+                let aggregate =
+                    types::aggregate(body, id).expect("a scoped tag defines an aggregate");
+                let ty = types::define_aggregate(context, body, aggregate, None)?;
+                return deduce::type_result(context, ty, span);
+            }
+            let inner = eval_type(context, body, *inner)?.description()?;
+            let span = span.clone();
+            inner.and_then(context, body, move |context, _, inner| {
+                let site = NominalSite {
+                    unit: context.source(),
+                    expression: id,
+                    specialization: context.nominal_scope(),
+                    inner,
+                };
+                let ty = context.env_mut().resolver_mut().nominal_at(site, &span);
+                deduce::type_result(context, ty, &span)
+            })
         }
         HMIRExprKind::Type(ty) => {
             let ty = types::construct_type(context, body, ty, None)?;
@@ -110,6 +135,7 @@ pub(crate) fn eval(
             }
             HMIROp::AddressOf(operand) => place::eval_address_of(context, body, span, *operand),
             HMIROp::Dereference(pointer) => place::eval_dereference(context, body, span, *pointer),
+            HMIROp::StrConcat { lhs, rhs } => expr::string::concat(context, body, span, *lhs, *rhs),
             HMIROp::OwnershipOp(op) => place::eval_ownership(context, body, span, op),
             HMIROp::Type(op) => types::query::eval_type_op(context, body, span, op),
             HMIROp::AggregateOp(aggregate) => {
@@ -169,11 +195,13 @@ pub(crate) fn eval_type(
     if context.is_runtime() {
         return comptime::frozen(context, span, |child| eval_type(child, body, id));
     }
-    match eval(context, body, id) {
+    match eval(context, body, id)
+        .and_then(|value| deduce::described_type(context, body, value, span))
+    {
         Err(flow::EvalExit::Stop(_)) => {
             Err(hmir_error(span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into())
         }
-        value => deduce::described_type(context, body, value?, span),
+        result => result,
     }
 }
 

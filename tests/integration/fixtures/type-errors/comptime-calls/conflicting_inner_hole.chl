@@ -1,0 +1,9 @@
+comptime type Buffer(comptime int N = _) => struct { int data[N]; };
+
+int length(Buffer(.N = _: N)& first, Buffer(.N = N)& second) => N;
+
+int main() {
+    Buffer(.N = 3) first;
+    Buffer(.N = 5) second;
+    return length(first, second);
+}

@@ -2,35 +2,53 @@ use crate::pipeline_error;
 use chl_log::CHLResult;
 use chl_log::catalogue::driver as catalogue;
 use chl_pipeline_data::config::{LinkEntry, LinkKind};
+use crate::objects::{defined_globals, write_dependent_libraries};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub(crate) fn link_relocatable(output: &Path, objects: &[PathBuf], roots: &[String]) -> CHLResult<()> {
-    let mut command = Command::new("ld");
-    command.arg("-r").arg("--gc-sections");
-    for root in roots {
-        command.arg(format!("--undefined={root}"));
+pub(crate) fn link_relocatable(
+    output: &Path,
+    own: &[PathBuf],
+    dependencies: &[PathBuf],
+    links: &[LinkEntry],
+) -> CHLResult<()> {
+    let mut inputs = own.iter().chain(dependencies).cloned().collect::<Vec<_>>();
+    let deplibs = output.with_extension("deplibs.o");
+    if let (false, Some(first)) = (links.is_empty(), inputs.first()) {
+        write_dependent_libraries(&deplibs, first, links)?;
+        inputs.push(deplibs.clone());
     }
-    command.arg("-o").arg(output);
-    command.args(objects);
-    run(&mut command, "relocatable")?;
 
-    let keep = output.with_extension("symbols");
-    std::fs::write(&keep, roots.join("\n")).map_err(|error| {
+    let mut command = Command::new("ld");
+    command.arg("-r").arg("-o").arg(output).args(&inputs);
+    let result = run(&mut command, "relocatable");
+    let _ = std::fs::remove_file(&deplibs);
+    result?;
+
+    let mut private = BTreeSet::new();
+    for dependency in dependencies {
+        private.extend(defined_globals(dependency)?);
+    }
+    if private.is_empty() {
+        return Ok(());
+    }
+    let list = output.with_extension("private");
+    std::fs::write(&list, private.into_iter().collect::<Vec<_>>().join("\n")).map_err(|error| {
         pipeline_error(
             &catalogue::FILE_OPERATION,
             (
                 "write".into(),
-                "library symbol list".into(),
-                Some(format!("{}", keep.display())),
+                "private symbol list".into(),
+                Some(format!("{}", list.display())),
                 format!("{}", error),
             ),
         )
     })?;
     let mut command = Command::new("objcopy");
-    command.arg(format!("--keep-global-symbols={}", keep.display())).arg(output);
+    command.arg(format!("--localize-symbols={}", list.display())).arg(output);
     let result = run(&mut command, "relocatable");
-    let _ = std::fs::remove_file(&keep);
+    let _ = std::fs::remove_file(&list);
     result
 }
 

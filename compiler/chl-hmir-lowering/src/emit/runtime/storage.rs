@@ -1,8 +1,8 @@
 use chl_hmir::ty::{HMIRTypeID, aggregate::HMIRBitfield, context::HMIRTypeContext};
 use chl_log::CHLResult;
 use chl_mir::{
-    MIRBindable, MIRBitfieldAccess, MIRInstructionKind, MIRInternalIntrinsic, MIRPlaceID,
-    MIRStoreBitfield, MIRTarget, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
+    MIRBindable, MIRBitfieldAccess, MIRInstructionKind, MIRInternalIntrinsic, MIRStoreBitfield,
+    MIRTarget, MIRTypeID, MIRValue, expr::instruction::MIRInvalidationKind,
 };
 use chl_tokens::TokenRange;
 use chl_util::identifier::CHLIdent;
@@ -13,7 +13,7 @@ use crate::{
     eval::types,
     lower::{global, types::lower_type},
     value::{
-        HMIRValue, HMIRValueKind,
+        self, HMIRValue, HMIRValueKind,
         address::{Addressable, HMIRAddress},
         immediate::HMIRImmValue,
         place::HMIRPlaceID,
@@ -78,15 +78,6 @@ fn declared(
     HMIRValue::new(reference, HMIRAddress::new(place, 0))
 }
 
-fn place(context: &LocalLoweringContext, reference: &HMIRValue) -> Option<MIRPlaceID> {
-    match reference.kind() {
-        HMIRValueKind::Reference(address) if address.offset() == 0 => {
-            Some(context.runtime().place(*address.base()))
-        }
-        _ => None,
-    }
-}
-
 pub fn allocate(
     context: &mut LocalLoweringContext,
     ty: HMIRTypeID,
@@ -127,10 +118,8 @@ pub fn adopt(
         address,
     };
     context.runtime_mut().emit_intrinsic(adopt, span.clone());
-    let target = declared(context, place, ty, span);
-    initialize(context, &target, span);
-
-    Ok(target)
+    initialize(context, place, span);
+    Ok(declared(context, place, ty, span))
 }
 
 pub fn parameter(
@@ -140,34 +129,32 @@ pub fn parameter(
     span: &TokenRange,
 ) -> CHLResult<HMIRValue> {
     let target = allocate(context, ty, name, span)?;
-    let Some(place) = place(context, &target) else {
-        unreachable!("a parameter is allocated as a place")
-    };
-    context.runtime_mut().builder_mut().add_parameter(place);
-    initialize(context, &target, span);
+    let place = value::as_place(&target).expect("a parameter is allocated as a place");
+    let id = context.runtime().place(place);
+    context.runtime_mut().builder_mut().add_parameter(id);
+    initialize(context, place, span);
 
     Ok(target)
 }
 
-pub fn initialize(context: &mut LocalLoweringContext, target: &HMIRValue, span: &TokenRange) {
-    if let Some(place) = place(context, target) {
-        context
-            .runtime_mut()
-            .emit(MIRInstructionKind::Initialize { place }, span.clone());
-    }
+pub fn initialize(context: &mut LocalLoweringContext, target: HMIRPlaceID, span: &TokenRange) {
+    let place = context.runtime().place(target);
+
+    context
+        .runtime_mut()
+        .emit(MIRInstructionKind::Initialize { place }, span.clone());
 }
 
 pub fn invalidate(
     context: &mut LocalLoweringContext,
-    target: &HMIRValue,
+    target: HMIRPlaceID,
     kind: MIRInvalidationKind,
     span: &TokenRange,
 ) {
-    if let Some(place) = place(context, target) {
-        context
-            .runtime_mut()
-            .emit(MIRInstructionKind::Invalidate { place, kind }, span.clone());
-    }
+    let place = context.runtime().place(target);
+    context
+        .runtime_mut()
+        .emit(MIRInstructionKind::Invalidate { place, kind }, span.clone());
 }
 
 pub fn lift(
@@ -182,7 +169,7 @@ pub fn lift(
         HMIRValueKind::Register(register) => {
             MIRBindable::Register(context.runtime().register(*register))
         }
-        HMIRValueKind::Immediate(_) | HMIRValueKind::Application(_) => {
+        HMIRValueKind::Immediate(_) | HMIRValueKind::Application(_) | HMIRValueKind::Quote(_) => {
             unreachable!("a lift reads out of local storage")
         }
     };

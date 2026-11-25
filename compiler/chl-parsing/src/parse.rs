@@ -3,7 +3,7 @@ use chl_hir::ast::{
     function::{HIRFunctionBody, HIRFunctionPrototype},
     global_var::HIRGlobalVariable,
     modifiers::{HIRSymbolNameScheme, LinkageMode},
-    types::{HIRType, HIRTypeKind, HIRTypeLookup},
+    types::HIRTypeKind,
     HIRStmt,
 };
 use chl_log::catalogue::parse::*;
@@ -11,19 +11,25 @@ use chl_log::CHLResult;
 use chl_preparse_data::VisibilityMode;
 use chl_tokens::{
     keyword, operator, punctuator, specifier,
-    token::{OperatorType, PunctuatorType, SpecifierType, TokenKind},
-    TokenIter, TokenRange,
+    token::{SpecifierType, Token, TokenKind},
+    TokenIter,
 };
 use chl_util::identifier::CHLIdent;
 
 use crate::{
-    assert_token_matches, log::parse_point_error, next_kind, parse::{
+    assert_token_matches,
+    log::parse_point_error,
+    parse::{
         expressions::parse_expr,
         functions::try_function_parse,
-        parser::ParserData,
-        statement::parse_stmt,
-        types::{parse_base_mods, parse_initializer, parse_typedef_initializer},
-    }, peek_next_kind, try_next,
+        parser::{LocalName, ParserData},
+        statement::parse_block_item,
+        types::{
+            parse_abstract_type, parse_declaration_head, parse_declarator, parse_typedef_declarator,
+            parse_variable_initializer, DeclaratorKind, TagScope,
+        },
+    },
+    peek_next_kind, try_next,
 };
 
 pub(crate) mod parser;
@@ -57,7 +63,13 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CHLResult<()> {
         keyword!(Typedef) => parse_typedef(data)?,
         keyword!(Comptime) => {
             data.tokens.next();
-            parse_global_expr(data, true)?
+            parse_global_expr(data, DeclarationPrefix::Comptime)?
+        }
+        TokenKind::CompilerIdentifier(attr)
+            if attr == "overwrite" && !data.c_mode && !data.in_include() =>
+        {
+            data.tokens.next();
+            parse_global_expr(data, DeclarationPrefix::Overwrite)?
         }
         punctuator!(Semicolon) => {
             data.tokens.next();
@@ -68,7 +80,7 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CHLResult<()> {
             parse_extern_c_mod(data)?
         }
         specifier!(Public) | specifier!(Private) => parse_access_mods(data)?,
-        _ => parse_global_expr(data, false)?,
+        _ => parse_global_expr(data, DeclarationPrefix::None)?,
     };
 
     Ok(())
@@ -166,7 +178,7 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CHLResult<()> {
     assert_token_matches!(data.tokens, keyword!(Typedef), "'typedef'");
     let start_index = data.tokens.index;
 
-    let (name, ty) = parse_typedef_initializer(data)?;
+    let (name, ty) = parse_typedef_declarator(data)?;
     let range = data.token_range(start_index - 1, data.tokens.index);
 
     let Some(name) = name else {
@@ -179,40 +191,11 @@ pub(crate) fn parse_typedef(data: &mut ParserData) -> CHLResult<()> {
 
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
-    if let HIRTypeKind::Identifier {
-        name: type_name,
-        lookup,
-        args: None,
-    } = &ty.kind
-    {
-        let is_existing_type_alias = *lookup == HIRTypeLookup::Standard
-            || data.ast.definition_stmts.iter().any(|definition| {
-                matches!(
-                    &definition.stmt,
-                    HIRStmt::TypeDefinition {
-                        name: Some(existing),
-                        ..
-                    } if existing == &name
-                )
-            });
-        if type_name.namespace.is_root() && type_name.name == name && is_existing_type_alias {
-            data.add_stmt(HIRStmt::TypeDefinition {
-                symbol_naming: data.naming(LinkageMode::Standard),
-                name: Some(name),
-                visibility: data.visibility,
-                ty: ty.clone(),
-                tag: None,
-                range,
-            });
-            return Ok(());
-        }
-    }
-
     data.add_stmt(HIRStmt::TypeDefinition {
         symbol_naming: data.naming(LinkageMode::Standard),
         name: Some(name),
         visibility: data.visibility,
-        ty: ty.clone(),
+        ty,
         tag: None,
         range,
     });
@@ -224,6 +207,7 @@ fn parse_fn_merge(
     data: &mut ParserData,
     mut prototype: HIRFunctionPrototype,
     inherited_external: bool,
+    overwrite: bool,
 ) -> CHLResult<()> {
     functions::linkage::resolve(data, &mut prototype, true);
     if try_next!(data.tokens, punctuator!(Semicolon)) {
@@ -231,19 +215,30 @@ fn parse_fn_merge(
             prototype.linkage = LinkageMode::Extern;
         }
 
-        data.add_stmt(HIRStmt::FunctionDefinition {
-            prototype,
-            visibility: data.visibility,
-            body: None,
-        });
+        data.add_declaration(
+            HIRStmt::FunctionDefinition {
+                prototype,
+                visibility: data.visibility,
+                body: None,
+            },
+            overwrite,
+        );
     } else {
-        let body = parse_function_body(data)?;
+        let body = data.with_name_scope(|data| {
+            for parameter in &prototype.params {
+                data.note_parameter(parameter);
+            }
+            parse_function_body(data, &prototype)
+        })?;
 
-        data.add_stmt(HIRStmt::FunctionDefinition {
-            prototype,
-            visibility: data.visibility,
-            body: Some(body),
-        });
+        data.add_declaration(
+            HIRStmt::FunctionDefinition {
+                prototype,
+                visibility: data.visibility,
+                body: Some(body),
+            },
+            overwrite,
+        );
     }
 
     Ok(())
@@ -251,7 +246,7 @@ fn parse_fn_merge(
 
 // The names bound by 'type' parameters of the declaration ahead. They are types from the
 // return type onwards, which is written before the parameter list that binds them.
-fn scan_type_binders(data: &ParserData) -> Vec<CHLIdent> {
+fn scan_type_binders(data: &ParserData) -> Vec<(CHLIdent, LocalName)> {
     let mut names = Vec::new();
     let mut depth = 0usize;
 
@@ -272,7 +267,26 @@ fn scan_type_binders(data: &ParserData) -> Vec<CHLIdent> {
                     .get(data.tokens.index + offset + 1)
                     .map(|token| &token.kind)
                 {
-                    names.push(CHLIdent::new(binder.clone()));
+                    names.push((CHLIdent::new(binder.clone()), LocalName::Type));
+                }
+            }
+            keyword!(Hole) if depth > 0 && !data.c_mode && !data.in_include() => {
+                let start = data.tokens.index + offset + 1;
+                if let Some(
+                    [Token {
+                        kind:
+                            punctuator!(OpenParen) | operator!(Comma) | TokenKind::Assignment(None),
+                        ..
+                    }, _, Token {
+                        kind: punctuator!(Colon),
+                        ..
+                    }, Token {
+                        kind: TokenKind::Identifier(name),
+                        ..
+                    }],
+                ) = data.tokens.slice.get(start - 2..start + 2)
+                {
+                    names.push((CHLIdent::new(name.clone()), LocalName::Inferred));
                 }
             }
             _ => {}
@@ -282,195 +296,108 @@ fn scan_type_binders(data: &ParserData) -> Vec<CHLIdent> {
     names
 }
 
-fn parse_global_expr(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
-    let binders = scan_type_binders(data);
-    for binder in &binders {
-        data.note_type_name(binder.clone());
-    }
-
-    let result = parse_global_declaration(data, comptime);
-
-    for binder in &binders {
-        data.unnote_type_name(binder);
-    }
-
-    result
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DeclarationPrefix {
+    None,
+    Comptime,
+    Overwrite,
 }
 
-fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
-    let start = data.tokens.index - usize::from(comptime);
-    let (name, return_type, specifiers) = parse_initializer(data)?;
-    let range = data.token_range(start, data.tokens.index);
+fn parse_global_expr(data: &mut ParserData, prefix: DeclarationPrefix) -> CHLResult<()> {
+    data.with_name_scope(|data| {
+        for (binder, kind) in scan_type_binders(data) {
+            data.note_local_name(binder, kind);
+        }
+        parse_global_declaration(data, prefix)
+    })
+}
+
+fn parse_global_declaration(data: &mut ParserData, prefix: DeclarationPrefix) -> CHLResult<()> {
+    let start = data.tokens.index - usize::from(prefix != DeclarationPrefix::None);
+    let comptime = prefix == DeclarationPrefix::Comptime;
+    let overwrite = prefix == DeclarationPrefix::Overwrite;
+    let (base, specifiers) = parse_declaration_head(data, TagScope::Module)?;
     let linkage = specifiers.linkage;
     let symbol_naming = data.naming(linkage);
-
     let inherited_external = !data.c_mode
         && symbol_naming == HIRSymbolNameScheme::Unmangled
         && linkage == LinkageMode::Standard;
 
-    let Some(name) = name else {
-        // Blank statement consisting on just a type, (i.e. struct [name] { [fields] };)
-
-        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-        return Ok(());
-    };
-
-    if !data.tokens.has_next() {
-        return parse_point_error(
-            &data.tokens,
-            &UNEXPECTED_END,
-            Some("global declaration".into()),
-        );
-    }
-
-    if let Some(prototype) = try_function_parse(
-        data,
-        start,
-        return_type.clone(),
-        name.clone(),
-        comptime,
-        specifiers,
-        symbol_naming,
-    )? {
-        return parse_fn_merge(data, prototype, inherited_external);
-    }
-
-    match next_kind!(data.tokens)? {
-        TokenKind::Assignment(_) => {
-            let initial_value = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-            
-            data.add_stmt(HIRStmt::GlobalVariableDefinition {
-                visibility: data.visibility,
-                variable: HIRGlobalVariable::Standard {
-                    comptime,
-                    name: name.clone(),
-                    ty: return_type.clone(),
-                    is_mutable: true,
-                    linkage,
-                    symbol_name_scheme: symbol_naming,
-                    initializer: Some(initial_value.clone()),
-                    range,
-                },
-            });
-        }
-
-        punctuator!(Semicolon) => {
-            add_global_variable(
-                data,
-                name,
-                return_type.clone(),
-                linkage,
-                symbol_naming,
-                inherited_external,
-                comptime,
-                None,
-                range,
-            );
-        }
-
-        operator!(Comma) => {
-            add_global_variable(
-                data,
-                name,
-                return_type.clone(),
-                linkage,
-                symbol_naming,
-                inherited_external,
-                comptime,
-                None,
-                range,
-            );
-
-            loop {
-                let next_start = data.tokens.index;
-                let (next_name, next_type) = parse_base_mods(data, return_type.clone())?;
-                let next_range = data.token_range(next_start, data.tokens.index);
-                let Some(next_name) = next_name else {
-                    return parse_point_error(
-                        &data.tokens,
-                        &EXPECTED_SYNTAX,
-                        (
-                            "a variable declaration".into(),
-                            Some("after ','".into()),
-                        ),
-                    );
-                };
-                let initializer = if try_next!(data.tokens, TokenKind::Assignment(_)) {
-                    Some(parse_expr(data)?)
-                } else {
-                    None
-                };
-
-                add_global_variable(
-                    data,
-                    next_name,
-                    next_type,
-                    linkage,
-                    symbol_naming,
-                    inherited_external,
-                    comptime,
-                    initializer,
-                    next_range,
-                );
-
-                match next_kind!(data.tokens)? {
-                    TokenKind::Operator(OperatorType::Comma) => {}
-                    TokenKind::Punctuator(PunctuatorType::Semicolon) => break,
-                    _ => {
-                        return parse_point_error(
-                            &data.tokens,
-                            &EXPECTED_SYNTAX,
-                            ("a global separator".into(), None),
-                        );
-                    }
-                }
+    let mut declarator_start = start;
+    loop {
+        let (name, ty) = parse_declarator(data, &base, TagScope::Module, DeclaratorKind::Named)?;
+        let range = data.token_range(declarator_start, data.tokens.index);
+        let Some(name) = name else {
+            if declarator_start == start && !overwrite {
+                assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+                return Ok(());
             }
-        }
-
-        _ => {
+            let (desired, after) = if declarator_start == start {
+                ("a function or global name", "after '@overwrite'")
+            } else {
+                ("a variable declaration", "after ','")
+            };
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
+                (desired.into(), Some(after.into())),
+            );
+        };
+
+        if declarator_start == start {
+            if let Some(prototype) = try_function_parse(
+                data,
+                start,
+                ty.clone(),
+                name.clone(),
+                comptime,
+                specifiers,
+                symbol_naming,
+            )? {
+                return parse_fn_merge(data, prototype, inherited_external, overwrite);
+            }
+        }
+
+        let initializer = parse_variable_initializer(data)?;
+        let explicit_extern = linkage == LinkageMode::Extern && !specifiers.thread_local;
+        if overwrite && !explicit_extern {
+            return crate::log::parse_underline_error(
+                &INVALID_CONTEXT,
                 (
-                    "a global declaration".into(),
-                    None,
+                    "@overwrite".into(),
+                    "a global declaration without plain 'extern' storage".into(),
                 ),
+                &range,
             );
         }
-    }
-
-    Ok(())
-}
-
-fn add_global_variable(
-    data: &mut ParserData,
-    name: CHLIdent,
-    ty: HIRType,
-    linkage: LinkageMode,
-    symbol_naming: HIRSymbolNameScheme,
-    inherited_external: bool,
-    comptime: bool,
-    initializer: Option<HIRExpression>,
-    range: TokenRange,
-) {
-    data.add_stmt(HIRStmt::GlobalVariableDefinition {
-        visibility: data.visibility,
-        variable: HIRGlobalVariable::Standard {
-            comptime,
-            name,
-            ty,
-            is_mutable: true,
-            linkage: if inherited_external {
-                LinkageMode::Extern
-            } else {
-                linkage
+        data.add_declaration(
+            HIRStmt::GlobalVariableDefinition {
+                visibility: data.visibility,
+                variable: HIRGlobalVariable::Standard {
+                    comptime,
+                    name,
+                    ty,
+                    is_mutable: true,
+                    explicit_extern,
+                    linkage: if inherited_external && initializer.is_none() {
+                        LinkageMode::Extern
+                    } else {
+                        linkage
+                    },
+                    symbol_name_scheme: symbol_naming,
+                    initializer,
+                    range,
+                },
             },
-            symbol_name_scheme: symbol_naming,
-            initializer,
-            range,
-        },
-    });
+            overwrite,
+        );
+
+        if !try_next!(data.tokens, operator!(Comma)) {
+            assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
+            return Ok(());
+        }
+        declarator_start = data.tokens.index;
+    }
 }
 
 pub(crate) fn parse_block(data: &mut ParserData) -> CHLResult<HIRExpression> {
@@ -491,16 +418,19 @@ fn parse_block_kind(data: &mut ParserData, kind: HIRBlockKind) -> CHLResult<HIRE
 }
 
 fn parse_block_statements(data: &mut ParserData) -> CHLResult<Box<[HIRExpression]>> {
-    let mut body = Vec::new();
-
-    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        body.push(parse_stmt(data)?);
-    }
-
-    Ok(body.into())
+    data.with_name_scope(|data| {
+        let mut body = Vec::new();
+        while !try_next!(data.tokens, punctuator!(CloseBrace)) {
+            body.push(parse_block_item(data)?);
+        }
+        Ok(body.into())
+    })
 }
 
-fn parse_function_body(data: &mut ParserData) -> CHLResult<HIRFunctionBody> {
+fn parse_function_body(
+    data: &mut ParserData,
+    prototype: &HIRFunctionPrototype,
+) -> CHLResult<HIRFunctionBody> {
     let start_index = data.tokens.index;
     if try_next!(data.tokens, punctuator!(OpenBrace)) {
         let statements = parse_block_statements(data)?;
@@ -518,6 +448,17 @@ fn parse_function_body(data: &mut ParserData) -> CHLResult<HIRFunctionBody> {
             "';' after function expression"
         );
         return Ok(HIRFunctionBody::Expression(expression));
+    }
+
+    if !data.c_mode
+        && prototype.comptime
+        && !prototype.noreturn
+        && matches!(prototype.return_type.kind, HIRTypeKind::Universe)
+        && try_next!(data.tokens, TokenKind::Assignment(None))
+    {
+        let ty = parse_abstract_type(data, TagScope::Alias)?;
+        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';' after type alias");
+        return Ok(HIRFunctionBody::TypeAlias(ty));
     }
 
     parse_point_error(

@@ -1,0 +1,8 @@
+import shared::base;
+import detail;
+
+public:
+
+int square(int value) {
+    return detail::product(value, value) + shared::base::offset();
+}

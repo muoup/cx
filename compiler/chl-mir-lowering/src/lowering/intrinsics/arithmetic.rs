@@ -3,9 +3,8 @@ use chl_lmir::{
     LMIRCoercionType, LMIRFloatBinOp, LMIRFloatUnOp, LMIRInstructionKind, LMIRIntBinOp,
     LMIRIntUnOp, LMIRPtrBinOp,
 };
-use chl_mir::ty::interface::MTRegistry;
-use chl_mir::ty::layout::calculate_type_layout;
 use chl_mir::immediate::MIRImmediate;
+use chl_mir::ty::interface::MTRegistry;
 use chl_mir::{
     MIRFloatIntrinsic, MIRIntIntrinsic, MIRIntType, MIRPtrIntrinsic, MIRTypeKind, MIRValue,
 };
@@ -231,13 +230,8 @@ pub(super) fn pointer(context: &mut FunctionContext<'_, '_>, op: &MIRPtrIntrinsi
             out,
             lhs,
             rhs,
-            element_ty,
-        } => {
-            let stride = calculate_type_layout(context.types(), *element_ty)
-                .size()
-                .max(1);
-            (out, lhs, rhs, LMIRPtrBinOp::DIFF, stride)
-        }
+            stride,
+        } => (out, lhs, rhs, LMIRPtrBinOp::DIFF, *stride),
         P::Add { out, ptr, offset } => (out, ptr, offset, LMIRPtrBinOp::ADD, 1),
         P::Sub { out, ptr, offset } => (out, ptr, offset, LMIRPtrBinOp::SUB, 1),
         P::Eq { out, lhs, rhs } => (out, lhs, rhs, LMIRPtrBinOp::EQ, 1),

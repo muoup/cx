@@ -20,9 +20,9 @@ use crate::{
     env::{HMIREnvironment, resolver::demand},
     eval::{
         symbol,
-        types::{self, comptime_only, name, validate},
+        types::{self, comptime_only, validate},
     },
-    log::{hmir_error, log_hmir_error},
+    log::hmir_error,
     lower::declaration,
 };
 
@@ -56,7 +56,7 @@ pub(crate) fn lower_prototype(
     let linkage = declaration::linkage(source);
     let value = symbol::value(env, def)?;
 
-    if comptime_only(env, env.referent(value.ty())) {
+    if !types::runtime_function(env, env.referent(value.ty())) {
         let source = env.symbols().resolve_definition(def);
         if let Some(HMIRDefKind::Function(function)) = declaration::canonical(source).kind()
             && function.signature().stage() == HMIRFunctionStage::Runtime
@@ -88,7 +88,17 @@ pub(crate) fn lower_type(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CHLResult<MIRTypeID> {
-    let underlying = settle(env, ty)?;
+    demand::force(env, ty)?;
+    types::require_runtime(env, ty, span)?;
+    lower_representation(env, ty, span)
+}
+
+pub(super) fn lower_representation(
+    env: &mut HMIREnvironment,
+    ty: HMIRTypeID,
+    span: &TokenRange,
+) -> CHLResult<MIRTypeID> {
+    let underlying = env.underlying(ty);
     let metadata = lower_metadata(env, ty);
     let base = match env.resolver().lowered_type(underlying) {
         Some(id) => id,
@@ -100,11 +110,6 @@ pub(crate) fn lower_type(
         env.module_mut().name_type(id, name);
     }
     Ok(id)
-}
-
-fn settle(env: &mut HMIREnvironment, ty: HMIRTypeID) -> CHLResult<HMIRTypeID> {
-    demand::force(env, ty)?;
-    Ok(env.underlying(ty))
 }
 
 // C qualifies the elements of a qualified array rather than the array itself
@@ -176,9 +181,6 @@ fn lower_underlying(
     ty: HMIRTypeID,
     span: &TokenRange,
 ) -> CHLResult<MIRTypeID> {
-    if comptime_only(env, ty) {
-        return log_hmir_error(span, &typecheck::COMPTIME_ONLY_TYPE, name(env, ty));
-    }
     validate(env, env.resolve_type_id(ty))?;
 
     let kind = match env.resolve_kind(ty).clone() {
@@ -202,7 +204,9 @@ fn lower_underlying(
             let debug_name = env.resolve_type_id(ty).debug_name().map(str::to_string);
             return Ok(lower_named(env, ty, undefined, debug_name));
         }
-        HMIRTypeKind::Nominal(_) => unreachable!("an underlying type is not nominal"),
+        HMIRTypeKind::Nominal { .. } | HMIRTypeKind::Strong { .. } => {
+            unreachable!("not a representation type")
+        }
 
         HMIRTypeKind::Void | HMIRTypeKind::Unreachable => MIRTypeKind::Void,
         HMIRTypeKind::Type | HMIRTypeKind::Staged(_) | HMIRTypeKind::Dependent => {
@@ -220,20 +224,26 @@ fn lower_underlying(
             ty: mir_float(float.width()),
         },
         HMIRTypeKind::PointerTo(inner) => MIRTypeKind::PointerTo {
-            inner: lower_type(env, inner, span)?,
+            inner: lower_pointee(env, inner, span)?,
         },
         HMIRTypeKind::ReferenceTo { inner, .. } => MIRTypeKind::MemoryReference {
-            inner: lower_type(env, inner, span)?,
+            inner: lower_pointee(env, inner, span)?,
         },
         HMIRTypeKind::Array { element, length } => MIRTypeKind::Array {
             length: length as usize,
             inner: lower_type(env, element, span)?,
         },
-        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => MIRTypeKind::Undefined(MIRUndefined::Array {
-            element: lower_type(env, element, span)?,
-            flexible: false,
-        }),
-        HMIRTypeKind::Builtin { name, size, alignment } => MIRTypeKind::Builtin {
+        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
+            MIRTypeKind::Undefined(MIRUndefined::Array {
+                element: lower_type(env, element, span)?,
+                flexible: false,
+            })
+        }
+        HMIRTypeKind::Builtin {
+            name,
+            size,
+            alignment,
+        } => MIRTypeKind::Builtin {
             name,
             layout: MIRTypeLayout::new(size, alignment),
         },
@@ -245,6 +255,18 @@ fn lower_underlying(
     let id = env.module_mut().intern_type(MIRType::new(kind));
     env.resolver_mut().cache_lowered(ty, id);
     Ok(id)
+}
+
+fn lower_pointee(
+    env: &mut HMIREnvironment,
+    inner: HMIRTypeID,
+    span: &TokenRange,
+) -> CHLResult<MIRTypeID> {
+    demand::force(env, inner)?;
+    if comptime_only(env, inner) && !types::runtime_function(env, inner) {
+        return Ok(env.module_mut().intern_type(MIRType::new(MIRTypeKind::Void)));
+    }
+    lower_representation(env, inner, span)
 }
 
 // Named types keep their identity, so two with the same shape are never interned together

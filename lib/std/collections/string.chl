@@ -1,0 +1,107 @@
+import std::{optional, panic, collections::span, collections::vector, memory::allocation} as std;
+
+#include <string.h>
+
+public:
+
+comptime type string(std::allocator A = std::heap_allocator)
+    => @strong std::vector(u8, .A = A);
+
+string(.A = A) string::new(comptime std::allocator A = std::heap_allocator) {
+    auto bytes = std::vector::new(u8, .A = A);
+    std::vector::push(bytes, (u8) 0);
+    return (string(.A = A)) move bytes;
+}
+
+string(.A = A) string::clone(const string(.A = _: A)& this)
+    => string::from_bytes(.A = A, string::as_const_bytes(this));
+
+void string::drop(string(.A = _: A) this)
+    => std::vector::drop((std::vector(u8, .A = A)) move this);
+
+string(.A = A) string::from_str(comptime std::allocator A = std::heap_allocator, const _str& text)
+    => string::from_bytes(.A = A, str::as_const_bytes(text));
+
+string(.A = A) string::from_bytes(
+    comptime std::allocator A = std::heap_allocator, std::span(const u8) bytes
+) {
+    string(.A = A) text = string::new(.A = A);
+    string::append_span(text, bytes);
+    return move text;
+}
+
+usize string::length(const string(.A = _)& this) => this.length - 1;
+
+std::span(u8) string::as_bytes(string(.A = _)& this)
+    => std::span::new((u8*) this.data, string::length(this));
+
+std::span(const u8) string::as_const_bytes(const string(.A = _)& this)
+    => std::span::new((const u8*) this.data, string::length(this));
+
+std::vector(u8, .A = A) string::into_bytes(string(.A = _: A) this) {
+    auto bytes = (std::vector(u8, .A = A)) move this;
+    bytes.length--;
+    return move bytes;
+}
+
+const _str& string::as_str(const string(.A = _)& this) {
+    const u8* data = this.data;
+    for (usize i = 0; i < string::length(this); i++) {
+        if (data[i] == 0) std::panic("String contains a zero byte");
+    }
+    return @unsafe((const _str&) (const char*) data);
+}
+
+void string::append_str(string(.A = _)& this, const _str& text)
+    => string::append_span(this, str::as_const_bytes(text));
+
+void string::append_span(string(.A = _: A)& this, std::span(const u8) bytes) {
+    if (bytes.length == 0) return;
+    const usize old_size = this.length;
+    if (bytes.length > (usize) -1 - old_size) std::panic("String length overflow");
+
+    const usize offset = (usize) bytes.data - (usize) this.data;
+    bool aliases = offset < old_size;
+    if (aliases && bytes.length > old_size - offset) std::panic("Invalid string source span");
+
+    auto& buffer = underlying(this);
+    const usize size = old_size + bytes.length;
+    if (size > buffer.capacity) {
+        usize capacity = buffer.capacity <= ((usize) -1) / 2 ? buffer.capacity * 2 : size;
+        std::vector::reserve(buffer, capacity < size ? size : capacity);
+    }
+
+    u8* data = buffer.data;
+    const u8* source = aliases ? data + offset : bytes.data;
+    memmove(data + old_size - 1, source, bytes.length);
+    data[size - 1] = 0;
+    buffer.length = size;
+}
+
+void string::append_byte(string(.A = _)& this, u8 byte)
+    => string::append_span(this, std::span::new((const u8*) &byte, 1));
+
+bool string::equals(const string(.A = _)& this, const string(.A = _)& other)
+    => std::span::equals(string::as_const_bytes(this), string::as_const_bytes(other));
+
+string(.A = A) str::substring(
+    comptime std::allocator A = std::heap_allocator, const _str& this, usize start, usize end
+) {
+    auto bytes = str::as_const_bytes(this);
+    if (start > end || end > bytes.length) std::panic("Invalid substring range");
+    return string::from_bytes(.A = A, std::span::new(bytes.data + start, end - start));
+}
+
+bool str::equals(const _str& this, const _str& other) => strcmp(this, other) == 0;
+
+usize str::length(const _str& this) => strlen(this);
+
+std::span(u8) str::as_bytes(_str& this) => std::span::new((u8*) this, str::length(this));
+
+std::span(const u8) str::as_const_bytes(const _str& this)
+    => std::span::new((const u8*) this, str::length(this));
+
+private:
+
+std::vector(u8, .A = A)& underlying(string(.A = _: A)& this)
+    => *(std::vector(u8, .A = A)*) &this;

@@ -15,6 +15,7 @@ use crate::{
         address::{Addressable, HMIRAddress},
         immediate::{HMIRImmValue, HMIRImmediate},
         place::HMIRPlaceID,
+        staged::QuoteRef,
     },
 };
 
@@ -34,6 +35,11 @@ pub fn int(env: &HMIREnvironment, value: i128, ty: HMIRTypeID) -> HMIRValue {
 pub fn float(env: &HMIREnvironment, value: f64, ty: HMIRTypeID) -> HMIRValue {
     let value = comptime::float::round(value, types::float_type(env, ty).width());
     HMIRValue::new(ty, HMIRImmValue::Float(FloatWrapper::from(value)))
+}
+
+pub fn string(ty: HMIRTypeID, value: String) -> HMIRValue {
+    let address = HMIRAddress::new(Addressable::Literal(value), 0);
+    HMIRValue::new(ty, HMIRImmValue::Address(address))
 }
 
 pub fn as_type(value: &HMIRValue) -> Option<HMIRTypeID> {
@@ -63,6 +69,13 @@ fn as_addressable(value: &HMIRValue) -> Option<&Addressable> {
         HMIRValueKind::Immediate(HMIRImmValue::Address(address)) if address.offset() == 0 => {
             Some(address.base())
         }
+        _ => None,
+    }
+}
+
+pub fn as_string(value: &HMIRValue) -> Option<&str> {
+    match as_addressable(value)? {
+        Addressable::Literal(text) => Some(text),
         _ => None,
     }
 }
@@ -140,11 +153,11 @@ pub struct HMIRValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HMIRValueKind {
-    /// Well-formed representation of a full value in any context, which is the form a comptime evaluation
-    /// converges to when it hands its value back to runtime
+    /// Well-formed representation of a full value in any context
     Immediate(HMIRImmValue),
 
     Application(HMIRApplication<HMIRValue>),
+    Quote(QuoteRef<HMIRValue>),
 
     /// An address into storage local to the function evaluating it, whether runtime or comptime; it is never
     /// well-formed outside of that function, so a comptime value holding one cannot converge

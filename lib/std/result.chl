@@ -1,65 +1,90 @@
+import std::panic as std;
+
 public:
 
-comptime type result(comptime type T, comptime type Err) =>
-    enum union : @copy_traits(T) {
-        err :: Err,
-        ok :: T
-    };
-    
-bool result::is_ok(comptime type T = _, result(T)& this) {
+comptime type result(comptime type T, comptime type Err) {
+    type traits = @type.is_nodrop(T) || (!@type.is_nodrop(Err) && @type.is_nocopy(T)) ? T : Err;
+    if (@type.is_unsafe_move(T) || @type.is_unsafe_move(Err)) {
+        return enum union : @copy_traits(traits), @unsafe_move { err :: Err, ok :: T };
+    }
+    return enum union : @copy_traits(traits) { err :: Err, ok :: T };
+}
+
+comptime ^result(T, Err) result::if_then_else(
+    type T = _, type Err = _, ^bool condition, ^T value, ^Err error
+) => emit .{
+    if (condition) yield ok_branch(T, Err, value);
+    yield err_branch(T, Err, error);
+};
+
+bool result::is_ok(comptime type T = _, comptime type Err = _, result(T, Err)& this) {
     return this is ok(_);
 }
 
-bool result::is_err(comptime type T = _, result(T)& this) {
-    return this is err();
+bool result::is_err(comptime type T = _, comptime type Err = _, result(T, Err)& this) {
+    return this is err(_);
+}
+
+void result::drop_with(
+    result(_: T, _: Err) this,
+    comptime fn drop_ok(^T) -> ^void,
+    comptime fn drop_err(^Err) -> ^void,
+) {
+    match (move this) {
+        ok(auto value) => move value |> drop_ok(),
+        err(auto value) => move value |> drop_err()
+    }
 }
 
 comptime ^result(U, Err) result::map(
-    comptime type T = _, 
-    comptime Err = _, 
-    comptime type U = _, 
-    ^result(T, Err) this, fn func(^T) -> ^U
+    comptime type U = _,
+    ^result(_: T, _: Err) this, fn func(^T) -> ^U
 ) => emit match (this) {
         ok(auto value) => _::ok(func(emit move value)),
         err(auto err) => _::err(move err),
     };
 
-T result::unwrap(comptime type T = _, comptime type Err = _, opt(T, Err) this) {
-    match (move this) {
-        ok(auto val) => return move val,
-        err(auto err) => {
-            std::panic("Called `result::unwrap()` on an `Err` value");
-        }
-    }
-}
+T result::unwrap(comptime type T = _, comptime type Err = _, result(T, Err) this)
+where pre: (!@type.is_nodrop(Err))
+=> move this |> result::expect("Called `result::unwrap()` on an `Err` value");
 
-comptime ^T result::unwrap_or(type T = _, type Err = _, ^result(T, Err) self, ^T default_value) 
+comptime ^T result::unwrap_or(type T = _, type Err = _, ^result(T, Err) self, ^T default_value)
 where
     pre: (!@type.is_nodrop(Err))
-=> emit match (self) {
+    => emit match (self) {
         ok(auto val) => move val,
         err(auto err) => default_value,
     };
 
-comptime ^T result::expect(type T = _, type Err = _, ^result(T, Err) self, ^_str& error)
-where
-    pre: (!@type.is_nodrop(Err))
+comptime ^T result::expect(^result(_: T, _) self, ^_str& error)
     => emit match (self) {
-        some(auto value) => move value,
-        none(auto err) => std::panic(error)
-    };
-    
-comptime ^T result::try(type T = _, type Err = _, ^result(T, Err) self) 
-    => emit match (self) {
-        some(auto value) => move value,
-        none() => return _::none(),
+        ok(auto value) => move value,
+        err(auto err) => std::panic(error)
     };
 
-comptime ^T result::try_or(type T = _, type Err = _, ^result(T, Err) self, fn on_err(^Err) -> ^void)
+comptime ^T result::try(^result(_: T, _) self)
     => emit match (self) {
-        some(auto value) => move value,
-        none(auto err) => {
-            on_none(emit move err);
-            return _::none();
+        ok(auto value) => move value,
+        err(auto err) => return _::err(move err),
+    };
+
+comptime ^T result::try_or(^result(_: T, _) self, ^void on_err)
+    => emit match (self) {
+        ok(auto value) => move value,
+        err(auto err) => {
+            on_err;
+            return _::err(move err);
         }
     };
+
+private:
+
+comptime ^result(T, Err) ok_branch(type T, type Err, ^T value) {
+    if (@type.equal(T, void)) return emit .{ value; yield _::ok(); };
+    return emit _::ok(value);
+}
+
+comptime ^result(T, Err) err_branch(type T, type Err, ^Err error) {
+    if (@type.equal(Err, void)) return emit .{ error; yield _::err(); };
+    return emit _::err(error);
+}

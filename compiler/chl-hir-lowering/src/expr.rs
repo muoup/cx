@@ -12,7 +12,7 @@ use chl_hir::ast::expression::{
 };
 use chl_hir::ast::types::HIRType;
 use chl_hmir::{
-    HMIRAggregateOp, HMIRControlOp, HMIROwnershipOp,
+    HMIRAggregateOp, HMIRControlOp,
     expr::{
         HMIRExprID, HMIRExprKind, literal::HMIRLiteral,
         op::{HMIRMemberStep, HMIRTypeOp},
@@ -67,6 +67,7 @@ pub(crate) fn lower_expr<'a>(
         HIRExprKind::Identifier { name } => lower_identifier(context, name, span)?,
         HIRExprKind::Type(ty) => lower_type(context, ty)?,
         HIRExprKind::Hole => context.hole(span),
+        HIRExprKind::HoleBinding(name) => context.bind_parameter_hole(name, span)?,
         HIRExprKind::ScopeAccess { base, member } => {
             let base = lower_scope_base(context, base)?;
             let member = member.clone();
@@ -218,14 +219,6 @@ pub(crate) fn lower_expr<'a>(
             context.control(HMIRControlOp::Yield(value), span)
         }
 
-        HIRExprKind::Leak { expr: inner } => {
-            let inner = lower_expr(context, inner)?;
-            context.ownership(HMIROwnershipOp::Leak(inner), span)
-        }
-        HIRExprKind::Copy { expr: inner } => {
-            let inner = lower_expr(context, inner)?;
-            context.ownership(HMIROwnershipOp::Copy(inner), span)
-        }
         HIRExprKind::Reify { signature, value } => lower_reify(context, signature, value, span)?,
         HIRExprKind::Intrinsic { path, args } => lower_intrinsic(context, path, args, span)?,
         HIRExprKind::NamedArgument { .. } => {
@@ -234,10 +227,6 @@ pub(crate) fn lower_expr<'a>(
                 &typecheck::INVALID_CONTEXT,
                 ("a named argument".into(), "anything but a call".into()),
             );
-        }
-        HIRExprKind::Adopt { expr: inner } => {
-            let inner = lower_expr(context, inner)?;
-            context.ownership(HMIROwnershipOp::Adopt(inner), span)
         }
         HIRExprKind::Unpack {
             expr: inner,
@@ -419,7 +408,7 @@ pub(crate) fn lower_quote<'a>(
             let params = params
                 .iter()
                 .zip(types)
-                .map(|(param, ty)| this.declare(Some(&param.name), ty, false, span))
+                .map(|(param, ty)| this.declare(Some(&param.name), ty, false, &param.range))
                 .collect();
             let body = lower_expr(this, body)?;
 

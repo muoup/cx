@@ -1,0 +1,33 @@
+import std::collections::span as std;
+
+#include <stdio.h>
+
+public extern "C": int printf(const char *__restrict format, ...);
+
+public:
+
+///
+/// Writes the provided C string to stdout
+///
+void print(const _str& s) {
+    fputs(s, stdout);
+}
+
+///
+/// Writes the provided C string followed by a newline to stdout
+///
+void println(const _str& s) {
+    puts(s);
+}
+
+///
+/// Writes the provided ASCII character to stdout
+///
+void print_char(i32 c) {
+    putchar(c);
+}
+
+usize print_span(std::span(const u8) bytes) {
+    if (bytes.length == 0) return 0;
+    return fwrite(bytes.data, 1, bytes.length, stdout);
+}

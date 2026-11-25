@@ -68,10 +68,17 @@ fn handle_include_impl(
     } {
         Some(path) => path,
         None => {
-            let frame = context.current_frame();
-            return frame
-                .cursor_view()
-                .log_error(file_name_start, &INCLUDE_NOT_FOUND, file_name);
+            let inner = &file_name[1..file_name.len() - 1];
+            let unbuilt = context
+                .includes
+                .iter()
+                .find_map(|root| root.unbuilt_library(inner))
+                .map(str::to_string);
+            let view = context.current_frame().cursor_view();
+            return match unbuilt {
+                Some(library) => view.log_error(file_name_start, &UNBUILT_INCLUDE, (file_name, library)),
+                None => view.log_error(file_name_start, &INCLUDE_NOT_FOUND, file_name),
+            };
         }
     };
 

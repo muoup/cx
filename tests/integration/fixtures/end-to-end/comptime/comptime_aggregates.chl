@@ -1,0 +1,131 @@
+#include <stdio.h>
+
+struct Policy {
+    fn apply(^int) -> ^int;
+    fn alternate(^int) -> ^int;
+    type item;
+    unsigned int flag : 1;
+    int amount;
+};
+
+struct Wrapper {
+    Policy policies[2];
+};
+
+enum union Choice {
+    none :: void,
+    some :: Policy
+};
+
+struct ValueOnly : @comptime {
+    int value;
+};
+
+union Either : @comptime {
+    int value;
+    Policy policy;
+};
+
+struct StaticPair {
+    char first;
+    int second;
+};
+
+int increment(int value) {
+    return value + 1;
+}
+
+comptime type Increment = @type.type_of(increment);
+comptime type Bare = fn(int) -> int;
+
+struct FunctionField {
+    Increment callback;
+};
+
+comptime Policy make_policy(int amount) {
+    return {
+        .apply = |auto value| => .{
+            int operand = value;
+            yield operand + amount;
+        },
+        .alternate = |auto value| => value,
+        .item = int,
+        .amount = amount
+    };
+}
+
+comptime int field_offset() {
+    StaticPair value = { 1, 2 };
+    char* base = (char*)&value;
+    char* second = (char*)&value.second;
+    return (int)(second - base);
+}
+
+comptime int from_choice(Policy policy) {
+    if (Choice::none() is some(auto absent)) return 0;
+    Choice choice = Choice::some(policy);
+    return match (choice) {
+        none() => 0,
+        some(auto found) => found.apply(10),
+    };
+}
+
+comptime int slots() {
+    Policy rows[2][2] = { { make_policy(1), make_policy(2) }, { make_policy(3), make_policy(4) } };
+    Policy* second_row = rows[1];
+    *(second_row + 1) = make_policy(8);
+    int first = rows[0][1].apply(10);
+    int second = 1[second_row].apply(10);
+    Policy* policy = &rows[1][1];
+    char* apply = (char*)&(*policy).apply;
+    auto alternate = &(*policy).alternate;
+    *alternate = (*policy).apply;
+    (*policy).flag = 1;
+    int updated = (*policy).alternate(10);
+    *(int*)(apply + __builtin_offsetof(Policy, amount)) = 7;
+    return (char*)alternate - apply == 1
+        && apply - (char*)&rows == 3 * sizeof(Policy)
+        && updated == 18 && (*policy).flag == 1 && (*policy).amount == 7
+        ? first + second + (int)(policy - second_row) : 0;
+}
+
+comptime int stored_functions() {
+    Bare callbacks[10];
+    callbacks[1] = increment;
+    return callbacks[1](9);
+}
+
+int function_stride() {
+    return (int)((&increment + 2) - &increment);
+}
+
+comptime int folded_stride = function_stride();
+comptime Wrapper policies = { { make_policy(3), make_policy(5) } };
+comptime ValueOnly scalar = { 7 };
+comptime int projected = scalar.value;
+comptime int selected = from_choice(policies.policies[1]);
+comptime Either either = { .policy = make_policy(7) };
+comptime int from_union = either.policy.apply(10);
+
+int apply(comptime Policy policy, int value) {
+    return policy.apply(emit value);
+}
+
+int main() {
+    Increment reference = increment;
+    fn* pointer(int) -> int = reference;
+    FunctionField field = { reference };
+    Policy* opaque = 0;
+    printf("%d %d %d\n", @type.c_sizeof(Increment) == @type.c_sizeof(void*),
+        field.callback(9) == 10, opaque == 0);
+    printf("%zu %zu %zu %zu %zu\n", @type.c_sizeof(void), sizeof(increment),
+        @type.c_sizeof(Bare[10]), @type.c_sizeof(Policy[2][3]), @type.c_sizeof(Wrapper));
+    printf("%d %d %d %d %d %d %d\n",
+        apply(policies.policies[0], 20), apply(policies.policies[1], 20),
+        selected, projected, from_union, pointer(30),
+        field_offset() == __builtin_offsetof(StaticPair, second));
+    printf("%d %d %d %d\n", slots(), stored_functions(), folded_stride, function_stride());
+    printf("%zu %zu %zu %zu\n", @type.align_of(Policy), __builtin_offsetof(Policy, amount),
+        __builtin_offsetof(Wrapper, policies[1].alternate), @type.c_sizeof(ValueOnly));
+    return 0;
+}

@@ -8,15 +8,19 @@ use chl_log::{
     catalogue::{mir, typecheck},
     error::CHLError,
 };
-use chl_mir::ty::layout::{MIRTypeLayout, calculate_field_layout, calculate_type_layout};
 use chl_tokens::TokenRange;
 
 use crate::{
     emit::comptime::int,
-    env::{function::LocalLoweringContext, resolver::demand},
+    env::{
+        function::{
+            LocalLoweringContext,
+            memory::{layout, member_layout},
+        },
+        resolver::demand,
+    },
     eval::{EvalResult, aggregate, deduce, eval_comptime, flow::Evaluation, types},
     log::hmir_error,
-    lower::types::lower_type,
     value::{self, HMIRValue},
 };
 
@@ -37,11 +41,14 @@ pub(super) fn eval_type_op(
     let (span, op) = (span.clone(), op.clone());
 
     subject.and_then(context, body, move |context, body, ty| {
+        if !demand::complete(context.env_mut(), ty)? {
+            return Err(incomplete_type(context, ty, &span).into());
+        }
         let width = HMIRIntWidth::pointer_width(context.env().architecture());
         let size_type = types::int(context.env_mut(), width, false, &span);
         let value = match &op {
-            HMIRTypeOp::SizeOf(_) => layout(context, ty, &span)?.size() as i128,
-            HMIRTypeOp::AlignOf(_) => layout(context, ty, &span)?.alignment() as i128,
+            HMIRTypeOp::SizeOf(_) => layout(context.env_mut(), ty, &span)?.size() as i128,
+            HMIRTypeOp::AlignOf(_) => layout(context.env_mut(), ty, &span)?.alignment() as i128,
             HMIRTypeOp::OffsetOf { member, .. } => {
                 offset(context, body, ty, member, size_type, &span)?
             }
@@ -55,18 +62,6 @@ pub(super) fn eval_type_op(
     })
 }
 
-fn layout(
-    context: &mut LocalLoweringContext,
-    ty: HMIRTypeID,
-    span: &TokenRange,
-) -> CHLResult<MIRTypeLayout> {
-    if !demand::complete(context.env_mut(), ty)? {
-        return Err(incomplete_type(context, ty, span));
-    }
-    let ty = lower_type(context.env_mut(), ty, span)?;
-    Ok(calculate_type_layout(context.env().module(), ty))
-}
-
 fn offset(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
@@ -75,9 +70,6 @@ fn offset(
     size_type: HMIRTypeID,
     span: &TokenRange,
 ) -> CHLResult<i128> {
-    if !demand::complete(context.env_mut(), current)? {
-        return Err(incomplete_type(context, current, span));
-    }
     let mut offset = 0i128;
     for step in member {
         match step {
@@ -102,7 +94,7 @@ fn offset(
                     );
                     return Err(hmir_error(index_span, &typecheck::TYPE_MISMATCH, mismatch));
                 };
-                let element_size = layout(context, element, span)?.size() as i128;
+                let element_size = layout(context.env_mut(), element, span)?.size() as i128;
                 let value = eval_comptime(context, body, *index, Some(size_type))?;
                 let (HMIRTypeKind::Int(int_type), Some(value)) = (
                     context.env().resolve_kind(value.ty()),
@@ -143,10 +135,10 @@ fn field(
     }
 
     let field_ty = *field.ty();
-    let owner = lower_type(context.env_mut(), owner, span)?;
-    let layout =
-        calculate_field_layout(context.env().module(), owner, index).ok_or_else(missing)?;
-    Ok((field_ty, layout.offset()))
+    Ok((
+        field_ty,
+        member_layout(context.env_mut(), owner, index, span)?.0,
+    ))
 }
 
 fn incomplete_type(context: &LocalLoweringContext, ty: HMIRTypeID, span: &TokenRange) -> CHLError {

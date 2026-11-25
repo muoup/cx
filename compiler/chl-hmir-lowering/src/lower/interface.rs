@@ -5,11 +5,14 @@ use chl_hir::ast::{
 use chl_hmir::{HMIRDefKind, HMIRFunctionStage, HMIRUnit};
 use chl_log::{CHLResult, catalogue::typecheck};
 use chl_mir::unit::interface::MIRCType;
-use chl_util::linkage::LinkageMode;
+use chl_util::{identifier::CHLIdent, linkage::LinkageMode};
 
 use crate::{
     env::HMIREnvironment,
-    eval::{symbol, types::comptime_only},
+    eval::{
+        symbol,
+        types::{comptime_only, runtime_function},
+    },
     log::hmir_error,
     lower::{declaration, global, types},
     value,
@@ -33,7 +36,7 @@ pub(crate) fn collect(env: &mut HMIREnvironment, unit: &HMIRUnit) -> CHLResult<(
                     continue;
                 }
                 if function.signature().stage() != HMIRFunctionStage::Runtime
-                    || declaration::needs_specialization(function)
+                    || declaration::needs_specialization(&*symbol::function(env, *id)?)
                 {
                     return Err(hmir_error(
                         span,
@@ -56,14 +59,19 @@ pub(crate) fn collect(env: &mut HMIREnvironment, unit: &HMIRUnit) -> CHLResult<(
             Some(HMIRDefKind::ComptimeGlobal(global)) if global.declares_type() => {
                 let value = symbol::value(env, *id)?;
                 let ty = value::as_type(&value).expect("a type declaration evaluates to a type");
-                if comptime_only(env, ty) {
+                let function = runtime_function(env, ty);
+                if comptime_only(env, ty) && !function {
                     return Err(hmir_error(
                         span,
                         &typecheck::INVALID_CONTEXT,
                         ("a compile-time type".into(), "a C interface".into()),
                     ));
                 }
-                let ty = types::lower_type(env, ty, span)?;
+                let ty = if function {
+                    types::lower_representation(env, ty, span)?
+                } else {
+                    types::lower_type(env, ty, span)?
+                };
                 env.module_mut().c_interface.types.push(MIRCType {
                     name: declaration::type_name(def),
                     ty,
@@ -82,10 +90,22 @@ pub(crate) fn collect(env: &mut HMIREnvironment, unit: &HMIRUnit) -> CHLResult<(
                         ),
                     ));
                 };
+                let mut name = declaration::type_name(def);
+                if let Some(scope) = def.name().namespace.clone().strip_prefix(unit.namespace())
+                    && !scope.is_root()
+                {
+                    let mut parts = scope
+                        .segments()
+                        .iter()
+                        .map(CHLIdent::as_str)
+                        .collect::<Vec<_>>();
+                    parts.push(name.as_str());
+                    name = CHLIdent::new(parts.join("_"));
+                }
                 env.module_mut()
                     .c_interface
                     .constants
-                    .push((declaration::type_name(def), constant));
+                    .push((name, constant));
             }
             _ => {}
         }

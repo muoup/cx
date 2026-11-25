@@ -1,0 +1,8 @@
+comptime type ignore(type T) = int;
+
+int use_alias(comptime type T = _, ignore(T) value) => value;
+
+int main() {
+    ignore(int) value = 0;
+    return use_alias(value);
+}

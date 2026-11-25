@@ -113,6 +113,7 @@ const config: Config = {
       copyright: `© ${new Date().getFullYear()} Zachary Verlardi`,
     },
     prism: {
+      additionalLanguages: ['lua'],
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
     },

@@ -1,9 +1,9 @@
-import std::vector;
+import std::collections::vector;
 
 int main() {
-    std::vector::vector(int) ints = std::vector::vector::new(int);
-    std::vector::vector(f64) floats = move ints;
+    std::collections::vector::vector(int) ints = std::collections::vector::vector::new(int);
+    std::collections::vector::vector(f64) floats = move ints;
 
-    move floats |> std::vector::vector::drop(.T = f64);
+    move floats |> std::collections::vector::vector::drop(.T = f64);
     return 0;
 }

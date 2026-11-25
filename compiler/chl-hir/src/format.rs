@@ -8,7 +8,7 @@ use crate::ast::{
     function::{HIRFunctionBody, HIRFunctionKind, HIRFunctionPrototype},
     global_var::{HIREnumVariant, HIRGlobalVariable},
     pattern::{HIRBindingMode, HIRPattern},
-    types::{HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
+    types::{HIRAggregateAttributes, HIRField, HIRMoveSemantics, HIRType, HIRTypeKind},
     HIRDefinition, HIRStmt, HIR,
 };
 
@@ -97,6 +97,9 @@ impl Display for HIRGlobalVariable {
 
 impl Display for HIRDefinition {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        if self.overwrite {
+            write!(f, "@overwrite ")?;
+        }
         Display::fmt(&self.stmt, f)
     }
 }
@@ -115,6 +118,7 @@ impl Display for HIRFunctionBody {
                 writeln!(f, "Function Expression Body =>")?;
                 HIRExprFormatter::new(expression, 1).fmt(f)
             }
+            Self::TypeAlias(ty) => write!(f, "Transparent Type Body = {ty}"),
         }
     }
 }
@@ -211,6 +215,7 @@ impl<'a> Display for HIRExprFormatter<'a> {
             HIRExprKind::Identifier { name } => writeln!(f, "Identifier {}", name),
             HIRExprKind::Type(ty) => writeln!(f, "Type {ty}"),
             HIRExprKind::Hole => writeln!(f, "Hole"),
+            HIRExprKind::HoleBinding(name) => writeln!(f, "HoleBinding {name}"),
             HIRExprKind::ScopeAccess { base, member } => {
                 writeln!(f, "ScopeAccess {member}")?;
                 HIRExprFormatter::new(base, self.depth + 1).fmt(f)
@@ -334,18 +339,6 @@ impl<'a> Display for HIRExprFormatter<'a> {
 
             HIRExprKind::Unsafe { expr } => {
                 writeln!(f, "Unsafe")?;
-                HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
-            HIRExprKind::Leak { expr } => {
-                writeln!(f, "Leak")?;
-                HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
-            HIRExprKind::Copy { expr } => {
-                writeln!(f, "Copy")?;
-                HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
-            }
-            HIRExprKind::Adopt { expr } => {
-                writeln!(f, "Adopt")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
             HIRExprKind::Reify { signature, value } => {
@@ -528,6 +521,8 @@ impl Display for HIRTypeKind {
             HIRTypeKind::Universe => write!(f, "type"),
             HIRTypeKind::Auto => write!(f, "auto"),
             HIRTypeKind::Staged(inner) => write!(f, "^{inner}"),
+            HIRTypeKind::Strong(inner) => write!(f, "@strong {inner}"),
+            HIRTypeKind::ScopedTag(_, inner) => write!(f, "{inner}"),
             HIRTypeKind::ExplicitSizedArray(inner, size) => write!(f, "[{inner}; {size}]"),
             HIRTypeKind::ImplicitSizedArray(inner) => write!(f, "[{inner}]"),
             HIRTypeKind::MemoryReference {
@@ -570,31 +565,19 @@ impl Display for HIRTypeKind {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                let mut attrs = Vec::new();
-
-                match attributes.semantics {
-                    HIRMoveSemantics::POD => {}
-                    HIRMoveSemantics::Nocopy => attrs.push("@nocopy"),
-                    HIRMoveSemantics::Nodrop => attrs.push("@nodrop"),
-                }
-                if attributes.unsafe_move {
-                    attrs.push("@unsafe_move");
-                }
-
-                let attr_str = if attrs.is_empty() {
-                    String::new()
-                } else {
-                    format!(" : {}", attrs.join(", "))
-                };
                 write!(
                     f,
                     "struct {}{} {{ {} }}",
                     name.as_ref().map(|n| n.as_str()).unwrap_or("__anonymous__"),
-                    attr_str,
+                    aggregate_attributes(attributes),
                     fields_str
                 )
             }
-            HIRTypeKind::Union { name, fields } => {
+            HIRTypeKind::Union {
+                name,
+                fields,
+                attributes,
+            } => {
                 let fields_str = fields
                     .iter()
                     .map(|field| match field {
@@ -616,8 +599,9 @@ impl Display for HIRTypeKind {
                     .join(", ");
                 write!(
                     f,
-                    "union {} {{ {} }}",
+                    "union {}{} {{ {} }}",
                     name.as_ref().map(|n| n.as_str()).unwrap_or(""),
+                    aggregate_attributes(attributes),
                     fields_str
                 )
             }
@@ -636,29 +620,36 @@ impl Display for HIRTypeKind {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                let mut attrs = Vec::new();
-                match attributes.semantics {
-                    HIRMoveSemantics::POD => {}
-                    HIRMoveSemantics::Nocopy => attrs.push("@nocopy"),
-                    HIRMoveSemantics::Nodrop => attrs.push("@nodrop"),
-                }
-                if attributes.unsafe_move {
-                    attrs.push("@unsafe_move");
-                }
                 write!(
                     f,
                     "union class {}{} {{ {variants_str} }}",
                     name.as_ref().map(|n| n.as_str()).unwrap_or("__anonymous__"),
-                    if attrs.is_empty() {
-                        "".to_string()
-                    } else {
-                        format!(" : {}", attrs.join(", "))
-                    }
+                    aggregate_attributes(attributes)
                 )
             }
             HIRTypeKind::Function { prototype, c_form: true } => write!(f, "Function({prototype})"),
             HIRTypeKind::Function { prototype, c_form: false } => write!(f, "fn({prototype})"),
         }
+    }
+}
+
+fn aggregate_attributes(attributes: &HIRAggregateAttributes) -> String {
+    let mut attrs = Vec::new();
+    match attributes.semantics {
+        HIRMoveSemantics::POD => {}
+        HIRMoveSemantics::Nocopy => attrs.push("@nocopy"),
+        HIRMoveSemantics::Nodrop => attrs.push("@nodrop"),
+    }
+    if attributes.unsafe_move {
+        attrs.push("@unsafe_move");
+    }
+    if attributes.comptime {
+        attrs.push("@comptime");
+    }
+    if attrs.is_empty() {
+        String::new()
+    } else {
+        format!(" : {}", attrs.join(", "))
     }
 }
 
@@ -680,7 +671,12 @@ impl Display for HIRFunctionPrototype {
         }));
 
         let params_str = params.join(", ");
-        write!(f, "{} :: {}({})", self.return_type, self.kind, params_str)
+        let noreturn = if self.noreturn { "noreturn " } else { "" };
+        write!(
+            f,
+            "{noreturn}{} :: {}({params_str})",
+            self.return_type, self.kind
+        )
     }
 }
 

@@ -74,6 +74,9 @@ impl MIRInstruction {
 
 #[derive(Debug, Clone)]
 pub enum MIRInstructionKind {
+    RequireLive {
+        place: MIRPlaceID,
+    },
     // Marks a place as live for ownership analysis
     Initialize {
         place: MIRPlaceID,

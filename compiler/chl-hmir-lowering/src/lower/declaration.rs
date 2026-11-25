@@ -14,10 +14,13 @@ use crate::{
         generation::Generation,
         resolver::demand,
     },
-    eval::{eval_type, flow, symbol, types},
+    eval::{deduce, eval_type, flow, symbol, types},
     log::hmir_error,
     value::{self, HMIRValue},
 };
+
+mod overwrite;
+pub(crate) use overwrite::integer_types_alike;
 
 // Checks the declarations of each symbol of 'unit' against each other, evaluates those that must be, and requests
 // the definitions the unit emits
@@ -25,11 +28,18 @@ pub(crate) fn resolve(env: &mut HMIREnvironment, unit: &HMIRUnit) -> CHLResult<(
     let mut defs = unit.defs().collect::<Vec<_>>();
     defs.sort_by_key(|(id, _)| **id);
     for (id, def) in defs {
+        overwrite::validate(def)?;
         declarations(def)?;
         agreement(def)?;
         linkage_agreement(def)?;
+        let chosen = canonical(def);
+        if let Some(HMIRDefKind::Function(function)) = chosen.kind()
+            && function.transparent_body().is_some()
+        {
+            deduce::pattern::validate(env, *id, chosen.span())?;
+        }
         evaluate(env, *id, def)?;
-        request(env, *id, def);
+        request(env, *id, def)?;
     }
     Ok(())
 }
@@ -150,15 +160,40 @@ fn evaluate(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) -> CHLResul
 }
 
 fn signature_agreement(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) -> CHLResult<()> {
+    let chosen = canonical(def);
     let canonical = symbol::signature(env, id)?;
     let comptime = FnContext::Comptime(ComptimeContext::new());
     let mut context = LocalLoweringContext::new(env, None, comptime).sourced(id.brand());
+    let mut original = None;
     for declaration in def.declarations() {
         let Some(HMIRDefKind::Function(function)) = declaration.kind() else {
             continue;
         };
+        if deduce::signature::elaborate(context.env_mut(), id, function)?.is_some() {
+            let subject = (
+                format!("declaration of '{}'", def.name()),
+                "this unit".into(),
+            );
+            return Err(hmir_error(
+                declaration.span(),
+                &typecheck::DUPLICATE_ITEM,
+                subject,
+            ));
+        }
         let signature = flow::top(types::eval_signature(&mut context, function))?;
-        if !types::signatures_alike(context.env(), &canonical, &signature) {
+        let env = context.env();
+        let agrees = if chosen.overwrites() && declaration.point() < chosen.point() {
+            types::signatures_match(&canonical, &signature, |a, b| {
+                overwrite::integer_types_alike(env, a, b, false)
+            }) && types::signatures_alike(
+                env,
+                original.get_or_insert_with(|| signature.clone()),
+                &signature,
+            )
+        } else {
+            types::signatures_alike(env, &canonical, &signature)
+        };
+        if !agrees {
             return Err(incompatible(def, declaration));
         }
     }
@@ -191,14 +226,15 @@ fn comptime_agreement(
     Ok(())
 }
 
-fn request(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) {
+fn request(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) -> CHLResult<()> {
     let linkage = linkage(def);
     let root = linkage != LinkageMode::Static
         && match canonical(def).kind() {
             Some(HMIRDefKind::Function(function)) => {
                 function.signature().stage() == HMIRFunctionStage::Runtime
-                    && !needs_specialization(function)
                     && function.def().is_some()
+                    && !needs_specialization(function)
+                    && !needs_specialization(&*symbol::function(env, id)?)
             }
             Some(HMIRDefKind::Global(global)) => {
                 global.initializer().is_some() || linkage != LinkageMode::Extern
@@ -208,6 +244,7 @@ fn request(env: &mut HMIREnvironment, id: HMIRDefID, def: &HMIRDef) {
     if root {
         env.generation_mut().request(Generation::Definition(id), None);
     }
+    Ok(())
 }
 
 // Requests the definition of a symbol that is referenced; one of the local unit or a static one is only generated
@@ -239,7 +276,13 @@ pub(crate) fn canonical(def: &HMIRDef) -> &HMIRDeclaration {
         .iter()
         .enumerate()
         .filter(|(_, declaration)| declaration.kind().is_some())
-        .max_by_key(|(index, declaration)| (declaration.role(), Reverse(*index)))
+        .max_by_key(|(index, declaration)| {
+            (
+                declaration.overwrites(),
+                declaration.role(),
+                Reverse(*index),
+            )
+        })
         .map(|(_, declaration)| declaration)
         .expect("a symbol has declaration content")
 }

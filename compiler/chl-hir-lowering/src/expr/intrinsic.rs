@@ -4,7 +4,7 @@ use chl_hir::ast::expression::{HIRExprKind, HIRExpression};
 use chl_hmir::expr::{
     HMIRExprID, HMIRExprKind,
     literal::HMIRLiteral,
-    op::{HMIROp, HMIRTypeOp},
+    op::{HMIROp, HMIROwnershipOp::{Adopt, Copy, Leak}, HMIRTypeOp},
 };
 use chl_intrinsics::{Intrinsic, IntrinsicSource};
 use chl_log::{
@@ -31,10 +31,17 @@ pub(crate) fn lower_intrinsic<'a>(
         demanded: 0,
         span,
     };
-    let kind = match path.as_str().starts_with("type.") {
-        true => HMIRTypeOp::from_path(path.as_str(), &mut source)?
+    let kind = match path.as_str() {
+        "adopt" => Some(HMIRExprKind::Op(HMIROp::OwnershipOp(Adopt(source.value()?)))),
+        "copy" => Some(HMIRExprKind::Op(HMIROp::OwnershipOp(Copy(source.value()?)))),
+        "leak" => Some(HMIRExprKind::Op(HMIROp::OwnershipOp(Leak(source.value()?)))),
+        "str.concat" => Some(HMIRExprKind::Op(HMIROp::StrConcat {
+            lhs: source.value()?,
+            rhs: source.value()?,
+        })),
+        path if path.starts_with("type.") => HMIRTypeOp::from_path(path, &mut source)?
             .map(|op| HMIRExprKind::Op(HMIROp::Type(op))),
-        false => Intrinsic::from_path(path.as_str(), &mut source)?.map(HMIRExprKind::Intrinsic),
+        path => Intrinsic::from_path(path, &mut source)?.map(HMIRExprKind::Intrinsic),
     };
     let Some(kind) = kind else {
         return log_hir_error(span, &parse::UNKNOWN_NAME, ("intrinsic".into(), format!("@{path}")));

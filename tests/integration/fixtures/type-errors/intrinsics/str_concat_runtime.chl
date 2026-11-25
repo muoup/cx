@@ -1,0 +1,8 @@
+void append(const _str& text) {
+    @str.concat(text, "suffix");
+}
+
+int main() {
+    append("prefix");
+    return 0;
+}

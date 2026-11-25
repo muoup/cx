@@ -1,0 +1,119 @@
+import std::{memory::allocation, collections::span, optional, panic} as std;
+
+#include <string.h>
+
+comptime usize initialization_size = 4;
+
+public:
+
+comptime bool valid_vector_inner(comptime type T) => !@type.is_reference(T) && !@type.is_const(T);
+
+comptime type vector(comptime type T, comptime std::allocator A = std::heap_allocator)
+where pre: (@unsafe(valid_vector_inner(T)))
+=> @strong struct : @nodrop {
+    void* data;
+    usize length;
+    usize capacity;
+};
+
+vector(T, .A = A) vector::new(comptime type T, comptime std::allocator A = std::heap_allocator)
+    => vector::with_capacity(T, .A = A, initialization_size);
+
+vector(T, .A = A) vector::with_capacity(
+    comptime type T, comptime std::allocator A = std::heap_allocator, usize capacity
+) {
+    auto block = std::allocate(A, allocation_size(T, capacity), .alignment = @type.align_of(T));
+    void* data = block.data;
+    @leak(block);
+    return { data, 0, capacity };
+}
+
+usize vector::length(vector(_, .A = _)& this) => this.length;
+
+void vector::drop(vector(_: T, .A = _: A) this)
+where pre: (!@type.is_nodrop(T))
+{
+    release(T, A, this.data, this.capacity);
+    @leak(this);
+}
+
+void vector::drop_with(vector(_: T, .A = _: A) this, comptime fn destructor(^T) -> ^void) {
+    for (usize i = 0; i < this.length; i++) {
+        T value = @adopt(this |> vector::at(i));
+        move value |> destructor();
+    }
+
+    release(T, A, this.data, this.capacity);
+    @leak(this);
+}
+
+void vector::reserve(vector(_: T, .A = _: A)& this, usize capacity)
+where pre: (!@type.is_unsafe_move(T))
+{
+    if (capacity <= this.capacity) return;
+
+    std::allocation(A, .alignment = std::allocation_alignment(A, @type.align_of(T))) block = { this.data, allocation_size(T, this.capacity) };
+    std::resize(block, allocation_size(T, capacity));
+    this.data = block.data;
+    this.capacity = capacity;
+    @leak(block);
+}
+
+void vector::push(vector(_: T, .A = _)& this, T object)
+where pre: (!@type.is_unsafe_move(T))
+{
+    if (this.length == this.capacity) {
+        usize capacity = this.capacity == 0 ? initialization_size : this.capacity * 2;
+        if (capacity <= this.capacity) std::panic("Vector capacity overflow");
+        vector::reserve(this, capacity);
+    }
+    memcpy((T*) this.data + this.length, &object, sizeof(T));
+    this.length++;
+    @leak(object);
+}
+
+std::opt(T) vector::pop(vector(_: T, .A = _)& this) {
+    if (this.length == 0) return _::none();
+
+    T buffer = @adopt(((T*) this.data)[--this.length]);
+    return _::some(move buffer);
+}
+
+std::opt(T&) vector::get(vector(_: T, .A = _)& this, usize index) {
+    if (index >= this.length) return _::none();
+    return _::some(((T*) this.data)[index]);
+}
+
+T& vector::at(vector(_: T, .A = _)& this, usize index) {
+    if (index >= this.length) std::panic("Attempted to index out of vector bounds");
+    return ((T*) this.data)[index];
+}
+
+std::span(T) vector::span(vector(_: T, .A = _)& this)
+    => std::span::new((T*) this.data, this.length);
+
+vector(@type.unqualify(T), .A = A) vector::from_span(
+    comptime std::allocator A = std::heap_allocator, std::span(_: T) this
+)
+where pre: (!@type.is_unsafe_move(T) && !@type.is_nodrop(T) && !@type.is_nocopy(T))
+{
+    auto values = vector::with_capacity(@type.unqualify(T), .A = A, this.length);
+    for (usize i = 0; i < this.length; i++) {
+        vector::push(values, @copy(this.data[i]));
+    }
+    return move values;
+}
+
+private:
+
+usize allocation_size(comptime type T, usize capacity)
+where pre: (sizeof(T) != 0)
+{
+    if (capacity > ((usize) -1) / sizeof(T)) std::panic("Vector capacity overflow");
+    return capacity * sizeof(T);
+}
+
+void release(comptime type T, comptime std::allocator A, void* data, usize capacity) {
+    std::allocation(A, .alignment = std::allocation_alignment(A, @type.align_of(T))) block = { data, allocation_size(T, capacity) };
+    std::deallocate(move block);
+}

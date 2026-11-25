@@ -18,7 +18,7 @@ comptime bool queries = @type.is_int(int)
     && @type.equal(@type.unqualify(const int* const), const int*)
     && @type.equal(@type.unqualify(const int&), const int&)
     && @type.equal(@type.type_of(5), int)
-    && @type.size_of(long) == 8
+    && @type.c_sizeof(long) == 8
     && @type.align_of(int) == 4;
 
 comptime int doubled = twice(21);

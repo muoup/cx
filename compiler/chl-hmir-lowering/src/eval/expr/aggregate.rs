@@ -23,17 +23,17 @@ use crate::{
     emit,
     env::{
         HMIREnvironment,
-        function::{LocalLoweringContext, memory::placement},
+        function::{LocalLoweringContext, memory::member_layout},
     },
     eval::{
         EvalResult,
         arithmetic::{binary_operands, eval_operand},
-        coerce, eval, expr,
-        flow::{EvalExit, Evaluation},
-        place, types,
+        coerce, comptime, deduce, eval, expr,
+        flow::Evaluation,
+        place, storage, types,
     },
     log::hmir_error,
-    value::{self, HMIRValue},
+    value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
 
 pub(crate) fn eval_aggregate(
@@ -91,24 +91,49 @@ pub(crate) fn eval_member(
     base: HMIRExprID,
     name: &CHLIdent,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let mut value = eval(context, body, base)?
-        .ready()
-        .and_then(|value| coerce::aggregate(context, value, &span).map_err(EvalExit::from))?;
+    let base = eval(context, body, base)?.ready()?;
+    let base = coerce::collapse(context, base, span)?;
+    let owner = context.env().referent(base.ty());
+    let opaque = matches!(base.kind(), HMIRValueKind::Immediate(HMIRImmValue::Opaque));
+    if context.is_runtime() && types::comptime_only(context.env(), owner) && !opaque {
+        let mut child = comptime::child(context);
+        let field = member(&mut child, base, name, span)?;
+        let value = emit::comptime::storage::contents(&mut child, &field, span)?;
+        return Ok(Evaluation::Ready(comptime::converge(
+            &mut child, value, span,
+        )?));
+    }
+    Ok(Evaluation::Ready(member(context, base, name, span)?))
+}
 
-    let Some(aggregate_type) = context.env().reference_inner(value.ty()) else {
-        unreachable!("coerce::aggregate did not return a reference type")
+fn member(
+    context: &mut LocalLoweringContext,
+    base: HMIRValue,
+    name: &CHLIdent,
+    span: &TokenRange,
+) -> CHLResult<HMIRValue> {
+    let opaque = matches!(base.kind(), HMIRValueKind::Immediate(HMIRImmValue::Opaque));
+    let mut value = if opaque {
+        base
+    } else {
+        coerce::aggregate(context, base, span)?
     };
-
-    let Some(path) = member_path(context.env(), aggregate_type, name) else {
-        let member = (types::name(context.env(), aggregate_type), name.to_string());
-        return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
+    let mut ty = context.env().referent(value.ty());
+    let Some(path) = member_path(context.env(), ty, name) else {
+        let member = (types::name(context.env(), ty), name.to_string());
+        return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member));
     };
     for index in path {
-        let owner = context.env().referent(value.ty());
-        let ty = *member_fields(context.env(), owner)[index].ty();
-        value = field(context, &value, index, ty, span)?;
+        let field_ty = *member_fields(context.env(), ty)[index].ty();
+        if !opaque {
+            value = field(context, &value, index, field_ty, span)?;
+        }
+        ty = field_ty;
     }
-    Ok(Evaluation::Ready(value))
+    if opaque {
+        return deduce::placeholder(context, ty, span);
+    }
+    Ok(value)
 }
 
 // The member 'index' of the aggregate 'base' references, referenced as 'ty&' with the owner's qualifiers
@@ -127,7 +152,13 @@ pub(crate) fn field(
         ..Default::default()
     };
     let ty = types::qualify::specify(context, ty, qualifiers, span);
-    let bitfield = placement(context.env_mut(), owner, index, span)?;
+    let bitfield = match member_fields(context.env(), owner)
+        .get(index)
+        .and_then(HMIRFieldDef::bit_width)
+    {
+        Some(_) => member_layout(context.env_mut(), owner, index, span)?.1,
+        None => None,
+    };
     let reference = types::reference(context.env_mut(), ty, bitfield, span);
     let base = base.clone();
     let projection = match context.env().resolve_kind(owner) {
@@ -232,12 +263,13 @@ pub(crate) fn eval_unpack(
     } in projections
     {
         let projected = field(context, &source, index, ty, span)?;
-        let value = match types::bitfield(context.env(), projected.ty()) {
-            Some(_) => emit::storage::read(context, &projected, span)?,
-            None => emit::storage::lift(context, &projected, span)?,
+        let value = if types::bitfield(context.env(), projected.ty()).is_some() {
+            emit::storage::read(context, &projected, span)?
+        } else {
+            emit::storage::lift(context, &projected, span)?
         };
         let target = emit::storage::allocate(context, ty, Some(name), span)?;
-        emit::storage::initialize(context, &target, Some(&value), span)?;
+        storage::initialize(context, &target, Some(&value), span)?;
         emit::storage::bind_local(context, local, target);
     }
     Ok(Evaluation::Ready(value::unit(context.env())))

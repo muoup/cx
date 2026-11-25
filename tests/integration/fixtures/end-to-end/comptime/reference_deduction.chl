@@ -1,7 +1,7 @@
 /* CHL-STDOUT: boxed 5 */
 /* CHL-STDOUT-NEXT: written 8 9 */
 
-import std::box as std;
+import std::memory::box as std;
 import std::optional;
 
 #include <stdio.h>

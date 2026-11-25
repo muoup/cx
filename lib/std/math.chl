@@ -1,0 +1,9 @@
+public:
+
+auto max(comptime type T = _, T val1, T val2) -> T {
+    return val1 > val2 ? val1 : val2;
+}
+
+auto min(comptime type T = _, T val1, T val2) -> T {
+    return val1 < val2 ? val1 : val2;
+}

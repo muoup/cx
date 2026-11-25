@@ -1,6 +1,6 @@
 /* CHL-STDOUT: 1 */
 
-import std::vector as _;
+import std::collections::vector as _;
 
 #include <stdio.h>
 
@@ -8,6 +8,6 @@ int main() {
     vector(int) vec = vector::new(int);
     vec |> vector::push(7);
     printf("%zu\n", vec.length);
-    vector::drop(.T = int, move vec);
+    vector::drop(move vec);
     return 0;
 }

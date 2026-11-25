@@ -1,21 +1,23 @@
 /* CHL-STDOUT: alpha */
 /* CHL-STDOUT-NEXT: beta */
+/* CHL-STDOUT-NEXT: line bytes: 6 */
 
-import std::file;
-import std::optional;
-import std::string;
+import std::{io::file, memory::allocation, optional, collections::string} as std;
 
 #include <stdio.h>
 
 i32 main() {
-    std::file::file f = std::file::file::open("end-to-end/library/file_read_to_string.txt", "r")
-        |> std::optional::opt::unwrap();
-    std::string::string s = f |> std::file::file::read_to_string();
+    auto file = std::file::open("end-to-end/library/file_read_to_string.txt", "r") |> std::opt::unwrap();
+    defer std::file::close(move file);
 
-    printf("%s", @unsafe((const char*)(s |> std::string::string::as_str())));
+    char first_line[16];
+    usize length = std::file::read_line(file, first_line, sizeof(first_line)) |> std::opt::unwrap();
+    printf("%s", first_line);
 
-    move f |> std::file::file::close();
-    move s |> std::string::string::drop();
+    auto tail = std::file::read_to_string(.A = std::aligned_heap_allocator, file);
+    printf("%s", std::string::as_str(tail));
+    std::string::drop(move tail);
 
+    printf("line bytes: %zu\n", length);
     return 0;
 }

@@ -1,6 +1,6 @@
-import std::vector;
+import std::collections::vector;
 
 int main() {
-    auto values = std::vector::vector::new(const int&);
+    auto values = std::collections::vector::vector::new(const int&);
     return 0;
 }

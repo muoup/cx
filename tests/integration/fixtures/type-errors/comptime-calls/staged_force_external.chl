@@ -1,0 +1,12 @@
+extern "C":
+int external();
+
+public:
+comptime int force() {
+    ^int code = emit external();
+    return code;
+}
+
+int main() {
+    return force();
+}

@@ -1,10 +1,11 @@
-comptime ^void invoke(fn proc(int) -> ^void) {
-    return proc(emit 1);
+comptime ^void invoke(^int code, fn proc(int) -> ^void) {
+    return proc(code);
 }
 
 void consume(int value) {}
 
 int main() {
-    invoke(|auto value| => consume(value));
+    int local = 1;
+    invoke(emit local, |auto value| => consume(value));
     return 0;
 }

@@ -43,7 +43,6 @@ pub struct GlobalCompilationContext {
     pub module_db: ModuleData,
 
     pub linking_files: Mutex<BTreeSet<PathBuf>>,
-    pub library_symbols: Mutex<BTreeMap<PathBuf, Vec<String>>>,
     pub headers: Mutex<BTreeMap<PathBuf, String>>,
 }
 
@@ -53,7 +52,6 @@ impl GlobalCompilationContext {
             config,
             module_db: ModuleData::new(),
             linking_files: Mutex::new(BTreeSet::new()),
-            library_symbols: Mutex::new(BTreeMap::new()),
             headers: Mutex::new(BTreeMap::new()),
         }
     }

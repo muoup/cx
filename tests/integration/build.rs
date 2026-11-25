@@ -31,6 +31,7 @@ fn main() {
             write_module(&mut output, &sanitize_ident(root), &root_path, kind, 0, false);
         }
     }
+    write_projects(&mut output, &fixture_dir.join("projects"));
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("Missing OUT_DIR"));
     fs::write(out_dir.join("generated_tests.rs"), output).expect("Failed to write generated tests");
@@ -119,6 +120,29 @@ fn write_module(
     }
 
     output.push_str(&format!("{indent}}}\n"));
+}
+
+fn write_projects(output: &mut String, root: &Path) {
+    println!("cargo:rerun-if-changed={}", root.display());
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    let mut projects = entries
+        .map(|entry| entry.expect("Failed to read directory entry").path())
+        .filter(|path| path.join("expect.toml").is_file())
+        .collect::<Vec<_>>();
+    projects.sort();
+
+    output.push_str("#[allow(non_snake_case)]\nmod projects {\n");
+    for project in projects {
+        println!("cargo:rerun-if-changed={}", project.display());
+        let name = sanitize_ident(&project.file_name().expect("Missing project name").to_string_lossy());
+        let path_literal = format!("{:?}", project.to_string_lossy().to_string());
+        output.push_str(&format!(
+            "    #[test]\n    fn r#{name}() {{ crate::project::run_project_test(std::path::Path::new({path_literal})); }}\n"
+        ));
+    }
+    output.push_str("}\n");
 }
 
 fn has_stdout_expectation(path: &Path) -> bool {

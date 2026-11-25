@@ -1,7 +1,7 @@
 import std::optional as std;
-import std::io as std;
-import std::file as std;
-import std::string as std;
+import std::io::stdio as std;
+import std::io::file as std;
+import std::collections::string as std;
 
 import ast as _;
 import interpreter as _;

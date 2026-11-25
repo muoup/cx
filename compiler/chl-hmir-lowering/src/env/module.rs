@@ -361,6 +361,10 @@ impl MIRFunctionBuilder {
         self.places.push(place)
     }
 
+    pub fn place(&self, id: MIRPlaceID) -> &MIRPlaceDecl {
+        &self.places[id]
+    }
+
     pub fn allocate_register(&mut self, register: MIRRegisterDecl) -> MIRRegister {
         self.registers.push(register)
     }

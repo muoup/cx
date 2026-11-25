@@ -1,9 +1,12 @@
+mod incomplete;
+
+pub(crate) use incomplete::{Incomplete, IncompleteReason};
+
 use chl_hmir::{HMIRBodyContext, ty::HMIRTypeID};
 use chl_log::{CHLResult, error::CHLError};
 
 use crate::{
     env::function::{Expectations, LocalLoweringContext},
-    eval::deduce::Incomplete,
     value::HMIRValue,
 };
 

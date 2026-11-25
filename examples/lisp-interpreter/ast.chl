@@ -1,6 +1,6 @@
-import std::box as std;
-import std::vector as std;
-import std::string as std;
+import std::memory::box as std;
+import std::collections::vector as std;
+import std::collections::string as std;
 
 #include <stdlib.h>
 
@@ -45,7 +45,7 @@ void lisp_node::drop(lisp_node node) {
             };
 
             move name |> std::string::drop();
-            move params |> std::vector::drop_with(std::string::drop);
+            move params |> std::vector::drop_with(drop_text);
             move body |> std::vector::drop_with(lisp_node::drop);
         }
         FnCall(auto fn_call) => {
@@ -81,3 +81,7 @@ void lisp_node::drop(lisp_node node) {
         Number(_) => {}
     }
 }
+
+private:
+
+void drop_text(std::string text) => std::string::drop(move text);

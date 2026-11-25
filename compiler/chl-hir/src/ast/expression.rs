@@ -55,6 +55,7 @@ pub enum HIRExprKind {
     Type(HIRType),
     // '_', a comptime argument left for the compiler to fill in
     Hole,
+    HoleBinding(CHLIdent),
     // 'base::member' where the base is computed, 'opt(int)::some'
     ScopeAccess {
         base: Box<HIRExpression>,
@@ -191,15 +192,6 @@ pub enum HIRExprKind {
     Unsafe {
         expr: Box<HIRExpression>,
     },
-    Leak {
-        expr: Box<HIRExpression>,
-    },
-    Copy {
-        expr: Box<HIRExpression>,
-    },
-    Adopt {
-        expr: Box<HIRExpression>,
-    },
     Unpack {
         expr: Box<HIRExpression>,
         bindings: Vec<HIRUnpackBinding>,
@@ -234,6 +226,7 @@ pub enum HIRExprKind {
 pub struct HIRClosureParam {
     pub name: CHLIdent,
     pub ty: HIRType,
+    pub range: TokenRange,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

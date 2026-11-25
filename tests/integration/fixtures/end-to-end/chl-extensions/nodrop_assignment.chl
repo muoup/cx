@@ -1,0 +1,54 @@
+/* CHL-STDOUT: 2 3 */
+/* CHL-STDOUT-NEXT: 4 4 3 */
+#include <stdio.h>
+
+struct Resource : @nodrop { int value; };
+
+comptime int replace_local() {
+    Resource resource;
+    resource = (Resource) { 1 };
+    Resource old = move resource;
+    resource = (Resource) { old.value + 1 };
+    int value = resource.value;
+    @leak(old);
+    @leak(resource);
+    return value;
+}
+
+void replace_adopted(Resource& borrowed) {
+    auto resource = @adopt(borrowed);
+    Resource old = move resource;
+    resource = (Resource) { old.value + 1 };
+    @leak(old);
+    @leak(resource);
+}
+
+struct Slot : @nocopy { int value; };
+
+void consume(Slot slot) {}
+
+int replace_after_branch(bool take) {
+    Slot slot = { 1 };
+    if (take) consume(move slot);
+    slot = (Slot) { 4 };
+    return slot.value;
+}
+
+int loop_scratch() {
+    int total = 0;
+    for (int i = 0; i < 4; i++) {
+        total += (i > 0 && i < 3) ? i : 0;
+    }
+    return total;
+}
+
+int main() {
+    Resource resource;
+    resource = (Resource) { replace_local() };
+    printf("%d ", resource.value);
+    replace_adopted(resource);
+    printf("%d\n", resource.value);
+    printf("%d %d %d\n", replace_after_branch(true), replace_after_branch(false), loop_scratch());
+    @leak(resource);
+    return 0;
+}

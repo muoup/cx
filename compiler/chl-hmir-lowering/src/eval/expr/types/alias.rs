@@ -30,24 +30,16 @@ pub(crate) fn define(
         span.clone(),
         Some(name.clone()),
     );
-    let reserved = context.env_mut().resolver_mut().reserve_type(placeholder);
+    let reserved = context.env_mut().resolver_mut().reserve_nominal(placeholder, None);
     let provisional = type_value(context, reserved, span)?;
     publish(context.env_mut(), provisional);
     let defined = evaluate(context, reserved)?;
-    let resolver = context.env_mut().resolver_mut();
-    let ty = resolver.realized_type(reserved);
-    let built = !matches!(ty.kind(), HMIRTypeKind::Undefined(HMIRUndefined::Forward(None)));
-    if defined == reserved && built {
-        if ty.debug_name().is_none() {
-            let named = HMIRType::new(
-                ty.kind().clone(),
-                *ty.semantics(),
-                ty.decl_span().clone(),
-                Some(name),
-            );
-            resolver.complete_type(reserved, named);
-        }
-    } else if reaches(context.env(), defined, reserved, &mut FxHashSet::default()) {
+    let built = defined == reserved
+        && !matches!(
+            context.env().resolve_kind(reserved),
+            HMIRTypeKind::Undefined(HMIRUndefined::Forward(None))
+        );
+    if !built && reaches(context.env(), defined, reserved, &mut FxHashSet::default()) {
         return Err(hmir_error(span, &mir::DEPENDENCY_CYCLE, format!("{name} -> {name}")));
     }
     type_value(context, defined, span)
@@ -68,7 +60,7 @@ fn reaches(
     match env.resolve_type_id(ty).kind() {
         HMIRTypeKind::PointerTo(inner)
         | HMIRTypeKind::ReferenceTo { inner, .. }
-        | HMIRTypeKind::Nominal(inner)
+        | HMIRTypeKind::Nominal { inner, .. }
         | HMIRTypeKind::Staged(inner)
         | HMIRTypeKind::Array { element: inner, .. }
         | HMIRTypeKind::Undefined(HMIRUndefined::Array { element: inner }) => {

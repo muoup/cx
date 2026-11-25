@@ -18,10 +18,7 @@ use chl_util::identifier::CHLIdent;
 use crate::parse::{
     expressions::parse_expr,
     parser::ParserData,
-    types::{
-        parse_abstract_type, parse_attributes, parse_initializer, DeclarationAttributes,
-        ParsedSpecifiers,
-    },
+    types::{parse_abstract_type, parse_noreturn, parse_typed_declarator, ParsedSpecifiers, TagScope},
 };
 
 pub(crate) mod linkage;
@@ -65,20 +62,19 @@ pub fn try_function_parse(
         return Ok(None);
     };
 
-    let args = parse_params(data)?;
+    let args = parse_params(data, TagScope::Module)?;
     let return_type = if !data.c_mode
         && matches!(return_type.kind, HIRTypeKind::Auto)
         && try_next!(data.tokens, operator!(Arrow))
     {
-        parse_abstract_type(data)?.add_specifier(return_type.specifiers)
+        parse_abstract_type(data, TagScope::Module)?.add_specifier(return_type.specifiers)
     } else {
         return_type
     };
 
     Ok(Some(HIRFunctionPrototype {
-        return_type: specifiers.attributes
-            .merge(args.attributes)
-            .apply_to_return_type(return_type),
+        return_type,
+        noreturn: specifiers.noreturn || args.noreturn,
         kind,
         comptime,
         contract: args.contract,
@@ -92,11 +88,11 @@ pub fn try_function_parse(
     }))
 }
 
-pub(crate) fn parse_function_contract(
+fn parse_function_contract(
     data: &mut ParserData,
-    attributes: &mut DeclarationAttributes,
+    noreturn: &mut bool,
 ) -> CHLResult<HIRFunctionContract> {
-    parse_c_declaration_suffixes(data, attributes)?;
+    parse_c_decl_modifiers(data, noreturn)?;
 
     let safe = try_next!(data.tokens, keyword!(Safe));
 
@@ -157,17 +153,16 @@ pub(crate) fn parse_function_contract(
         }
     }
 
-    parse_c_declaration_suffixes(data, attributes)?;
+    parse_c_decl_modifiers(data, noreturn)?;
     Ok(contract)
 }
 
-// FIXME: Remove this hack and support declaration suffixes
-fn parse_c_declaration_suffixes(
+fn parse_c_decl_modifiers(
     data: &mut ParserData,
-    attributes: &mut DeclarationAttributes,
+    noreturn: &mut bool,
 ) -> CHLResult<()> {
     loop {
-        parse_attributes(&mut data.tokens, attributes);
+        *noreturn |= parse_noreturn(&mut data.tokens);
 
         let Some(token) = data.tokens.peek() else {
             return Ok(());
@@ -219,31 +214,28 @@ pub(crate) struct ParseParamsResult {
     pub(crate) params: Vec<HIRParameter>,
     pub(crate) var_args: bool,
     pub(crate) contract: HIRFunctionContract,
-    pub(crate) attributes: DeclarationAttributes,
+    pub(crate) noreturn: bool,
 }
 
-pub(crate) fn parse_params(data: &mut ParserData) -> CHLResult<ParseParamsResult> {
+pub(crate) fn parse_params(data: &mut ParserData, scope: TagScope) -> CHLResult<ParseParamsResult> {
     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
+    data.with_name_scope(|data| parse_parameter_list(data, scope))
+}
 
+fn parse_parameter_list(data: &mut ParserData, scope: TagScope) -> CHLResult<ParseParamsResult> {
     let mut params = Vec::new();
-    let mut attributes = DeclarationAttributes::default();
-
-    while !try_next!(data.tokens, punctuator!(CloseParen)) {
+    let var_args = loop {
+        if try_next!(data.tokens, punctuator!(CloseParen)) {
+            break false;
+        }
         if try_next!(data.tokens, punctuator!(Ellipsis)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            let contract = parse_function_contract(data, &mut attributes)?;
-
-            return Ok(ParseParamsResult {
-                params,
-                var_args: true,
-                contract,
-                attributes,
-            });
+            break true;
         }
 
         let start = data.tokens.index;
         let comptime = try_next!(data.tokens, keyword!(Comptime));
-        let (name, ty, _) = parse_initializer(data)?;
+        let (name, ty, _) = parse_typed_declarator(data, scope)?;
         let range = data.token_range(start, data.tokens.index);
         let default = match try_next!(data.tokens, TokenKind::Assignment(None)) {
             true => {
@@ -255,20 +247,23 @@ pub(crate) fn parse_params(data: &mut ParserData) -> CHLResult<ParseParamsResult
             false => None,
         };
 
-        params.push(HIRParameter { name, ty, comptime, default, range });
+        let parameter = HIRParameter { name, ty, comptime, default, range };
+        data.note_parameter(&parameter);
+        params.push(parameter);
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-            break;
+            break false;
         }
-    }
+    };
 
-    let contract = parse_function_contract(data, &mut attributes)?;
+    let mut noreturn = false;
+    let contract = parse_function_contract(data, &mut noreturn)?;
 
     Ok(ParseParamsResult {
         params,
-        var_args: false,
+        var_args,
         contract,
-        attributes,
+        noreturn,
     })
 }

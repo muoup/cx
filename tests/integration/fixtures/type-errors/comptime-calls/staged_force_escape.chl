@@ -1,0 +1,8 @@
+comptime int force() {
+    ^int code = emit .{ return 5; };
+    return code;
+}
+
+int main() {
+    return force();
+}

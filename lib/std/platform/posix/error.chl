@@ -1,0 +1,13 @@
+import std::net::error as std;
+import std::platform::posix as std::posix::raw;
+
+#include <errno.h>
+
+public:
+
+std::posix::raw::errno_code errno_code::current() => (std::posix::raw::errno_code) errno;
+
+std::socket_error errno_code::into_socket_error(std::posix::raw::errno_code code) => (std::socket_error) (int) code;
+
+bool posix_status::is_ok(std::posix::raw::posix_status status) => (int) status == 0;
+bool fd_result::is_ok(std::posix::raw::fd_result result) => (int) result != -1;

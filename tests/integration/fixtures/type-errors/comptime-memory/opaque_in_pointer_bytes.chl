@@ -1,0 +1,18 @@
+struct Payload : @comptime {
+    unsigned char prefix;
+    type value;
+};
+
+union Overlay : @comptime {
+    Payload payload;
+    int* pointer;
+};
+
+comptime int attempt() {
+    Overlay value = { .pointer = 0 };
+    value.payload.value = int;
+    if (value.pointer == 0) return 1;
+    return 0;
+}
+
+comptime int result = attempt();

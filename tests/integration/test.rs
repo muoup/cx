@@ -1,3 +1,5 @@
+mod project;
+
 use chl_test_support::{
     assert_stdout, backend_name, compile_file, expected_stdout, run_binary, run_command,
     CompilationFailure, CompilationMode, CompilerBackend, ReferenceCompiler, TestTempDir,

@@ -24,23 +24,28 @@ impl MIRTypeLayout {
     pub fn alignment(&self) -> usize {
         self.alignment
     }
+
+    pub fn with_tag(self) -> Self {
+        let size = self.size.checked_add(1).expect("sum layout overflows");
+        Self::new(align_to(size, self.alignment), self.alignment)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MIRFieldLayout {
+pub enum MIRFieldLayout<T = MIRTypeID> {
     Standard {
         offset: usize,
-        ty: MIRTypeID,
+        ty: T,
     },
     Bitfield {
         offset: usize,
         bit_offset: usize,
         bit_width: usize,
-        storage_type: MIRTypeID,
+        storage_type: T,
     },
 }
 
-impl MIRFieldLayout {
+impl<T: Copy> MIRFieldLayout<T> {
     pub fn offset(&self) -> usize {
         match self {
             Self::Standard { offset, .. } | Self::Bitfield { offset, .. } => *offset,
@@ -48,7 +53,7 @@ impl MIRFieldLayout {
     }
 
     /// The type stored at `offset()`; for a bitfield, its storage unit.
-    pub fn ty(&self) -> MIRTypeID {
+    pub fn ty(&self) -> T {
         match self {
             Self::Standard { ty, .. } => *ty,
             Self::Bitfield { storage_type, .. } => *storage_type,
@@ -72,11 +77,8 @@ pub fn calculate_field_layouts<Registry: MTRegistry>(
         MIRTypeKind::Union { variants } | MIRTypeKind::TaggedUnion { variants } => (variants, true),
         _ => return None,
     };
-    let (layouts, _) = layout_fields(
-        fields,
-        is_union,
-        |ty| calculate_type_layout(registry, ty),
-    );
+    let (layouts, _) =
+        layout_mir_fields(fields, is_union, |ty| calculate_type_layout(registry, ty));
     Some(layouts)
 }
 
@@ -133,14 +135,10 @@ pub(crate) fn compute_layout<Registry: MTRegistry>(
                 element.alignment,
             )
         }
-        MIRTypeKind::Structured { fields } => layout_fields(fields, false, &mut *child).1,
-        MIRTypeKind::Union { variants } => layout_fields(variants, true, &mut *child).1,
+        MIRTypeKind::Structured { fields } => layout_mir_fields(fields, false, &mut *child).1,
+        MIRTypeKind::Union { variants } => layout_mir_fields(variants, true, &mut *child).1,
         MIRTypeKind::TaggedUnion { variants } => {
-            let data = layout_fields(variants, true, &mut *child).1;
-            MIRTypeLayout::new(
-                data.size.checked_add(1).expect("sum layout overflows"),
-                data.alignment,
-            )
+            layout_mir_fields(variants, true, &mut *child).1.with_tag()
         }
         MIRTypeKind::Builtin { layout, .. } => *layout,
         MIRTypeKind::Undefined(MIRUndefined::Array { element, flexible: true }) => {
@@ -154,23 +152,36 @@ pub(crate) fn compute_layout<Registry: MTRegistry>(
     MIRTypeLayout::new(align_to(layout.size, alignment), alignment)
 }
 
-/// System V bitfield layout: a bitfield takes the next free bit unless it would cross an alignment
-/// boundary of its type, and is accessed as a word of its type at the aligned offset containing it.
-fn layout_fields(
+fn layout_mir_fields(
     fields: &[MIRField],
     is_union: bool,
     mut storage_layout: impl FnMut(MIRTypeID) -> MIRTypeLayout,
 ) -> (Vec<MIRFieldLayout>, MIRTypeLayout) {
+    let fields = fields.iter().map(|field| {
+        let ty = field.ty();
+        let bitfield = match field {
+            MIRField::Bitfield { width, name, .. } => Some((*width, name.is_some())),
+            MIRField::Standard { .. } => None,
+        };
+        (ty, storage_layout(ty), bitfield)
+    });
+    layout_fields(fields, is_union)
+}
+
+/// System V bitfield layout: a bitfield takes the next free bit unless it would cross an alignment
+/// boundary of its type, and is accessed as a word of its type at the aligned offset containing it.
+pub fn layout_fields<T: Copy>(
+    fields: impl ExactSizeIterator<Item = (T, MIRTypeLayout, Option<(usize, bool)>)>,
+    is_union: bool,
+) -> (Vec<MIRFieldLayout<T>>, MIRTypeLayout) {
     let mut layouts = Vec::with_capacity(fields.len());
     let mut bits = 0usize;
     let mut size = 0usize;
     let mut alignment = 1usize;
 
-    for field in fields {
-        let storage = storage_layout(field.ty());
-
-        let layout = match field {
-            MIRField::Standard { type_id, .. } => {
+    for (ty, storage, bitfield) in fields {
+        let layout = match bitfield {
+            None => {
                 alignment = alignment.max(storage.alignment);
                 let offset = if is_union {
                     0
@@ -182,32 +193,25 @@ fn layout_fields(
                     .expect("aggregate layout overflows");
                 bits = end * 8;
                 size = size.max(end);
-                MIRFieldLayout::Standard {
-                    offset,
-                    ty: *type_id,
-                }
+                MIRFieldLayout::Standard { offset, ty }
             }
-            MIRField::Bitfield {
-                name,
-                integer_type_id,
-                width,
-            } => {
+            Some((width, named)) => {
                 let capacity = storage.size * 8;
-                assert!(*width <= capacity, "bitfield exceeds its storage type");
+                assert!(width <= capacity, "bitfield exceeds its storage type");
                 let boundary = storage.alignment * 8;
 
                 let start = if is_union {
                     0
-                } else if *width == 0 || bits % boundary + *width > capacity {
+                } else if width == 0 || bits % boundary + width > capacity {
                     align_to(bits, boundary)
                 } else {
                     bits
                 };
                 let offset = start / boundary * storage.alignment;
-                if *width != 0 {
-                    bits = start + *width;
+                if width != 0 {
+                    bits = start + width;
                     size = size.max(bits.div_ceil(8));
-                    if name.is_some() {
+                    if named {
                         alignment = alignment.max(storage.alignment);
                         size = size.max(offset + storage.size);
                     }
@@ -218,8 +222,8 @@ fn layout_fields(
                 MIRFieldLayout::Bitfield {
                     offset,
                     bit_offset: start - offset * 8,
-                    bit_width: *width,
-                    storage_type: *integer_type_id,
+                    bit_width: width,
+                    storage_type: ty,
                 }
             }
         };

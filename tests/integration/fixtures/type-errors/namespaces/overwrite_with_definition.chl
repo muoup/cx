@@ -1,0 +1,5 @@
+extern "C":
+int calculate(int value);
+@overwrite int calculate(int value);
+int calculate(int value) { return value; }
+int main() { return 0; }

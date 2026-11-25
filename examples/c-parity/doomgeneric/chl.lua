@@ -1,6 +1,7 @@
 package("doomgeneric")
 include("upstream/doomgeneric")
-import("../../raylib.lua")
+include("../../artifacts/raylib/include")
+dep("../../raylib.lua")
 
 debug_profile():backend("llvm")
 

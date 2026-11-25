@@ -1,0 +1,6 @@
+comptime type Required(comptime type T) = T;
+
+int main() {
+    Required value;
+    return 0;
+}

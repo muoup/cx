@@ -1,4 +1,4 @@
-import std::io as std;
+import std::io::stdio as std;
 
 struct holder {
     const _str& text;

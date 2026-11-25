@@ -17,7 +17,7 @@ use crate::{
     eval::{
         EvalResult, arithmetic, coerce, eval, eval_type,
         flow::{self, Evaluation},
-        types,
+        storage, types,
     },
     log::hmir_error,
     value::{self, HMIRValue},
@@ -130,7 +130,7 @@ pub(crate) fn bind(
         }
     };
     let destination = emit::storage::allocate(context, binding_ty, local_info.name().cloned(), span)?;
-    emit::storage::initialize(context, &destination, Some(&value), span)?;
+    storage::initialize(context, &destination, Some(&value), span)?;
     emit::storage::bind_local(context, local, destination);
     Ok(reference.is_none())
 }
@@ -161,7 +161,9 @@ pub(crate) fn eval_is(
     let expected = value::int(context.env(), index as i128, tag.ty());
     let boolean = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = arithmetic::binary(context, HMIRBinaryOp::Eq, &tag, &expected, boolean, span)?;
-    if let Some(HMIRPattern::Binding(local)) = inner.as_deref() {
+    if let Some(HMIRPattern::Binding(local)) = inner.as_deref()
+        && !(context.is_comptime() && value::as_int(&result) == Some(0))
+    {
         let owned = !context.env().is_reference(subject.ty());
         let subject = match owned {
             true => coerce::temporary(context, &subject, span)?,

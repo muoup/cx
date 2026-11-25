@@ -28,6 +28,7 @@ struct Opaque;
 typedef i32 Count;
 typedef struct Standalone Renamed;
 typedef Hidden PublicHidden;
+typedef int Handler(int value);
 typedef int (*Callback)(int value);
 typedef int Values[3];
 
@@ -39,6 +40,9 @@ enum Mode {
     Ready = 3,
     Done,
 };
+
+enum JobState : @strong int { Done = 10 };
+enum FileState : @strong int { Done = 20 };
 
 struct Envelope {
     Hidden hidden;

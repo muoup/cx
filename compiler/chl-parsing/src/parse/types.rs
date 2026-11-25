@@ -1,79 +1,136 @@
-use crate::parse::expressions::{parse_argument, parse_expr};
-use crate::parse::{try_parse_simple_identifier, ParserData};
-use crate::{assert_token_matches, log::parse_point_error, next_kind, peek_kind, try_next};
+use crate::parse::{expressions::parse_argument, ParserData};
+use crate::{assert_token_matches, log::parse_point_error, peek_kind, try_next};
 use chl_hir::ast::expression::HIRExpression;
-use chl_hir::ast::global_var::HIREnumDefinition;
-use chl_hir::ast::types::HIRMoveSemantics;
-use chl_hir::ast::HIRStmt;
 use chl_hir::ast::{
-    function::{HIRFunctionKind, HIRFunctionPrototype},
-    global_var::{HIREnumVariant, HIRGlobalVariable},
-    modifiers::{
-        HIRSymbolNameScheme, HIRTypeQualifiers, LinkageMode, HIR_CONST, HIR_RESTRICT, HIR_VOLATILE,
-    },
-    types::{
-        HIRAggregateAttributes, HIRField, HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup,
-        ANONYMOUS_MEMBER_PREFIX,
-    },
+    modifiers::{HIRTypeQualifiers, LinkageMode, HIR_CONST, HIR_RESTRICT, HIR_VOLATILE},
+    types::{HIRType, HIRTypeKind, HIRTypeLookup},
 };
+use chl_hir::intrinsic_types::is_intrinsic_type;
 use chl_log::catalogue::parse::*;
 use chl_log::CHLResult;
 use chl_namespace::module::QualifiedName;
-use chl_hir::intrinsic_types::is_intrinsic_type;
-use chl_tokens::token::{AttributeType, OperatorType, PunctuatorType, SpecifierType, TokenKind};
-use chl_tokens::{
-    identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter, TokenRange,
-};
-use chl_util::identifier::CHLIdent;
+use chl_tokens::token::{AttributeType, SpecifierType, TokenKind};
+use chl_tokens::{identifier, intrinsic, keyword, operator, punctuator, specifier, TokenIter};
 
-use crate::parse::functions::{parse_params, ParseParamsResult};
-use crate::parse::{parse_intrinsic, try_parse_qualified_name};
+use crate::parse::{parse_intrinsic, parser::LocalName, try_parse_qualified_name};
 
-pub fn is_type_decl(data: &mut ParserData) -> CHLResult<bool> {
-    fn is_used_as_value(data: &ParserData) -> bool {
-        matches!(
-            data.tokens
-                .slice
-                .get(data.tokens.index + 1)
-                .map(|token| &token.kind),
-            Some(
-                TokenKind::Assignment(_)
-                    | TokenKind::Operator(OperatorType::Access | OperatorType::Arrow)
-            )
-        )
-    }
+pub(super) enum TypePosition {
+    Statement,
+    Expression,
+    Cast,
+}
 
-    let tok = data.tokens.peek().map(|tok| tok.kind.clone());
-
-    if tok.is_none() {
+pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLResult<bool> {
+    let Some(token) = data.tokens.peek() else {
         return Ok(false);
-    }
+    };
 
-    Ok(match &tok.unwrap() {
+    Ok(match &token.kind {
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum, Register) => true,
 
         keyword!(Type, Fn) => true,
+        TokenKind::CompilerIdentifier(name) if name == "strong" => {
+            !data.c_mode && !data.in_include()
+        }
         operator!(Caret) => !data.c_mode,
 
-        identifier!(name) if is_intrinsic_type(name) => !is_used_as_value(data),
+        identifier!() => {
+            let start = data.tokens.index;
+            let name = try_parse_qualified_name(&mut data.tokens);
+            let end = std::mem::replace(&mut data.tokens.index, start);
+            let name = name?.expect("an identifier starts a qualified name");
+            let following = data.tokens.slice.get(end).map(|token| &token.kind);
 
-        TokenKind::Identifier(_) => {
-            let pre_idx = data.tokens.index;
-            let Some(ident) = try_parse_qualified_name(&mut data.tokens)? else {
-                unreachable!()
-            };
-            let end_idx = data.tokens.index;
-            data.tokens.index = pre_idx;
-
-            if data.is_generator(&ident)? {
-                // A generator names a type only once it is applied
-                matches!(
-                    data.tokens.slice.get(end_idx).map(|token| &token.kind),
-                    Some(punctuator!(OpenParen))
-                )
+            if matches!(
+                following,
+                Some(TokenKind::Assignment(_) | operator!(Access) | operator!(Arrow))
+            ) {
+                return Ok(false);
+            }
+            if type_application_before_declarator(data, end) {
+                return Ok(true);
+            }
+            if let Some(kind) = data.local_name(&name) {
+                return Ok(match kind {
+                    LocalName::Type => true,
+                    LocalName::Value => false,
+                    LocalName::Inferred => {
+                        let tail = &data.tokens.slice[end..];
+                        let mut tail = tail.iter().skip_while(|token| {
+                            matches!(
+                                token.kind,
+                                operator!(Asterisk) | operator!(Ampersand) | specifier!()
+                            )
+                        });
+                        let next = tail.next().map(|token| &token.kind);
+                        let indirect =
+                            matches!(following, Some(operator!(Asterisk) | operator!(Ampersand)));
+                        match position {
+                            TypePosition::Statement => matches!(next, Some(identifier!())),
+                            TypePosition::Expression => {
+                                indirect
+                                    && matches!(
+                                        next,
+                                        Some(
+                                            punctuator!(CloseParen)
+                                                | punctuator!(CloseBracket)
+                                                | operator!(Comma)
+                                        )
+                                    )
+                            }
+                            TypePosition::Cast => {
+                                matches!(next, Some(punctuator!(CloseParen)))
+                                    && (indirect
+                                        || matches!(
+                                            tail.next().map(|token| &token.kind),
+                                            Some(
+                                                identifier!()
+                                                    | TokenKind::IntLiteral(_)
+                                                    | TokenKind::FloatLiteral(_)
+                                                    | TokenKind::StringLiteral(_)
+                                                    | TokenKind::CompilerIdentifier(_)
+                                                    | punctuator!(OpenBrace)
+                                            )
+                                        ))
+                            }
+                        }
+                    }
+                });
+            }
+            if name
+                .root_name_ref()
+                .is_some_and(|root| is_intrinsic_type(root.as_str()))
+            {
+                return Ok(true);
+            }
+            if data.is_generator(&name)? {
+                let scoped = matches!(position, TypePosition::Statement)
+                    && matches!(
+                        application_suffix(&data.tokens, end),
+                        Some(operator!(ScopeRes))
+                    );
+                if matches!(following, Some(punctuator!(OpenParen))) {
+                    return Ok(!scoped);
+                }
+                let declarator = matches!(
+                    following,
+                    Some(specifier!() | operator!(Asterisk) | operator!(Ampersand))
+                );
+                match position {
+                    TypePosition::Statement => {
+                        declarator || matches!(following, Some(identifier!()))
+                    }
+                    TypePosition::Cast => match following {
+                        Some(punctuator!(CloseParen)) => !matches!(
+                            data.tokens.slice.get(end + 1).map(|token| &token.kind),
+                            Some(punctuator!(OpenParen))
+                        ),
+                        _ => declarator,
+                    },
+                    TypePosition::Expression => false,
+                }
             } else {
-                is_unimported_generator(data, &ident, end_idx)?
-                    || (data.is_type_ident(&ident)? && !is_used_as_value(data))
+                data.is_module_type(&name)?
             }
         }
 
@@ -81,32 +138,35 @@ pub fn is_type_decl(data: &mut ParserData) -> CHLResult<bool> {
     })
 }
 
-// No expression applies a name and then names another, so an undeclared name applied before a
-// name is a generator from a module that was not imported
-fn is_unimported_generator(data: &ParserData, name: &QualifiedName, end: usize) -> CHLResult<bool> {
-    Ok(!data.c_mode
-        && data.is_undeclared(name)?
-        && application_end(data, end).is_some_and(|after| {
-            matches!(
-                data.tokens.slice.get(after).map(|token| &token.kind),
-                Some(TokenKind::Identifier(_))
-            )
-        }))
+fn type_application_before_declarator(data: &ParserData, end: usize) -> bool {
+    !data.c_mode && matches!(application_suffix(&data.tokens, end), Some(identifier!()))
 }
 
-// The index past the parenthesized arguments opening at 'open'
-pub(crate) fn application_end(data: &ParserData, open: usize) -> Option<usize> {
-    if !matches!(data.tokens.slice.get(open).map(|token| &token.kind), Some(punctuator!(OpenParen))) {
+fn is_type_application(data: &ParserData, name: &QualifiedName) -> CHLResult<bool> {
+    if data.is_generator(name)? {
+        return Ok(true);
+    }
+    if !type_application_before_declarator(data, data.tokens.index) {
+        return Ok(false);
+    }
+    match data.local_name(name) {
+        Some(kind) => Ok(kind == LocalName::Value),
+        None => Ok(!data.is_module_type(name)?),
+    }
+}
+
+pub(super) fn application_suffix<'a>(tokens: &TokenIter<'a>, open: usize) -> Option<&'a TokenKind> {
+    if !matches!(tokens.slice.get(open)?.kind, punctuator!(OpenParen)) {
         return None;
     }
     let mut depth = 0usize;
-    for (index, token) in data.tokens.slice.iter().enumerate().skip(open) {
+    for (index, token) in tokens.slice.iter().enumerate().skip(open) {
         match &token.kind {
             punctuator!(OpenParen) => depth += 1,
             punctuator!(CloseParen) => {
                 depth -= 1;
                 if depth == 0 {
-                    return Some(index + 1);
+                    return tokens.slice.get(index + 1).map(|token| &token.kind);
                 }
             }
             _ => {}
@@ -115,450 +175,7 @@ pub(crate) fn application_end(data: &ParserData, open: usize) -> Option<usize> {
     None
 }
 
-fn token_range(data: &ParserData, start: usize, end: usize) -> TokenRange {
-    data.token_range(start, end.max(start.saturating_add(1)))
-}
-
-fn parse_type_attributes(
-    data: &mut ParserData,
-    kind_name: &str,
-) -> CHLResult<HIRAggregateAttributes> {
-    let mut attributes = HIRAggregateAttributes::default();
-
-    if try_next!(data.tokens, punctuator!(Colon)) {
-        loop {
-            assert_token_matches!(data.tokens, TokenKind::CompilerIdentifier(attr), "a type attribute");
-            let attr = attr.clone();
-
-            match attr.as_str() {
-                "nocopy" => attributes.semantics = HIRMoveSemantics::Nocopy,
-                "nodrop" => attributes.semantics = HIRMoveSemantics::Nodrop,
-                "unsafe_move" => attributes.unsafe_move = true,
-                "copy_traits" => {
-                    assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-                    assert_token_matches!(data.tokens, identifier!(type_param), "a type parameter name");
-                    let type_param = type_param.clone();
-                    assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
-                    attributes.copy_traits = Some(type_param);
-                }
-                _ => {
-                    return parse_point_error(
-                        &data.tokens,
-                        &UNKNOWN_NAME,
-                        (format!("{kind_name} attribute"), format!("@{attr}")),
-                    );
-                }
-            }
-
-            if !try_next!(data.tokens, operator!(Comma)) {
-                break;
-            }
-        }
-    }
-
-    Ok(attributes)
-}
-
-fn aggregate_field_from_decl(
-    data: &mut ParserData,
-    name: Option<CHLIdent>,
-    ty: HIRType,
-) -> CHLResult<HIRField> {
-    if try_next!(data.tokens, punctuator!(Colon)) {
-        let width = match next_kind!(data.tokens)? {
-            TokenKind::IntLiteral(literal) => literal.magnitude as usize,
-            _ => {
-                return parse_point_error(
-                    &data.tokens,
-                    &EXPECTED_SYNTAX,
-                    (
-                        "a non-negative integer literal".into(),
-                        Some("as bitfield width".into()),
-                    ),
-                );
-            }
-        };
-
-        return Ok(HIRField::Bitfield {
-            name: name.map(|name| name.to_string()),
-            integer_type: ty,
-            width,
-        });
-    }
-
-    let name = match name {
-        Some(name) => name.to_string(),
-        None if matches!(
-            ty.kind,
-            HIRTypeKind::Structured { name: None, .. } | HIRTypeKind::Union { name: None, .. }
-        ) =>
-        {
-            format!("{ANONYMOUS_MEMBER_PREFIX}{}", data.tokens.index)
-        }
-        None => {
-            return parse_point_error(
-                &data.tokens,
-                &UNSUPPORTED_FEATURE,
-                (format!("nameless member of {ty}"), "the parser".into()),
-            );
-        }
-    };
-
-    Ok(HIRField::standard(name, ty))
-}
-
-fn parse_aggregate_fields(data: &mut ParserData) -> CHLResult<Vec<HIRField>> {
-    let prefix_specs = parse_decl_specifiers(&mut data.tokens);
-    let type_base = parse_type_base(data)?.add_specifier(prefix_specs.qualifiers);
-    let mut fields = Vec::new();
-
-    loop {
-        let (name, ty) = parse_base_mods(data, type_base.clone())?;
-        fields.push(aggregate_field_from_decl(data, name, ty)?);
-
-        if !try_next!(data.tokens, operator!(Comma)) {
-            break;
-        }
-    }
-
-    Ok(fields)
-}
-
-fn predeclaration_type(
-    data: &mut ParserData,
-    name: Option<QualifiedName>,
-    predeclaration: HIRTagKind,
-    header: TokenRange,
-) -> CHLResult<HIRType> {
-    let Some(name) = name else {
-        return parse_point_error(
-            &data.tokens,
-            &EXPECTED_SYNTAX,
-            (
-                "a type name".into(),
-                Some("for a predeclaration".into()),
-            ),
-        );
-    };
-    let is_root_name = name.namespace.is_root();
-    let definition_name = name.name.clone();
-
-    let ty = HIRTypeKind::Identifier {
-        name,
-        lookup: HIRTypeLookup::Tag(predeclaration),
-        args: None,
-    }
-    .to_type();
-
-    if matches!(predeclaration, HIRTagKind::Struct | HIRTagKind::Union)
-        && is_root_name
-        && (data.c_mode
-            || data.in_include()
-            || matches!(
-                data.tokens.peek().map(|token| &token.kind),
-                Some(punctuator!(Semicolon))
-            ))
-        && !data.ast.definition_stmts.iter().any(|definition| {
-            matches!(
-                &definition.stmt,
-                HIRStmt::TypeDefinition { name: Some(existing), tag: Some(tag), .. }
-                    if existing == &definition_name && *tag == predeclaration
-            )
-        })
-    {
-        data.add_stmt(HIRStmt::TypeDefinition {
-            symbol_naming: data.naming(LinkageMode::Standard),
-            name: Some(definition_name),
-            visibility: data.visibility,
-            ty: ty.clone(),
-            tag: Some(predeclaration),
-            range: header,
-        });
-    }
-
-    Ok(ty)
-}
-
-fn defined_type(
-    data: &mut ParserData,
-    name: Option<CHLIdent>,
-    ty: HIRType,
-    predeclaration: HIRTagKind,
-    header: TokenRange,
-) -> CHLResult<HIRType> {
-    if let Some(name) = name {
-        // If structure definition has a name, add it to the type map and return
-        // the identifier pointer to that type
-
-        data.add_stmt(HIRStmt::TypeDefinition {
-            symbol_naming: data.naming(LinkageMode::Standard),
-            name: Some(name.clone()),
-            visibility: data.visibility,
-            ty,
-            tag: Some(predeclaration),
-            range: header,
-        });
-
-        Ok(HIRTypeKind::Identifier {
-            name: QualifiedName::new_raw(name),
-            lookup: HIRTypeLookup::Tag(predeclaration),
-            args: None,
-        }
-        .to_type())
-    } else {
-        // If the structure definition is anonymous, it can only be parsed as
-        // an in-place type.
-
-        Ok(ty)
-    }
-}
-
-pub(crate) fn parse_struct_def(data: &mut ParserData) -> CHLResult<HIRType> {
-    let start = data.tokens.index;
-    assert_token_matches!(data.tokens, keyword!(Struct), "'struct'");
-
-    let name = try_parse_qualified_name(&mut data.tokens)?;
-    let header = data.token_range(start, data.tokens.index);
-    let attributes = parse_type_attributes(data, "struct")?;
-
-    if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, HIRTagKind::Struct, header);
-    }
-
-    let mut fields = Vec::new();
-
-    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        fields.extend(parse_aggregate_fields(data)?);
-        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-    }
-
-    let name = match name {
-        None => None,
-        Some(name) => match name.root_name() {
-            Some(name) => Some(name),
-            None => {
-                return parse_point_error(
-                    &data.tokens,
-                    &EXPECTED_SYNTAX,
-                    ("a struct name".into(), None),
-                );
-            }
-        },
-    };
-
-    defined_type(
-        data,
-        name.clone(),
-        HIRTypeKind::Structured {
-            name,
-            attributes,
-            fields,
-        }
-        .to_type(),
-        HIRTagKind::Struct,
-        header,
-    )
-}
-
-pub(crate) fn parse_enum_def(data: &mut ParserData) -> CHLResult<HIRType> {
-    let start = data.tokens.index;
-    assert_token_matches!(data.tokens, keyword!(Enum), "'enum'");
-
-    if peek_kind!(data.tokens, keyword!(Union)) {
-        data.tokens.back();
-        return parse_tagged_union_def(data);
-    }
-
-    let name = try_parse_qualified_name(&mut data.tokens)?;
-    let header = data.token_range(start, data.tokens.index);
-
-    if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, HIRTagKind::Enum, header);
-    }
-
-    let mut variants = Vec::new();
-
-    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        let variant_start = data.tokens.index;
-        let Some(variant_name) = try_parse_simple_identifier(&mut data.tokens) else {
-            return parse_point_error(
-                &data.tokens,
-                &EXPECTED_SYNTAX,
-                ("an enum variant".into(), None),
-            );
-        };
-
-        let value = if try_next!(data.tokens, TokenKind::Assignment(None)) {
-            data.change_comma_mode(false);
-            let value = parse_expr(data)?;
-            data.pop_comma_mode();
-            Some(value)
-        } else {
-            None
-        };
-
-        variants.push(HIREnumVariant {
-            name: variant_name,
-            value,
-            range: data.token_range(variant_start, data.tokens.index),
-        });
-
-        if !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseBrace), "'}'");
-            break;
-        }
-    }
-
-    let name = match name {
-        None => None,
-        Some(name) => match name.root_name() {
-            Some(name) => Some(name),
-            None => {
-                return parse_point_error(
-                    &data.tokens,
-                    &EXPECTED_SYNTAX,
-                    (
-                        "a simple identifier".into(),
-                        Some("as a qualified type name".into()),
-                    ),
-                );
-            }
-        },
-    };
-
-    data.add_stmt(HIRStmt::GlobalVariableDefinition {
-        visibility: data.visibility,
-        variable: HIRGlobalVariable::EnumDefinition(HIREnumDefinition {
-            name: name.clone(),
-            variants: variants.clone(),
-            symbol_naming: data.naming(LinkageMode::Standard),
-        }),
-    });
-
-    defined_type(
-        data,
-        name,
-        HIRTypeKind::Identifier {
-            name: QualifiedName::new_raw(CHLIdent::new("int")),
-            lookup: HIRTypeLookup::Standard,
-            args: None,
-        }
-        .to_type(),
-        HIRTagKind::Enum,
-        header,
-    )
-}
-
-pub(crate) fn parse_tagged_union_def(data: &mut ParserData) -> CHLResult<HIRType> {
-    let start = data.tokens.index;
-    assert_token_matches!(data.tokens, keyword!(Enum), "'enum'");
-    assert_token_matches!(data.tokens, keyword!(Union), "'union'");
-
-    let union_name = try_parse_simple_identifier(&mut data.tokens);
-    let header = data.token_range(start, data.tokens.index);
-    let attributes = parse_type_attributes(data, "enum union")?;
-
-    assert_token_matches!(data.tokens, punctuator!(OpenBrace), "'{'");
-
-    let mut variants = Vec::new();
-
-    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-            return parse_point_error(
-                &data.tokens,
-                &EXPECTED_SYNTAX,
-                ("a tagged union variant name".into(), None),
-            );
-        };
-
-        assert_token_matches!(data.tokens, operator!(ScopeRes), "'::'");
-
-        match parse_initializer(data) {
-            // Success Path = Valid Type + No Name
-            Ok((None, ty, _)) => variants.push(HIRField::standard(name.to_string(), ty)),
-
-            Ok((Some(_), _, _)) => {
-                return parse_point_error(
-                    &data.tokens,
-                    &EXPECTED_SYNTAX,
-                    (
-                        "an unnamed type".into(),
-                        Some("for tagged union variant".into()),
-                    ),
-                );
-            }
-
-            _ => {
-                return parse_point_error(
-                    &data.tokens,
-                    &EXPECTED_SYNTAX,
-                    ("a tagged union variant type".into(), None),
-                );
-            }
-        }
-
-        if !try_next!(data.tokens, operator!(Comma)) {
-            assert_token_matches!(data.tokens, punctuator!(CloseBrace), "'}'");
-            break;
-        }
-    }
-
-    defined_type(
-        data,
-        union_name.clone(),
-        HIRTypeKind::TaggedUnion {
-            name: union_name,
-            attributes,
-            variants,
-        }
-        .to_type(),
-        HIRTagKind::Union,
-        header,
-    )
-}
-
-pub(crate) fn parse_union_def(data: &mut ParserData) -> CHLResult<HIRType> {
-    let start = data.tokens.index;
-    assert_token_matches!(data.tokens, keyword!(Union), "'union'");
-
-    let name = try_parse_qualified_name(&mut data.tokens)?;
-    let header = data.token_range(start, data.tokens.index);
-
-    if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        return predeclaration_type(data, name, HIRTagKind::Union, header);
-    }
-
-    let mut fields = Vec::new();
-
-    while !try_next!(data.tokens, punctuator!(CloseBrace)) {
-        fields.extend(parse_aggregate_fields(data)?);
-        assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
-    }
-
-    let name = match name {
-        None => None,
-        Some(name) => match name.root_name() {
-            Some(name) => Some(name),
-            None => {
-                return parse_point_error(
-                    &data.tokens,
-                    &EXPECTED_SYNTAX,
-                    ("a union name".into(), None),
-                );
-            }
-        },
-    };
-
-    defined_type(
-        data,
-        name.clone(),
-        HIRTypeKind::Union { name, fields }.to_type(),
-        HIRTagKind::Union,
-        header,
-    )
-}
-
-pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> HIRTypeQualifiers {
+fn parse_specifier(tokens: &mut TokenIter) -> HIRTypeQualifiers {
     parse_decl_specifiers(tokens).qualifiers
 }
 
@@ -566,310 +183,63 @@ pub(crate) fn parse_specifier(tokens: &mut TokenIter) -> HIRTypeQualifiers {
 pub(crate) struct ParsedSpecifiers {
     pub(crate) qualifiers: HIRTypeQualifiers,
     pub(crate) linkage: LinkageMode,
-    pub(crate) attributes: DeclarationAttributes,
-}
-
-/// Attributes attached to a declaration, gathered from `TokenKind::Attribute` tokens.
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct DeclarationAttributes {
     pub(crate) noreturn: bool,
+    pub(crate) thread_local: bool,
 }
 
-impl DeclarationAttributes {
-    pub(crate) fn record(&mut self, attribute: AttributeType) {
-        match attribute {
-            AttributeType::Noreturn => self.noreturn = true,
-        }
+pub(crate) fn parse_noreturn(tokens: &mut TokenIter) -> bool {
+    let mut noreturn = false;
+    while try_next!(tokens, TokenKind::Attribute(AttributeType::Noreturn)) {
+        noreturn = true;
     }
-
-    pub(crate) fn merge(self, other: DeclarationAttributes) -> DeclarationAttributes {
-        DeclarationAttributes {
-            noreturn: self.noreturn || other.noreturn,
-        }
-    }
-
-    /// A function that never returns is declared as returning `unreachable`,
-    /// regardless of the return type written in the source.
-    pub(crate) fn apply_to_return_type(&self, return_type: HIRType) -> HIRType {
-        if !self.noreturn {
-            return return_type;
-        }
-
-        let mut unreachable = HIRTypeKind::Identifier {
-            name: QualifiedName::root(CHLIdent::new("unreachable")),
-            lookup: HIRTypeLookup::Standard,
-            args: None,
-        }
-        .to_type();
-        unreachable.range = return_type.range;
-        unreachable
-    }
+    noreturn
 }
 
-pub(crate) fn parse_attributes(tokens: &mut TokenIter, attributes: &mut DeclarationAttributes) {
-    while let Some(TokenKind::Attribute(attribute)) = tokens.peek().map(|token| &token.kind) {
-        attributes.record(*attribute);
-        tokens.next();
-    }
-}
-
-pub(crate) fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
+fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
     let mut spec_acc: HIRTypeQualifiers = 0;
     let mut linkage = LinkageMode::Standard;
-    let mut attributes = DeclarationAttributes::default();
+    let mut noreturn = false;
+    let mut thread_local = false;
 
     loop {
-        match next_kind!(tokens) {
-            Ok(TokenKind::Specifier(spec)) => match spec {
+        match tokens.peek().map(|token| &token.kind) {
+            Some(TokenKind::Specifier(spec)) => match spec {
                 SpecifierType::Const => spec_acc |= HIR_CONST,
                 SpecifierType::Volatile => spec_acc |= HIR_VOLATILE,
                 SpecifierType::Restrict => spec_acc |= HIR_RESTRICT,
                 SpecifierType::Extern => linkage = LinkageMode::Extern,
                 SpecifierType::Static => linkage = LinkageMode::Static,
-                SpecifierType::Inline | SpecifierType::ThreadLocal => {}
+                SpecifierType::ThreadLocal => thread_local = true,
+                SpecifierType::Inline => {}
 
                 SpecifierType::Public | SpecifierType::Private => break,
             },
-            Ok(TokenKind::Attribute(attribute)) => attributes.record(*attribute),
+            Some(TokenKind::Attribute(AttributeType::Noreturn)) => noreturn = true,
             _ => break,
         }
+        tokens.next();
     }
-
-    tokens.back();
     ParsedSpecifiers {
         qualifiers: spec_acc,
         linkage,
-        attributes,
+        noreturn,
+        thread_local,
     }
 }
 
-pub(crate) fn parse_type_mods(
-    data: &mut ParserData,
-    acc_type: HIRType,
-) -> CHLResult<(Option<CHLIdent>, HIRType)> {
-    parse_declarator_mods(data, acc_type, true)
-}
-
-// With 'named' unset only the pointer and reference suffixes of an abstract type are read
-fn parse_declarator_mods(
-    data: &mut ParserData,
-    acc_type: HIRType,
-    named: bool,
-) -> CHLResult<(Option<CHLIdent>, HIRType)> {
-    let Some(next_tok) = data.tokens.peek() else {
-        return Ok((None, acc_type));
-    };
-    let start_index = data.tokens.index;
-
-    match &next_tok.kind {
-        keyword!(Weak) => {
-            data.tokens.next();
-            assert_token_matches!(data.tokens, operator!(Asterisk), "'*'");
-
-            let specs = parse_specifier(&mut data.tokens);
-            let range = acc_type.range.clone();
-            let mut acc_type = HIRType::new(
-                specs,
-                HIRTypeKind::PointerTo {
-                    inner_type: Box::new(acc_type),
-                },
-            );
-            acc_type.range = range;
-
-            parse_declarator_mods(data, acc_type, named)
-        }
-
-        operator!(Asterisk) => {
-            data.tokens.next();
-            let specs = parse_specifier(&mut data.tokens);
-            let acc_type = acc_type.pointer_to(specs);
-
-            parse_declarator_mods(data, acc_type, named)
-        }
-
-        punctuator!(Apostrophe) => {
-            data.tokens.next();
-
-            let lifetime_kind = next_kind!(data.tokens)?.clone();
-            let lifetime = match lifetime_kind {
-                TokenKind::Identifier(lifetime) => CHLIdent::from(lifetime.as_str()),
-                keyword!(Hole) => CHLIdent::new("_"),
-                TokenKind::Specifier(SpecifierType::Static) => CHLIdent::new("static"),
-                _ => {
-                    return parse_point_error(
-                        &data.tokens,
-                        &EXPECTED_SYNTAX,
-                        ("a lifetime identifier".into(), None),
-                    );
-                }
-            };
-
-            assert_token_matches!(data.tokens, operator!(Ampersand), "'&'");
-
-            let range = acc_type.range.clone();
-            let ref_type = HIRTypeKind::MemoryReference {
-                inner_type: Box::new(acc_type),
-                lifetime: Some(lifetime),
-            }
-            .to_type()
-            .with_range(range);
-
-            parse_declarator_mods(data, ref_type, named)
-        }
-
-        operator!(Ampersand) => {
-            data.tokens.next();
-
-            let range = acc_type.range.clone();
-            let ref_type = HIRTypeKind::MemoryReference {
-                inner_type: Box::new(acc_type),
-                lifetime: None,
-            }
-            .to_type()
-            .with_range(range);
-
-            parse_declarator_mods(data, ref_type, named)
-        }
-
-        punctuator!(OpenParen) if named => {
-            data.tokens.next();
-            if peek_kind!(data.tokens, identifier!())
-                && matches!(
-                    data.tokens
-                        .slice
-                        .get(data.tokens.index + 1)
-                        .map(|token| &token.kind),
-                    Some(punctuator!(CloseParen))
-                )
-            {
-                let name = try_parse_simple_identifier(&mut data.tokens);
-                data.tokens.next();
-                return Ok((name, acc_type));
-            }
-            if !matches!(next_kind!(data.tokens), Ok(operator!(Asterisk))) {
-                data.tokens.index = start_index;
-                return Ok((None, acc_type));
-            }
-            let name = try_parse_simple_identifier(&mut data.tokens);
-
-            let mut array_suffixes: Vec<Option<HIRExpression>> = Vec::new();
-            while try_next!(data.tokens, punctuator!(OpenBracket)) {
-                if try_next!(data.tokens, punctuator!(CloseBracket)) {
-                    array_suffixes.push(None);
-                } else {
-                    let size = parse_expr(data)?;
-                    assert_token_matches!(data.tokens, punctuator!(CloseBracket), "']'");
-                    array_suffixes.push(Some(size));
-                }
-            }
-
-            assert_token_matches!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::CloseParen),
-                "')'"
-            );
-
-            let ParseParamsResult {
-                params,
-                var_args,
-                contract,
-                ..
-            } = parse_params(data)?;
-
-            let prototype = HIRFunctionPrototype {
-                kind: HIRFunctionKind::Standard(CHLIdent::new("__internal_fnptr")),
-                comptime: false,
-                return_type: acc_type,
-                params,
-                var_args,
-                contract,
-                linkage: LinkageMode::Standard,
-                symbol_naming: HIRSymbolNameScheme::Namespaced,
-                range: TokenRange::internal(),
-            };
-
-            let fn_ptr_type = HIRTypeKind::Function {
-                prototype: Box::new(prototype),
-                c_form: true,
-            }
-            .to_type()
-            .pointer_to(0);
-
-            let fn_ptr_type = array_suffixes
-                .into_iter()
-                .rev()
-                .fold(fn_ptr_type, |inner, size| match size {
-                    Some(size) => {
-                        HIRTypeKind::ExplicitSizedArray(Box::new(inner), Box::new(size)).to_type()
-                    }
-                    None => HIRTypeKind::ImplicitSizedArray(Box::new(inner)).to_type(),
-                });
-
-            Ok((name, fn_ptr_type))
-        }
-
-        identifier!() if named => {
-            let Some(name) = try_parse_simple_identifier(&mut data.tokens) else {
-                unreachable!();
-            };
-
-            Ok((Some(name), acc_type))
-        }
-
-        _ => Ok((None, acc_type)),
-    }
-}
-
-pub(crate) fn parse_type_suffix_mod(
-    data: &mut ParserData,
-    mut acc_type: HIRType,
-) -> CHLResult<HIRType> {
-    let Some(next_tok) = data.tokens.peek() else {
-        return Ok(acc_type);
-    };
-
-    match &next_tok.kind {
-        punctuator!(OpenBracket) => {
-            data.tokens.next();
-
-            if try_next!(data.tokens, punctuator!(CloseBracket)) {
-                let range = acc_type.range.clone();
-                let nested = parse_type_suffix_mod(data, acc_type)?;
-                acc_type = HIRTypeKind::ImplicitSizedArray(Box::new(nested)).to_type();
-                acc_type.range = range;
-            } else {
-                let inner = parse_expr(data)?;
-                assert_token_matches!(data.tokens, punctuator!(CloseBracket), "']'");
-
-                let range = acc_type.range.clone();
-                let nested = parse_type_suffix_mod(data, acc_type)?;
-                acc_type =
-                    HIRTypeKind::ExplicitSizedArray(Box::new(nested), Box::new(inner)).to_type();
-                acc_type.range = range;
-            }
-
-            Ok(acc_type)
-        }
-
-        _ => Ok(acc_type),
-    }
-}
-
-pub(crate) fn parse_type_base(data: &mut ParserData) -> CHLResult<HIRType> {
-    let start_index = data.tokens.index;
+fn parse_type_base(data: &mut ParserData, scope: TagScope) -> CHLResult<HIRType> {
     let Some(next_token) = data.tokens.peek() else {
         return parse_point_error(&data.tokens, &UNEXPECTED_END, Some("type".into()));
     };
 
-    let ty = match &next_token.kind {
+    match &next_token.kind {
         identifier!() => {
             let Some(name) = try_parse_qualified_name(&mut data.tokens)? else {
                 unreachable!();
             };
 
-            let end = data.tokens.index;
             let args = if peek_kind!(data.tokens, punctuator!(OpenParen))
-                && (data.is_generator(&name)? || is_unimported_generator(data, &name, end)?)
+                && is_type_application(data, &name)?
             {
                 Some(parse_args(data)?)
             } else {
@@ -894,15 +264,17 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CHLResult<HIRType> {
             Ok(HIRTypeKind::Universe.to_type())
         }
 
-        keyword!(Fn) => {
+        TokenKind::CompilerIdentifier(name)
+            if name == "strong" && !data.c_mode && !data.in_include() =>
+        {
             data.tokens.next();
-            Ok(fn_declarator_marker())
+            Ok(HIRTypeKind::Strong(Box::new(parse_abstract_type(data, scope)?)).to_type())
         }
 
         // '^' takes the whole abstract type after it, so '^const T&' stages a 'const T&'
         operator!(Caret) if !data.c_mode => {
             data.tokens.next();
-            Ok(HIRTypeKind::Staged(Box::new(parse_abstract_type(data)?)).to_type())
+            Ok(HIRTypeKind::Staged(Box::new(parse_abstract_type(data, scope)?)).to_type())
         }
 
         intrinsic!() => Ok(HIRTypeKind::Identifier {
@@ -912,24 +284,10 @@ pub(crate) fn parse_type_base(data: &mut ParserData) -> CHLResult<HIRType> {
         }
         .to_type()),
 
-        keyword!(Struct) => parse_struct_def(data),
-        keyword!(Enum) => parse_enum_def(data),
-        keyword!(Union) => parse_union_def(data),
+        keyword!(Struct, Enum, Union) => parse_tag(data, scope),
 
-        _ => {
-            return parse_point_error(
-                &data.tokens,
-                &EXPECTED_SYNTAX,
-                ("a type".into(), None),
-            );
-        }
-    };
-
-    let specifiers = parse_specifier(&mut data.tokens);
-
-    Ok(ty?
-        .add_specifier(specifiers)
-        .with_range(token_range(data, start_index, data.tokens.index)))
+        _ => parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a type".into(), None)),
+    }
 }
 
 // The parenthesized arguments of a call or of a generator, 'opt(int)'
@@ -956,231 +314,12 @@ pub(crate) fn parse_args(data: &mut ParserData) -> CHLResult<Vec<HIRExpression>>
     args
 }
 
-// 'fn' is parsed as a base type whose declarator carries the signature, its indirections and
-// name sitting where C puts them: 'fn* table[4](int) -> int'. Bare 'fn' is the function type itself
-fn fn_declarator_marker() -> HIRType {
-    HIRTypeKind::Identifier {
-        name: QualifiedName::new_raw(CHLIdent::new("@fn")),
-        lookup: HIRTypeLookup::Standard,
-        args: None,
-    }
-    .to_type()
-}
+mod declarator;
+pub(crate) use declarator::{
+    parse_abstract_type, parse_declaration_head, parse_declarator, parse_typed_declarator,
+    parse_typedef_declarator, parse_variable_initializer, DeclaratorKind,
+};
 
-fn is_fn_declarator_marker(ty: &HIRType) -> bool {
-    matches!(
-        &ty.kind,
-        HIRTypeKind::Identifier { name, args: None, .. }
-            if name.namespace.is_root() && name.name.as_str() == "@fn"
-    )
-}
-
-fn parse_fn_signature(data: &mut ParserData) -> CHLResult<HIRType> {
-    let start_index = data.tokens.index;
-    let ParseParamsResult {
-        params,
-        var_args,
-        contract,
-        ..
-    } = parse_params(data)?;
-    assert_token_matches!(data.tokens, operator!(Arrow), "'->' after 'fn' parameters");
-    let return_type = parse_abstract_type(data)?;
-
-    let prototype = HIRFunctionPrototype {
-        kind: HIRFunctionKind::Standard(CHLIdent::new("__internal_fnptr")),
-        comptime: false,
-        return_type,
-        params,
-        var_args,
-        contract,
-        linkage: LinkageMode::Standard,
-        symbol_naming: HIRSymbolNameScheme::Namespaced,
-        range: TokenRange::internal(),
-    };
-
-    Ok(HIRTypeKind::Function {
-        prototype: Box::new(prototype),
-        c_form: false,
-    }
-    .to_type()
-    .with_range(token_range(data, start_index, data.tokens.index)))
-}
-
-enum FnIndirection {
-    Pointer(HIRTypeQualifiers),
-    Reference,
-}
-
-fn parse_fn_indirections(data: &mut ParserData) -> Vec<FnIndirection> {
-    let mut indirections = Vec::new();
-    loop {
-        if try_next!(data.tokens, operator!(Asterisk)) {
-            indirections.push(FnIndirection::Pointer(parse_specifier(&mut data.tokens)));
-        } else if try_next!(data.tokens, operator!(Ampersand)) {
-            indirections.push(FnIndirection::Reference);
-        } else {
-            return indirections;
-        }
-    }
-}
-
-// Indirections apply innermost first, as in a C declarator: 'fn*& f' is a reference to a pointer
-fn parse_fn_type(data: &mut ParserData, indirections: Vec<FnIndirection>) -> CHLResult<HIRType> {
-    let function = parse_fn_signature(data)?;
-    let range = function.range.clone();
-    Ok(indirections
-        .into_iter()
-        .fold(function, |inner, indirection| match indirection {
-            FnIndirection::Pointer(specifiers) => inner.pointer_to(specifiers),
-            FnIndirection::Reference => HIRTypeKind::MemoryReference {
-                inner_type: Box::new(inner),
-                lifetime: None,
-            }
-            .to_type(),
-        })
-        .with_range(range))
-}
-
-fn parse_fn_declarator(data: &mut ParserData) -> CHLResult<(Option<CHLIdent>, HIRType)> {
-    let indirections = parse_fn_indirections(data);
-    let name = try_parse_simple_identifier(&mut data.tokens);
-
-    let mut array_suffixes: Vec<Option<HIRExpression>> = Vec::new();
-    while try_next!(data.tokens, punctuator!(OpenBracket)) {
-        if try_next!(data.tokens, punctuator!(CloseBracket)) {
-            array_suffixes.push(None);
-        } else {
-            let size = parse_expr(data)?;
-            assert_token_matches!(data.tokens, punctuator!(CloseBracket), "']'");
-            array_suffixes.push(Some(size));
-        }
-    }
-
-    if !peek_kind!(data.tokens, punctuator!(OpenParen)) {
-        return parse_point_error(
-            &data.tokens,
-            &EXPECTED_SYNTAX,
-            ("a parameter list".into(), Some("after 'fn'".into())),
-        );
-    }
-
-    let function = parse_fn_type(data, indirections)?;
-
-    // An anonymous 'fn' type only takes a name as the return type of a function declarator
-    if name.is_none() && array_suffixes.is_empty() {
-        let Some(trailing) = try_parse_simple_identifier(&mut data.tokens) else {
-            return Ok((None, function));
-        };
-        if peek_kind!(data.tokens, punctuator!(OpenParen)) {
-            return Ok((Some(trailing), function));
-        }
-        data.tokens.back();
-        return parse_point_error(&data.tokens, &FN_TRAILING_NAME, trailing.to_string());
-    }
-
-    let ty = array_suffixes
-        .into_iter()
-        .rev()
-        .fold(function, |inner, size| match size {
-            Some(size) => {
-                HIRTypeKind::ExplicitSizedArray(Box::new(inner), Box::new(size)).to_type()
-            }
-            None => HIRTypeKind::ImplicitSizedArray(Box::new(inner)).to_type(),
-        });
-
-    Ok((name, ty))
-}
-
-// A type with no declarator name: the base and its pointer and reference suffixes
-pub(crate) fn parse_abstract_type(data: &mut ParserData) -> CHLResult<HIRType> {
-    let specifiers = parse_decl_specifiers(&mut data.tokens);
-    let base = parse_type_base(data)?.add_specifier(specifiers.qualifiers);
-
-    if is_fn_declarator_marker(&base) {
-        let indirections = parse_fn_indirections(data);
-        return parse_fn_type(data, indirections);
-    }
-
-    let ty = parse_declarator_mods(data, base, false)?.1;
-    parse_type_suffix_mod(data, ty)
-}
-
-pub(crate) fn parse_base_mods(
-    data: &mut ParserData,
-    acc_type: HIRType,
-) -> CHLResult<(Option<CHLIdent>, HIRType)> {
-    if is_fn_declarator_marker(&acc_type) {
-        return parse_fn_declarator(data);
-    }
-
-    let (name, modified_type) = parse_type_mods(data, acc_type)?;
-
-    let modified_type = parse_type_suffix_mod(data, modified_type)?;
-
-    Ok((name, modified_type))
-}
-
-pub(crate) fn parse_initializer(
-    data: &mut ParserData,
-) -> CHLResult<(Option<CHLIdent>, HIRType, ParsedSpecifiers)> {
-    let mut prefix_specs = parse_decl_specifiers(&mut data.tokens);
-    let type_base = parse_type_base(data)?;
-    parse_attributes(&mut data.tokens, &mut prefix_specs.attributes);
-
-    let (name, ty) = parse_named_declarator(data, type_base.add_specifier(prefix_specs.qualifiers))?;
-    Ok((name, ty, prefix_specs))
-}
-
-pub(crate) fn parse_named_declarator(
-    data: &mut ParserData,
-    base: HIRType,
-) -> CHLResult<(Option<CHLIdent>, HIRType)> {
-    let (name, mut ty) = parse_base_mods(data, base)?;
-    if !data.c_mode && name.is_some() && matches!(ty.kind, HIRTypeKind::Auto)
-        && try_next!(data.tokens, punctuator!(Colon))
-    {
-        ty = parse_abstract_type(data)?.add_specifier(ty.specifiers);
-    }
-    Ok((name, ty))
-}
-
-pub(crate) fn parse_typedef_initializer(
-    data: &mut ParserData,
-) -> CHLResult<(Option<CHLIdent>, HIRType)> {
-    let (name, return_type, specifiers) = parse_initializer(data)?;
-
-    if name.is_none() || !peek_kind!(data.tokens, punctuator!(OpenParen)) {
-        return Ok((name, return_type));
-    }
-
-    let ParseParamsResult {
-        params,
-        var_args,
-        contract,
-        attributes,
-    } = parse_params(data)?;
-
-    let prototype = HIRFunctionPrototype {
-        kind: HIRFunctionKind::Standard(CHLIdent::new("__internal_fnptr")),
-        comptime: false,
-        return_type: specifiers
-            .attributes
-            .merge(attributes)
-            .apply_to_return_type(return_type),
-        params,
-        var_args,
-        contract,
-        linkage: LinkageMode::Standard,
-        symbol_naming: HIRSymbolNameScheme::Namespaced,
-        range: TokenRange::internal(),
-    };
-
-    Ok((
-        name,
-        HIRTypeKind::Function {
-            prototype: Box::new(prototype),
-            c_form: true,
-        }
-        .to_type(),
-    ))
-}
+mod tags;
+use tags::parse_tag;
+pub(crate) use tags::TagScope;

@@ -2,15 +2,21 @@ use chl_hmir::{
     HMIRBodyContext,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRTypeID, HMIRTypeKind, context::HMIRTypeContext},
+    ty::HMIRTypeID,
 };
-use chl_log::{CHLResult, catalogue::typecheck};
+use chl_log::{
+    CHLResult,
+    catalogue::{mir, typecheck},
+};
 use chl_tokens::TokenRange;
 
 use super::{Shape, captures, materialize, shape, signature};
 use crate::{
     emit,
-    env::function::{ComptimeContext, FnContext, LocalLoweringContext, runtime::RuntimeScope},
+    env::function::{
+        ComptimeContext, FnContext, LocalLoweringContext, comptime::ComptimeScope,
+        runtime::RuntimeScope, scope::Bindings,
+    },
     eval::{
         EvalResult, coerce, comptime, control,
         deduce::{self, Incomplete},
@@ -19,11 +25,7 @@ use crate::{
         types,
     },
     log::hmir_error,
-    value::{
-        HMIRValue,
-        immediate::HMIRImmValue,
-        staged::{Quote, QuoteRef},
-    },
+    value::{HMIRValue, staged::Quote},
 };
 
 // Emitting code that is already being emitted changes nothing, so it stands as the code itself
@@ -47,7 +49,7 @@ pub(super) fn capture(
     root: HMIRExprID,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let code = QuoteRef::new(closure(context, body, params, root)?);
+    let code = closure(context, body, params, root)?;
     let span = span.clone();
     let pending =
         Incomplete::synthesizing(
@@ -80,19 +82,16 @@ pub(crate) fn closure(
 // A quote with nothing expected of it is typed by its declared parameters and the result its body has with them
 fn synthesized(
     context: &mut LocalLoweringContext,
-    code: QuoteRef,
+    code: Quote,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let declared = declared(context, code.get(), None)?;
+    let declared = declared(context, &code, None)?;
     let Some(types) = declared.into_iter().collect::<Option<Vec<_>>>() else {
         return Err(hmir_error(span, &typecheck::CANNOT_INFER, "this type".into()).into());
     };
-    let result = synthesize(context, code.get(), &types, span)?.ready()?;
+    let result = synthesize(context, &code, &types, span)?.ready()?;
     let ty = signature(context, types, result, span);
-    Ok(Evaluation::Ready(HMIRValue::new(
-        ty,
-        HMIRImmValue::Quote(code),
-    )))
+    Ok(Evaluation::Ready(HMIRValue::new(ty, code.into_kind())))
 }
 
 pub(crate) fn synthesize(
@@ -103,12 +102,8 @@ pub(crate) fn synthesize(
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
     deduce::typed(context, span, false, |context| {
         let mut args = Vec::with_capacity(types.len());
-        for param in types {
-            let ty = match context.env().resolve_kind(*param) {
-                HMIRTypeKind::Staged(inner) => *inner,
-                _ => *param,
-            };
-            args.push(deduce::placeholder(context, ty, span)?);
+        for &param in types {
+            args.push(deduce::placeholder(context, param, span)?);
         }
         let quote = deduce::shadowed(context, quote, span)?;
         expand(context, &quote, &args, None)
@@ -117,13 +112,13 @@ pub(crate) fn synthesize(
 
 fn resolve(
     context: &mut LocalLoweringContext,
-    code: QuoteRef,
+    code: Quote,
     expected: HMIRTypeID,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let (Shape { params, result }, insert) = match shape(context.env(), expected) {
         Some(shape) => (shape, false),
-        None if !code.get().params().is_empty() => {
+        None if !code.params().is_empty() => {
             let conversion = ("a staged closure".into(), types::name(context.env(), expected));
             return Err(hmir_error(span, &typecheck::INVALID_CONVERSION, conversion).into());
         }
@@ -135,16 +130,16 @@ fn resolve(
             true,
         ),
     };
-    if params.len() != code.get().params().len() {
+    if params.len() != code.params().len() {
         let count = (
             "staged expression".into(),
             params.len(),
-            code.get().params().len(),
+            code.params().len(),
             false,
         );
         return Err(hmir_error(span, &typecheck::ARGUMENT_COUNT, count).into());
     }
-    let declared = declared(context, code.get(), Some(&params))?;
+    let declared = declared(context, &code, Some(&params))?;
     for (actual, expected) in declared.into_iter().zip(&params) {
         let Some(actual) = actual else {
             continue;
@@ -159,7 +154,7 @@ fn resolve(
         }
     }
     let ty = signature(context, params, result, span);
-    let value = HMIRValue::new(ty, HMIRImmValue::Quote(code));
+    let value = HMIRValue::new(ty, code.into_kind());
     match insert {
         true => materialize(context, value, span),
         false => Ok(Evaluation::Ready(value)),
@@ -206,9 +201,9 @@ pub(crate) fn declared(
     Ok(types)
 }
 
-pub(super) fn expand(
+pub(super) fn expand<V: Clone + Into<HMIRValue>>(
     context: &mut LocalLoweringContext,
-    quote: &Quote,
+    quote: &Quote<V>,
     args: &[HMIRValue],
     expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
@@ -217,12 +212,22 @@ pub(super) fn expand(
         .body(quote.root().body())
         .expect("a quoted body exists");
     let span = body.expr(quote.root()).span();
-    let sealed = !context.runtime().quoting() && !context.expectations().allows_escape();
-    let scope = RuntimeScope::new(false).quoted(body.id(), sealed);
-    context
-        .runtime_mut()
-        .scopes_mut()
-        .push(scope, None, quote.captures().clone());
+    let bindings: Bindings = quote
+        .captures()
+        .iter()
+        .map(|(&local, value)| (local, value.clone().into()))
+        .collect();
+    let allows_escape = context.expectations().allows_escape();
+    match context.context_mut() {
+        FnContext::Runtime(runtime) => {
+            let sealed = !runtime.quoting() && !allows_escape;
+            let scope = RuntimeScope::new(false).quoted(body.id(), sealed);
+            runtime.scopes_mut().push(scope, None, bindings);
+        }
+        FnContext::Comptime(comptime) => {
+            comptime.scopes_mut().push(ComptimeScope::quoted(), None, bindings);
+        }
+    }
 
     let source = quote.source();
     let completion = context.relocated(source, |context| {
@@ -237,6 +242,14 @@ pub(super) fn expand(
                 None => Ok(value),
             })
     });
+    let completion = if context.is_comptime() {
+        let span = span.clone();
+        flow::catch(completion, move |_| {
+            Err(hmir_error(&span, &mir::COMPTIME_CONTROL_ESCAPE, ()).into())
+        })
+    } else {
+        completion
+    };
     Ok(match control::closing(context, body, completion, span)? {
         Evaluation::Incomplete(pending) => {
             Evaluation::Incomplete(pending.in_source(source, quote.root().body()))

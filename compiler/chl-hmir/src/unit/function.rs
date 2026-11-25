@@ -1,8 +1,8 @@
 use chl_util::{identifier::CHLIdent, linkage::LinkageMode};
 
 use crate::{
-    body::{HMIRBodyContext, HMIRLocalID},
-    expr::HMIRExprID,
+    body::{HMIRBodyContext, HMIRHole, HMIRLocal, HMIRLocalID},
+    expr::{HMIRExpr, HMIRExprID, HMIRExprKind},
 };
 
 #[derive(Debug, Clone)]
@@ -17,6 +17,7 @@ pub struct HMIRFunction {
 pub struct HMIRFnDefinition {
     root: HMIRExprID,
     address_labels: Vec<CHLIdent>,
+    transparent: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +36,7 @@ pub struct HMIRFnPrototype {
 pub struct HMIRFnParamDecl {
     name: Option<CHLIdent>,
     default: Option<HMIRExprID>,
+    inferred: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +90,53 @@ impl HMIRFunction {
         &self.body
     }
 
+    pub fn body_mut(&mut self) -> &mut HMIRBodyContext {
+        &mut self.body
+    }
+
+    pub fn prepend_inferred_parameters(&mut self, locals: &[HMIRLocalID]) {
+        if locals.is_empty() {
+            return;
+        }
+        let prototype = &mut self.prototype;
+        let mut declarations = Vec::new();
+        let mut parameters = Vec::new();
+        let mut contract_locals = Vec::new();
+        for &local in locals {
+            let binding = self.body.local(local);
+            let span = binding.span();
+            let default = prototype.defaults.declare_hole(HMIRHole::new(span.clone()));
+            let default = prototype
+                .defaults
+                .push_expr(HMIRExpr::new(HMIRExprKind::Hole(default), span.clone()));
+            declarations.push(HMIRFnParamDecl {
+                name: None,
+                default: Some(default),
+                inferred: true,
+            });
+            parameters.push(HMIRFnParam::new(true, binding.ty()));
+            if binding.name().is_none() && !prototype.signature.contract.params.is_empty() {
+                let contract = &mut prototype.signature.contract.body;
+                let hole = contract.declare_hole(HMIRHole::new(span.clone()));
+                let ty = contract.push_expr(HMIRExpr::new(HMIRExprKind::Hole(hole), span.clone()));
+                contract_locals.push(contract.declare_local(HMIRLocal::new(
+                    None,
+                    ty,
+                    span.clone(),
+                    true,
+                )));
+            }
+        }
+        prototype.params.splice(0..0, declarations);
+        prototype.signature.params.splice(0..0, parameters);
+        let contract = &mut prototype.signature.contract;
+        if !contract_locals.is_empty() {
+            contract_locals.extend_from_slice(&contract.params);
+            contract.params = contract_locals.into();
+        }
+        self.params = locals.iter().chain(self.params.iter()).copied().collect();
+    }
+
     pub fn params(&self) -> &[HMIRLocalID] {
         &self.params
     }
@@ -102,6 +151,27 @@ impl HMIRFunction {
 
     pub fn def(&self) -> Option<&HMIRFnDefinition> {
         self.def.as_ref()
+    }
+
+    pub fn structural_body(&self) -> Option<HMIRExprID> {
+        let root = self.transparent_body()?;
+        let mut operand = root;
+        while let crate::expr::HMIRExprKind::Type(ty) = self.body().expr(operand).kind() {
+            match ty.kind() {
+                crate::ty::HMIRExprTypeKind::Nominal { inner, strong_identifier: None } => {
+                    operand = *inner;
+                }
+                crate::ty::HMIRExprTypeKind::Strong { .. } => return None,
+                _ => break,
+            }
+        }
+        Some(root)
+    }
+
+    pub fn transparent_body(&self) -> Option<HMIRExprID> {
+        self.def()
+            .filter(|def| def.transparent)
+            .map(HMIRFnDefinition::root)
     }
 
     pub fn returns_type(&self) -> bool {
@@ -149,7 +219,11 @@ impl HMIRFnPrototype {
 
 impl HMIRFnParamDecl {
     pub fn new(name: Option<CHLIdent>, default: Option<HMIRExprID>) -> Self {
-        Self { name, default }
+        Self {
+            name,
+            default,
+            inferred: false,
+        }
     }
 
     pub fn name(&self) -> Option<&CHLIdent> {
@@ -159,6 +233,10 @@ impl HMIRFnParamDecl {
     // Only a named argument binds a parameter with a default; left unbound, it takes the default
     pub fn default(&self) -> Option<HMIRExprID> {
         self.default
+    }
+
+    pub fn inferred(&self) -> bool {
+        self.inferred
     }
 }
 
@@ -272,10 +350,11 @@ impl Default for HMIRContract {
 }
 
 impl HMIRFnDefinition {
-    pub fn new(root: HMIRExprID, address_labels: Vec<CHLIdent>) -> Self {
+    pub fn new(root: HMIRExprID, address_labels: Vec<CHLIdent>, transparent: bool) -> Self {
         Self {
             root,
             address_labels,
+            transparent,
         }
     }
 

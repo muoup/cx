@@ -1,3 +1,5 @@
+use std::{ops::Deref, rc::Rc};
+
 use chl_hir::ast::types::HIRTagKind;
 use chl_hmir::{
     HMIRComptimeGlobal, HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind,
@@ -20,8 +22,9 @@ use crate::{
         HMIREnvironment,
         function::{ComptimeContext, FnContext, LocalLoweringContext},
         resolver::{SymbolState, demand},
+        symbols::HMIRUnitHandle,
     },
-    eval::{self, eval_type, flow, name::type_value, types},
+    eval::{self, comptime, deduce, eval_type, flow, name::type_value, types},
     log::hmir_error,
     lower::declaration,
     value::{
@@ -74,6 +77,46 @@ pub(crate) fn value_type(env: &mut HMIREnvironment, def: HMIRDefID) -> CHLResult
     Ok(env.referent(value.ty()))
 }
 
+pub(crate) enum Function<'hmir> {
+    Source(HMIRUnitHandle<'hmir>, HMIRDefID),
+    Elaborated(Rc<HMIRFunction>),
+}
+
+impl Deref for Function<'_> {
+    type Target = HMIRFunction;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Source(unit, def) => {
+                declaration::function(unit.resolve_def(*def).expect("function exists"))
+            }
+            Self::Elaborated(function) => function,
+        }
+    }
+}
+
+pub(crate) fn function<'hmir>(
+    env: &mut HMIREnvironment<'_, 'hmir>,
+    def: HMIRDefID,
+) -> CHLResult<Function<'hmir>> {
+    let unit = env
+        .symbols_mut()
+        .owner(def.brand())
+        .expect("function owner exists");
+    let source = Function::Source(unit, def);
+    let expanded = match env.resolver().elaborated_functions.get(&def) {
+        Some(expanded) => expanded.clone(),
+        None => {
+            let expanded = deduce::signature::elaborate(env, def, &source)?.map(Rc::new);
+            env.resolver_mut()
+                .elaborated_functions
+                .insert(def, expanded.clone());
+            expanded
+        }
+    };
+    Ok(expanded.map_or(source, Function::Elaborated))
+}
+
 fn evaluating<T>(
     env: &mut HMIREnvironment,
     def: HMIRDefID,
@@ -117,9 +160,12 @@ fn evaluate(context: &mut LocalLoweringContext, id: HMIRDefID) -> CHLResult<HMIR
             if let Some(tag) = declaration.tag()
                 && let Some(declared) = types::aggregate(global.body(), global.initializer()) =>
         {
-            tagged(context, id, declaration, tag, declared)
+            tagged(context, id, declaration, tag, declared.ty)
         }
-        HMIRDefKind::Function(function) => function_value(context, id, function, span),
+        HMIRDefKind::Function(_) => {
+            let function = function(context.env_mut(), id)?;
+            function_value(context, id, &function, span)
+        }
         HMIRDefKind::Global(_) => global_value(context, id, def, declaration),
         HMIRDefKind::ComptimeGlobal(global) => comptime_value(context, id, global, span),
     }
@@ -134,7 +180,7 @@ fn body(context: &mut LocalLoweringContext, id: HMIRDefID, ty: HMIRTypeID) -> CH
     };
     let declared = types::aggregate(global.body(), global.initializer())
         .expect("a pending type declares an aggregate");
-    types::construct_type(context, global.body(), declared, Some(ty))?;
+    types::define_aggregate(context, global.body(), declared, Some(ty))?;
     Ok(())
 }
 
@@ -154,7 +200,7 @@ fn tagged(
     );
     let name = declaration::type_name(context.unit(id.brand()).resolve_def(id).unwrap());
     let resolver = context.env_mut().resolver_mut();
-    let ty = resolver.reserve_type(placeholder);
+    let ty = resolver.reserve_nominal(placeholder, None);
     resolver.name_type(ty, name);
     if declaration.role() == HMIRDeclarationRole::Definition {
         resolver.set_pending(ty, Some(id));
@@ -181,12 +227,37 @@ fn global_value(
     declaration: &HMIRDeclaration,
 ) -> CHLResult<HMIRValue> {
     let span = declaration.span();
-    let mut merged = None;
+    let HMIRDefKind::Global(canonical) = declaration.kind().unwrap() else {
+        unreachable!("a global is declared as one")
+    };
+    let replacement = if declaration.overwrites() {
+        Some(global_type(context, id, canonical, span)?)
+    } else {
+        None
+    };
+    let mut merged = replacement;
+    let mut original = None;
     for other in def.declarations() {
+        if replacement.is_some() && std::ptr::eq(other, declaration) {
+            continue;
+        }
         let Some(HMIRDefKind::Global(global)) = other.kind() else {
             continue;
         };
-        let ty = global_type(context, id, global, span)?;
+        let ty = global_type(context, id, global, other.span())?;
+        if let Some(replacement) = replacement {
+            let env = context.env();
+            let matches = if other.point() < declaration.point() {
+                declaration::integer_types_alike(env, replacement, ty, true)
+                    && types::alike(env, *original.get_or_insert(ty), ty, true)
+            } else {
+                types::alike(env, replacement, ty, true)
+            };
+            if !matches {
+                return Err(declaration::incompatible(def, other));
+            }
+            continue;
+        }
         merged = Some(match merged {
             None => ty,
             Some(previous) => composite(context.env(), previous, ty)
@@ -199,9 +270,6 @@ fn global_value(
         context.env().resolve_kind(ty),
         HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })
     );
-    let Some(HMIRDefKind::Global(canonical)) = declaration.kind() else {
-        unreachable!("a global is declared as one")
-    };
     if unbounded && linkage != LinkageMode::Extern && canonical.initializer().is_none() {
         ty = types::array(context.env_mut(), ty, 1, span);
     }
@@ -274,7 +342,8 @@ fn comptime_value(
         flow::boundary(eval_type(context, global.body(), global.ty()))?.description(),
     )?;
     if !matches!(context.env().resolve_kind(declared), HMIRTypeKind::Type) {
-        return eval::eval_comptime(context, global.body(), global.initializer(), Some(declared));
+        let value = eval::eval_comptime(context, global.body(), global.initializer(), Some(declared))?;
+        return comptime::independent(context, value, "a comptime global initializer", span).map(Into::into);
     }
     let source = context.env().symbols().resolve_definition(id);
     let name = source.name().name.to_string();
@@ -288,7 +357,7 @@ fn comptime_value(
         match types::aggregate(body, global.initializer()) {
             Some(declared) => {
                 context.env_mut().resolver_mut().name_type(reserved, symbol_name);
-                types::construct_type(context, body, declared, Some(reserved))
+                types::define_aggregate(context, body, declared, Some(reserved))
             }
             None => flow::top(
                 flow::boundary(eval_type(context, body, global.initializer()))?.description(),

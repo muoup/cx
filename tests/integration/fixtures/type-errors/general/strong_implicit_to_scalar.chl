@@ -1,0 +1,7 @@
+typedef @strong int meters;
+
+int main() {
+    meters distance = (meters)1;
+    int scalar = distance;
+    return scalar;
+}

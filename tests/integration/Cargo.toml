@@ -18,3 +18,5 @@ harness = true
 chl-test-support = { path = "../support", default-features = false }
 chl-pipeline = { path = "../../compiler/chl-pipeline", default-features = false }
 chl-pipeline-data = { path = "../../compiler/chl-pipeline-data" }
+serde = { version = "1", features = ["derive"] }
+toml = { version = "0.9.12", default-features = false, features = ["parse", "serde", "std"] }

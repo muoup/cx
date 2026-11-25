@@ -1,45 +1,48 @@
-use std::{collections::BTreeMap, mem};
+mod inference;
+mod matching;
+
+pub(crate) use inference::{infer, infer_from_types};
+
+use std::collections::BTreeMap;
 
 use chl_hmir::{
     HMIRBodyContext, HMIRDefID, HMIRFunction,
-    body::HMIRLocalID,
-    expr::{HMIRExprID, HMIRExprKind},
-    ty::{
-        HMIRExprType, HMIRExprTypeKind, HMIRTypeID, HMIRTypeKind,
-        aggregate::{HMIRDeclaredMove, HMIRTypeSemantics},
-        context::HMIRTypeContext,
-    },
+    ty::{HMIRTypeID, context::HMIRTypeContext},
 };
 use chl_log::{CHLResult, catalogue::typecheck, error::CHLError};
 use chl_tokens::TokenRange;
-use chl_util::identifier::CHLIdent;
 
 use crate::{
-    env::function::LocalLoweringContext,
+    env::function::{ComptimeContext, LocalLoweringContext},
     eval::{
         EvalResult,
         call::dependent::Frame,
         coerce, comptime,
-        deduce::{self, Incomplete, IncompleteReason, subject},
-        eval, eval_type,
-        flow::{self, Evaluation},
+        flow::{Evaluation, Incomplete, IncompleteReason},
         staged, symbol,
         types::{self, alike},
     },
     log::hmir_error,
-    lower::declaration,
     value::{self, HMIRValue},
 };
 
-// The comptime arguments of a call deferred to deduction, by parameter, and the value deduced for each
+use super::pattern::Form;
+
 pub(crate) struct Deduction<'a> {
     function: &'a HMIRFunction,
     def: HMIRDefID,
-    // Each deferred argument, with whether it is the parameter's default. A type is left incomplete, while a
-    // value is a bare hole that the value deduced for it replaces
-    deferred: BTreeMap<usize, (Option<Incomplete<HMIRValue>>, bool)>,
-    inferred: BTreeMap<usize, HMIRValue>,
-    bound: Vec<(usize, HMIRValue)>,
+    slots: BTreeMap<usize, Slot>,
+}
+
+struct Slot {
+    pending: Option<Pending>,
+    evidence: Option<HMIRValue>,
+}
+
+pub(crate) enum Pending {
+    Value,
+    Argument(Incomplete<HMIRValue>),
+    Default(Incomplete<HMIRValue>),
 }
 
 impl<'a> Deduction<'a> {
@@ -47,429 +50,150 @@ impl<'a> Deduction<'a> {
         Self {
             function,
             def,
-            deferred: BTreeMap::new(),
-            inferred: BTreeMap::new(),
-            bound: Vec::new(),
+            slots: BTreeMap::new(),
         }
     }
 
-    pub(crate) fn defer(
-        &mut self,
-        index: usize,
-        pending: Option<Incomplete<HMIRValue>>,
-        default: bool,
-    ) {
-        self.deferred.insert(index, (pending, default));
-    }
-
-    pub(crate) fn is_hole(&self, index: usize) -> bool {
-        self.deferred.contains_key(&index)
-    }
-
-    pub(crate) fn first(&self) -> Option<usize> {
-        self.deferred.keys().next().copied()
-    }
-
-    // The deferred argument that the type of the parameter 'index' depends on
-    pub(crate) fn blocking(&self, index: usize) -> Option<usize> {
-        let form = *self.function.signature().params()[index].ty();
-        let references = staged::references(self.function.body(), form);
-        let params = self.function.params();
-        self.deferred
-            .keys()
-            .copied()
-            .find(|hole| references.contains(&params[*hole]))
-    }
-
-    // Deduces the deferred arguments from the arguments from 'from' on, binding each one deduced in 'frame'.
-    //
-    // Every argument other than a closure is unified before any is bound. A closure is typed after them, in
-    // order, with the parameter types that what is bound by then decides, and its result unified.
-    pub(crate) fn infer(
-        &mut self,
-        context: &mut LocalLoweringContext,
-        frame: &mut Frame,
-        body: &HMIRBodyContext,
-        args: &[Option<HMIRExprID>],
-        from: usize,
-        span: &TokenRange,
-    ) -> EvalResult<Vec<(usize, HMIRValue)>> {
-        let mut closures = Vec::new();
-        for (index, arg) in args.iter().enumerate().skip(from) {
-            let Some(arg) = arg.filter(|_| !self.is_hole(index)) else {
-                continue;
-            };
-            if let Some(closure) = closure(body, arg) {
-                closures.push((index, closure));
-                continue;
-            }
-            let Some(actual) = actual_type(context, body, arg)? else {
-                continue;
-            };
-            let form = *self.function.signature().params()[index].ty();
-            let actual = self.argument(context, form, actual, span);
-            self.unify(context, frame, form, Some(actual), span)?;
-        }
-        self.bind(context, frame, body, span)?;
-        for (index, (params, root)) in closures {
-            self.closure(context, frame, body, index, params, root, span)?;
-            self.bind(context, frame, body, span)?;
-        }
-        Ok(mem::take(&mut self.bound))
-    }
-
-    // A closure passed to a parameter of function type: the types it declares are unified with those of the
-    // parameter, and the result its body has with the parameter types decided by then with that of the parameter
-    fn closure(
-        &mut self,
-        context: &mut LocalLoweringContext,
-        frame: &mut Frame,
-        body: &HMIRBodyContext,
-        index: usize,
-        params: &[HMIRLocalID],
-        root: HMIRExprID,
-        span: &TokenRange,
-    ) -> EvalResult<()> {
-        let function = self.function;
-        let form = *function.signature().params()[index].ty();
-        let HMIRExprKind::Type(ty) = function.body().expr(form).kind() else {
-            return Ok(());
-        };
-        let HMIRExprTypeKind::Function { signature, .. } = ty.kind() else {
-            return Ok(());
-        };
-        if signature.params().len() != params.len() {
-            return Ok(());
-        }
-        let quote = staged::closure(context, body, params, root)?;
-        let declared = staged::declared(context, &quote, None)?;
-        for (declared, param) in declared.iter().zip(signature.params()) {
-            self.unify(context, frame, *param.ty(), *declared, span)?;
-        }
-        self.bind(context, frame, body, span)?;
-
-        let mut types = Vec::with_capacity(params.len());
-        for (declared, param) in declared.into_iter().zip(signature.params()) {
-            let ty = match declared {
-                Some(ty) => ty,
-                None => {
-                    let evaluated = frame.enter(context, span, |child| {
-                        flow::top(
-                            eval_type(child, function.body(), *param.ty())
-                                .and_then(|ty| ty.description()),
-                        )
-                    });
-                    match evaluated {
-                        Ok(ty) => ty,
-                        Err(_) => return Ok(()),
-                    }
-                }
-            };
-            types.push(ty);
-        }
-        let result = staged::synthesize(context, &quote, &types, span)?.ready()?;
-        let result = staged::lift(context.env_mut(), result, span);
-        self.unify(context, frame, *signature.return_type(), Some(result), span)?;
-        Ok(())
-    }
-
-    // Binds each deferred argument deduced so far in 'frame', completed from the type deduced for it
-    fn bind(
-        &mut self,
-        context: &mut LocalLoweringContext,
-        frame: &mut Frame,
-        body: &HMIRBodyContext,
-        span: &TokenRange,
-    ) -> EvalResult<()> {
-        let ready = self
-            .deferred
-            .keys()
-            .copied()
-            .filter(|index| self.inferred.contains_key(index))
-            .collect::<Vec<_>>();
-        for index in ready {
-            let (pending, default) = self.deferred.remove(&index).expect("a deferred argument");
-            let inferred = self.inferred[&index].clone();
-            let Some(pending) = pending else {
-                let value = frame.argument(context, index, inferred, span)?;
-                self.bound.push((index, value));
-                continue;
-            };
-            let source = match default {
-                true => self.function.prototype().defaults(),
-                false => body,
-            };
-            let inferred = value::as_type(&inferred).expect("a deferred type infers a type");
-            let value =
-                Evaluation::Incomplete(pending).complete(context, source, Some(inferred))?;
-            let value = frame.argument(context, index, value, span)?;
-            self.bound.push((index, value));
-        }
-        Ok(())
-    }
-
-    fn argument(
-        &self,
-        context: &mut LocalLoweringContext,
-        form: HMIRExprID,
-        actual: HMIRTypeID,
-        span: &TokenRange,
-    ) -> HMIRTypeID {
-        match self.function.body().expr(form).kind() {
-            HMIRExprKind::Type(ty) if matches!(ty.kind(), HMIRExprTypeKind::ReferenceTo { .. }) => {
-                actual
-            }
-            _ => types::qualify::value(context, actual, span),
-        }
-    }
-
-    fn unify(
-        &mut self,
-        context: &mut LocalLoweringContext,
-        frame: &mut Frame,
-        form: HMIRExprID,
-        actual: Option<HMIRTypeID>,
-        span: &TokenRange,
-    ) -> CHLResult<()> {
-        let function = self.function;
-        match function.body().expr(form).kind() {
-            HMIRExprKind::Local(_) => match self.param(form) {
-                Some(index) => {
-                    let actual = actual.map(|actual| deduce::type_constant(context, actual, span));
-                    self.record(context, frame, index, actual, span)
-                }
-                None => Ok(()),
+    pub(crate) fn defer(&mut self, index: usize, pending: Pending) {
+        self.slots.insert(
+            index,
+            Slot {
+                pending: Some(pending),
+                evidence: None,
             },
-            HMIRExprKind::Call {
-                callee,
-                args,
-                named,
-            } => {
-                let mut applied = actual.and_then(|actual| {
-                    self.applied(context, frame, *callee, args.len(), named, actual, span)
-                });
-                let forms = args.iter().chain(named.iter().map(|(_, form)| form));
-                for (index, form) in forms.enumerate() {
-                    let actual = applied
-                        .as_mut()
-                        .and_then(|values| values.get_mut(index))
-                        .and_then(Option::take);
-                    match (actual.as_ref().and_then(value::as_type), self.param(*form)) {
-                        (None, Some(param)) => self.record(context, frame, param, actual, span)?,
-                        (ty, _) => self.unify(context, frame, *form, ty, span)?,
-                    }
-                }
-                Ok(())
-            }
-            HMIRExprKind::Type(ty) => self.structure(context, frame, ty, actual, span),
-            _ => Ok(()),
-        }
-    }
-
-    fn structure(
-        &mut self,
-        context: &mut LocalLoweringContext,
-        frame: &mut Frame,
-        ty: &'a HMIRExprType,
-        actual: Option<HMIRTypeID>,
-        span: &TokenRange,
-    ) -> CHLResult<()> {
-        let env = context.env();
-        match ty.kind() {
-            HMIRExprTypeKind::PointerTo(inner) => {
-                let actual =
-                    actual.and_then(|actual| match env.resolve_kind(env.referent(actual)) {
-                        HMIRTypeKind::Function { .. } => Some(env.referent(actual)),
-                        _ => env
-                            .pointer_inner(actual)
-                            .or_else(|| env.array_inner(actual)),
-                    });
-                self.unify(context, frame, *inner, actual, span)
-            }
-            HMIRExprTypeKind::ReferenceTo { inner, .. } => {
-                let actual = actual.map(|actual| env.referent(actual));
-                self.unify(context, frame, *inner, actual, span)
-            }
-            HMIRExprTypeKind::Array { element, .. } => {
-                let actual = actual.and_then(|actual| {
-                    env.array_inner(actual)
-                        .or_else(|| env.pointer_inner(actual))
-                });
-                self.unify(context, frame, *element, actual, span)
-            }
-            HMIRExprTypeKind::Nominal(inner) => {
-                let declared = ty.semantics();
-                let qualifiers = HMIRTypeSemantics {
-                    constant: declared.constant,
-                    volatile: declared.volatile,
-                    ..Default::default()
-                };
-                let actual = actual.filter(|_| {
-                    !declared.unsafe_move && declared.move_semantics == HMIRDeclaredMove::default()
-                });
-                let actual =
-                    actual.map(|actual| types::qualify::remove(context, actual, qualifiers, span));
-                self.unify(context, frame, *inner, actual, span)
-            }
-            HMIRExprTypeKind::Staged(inner) => {
-                let actual = actual.map(|actual| match env.resolve_kind(actual) {
-                    HMIRTypeKind::Staged(inner) => *inner,
-                    _ => actual,
-                });
-                self.unify(context, frame, *inner, actual, span)
-            }
-            HMIRExprTypeKind::Function { signature, .. } => {
-                let actual = actual
-                    .map(|actual| {
-                        env.pointer_inner(actual)
-                            .unwrap_or_else(|| env.referent(actual))
-                    })
-                    .and_then(|actual| match env.resolve_kind(actual) {
-                        HMIRTypeKind::Function {
-                            signature: actual, ..
-                        } if actual.is_variadic() == signature.is_variadic()
-                            && actual.params().len() == signature.params().len() =>
-                        {
-                            Some(actual.clone())
-                        }
-                        _ => None,
-                    });
-                for (index, param) in signature.params().iter().enumerate() {
-                    let actual = actual.as_ref().map(|actual| *actual.params()[index].ty());
-                    self.unify(context, frame, *param.ty(), actual, span)?;
-                }
-                let actual = actual.map(|actual| *actual.return_type());
-                self.unify(context, frame, *signature.return_type(), actual, span)
-            }
-            _ => Ok(()),
-        }
-    }
-
-    // The arguments a type generator named by 'callee' applied to produce 'actual', for each of the positional
-    // and then the named arguments of a call to it, bound as the call binds them
-    fn applied(
-        &self,
-        context: &mut LocalLoweringContext,
-        frame: &mut Frame,
-        callee: HMIRExprID,
-        args: usize,
-        named: &[(CHLIdent, HMIRExprID)],
-        actual: HMIRTypeID,
-        span: &TokenRange,
-    ) -> Option<Vec<Option<HMIRValue>>> {
-        let body = self.function.body();
-        let value = frame
-            .enter(context, span, |child| flow::top(eval(child, body, callee)))
-            .ok()?;
-        let (callee, curried) = match value::into_application(value) {
-            Ok(application) => (*application.callee, application.args),
-            Err(callee) => (callee, Vec::new()),
-        };
-        let def = value::as_function(&callee)?;
-        let instance = instance(context, def, actual)?;
-        let source = context.env().symbols().resolve_definition(def);
-        let params = declaration::function(source).prototype().params();
-        let mut values = (0..params.len())
-            .filter(|index| {
-                curried.get(*index).is_none_or(Option::is_none)
-                    && params[*index].default().is_none()
-            })
-            .map(|index| instance.get(index).cloned())
-            .take(args)
-            .collect::<Vec<_>>();
-        values.resize(args, None);
-        values.extend(named.iter().map(|(name, _)| {
-            (0..params.len())
-                .find(|index| params[*index].name() == Some(name))
-                .and_then(|index| instance.get(index).cloned())
-        }));
-        Some(values)
-    }
-
-    // The parameter that 'form' names, when it names one
-    fn param(&self, form: HMIRExprID) -> Option<usize> {
-        let HMIRExprKind::Local(local) = self.function.body().expr(form).kind() else {
-            return None;
-        };
-        self.function
-            .params()
-            .iter()
-            .position(|param| param == local)
-    }
-
-    // Records 'actual' as deduced for the parameter 'index'. A value other than a type is compared as the type of
-    // its parameter has it, which is known once its argument is deferred
-    fn record(
-        &mut self,
-        context: &mut LocalLoweringContext,
-        frame: &mut Frame,
-        index: usize,
-        actual: Option<HMIRValue>,
-        span: &TokenRange,
-    ) -> CHLResult<()> {
-        let Some(actual) = actual else {
-            return Ok(());
-        };
-        if !self.inferred.contains_key(&index) && !self.is_hole(index) {
-            return Ok(());
-        }
-        let actual = match value::as_type(&actual) {
-            Some(ty) if matches!(context.env().resolve_kind(ty), HMIRTypeKind::Unreachable) => {
-                return Ok(());
-            }
-            Some(_) => actual,
-            None => {
-                let ty = frame.parameter(context, index, span)?;
-                frame.enter(context, span, |child| {
-                    let actual = coerce::implicit::standard(child, actual, ty, span)?;
-                    comptime::converge(child, actual, span)
-                })?
-            }
-        };
-        let Some(first) = self.inferred.get(&index) else {
-            self.inferred.insert(index, actual);
-            return Ok(());
-        };
-        let agrees = match (value::as_type(first), value::as_type(&actual)) {
-            (Some(first), Some(actual)) => alike(context.env(), first, actual, true),
-            _ => first == &actual,
-        };
-        if agrees {
-            return Ok(());
-        }
-        let describe = |value: &HMIRValue| {
-            value::describe(context.env(), value).unwrap_or_else(|| {
-                format!("a value of '{}'", types::name(context.env(), value.ty()))
-            })
-        };
-        Err(hmir_error(
-            span,
-            &typecheck::CONFLICTING_DEDUCTIONS,
-            (self.parameter(index), describe(first), describe(&actual)),
-        ))
-    }
-
-    fn parameter(&self, index: usize) -> String {
-        let local = self.function.params()[index];
-        match self.function.body().local(local).name() {
-            Some(name) => name.to_string(),
-            None => index.to_string(),
-        }
-    }
-
-    pub(crate) fn undeduced(
-        &self,
-        context: &LocalLoweringContext,
-        index: usize,
-        span: &TokenRange,
-    ) -> CHLError {
-        let subject = format!(
-            "comptime argument '{}' of '{}'",
-            self.parameter(index),
-            symbol::name(context.env(), self.def)
         );
-        hmir_error(span, &typecheck::TEMPLATE_DEDUCTION, subject)
     }
+
+    fn is_open(&self, index: usize) -> bool {
+        self.slots
+            .get(&index)
+            .is_some_and(|slot| slot.pending.is_some())
+    }
+
+    fn open(&self) -> impl Iterator<Item = usize> + '_ {
+        self.slots
+            .iter()
+            .filter_map(|(&index, slot)| slot.pending.as_ref().map(|_| index))
+    }
+
+    pub(crate) fn first_open(&self) -> Option<usize> {
+        self.open().next()
+    }
+}
+
+pub(crate) fn blocking(deduction: &Deduction, index: usize) -> Option<usize> {
+    let mut open = deduction.open().peekable();
+    open.peek()?;
+    let function = deduction.function;
+    let form = *function.signature().params()[index].ty();
+    let references = staged::references(function.body(), form);
+    open.find(|&hole| references.contains(&function.params()[hole]))
+}
+
+fn bind(
+    deduction: &mut Deduction,
+    context: &mut LocalLoweringContext,
+    frame: &mut Frame,
+    body: &HMIRBodyContext,
+    values: &mut [Option<HMIRValue>],
+    span: &TokenRange,
+) -> EvalResult<()> {
+    for (&index, slot) in &mut deduction.slots {
+        let Some(evidence) = &slot.evidence else {
+            continue;
+        };
+        let Some(pending) = slot.pending.take() else {
+            continue;
+        };
+        let (pending, source) = match pending {
+            Pending::Value => (None, body),
+            Pending::Argument(pending) => (Some(pending), body),
+            Pending::Default(pending) => (Some(pending), deduction.function.prototype().defaults()),
+        };
+        let value = match pending {
+            None => evidence.clone(),
+            Some(pending) => {
+                let ty = value::as_type(evidence).expect("a deferred type infers a type");
+                Evaluation::Incomplete(pending).complete(context, source, Some(ty))?
+            }
+        };
+        values[index] = Some(frame.argument(context, index, value, span)?);
+    }
+    Ok(())
+}
+
+fn record(
+    deduction: &mut Deduction,
+    context: &mut LocalLoweringContext,
+    frame: &mut Frame,
+    index: usize,
+    actual: HMIRValue,
+    span: &TokenRange,
+) -> CHLResult<()> {
+    let Some(slot) = deduction.slots.get_mut(&index) else {
+        return Ok(());
+    };
+    let actual = match value::as_type(&actual) {
+        Some(ty) if context.env().is_unreachable(ty) => {
+            return Ok(());
+        }
+        Some(_) => actual,
+        None if deduction.function.prototype().params()[index].inferred() => actual,
+        None => {
+            let ty = frame.parameter(context, index, span)?;
+            frame.enter(context, span, |child| {
+                let actual = coerce::implicit::standard(child, actual, ty, span)?;
+                comptime::converge(child, actual, span)
+            })?
+        }
+    };
+    let Some(first) = &slot.evidence else {
+        slot.evidence = Some(actual);
+        return Ok(());
+    };
+    let agrees = match (value::as_type(first), value::as_type(&actual)) {
+        (Some(first), Some(actual)) => alike(context.env(), first, actual, true),
+        _ => first == &actual,
+    };
+    if agrees {
+        return Ok(());
+    }
+    let describe = |value: &HMIRValue| {
+        value::describe(context.env(), value)
+            .unwrap_or_else(|| format!("a value of '{}'", types::name(context.env(), value.ty())))
+    };
+    Err(hmir_error(
+        span,
+        &typecheck::CONFLICTING_DEDUCTIONS,
+        (
+            parameter(deduction.function, index),
+            describe(first),
+            describe(&actual),
+        ),
+    ))
+}
+
+fn parameter(function: &HMIRFunction, index: usize) -> String {
+    let local = function.params()[index];
+    function
+        .body()
+        .local(local)
+        .name()
+        .map_or_else(|| index.to_string(), ToString::to_string)
+}
+
+pub(crate) fn undeduced(
+    deduction: &Deduction,
+    context: &LocalLoweringContext,
+    index: usize,
+    span: &TokenRange,
+) -> CHLError {
+    let subject = format!(
+        "comptime argument '{}' of '{}'",
+        parameter(deduction.function, index),
+        symbol::name(context.env(), deduction.def)
+    );
+    hmir_error(span, &typecheck::TEMPLATE_DEDUCTION, subject)
 }
 
 // The arguments 'def' was applied to when it generated 'ty'.
@@ -488,28 +212,63 @@ fn instance(
 
 pub(crate) fn generates_type(function: &HMIRFunction) -> bool {
     let signature = function.signature();
-    signature.params().iter().all(|param| param.comptime()) && function.returns_type()
+    function.returns_type()
+        && (function.transparent_body().is_some()
+            || (0..signature.params().len()).all(|index| signature.is_comptime_param(index)))
 }
 
-// The arguments of a type generator that a call left as holes are those the type expected of the call was
-// generated from, when 'def' generated that type
 pub(crate) fn generated(
+    deduction: Deduction,
     context: &LocalLoweringContext,
-    def: HMIRDefID,
     values: Vec<Option<HMIRValue>>,
-    undeduced: CHLError,
+    undeduced_error: CHLError,
     span: &TokenRange,
 ) -> Evaluation<Vec<Option<HMIRValue>>> {
+    let Deduction { def, slots, .. } = deduction;
+    let span = span.clone();
     Evaluation::Incomplete(Incomplete::new(
         context,
-        span,
+        &span.clone(),
         IncompleteReason::ExpectedType,
         None,
-        move |context, _, expected| {
+        move |context, body, expected| {
             let expected = context.env().referent(expected);
-            let Some(instance) = instance(context, def, expected) else {
-                return Err(undeduced.into());
-            };
+            let function = symbol::function(context.env_mut(), def)?;
+            if let Some(root) = function.structural_body() {
+                let mut values = values;
+                let mut frame = Frame::new(&function, def, ComptimeContext::of(def), false);
+                for (index, value) in values.iter().enumerate() {
+                    if let Some(value) = value {
+                        frame.argument(context, index, value.clone(), &span)?;
+                    }
+                }
+                let mut deduction = Deduction {
+                    function: &function,
+                    def,
+                    slots,
+                };
+                matching::unify(
+                    &mut deduction,
+                    context,
+                    &mut frame,
+                    Form::new(function.body(), root),
+                    expected,
+                    &span,
+                )?;
+                bind(
+                    &mut deduction,
+                    context,
+                    &mut frame,
+                    body,
+                    &mut values,
+                    &span,
+                )?;
+                if let Some(index) = deduction.first_open() {
+                    return Err(undeduced(&deduction, context, index, &span).into());
+                }
+                return Ok(Evaluation::Ready(values));
+            }
+            let instance = instance(context, def, expected).ok_or(undeduced_error)?;
             let applied = values.into_iter().zip(instance);
             Ok(Evaluation::Ready(
                 applied
@@ -518,33 +277,4 @@ pub(crate) fn generated(
             ))
         },
     ))
-}
-
-// The parameters and body of a closure that takes parameters
-fn closure(body: &HMIRBodyContext, mut arg: HMIRExprID) -> Option<(&[HMIRLocalID], HMIRExprID)> {
-    while let HMIRExprKind::Piped(inner) = body.expr(arg).kind() {
-        arg = *inner;
-    }
-    match body.expr(arg).kind() {
-        HMIRExprKind::Quote { params, body } if !params.is_empty() => Some((params, *body)),
-        _ => None,
-    }
-}
-
-pub(crate) fn actual_type(
-    context: &mut LocalLoweringContext,
-    body: &HMIRBodyContext,
-    mut arg: HMIRExprID,
-) -> CHLResult<Option<HMIRTypeID>> {
-    loop {
-        match body.expr(arg).kind() {
-            HMIRExprKind::Piped(inner) => arg = *inner,
-            HMIRExprKind::Quote {
-                params,
-                body: inner,
-            } if params.is_empty() => arg = *inner,
-            HMIRExprKind::Hole(_) | HMIRExprKind::Quote { .. } => return Ok(None),
-            _ => return Ok(Some(flow::top(subject(context, body, arg))?)),
-        }
-    }
 }

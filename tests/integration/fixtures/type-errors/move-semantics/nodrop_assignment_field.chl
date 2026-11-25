@@ -1,0 +1,9 @@
+struct Resource : @nodrop { int value; };
+struct Holder : @nodrop { Resource value; };
+
+int main() {
+    Holder holder = { { 1 } };
+    holder.value = (Resource) { 2 };
+    @leak(holder);
+    return 0;
+}

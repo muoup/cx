@@ -19,11 +19,12 @@ define_errors! {
         message
     };
     TYPE_MISMATCH: (String, String, String) = "T0012" => |(context, expected, found)| format!("type mismatch in {context}: expected {expected}, found {found}");
-    INVALID_CONVERSION: (String, String) = "T0013" => |(from, to)| format!("cannot convert {from} to '{to}'");
+    INVALID_CONVERSION: (String, String) = "T0013" => |(from, to)| format!("cannot convert '{from}' to '{to}'");
     INVALID_BINARY_OPERANDS: (String, String, String) = "T0014" => |(operation, left, right)| format!("no operator '{operation}' for '{left}' and '{right}'");
     ARGUMENT_COUNT: (String, usize, usize, bool) = "T0015" => |(subject, expected, found, var_args)| {
         let qualifier = if var_args { "at least " } else { "" };
-        format!("{subject} expects {qualifier}{expected} arguments, found {found}")
+        let noun = if expected == 1 { "argument" } else { "arguments" };
+        format!("{subject} expects {qualifier}{expected} positional {noun}, found {found}")
     };
     INITIALIZER_LIMIT: (String, Option<usize>) = "T0016" => |(subject, limit)| {
         let mut message = format!("too many elements in {subject} initializer");
@@ -115,6 +116,8 @@ define_errors! {
     ESCAPING_SPLICE: String = "T0076" => |jump| format!("'{jump}' emits escaping instructions; mark the splice with a postfix '!' to allow it");
     FLEXIBLE_ARRAY_MEMBER: (String, String) = "T0077" => |(member, rule)| format!("flexible array member '{member}' {rule}");
     FLEXIBLE_ARRAY_NESTING: (String, String) = "T0078" => |(ty, position)| format!("'{ty}' has a flexible array member and cannot be {position}");
+    UNTRACKED_NODROP_DROP: String = "T0079" => |ty| format!("cannot drop or replace a value of @nodrop type '{ty}' without tracked liveness");
+    ENUM_MEMBER_RANGE: String = "T0080" => |value| format!("enum member value {value} does not fit its underlying type");
 
     COMPTIME_INTERPRETATION: String = "T0074" => |action| format!("failure during comptime evaluation: {action}");
 

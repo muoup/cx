@@ -2,18 +2,17 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use mlua::{Lua, Result, Table};
+use mlua::{Lua, Result};
 
 use super::values::fail;
 use crate::config::schema::{
-    DEBUG_PROFILE, Mount, ProfileSettings, TargetKind, Usage,
+    DEBUG_PROFILE, IncludeSpec, LibraryConfig, LinkEntry, Mount, ProfileSettings, TargetKind,
 };
 
 pub(super) type Shared = Rc<RefCell<State>>;
 
 #[derive(Default)]
 pub(super) struct State {
-    pub files: Vec<PathBuf>,
     pub stack: Vec<usize>,
     pub packages: Vec<PackageDraft>,
     pub targets: Vec<TargetDraft>,
@@ -24,12 +23,13 @@ pub(super) struct PackageDraft {
     pub name: Option<String>,
     pub source_root: Option<PathBuf>,
     pub mounts: Vec<Mount>,
-    pub usage: Usage,
-    pub c_units: Vec<String>,
+    pub deps: Vec<usize>,
+    pub library: Option<LibraryConfig>,
+    pub includes: Vec<IncludeSpec>,
+    pub defines: Vec<(String, String)>,
+    pub objects: Vec<PathBuf>,
+    pub links: Vec<LinkEntry>,
     pub profiles: Vec<ProfileDraft>,
-    pub selectable: Vec<usize>,
-    pub exported: Vec<usize>,
-    pub helpers: Table,
 }
 
 pub(super) struct ProfileDraft {
@@ -45,25 +45,33 @@ pub(super) struct TargetDraft {
     pub matches: Vec<String>,
     pub excludes: Vec<String>,
     pub headers: Vec<String>,
+    pub ffi_includes: Vec<FfiIncludeDraft>,
+}
+
+pub(super) struct FfiIncludeDraft {
+    pub package: usize,
+    pub name: String,
+    pub prefix: Option<String>,
 }
 
 impl PackageDraft {
-    pub fn new(script: PathBuf, helpers: Table) -> Self {
+    pub fn new(script: PathBuf) -> Self {
         Self {
             script,
             name: None,
             source_root: None,
             mounts: Vec::new(),
-            usage: Usage::default(),
-            c_units: Vec::new(),
+            deps: Vec::new(),
+            library: None,
+            includes: Vec::new(),
+            defines: Vec::new(),
+            objects: Vec::new(),
+            links: Vec::new(),
             profiles: vec![ProfileDraft {
                 name: DEBUG_PROFILE.into(),
                 base: None,
                 settings: ProfileSettings::default(),
             }],
-            selectable: Vec::new(),
-            exported: Vec::new(),
-            helpers,
         }
     }
 
@@ -77,9 +85,9 @@ impl PackageDraft {
 
 impl State {
     pub fn directory(&self) -> PathBuf {
-        self.files
-            .last()
-            .and_then(|file| file.parent())
+        self.packages[self.current()]
+            .script
+            .parent()
             .map(Path::to_path_buf)
             .unwrap_or_default()
     }

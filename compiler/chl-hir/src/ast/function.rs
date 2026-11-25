@@ -15,6 +15,7 @@ pub enum HIRFunctionBody {
         range: TokenRange,
     },
     Expression(HIRExpression),
+    TypeAlias(HIRType),
 }
 
 impl HIRFunctionBody {
@@ -22,6 +23,7 @@ impl HIRFunctionBody {
         match self {
             Self::Block { range, .. } => range,
             Self::Expression(expression) => &expression.range,
+            Self::TypeAlias(ty) => &ty.range,
         }
     }
 }
@@ -40,6 +42,7 @@ pub struct HIRFunctionPrototype {
     pub comptime: bool,
 
     pub return_type: HIRType,
+    pub noreturn: bool,
     pub params: Vec<HIRParameter>,
     pub var_args: bool,
     pub contract: HIRFunctionContract,

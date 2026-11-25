@@ -8,6 +8,7 @@ pub struct HMIRGlobal {
     
     symbol_name: CHLIdent,
     linkage: LinkageMode,
+    explicit_extern: bool,
 
     ty: HMIRExprID,
     initializer: Option<HMIRExprID>,
@@ -28,6 +29,7 @@ impl HMIRGlobal {
         initializer: Option<HMIRExprID>,
         linkage: LinkageMode,
         symbol_name: CHLIdent,
+        explicit_extern: bool,
     ) -> Self {
         Self {
             body,
@@ -35,6 +37,7 @@ impl HMIRGlobal {
             initializer,
             linkage,
             symbol_name,
+            explicit_extern,
         }
     }
 
@@ -52,6 +55,10 @@ impl HMIRGlobal {
 
     pub fn linkage(&self) -> LinkageMode {
         self.linkage
+    }
+
+    pub fn is_explicit_extern(&self) -> bool {
+        self.explicit_extern
     }
 
     pub fn symbol_name(&self) -> &CHLIdent {

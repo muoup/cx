@@ -1,6 +1,6 @@
 /* CHL-STDOUT: text 7 2.500000 */
 
-import std::string as std;
+import std::collections::string as std;
 
 #include <stdio.h>
 

@@ -50,6 +50,7 @@ pub enum HMIRImmValue {
     Unit,
 
     Address(HMIRAddress<Addressable>),
+    Application(HMIRApplication<HMIRImmediate>),
 
     Int(i128),
     Float(FloatWrapper),
@@ -62,14 +63,13 @@ pub enum HMIRImmValue {
         payload: Box<HMIRImmValue>,
     },
 
-    Quote(QuoteRef),
+    Quote(QuoteRef<HMIRImmediate>),
     /// The function constructing a variant of a tagged union. It is generated only where it is lowered as a
     /// runtime operand; a comptime call constructs the variant in place
     Constructor {
         ty: HMIRTypeID,
         variant: usize,
     },
-    Application(HMIRApplication<HMIRImmediate>),
 
     Type(HMIRTypeID),
 

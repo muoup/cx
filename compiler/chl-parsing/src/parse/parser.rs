@@ -2,8 +2,9 @@ use rustc_hash::FxHashMap;
 
 use chl_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
-    function::HIRFunctionKind,
+    function::{HIRFunctionKind, HIRParameter},
     modifiers::{HIRSymbolNameScheme, LinkageMode},
+    types::HIRTypeKind,
     HIRDefinition, HIRStmt, HIR,
 };
 use chl_log::catalogue::parse::*;
@@ -20,20 +21,28 @@ use crate::log::parse_point_error;
 
 #[derive(Debug)]
 pub struct ParserData<'a> {
+    pub registry: &'a GlobalPreparseRegistry,
+    pub pp_contents: &'a PreparseContents,
     pub tokens: TokenIter<'a>,
+
+    include_states: Vec<IncludeParserState>,
+    
     pub visibility: VisibilityMode,
     pub symbol_naming: HIRSymbolNameScheme,
-    include_states: Vec<IncludeParserState>,
     pub expr_commas: Vec<bool>,
-    pub pp_contents: &'a PreparseContents,
-    // uses u8 mapping instead of a set to prevent problems with shadowing
-    pub temporary_type_names: FxHashMap<CHLIdent, u8>,
+    name_scopes: Vec<FxHashMap<CHLIdent, LocalName>>,
     namespace_aliases: NamespaceAliases,
     pub(super) c_function_linkages: FxHashMap<QualifiedName, LinkageMode>,
 
-    pub registry: &'a GlobalPreparseRegistry,
     pub ast: HIR,
     pub c_mode: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LocalName {
+    Type,
+    Value,
+    Inferred,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,7 +68,7 @@ impl<'a> ParserData<'a> {
             expr_commas: vec![true],
             pp_contents,
             registry,
-            temporary_type_names: FxHashMap::default(),
+            name_scopes: vec![FxHashMap::default()],
             namespace_aliases: pp_contents.namespace_aliases.clone(),
             c_function_linkages: FxHashMap::default(),
             ast: HIR::new(
@@ -107,11 +116,18 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn add_stmt(&mut self, stmt: HIRStmt) {
+        self.add_declaration(stmt, false);
+    }
+
+    pub(super) fn add_declaration(&mut self, stmt: HIRStmt, overwrite: bool) {
         let namespace = self.current_module_namespace();
         self.register_stmt_namespace_aliases(&namespace, &stmt);
-        self.ast
-            .definition_stmts
-            .push(HIRDefinition { namespace, stmt, ordered: self.c_mode || self.in_include() })
+        self.ast.definition_stmts.push(HIRDefinition {
+            namespace,
+            stmt,
+            ordered: self.c_mode || self.in_include(),
+            overwrite,
+        })
     }
 
     pub fn begin_include(&mut self) {
@@ -152,39 +168,41 @@ impl<'a> ParserData<'a> {
         self.ast
     }
 
-    pub fn is_type_ident(&self, name: &QualifiedName) -> CHLResult<bool> {
-        Ok(self.is_temporary_type(name) || self.query_identifier(name.clone())?)
-    }
-
-    pub fn is_temporary_type(&self, name: &QualifiedName) -> bool {
-        name.namespace.is_root() && self.temporary_type_names.contains_key(&name.name)
-    }
-
     pub fn is_generator(&self, name: &QualifiedName) -> CHLResult<bool> {
-        Ok(!self.is_temporary_type(name)
+        Ok(self.local_name(name).is_none()
             && self.symbol_kind(name)? == Some(PreparseSymbolKind::Generator))
     }
 
-    pub fn is_undeclared(&self, name: &QualifiedName) -> CHLResult<bool> {
-        Ok(!self.is_temporary_type(name) && self.symbol_kind(name)?.is_none())
+    pub(super) fn with_name_scope<T>(&mut self, parse: impl FnOnce(&mut Self) -> T) -> T {
+        self.name_scopes.push(FxHashMap::default());
+        let result = parse(self);
+        self.name_scopes.pop();
+        result
     }
 
-    pub fn note_type_name(&mut self, name: CHLIdent) {
-        *self.temporary_type_names.entry(name).or_insert(0) += 1;
-    }
-
-    pub fn unnote_type_name(&mut self, name: &CHLIdent) {
-        if let Some(count) = self.temporary_type_names.get_mut(name) {
-            *count -= 1;
-            if *count == 0 {
-                self.temporary_type_names.remove(name);
-            }
+    pub(super) fn note_parameter(&mut self, parameter: &HIRParameter) {
+        if let Some(name) = &parameter.name {
+            let kind = if matches!(parameter.ty.kind, HIRTypeKind::Universe) {
+                LocalName::Type
+            } else {
+                LocalName::Value
+            };
+            self.note_local_name(name.clone(), kind);
         }
     }
 
-    pub fn query_identifier(&self, name: QualifiedName) -> CHLResult<bool> {
+    pub(super) fn note_local_name(&mut self, name: CHLIdent, kind: LocalName) {
+        self.name_scopes.last_mut().expect("a lexical name scope").insert(name, kind);
+    }
+    
+    pub(super) fn local_name(&self, name: &QualifiedName) -> Option<LocalName> {
+        let root = name.root_name_ref()?;
+        self.name_scopes.iter().rev().find_map(|scope| scope.get(root).copied())
+    }
+
+    pub(super) fn is_module_type(&self, name: &QualifiedName) -> CHLResult<bool> {
         Ok(self
-            .symbol_kind(&name)?
+            .symbol_kind(name)?
             .is_some_and(|kind| !(self.c_mode && kind == PreparseSymbolKind::Tag)))
     }
 

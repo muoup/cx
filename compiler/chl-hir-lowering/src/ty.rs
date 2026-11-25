@@ -41,8 +41,18 @@ pub(crate) fn lower_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) ->
     if !semantics.constant && !semantics.volatile {
         return Ok(lowered);
     }
-    let kind = HMIRExprTypeKind::Nominal(lowered);
+    let kind = HMIRExprTypeKind::Nominal { inner: lowered, strong_identifier: None };
     Ok(context.expr_type(kind, semantics, None, &ty.range))
+}
+
+pub(crate) fn lower_return_type<'a>(
+    context: &mut BodyLowering<'a>,
+    prototype: &'a HIRFunctionPrototype,
+) -> CHLResult<HMIRExprID> {
+    if prototype.noreturn {
+        return Ok(context.type_ref(HMIRExprTypeKind::Unreachable, &prototype.return_type.range));
+    }
+    lower_type(context, &prototype.return_type)
 }
 
 fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -> CHLResult<HMIRExprID> {
@@ -63,6 +73,21 @@ fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -
         }
         HIRTypeKind::Universe => return Ok(context.type_of_types(span)),
         HIRTypeKind::Auto => return Ok(context.hole(span)),
+        HIRTypeKind::Strong(inner) => HMIRExprTypeKind::Strong {
+            inner: lower_type(context, inner)?,
+            binding: None,
+        },
+        HIRTypeKind::ScopedTag(tag, ty) => {
+            let name = ty.get_name().expect("a scoped tag has a name");
+            let (local, new) = context.declare_tag(*tag, name, &ty.range)?;
+            if !new {
+                return Ok(context.push(HMIRExprKind::Local(local), span));
+            }
+            HMIRExprTypeKind::Strong {
+                inner: lower_type(context, ty)?,
+                binding: Some(local),
+            }
+        }
         HIRTypeKind::Staged(_) => unreachable!("handled as a staged signature above"),
         HIRTypeKind::ExplicitSizedArray(element, length) => {
             let element = lower_type(context, element)?;
@@ -90,11 +115,14 @@ fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -
             let kind = HMIRExprTypeKind::Struct { fields };
             return lower_aggregate_type(context, name.as_ref(), kind, attributes, span);
         }
-        HIRTypeKind::Union { name, fields } => {
+        HIRTypeKind::Union {
+            name,
+            fields,
+            attributes,
+        } => {
             let fields = lower_fields(context, fields)?;
             let kind = HMIRExprTypeKind::Union { fields };
-            let attributes = HIRAggregateAttributes::default();
-            return lower_aggregate_type(context, name.as_ref(), kind, &attributes, span);
+            return lower_aggregate_type(context, name.as_ref(), kind, attributes, span);
         }
         HIRTypeKind::TaggedUnion {
             name,
@@ -138,7 +166,7 @@ fn lower_type_name(
 fn staged_signature(ty: &HIRType) -> Option<(Vec<&HIRType>, &HIRType)> {
     match &ty.kind {
         HIRTypeKind::Staged(result) => Some((Vec::new(), result)),
-        HIRTypeKind::Function { prototype, .. } => {
+        HIRTypeKind::Function { prototype, .. } if !prototype.noreturn => {
             let HIRTypeKind::Staged(result) = &prototype.return_type.kind else {
                 return None;
             };
@@ -188,7 +216,7 @@ fn lower_function_type<'a>(
             Ok(HMIRFnParam::new(param.comptime, ty))
         })
         .collect::<CHLResult<_>>()?;
-    let return_type = lower_type(context, &prototype.return_type)?;
+    let return_type = lower_return_type(context, prototype)?;
     let stage = if prototype.comptime {
         HMIRFunctionStage::Comptime
     } else {
@@ -256,6 +284,7 @@ fn lower_aggregate_type(
         constant: false,
         volatile: false,
         unsafe_move: attributes.unsafe_move,
+        comptime: attributes.comptime,
         move_semantics,
     };
 

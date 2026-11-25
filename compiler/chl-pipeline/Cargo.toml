@@ -12,6 +12,7 @@ backend-llvm = ["dep:chl-backend-llvm"]
 rustc-hash = { workspace = true }
 speedy = { workspace = true }
 fs2 = { workspace = true }
+object = { version = "0.39.1", default-features = false, features = ["std", "read_core", "elf", "write_std"] }
 
 chl-lexer = { path = "../chl-lexer", default-features = false }
 chl-parsing = { path = "../chl-parsing" }

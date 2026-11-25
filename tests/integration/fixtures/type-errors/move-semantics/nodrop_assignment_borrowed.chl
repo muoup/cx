@@ -1,0 +1,14 @@
+struct Resource : @nodrop { int value; };
+
+void replace(Resource& borrowed) {
+    auto owned = @adopt(borrowed);
+    @leak(owned);
+    borrowed = (Resource) { 2 };
+}
+
+int main() {
+    Resource owned = { 1 };
+    replace(owned);
+    @leak(owned);
+    return 0;
+}

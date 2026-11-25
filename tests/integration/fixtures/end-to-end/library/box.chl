@@ -1,12 +1,12 @@
 /* CHL-STDOUT: i = 2 */
 
-import std::box;
+import std::memory::box;
 
 #include <stdio.h>
 #include <stdlib.h>
 
 int main() {
-  std::box::box(int) i = std::box::box::new(2);
-  printf("i = %d\n", i |> std::box::box::deref_mut());
-  move i |> std::box::box::drop();
+  std::memory::box::box(int) i = std::memory::box::box::new(2);
+  printf("i = %d\n", i |> std::memory::box::box::deref_mut());
+  move i |> std::memory::box::box::drop();
 }

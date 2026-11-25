@@ -1,6 +1,7 @@
 use chl_hir::ast::types::HIRTagKind;
 use chl_hmir::{
     HMIRBodyContext,
+    body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
@@ -14,9 +15,9 @@ use chl_log::{
 };
 
 use crate::{
-    emit::comptime::int,
+    emit::{comptime::int, storage},
     env::{function::LocalLoweringContext, resolver::demand},
-    eval::{eval_comptime, eval_type, flow, staged, types},
+    eval::{eval_comptime, eval_type, flow, name::type_value, staged, types},
     log::hmir_error,
     value,
 };
@@ -43,21 +44,12 @@ pub(crate) fn construct_type(
         }
         _ => None,
     };
-    let named = aggregate
-        .filter(|_| reserved.is_some() || ty.debug_name().is_some())
-        .map(|tag| {
-            let kind = HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag)));
-            let name = ty.debug_name().map(str::to_owned);
-            let placeholder = HMIRType::new(kind, semantics, ty.decl_span().clone(), name);
-            let resolver = context.env_mut().resolver_mut();
-            match reserved {
-                Some(id) => {
-                    resolver.complete_type(id, placeholder);
-                    id
-                }
-                None => resolver.reserve_type(placeholder),
-            }
-        });
+    let nominal = aggregate.zip(reserved).map(|(tag, id)| {
+        let kind = HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag)));
+        let placeholder = HMIRType::new(kind, semantics, ty.decl_span().clone(), None);
+        context.env_mut().resolver_mut().set_nominal_placeholder(id, placeholder);
+        id
+    });
     let move_semantics = declared_move(context, body, &ty.semantics().move_semantics)?;
     let complete = match ty.kind() {
         HMIRExprTypeKind::Function { signature: source, decays } => {
@@ -73,11 +65,11 @@ pub(crate) fn construct_type(
                 complete.debug_name().map(str::to_owned),
             )
         }
-        HMIRExprTypeKind::Nominal(inner) => {
+        HMIRExprTypeKind::Nominal { inner, .. } => {
             let inner =
                 flow::top(eval_type(context, body, *inner).and_then(|ty| ty.description()))?;
             HMIRType::new(
-                HMIRTypeKind::Nominal(inner),
+                HMIRTypeKind::Nominal { inner, strong_identifier: None },
                 semantics,
                 ty.decl_span().clone(),
                 None,
@@ -100,28 +92,74 @@ pub(crate) fn construct_type(
     };
     types::validate(context.env(), &complete)?;
     let resolver = context.env_mut().resolver_mut();
-    Ok(match named {
+    let inner = resolver.realize_type(complete);
+    Ok(match nominal {
         Some(id) => {
-            resolver.complete_type(id, complete);
+            resolver.complete_nominal(id, inner);
             id
         }
-        None => resolver.realize_type(complete),
+        None => inner,
     })
 }
 
-// The aggregate 'expr' declares, when it is one
-pub(crate) fn aggregate(body: &HMIRBodyContext, expr: HMIRExprID) -> Option<&HMIRExprType> {
-    let HMIRExprKind::Type(declared) = body.expr(expr).kind() else {
+pub(crate) struct Aggregate<'a> {
+    pub ty: &'a HMIRExprType,
+    binding: Option<HMIRLocalID>,
+}
+
+pub(crate) fn aggregate(body: &HMIRBodyContext, expr: HMIRExprID) -> Option<Aggregate<'_>> {
+    let HMIRExprKind::Type(ty) = body.expr(expr).kind() else {
         return None;
     };
+    let (ty, binding) = match ty.kind() {
+        HMIRExprTypeKind::Strong { inner, binding } => {
+            let HMIRExprKind::Type(inner) = body.expr(*inner).kind() else {
+                return None;
+            };
+            (inner, *binding)
+        }
+        _ => (ty, None),
+    };
     matches!(
-        declared.kind(),
+        ty.kind(),
         HMIRExprTypeKind::Struct { .. }
             | HMIRExprTypeKind::Union { .. }
             | HMIRExprTypeKind::TaggedUnion { .. }
             | HMIRExprTypeKind::Undefined(HMIRUndefined::Forward(_))
     )
-    .then_some(declared)
+    .then_some(Aggregate { ty, binding })
+}
+
+pub(crate) fn define_aggregate(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    aggregate: Aggregate<'_>,
+    mut reserved: Option<HMIRTypeID>,
+) -> CHLResult<HMIRTypeID> {
+    if let Some(local) = aggregate.binding {
+        if let Some(ty) = context.get_local(&local).and_then(value::as_type) {
+            return Ok(ty);
+        }
+        let ty = aggregate.ty;
+        let span = ty.decl_span();
+        let reserved = *reserved.get_or_insert_with(|| {
+            let forward = HMIRTypeKind::Undefined(HMIRUndefined::Forward(None));
+            let placeholder = HMIRType::new(
+                forward,
+                Default::default(),
+                span.clone(),
+                ty.debug_name().map(str::to_owned),
+            );
+            let specialization = context.nominal_scope();
+            context
+                .env_mut()
+                .resolver_mut()
+                .reserve_nominal(placeholder, specialization)
+        });
+        let value = type_value(context, reserved, span)?;
+        storage::bind_local(context, local, value);
+    }
+    construct_type(context, body, aggregate.ty, reserved)
 }
 
 // An array bounded by '_' has no type of its own, only one an expected array type completes

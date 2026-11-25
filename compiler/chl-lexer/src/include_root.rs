@@ -9,6 +9,10 @@ pub enum IncludeSource {
         base: PathBuf,
         files: FxHashSet<PathBuf>,
     },
+    Generated {
+        directory: PathBuf,
+        library: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,12 +27,9 @@ impl IncludeRoot {
     }
 
     pub fn resolve(&self, inner: &str) -> Option<PathBuf> {
-        let relative = match &self.alias {
-            Some(alias) => inner.strip_prefix(alias.as_str())?.strip_prefix('/')?,
-            None => inner,
-        };
+        let relative = self.relative(inner)?;
         match &self.source {
-            IncludeSource::Directory(directory) => {
+            IncludeSource::Directory(directory) | IncludeSource::Generated { directory, .. } => {
                 Some(directory.join(relative)).filter(|path| path.is_file())
             }
             IncludeSource::Files { base, files } => {
@@ -39,8 +40,25 @@ impl IncludeRoot {
 
     pub(crate) fn search_directory(&self) -> Option<&Path> {
         match (&self.source, &self.alias) {
-            (IncludeSource::Directory(directory), None) => Some(directory),
+            (IncludeSource::Directory(directory), None)
+            | (IncludeSource::Generated { directory, .. }, None) => Some(directory),
             _ => None,
+        }
+    }
+
+    pub(crate) fn unbuilt_library(&self, inner: &str) -> Option<&str> {
+        match &self.source {
+            IncludeSource::Generated { directory, library } if !directory.is_dir() => {
+                self.relative(inner).map(|_| library.as_str())
+            }
+            _ => None,
+        }
+    }
+
+    fn relative<'a>(&self, inner: &'a str) -> Option<&'a str> {
+        match &self.alias {
+            Some(alias) => inner.strip_prefix(alias.as_str())?.strip_prefix('/'),
+            None => Some(inner),
         }
     }
 }
