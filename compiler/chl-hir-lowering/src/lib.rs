@@ -23,7 +23,7 @@ pub fn generate_hmir(
     id: HMIRUnitID,
     namespace: NamespacePath,
 ) -> CHLResult<HMIRUnit> {
-    let planned = plan_symbols(hir, &namespace, id);
+    let planned = plan_symbols(hir, &namespace, id)?;
     let context = UnitContext::new(id, &planned);
 
     let symbols = symbol_table(hir, id, &planned);

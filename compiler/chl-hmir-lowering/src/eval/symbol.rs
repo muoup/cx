@@ -227,12 +227,37 @@ fn global_value(
     declaration: &HMIRDeclaration,
 ) -> CHLResult<HMIRValue> {
     let span = declaration.span();
-    let mut merged = None;
+    let HMIRDefKind::Global(canonical) = declaration.kind().unwrap() else {
+        unreachable!("a global is declared as one")
+    };
+    let replacement = if declaration.overwrites() {
+        Some(global_type(context, id, canonical, span)?)
+    } else {
+        None
+    };
+    let mut merged = replacement;
+    let mut original = None;
     for other in def.declarations() {
+        if replacement.is_some() && std::ptr::eq(other, declaration) {
+            continue;
+        }
         let Some(HMIRDefKind::Global(global)) = other.kind() else {
             continue;
         };
-        let ty = global_type(context, id, global, span)?;
+        let ty = global_type(context, id, global, other.span())?;
+        if let Some(replacement) = replacement {
+            let env = context.env();
+            let matches = if other.point() < declaration.point() {
+                declaration::integer_types_alike(env, replacement, ty, true)
+                    && types::alike(env, *original.get_or_insert(ty), ty, true)
+            } else {
+                types::alike(env, replacement, ty, true)
+            };
+            if !matches {
+                return Err(declaration::incompatible(def, other));
+            }
+            continue;
+        }
         merged = Some(match merged {
             None => ty,
             Some(previous) => composite(context.env(), previous, ty)
@@ -245,9 +270,6 @@ fn global_value(
         context.env().resolve_kind(ty),
         HMIRTypeKind::Undefined(HMIRUndefined::Array { .. })
     );
-    let Some(HMIRDefKind::Global(canonical)) = declaration.kind() else {
-        unreachable!("a global is declared as one")
-    };
     if unbounded && linkage != LinkageMode::Extern && canonical.initializer().is_none() {
         ty = types::array(context.env_mut(), ty, 1, span);
     }

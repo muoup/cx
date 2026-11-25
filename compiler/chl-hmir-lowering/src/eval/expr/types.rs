@@ -372,6 +372,14 @@ pub(crate) fn signatures_alike(
     a: &HMIRFnSignature<HMIRTypeID>,
     b: &HMIRFnSignature<HMIRTypeID>,
 ) -> bool {
+    signatures_match(a, b, |left, right| alike(env, left, right, false))
+}
+
+pub(crate) fn signatures_match(
+    a: &HMIRFnSignature<HMIRTypeID>,
+    b: &HMIRFnSignature<HMIRTypeID>,
+    alike: impl Fn(HMIRTypeID, HMIRTypeID) -> bool,
+) -> bool {
     a.stage() == b.stage()
         && a.contract().is_safe() == b.contract().is_safe()
         && a.is_variadic() == b.is_variadic()
@@ -379,8 +387,8 @@ pub(crate) fn signatures_alike(
         && a.params()
             .iter()
             .zip(b.params())
-            .all(|(a, b)| a.comptime() == b.comptime() && alike(env, *a.ty(), *b.ty(), false))
-        && alike(env, *a.return_type(), *b.return_type(), false)
+            .all(|(a, b)| a.comptime() == b.comptime() && alike(*a.ty(), *b.ty()))
+        && alike(*a.return_type(), *b.return_type())
 }
 
 pub(crate) fn bitfield(env: &HMIREnvironment, reference: HMIRTypeID) -> Option<HMIRBitfield> {

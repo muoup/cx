@@ -84,6 +84,7 @@ impl UnitContext {
             VisibilityMode::Private,
             Some(HIRSymbolNameScheme::Unmangled),
             Some(kind),
+            false,
         ));
         *id
     }
@@ -117,6 +118,7 @@ impl UnitContext {
             VisibilityMode::Private,
             None,
             Some(kind),
+            false,
         );
         self.statics
             .borrow_mut()

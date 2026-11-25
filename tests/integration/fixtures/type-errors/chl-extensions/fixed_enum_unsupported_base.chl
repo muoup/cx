@@ -1,0 +1,2 @@
+enum flags : @strong unsigned int { FIRST = 1 };
+int main() { return 0; }

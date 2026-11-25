@@ -1,13 +1,13 @@
 use chl_hir::ast::{
     expression::{HIRExprKind, HIRExpression},
     function::{HIRFunctionBody, HIRFunctionPrototype, HIRParameter},
-    global_var::HIREnumVariant,
-    types::{HIRType, HIRTypeKind, HIRTypeLookup},
+    global_var::HIREnumDefinition,
+    types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
 use chl_hmir::{
-    HMIRBinaryOp, HMIRBodyContext, HMIRComptimeGlobal, HMIRContract, HMIRDef, HMIRDefID, HMIRDefKind,
-    HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
-    expr::HMIRExprID,
+    HMIRBinaryOp, HMIRBodyContext, HMIRCoerceMode, HMIRComptimeGlobal, HMIRContract, HMIRDef,
+    HMIRDefID, HMIRDefKind, HMIRFnSignature, HMIRFunction, HMIRFunctionStage, HMIRGlobal, HMIROp,
+    expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprTypeKind, HMIRUndefined,
         aggregate::HMIRTypeSemantics,
@@ -72,11 +72,18 @@ fn lower_def<'a>(
     source: &DefSource<'a>,
 ) -> CHLResult<HMIRDefKind> {
     match source {
-        DefSource::Type { ty } => {
+        DefSource::Type { ty } | DefSource::EnumType { underlying: Some(ty) } => {
             let ty_of = context.type_of_types(&ty.range);
             let initializer = lower_type(&mut context, ty)?;
             let global = HMIRComptimeGlobal::new(context.finish(), ty_of, initializer);
 
+            Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)))
+        }
+        DefSource::EnumType { underlying: None } => {
+            let span = &TokenRange::internal();
+            let ty = context.type_of_types(span);
+            let initializer = context.type_ref(HMIRExprTypeKind::Int(ENUM_INT), span);
+            let global = HMIRComptimeGlobal::new(context.finish(), ty, initializer);
             Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)))
         }
         DefSource::Function { prototype, body } => lower_function(context, name, prototype, *body),
@@ -85,6 +92,7 @@ fn lower_def<'a>(
             ty,
             initializer,
             linkage,
+            explicit_extern,
             naming,
         } => {
             let link_name = context.unit().link_name(name, *naming);
@@ -104,13 +112,22 @@ fn lower_def<'a>(
                 let global = HMIRComptimeGlobal::new(context.finish(), ty, initializer);
                 return Ok(HMIRDefKind::ComptimeGlobal(Box::new(global)));
             }
-            let global = HMIRGlobal::new(context.finish(), ty, initializer, *linkage, link_name);
+            let global = HMIRGlobal::new(
+                context.finish(),
+                ty,
+                initializer,
+                *linkage,
+                link_name,
+                *explicit_extern,
+            );
 
             Ok(HMIRDefKind::Global(Box::new(global)))
         }
-        DefSource::EnumVariant { variants, index } => {
-            lower_enum_variant(context, name, variants, *index)
-        }
+        DefSource::EnumVariant {
+            enumeration,
+            index,
+            scoped_type,
+        } => lower_enum_variant(context, name, enumeration, *index, scoped_type.as_ref()),
     }
 }
 
@@ -220,15 +237,18 @@ fn is_void(ty: &HIRType) -> bool {
         .is_some_and(|name| name.as_str() == "void")
 }
 
+const ENUM_INT: HMIRIntType = HMIRIntType::new(HMIRIntWidth::I32, true);
+
 fn lower_enum_variant<'a>(
     mut context: BodyLowering<'a>,
     name: &QualifiedName,
-    variants: &'a [HIREnumVariant],
+    enumeration: &'a HIREnumDefinition,
     index: usize,
+    scoped_type: Option<&QualifiedName>,
 ) -> CHLResult<HMIRDefKind> {
-    let span = TokenRange::internal();
-    let int = HMIRIntType::new(HMIRIntWidth::I32, true);
-    let ty = context.type_ref(HMIRExprTypeKind::Int(int), &span);
+    let variants = &enumeration.variants;
+    let span = &variants[index].range;
+    let fixed = enumeration.underlying.is_some();
     // Implicit values count from the nearest explicit one rather than the previous variant, so
     // evaluating a long enum does not recurse through every variant before it
     let explicit = variants[..index]
@@ -236,14 +256,40 @@ fn lower_enum_variant<'a>(
         .rposition(|variant| variant.value.is_some());
     let initializer = match (&variants[index].value, explicit) {
         (Some(value), _) => lower_expr(&mut context, value)?,
-        (None, None) => context.int_literal(int, index as i128, &span),
+        (None, None) => context.int_literal(ENUM_INT, index as i128, span),
         (None, Some(explicit)) => {
             let base = QualifiedName::new(name.namespace.clone(), variants[explicit].name.clone());
-            let lhs = context.def_expr(base, &span);
-            let rhs = context.int_literal(int, (index - explicit) as i128, &span);
+            let mut lhs = context.def_expr(base, span);
+            let sum_type = if fixed {
+                let wide = HMIRIntType::new(HMIRIntWidth::I64, true);
+                let target = context.type_ref(HMIRExprTypeKind::Int(wide), span);
+                lhs = context.coerce(HMIRCoerceMode::CCast, lhs, target, span);
+                wide
+            } else {
+                ENUM_INT
+            };
+            let rhs = context.int_literal(sum_type, (index - explicit) as i128, span);
             let op = HMIRBinaryOp::Add;
-            context.op(HMIROp::BinOp { op, lhs, rhs }, &span)
+            context.op(HMIROp::BinOp { op, lhs, rhs }, span)
         }
+    };
+    let ty = if let Some(name) = scoped_type {
+        context.push(
+            HMIRExprKind::Name {
+                name: name.clone(),
+                tag: Some(HIRTagKind::Enum),
+            },
+            span,
+        )
+    } else if let Some(base) = &enumeration.underlying {
+        lower_type(&mut context, base)?
+    } else {
+        context.type_ref(HMIRExprTypeKind::Int(ENUM_INT), span)
+    };
+    let initializer = if fixed {
+        context.coerce(HMIRCoerceMode::EnumMember, initializer, ty, span)
+    } else {
+        initializer
     };
     let global = HMIRComptimeGlobal::new(context.finish(), ty, initializer);
 

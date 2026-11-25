@@ -37,6 +37,7 @@ pub struct HMIRDeclaration {
     visibility: VisibilityMode,
     naming: Option<HIRSymbolNameScheme>,
     kind: Option<HMIRDefKind>,
+    overwrite: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -87,6 +88,7 @@ impl HMIRDeclaration {
         visibility: VisibilityMode,
         naming: Option<HIRSymbolNameScheme>,
         kind: Option<HMIRDefKind>,
+        overwrite: bool,
     ) -> Self {
         Self {
             point,
@@ -96,6 +98,7 @@ impl HMIRDeclaration {
             visibility,
             naming,
             kind,
+            overwrite,
         }
     }
 
@@ -125,5 +128,9 @@ impl HMIRDeclaration {
 
     pub fn kind(&self) -> Option<&HMIRDefKind> {
         self.kind.as_ref()
+    }
+
+    pub fn overwrites(&self) -> bool {
+        self.overwrite
     }
 }

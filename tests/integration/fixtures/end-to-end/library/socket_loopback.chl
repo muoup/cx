@@ -12,11 +12,13 @@ void check(bool passed) {
 }
 
 void socket_errors() {
+    check(std::posix::fd_result::is_ok((std::posix::raw::fd_result) 0));
+    check(!std::posix::fd_result::is_ok((std::posix::raw::fd_result) -1));
     auto closed = std::posix::socket::close(std::posix::socket::new(-1));
     auto code = std::posix::errno_code::current();
-    check((int) code == EBADF);
+    check(code == (std::posix::raw::errno_code) std::posix::raw::errno_type::BADF);
 
-    errno = EAGAIN;
+    errno = (int) std::posix::raw::errno_type::AGAIN;
     auto would_block = std::posix::errno_code::into_socket_error(std::posix::errno_code::current());
     check(std::socket_error::is_would_block(would_block));
     check(closed is err(auto error) && !std::socket_error::is_would_block(error));
@@ -45,12 +47,12 @@ void tcp(std::endpoint address) {
     auto accepted = std::tcp_server::accept(server) |> std::result::unwrap();
     defer std::tcp_connection::drop(move accepted);
     check(std::tcp_connection::remote(client).port == local.port);
-    check(std::posix::raw::close(-1) < 0 && errno == EBADF);
+    check(!std::posix::posix_status::is_ok(std::posix::raw::close(-1)) && errno == EBADF);
     std::tcp_connection::send(client, std::str::as_const_bytes("x")) |> std::result::unwrap();
     std::tcp_connection::drop(move client);
 
     u8 buffer[16];
-    check(std::posix::raw::close(-1) < 0 && errno == EBADF);
+    check(!std::posix::posix_status::is_ok(std::posix::raw::close(-1)) && errno == EBADF);
     auto received = std::tcp_connection::read(accepted, std::span::new(buffer, sizeof(buffer)))
         |> std::result::unwrap();
     check(received.length == 1 && received.data[0] == 'x');
@@ -79,6 +81,13 @@ void udp(std::endpoint address) {
 int main() {
     socket_errors();
     auto socket = std::posix::socket::open(std::posix::stream_socket) |> std::result::unwrap();
+    int native_type = 0;
+    std::posix::raw::socklen_t length = sizeof(native_type);
+    auto status = std::posix::raw::getsockopt(
+        socket.fd, std::posix::raw::socket_option_level::SOCKET, std::posix::raw::socket_option::TYPE,
+        &native_type, &length
+    );
+    check(std::posix::posix_status::is_ok(status) && native_type == (int) std::posix::raw::socket_type::STREAM);
     std::posix::socket::close(move socket) |> std::result::unwrap();
     auto address = std::endpoint::ipv4("127.0.0.1", 0) |> std::opt::unwrap();
     check(std::endpoint::ipv4("255.255.255.255", 0) is some(_));

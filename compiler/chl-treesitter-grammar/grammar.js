@@ -217,6 +217,7 @@ module.exports = grammar({
         [$.type_application, $.primary_expression],
         [$.builtin_type, $.variable_declaration],
         [$.builtin_type, $.function_declaration],
+        [$.builtin_type, $.variable_declaration, $.function_declaration],
         [$.struct_type, $.type_literal],
         [$.union_type, $.type_literal],
         [$.anonymous_struct_body, $.struct_definition],
@@ -245,6 +246,7 @@ module.exports = grammar({
                 $.comptime_function_definition,
                 $.type_definition,
                 $.function_definition,
+                $.overwrite_declaration,
                 $.function_declaration,
                 $.declaration,
                 $._statement,
@@ -462,12 +464,16 @@ module.exports = grammar({
             seq(
                 keyword($, "enum"),
                 optional(field("name", $.identifier)),
-                optional($.type_attributes),
+                optional(seq(":", field("underlying", $.enum_underlying_type))),
                 "{",
-                optional(commaSep1($.enum_member)),
+                repeat(choice($.preprocessor_directive, seq($.enum_member, ","))),
+                optional(seq($.enum_member, repeat($.preprocessor_directive))),
                 "}",
                 ";",
             ),
+
+        enum_underlying_type: ($) =>
+            seq(optional(keyword($, "@strong")), alias("int", $.builtin_type)),
 
         enum_union_definition: ($) =>
             seq(
@@ -642,6 +648,9 @@ module.exports = grammar({
                 ),
                 ";",
             ),
+
+        overwrite_declaration: ($) =>
+            seq(alias("@overwrite", $.compiler_identifier), choice($.declaration, $.function_declaration)),
 
         comptime_function_definition: ($) =>
             prec(

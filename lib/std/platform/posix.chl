@@ -1,49 +1,316 @@
+#include <errno.h>
+
 public extern "C":
 
-#include <errno.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include <unistd.h>
 #include <fcntl.h>
 
 public:
 
-comptime errno_code ERRNO_EINTR = (errno_code) EINTR;
+comptime type errno_code = @strong int;
+comptime type posix_status = @strong int;
+comptime type fd_result = @strong int;
 
-comptime int ENUM_O_NONBLOCK = O_NONBLOCK;
+enum errno_type : @strong int {
+    ARG_LIST_TOO_LONG = E2BIG,
+    ACCES = EACCES,
+    ADDRINUSE = EADDRINUSE,
+    ADDRNOTAVAIL = EADDRNOTAVAIL,
+    AFNOSUPPORT = EAFNOSUPPORT,
+    AGAIN = EAGAIN,
+    ALREADY = EALREADY,
+    BADF = EBADF,
+    BADMSG = EBADMSG,
+    BUSY = EBUSY,
+    CANCELED = ECANCELED,
+    CHILD = ECHILD,
+    CONNABORTED = ECONNABORTED,
+    CONNREFUSED = ECONNREFUSED,
+    CONNRESET = ECONNRESET,
+    DEADLK = EDEADLK,
+    DESTADDRREQ = EDESTADDRREQ,
+    DOM = EDOM,
+#ifdef EDQUOT
+    DQUOT = EDQUOT,
+#endif
+    EXIST = EEXIST,
+    FAULT = EFAULT,
+    FBIG = EFBIG,
+    HOSTUNREACH = EHOSTUNREACH,
+    IDRM = EIDRM,
+    ILSEQ = EILSEQ,
+    INPROGRESS = EINPROGRESS,
+    INTR = EINTR,
+    INVAL = EINVAL,
+    IO = EIO,
+    ISCONN = EISCONN,
+    ISDIR = EISDIR,
+    LOOP = ELOOP,
+    MFILE = EMFILE,
+    MLINK = EMLINK,
+    MSGSIZE = EMSGSIZE,
+#ifdef EMULTIHOP
+    MULTIHOP = EMULTIHOP,
+#endif
+    NAMETOOLONG = ENAMETOOLONG,
+    NETDOWN = ENETDOWN,
+    NETRESET = ENETRESET,
+    NETUNREACH = ENETUNREACH,
+    NFILE = ENFILE,
+    NOBUFS = ENOBUFS,
+#ifdef ENODATA
+    NODATA = ENODATA,
+#endif
+    NODEV = ENODEV,
+    NOENT = ENOENT,
+    NOEXEC = ENOEXEC,
+    NOLCK = ENOLCK,
+#ifdef ENOLINK
+    NOLINK = ENOLINK,
+#endif
+    NOMEM = ENOMEM,
+    NOMSG = ENOMSG,
+    NOPROTOOPT = ENOPROTOOPT,
+    NOSPC = ENOSPC,
+#ifdef ENOSR
+    NOSR = ENOSR,
+#endif
+#ifdef ENOSTR
+    NOSTR = ENOSTR,
+#endif
+    NOSYS = ENOSYS,
+    NOTCONN = ENOTCONN,
+    NOTDIR = ENOTDIR,
+    NOTEMPTY = ENOTEMPTY,
+#ifdef ENOTRECOVERABLE
+    NOTRECOVERABLE = ENOTRECOVERABLE,
+#endif
+    NOTSOCK = ENOTSOCK,
+    NOTSUP = ENOTSUP,
+    NOTTY = ENOTTY,
+    NXIO = ENXIO,
+    OPNOTSUPP = EOPNOTSUPP,
+    OVERFLOW = EOVERFLOW,
+#ifdef EOWNERDEAD
+    OWNERDEAD = EOWNERDEAD,
+#endif
+    PERM = EPERM,
+    PIPE = EPIPE,
+    PROTO = EPROTO,
+    PROTONOSUPPORT = EPROTONOSUPPORT,
+    PROTOTYPE = EPROTOTYPE,
+    RANGE = ERANGE,
+    ROFS = EROFS,
+    SPIPE = ESPIPE,
+    SRCH = ESRCH,
+#ifdef ESOCKTNOSUPPORT
+    SOCKTNOSUPPORT = ESOCKTNOSUPPORT,
+#endif
+#ifdef ESTALE
+    STALE = ESTALE,
+#endif
+#ifdef ETIME
+    TIME = ETIME,
+#endif
+    TIMEDOUT = ETIMEDOUT,
+    TXTBSY = ETXTBSY,
+    WOULDBLOCK = EWOULDBLOCK,
+    XDEV = EXDEV,
+};
 
-comptime int ENUM_F_DUPFD = F_DUPFD;
-comptime int ENUM_F_DUPFD_CLOEXEC = F_DUPFD_CLOEXEC;
-comptime int ENUM_F_GETFD = F_GETFD;
-comptime int ENUM_F_SETFD = F_SETFD;
-comptime int ENUM_F_GETFL = F_GETFL;
-comptime int ENUM_F_SETFL = F_SETFL;
-comptime int ENUM_F_SETLK = F_SETLK;
-comptime int ENUM_F_SETLKW = F_SETLKW;
+enum addr_family : @strong int {
+    UNSPEC = AF_UNSPEC,
+    UNIX = AF_UNIX,
+    INET = AF_INET,
+    INET6 = AF_INET6,
+#ifdef AF_PACKET
+    PACKET = AF_PACKET,
+#endif
+};
 
-comptime int ENUM_AF_UNSPEC = AF_UNSPEC;
-comptime int ENUM_AF_UNIX = AF_UNIX;
-comptime int ENUM_AF_INET = AF_INET;
-comptime int ENUM_AF_INET6 = AF_INET6;
-comptime int ENUM_AF_PACKET = AF_PACKET;
+enum socket_type : @strong int {
+    STREAM = SOCK_STREAM,
+    DGRAM = SOCK_DGRAM,
+    RAW = SOCK_RAW,
+    SEQ_PACKET = SOCK_SEQPACKET,
+#ifdef SOCK_CLOEXEC
+    CLOEXEC = SOCK_CLOEXEC,
+#endif
+#ifdef SOCK_CLOFORK
+    CLOFORK = SOCK_CLOFORK,
+#endif
+#ifdef SOCK_NONBLOCK
+    NONBLOCK = SOCK_NONBLOCK,
+#endif
+};
 
-comptime int ENUM_SOCK_STREAM = SOCK_STREAM;
-comptime int ENUM_SOCK_DGRAM = SOCK_DGRAM;
-comptime int ENUM_SOCK_RAW = SOCK_RAW;
-comptime int ENUM_SOCK_SEQPACKET = SOCK_SEQPACKET;
+enum ip_protocol : @strong int {
+    IP = IPPROTO_IP,
+    ICMP = IPPROTO_ICMP,
+    TCP = IPPROTO_TCP,
+    UDP = IPPROTO_UDP,
+    IPV6 = IPPROTO_IPV6,
+    RAW = IPPROTO_RAW,
+};
 
-comptime int ENUM_IPPROTO_IP = IPPROTO_IP;
-comptime int ENUM_IPPROTO_ICMP = IPPROTO_ICMP;
-comptime int ENUM_IPPROTO_TCP = IPPROTO_TCP;
-comptime int ENUM_IPPROTO_UDP = IPPROTO_UDP;
-comptime int ENUM_IPPROTO_IPV6 = IPPROTO_IPV6;
-comptime int ENUM_IPPROTO_RAW = IPPROTO_RAW;
+enum file_status_flags : @strong int {
+    APPEND = O_APPEND,
+#ifdef O_DSYNC
+    DSYNC = O_DSYNC,
+#endif
+    NONBLOCK = O_NONBLOCK,
+#ifdef O_RSYNC
+    RSYNC = O_RSYNC,
+#endif
+    SYNC = O_SYNC,
+};
 
-#if defined(MSG_NOSIGNAL)
-comptime int send_flags = MSG_NOSIGNAL;
-#elif defined(SO_NOSIGPIPE)
-comptime int send_flags = SO_NOSIGPIPE;
+enum fcntl_command : @strong int {
+    DUPFD = F_DUPFD,
+#ifdef F_DUPFD_CLOEXEC
+    DUPFD_CLOEXEC = F_DUPFD_CLOEXEC,
+#endif
+#ifdef F_DUPFD_CLOFORK
+    DUPFD_CLOFORK = F_DUPFD_CLOFORK,
+#endif
+    GETFD = F_GETFD,
+    SETFD = F_SETFD,
+    GETFL = F_GETFL,
+    SETFL = F_SETFL,
+    GETLK = F_GETLK,
+    SETLK = F_SETLK,
+    SETLKW = F_SETLKW,
+    GETOWN = F_GETOWN,
+    SETOWN = F_SETOWN,
+#ifdef F_GETOWN_EX
+    GETOWN_EX = F_GETOWN_EX,
+#endif
+#ifdef F_SETOWN_EX
+    SETOWN_EX = F_SETOWN_EX,
+#endif
+#ifdef F_OFD_GETLK
+    OFD_GETLK = F_OFD_GETLK,
+#endif
+#ifdef F_OFD_SETLK
+    OFD_SETLK = F_OFD_SETLK,
+#endif
+#ifdef F_OFD_SETLKW
+    OFD_SETLKW = F_OFD_SETLKW,
+#endif
+};
+
+enum socket_option_level : @strong int {
+    SOCKET = SOL_SOCKET,
+    IP = IPPROTO_IP,
+    IPV6 = IPPROTO_IPV6,
+    TCP = IPPROTO_TCP,
+    UDP = IPPROTO_UDP,
+};
+
+enum socket_option : @strong int {
+    ACCEPTCONN = SO_ACCEPTCONN,
+    BROADCAST = SO_BROADCAST,
+    DEBUG = SO_DEBUG,
+#ifdef SO_DOMAIN
+    DOMAIN = SO_DOMAIN,
+#endif
+    DONTROUTE = SO_DONTROUTE,
+    ERROR = SO_ERROR,
+    KEEPALIVE = SO_KEEPALIVE,
+    LINGER = SO_LINGER,
+#ifdef SO_NOSIGPIPE
+    NOSIGPIPE = SO_NOSIGPIPE,
+#endif
+    OOBINLINE = SO_OOBINLINE,
+#ifdef SO_PROTOCOL
+    PROTOCOL = SO_PROTOCOL,
+#endif
+    RCVBUF = SO_RCVBUF,
+    RCVLOWAT = SO_RCVLOWAT,
+    RCVTIMEO = SO_RCVTIMEO,
+    REUSEADDR = SO_REUSEADDR,
+#ifdef SO_REUSEPORT
+    REUSEPORT = SO_REUSEPORT,
+#endif
+    SNDBUF = SO_SNDBUF,
+    SNDLOWAT = SO_SNDLOWAT,
+    SNDTIMEO = SO_SNDTIMEO,
+    TYPE = SO_TYPE,
+    V6_JOIN_GROUP = IPV6_JOIN_GROUP,
+    V6_LEAVE_GROUP = IPV6_LEAVE_GROUP,
+    V6_MULTICAST_HOPS = IPV6_MULTICAST_HOPS,
+    V6_MULTICAST_IF = IPV6_MULTICAST_IF,
+    V6_MULTICAST_LOOP = IPV6_MULTICAST_LOOP,
+    V6_UNICAST_HOPS = IPV6_UNICAST_HOPS,
+    V6ONLY = IPV6_V6ONLY,
+    NODELAY = TCP_NODELAY,
+};
+
+enum send_flags : @strong int {
+    NONE = 0,
+    DONTROUTE = MSG_DONTROUTE,
+#ifdef MSG_DONTWAIT
+    DONTWAIT = MSG_DONTWAIT,
+#endif
+    EOR = MSG_EOR,
+    OOB = MSG_OOB,
+#ifdef MSG_NOSIGNAL
+    NO_SIGNAL = MSG_NOSIGNAL,
 #else
-comptime int send_flags = 0;
-#end
+    NO_SIGNAL = 0,
+#endif
+};
+
+enum recv_flags : @strong int {
+    NONE = 0,
+#ifdef MSG_CMSG_CLOEXEC
+    CMSG_CLOEXEC = MSG_CMSG_CLOEXEC,
+#endif
+#ifdef MSG_CMSG_CLOFORK
+    CMSG_CLOFORK = MSG_CMSG_CLOFORK,
+#endif
+#ifdef MSG_DONTWAIT
+    DONTWAIT = MSG_DONTWAIT,
+#endif
+    OOB = MSG_OOB,
+    PEEK = MSG_PEEK,
+    WAITALL = MSG_WAITALL,
+};
+
+enum recv_message_flags : @strong int {
+    NONE = 0,
+    CTRUNC = MSG_CTRUNC,
+    EOR = MSG_EOR,
+    OOB = MSG_OOB,
+    TRUNC = MSG_TRUNC,
+};
+
+public extern "C":
+
+@overwrite fd_result socket(addr_family domain, socket_type kind, int protocol);
+@overwrite fd_result accept(int fd, struct sockaddr* address, socklen_t* length);
+
+@overwrite posix_status close(int fd);
+@overwrite posix_status bind(int fd, const struct sockaddr* address, socklen_t length);
+@overwrite posix_status listen(int fd, int backlog);
+@overwrite posix_status connect(int fd, const struct sockaddr* address, socklen_t length);
+@overwrite posix_status getsockname(int fd, struct sockaddr* address, socklen_t* length);
+@overwrite posix_status getsockopt(
+    int fd, socket_option_level level, socket_option option, void* value, socklen_t* length
+);
+@overwrite posix_status setsockopt(
+    int fd, socket_option_level level, socket_option option, const void* value, socklen_t length
+);
+
+@overwrite int fcntl(int fd, fcntl_command command, ...);
+
+@overwrite ssize_t recv(int fd, void* buffer, size_t length, recv_flags flags);
+@overwrite ssize_t recvfrom(int fd, void* buffer, size_t length, recv_flags flags, struct sockaddr* address, socklen_t* addr_len);
+@overwrite ssize_t recvmsg(int fd, struct msghdr* message, recv_flags flags);
+@overwrite ssize_t send(int fd, const void* buffer, size_t length, send_flags flags);
+@overwrite ssize_t sendto(int fd, const void* buffer, size_t length, send_flags flags, const struct sockaddr* address, socklen_t addr_len);
+@overwrite ssize_t sendmsg(int fd, const struct msghdr* message, send_flags flags);

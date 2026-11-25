@@ -60,6 +60,24 @@ pub(crate) fn eval_coerce(
     Ok(Evaluation::Ready(match mode {
         HMIRCoerceMode::Implicit => implicit::standard(context, value, target, span)?,
         HMIRCoerceMode::CCast => explicit::standard(context, value, target, span)?,
+        HMIRCoerceMode::EnumMember => {
+            let Some(number) = value::as_int(&value) else {
+                let subject = ("enum member".into(), "a compile-time integer".into(), None);
+                return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, subject).into());
+            };
+            let typed = value::int(context.env(), number, target);
+            if number < 0 && !types::int_type(context.env(), value.ty()).signed() {
+                return Err(
+                    hmir_error(span, &typecheck::ENUM_MEMBER_RANGE, (number as u128).to_string()).into(),
+                );
+            }
+            if value::as_int(&typed) != Some(number) {
+                return Err(
+                    hmir_error(span, &typecheck::ENUM_MEMBER_RANGE, number.to_string()).into(),
+                );
+            }
+            typed
+        }
 
         // REVIEW: This is a temporary solution to allow for the use of explicit casts in the compiler. It should be removed once the compiler is fully implemented.
         _ => explicit::standard(context, value, target, span)?,

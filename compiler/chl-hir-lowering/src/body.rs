@@ -559,7 +559,14 @@ pub(crate) fn lower_static(
         LinkageMode::Extern => name.clone(),
         _ => CHLIdent::from(format!("{name}.{}", id.index()).as_str()),
     };
-    let global = HMIRGlobal::new(global.finish(), global_ty, initializer, linkage, link_name);
+    let global = HMIRGlobal::new(
+        global.finish(),
+        global_ty,
+        initializer,
+        linkage,
+        link_name,
+        false,
+    );
 
     let qualified = QualifiedName::new(context.namespace.clone(), name.clone());
     let kind = HMIRDefKind::Global(Box::new(global));

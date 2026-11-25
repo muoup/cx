@@ -63,7 +63,13 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CHLResult<()> {
         keyword!(Typedef) => parse_typedef(data)?,
         keyword!(Comptime) => {
             data.tokens.next();
-            parse_global_expr(data, true)?
+            parse_global_expr(data, DeclarationPrefix::Comptime)?
+        }
+        TokenKind::CompilerIdentifier(attr)
+            if attr == "overwrite" && !data.c_mode && !data.in_include() =>
+        {
+            data.tokens.next();
+            parse_global_expr(data, DeclarationPrefix::Overwrite)?
         }
         punctuator!(Semicolon) => {
             data.tokens.next();
@@ -74,7 +80,7 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CHLResult<()> {
             parse_extern_c_mod(data)?
         }
         specifier!(Public) | specifier!(Private) => parse_access_mods(data)?,
-        _ => parse_global_expr(data, false)?,
+        _ => parse_global_expr(data, DeclarationPrefix::None)?,
     };
 
     Ok(())
@@ -201,6 +207,7 @@ fn parse_fn_merge(
     data: &mut ParserData,
     mut prototype: HIRFunctionPrototype,
     inherited_external: bool,
+    overwrite: bool,
 ) -> CHLResult<()> {
     functions::linkage::resolve(data, &mut prototype, true);
     if try_next!(data.tokens, punctuator!(Semicolon)) {
@@ -208,11 +215,14 @@ fn parse_fn_merge(
             prototype.linkage = LinkageMode::Extern;
         }
 
-        data.add_stmt(HIRStmt::FunctionDefinition {
-            prototype,
-            visibility: data.visibility,
-            body: None,
-        });
+        data.add_declaration(
+            HIRStmt::FunctionDefinition {
+                prototype,
+                visibility: data.visibility,
+                body: None,
+            },
+            overwrite,
+        );
     } else {
         let body = data.with_name_scope(|data| {
             for parameter in &prototype.params {
@@ -221,11 +231,14 @@ fn parse_fn_merge(
             parse_function_body(data, &prototype)
         })?;
 
-        data.add_stmt(HIRStmt::FunctionDefinition {
-            prototype,
-            visibility: data.visibility,
-            body: Some(body),
-        });
+        data.add_declaration(
+            HIRStmt::FunctionDefinition {
+                prototype,
+                visibility: data.visibility,
+                body: Some(body),
+            },
+            overwrite,
+        );
     }
 
     Ok(())
@@ -283,17 +296,26 @@ fn scan_type_binders(data: &ParserData) -> Vec<(CHLIdent, LocalName)> {
     names
 }
 
-fn parse_global_expr(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DeclarationPrefix {
+    None,
+    Comptime,
+    Overwrite,
+}
+
+fn parse_global_expr(data: &mut ParserData, prefix: DeclarationPrefix) -> CHLResult<()> {
     data.with_name_scope(|data| {
         for (binder, kind) in scan_type_binders(data) {
             data.note_local_name(binder, kind);
         }
-        parse_global_declaration(data, comptime)
+        parse_global_declaration(data, prefix)
     })
 }
 
-fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CHLResult<()> {
-    let start = data.tokens.index - usize::from(comptime);
+fn parse_global_declaration(data: &mut ParserData, prefix: DeclarationPrefix) -> CHLResult<()> {
+    let start = data.tokens.index - usize::from(prefix != DeclarationPrefix::None);
+    let comptime = prefix == DeclarationPrefix::Comptime;
+    let overwrite = prefix == DeclarationPrefix::Overwrite;
     let (base, specifiers) = parse_declaration_head(data, TagScope::Module)?;
     let linkage = specifiers.linkage;
     let symbol_naming = data.naming(linkage);
@@ -306,14 +328,19 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CHLResult<
         let (name, ty) = parse_declarator(data, &base, TagScope::Module, DeclaratorKind::Named)?;
         let range = data.token_range(declarator_start, data.tokens.index);
         let Some(name) = name else {
-            if declarator_start == start {
+            if declarator_start == start && !overwrite {
                 assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
                 return Ok(());
             }
+            let (desired, after) = if declarator_start == start {
+                ("a function or global name", "after '@overwrite'")
+            } else {
+                ("a variable declaration", "after ','")
+            };
             return parse_point_error(
                 &data.tokens,
                 &EXPECTED_SYNTAX,
-                ("a variable declaration".into(), Some("after ','".into())),
+                (desired.into(), Some(after.into())),
             );
         };
 
@@ -327,28 +354,43 @@ fn parse_global_declaration(data: &mut ParserData, comptime: bool) -> CHLResult<
                 specifiers,
                 symbol_naming,
             )? {
-                return parse_fn_merge(data, prototype, inherited_external);
+                return parse_fn_merge(data, prototype, inherited_external, overwrite);
             }
         }
 
         let initializer = parse_variable_initializer(data)?;
-        data.add_stmt(HIRStmt::GlobalVariableDefinition {
-            visibility: data.visibility,
-            variable: HIRGlobalVariable::Standard {
-                comptime,
-                name,
-                ty,
-                is_mutable: true,
-                linkage: if inherited_external && initializer.is_none() {
-                    LinkageMode::Extern
-                } else {
-                    linkage
+        let explicit_extern = linkage == LinkageMode::Extern && !specifiers.thread_local;
+        if overwrite && !explicit_extern {
+            return crate::log::parse_underline_error(
+                &INVALID_CONTEXT,
+                (
+                    "@overwrite".into(),
+                    "a global declaration without plain 'extern' storage".into(),
+                ),
+                &range,
+            );
+        }
+        data.add_declaration(
+            HIRStmt::GlobalVariableDefinition {
+                visibility: data.visibility,
+                variable: HIRGlobalVariable::Standard {
+                    comptime,
+                    name,
+                    ty,
+                    is_mutable: true,
+                    explicit_extern,
+                    linkage: if inherited_external && initializer.is_none() {
+                        LinkageMode::Extern
+                    } else {
+                        linkage
+                    },
+                    symbol_name_scheme: symbol_naming,
+                    initializer,
+                    range,
                 },
-                symbol_name_scheme: symbol_naming,
-                initializer,
-                range,
             },
-        });
+            overwrite,
+        );
 
         if !try_next!(data.tokens, operator!(Comma)) {
             assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");

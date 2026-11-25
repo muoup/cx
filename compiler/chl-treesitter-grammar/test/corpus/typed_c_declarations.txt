@@ -1,0 +1,97 @@
+==================
+fixed enums and C declaration overwrites
+==================
+
+enum Legacy { READY };
+enum Fixed : int { IDLE = 0 };
+enum SocketKind : @strong int {
+    STREAM = 1,
+#ifdef DGRAM_SUPPORTED
+    DGRAM,
+#endif
+};
+
+@overwrite int socket(int domain, SocketKind kind, int protocol);
+@overwrite extern SocketKind current_kind;
+
+---
+
+(source_file
+  (type_definition
+    (enum_definition
+      (keyword)
+      (identifier)
+      (enum_member
+        (identifier))))
+  (type_definition
+    (enum_definition
+      (keyword)
+      (identifier)
+      (enum_underlying_type
+        (builtin_type))
+      (enum_member
+        (identifier)
+        (operator)
+        (expression
+          (primary_expression
+            (literal
+              (number_literal)))))))
+  (type_definition
+    (enum_definition
+      (keyword)
+      (identifier)
+      (enum_underlying_type
+        (keyword)
+        (builtin_type))
+      (enum_member
+        (identifier)
+        (operator)
+        (expression
+          (primary_expression
+            (literal
+              (number_literal)))))
+      (preprocessor_directive)
+      (enum_member
+        (identifier))
+      (preprocessor_directive)))
+  (overwrite_declaration
+    (compiler_identifier)
+    (function_declaration
+      (type
+        (builtin_type_sequence
+          (builtin_type)))
+      (function_declarator
+        (callable_name
+          (qualified_name
+            (identifier)))
+        (parameter_list
+          (parameter
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator
+              (identifier)))
+          (parameter
+            (type
+              (qualified_name
+                (identifier)))
+            (declarator
+              (identifier)))
+          (parameter
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator
+              (identifier)))))))
+  (overwrite_declaration
+    (compiler_identifier)
+    (declaration
+      (declaration_specifier
+        (keyword))
+      (variable_declaration
+        (type
+          (qualified_name
+            (identifier)))
+        (declarator_with_initializer
+          (declarator
+            (identifier)))))))

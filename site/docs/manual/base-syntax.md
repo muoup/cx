@@ -15,6 +15,25 @@ behavior across different architectures and operating systems:
 - `f32`, `f64`: n-bit floating-point values
 - `usize`, `isize`: pointer-sized signed/unsigned integer types
 
+## Integer Enums
+
+Plain `enum` uses C-style integer constants in the surrounding scope. A
+definition can explicitly select `int` with `enum Name : int`. To give a named
+enum its own type and scope, use `@strong int` as the base.
+
+```chl
+enum socket_type : @strong int {
+    STREAM = 1,
+    DGRAM,
+};
+
+socket_type kind = socket_type::DGRAM;
+```
+
+Members of a strong enum have the enum's type. Use an explicit cast to convert
+between the enum and `int`. For both explicit base forms, member values must fit
+the base type, including values assigned by implicit increments.
+
 ## Reference Types
 
 References are declared with a `&` type suffix and provide an alternative to C's pointer types with a stronger invariant. A reference type

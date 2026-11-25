@@ -13,13 +13,15 @@ struct socket : @nodrop {
 socket socket::new(int fd) => (socket) { .fd = fd };
 
 std::result(socket, std::socket_error) socket::open(socket_kind kind) {
-    int protocol_type = kind == stream_socket ? std::posix::raw::SOCK_STREAM : std::posix::raw::SOCK_DGRAM;
-    int fd = std::posix::raw::socket(std::posix::raw::af_inet, protocol_type, 0);
-    return std::result::if_then_else(emit fd >= 0, emit socket::new(fd), emit current_socket_error());
+    auto native_kind = kind == stream_socket ? std::posix::raw::socket_type::STREAM : std::posix::raw::socket_type::DGRAM;
+    auto fd = std::posix::raw::socket(std::posix::raw::addr_family::INET, native_kind, 0);
+    return std::result::if_then_else(
+        emit std::posix::fd_result::is_ok(fd), emit socket::new((int) fd), emit current_socket_error()
+    );
 }
 
 std::result(void, std::socket_error) socket::close(socket this) {
-    int status = std::posix::raw::close(this.fd);
+    auto status = std::posix::raw::close(this.fd);
     @leak(this);
     return status_result(status);
 }
@@ -27,10 +29,10 @@ std::result(void, std::socket_error) socket::close(socket this) {
 std::result(std::span(u8), std::socket_error) socket::read(socket& this, std::span(u8) buffer) {
     if (buffer.length == 0) return _::ok(buffer);
     isize size;
-    
+
     do {
-        size = std::posix::raw::recv(this.fd, buffer.data, buffer.length, 0);
-    } while (size < 0 && std::posix::errno_code::current() == std::posix::eintr);
+        size = std::posix::raw::recv(this.fd, buffer.data, buffer.length, std::posix::raw::recv_flags::NONE);
+    } while (size < 0 && std::posix::errno_code::current() == interrupted);
 
     return std::result::if_then_else(
         emit size >= 0, emit std::span::new(buffer.data, (usize) size), emit current_socket_error()
@@ -40,10 +42,10 @@ std::result(std::span(u8), std::socket_error) socket::read(socket& this, std::sp
 std::result(usize, std::socket_error) socket::write(socket& this, std::span(const u8) buffer) {
     if (buffer.length == 0) return _::ok((usize) 0);
     isize size;
-    
+
     do {
-        size = std::posix::raw::send(this.fd, buffer.data, buffer.length, std::posix::raw::send_flags);
-    } while (size < 0 && std::posix::errno_code::current() == std::posix::eintr);
+        size = std::posix::raw::send(this.fd, buffer.data, buffer.length, std::posix::raw::send_flags::NO_SIGNAL);
+    } while (size < 0 && std::posix::errno_code::current() == interrupted);
 
     return std::result::if_then_else(emit size >= 0, emit (usize) size, emit current_socket_error());
 }
@@ -69,14 +71,14 @@ struct accept_details : @nodrop {
 std::result(accept_details, std::socket_error) socket::accept(socket& this) {
     std::posix::raw::sockaddr_in native = { 0 };
     std::posix::raw::socklen_t length = sizeof(native);
-    int fd;
+    std::posix::raw::fd_result fd;
     do {
         fd = std::posix::raw::accept(this.fd, (std::posix::raw::sockaddr*) &native, &length);
-    } while (fd < 0 && std::posix::errno_code::current() == std::posix::eintr);
+    } while (!std::posix::fd_result::is_ok(fd) && std::posix::errno_code::current() == interrupted);
 
     return std::result::if_then_else(
-        emit fd >= 0,
-        emit (accept_details) { .connection = socket::new(fd), .remote = decode(native) },
+        emit std::posix::fd_result::is_ok(fd),
+        emit (accept_details) { .connection = socket::new((int) fd), .remote = decode(native) },
         emit current_socket_error()
     );
 }
@@ -84,22 +86,29 @@ std::result(accept_details, std::socket_error) socket::accept(socket& this) {
 std::result(std::endpoint, std::socket_error) socket::local_address(socket& this) {
     std::posix::raw::sockaddr_in native = { 0 };
     std::posix::raw::socklen_t length = sizeof(native);
-    int status = std::posix::raw::getsockname(this.fd, (std::posix::raw::sockaddr*) &native, &length);
-    return std::result::if_then_else(emit status >= 0, emit decode(native), emit current_socket_error());
+    auto status = std::posix::raw::getsockname(this.fd, (std::posix::raw::sockaddr*) &native, &length);
+    return std::result::if_then_else(
+        emit std::posix::posix_status::is_ok(status), emit decode(native), emit current_socket_error()
+    );
 }
 
 std::result(void, std::socket_error) socket::set_reuse_address(socket& this, bool enabled) {
     int value = enabled ? 1 : 0;
     return status_result(std::posix::raw::setsockopt(
-        this.fd, std::posix::raw::sol_socket, std::posix::raw::so_reuseaddr, &value, sizeof(value)
+        this.fd, std::posix::raw::socket_option_level::SOCKET, std::posix::raw::socket_option::REUSEADDR,
+        &value, sizeof(value)
     ));
 }
 
 std::result(void, std::socket_error) socket::set_blocking(socket& this, bool blocking) {
-    int flags = std::posix::raw::fcntl(this.fd, std::posix::raw::f_getfl, 0);
-    if (flags < 0) return _::err(current_socket_error());
-    flags = blocking ? flags & ~std::posix::raw::o_nonblock : flags | std::posix::raw::o_nonblock;
-    return status_result(std::posix::raw::fcntl(this.fd, std::posix::raw::f_setfl, flags));
+    int status = std::posix::raw::fcntl(this.fd, std::posix::raw::fcntl_command::GETFL, 0);
+    if (status < 0) return _::err(current_socket_error());
+    auto flags = (std::posix::raw::file_status_flags) status;
+    auto nonblock = std::posix::raw::file_status_flags::NONBLOCK;
+    flags = blocking ? flags & ~nonblock : flags | nonblock;
+    return status_result((std::posix::raw::posix_status) std::posix::raw::fcntl(
+        this.fd, std::posix::raw::fcntl_command::SETFL, (int) flags
+    ));
 }
 
 std::result(usize, std::socket_error) socket::send_to(socket& this, std::span(const u8) buffer, std::endpoint remote) {
@@ -107,10 +116,10 @@ std::result(usize, std::socket_error) socket::send_to(socket& this, std::span(co
     isize size;
     do {
         size = std::posix::raw::sendto(
-            this.fd, buffer.data, buffer.length, std::posix::raw::send_flags,
+            this.fd, buffer.data, buffer.length, std::posix::raw::send_flags::NO_SIGNAL,
             (const std::posix::raw::sockaddr*) &native, sizeof(native)
         );
-    } while (size < 0 && std::posix::errno_code::current() == std::posix::eintr);
+    } while (size < 0 && std::posix::errno_code::current() == interrupted);
 
     return std::result::if_then_else(emit size >= 0, emit (usize) size, emit current_socket_error());
 }
@@ -126,9 +135,10 @@ std::result(datagram, std::socket_error) socket::recv_from(socket& this, std::sp
     isize size;
     do {
         size = std::posix::raw::recvfrom(
-            this.fd, buffer.data, buffer.length, 0, (std::posix::raw::sockaddr*) &native, &length
+            this.fd, buffer.data, buffer.length, std::posix::raw::recv_flags::NONE,
+            (std::posix::raw::sockaddr*) &native, &length
         );
-    } while (size < 0 && std::posix::errno_code::current() == std::posix::eintr);
+    } while (size < 0 && std::posix::errno_code::current() == interrupted);
 
     return std::result::if_then_else(
         emit size >= 0,
@@ -139,15 +149,17 @@ std::result(datagram, std::socket_error) socket::recv_from(socket& this, std::sp
 
 private:
 
+comptime std::posix::raw::errno_code interrupted = (std::posix::raw::errno_code) std::posix::raw::errno_type::INTR;
+
 std::socket_error current_socket_error()
     => std::posix::errno_code::into_socket_error(std::posix::errno_code::current());
 
-std::result(void, std::socket_error) status_result(int status)
-    => std::result::if_then_else(emit status >= 0, emit (void) 0, emit current_socket_error());
+std::result(void, std::socket_error) status_result(std::posix::raw::posix_status status)
+    => std::result::if_then_else(emit std::posix::posix_status::is_ok(status), emit (void) 0, emit current_socket_error());
 
 std::posix::raw::sockaddr_in encode(std::endpoint address) {
     std::posix::raw::sockaddr_in native = { 0 };
-    native.sin_family = std::posix::raw::af_inet;
+    native.sin_family = (int) std::posix::raw::addr_family::INET;
     native.sin_port = std::posix::raw::htons(address.port);
     native.sin_addr.s_addr = std::posix::raw::htonl(address.address);
     return native;

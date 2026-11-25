@@ -1,0 +1,2 @@
+enum values : @strong int { LAST = 2147483647, TOO_LARGE };
+int main() { return 0; }

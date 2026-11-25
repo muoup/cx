@@ -41,6 +41,9 @@ enum Mode {
     Done,
 };
 
+enum JobState : @strong int { Done = 10 };
+enum FileState : @strong int { Done = 20 };
+
 struct Envelope {
     Hidden hidden;
     types::External external;

@@ -188,6 +188,28 @@ symbol from an included header when its type and linkage-relevant attributes
 match. Visibility may differ, in which case the most permissive declared
 visibility is used.
 
+A Chloro module can use `@overwrite` to give an earlier C predeclaration a
+stronger type. The symbol must have an earlier declaration in the same module
+and can be overwritten once. Functions must have only prototypes, and globals
+must have explicit `extern` declarations with no initializer. The replacement
+can change the strong identity of a scalar integer while preserving its
+underlying type and the rest of the declaration.
+
+```chl
+#include <unistd.h>
+
+public:
+
+typedef @strong int posix_status;
+
+public extern "C":
+
+@overwrite posix_status close(int fd);
+```
+
+Generated C headers export scoped integer enum members with the enum name as a
+prefix. For example, `Mode::Ready` is emitted as `Mode_Ready`.
+
 An ordinary namespace-mangled Chloro declaration with the same name is not a
 distinct binding. It conflicts with the included declaration because both
 occupy the same module namespace but name different linker symbols. This permits

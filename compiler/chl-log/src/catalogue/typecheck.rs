@@ -117,6 +117,7 @@ define_errors! {
     FLEXIBLE_ARRAY_MEMBER: (String, String) = "T0077" => |(member, rule)| format!("flexible array member '{member}' {rule}");
     FLEXIBLE_ARRAY_NESTING: (String, String) = "T0078" => |(ty, position)| format!("'{ty}' has a flexible array member and cannot be {position}");
     UNTRACKED_NODROP_DROP: String = "T0079" => |ty| format!("cannot drop or replace a value of @nodrop type '{ty}' without tracked liveness");
+    ENUM_MEMBER_RANGE: String = "T0080" => |value| format!("enum member value {value} does not fit its underlying type");
 
     COMPTIME_INTERPRETATION: String = "T0074" => |action| format!("failure during comptime evaluation: {action}");
 

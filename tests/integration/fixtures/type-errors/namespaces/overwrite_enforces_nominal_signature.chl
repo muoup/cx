@@ -1,0 +1,7 @@
+enum input : @strong int { VALUE = 1 };
+
+extern "C":
+int calculate(int value);
+@overwrite int calculate(input value);
+
+int main() { return calculate(1); }

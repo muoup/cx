@@ -116,11 +116,18 @@ impl<'a> ParserData<'a> {
     }
 
     pub fn add_stmt(&mut self, stmt: HIRStmt) {
+        self.add_declaration(stmt, false);
+    }
+
+    pub(super) fn add_declaration(&mut self, stmt: HIRStmt, overwrite: bool) {
         let namespace = self.current_module_namespace();
         self.register_stmt_namespace_aliases(&namespace, &stmt);
-        self.ast
-            .definition_stmts
-            .push(HIRDefinition { namespace, stmt, ordered: self.c_mode || self.in_include() })
+        self.ast.definition_stmts.push(HIRDefinition {
+            namespace,
+            stmt,
+            ordered: self.c_mode || self.in_include(),
+            overwrite,
+        })
     }
 
     pub fn begin_include(&mut self) {

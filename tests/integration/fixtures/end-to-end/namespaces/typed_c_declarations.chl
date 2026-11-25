@@ -1,0 +1,26 @@
+/* CHL-STDOUT: typed C declarations passed */
+
+import _typed_c as c;
+
+#include <stdio.h>
+
+int main() {
+    c::value positive = c::abs((c::value) -7);
+    if ((int) positive != 7) return 1;
+
+    c::index old = c::optind;
+    c::optind = c::index::THREE;
+    if (c::optind != c::index::THREE) return 2;
+    c::optind = old;
+
+    c::value three = c::value::THREE;
+    if ((int) three != 3) return 3;
+    if (@type.equal(c::value, c::index) || @type.equal(c::value, int)) return 4;
+    if ((int) c::value::Zero != 0 || (int) c::value::FIVE != 5) return 5;
+
+    c::legacy plain = c::Legacy;
+    c::fixed explicit_int = c::Next;
+    if (plain != 2 || explicit_int != 4 || c::Zero != 0) return 6;
+    puts("typed C declarations passed");
+    return 0;
+}

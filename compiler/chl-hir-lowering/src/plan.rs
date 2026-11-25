@@ -4,7 +4,7 @@ use chl_hir::ast::{
     HIR, HIRStmt,
     expression::HIRExpression,
     function::{HIRFunctionBody, HIRFunctionKind, HIRFunctionPrototype},
-    global_var::{HIREnumVariant, HIRGlobalVariable},
+    global_var::{HIREnumDefinition, HIRGlobalVariable},
     modifiers::{HIRSymbolNameScheme, LinkageMode, VisibilityMode},
     types::{HIRTagKind, HIRType, HIRTypeKind, HIRTypeLookup},
 };
@@ -12,13 +12,19 @@ use chl_hmir::{
     HMIRDeclaration, HMIRDeclarationRole, HMIRDefKind, HMIRUnitID,
     unit::{def::HMIRDeclarationPoint, symbols::HMIRLookupClass},
 };
+use chl_log::{CHLResult, catalogue::typecheck};
 use chl_namespace::module::{NamespacePath, QualifiedName};
 use chl_tokens::TokenRange;
 use chl_util::identifier::CHLIdent;
 
+use crate::log::log_hir_error;
+
 pub(crate) enum DefSource<'h> {
     Type {
         ty: &'h HIRType,
+    },
+    EnumType {
+        underlying: Option<&'h HIRType>,
     },
     Function {
         prototype: &'h HIRFunctionPrototype,
@@ -29,11 +35,13 @@ pub(crate) enum DefSource<'h> {
         ty: &'h HIRType,
         initializer: Option<&'h HIRExpression>,
         linkage: LinkageMode,
+        explicit_extern: bool,
         naming: HIRSymbolNameScheme,
     },
     EnumVariant {
-        variants: &'h [HIREnumVariant],
+        enumeration: &'h HIREnumDefinition,
         index: usize,
+        scoped_type: Option<QualifiedName>,
     },
 }
 
@@ -47,6 +55,7 @@ pub(crate) struct PlannedDeclaration<'h> {
     visibility: VisibilityMode,
     naming: Option<HIRSymbolNameScheme>,
     source: Option<DefSource<'h>>,
+    overwrite: bool,
 }
 
 pub(crate) struct PlannedSymbol<'h> {
@@ -88,6 +97,7 @@ impl<'h> PlannedDeclaration<'h> {
             self.visibility,
             self.naming,
             kind,
+            self.overwrite,
         )
     }
 }
@@ -122,11 +132,47 @@ fn is_forward_declaration(name: &CHLIdent, tag: Option<HIRTagKind>, ty: &HIRType
     )
 }
 
+fn enum_is_scoped(enumeration: &HIREnumDefinition) -> CHLResult<bool> {
+    let Some(base) = &enumeration.underlying else {
+        return Ok(false);
+    };
+    let (representation, scoped) = match &base.kind {
+        HIRTypeKind::Strong(representation) => (representation.as_ref(), true),
+        _ => (base, false),
+    };
+    let is_int = base.specifiers == 0
+        && representation.specifiers == 0
+        && matches!(
+            &representation.kind,
+            HIRTypeKind::Identifier { name, lookup: HIRTypeLookup::Standard, args: None }
+                if name.root_name_ref().is_some_and(|name| name.as_str() == "int")
+        );
+    if !is_int {
+        return log_hir_error(
+            &base.range,
+            &typecheck::TYPE_REQUIREMENT,
+            (
+                "an enum base".into(),
+                "`int` or `@strong int`".into(),
+                Some(base.to_string()),
+            ),
+        );
+    }
+    if scoped && enumeration.name.is_none() {
+        return log_hir_error(
+            &enumeration.range,
+            &typecheck::INVALID_CONTEXT,
+            ("`@strong int`".into(), "an anonymous enum".into()),
+        );
+    }
+    Ok(scoped)
+}
+
 pub(crate) fn plan_symbols<'h>(
     hir: &'h HIR,
     namespace: &NamespacePath,
     unit: HMIRUnitID,
-) -> Vec<PlannedSymbol<'h>> {
+) -> CHLResult<Vec<PlannedSymbol<'h>>> {
     let mut symbols = Vec::<PlannedSymbol>::new();
     let mut indices = FxHashMap::default();
     for (ordinal, definition) in hir.definition_stmts.iter().enumerate() {
@@ -163,6 +209,7 @@ pub(crate) fn plan_symbols<'h>(
                 visibility: *visibility,
                 naming,
                 source,
+                overwrite: definition.overwrite,
             });
         };
 
@@ -218,6 +265,7 @@ pub(crate) fn plan_symbols<'h>(
                     ty,
                     initializer,
                     linkage,
+                    explicit_extern,
                     symbol_name_scheme,
                     range,
                     ..
@@ -236,20 +284,47 @@ pub(crate) fn plan_symbols<'h>(
                         ty,
                         initializer: initializer.as_ref(),
                         linkage: *linkage,
+                        explicit_extern: *explicit_extern,
                         naming: *symbol_name_scheme,
                     }),
                 ),
                 HIRGlobalVariable::EnumDefinition(enumeration) => {
+                    let name = enumeration
+                        .name
+                        .as_ref()
+                        .map(|name| QualifiedName::new(base.clone(), name.clone()));
+                    let scoped_type = if enum_is_scoped(enumeration)? {
+                        name.clone()
+                    } else {
+                        None
+                    };
+                    let members = match &scoped_type {
+                        Some(ty) => base.clone().child(ty.name.clone()),
+                        None => base.clone(),
+                    };
                     for (index, variant) in enumeration.variants.iter().enumerate() {
                         declare(
-                            QualifiedName::new(base.clone(), variant.name.clone()),
+                            QualifiedName::new(members.clone(), variant.name.clone()),
                             None,
                             Some(enumeration.symbol_naming),
                             &variant.range,
                             HMIRDeclarationRole::Definition,
                             Some(DefSource::EnumVariant {
-                                variants: &enumeration.variants,
+                                enumeration,
                                 index,
+                                scoped_type: scoped_type.clone(),
+                            }),
+                        );
+                    }
+                    if let Some(name) = name {
+                        declare(
+                            name,
+                            Some(HIRTagKind::Enum),
+                            Some(enumeration.symbol_naming),
+                            &enumeration.range,
+                            HMIRDeclarationRole::Definition,
+                            Some(DefSource::EnumType {
+                                underlying: enumeration.underlying.as_ref(),
                             }),
                         );
                     }
@@ -257,5 +332,5 @@ pub(crate) fn plan_symbols<'h>(
             },
         }
     }
-    symbols
+    Ok(symbols)
 }

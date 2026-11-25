@@ -16,6 +16,7 @@ pub enum HIRGlobalVariable {
         name: CHLIdent,
         ty: HIRType,
         is_mutable: bool,
+        explicit_extern: bool,
         initializer: Option<HIRExpression>,
 
         linkage: LinkageMode,
@@ -27,8 +28,10 @@ pub enum HIRGlobalVariable {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HIREnumDefinition {
     pub name: Option<CHLIdent>,
+    pub underlying: Option<HIRType>,
     pub variants: Vec<HIREnumVariant>,
     pub symbol_naming: HIRSymbolNameScheme,
+    pub range: TokenRange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

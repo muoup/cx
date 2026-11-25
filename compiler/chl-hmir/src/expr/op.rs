@@ -81,6 +81,7 @@ pub enum HMIRCoerceMode {
     Implicit,
     Convert,
     CCast,
+    EnumMember,
     Truthy,
 }
 
@@ -199,6 +200,7 @@ impl HMIRCoerceMode {
             Self::Implicit => "op.coerce",
             Self::Convert => "op.convert",
             Self::CCast => "op.c_cast",
+            Self::EnumMember => "op.enum_member",
             Self::Truthy => "op.truthy",
         }
     }

@@ -184,6 +184,7 @@ pub(crate) struct ParsedSpecifiers {
     pub(crate) qualifiers: HIRTypeQualifiers,
     pub(crate) linkage: LinkageMode,
     pub(crate) noreturn: bool,
+    pub(crate) thread_local: bool,
 }
 
 pub(crate) fn parse_noreturn(tokens: &mut TokenIter) -> bool {
@@ -198,6 +199,7 @@ fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
     let mut spec_acc: HIRTypeQualifiers = 0;
     let mut linkage = LinkageMode::Standard;
     let mut noreturn = false;
+    let mut thread_local = false;
 
     loop {
         match tokens.peek().map(|token| &token.kind) {
@@ -207,7 +209,8 @@ fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
                 SpecifierType::Restrict => spec_acc |= HIR_RESTRICT,
                 SpecifierType::Extern => linkage = LinkageMode::Extern,
                 SpecifierType::Static => linkage = LinkageMode::Static,
-                SpecifierType::Inline | SpecifierType::ThreadLocal => {}
+                SpecifierType::ThreadLocal => thread_local = true,
+                SpecifierType::Inline => {}
 
                 SpecifierType::Public | SpecifierType::Private => break,
             },
@@ -220,6 +223,7 @@ fn parse_decl_specifiers(tokens: &mut TokenIter) -> ParsedSpecifiers {
         qualifiers: spec_acc,
         linkage,
         noreturn,
+        thread_local,
     }
 }
 

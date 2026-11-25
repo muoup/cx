@@ -1,0 +1,5 @@
+#include "include/_overwrite_tentative.h"
+
+extern "C":
+@overwrite extern int value;
+int main() { return 0; }

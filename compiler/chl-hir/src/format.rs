@@ -97,6 +97,9 @@ impl Display for HIRGlobalVariable {
 
 impl Display for HIRDefinition {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        if self.overwrite {
+            write!(f, "@overwrite ")?;
+        }
         Display::fmt(&self.stmt, f)
     }
 }

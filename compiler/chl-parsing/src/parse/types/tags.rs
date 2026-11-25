@@ -1,4 +1,7 @@
-use super::{parse_declaration_head, parse_declarator, parse_typed_declarator, DeclaratorKind};
+use super::{
+    DeclaratorKind, TypePosition, parse_abstract_type, parse_declaration_head, parse_declarator,
+    parse_typed_declarator, starts_type,
+};
 use crate::{
     assert_token_matches,
     log::{parse_point_error, parse_underline_error},
@@ -19,7 +22,9 @@ use chl_hir::ast::{
 };
 use chl_log::{catalogue::parse::*, CHLResult};
 use chl_namespace::module::QualifiedName;
-use chl_tokens::{identifier, keyword, operator, punctuator, token::TokenKind, TokenRange};
+use chl_tokens::{
+    TokenRange, identifier, keyword, operator, punctuator, token::TokenKind,
+};
 use chl_util::identifier::CHLIdent;
 
 fn parse_type_attributes(
@@ -182,6 +187,11 @@ pub(super) fn parse_tag(data: &mut ParserData, scope: TagScope) -> CHLResult<HIR
     let name = try_parse_qualified_name(&mut data.tokens)?;
     let header = data.token_range(start, data.tokens.index);
     let label = if tagged { "enum union" } else { tag.prefix() };
+    let underlying = if tag == HIRTagKind::Enum {
+        parse_enum_underlying(data)?
+    } else {
+        None
+    };
     
     let attributes = if tag != HIRTagKind::Enum {
         parse_type_attributes(data, label)?
@@ -190,7 +200,7 @@ pub(super) fn parse_tag(data: &mut ParserData, scope: TagScope) -> CHLResult<HIR
     };
 
     if !try_next!(data.tokens, punctuator!(OpenBrace)) {
-        if tagged {
+        if tagged || underlying.is_some() {
             return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("'{'".into(), None));
         }
         let Some(name) = name else {
@@ -245,22 +255,34 @@ pub(super) fn parse_tag(data: &mut ParserData, scope: TagScope) -> CHLResult<HIR
         );
     }
 
-    let kind = if tag == HIRTagKind::Enum {
+    if tag == HIRTagKind::Enum {
         let variants = parse_enum_variants(data)?;
+        let range = data.token_range(start, data.tokens.index);
+        let ty = match &name {
+            Some(name) => tag_reference(QualifiedName::new_raw(name.clone()), tag),
+            None => underlying.clone().unwrap_or_else(|| {
+                HIRTypeKind::Identifier {
+                    name: QualifiedName::new_raw(CHLIdent::new("int")),
+                    lookup: HIRTypeLookup::Standard,
+                    args: None,
+                }
+                .to_type()
+            }),
+        };
         data.add_stmt(HIRStmt::GlobalVariableDefinition {
             visibility: data.visibility,
             variable: HIRGlobalVariable::EnumDefinition(HIREnumDefinition {
-                name: name.clone(),
+                name,
+                underlying,
                 variants,
                 symbol_naming: data.naming(LinkageMode::Standard),
+                range: range.clone(),
             }),
         });
-        HIRTypeKind::Identifier {
-            name: QualifiedName::new_raw(CHLIdent::new("int")),
-            lookup: HIRTypeLookup::Standard,
-            args: None,
-        }
-    } else if tagged {
+        return Ok(ty.with_range(range));
+    }
+
+    let kind = if tagged {
         let variants = parse_tagged_variants(data, scope)?;
         HIRTypeKind::TaggedUnion {
             name: name.clone(),
@@ -295,6 +317,15 @@ pub(super) fn parse_tag(data: &mut ParserData, scope: TagScope) -> CHLResult<HIR
     } else {
         Ok(HIRTypeKind::ScopedTag(tag, Box::new(ty)).to_type())
     }
+}
+
+fn parse_enum_underlying(data: &mut ParserData) -> CHLResult<Option<HIRType>> {
+    let colon = data.tokens.index;
+    if try_next!(data.tokens, punctuator!(Colon)) && starts_type(data, TypePosition::Cast)? {
+        return parse_abstract_type(data, TagScope::Alias).map(Some);
+    }
+    data.tokens.index = colon;
+    Ok(None)
 }
 
 fn parse_enum_variants(data: &mut ParserData) -> CHLResult<Vec<HIREnumVariant>> {

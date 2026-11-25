@@ -30,6 +30,7 @@ pub struct HIR {
 #[derive(Debug)]
 pub struct HIRDefinition {
     pub ordered: bool,
+    pub overwrite: bool,
     pub namespace: NamespacePath,
     pub stmt: HIRStmt,
 }

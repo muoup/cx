@@ -1,0 +1,8 @@
+enum family : @strong int { INET = 2 };
+enum kind : @strong int { STREAM = 1 };
+
+int open(family domain, kind socket_type) { return 0; }
+
+int main() {
+    return open(kind::STREAM, family::INET);
+}
