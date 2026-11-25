@@ -1,5 +1,4 @@
-import std::optional as std;
-import std::string as std;
+import std::{optional, string, allocation} as std;
 
 extern "C":
 
@@ -55,7 +54,7 @@ std::opt(usize) file::read(file& this, char* buffer, u64 buffer_size) {
     );
 }
 
-std::string file::read_to_string(file& this) {
+std::string(.A = A) file::read_to_string(comptime std::allocator A = std::heap_allocator, file& this) {
     int c;
     std::string s = std::string::new();
 

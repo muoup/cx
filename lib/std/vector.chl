@@ -134,7 +134,7 @@ where
 }
 
 void force_grow(vector(_: T, .A = _: A)& this) {
-    this.capacity *= 2;
+    this.capacity = this.capacity * 2 + 1;
     std::reallocate_inplace(A, this.alloc, this.capacity * sizeof(T));
 }
 

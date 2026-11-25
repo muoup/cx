@@ -3,11 +3,15 @@
 
 import std::{optional, io, math} as std;
 
+extern "C":
+
+void* aligned_alloc(usize alignment, usize size);
+
 public:
 
 comptime type raw_allocation = struct : @nodrop { void* data; usize size; };
 
-comptime type fn_alloc = fn(^usize) -> ^raw_allocation;
+comptime type fn_alloc = fn(^usize) -> ^std::opt(raw_allocation);
 comptime type fn_realloc = fn(^raw_allocation, ^usize) -> ^raw_allocation;
 comptime type fn_free = fn(^raw_allocation) -> ^void;
 
@@ -23,8 +27,17 @@ comptime allocator allocator::new(fn_alloc A, fn_free F, std::opt(fn_realloc) R 
     => { .allocate = A, .deallocate = F, .realloc = R };
 
 auto allocate(comptime allocator A, usize len) -> allocation(A)
-    => (allocation(A)) A.allocate(emit len);
+    => try_allocate(A, len) |> std::opt::expect("Allocation failed");
 
+auto allocate_aligned(comptime allocator A, usize len, usize alignment) -> allocation(A)
+    => try_allocate_aligned(A, len, alignment) |> std::opt::expect("Allocation failed");
+    
+auto try_allocate(comptime allocator A, usize len) -> std::opt(allocation(A))
+    => A.allocate(emit len, emit 0) |> std::opt::map(|auto raw| => (allocation(A)) raw);
+
+auto try_allocate_aligned(comptime allocator A, usize len, usize alignment) -> std::opt(allocation(A))
+    => A.allocate(emit len, emit alignment) |> std::opt::map(|auto raw| => (allocation(A)) raw);
+    
 void deallocate(comptime allocator A = _, allocation(A) alloc)
     => A.deallocate(emit (raw_allocation) move alloc);
 
@@ -57,12 +70,13 @@ comptime allocator heap_allocator = allocator::new(
     .R = _::some(heap_allocator::reallocate)
 );
 
-raw_allocation heap_allocator::allocate(usize size) {
-    void* data = malloc(size);
-    return { data, size };
+auto heap_allocator::allocate(usize size, usize alignment) -> std::opt(raw_allocation) {
+    void* data = alignment == 0 ? malloc(size) : aligned_alloc(size, alignment);
+    
+    return std::opt::if_then(emit data != NULL, emit (raw_allocation) { data, size });
 }
 
-raw_allocation heap_allocator::reallocate(raw_allocation alloc, usize new_size) {
+auto heap_allocator::reallocate(raw_allocation alloc, usize new_size) -> raw_allocation {
     alloc.data = realloc(alloc.data, new_size);
     alloc.size = new_size;
     return move alloc;

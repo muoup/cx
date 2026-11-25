@@ -20,7 +20,7 @@ string(.A = A) string::new(comptime std::allocator A = std::heap_allocator)
 string(.A = A) string::clone(const string(.A = _: A)& this) => this |> string::as_str() |> string::from_str();
 
 void string::drop(string(.A = _: A) this)
-    => move this |> string::underlying() |> std::vector::drop();
+    => move this |> string::into_bytes() |> std::vector::drop();
 
 string(.A = A) string::from_str(comptime std::allocator A = std::heap_allocator, const _str& s) {
     string new_string = string::new();
@@ -28,7 +28,7 @@ string(.A = A) string::from_str(comptime std::allocator A = std::heap_allocator,
     return move new_string;
 }
 
-string(.A = A) string::from_ascii(comptime std::allocator A = std::heap_allocator, std::span(const char) this) {
+string(.A = A) string::from_bytes(comptime std::allocator A = std::heap_allocator, std::span(const u8) this) {
     string str = string::new();
     string::append_span(str, this);
     return move str;
@@ -45,18 +45,14 @@ _str& string::as_str_mut(string(.A = _)& this) {
     return @unsafe((_str&) (char*) this.alloc.data);
 }
 
-std::span(char) string::as_ascii(string(.A = _)& this)
+std::span(u8) string::as_bytes(string(.A = _)& this)
     => std::span::new(this.data, this.length);
 
-std::vector(char, .A = A) string::into_ascii(string(.A = _: A) this) {
-    auto allocator = (std::allocation(std::heap_allocator)) {
-        .data = this.data,
-        .size = this.capacity
-    };
- 
-    auto result = std::vector::from_data(char, move allocator, this.length);
-    @leak(this);
-    return move result;
+std::span(const u8) string::as_const_bytes(const string(.A = _)& this)
+    => std::span::new(this.data, this.length);
+    
+std::vector(u8, .A = A) string::into_bytes(string(.A = _: A) this) {
+    return move (std::vector(u8, .A = A)) this;
 }
 
 void string::append_str(string(.A = _)& this, const _str& s) {
@@ -77,13 +73,9 @@ void string::append_span(string(.A = _)& this, std::span(const char) span) {
     (this |> string::as_str_mut())[this.length] = 0;
 }
 
-void string::append_char(string(.A = _)& this, char c) {
-    if (this.length + 1 >= this.capacity) {
-        this |> string::_realloc();
-    }
-
-    (this |> string::as_str_mut())[this.length++] = c;
-    (this |> string::as_str_mut())[this.length] = 0;
+void string::append_byte(string(.A = _)& this, char c) {
+    this |> string::underlying_ref() |> std::vector::push(c);
+    this |> string::underlying_ref() |> std::vector::push(0);
 }
 
 bool string::equals(const string(.A = _)& this, const string& other) {
@@ -117,7 +109,7 @@ usize str::length(const _str& this) {
 std::span(u8) str::as_bytes(_str& this) {
     usize len = str::length(this);
 
-    return std::span::new(.T = char, (char*) this, len);
+    return std::span::new((u8*) this, len);
 }
 
 std::span(const u8) str::as_const_bytes(const _str& this) {
@@ -131,9 +123,6 @@ private:
 std::vector(u8, .A = A)& string::underlying_ref(string(.A = _: A)& this)
     => *(std::vector(u8, .A = A)*) &this;
 
-std::vector(u8, .A = A) string::underlying(string(.A = _: A) this)
-    => (std::vector(u8, .A = A)) move this;
-    
 void string::_realloc(string(.A = _: A)& this) {
     this 
         |> string::underlying_ref() 
