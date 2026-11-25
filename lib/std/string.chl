@@ -1,130 +1,107 @@
-import std::{optional, io, span, vector, allocation} as std;
+import std::{optional, panic, memory::span, collections::vector, memory::allocation} as std;
 
-extern "C":
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 public:
 
-comptime type string(std::allocator A = std::heap_allocator) 
+comptime type string(std::allocator A = std::heap_allocator)
     => @strong std::vector(u8, .A = A);
 
-// std::string implementations
-
-string(.A = A) string::new(comptime std::allocator A = std::heap_allocator)
-    => (string(.A = A)) std::vector::new(u8);
-
-string(.A = A) string::clone(const string(.A = _: A)& this) => this |> string::as_str() |> string::from_str();
-
-void string::drop(string(.A = _: A) this)
-    => move this |> string::into_bytes() |> std::vector::drop();
-
-string(.A = A) string::from_str(comptime std::allocator A = std::heap_allocator, const _str& s) {
-    string new_string = string::new();
-    new_string |> string::append_str(s);
-    return move new_string;
+string(.A = A) string::new(comptime std::allocator A = std::heap_allocator) {
+    auto bytes = std::vector::new(u8, .A = A);
+    std::vector::push(bytes, (u8) 0);
+    return (string(.A = A)) move bytes;
 }
 
-string(.A = A) string::from_bytes(comptime std::allocator A = std::heap_allocator, std::span(const u8) this) {
-    string str = string::new();
-    string::append_span(str, this);
-    return move str;
+string(.A = A) string::clone(const string(.A = _: A)& this)
+    => string::from_bytes(.A = A, string::as_const_bytes(this));
+
+void string::drop(string(.A = _: A) this)
+    => std::vector::drop((std::vector(u8, .A = A)) move this);
+
+string(.A = A) string::from_str(comptime std::allocator A = std::heap_allocator, const _str& text)
+    => string::from_bytes(.A = A, str::as_const_bytes(text));
+
+string(.A = A) string::from_bytes(
+    comptime std::allocator A = std::heap_allocator, std::span(const u8) bytes
+) {
+    string(.A = A) text = string::new(.A = A);
+    string::append_span(text, bytes);
+    return move text;
+}
+
+usize string::length(const string(.A = _)& this) => this.length - 1;
+
+std::span(u8) string::as_bytes(string(.A = _)& this)
+    => std::span::new((u8*) this.data, string::length(this));
+
+std::span(const u8) string::as_const_bytes(const string(.A = _)& this)
+    => std::span::new((const u8*) this.data, string::length(this));
+
+std::vector(u8, .A = A) string::into_bytes(string(.A = _: A) this) {
+    auto bytes = (std::vector(u8, .A = A)) move this;
+    bytes.length--;
+    return move bytes;
 }
 
 const _str& string::as_str(const string(.A = _)& this) {
-    // SAFETY: We ensure via our API that our internal const char* is a valid c-string with null-termination,
-    // so this cast is safe as long as the caller does not mutate the string data through the returned reference.
-    return @unsafe((const _str&) (char*) this.alloc.data);
-}
-
-_str& string::as_str_mut(string(.A = _)& this) {
-    // SAFETY: See string::as_str above
-    return @unsafe((_str&) (char*) this.alloc.data);
-}
-
-std::span(u8) string::as_bytes(string(.A = _)& this)
-    => std::span::new(this.data, this.length);
-
-std::span(const u8) string::as_const_bytes(const string(.A = _)& this)
-    => std::span::new(this.data, this.length);
-    
-std::vector(u8, .A = A) string::into_bytes(string(.A = _: A) this) {
-    return move (std::vector(u8, .A = A)) this;
-}
-
-void string::append_str(string(.A = _)& this, const _str& s) {
-    usize str_length = str::length(s);
-    auto span = std::span::new(.T = const char, (const char*) s, str_length);
-    string::append_span(this, span);
-}
-
-void string::append_span(string(.A = _)& this, std::span(const char) span) {
-    u64 length = span |> std::span::length();
-
-    while (this.length + span.length + 1 >= this.capacity) {
-        this |> string::_realloc();
+    const u8* data = this.data;
+    for (usize i = 0; i < string::length(this); i++) {
+        if (data[i] == 0) std::panic("String contains a zero byte");
     }
-    
-    memcpy(this.alloc.data + this.length, span |> std::span::data(), length);
-    this.length = length + this.length;
-    (this |> string::as_str_mut())[this.length] = 0;
+    return @unsafe((const _str&) (const char*) data);
 }
 
-void string::append_byte(string(.A = _)& this, char c) {
-    this |> string::underlying_ref() |> std::vector::push(c);
-    this |> string::underlying_ref() |> std::vector::push(0);
-}
+void string::append_str(string(.A = _)& this, const _str& text)
+    => string::append_span(this, str::as_const_bytes(text));
 
-bool string::equals(const string(.A = _)& this, const string& other) {
-    if (this.length != other.length) {
-        return false;
-    }
-    return strcmp(this.data, other.data) == 0;
-}
+void string::append_span(string(.A = _: A)& this, std::span(const u8) bytes) {
+    if (bytes.length == 0) return;
+    const usize old_size = this.length;
+    if (bytes.length > (usize) -1 - old_size) std::panic("String length overflow");
 
-string str::substring(const _str& this, usize start, usize end) {
-    if (start > end || end > strlen(this)) {
-        std::io::println("Invalid substring range");
-        @unsafe(exit(1));
+    const usize offset = (usize) bytes.data - (usize) this.data;
+    bool aliases = offset < old_size;
+    if (aliases && bytes.length > old_size - offset) std::panic("Invalid string source span");
+
+    auto& buffer = underlying(this);
+    const usize size = old_size + bytes.length;
+    if (size > buffer.capacity) {
+        usize capacity = buffer.capacity <= ((usize) -1) / 2 ? buffer.capacity * 2 : size;
+        std::vector::reserve(buffer, capacity < size ? size : capacity);
     }
 
-    string result = string::new();
-    for (usize i = start; i < end; i++) {
-        result |> string::append_char(this[i]);
-    }
-    return move result;
-}
-    
-bool str::equals(const _str& this, const _str& other) {
-    return strcmp(this, other) == 0;
+    u8* data = buffer.data;
+    const u8* source = aliases ? data + offset : bytes.data;
+    memmove(data + old_size - 1, source, bytes.length);
+    data[size - 1] = 0;
+    buffer.length = size;
 }
 
-usize str::length(const _str& this) {
-    return strlen(this);
+void string::append_byte(string(.A = _)& this, u8 byte)
+    => string::append_span(this, std::span::new((const u8*) &byte, 1));
+
+bool string::equals(const string(.A = _)& this, const string(.A = _)& other)
+    => std::span::equals(string::as_const_bytes(this), string::as_const_bytes(other));
+
+string(.A = A) str::substring(
+    comptime std::allocator A = std::heap_allocator, const _str& this, usize start, usize end
+) {
+    auto bytes = str::as_const_bytes(this);
+    if (start > end || end > bytes.length) std::panic("Invalid substring range");
+    return string::from_bytes(.A = A, std::span::new(bytes.data + start, end - start));
 }
 
-std::span(u8) str::as_bytes(_str& this) {
-    usize len = str::length(this);
+bool str::equals(const _str& this, const _str& other) => strcmp(this, other) == 0;
 
-    return std::span::new((u8*) this, len);
-}
+usize str::length(const _str& this) => strlen(this);
 
-std::span(const u8) str::as_const_bytes(const _str& this) {
-    usize len = str::length(this);
-    
-    return std::span::new((const u8*) this, len);
-}
+std::span(u8) str::as_bytes(_str& this) => std::span::new((u8*) this, str::length(this));
+
+std::span(const u8) str::as_const_bytes(const _str& this)
+    => std::span::new((const u8*) this, str::length(this));
 
 private:
 
-std::vector(u8, .A = A)& string::underlying_ref(string(.A = _: A)& this)
+std::vector(u8, .A = A)& underlying(string(.A = _: A)& this)
     => *(std::vector(u8, .A = A)*) &this;
-
-void string::_realloc(string(.A = _: A)& this) {
-    this 
-        |> string::underlying_ref() 
-        |> std::vector::force_grow();
-}

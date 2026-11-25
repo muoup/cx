@@ -1,32 +1,30 @@
 import std::optional as std;
 
-extern "C":
-
-#include <sys/socket.h>
-#include <arpa/inet.h>
-
 public:
 
 struct endpoint {
-    sockaddr_in address;
-    u32 length;
+    u32 address;
+    u16 port;
 };
 
-std::opt(endpoint) endpoint::ipv4(const _str& address, u16 port) {
-    u32 raw_address = inet_addr(address);
+std::opt(endpoint) endpoint::ipv4(const _str& text, u16 port) {
+    u32 address = 0;
+    usize index = 0;
+    
+    for (usize part = 0; part < 4; part++) {
+        u32 value = 0;
+        usize digits = 0;
+        
+        while (text[index] >= '0' && text[index] <= '9') {
+            value = value * 10 + (u32) (text[index++] - '0');
+            if (value > 255 || ++digits > 3) return _::none();
+        }
+        
+        if (digits == 0) return _::none();
+        if (part < 3 && text[index++] != '.') return _::none();
 
-    if (raw_address == 0xFFFFFFFF) {
-        return _::none();
+        address = (address << 8) | value;
     }
 
-    endpoint value = (endpoint) {
-        .address = (sockaddr_in) {
-            .sin_family = AF_INET,
-            .sin_port = htons(port),
-            .sin_addr = (in_addr) { .s_addr = raw_address },
-        },
-        .length = (u32) sizeof(sockaddr_in)
-    };
-
-    return _::some(value);
+    return std::opt::if_then(text[index] == 0, (endpoint) { address, port });
 }

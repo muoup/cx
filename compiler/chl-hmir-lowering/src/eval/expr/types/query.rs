@@ -7,7 +7,7 @@ use chl_log::{CHLResult, catalogue::typecheck};
 use chl_tokens::TokenRange;
 
 use crate::{
-    env::function::LocalLoweringContext,
+    env::{function::LocalLoweringContext, resolver::demand},
     eval::{
         EvalResult, deduce, eval, eval_type,
         flow::Evaluation,
@@ -60,16 +60,35 @@ pub(crate) fn eval_type_op(
             let unqualified = qualify::unqualified(context, ty, span);
             type_value(context, unqualified, span)
         }
+        HMIRTypeOp::IsNodrop(ty)
+        | HMIRTypeOp::IsNocopy(ty)
+        | HMIRTypeOp::IsUnsafeMove(ty) => {
+            let ty = subject(context, body, *ty)?;
+            demand::force(context.env_mut(), ty)?;
+
+            let holds = match op {
+                HMIRTypeOp::IsNocopy(_) => context.env().is_nocopy(ty),
+                HMIRTypeOp::IsNodrop(_) => context.env().is_nodrop(ty),
+                HMIRTypeOp::IsUnsafeMove(_) => context.env().semantics(ty).unsafe_move,
+
+                _ => unreachable!()
+            };
+            boolean(context, holds, span)
+        },
+
         HMIRTypeOp::IsInt(ty)
         | HMIRTypeOp::IsFloat(ty)
         | HMIRTypeOp::IsPointer(ty)
         | HMIRTypeOp::IsSigned(ty)
         | HMIRTypeOp::IsReference(ty)
-        | HMIRTypeOp::IsConst(ty) 
-        | HMIRTypeOp::IsNodrop(ty) 
-        | HMIRTypeOp::IsNocopy(ty) 
-        | HMIRTypeOp::IsUnsafeMove(ty) => {
+        | HMIRTypeOp::IsConst(ty) => {
             let ty = subject(context, body, *ty)?;
+            if matches!(
+                op,
+                HMIRTypeOp::IsNodrop(_) | HMIRTypeOp::IsNocopy(_) | HMIRTypeOp::IsUnsafeMove(_)
+            ) {
+                demand::force(context.env_mut(), ty)?;
+            }
             let env = context.env();
             let holds = match op {
                 HMIRTypeOp::IsInt(_) => env.is_int(ty),
@@ -78,9 +97,6 @@ pub(crate) fn eval_type_op(
                 HMIRTypeOp::IsReference(_) => env.is_reference(ty),
                 HMIRTypeOp::IsSigned(_) => env.is_int(ty) && types::int_type(env, ty).signed(),
                 HMIRTypeOp::IsConst(_) => env.semantics(ty).constant,
-                HMIRTypeOp::IsNocopy(_) => env.is_nocopy(ty),
-                HMIRTypeOp::IsNodrop(_) => env.is_nodrop(ty),
-                HMIRTypeOp::IsUnsafeMove(_) => env.semantics(ty).unsafe_move,
 
                 _ => unreachable!()
             };

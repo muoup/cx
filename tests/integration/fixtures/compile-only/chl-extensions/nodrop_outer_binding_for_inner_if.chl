@@ -1,4 +1,4 @@
-import std::vector as std;
+import std::collections::vector as std;
 
 struct Resource : @nodrop {
     int value;

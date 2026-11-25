@@ -1,4 +1,4 @@
-import std::span as std;
+import std::memory::span as std;
 
 public:
 

@@ -1,0 +1,7 @@
+import std::memory::allocation as std;
+
+int main() {
+    auto block = std::allocate(std::heap_allocator, 64, .alignment = 64);
+    std::deallocate(move block);
+    return 0;
+}

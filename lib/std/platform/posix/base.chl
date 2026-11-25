@@ -114,6 +114,22 @@ int     fcntl(int fd, int cmd, ...);
 
 typedef struct sockaddr sockaddr;
 typedef struct sockaddr_in sockaddr_in;
+typedef socklen_t address_length;
+typedef ssize_t socket_size;
+
+comptime int ENUM_SOL_SOCKET = SOL_SOCKET;
+comptime int ENUM_SO_REUSEADDR = SO_REUSEADDR;
+
+#ifdef MSG_NOSIGNAL
+comptime int ENUM_SEND_FLAGS = MSG_NOSIGNAL;
+#else
+comptime int ENUM_SEND_FLAGS = 0;
+#endif
+
+u16 htons(u16 port);
+u16 ntohs(u16 port);
+u32 htonl(u32 address);
+u32 ntohl(u32 address);
 
 comptime int ENUM_AF_UNSPEC = AF_UNSPEC;
 comptime int ENUM_AF_UNIX = AF_UNIX;

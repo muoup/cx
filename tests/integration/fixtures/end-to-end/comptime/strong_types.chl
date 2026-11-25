@@ -3,7 +3,7 @@
 /* CHL-STDOUT-NEXT: 4 1 8 */
 /* CHL-STDOUT-NEXT: 1 1 1 1 */
 #include <stdio.h>
-import std::vector as std;
+import std::collections::vector as std;
 
 typedef @strong int meters;
 typedef meters distance;

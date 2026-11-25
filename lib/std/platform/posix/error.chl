@@ -1,0 +1,7 @@
+import std::net::error as std;
+
+public:
+
+comptime type errno = @strong int;
+
+std::socket_error new_socket_error(errno err) => (std::socket_error) err;

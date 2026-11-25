@@ -1,0 +1,77 @@
+/* CHL-STDOUT: allocator checks passed */
+
+import std::{collections::vector, memory::{allocation, box}, optional, panic} as std;
+
+#include <stdio.h>
+#include <stdlib.h>
+
+int frees = 0;
+
+void* test_allocate(usize size, usize alignment) {
+    if (size > 16) return NULL;
+    return malloc(size);
+}
+
+void test_free(void* pointer, usize size, usize alignment) {
+    frees++;
+    free(pointer);
+}
+
+void* test_resize(void* pointer, usize old_size, usize size, usize alignment) {
+    if (size > 16) return NULL;
+    return realloc(pointer, size);
+}
+
+comptime std::allocator fallback = std::allocator::new(test_allocate, test_free);
+comptime std::allocator native = std::allocator::new(test_allocate, test_free, .resize = _::some(test_resize));
+
+void check(bool passed) {
+    if (!passed) std::panic("Allocation invariant failed");
+}
+
+void resize_check(comptime std::allocator policy) {
+    auto block = std::allocate(policy, 4);
+    ((u8*) block.data)[0] = 23;
+    void* original = block.data;
+    check(!std::try_resize(block, 20));
+    check(block.size == 4 && block.data == original && ((u8*) block.data)[0] == 23);
+    check(std::try_resize(block, 8));
+    check(block.size == 8 && ((u8*) block.data)[0] == 23);
+    check(std::try_resize(block, 0) && block.data == NULL);
+    std::deallocate(move block);
+    check(std::try_allocate(policy, 20) is none());
+}
+
+comptime std::allocator aligned = std::allocator::new(
+    std::aligned_heap_allocator.allocate, std::aligned_heap_allocator.deallocate,
+    .minimum_alignment = 64, .maximum_alignment = 64
+);
+
+int main() {
+    resize_check(fallback);
+    resize_check(native);
+    check(frees == 3);
+
+    auto aligned_block = std::allocate(std::aligned_heap_allocator, 17, .alignment = 64);
+    check((usize) aligned_block.data % 64 == 0);
+    check(std::try_resize(aligned_block, 33) && (usize) aligned_block.data % 64 == 0);
+    std::deallocate(move aligned_block);
+
+    auto vector = std::vector::with_capacity(u8, .A = aligned, 0);
+    for (usize index = 0; index < 17; index++) {
+        std::vector::push(vector, (u8) index);
+        check((usize) &std::vector::at(vector, 0) % 64 == 0);
+    }
+    check(std::vector::at(vector, 0) == 0 && std::vector::at(vector, 16) == 16);
+    std::vector::drop(move vector);
+
+    auto box = std::box::new(.A = aligned, 42);
+    check((usize) &std::box::deref(box) % 64 == 0);
+    check(std::box::deref(box) == 42);
+    std::box::drop(move box);
+
+    check(sizeof(std::box(u8)) == sizeof(void*));
+    check(sizeof(std::vector(u8)) == sizeof(void*) + 2 * sizeof(usize));
+    puts("allocator checks passed");
+    return 0;
+}

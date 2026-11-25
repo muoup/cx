@@ -8,8 +8,8 @@ import std::optional as std;
 int main() {
     std::string::string s = std::string::string::new();
     s |> std::string::append_str("Hello, worl");
-    s |> std::string::append_char('d');
-    s |> std::string::append_char('!');
+    s |> std::string::append_byte('d');
+    s |> std::string::append_byte('!');
     printf("%s\n", s |> std::string::as_str());
     move s |> std::string::string::drop();
 }

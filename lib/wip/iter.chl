@@ -61,7 +61,7 @@ comptime type span_iter(type index)
 
 // Test:
 
-import std::vector as std;
+import std::collections::vector as std;
 import std::iter as std;
 
 int main() {

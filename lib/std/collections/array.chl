@@ -1,4 +1,4 @@
-import std::{optional, span} as std;
+import std::{optional, memory::span, panic} as std;
 
 public:
 
@@ -10,13 +10,13 @@ comptime type array(type T, usize len)
 
 ///
 /// Standard factory for a zero-initialized array of provided length.
-/// 
+///
 /// ### Note
 ///
 /// The default constructor produces a comptime code expression to encourage
-/// compiler inlining in the common use case of large buffer arrays. Without optimization, 
-/// this code is able to take advantage of the frontends built-in fast codegen path for 
-/// variable declarations which remove the need for a new allocation if the rhs of a declaration 
+/// compiler inlining in the common use case of large buffer arrays. Without optimization,
+/// this code is able to take advantage of the frontends built-in fast codegen path for
+/// variable declarations which remove the need for a new allocation if the rhs of a declaration
 /// is an owned place, which materialization will ensure.
 ///
 comptime ^array(T, len) array::new(comptime type T, comptime usize len)
@@ -25,13 +25,16 @@ comptime ^array(T, len) array::new(comptime type T, comptime usize len)
 comptime usize array::length(comptime type T = _, comptime usize len = _, ^array(T, len)& array)
     => len;
 
-std::opt(T&) array::get(comptime type T = _, comptime usize len = _, array(T, len) array, usize index)
-    => std::opt::if_then(emit index < len, emit array.data[index]);
+std::opt(T&) array::get(comptime type T = _, comptime usize len = _, array(T, len)& array, usize index)
+{
+    if (index >= len) return _::none();
+    return _::some(array.data[index]);
+}
 
-T& array::at(comptime type T = _, comptime usize len = _, array(T, len) array, usize index) {
+T& array::at(comptime type T = _, comptime usize len = _, array(T, len)& array, usize index) {
     if (index >= len) std::panic("Attempted to index outside of array bounds");
 
-    return array.data[usize];
+    return array.data[index];
 }
 
 std::span(T) array::as_span(comptime type T = _, comptime usize len = _, array(T, len)& array)

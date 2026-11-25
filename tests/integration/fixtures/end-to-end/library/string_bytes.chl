@@ -1,0 +1,32 @@
+/* CHL-STDOUT: 6 0 7 9 0 7 */
+/* CHL-STDOUT-NEXT: 100% */
+
+import std::{collections::vector, io, memory::{allocation, span}, panic, string} as std;
+
+#include <stdio.h>
+
+int main() {
+    auto text = std::string::new(.A = std::aligned_heap_allocator);
+    const _str& empty = std::string::as_str(text);
+    if (empty[0] != 0) std::panic("Empty string is missing its terminator");
+
+    std::string::append_byte(text, 9);
+    std::string::append_byte(text, 0);
+    std::string::append_byte(text, 7);
+    std::string::append_span(text, std::string::as_const_bytes(text));
+    auto clone = std::string::clone(text);
+    if (!std::string::equals(text, clone)) std::panic("Cloning changed the payload");
+    std::string::as_bytes(clone).data[2] = 8;
+    if (std::string::equals(text, clone)) std::panic("Equality stopped at the interior zero");
+    std::string::drop(move clone);
+
+    auto bytes = std::string::into_bytes(move text);
+    printf("%zu %d %d %d %d %d\n", bytes.length, std::vector::at(bytes, 1),
+        std::vector::at(bytes, 2), std::vector::at(bytes, 3),
+        std::vector::at(bytes, 4), std::vector::at(bytes, 5));
+    std::vector::drop(move bytes);
+
+    std::print("100%");
+    std::print_char('\n');
+    return 0;
+}

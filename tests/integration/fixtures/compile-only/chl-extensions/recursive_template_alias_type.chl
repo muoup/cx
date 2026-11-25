@@ -1,4 +1,4 @@
-import std::vector as _;
+import std::collections::vector as _;
 
 enum union Node : @nodrop {
     Children :: vector(Node),

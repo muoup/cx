@@ -73,6 +73,35 @@ void string::drop(string this) {
 
 The compiler cannot verify that cleanup occurred before `@leak`; incorrect use can therefore produce resource leaks or other undefined behavior. In a `safe` function it must be enclosed by [`@unsafe`](./safe-functions.md#unsafe).
 
+## Allocator-backed Standard Library Types
+
+`vector`, `box`, and `string` accept a comptime allocator policy. The ordinary
+heap allocator is the default. Select the aligned heap explicitly when the
+element needs more alignment than the ordinary heap guarantees.
+
+```chl
+import std::{collections::vector, memory::allocation} as std;
+
+int main() {
+    auto values = std::vector::new(int, .A = std::aligned_heap_allocator);
+    defer std::vector::drop(move values);
+    std::vector::push(values, 42);
+    return 0;
+}
+```
+
+`try_allocate` reports allocation failure through `opt`. `allocate` and the
+standard owning constructors terminate on failure. An alignment request is a
+comptime power of two and defaults to one. Allocators round it up to their
+minimum and reject requests above their maximum at compile time. An owning
+allocation carries the allocator and effective alignment in its type.
+`try_resize` leaves the original block intact on failure, and `deallocate`
+consumes it. `box::leak` relinquishes the owning handle without freeing it.
+
+`string` stores counted bytes followed by a zero terminator. Byte views and
+`into_bytes` exclude the terminator and preserve interior zeros. `as_str`
+checks for interior zeros before lending a C-string reference.
+
 ## Unpacking Linear Structs
 
 When an `@nodrop` struct owns `@nodrop` fields, `@unpack` can consume the outer value and create separate owned bindings for selected fields:

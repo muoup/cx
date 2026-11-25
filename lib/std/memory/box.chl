@@ -1,0 +1,51 @@
+import std::memory::allocation as std;
+
+#include <string.h>
+
+public:
+
+comptime type box(type T, std::allocator A = std::heap_allocator)
+    => @strong struct : @nodrop { void* data; };
+
+box(T, .A = A) box::new(comptime type T = _, comptime std::allocator A = std::heap_allocator, T value)
+where pre: (!@type.is_unsafe_move(T) && sizeof(T) != 0)
+{
+    auto block = std::allocate(A, sizeof(T), .alignment = @type.align_of(T));
+    memcpy(block.data, &value, sizeof(T));
+    @leak(value);
+
+    void* data = block.data;
+    @leak(block);
+    return { data };
+}
+
+const T& box::deref(const box(_: T, .A = _)& this) => *((const T*) this.data);
+
+T& box::deref_mut(box(_: T, .A = _)& this) => *((T*) this.data);
+
+T* box::leak(box(_: T, .A = _) this) {
+    T* ptr = this.data;
+    @leak(this);
+    return ptr;
+}
+
+void box::drop_with(box(_: T, .A = _: A) this, fn* drop(T) -> void) {
+    T value = @adopt(this |> box::deref_mut());
+    drop(move value);
+    release(T, A, this.data);
+    @leak(this);
+}
+
+void box::drop(box(_: T, .A = _: A) this)
+where pre: (!@type.is_nodrop(T))
+{
+    release(T, A, this.data);
+    @leak(this);
+}
+
+private:
+
+void release(comptime type T, comptime std::allocator A, void* data) {
+    std::allocation(A, .alignment = std::allocation_alignment(A, @type.align_of(T))) block = { data, sizeof(T) };
+    std::deallocate(move block);
+}

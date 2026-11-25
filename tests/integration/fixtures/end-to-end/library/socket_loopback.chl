@@ -1,0 +1,75 @@
+/* CHL-STDOUT: socket checks passed */
+
+import std::{memory::span, net::{address, error, tcp, udp}, optional, result, string, panic} as std;
+import std::platform::posix::socket as std::posix;
+import std::platform::posix::base as std::posix::base;
+
+#include <stdio.h>
+
+void check(bool passed) {
+    if (!passed) std::panic("Socket invariant failed");
+}
+
+void tcp(std::endpoint address) {
+    auto server = std::tcp_server::new() |> std::result::unwrap();
+    defer std::tcp_server::drop(move server);
+    std::tcp_server::bind(server, address) |> std::result::unwrap();
+    std::tcp_server::set_blocking(server, false) |> std::result::unwrap();
+
+    match (std::tcp_server::accept(server)) {
+        ok(auto connection) => {
+            std::tcp_connection::drop(move connection);
+            std::panic("Accepted an unexpected connection");
+        }
+        err(auto error) => {
+            u8 output[128];
+            check(std::socket_error::format(error, std::span::new(output, sizeof(output))) > 0);
+        }
+    }
+
+    auto local = std::tcp_server::local_address(server) |> std::result::unwrap();
+    auto client = std::tcp_connection::connect_to(local) |> std::result::unwrap();
+    auto accepted = std::tcp_server::accept(server) |> std::result::unwrap();
+    defer std::tcp_connection::drop(move accepted);
+    check(std::tcp_connection::remote(client).port == local.port);
+    std::tcp_connection::send(client, std::str::as_const_bytes("x")) |> std::result::unwrap();
+    std::tcp_connection::drop(move client);
+
+    u8 buffer[16];
+    auto received = std::tcp_connection::read(accepted, std::span::new(buffer, sizeof(buffer)))
+        |> std::result::unwrap();
+    check(received.length == 1 && received.data[0] == 'x');
+    auto eof = std::tcp_connection::read(accepted, std::span::new(buffer, sizeof(buffer)))
+        |> std::result::unwrap();
+    check(eof.length == 0);
+}
+
+void udp(std::endpoint address) {
+    auto receiver = std::udp_socket::open() |> std::result::unwrap();
+    defer std::udp_socket::close(move receiver);
+    auto sender = std::udp_socket::open() |> std::result::unwrap();
+    defer std::udp_socket::close(move sender);
+    std::udp_socket::bind(receiver, address) |> std::result::unwrap();
+    std::udp_socket::set_blocking(receiver, false) |> std::result::unwrap();
+    auto local = std::udp_socket::local_address(receiver) |> std::result::unwrap();
+
+    usize sent = std::udp_socket::send_to(sender, std::str::as_const_bytes(""), local) |> std::result::unwrap();
+    check(sent == 0);
+    u8 buffer[16];
+    auto datagram = std::udp_socket::recv_from(receiver, std::span::new(buffer, sizeof(buffer)))
+        |> std::result::unwrap();
+    check(datagram.length == 0 && datagram.source.address == address.address);
+}
+
+int main() {
+    check(std::posix::raw::ENUM_AF_INET != 0);
+    auto socket = std::posix::socket::open(std::posix::stream_socket) |> std::result::unwrap();
+    std::posix::socket::close(move socket) |> std::result::unwrap();
+    auto address = std::endpoint::ipv4("127.0.0.1", 0) |> std::opt::unwrap();
+    check(std::endpoint::ipv4("255.255.255.255", 0) is some(_));
+    check(std::endpoint::ipv4("256.0.0.1", 0) is none());
+    tcp(address);
+    udp(address);
+    puts("socket checks passed");
+    return 0;
+}

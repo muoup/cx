@@ -1,5 +1,5 @@
-import std::box as std;
-import std::vector as std;
+import std::memory::box as std;
+import std::collections::vector as std;
 import std::string as std;
 import std::io as std;
 
@@ -41,7 +41,7 @@ bool is_delimiter(char c) {
     return 1 == 0;
 }
 
-bool is_number_token(_str& token) {
+bool is_number_token(const _str& token) {
     if (isdigit(token[0]) != 0) {
         return 1 == 1;
     }
@@ -52,7 +52,6 @@ bool is_number_token(_str& token) {
 std::string string_from_owned_token(_str& token) {
     std::string result = std::string::new();
     result |> std::string::append_str(token);
-    result.data[result.length] = '\0';
     free(token);
     return move result;
 }
@@ -151,7 +150,7 @@ lisp_node parser::parse_expr(parser& this) {
     }
 
     std::string token = this |> parser::parse_token();
-    if (is_number_token(token |> std::string::as_str_mut())) {
+    if (is_number_token(token |> std::string::as_str())) {
         f64 value = atof(token |> std::string::as_str());
         move token |> std::string::drop();
         

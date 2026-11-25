@@ -29,10 +29,10 @@ Related modules can be imported in one statement. Each leaf is expanded into a
 normal module import, and an alias applies to every leaf:
 
 ```chl
-import std::{vector, optional, net::{udp, address}} as std;
+import std::{collections::vector, optional, net::{udp, address}} as std;
 ```
 
-This is equivalent to importing `std::vector`, `std::optional`,
+This is equivalent to importing `std::collections::vector`, `std::optional`,
 `std::net::udp`, and `std::net::address` separately with the same alias.
 Trailing commas are allowed in grouped import lists.
 
@@ -46,41 +46,51 @@ declarations rather than symbol copies.
 An import can provide an alternative namespace with `as`:
 
 ```chl
-import std::vector as v;
+import std::collections::vector as v;
 
-v::vector<int> values = v::vector::new<int>();
+v::vector(int) values = v::vector::new(int);
 ```
 
 The special alias `_` places the imported module at the root namespace, allowing its public declarations to be referenced without the module prefix:
 
 ```chl
-import std::vector as _;
+import std::collections::vector as _;
 
-vector<int> values = vector::new<int>();
+vector(int) values = vector::new(int);
 ```
 
 Aliases may overlap, however any symbol name which refers to multiple definitions due to alias overlap cannot be used. However, if this occurs with `_`-aliasing and one definition refers to a symbol defined in the current module, the namespace symbol will deduce to that definition:
 
 ```chl
 // Okay:
-import std::{vector, file, optional} as std;
+import std::{collections::vector, io::file, optional} as std;
 
-std::vector<int> vec = std::vector::new<int>();
-std::file file = std::file::open("test.txt")
-    |> std::optional::unwrap();
+std::vector(int) vec = std::vector::new(int);
+std::file file = std::file::open("test.txt", "r")
+    |> std::opt::unwrap();
 
 // Error:
-import std::vector as mod;
+import std::collections::vector as mod;
 import other::vector as mod; // Where `other` contains some definition of a `vector` type
 
 mod::vector vec = mod::vector::new(); // Type Error: The symbol `mod::vector` is ambiguous
 
 // Okay:
-import std::vector as _;
+import std::collections::vector as _;
 
 struct vector { ... };
 
 vector vec = ...; // Okay: the current module's definition of `vector` takes precedence
+```
+
+Official examples typically put portable standard-library modules under the
+`std` alias. Use `std::posix` for typed POSIX wrappers and `std::posix::raw`
+for the underlying C bindings.
+
+```chl
+import std::{collections::vector, io::file, net::{address, tcp}} as std;
+import std::platform::posix::socket as std::posix;
+import std::platform::posix::base as std::posix::base;
 ```
 
 ## Visibility

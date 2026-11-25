@@ -1,103 +1,78 @@
-import std::{span, optional} as std;
-import std::net::{socket, address} as std::net;
-
-extern "C":
-
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <fcntl.h>
+import std::{memory::span, result, net::{address, error, handle}} as std;
+import std::platform::posix::socket as std::posix;
 
 public:
 
 struct tcp_server : @nodrop {
-    std::net::socket socket;
+    std::socket_handle backend;
 };
 
 struct tcp_connection : @nodrop {
-    std::net::socket socket;
-    std::net::endpoint remote;
+    std::socket_handle backend;
+    std::endpoint peer;
 };
 
-std::opt(tcp_server) tcp_server::new() {
-    auto server_socket = std::net::socket::open()
-        |> std::opt::try()!;
+std::result(tcp_server, std::socket_error) tcp_server::new() {
+    auto backend = std::posix::socket::open(std::posix::stream_socket)
+        |> std::socket_result() |> std::result::try()!;
+        
+    std::posix::socket::set_reuse_address(backend, true)
+        |> std::socket_result()
+        |> std::result::try_or(emit .{ std::posix::socket::close(move backend); })!;
 
-    int enabled = 1;
-    server_socket 
-        |> std::net::socket::set_opt(SOL_SOCKET, SO_REUSEADDR, &enabled, (u32) sizeof(int));
-
-    return _::some((tcp_server) { .socket = move server_socket });
+    return _::ok((tcp_server) { .backend = move backend });
 }
 
-std::opt(tcp_connection) tcp_connection::connect_to(std::net::endpoint address) {
-    auto client_socket = std::net::socket::open()
-        |> std::opt::try()!;
-
-    client_socket
-        |> std::net::socket::connect(move address)
-        |> std::opt::try_or(emit .{ move client_socket |> std::net::socket::close(); })!;
-
-    return _::some((tcp_connection) { .socket = move client_socket });
+std::result(tcp_connection, std::socket_error) tcp_connection::connect_to(std::endpoint address) {
+    auto backend = std::posix::socket::open(std::posix::stream_socket)
+        |> std::socket_result() |> std::result::try()!;
+    std::posix::socket::connect(backend, address)
+        |> std::socket_result()
+        |> std::result::try_or(emit .{ std::posix::socket::close(move backend); })!;
+    return _::ok((tcp_connection) { .backend = move backend, .peer = address });
 }
 
 void tcp_server::drop(tcp_server server) {
-    @unpack(move server) {
-        socket: socket
-    };
-
-    move socket |> std::net::socket::close();
+    @unpack(move server) { backend: backend };
+    std::posix::socket::close(move backend);
 }
 
 void tcp_connection::drop(tcp_connection connection) {
-    @unpack(move connection) {
-        socket: socket
-    };
-    
-    move socket |> std::net::socket::close();
+    @unpack(move connection) { backend: backend };
+    std::posix::socket::close(move backend);
 }
 
-std::opt(void) tcp_server::bind(tcp_server& server, std::net::endpoint address) {
-    server.socket
-        |> std::net::socket::bind(move address)
-        |> std::opt::try()!;
-
-    server.socket
-        |> std::net::socket::listen(10)
-        |> std::opt::try()!;
-
-    return _::some();
+std::result(void, std::socket_error) tcp_server::bind(tcp_server& server, std::endpoint address) {
+    std::posix::socket::bind(server.backend, address)
+        |> std::socket_result() |> std::result::try()!;
+    return std::socket_result(emit std::posix::socket::listen(server.backend, 10));
 }
 
-std::opt(tcp_connection) tcp_server::accept(tcp_server& server)
-    => server.socket
-        |> std::net::socket::accept()
-        |> std::opt::map(|auto details| {
-            @unpack(details) {
-                socket: socket,
-                remote: remote
-            };
+std::result(std::endpoint, std::socket_error) tcp_server::local_address(tcp_server& server)
+    => std::socket_result(emit std::posix::socket::local_address(server.backend));
 
-            yield (tcp_connection) { .socket = move socket, .remote = move remote };
-        });
-
-std::opt(void) tcp_server::set_blocking(tcp_server& server, bool blocking) {
-    server.socket
-        |> std::net::socket::set_blocking(blocking);
-
-    return _::some();
+std::result(tcp_connection, std::socket_error) tcp_server::accept(tcp_server& server) {
+    auto details = std::posix::socket::accept(server.backend)
+        |> std::socket_result() |> std::result::try()!;
+    @unpack(move details) { connection: backend, remote: remote };
+    return _::ok((tcp_connection) { .backend = move backend, .peer = remote });
 }
 
-std::opt(void) tcp_connection::send(tcp_connection& connection, std::span(const u8) message) {
-    connection.socket
-        |> std::net::socket::write(message |> std::span::as_const())
-        |> std::opt::try()!;
+std::result(void, std::socket_error) tcp_server::set_blocking(tcp_server& server, bool blocking)
+    => std::socket_result(emit std::posix::socket::set_blocking(server.backend, blocking));
 
-    return _::some();
+std::result(void, std::socket_error) tcp_connection::send(tcp_connection& connection, std::span(const u8) data) {
+    while (data.length != 0) {
+        usize sent = std::posix::socket::write(connection.backend, data)
+            |> std::socket_result() |> std::result::try()!;
+        if (sent == 0) return _::err(std::socket_error::write_zero());
+        data.data += sent;
+        data.length -= sent;
+    }
+    return _::ok();
 }
 
-std::opt(std::span(u8)) tcp_connection::read(tcp_connection& connection, std::span(u8) buffer)
-    => connection.socket
-        |> std::net::socket::read(buffer);
+std::result(std::span(u8), std::socket_error) tcp_connection::read(tcp_connection& connection, std::span(u8) buffer)
+    => std::socket_result(emit std::posix::socket::read(connection.backend, buffer));
 
-std::net::endpoint& tcp_connection::remote(tcp_connection& connection) => connection.remote;
+std::endpoint& tcp_connection::remote(tcp_connection& connection) => connection.peer;

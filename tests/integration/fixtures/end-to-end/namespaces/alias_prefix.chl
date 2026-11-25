@@ -1,6 +1,6 @@
 /* CHL-STDOUT: 1 */
 
-import std::vector as v;
+import std::collections::vector as v;
 
 #include <stdio.h>
 

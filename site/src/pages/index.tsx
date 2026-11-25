@@ -8,40 +8,38 @@ import Foliage from "../components/Foliage";
 import {chlLines} from "../lib/chl-lines";
 import styles from "./index.module.css";
 
-const leakingServer = `import std::{optional, span} as std;
-import std::net::{tcp, address} as std::net;
+const leakingServer = `import std::{memory::span, net::tcp, result, string} as std;
 
-void serve(std::net::tcp_socket& server) {
+void serve(std::tcp_server& server) {
     while (true) {
-        std::net::tcp_stream client = server
-            |> std::net::tcp_socket::accept()
-            |> std::opt::unwrap_or(.{ continue; });
+        std::tcp_connection client = server
+            |> std::tcp_server::accept()
+            |> std::result::unwrap_or(emit .{ continue; })!;
 
-        std::span<const u8> reply = std::span::str_as_bytes("hello\\n");
-        client |> std::net::tcp_stream::write(reply)
-            |> std::opt::unwrap_or(.{ continue; });
+        std::span(const u8) reply = std::str::as_const_bytes("hello\\n");
+        client |> std::tcp_connection::send(reply)
+            |> std::result::unwrap_or(emit .{ continue; })!;
 
-        move client |> std::net::tcp_stream::close();
+        move client |> std::tcp_connection::drop();
     }
 }`;
 
-const fixedServer = `import std::{optional, span} as std;
-import std::net::{tcp, address} as std::net;
+const fixedServer = `import std::{memory::span, net::tcp, result, string} as std;
 
-void serve(std::net::tcp_socket& server) {
+void serve(std::tcp_server& server) {
     while (true) {
-        std::net::tcp_stream client = server
-            |> std::net::tcp_socket::accept()
-            |> std::opt::unwrap_or(.{ continue; });
+        std::tcp_connection client = server
+            |> std::tcp_server::accept()
+            |> std::result::unwrap_or(emit .{ continue; })!;
 
-        std::span<const u8> reply = std::span::str_as_bytes("hello\\n");
-        client |> std::net::tcp_stream::write(reply)
-            |> std::opt::unwrap_or(.{
-                move client |> std::net::tcp_stream::close();
+        std::span(const u8) reply = std::str::as_const_bytes("hello\\n");
+        client |> std::tcp_connection::send(reply)
+            |> std::result::unwrap_or(emit .{
+                move client |> std::tcp_connection::drop();
                 continue;
-            });
+            })!;
 
-        move client |> std::net::tcp_stream::close();
+        move client |> std::tcp_connection::drop();
     }
 }`;
 
@@ -270,10 +268,10 @@ function LeakDiagnostic() {
             <span className={styles.error}>error:</span> `client` is marked @nodrop but is leaked without cleanup{"\n"}
             {"  "}{gutter("-->")} server.chl:12:44{"\n"}
             {"   "}{gutter("|")}{"\n"}
-            {gutter("12 |")}{"             |> std::opt::unwrap_or(.{ continue; });\n"}
+            {gutter("12 |")}{"             |> std::result::unwrap_or(emit .{ continue; })!;\n"}
             {"   "}{gutter("|")}{" ".repeat(44)}
             <span className={styles.error}>^^^^^^^^ `client` leaks here</span>{"\n"}
-            {"   "}{gutter("=")} <span className={styles.help}>help:</span> close it first: move client |&gt; std::net::tcp_stream::close();
+            {"   "}{gutter("=")} <span className={styles.help}>help:</span> close it first: move client |&gt; std::tcp_connection::drop();
         </div>
     );
 }

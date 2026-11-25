@@ -40,8 +40,8 @@ jobs:
       - name: Build chl for the standard-library reference
         working-directory: .
         run: |
-          cargo build --release --locked -p chl
-          echo "CHL_BIN=$GITHUB_WORKSPACE/target/release/chl" >> "$GITHUB_ENV"
+          cargo build --release --locked -p chloro
+          echo "CHL_BIN=$GITHUB_WORKSPACE/target/release/chloro" >> "$GITHUB_ENV"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

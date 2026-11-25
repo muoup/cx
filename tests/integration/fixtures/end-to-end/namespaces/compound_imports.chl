@@ -1,6 +1,6 @@
 /* CHL-STDOUT: 1 */
 
-import std::{vector, optional} as v;
+import std::{collections::vector, optional} as v;
 import std::{net::{udp, address,},};
 
 #include <stdio.h>

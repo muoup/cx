@@ -1,75 +1,43 @@
-import std::optional as std;
-import std::span as std;
-import std::io as std;
-
-import std::net::address as std::net;
-
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+import std::{memory::span, result, net::{address, error, handle}} as std;
+import std::platform::posix::socket as std::posix;
 
 public:
 
 struct datagram {
-    u64 length;
-    std::net::endpoint source;
+    usize length;
+    std::endpoint source;
 };
 
 struct udp_socket : @nodrop {
-    i32 fd;
+    std::socket_handle backend;
 };
 
-std::opt(udp_socket) udp_socket::open() {
-    i32 fd = socket(AF_INET, SOCK_DGRAM, 0);
-
-    if (fd < 0) {
-        return _::none();
-    }
-
-    return _::some((udp_socket) { .fd = fd });
+std::result(udp_socket, std::socket_error) udp_socket::open() {
+    auto backend = std::posix::socket::open(std::posix::datagram_socket)
+        |> std::socket_result() |> std::result::try()!;
+    return _::ok((udp_socket) { .backend = move backend });
 }
 
-std::opt(void) udp_socket::bind(udp_socket& this, std::net::endpoint addr) {
-    if (bind(this.fd, (sockaddr*) &addr.address, addr.length) < 0) {
-        return _::none();
-    }
+std::result(void, std::socket_error) udp_socket::bind(udp_socket& this, std::endpoint address)
+    => std::socket_result(emit std::posix::socket::bind(this.backend, address));
 
-    return _::some();
-}
+std::result(std::endpoint, std::socket_error) udp_socket::local_address(udp_socket& this)
+    => std::socket_result(emit std::posix::socket::local_address(this.backend));
 
-std::opt(u64) udp_socket::send_to(
-    udp_socket& this, 
-    const std::span(const u8) buffer, 
-    std::net::endpoint& remote
-) {
-    i64 sent = 
-        sendto(this.fd, buffer.data, buffer.length, 0, (sockaddr*) &remote.address, remote.length);
+std::result(void, std::socket_error) udp_socket::set_blocking(udp_socket& this, bool blocking)
+    => std::socket_result(emit std::posix::socket::set_blocking(this.backend, blocking));
 
-    if (sent < 0) {
-        return _::none();
-    }
+std::result(usize, std::socket_error) udp_socket::send_to(
+    udp_socket& this, std::span(const u8) buffer, std::endpoint remote
+) => std::socket_result(emit std::posix::socket::send_to(this.backend, buffer, remote));
 
-    return _::some((u64) sent);
-}
-
-std::opt(datagram) udp_socket::recv_from(udp_socket& this, void* buffer, u64 capacity) {
-    std::net::endpoint source;
-    source.length = (u32) sizeof(sockaddr_in);
-
-    i64 received = 
-        recvfrom(this.fd, buffer, capacity, 0, (sockaddr*) &source.address, &source.length);
-
-    if (received < 0) {
-        return _::none();
-    }
-
-    return _::some((datagram) {
-        .length = (u64) received,
-        .source = source
-    });
+std::result(datagram, std::socket_error) udp_socket::recv_from(udp_socket& this, std::span(u8) buffer) {
+    auto message = std::posix::socket::recv_from(this.backend, buffer)
+        |> std::socket_result() |> std::result::try()!;
+    return _::ok((datagram) { .length = message.length, .source = message.source });
 }
 
 void udp_socket::close(udp_socket this) {
-    close(this.fd);
-    @leak(this);
+    @unpack(move this) { backend: backend };
+    std::posix::socket::close(move backend);
 }

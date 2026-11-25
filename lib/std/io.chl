@@ -1,4 +1,4 @@
-//import std::span as std;
+import std::memory::span as std;
 
 #include <stdio.h>
 
@@ -10,7 +10,7 @@ public:
 /// Writes the provided ASCII string to stdout
 ///
 void print(const _str& s) {
-    printf(s);
+    fputs(s, stdout);
 }
 
 ///
@@ -27,9 +27,7 @@ void print_char(i32 c) {
     putchar(c);
 }
 
-///
-/// Writes the provided ASCII character span to stdout
-///
-//void print_span(const std::span(char) data_str) {
-//    fwrite(data_str |> std::span::data(), data_str |> std::span::length(), 1, stdout); 
-//}
+usize print_span(std::span(const u8) bytes) {
+    if (bytes.length == 0) return 0;
+    return fwrite(bytes.data, 1, bytes.length, stdout);
+}
