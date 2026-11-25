@@ -22,7 +22,7 @@ int borrowed_choice(Choice& value) {
                 one(auto& inner) => .{
                     inner += 1;
                     yield inner;
-                }
+                },
                 _ => 20,
             };
             yield changed;

@@ -127,7 +127,7 @@ void run() {
 postfix bang before closure pipe
 ==================
 void run() {
-    with_cleanup(emit value)! <| |auto captured| { continue; };
+    with_cleanup(emit value)! <| |auto captured| => .{ continue; };
     std::rcell::borrow(emit cell)! <| |auto mutable| then
     use(mutable);
 }
@@ -172,9 +172,13 @@ void run() {
                       (builtin_type_sequence
                         (builtin_type)))
                     (identifier)
-                    (compound_statement
-                      (continue_statement
-                        (keyword)))))))))
+                    (operator)
+                    (expression
+                      (primary_expression
+                        (staged_block
+                          (compound_statement
+                            (continue_statement
+                              (keyword))))))))))))
         (staged_continuation_statement
           (staged_continuation_expression
             (expression

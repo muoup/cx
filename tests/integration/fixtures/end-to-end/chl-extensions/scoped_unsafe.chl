@@ -75,7 +75,7 @@ void contextual(int cond) safe {
     holder h = @unsafe({ .inner = move first, .tag = note(1) });
     holder g = @unsafe(.{
         note(2);
-        @unsafe({ .inner = move second, .tag = note(3) });
+        yield @unsafe({ .inner = move second, .tag = note(3) });
     });
     holder k = cond ? @unsafe({ .inner = move third, .tag = 0 }) : @unsafe({ .inner = move fourth, .tag = 1 });
     @unsafe {

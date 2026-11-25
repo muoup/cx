@@ -123,7 +123,7 @@ pub(crate) fn lower_expr<'a>(
             condition,
             increment,
             body,
-        } => lower_for(context, init, condition, increment, body, span)?,
+        } => lower_for(context, init, condition.as_deref(), increment, body, span)?,
         HIRExprKind::Match { condition, arms } => lower_match(context, condition, arms, span)?,
         HIRExprKind::Switch { condition, body } => lower_switch(context, condition, body, span)?,
         HIRExprKind::Case { value, statement } => {
@@ -175,8 +175,9 @@ pub(crate) fn lower_expr<'a>(
             initial_value,
             ..
         } => lower_declaration(context, ty, name, initial_value.as_deref(), span)?,
-        HIRExprKind::BinOp {
-            op: HIRBinOp::MethodCall | HIRBinOp::Pipe(_) | HIRBinOp::BackwardPipe,
+        HIRExprKind::Call { .. }
+        | HIRExprKind::BinOp {
+            op: HIRBinOp::Pipe(_) | HIRBinOp::BackwardPipe,
             ..
         } => context.scoped_as(ScopeKind::Arguments, |this| {
             lower_call(this, expr, Vec::new(), Vec::new())

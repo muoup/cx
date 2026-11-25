@@ -12,7 +12,7 @@ comptime ^int dbl(^int x) => emit x * 2;
 comptime ^void synthesized() {
     auto q = emit 1 + 2;
     auto twice = |^int x| => x * 2;
-    auto bump = |^int& x| { x += 1; };
+    auto bump = |^int& x| => .{ x += 1; };
     auto feed = |fn sink(^int) -> ^void| => sink(emit 7);
     return emit .{
         int y = 5;

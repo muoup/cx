@@ -207,7 +207,7 @@ int apply(fn* f(int) -> int, int v) {
 fn declarator staged closure parameter
 ==================
 void run() {
-    each(emit |fn sink(^T) -> ^void| { sink(1); });
+    each(emit |fn sink(^T) -> ^void| => .{ sink(1); });
 }
 
 ---
@@ -256,18 +256,22 @@ void run() {
                                   (type
                                     (builtin_type_sequence
                                       (builtin_type))))))
-                            (compound_statement
-                              (expression_statement
-                                (expression
-                                  (postfix_expression
-                                    (primary_expression
-                                      (qualified_name
-                                        (identifier)))
-                                    (argument_list
+                            (operator)
+                            (expression
+                              (primary_expression
+                                (staged_block
+                                  (compound_statement
+                                    (expression_statement
                                       (expression
-                                        (primary_expression
-                                          (literal
-                                            (number_literal)))))))))))))))))))))))
+                                        (postfix_expression
+                                          (primary_expression
+                                            (qualified_name
+                                              (identifier)))
+                                          (argument_list
+                                            (expression
+                                              (primary_expression
+                                                (literal
+                                                  (number_literal))))))))))))))))))))))))))
 
 ==================
 anonymous fn types

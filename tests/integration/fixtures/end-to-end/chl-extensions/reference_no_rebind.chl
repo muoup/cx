@@ -12,8 +12,8 @@ int main() {
     std::optional::opt(int&) item = std::optional::opt(int&)::some(a);
     item = std::optional::opt(int&)::some(b);
     match (item) {
-        some(auto& value) => { value = 8; },
-        none() => {},
+        some(auto& value) => .{ value = 8; },
+        none() => (),
     }
     int& r = c;
     int* p = &r;

@@ -93,7 +93,7 @@ pub enum HIRExprKind {
     },
     For {
         init: Box<HIRExpression>,
-        condition: Box<HIRExpression>,
+        condition: Option<Box<HIRExpression>>,
         increment: Box<HIRExpression>,
         body: Box<HIRExpression>,
     },
@@ -142,6 +142,10 @@ pub enum HIRExprKind {
         rhs: Box<HIRExpression>,
         op: HIRBinOp,
     },
+    Call {
+        callee: Box<HIRExpression>,
+        args: Vec<HIRExpression>,
+    },
     UnOp {
         operand: Box<HIRExpression>,
         operator: HIRUnOp,
@@ -155,7 +159,6 @@ pub enum HIRExprKind {
     Defer {
         expr: Box<HIRExpression>,
     },
-    // An anonymous comptime function whose body is emitted, '|value| => ...' or '|value| { ... }'
     Closure {
         params: Vec<HIRClosureParam>,
         body: Box<HIRExpression>,

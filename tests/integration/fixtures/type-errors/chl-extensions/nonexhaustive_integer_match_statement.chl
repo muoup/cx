@@ -1,6 +1,6 @@
 void inspect(int value) {
     match (value) {
-        0 => {}
+        0 => ()
     }
 }
 

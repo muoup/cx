@@ -26,7 +26,7 @@ use crate::{
     eval::{
         EvalResult,
         binding::eval_scoped,
-        coerce, eval,
+        coerce, eval, eval_expected,
         flow::{self, ComptimeStop, Evaluation},
         storage,
         types::{self, alike},
@@ -39,6 +39,7 @@ pub(crate) fn eval_control(
     body: &HMIRBodyContext,
     span: &TokenRange,
     control: &HMIRControlOp,
+    expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     match control {
         HMIRControlOp::Return(value) => exit::eval_return(context, body, span, *value),
@@ -56,13 +57,13 @@ pub(crate) fn eval_control(
         HMIRControlOp::Unsafe(operand) => {
             let expectations = context.expectations().permitting(Permission::Unsafe);
             flow::scoped(context, expectations, |context| {
-                eval(context, body, *operand)
+                eval_expected(context, body, *operand, expected)
             })
         }
         HMIRControlOp::Escape(operand) => {
             let expectations = context.expectations().allowing_escape();
             flow::scoped(context, expectations, |context| {
-                eval(context, body, *operand)
+                eval_expected(context, body, *operand, expected)
             })
         }
         HMIRControlOp::Unreachable => todo!("HMIRControlOp::Unreachable"),
@@ -76,9 +77,18 @@ pub(crate) fn eval_if(
     condition: HMIRExprID,
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
+    expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     emit::open_scope(context);
-    let result = branch(context, body, span, condition, then_branch, else_branch);
+    let result = branch(
+        context,
+        body,
+        span,
+        condition,
+        then_branch,
+        else_branch,
+        expected,
+    );
     closing(context, body, result, span)
 }
 
@@ -89,16 +99,19 @@ fn branch(
     condition: HMIRExprID,
     then_branch: HMIRExprID,
     else_branch: Option<HMIRExprID>,
+    expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     match context.context() {
         FnContext::Comptime(_) => {
             let condition = eval(context, body, condition)?.ready()?;
 
             match (comptime_truth(&condition), else_branch) {
-                (true, Some(_)) => eval_scoped(context, body, then_branch, false),
-                (false, Some(else_branch)) => eval_scoped(context, body, else_branch, false),
+                (true, Some(_)) => eval_scoped(context, body, then_branch, false, expected),
+                (false, Some(else_branch)) => {
+                    eval_scoped(context, body, else_branch, false, expected)
+                }
                 (true, None) => {
-                    eval_scoped(context, body, then_branch, false)?.ready()?;
+                    eval_scoped(context, body, then_branch, false, None)?.ready()?;
                     Ok(Evaluation::Ready(value::unit(context.env())))
                 }
                 (false, None) => Ok(Evaluation::Ready(value::unit(context.env()))),
@@ -119,13 +132,15 @@ fn branch(
 
             emit::runtime::flow::switch_to(context, then_block);
             let place = else_branch.is_some();
-            let then_expr = flow::catch_diverged(eval_scoped(context, body, then_branch, place))?;
+            let expected = else_branch.and(expected);
+            let then_expr =
+                flow::catch_diverged(eval_scoped(context, body, then_branch, place, expected))?;
             let span = span.clone();
 
             then_expr.chain(
                 context,
                 body,
-                None,
+                expected,
                 |_| None,
                 move |context, body, then, expected| {
                     if let Some(else_branch) = else_branch {
@@ -134,14 +149,23 @@ fn branch(
                         );
 
                         emit::runtime::flow::switch_to(context, else_block);
-                        flow::catch_diverged(eval_scoped(context, body, else_branch, true))?
-                            .try_complete(context, body, expected)?
-                            .and_then(context, body, move |context, _, otherwise| {
+                        flow::catch_diverged(eval_scoped(
+                            context,
+                            body,
+                            else_branch,
+                            true,
+                            expected,
+                        ))?
+                        .try_complete(context, body, expected)?
+                        .and_then(
+                            context,
+                            body,
+                            move |context, _, otherwise| {
                                 arms.extend(otherwise.map(|value| {
                                     (emit::runtime::flow::current_block(context), value)
                                 }));
                                 let place = context.runtime().declared_places() == declared;
-                                merge(context, arms, place, &span)
+                                merge(context, arms, place, None, &span)
                             })
                     } else {
                         emit::runtime::flow::jump(context, merge_block, &span);
@@ -160,31 +184,36 @@ pub(crate) fn merge(
     context: &mut LocalLoweringContext,
     mut arms: Vec<(MIRBasicBlockID, HMIRValue)>,
     place: bool,
+    expected: Option<HMIRTypeID>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     if arms.is_empty() {
         return flow::diverged();
     }
     let merge = emit::runtime::flow::block(context, "if.merge");
-    let ty = merged_type(context, &arms, span);
-    let place = place
-        && ty.is_some_and(|ty| {
-            let env = context.env();
-            env.is_reference(ty)
-                && arms
-                    .iter()
-                    .all(|(_, value)| alike(env, ty, value.ty(), true))
-        });
-    if !place {
-        for (block, value) in &mut arms {
-            emit::runtime::flow::switch_to(context, *block);
-            *value = coerce::promotion::std_rvalue(context, value.clone(), span)?;
-            *block = emit::runtime::flow::current_block(context);
+    let ty = match expected {
+        Some(ty) => (!context.env().is_void(ty)).then_some(ty),
+        None => {
+            let ty = merged_type(context, &arms, span);
+            let keep_place = place
+                && ty.is_some_and(|ty| {
+                    let env = context.env();
+                    env.is_reference(ty)
+                        && arms
+                            .iter()
+                            .all(|(_, value)| alike(env, ty, value.ty(), true))
+                });
+            if keep_place {
+                ty
+            } else {
+                for (block, value) in &mut arms {
+                    emit::runtime::flow::switch_to(context, *block);
+                    *value = coerce::promotion::std_rvalue(context, value.clone(), span)?;
+                    *block = emit::runtime::flow::current_block(context);
+                }
+                merged_type(context, &arms, span)
+            }
         }
-    }
-    let ty = match place {
-        true => ty,
-        false => merged_type(context, &arms, span),
     };
     let result = match ty {
         Some(ty) => Some(emit::storage::scratch(context, ty, span)?),

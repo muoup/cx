@@ -11,22 +11,6 @@ use crate::{
     log::log_hir_error,
 };
 
-fn comma_separated(expr: &HIRExpression) -> Vec<&HIRExpression> {
-    match &expr.kind {
-        HIRExprKind::Void => Vec::new(),
-        HIRExprKind::BinOp {
-            op: HIRBinOp::Comma,
-            lhs,
-            rhs,
-        } => {
-            let mut exprs = comma_separated(lhs);
-            exprs.push(rhs);
-            exprs
-        }
-        _ => vec![expr],
-    }
-}
-
 type Named<'h> = Vec<(&'h CHLIdent, &'h HIRExpression)>;
 
 // The positional arguments in order, apart from those that name the parameter they bind
@@ -69,16 +53,9 @@ pub(crate) fn lower_call<'a>(
         let lowered = lower_call(context, operand, piped, append)?;
         return Ok(context.control(HMIRControlOp::Escape(lowered), &call.range));
     }
-    let HIRExprKind::BinOp { op, lhs, rhs } = &call.kind else {
-        return log_hir_error(
-            &call.range,
-            &typecheck::UNEXPECTED_KIND,
-            ("pipe target".into(), "a call".into()),
-        );
-    };
-    match op {
-        HIRBinOp::MethodCall => {
-            let (args, named) = split_arguments(comma_separated(rhs));
+    match &call.kind {
+        HIRExprKind::Call { callee, args } => {
+            let (args, named) = split_arguments(args);
             let mut args = args.into_iter().map(|arg| (arg, false)).collect::<Vec<_>>();
             for (index, value) in piped.into_iter().rev() {
                 if index > args.len() {
@@ -95,14 +72,22 @@ pub(crate) fn lower_call<'a>(
                 args.insert(index, (value, true));
             }
             args.extend(append.into_iter().map(|arg| (arg, true)));
-            lower_callee_call(context, lhs, args, named, &call.range)
+            lower_callee_call(context, callee, args, named, &call.range)
         }
-        HIRBinOp::Pipe(index) => {
+        HIRExprKind::BinOp {
+            op: HIRBinOp::Pipe(index),
+            lhs,
+            rhs,
+        } => {
             // REVIEW: We might want to consider consolidating this into HMIR eval, i.e. have this be a standard operation
             piped.push((*index as usize, lhs.as_ref()));
             lower_call(context, rhs, piped, append)
         }
-        HIRBinOp::BackwardPipe => {
+        HIRExprKind::BinOp {
+            op: HIRBinOp::BackwardPipe,
+            lhs,
+            rhs,
+        } => {
             let append = std::iter::once(rhs.as_ref()).chain(append).collect();
             lower_call(context, lhs, piped, append)
         }

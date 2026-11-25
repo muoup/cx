@@ -14,7 +14,7 @@ use crate::{
     emit,
     env::function::{ComptimeContext, FnContext, LocalLoweringContext},
     eval::{
-        EvalResult, coerce, deduce, eval,
+        EvalResult, coerce, deduce, eval_expected,
         flow::{EvalExit, Evaluation, StopReason},
         name::type_value,
     },
@@ -76,7 +76,7 @@ fn evaluate(
     expected: Option<HMIRTypeID>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let value = eval(context, body, expr)?;
+    let value = eval_expected(context, body, expr, expected)?;
     let value = match value.known().and_then(value::as_type) {
         Some(_) => {
             let span = span.clone();

@@ -6,17 +6,17 @@ int main() {
     int b = 2;
     std::optional::opt(int&) item = std::optional::opt(int&)::some(a);
     match (item) {
-        some(auto value) => { value = b; },
-        none() => {},
+        some(auto value) => .{ value = b; },
+        none() => (),
     }
     match (item) {
-        some(auto& value) => { value = b; },
-        none() => {},
+        some(auto& value) => .{ value = b; },
+        none() => (),
     }
     b = 7;
     match (item) {
-        some(auto value) => { printf("%d %d %d\n", a, b, value); },
-        none() => {},
+        some(auto value) => .{ printf("%d %d %d\n", a, b, value); },
+        none() => (),
     }
     return 0;
 }

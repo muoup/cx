@@ -93,23 +93,6 @@ fn parse_item(data: &mut ParserData, allow_declaration: bool) -> CHLResult<HIREx
     Ok(stmt)
 }
 
-pub(crate) fn parse_arm(data: &mut ParserData) -> CHLResult<HIRExpression> {
-    let start = data.tokens.index;
-
-    Ok(match next_kind!(data.tokens)? {
-        punctuator!(OpenBrace) => {
-            data.tokens.back();
-            parse_block(data)?
-        }
-        keyword!(Break) => data.expr_from(start, HIRExprKind::Break),
-        keyword!(Continue) => data.expr_from(start, HIRExprKind::Continue),
-        _ => {
-            data.tokens.back();
-            parse_expr(data)?
-        }
-    })
-}
-
 /// The statement a label applies to. A label may also end a block, where it labels nothing.
 fn parse_labelled_stmt(data: &mut ParserData, allow_declaration: bool) -> CHLResult<Box<HIRExpression>> {
     if peek_kind!(data.tokens, punctuator!(CloseBrace)) {
@@ -203,9 +186,9 @@ fn parse_for(data: &mut ParserData, start: usize) -> CHLResult<HIRExpression> {
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
     let condition = if peek_kind!(data.tokens, punctuator!(Semicolon)) {
-        data.expr_from(data.tokens.index, HIRExprKind::Void)
+        None
     } else {
-        parse_expr(data)?
+        Some(Box::new(parse_expr(data)?))
     };
     assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
 
@@ -222,7 +205,7 @@ fn parse_for(data: &mut ParserData, start: usize) -> CHLResult<HIRExpression> {
         start,
         HIRExprKind::For {
             init: Box::new(init),
-            condition: Box::new(condition),
+            condition,
             increment: Box::new(increment),
             body: Box::new(body),
         },

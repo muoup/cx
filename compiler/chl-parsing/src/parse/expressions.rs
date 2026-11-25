@@ -23,7 +23,6 @@ use chl_util::unsafe_float::FloatWrapper;
 use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
-use crate::parse::statement::parse_arm;
 use crate::parse::types::{
     application_suffix, parse_abstract_type, parse_args, parse_typed_declarator, starts_type,
     TypePosition,
@@ -246,30 +245,13 @@ pub(crate) fn parse_expr_op_concat(
 
 fn parse_call(data: &mut ParserData, callee: HIRExpression) -> CHLResult<HIRExpression> {
     let start_index = data.tokens.index;
-    let mut args = parse_args(data)?.into_iter();
-    let args = match args.next() {
-        None => HIRExprKind::Void.into_expr(
-            start_index,
-            data.tokens.index,
-            data.token_range(start_index, data.tokens.index),
-        ),
-        Some(first) => args.fold(first, |lhs, rhs| {
-            let range = lhs.range.cover(&rhs.range);
-            HIRExprKind::BinOp {
-                op: HIRBinOp::Comma,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            }
-            .into_expr(start_index, data.tokens.index, range)
-        }),
-    };
+    let args = parse_args(data)?;
     let range = callee
         .range
         .cover(&data.token_range(start_index, data.tokens.index));
-    Ok(HIRExprKind::BinOp {
-        op: HIRBinOp::MethodCall,
-        lhs: Box::new(callee),
-        rhs: Box::new(args),
+    Ok(HIRExprKind::Call {
+        callee: Box::new(callee),
+        args,
     }
     .into_expr(start_index, data.tokens.index, range))
 }
@@ -356,12 +338,23 @@ fn parse_va_arg_call(data: &mut ParserData, expr_stack: &mut Vec<HIRExpression>)
 }
 
 pub(crate) fn parse_pattern(data: &mut ParserData) -> CHLResult<HIRPattern> {
+    let negative = try_next!(data.tokens, operator!(Minus));
     match peek_next_kind!(data.tokens)? {
         TokenKind::IntLiteral(literal) => {
-            let value = literal.magnitude as i64;
+            let magnitude = i128::from(literal.magnitude);
+            let value = if negative { -magnitude } else { magnitude };
             data.tokens.next();
             Ok(HIRPattern::Integer(value))
         }
+
+        _ if negative => parse_point_error(
+            &data.tokens,
+            &EXPECTED_SYNTAX,
+            (
+                "an integer literal".into(),
+                Some("after '-' in a pattern".into()),
+            ),
+        ),
 
         TokenKind::FloatLiteral(literal) => {
             let value = literal.value;
@@ -639,8 +632,6 @@ pub(crate) fn parse_expr_val(
                 }
                 if try_next!(data.tokens, keyword!(Then)) {
                     Ok(data.expr_from(data.tokens.index - 1, HIRExprKind::Then))
-                } else if peek_kind!(data.tokens, punctuator!(OpenBrace)) {
-                    parse_expression_block(data)
                 } else if try_next!(data.tokens, punctuator!(ThickArrow)) {
                     data.change_comma_mode(false);
                     let body = parse_expr(data);
@@ -650,7 +641,7 @@ pub(crate) fn parse_expr_val(
                     parse_point_error(
                         &data.tokens,
                         &EXPECTED_SYNTAX,
-                        ("'=>', '{' or 'then'".into(), Some("after closure parameters".into())),
+                        ("'=>' or 'then'".into(), Some("after closure parameters".into())),
                     )
                 }
             })?;
@@ -705,19 +696,12 @@ pub(crate) fn parse_expr_val(
             parse_keyword_expr(data, keyword)?.kind
         }
 
+        TokenKind::Punctuator(PunctuatorType::OpenParen)
+            if try_next!(data.tokens, punctuator!(CloseParen)) =>
+        {
+            HIRExprKind::Void
+        }
         TokenKind::Punctuator(PunctuatorType::OpenParen) => {
-            if try_next!(
-                data.tokens,
-                TokenKind::Punctuator(PunctuatorType::CloseParen)
-            ) {
-                expr_stack.push(HIRExprKind::Void.into_expr(
-                    start_index,
-                    data.tokens.index,
-                    data.token_range(start_index, data.tokens.index),
-                ));
-                return Ok(());
-            }
-
             data.change_comma_mode(true);
 
             let expr = parse_expr(data)?;
@@ -1015,16 +999,11 @@ pub(crate) fn parse_keyword_expr(
                 assert_token_matches!(data.tokens, punctuator!(ThickArrow), "'=>'");
                 let body = data.with_name_scope(|data| {
                     note_pattern_binding(data, &value);
-                    parse_arm(data)
+                    parse_expr(data)
                 })?;
                 arms.push((value, body));
 
-                let braced = matches!(
-                    data.tokens.prev().map(|token| &token.kind),
-                    Some(punctuator!(CloseBrace))
-                );
                 if !try_next!(data.tokens, operator!(Comma))
-                    && !braced
                     && !peek_kind!(data.tokens, punctuator!(CloseBrace))
                 {
                     return parse_point_error(

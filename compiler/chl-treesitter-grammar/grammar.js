@@ -227,6 +227,7 @@ module.exports = grammar({
         [$.staged_continuation_lambda, $.staged_lambda],
         [$.match_statement, $.match_expression],
         [$.compound_statement, $.initializer_list],
+        [$.expression_statement, $.initializer_item],
         [$.primary_expression, $.compound_initializer],
         [$.defer_statement, $.primary_expression],
         [$.primary_expression, $.emit_expression],
@@ -884,34 +885,17 @@ module.exports = grammar({
             ),
 
         _match_body: ($) =>
-            seq(
-                "{",
-                repeat($.match_arm),
-                optional(alias($._final_match_arm, $.match_arm)),
-                "}",
-            ),
+            seq("{", optional(commaSep1($.match_arm)), "}"),
 
         match_arm: ($) =>
             seq(
                 $.match_pattern,
                 op($, "=>"),
                 choice(
-                    seq($.compound_statement, optional(",")),
-                    prec(1, seq($.staged_block, optional(","))),
-                    seq($._match_arm_value, ","),
+                    $.expression,
+                    alias($._arm_return, $.return_statement),
+                    alias($._arm_yield, $.yield_statement),
                 ),
-            ),
-
-        _final_match_arm: ($) =>
-            seq($.match_pattern, op($, "=>"), $._match_arm_value),
-
-        _match_arm_value: ($) =>
-            choice(
-                $.expression,
-                alias($._arm_return, $.return_statement),
-                alias($._arm_yield, $.yield_statement),
-                alias($._arm_break, $.break_statement),
-                alias($._arm_continue, $.continue_statement),
             ),
 
         _arm_return: ($) =>
@@ -920,13 +904,10 @@ module.exports = grammar({
         _arm_yield: ($) =>
             prec.right(seq(keyword($, "yield"), optional($.expression))),
 
-        _arm_break: ($) => keyword($, "break"),
-
-        _arm_continue: ($) => keyword($, "continue"),
-
         match_pattern: ($) =>
             choice(
                 $.number_literal,
+                seq(op($, "-"), $.number_literal),
                 $.binding_pattern,
                 $._pattern_path,
                 $.variant_pattern,
@@ -1040,7 +1021,7 @@ module.exports = grammar({
                 ),
             ),
 
-        expression_statement: ($) => seq(optional($.expression), ";"),
+        expression_statement: ($) => seq(optional(seq($.expression, repeat(seq(",", $.expression)))), ";"),
 
         expression: ($) =>
             choice(
@@ -1165,6 +1146,7 @@ module.exports = grammar({
                 $.type_literal,
                 $.cast_expression,
                 $.parenthesized_expression,
+                $.unit_literal,
                 $.compound_initializer,
                 $.initializer_list,
                 $.staged_block,
@@ -1193,6 +1175,8 @@ module.exports = grammar({
                 keyword($, "false"),
             ),
 
+        unit_literal: (_) => seq("(", ")"),
+
         parenthesized_expression: ($) => seq("(", $.expression, repeat(seq(",", $.expression)), ")"),
 
         cast_expression: ($) => seq("(", $.type, ")", $.expression),
@@ -1219,7 +1203,6 @@ module.exports = grammar({
                 $._lambda_parameters,
                 choice(
                     $.staged_then,
-                    $.compound_statement,
                     seq(
                         op($, "=>"),
                         choice(

@@ -20,7 +20,7 @@ use crate::{
     eval::{
         EvalResult,
         aggregate::variant,
-        coerce, comptime, eval, expr,
+        coerce, comptime, eval, eval_expected, expr,
         flow::{self, Evaluation},
         place, staged, symbol, types,
     },
@@ -271,7 +271,11 @@ fn arguments(
         values.push(match (applied.next().flatten(), *arg, param) {
             (Some(value), _, _) => Some(value),
             (None, Some(arg), Some(ty)) => {
-                let value = eval(context, body, arg)?.complete(context, body, Some(ty))?;
+                let value = eval_expected(context, body, arg, Some(ty))?.complete(
+                    context,
+                    body,
+                    Some(ty),
+                )?;
                 Some(coerce::implicit::standard(
                     context,
                     value,

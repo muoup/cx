@@ -22,7 +22,7 @@ int main() {
     Values first = { next(), next() };
     Values second = first;
     second[0]++;
-    Pair contextual = .{ calls++; ({ 9, 10 }); };
+    Pair contextual = .{ calls++; yield { 9, 10 }; };
     printf("%d %d %d %d %d %d %d %d\n", value, once, pair.left, first[0], second[0], contextual.right, calls, folded);
     return 0;
 }

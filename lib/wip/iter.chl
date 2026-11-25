@@ -17,7 +17,7 @@ comptime ^iter(a, index) span::iter(lifetime a, type index, ^std::span(a, index)
             }
         )
         |> iter(a, index)() {
-            .next = @reify(_, |auto& iter| {
+            .next = @reify(_, |auto& iter| => .{
                 if (iter.remaining == 0) return _::none();
                 remaining--;
                 return _::some(*data++);    
@@ -29,7 +29,7 @@ comptime ^void iter::for_each(lifetime a, type index, ^iter(a, index) this, fn c
         while (true) {
             match (this.next()) {
                 some(auto value) => callback(value),
-                none() => break
+                none() => .{ break; }
             }
         }
     };
@@ -40,7 +40,7 @@ comptime ^iter(a, out) iter::map(
     fn callback(^index) -> ^out
 )
     => iter(a, out)() {
-        .next = @reify(_, |auto& iter| {
+        .next = @reify(_, |auto& iter| => .{
             iter.next()
             |>(1) std::optional::map(_, |auto value| => callback(value))
         }),

@@ -20,7 +20,7 @@ use crate::{
     eval::{
         EvalResult, coerce,
         control::{self, closing},
-        deduce, eval, eval_type,
+        deduce, eval_expected, eval_type,
         expr::place,
         flow::{self, ComptimeStop, EvalExit, Evaluation, RuntimeStop, StopReason},
         staged, storage, types,
@@ -157,8 +157,9 @@ pub(crate) fn eval_let(
     };
 
     let is_runtime = context.is_runtime();
-    let value = eval(context, body, initializer)?;
-    let value = deduce::complete(context, body, value, declared.known().copied(), &span)?;
+    let expected = declared.known().copied();
+    let value = eval_expected(context, body, initializer, expected)?;
+    let value = deduce::complete(context, body, value, expected, &span)?;
     let span = span.clone();
     let as_is = matches!(body.expr(local.ty()).kind(), HMIRExprKind::Hole(_)) || referent.is_some();
     value.and_then(context, body, move |context, body, value| {
@@ -255,19 +256,26 @@ pub(crate) fn eval_block(
     statements: &[HMIRExprID],
     scoped: bool,
     yields: bool,
+    expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     if !scoped {
-        return eval_statements(context, body, span, statements, true, true);
+        return eval_statements(context, body, span, statements, true, expected);
     }
 
     let scope = emit::open_scope(context);
     if yields {
         match context.context_mut() {
-            FnContext::Runtime(runtime) => runtime.scopes_mut().control_mut(scope).begin_yield(),
-            FnContext::Comptime(comptime) => comptime.scopes_mut().control_mut(scope).begin_yield(),
+            FnContext::Runtime(runtime) => runtime
+                .scopes_mut()
+                .control_mut(scope)
+                .begin_yield(expected),
+            FnContext::Comptime(comptime) => comptime
+                .scopes_mut()
+                .control_mut(scope)
+                .begin_yield(expected),
         }
     }
-    let result = eval_statements(context, body, span, statements, yields, false);
+    let result = eval_statements(context, body, span, statements, false, None);
     let result = if yields {
         yielded(context, body, scope, result, span)
     } else {
@@ -311,7 +319,7 @@ fn yielded(
             let subject = "every path of an expression block".into();
             return Err(hmir_error(&span, &typecheck::MISSING_YIELD, subject).into());
         }
-        control::merge(context, exits, false, &span)
+        control::merge(context, exits, false, None, &span)
     })
 }
 
@@ -320,12 +328,18 @@ fn eval_statements(
     body: &HMIRBodyContext,
     span: &TokenRange,
     statements: &[HMIRExprID],
-    yields: bool,
-    place: bool,
+    keep_last: bool,
+    expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let mut dead = false;
     for (index, statement) in statements.iter().enumerate() {
-        let result = eval(context, body, *statement);
+        let last = keep_last && index + 1 == statements.len();
+        let result = eval_expected(
+            context,
+            body,
+            *statement,
+            if last { expected } else { None },
+        );
         if matches!(
             &result,
             Err(EvalExit::Stop(StopReason::Runtime(RuntimeStop::Diverged)))
@@ -334,23 +348,12 @@ fn eval_statements(
             unreachable(context);
             continue;
         }
-        let yielded = yields && index + 1 == statements.len();
-        if yielded && dead && !reachable(context) {
+        if last && dead && !reachable(context) {
             result?;
             return flow::diverged();
         }
-        if yielded && place {
+        if last {
             return result;
-        }
-        if yielded {
-            let result = result?;
-            let span = span.clone();
-            let partial = |value: &HMIRValue| value::as_type(value).map(|_| value.clone());
-            return result.chain(context, body, None, partial, move |context, _, value, _| {
-                Ok(Evaluation::Ready(coerce::promotion::std_rvalue(
-                    context, value, &span,
-                )?))
-            });
         }
         match result {
             Ok(Evaluation::Incomplete(pending)) if pending.is_yielding() => {
@@ -358,7 +361,7 @@ fn eval_statements(
                 let span = span.clone();
                 let pending = Evaluation::Incomplete(pending);
                 return pending.and_then(context, body, move |context, body, _| {
-                    eval_statements(context, body, &span, &remaining, yields, place)
+                    eval_statements(context, body, &span, &remaining, keep_last, expected)
                 });
             }
             result => {
@@ -396,14 +399,34 @@ pub(crate) fn eval_scoped(
     body: &HMIRBodyContext,
     expr: HMIRExprID,
     place: bool,
+    expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let node = body.expr(expr);
     if matches!(node.kind(), HMIRExprKind::Block { scoped: true, .. }) {
-        return eval(context, body, expr);
+        return eval_expected(context, body, expr, expected);
     }
 
     let span = node.span();
     emit::open_scope(context);
-    let result = eval_statements(context, body, span, &[expr], true, place);
+    let result = eval_expected(context, body, expr, expected);
+    let result = if place {
+        result
+    } else {
+        let span = span.clone();
+        let partial = |value: &HMIRValue| value::as_type(value).map(|_| value.clone());
+        result.and_then(|result| {
+            result.chain(
+                context,
+                body,
+                expected,
+                partial,
+                move |context, _, value, _| {
+                    Ok(Evaluation::Ready(coerce::promotion::std_rvalue(
+                        context, value, &span,
+                    )?))
+                },
+            )
+        })
+    };
     closing(context, body, result, span)
 }

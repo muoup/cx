@@ -10,7 +10,7 @@ comptime ^int apply(fn f(^int, ^int) -> ^int, ^int a, ^int b) =>
 
 int main() {
     int x = 10;
-    with(emit x, |^int& v| { v += 1; });
+    with(emit x, |^int& v| => .{ v += 1; });
     int d = apply(|auto a, auto b| => a - b, emit 8, emit 3);
     int output = 0;
     int& reference = output;

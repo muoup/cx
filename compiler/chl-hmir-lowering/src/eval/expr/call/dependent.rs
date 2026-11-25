@@ -25,7 +25,7 @@ use crate::{
     eval::{
         EvalResult, coerce, comptime, control,
         deduce::{self, Deduction, Pending},
-        eval, eval_type,
+        eval, eval_expected, eval_type,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
         staged, storage, symbol, types,
     },
@@ -341,7 +341,7 @@ pub(crate) fn call(
             Some(arg) if (runtime && params[index].comptime()) || spliced => {
                 comptime::freeze(context, body, arg, Some(ty))
             }
-            Some(arg) => eval(context, body, arg).and_then(|evaluated| {
+            Some(arg) => eval_expected(context, body, arg, Some(ty)).and_then(|evaluated| {
                 deduce::complete(context, body, evaluated, Some(ty), arg_span)
             }),
             None => super::default(context, def, function, index, ty),

@@ -71,7 +71,7 @@ comptime ^T result::try(^result(_: T, _) self)
 comptime ^T result::try_or(^result(_: T, _) self, ^void on_err)
     => emit match (self) {
         ok(auto value) => move value,
-        err(auto err) => {
+        err(auto err) => .{
             on_err;
             return _::err(move err);
         }

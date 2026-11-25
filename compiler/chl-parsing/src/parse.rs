@@ -418,13 +418,16 @@ fn parse_block_kind(data: &mut ParserData, kind: HIRBlockKind) -> CHLResult<HIRE
 }
 
 fn parse_block_statements(data: &mut ParserData) -> CHLResult<Box<[HIRExpression]>> {
-    data.with_name_scope(|data| {
+    data.change_comma_mode(true);
+    let result = data.with_name_scope(|data| {
         let mut body = Vec::new();
         while !try_next!(data.tokens, punctuator!(CloseBrace)) {
             body.push(parse_block_item(data)?);
         }
         Ok(body.into())
-    })
+    });
+    data.pop_comma_mode();
+    result
 }
 
 fn parse_function_body(

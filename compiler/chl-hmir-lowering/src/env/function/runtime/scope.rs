@@ -1,4 +1,4 @@
-use chl_hmir::{HMIRUnitID, body::HMIRBodyID, expr::HMIRExprID};
+use chl_hmir::{HMIRUnitID, body::HMIRBodyID, expr::HMIRExprID, ty::HMIRTypeID};
 use chl_mir::MIRBasicBlockID;
 
 use crate::{
@@ -77,6 +77,7 @@ pub(crate) struct RuntimeScope {
     exit: Option<Exit>,
     returning: Option<HMIRUnitID>,
     yields: Option<Vec<(MIRBasicBlockID, HMIRValue)>>,
+    yield_type: Option<HMIRTypeID>,
     quote: Option<HMIRBodyID>,
     sealed: bool,
     places: Vec<HMIRPlaceID>,
@@ -147,8 +148,13 @@ impl RuntimeScope {
         self.yields.is_some()
     }
 
-    pub(crate) fn begin_yield(&mut self) {
+    pub(crate) fn begin_yield(&mut self, expected: Option<HMIRTypeID>) {
         self.yields = Some(Vec::new());
+        self.yield_type = expected;
+    }
+
+    pub(crate) fn yield_type(&self) -> Option<HMIRTypeID> {
+        self.yield_type
     }
 
     pub(crate) fn push_yield(&mut self, block: MIRBasicBlockID, value: HMIRValue) {

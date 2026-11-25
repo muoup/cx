@@ -223,7 +223,7 @@ fn runtime_switch(
         .scopes_mut()
         .control_mut(scope)
         .set_exit(Exit::new(exit, None, blocks));
-    let completion = eval_scoped(context, body, switch_body, false);
+    let completion = eval_scoped(context, body, switch_body, false, None);
     let finish = span.clone();
     let completion = flow::finally(context, body, completion, move |context, _, _| {
         storage::close_scope(context, &finish)?;
@@ -296,16 +296,16 @@ pub(crate) fn seek(
             statements,
             scoped,
             yields,
-        } => eval_block(context, body, span, statements, *scoped, *yields),
+        } => eval_block(context, body, span, statements, *scoped, *yields, None),
         HMIRExprKind::If {
             then_branch,
             else_branch,
             ..
         } => {
-            let value = eval_scoped(context, body, *then_branch, false)?.ready()?;
+            let value = eval_scoped(context, body, *then_branch, false, None)?.ready()?;
             match else_branch {
                 _ if context.comptime().selected_case().is_none() => Ok(Evaluation::Ready(value)),
-                Some(otherwise) => eval_scoped(context, body, *otherwise, false),
+                Some(otherwise) => eval_scoped(context, body, *otherwise, false, None),
                 None => Ok(Evaluation::Ready(value::unit(context.env()))),
             }
         }
@@ -339,7 +339,7 @@ fn seek_loop(
     increment: Option<HMIRExprID>,
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    match eval_scoped(context, body, loop_body, false) {
+    match eval_scoped(context, body, loop_body, false, None) {
         Ok(Evaluation::Ready(_)) if context.comptime().selected_case().is_some() => {
             return Ok(Evaluation::Ready(value::unit(context.env())));
         }

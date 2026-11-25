@@ -28,7 +28,7 @@ comptime ^void with_trace(^int& value, fn proc(^int&) -> ^void) {
 
 void single_expression() {
     int source = 4;
-    with_trace(emit source) <| |auto value| {
+    with_trace(emit source) <| |auto value| => .{
         value += 1;
     };
     printf("single complete\n");

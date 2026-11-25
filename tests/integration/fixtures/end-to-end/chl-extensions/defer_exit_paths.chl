@@ -35,7 +35,7 @@ int yield_arm(int value) {
         2 => .{
             defer say("arm", value);
             yield value + 5;
-        }
+        },
         _ => 0,
     };
     printf("yielded %d\n", result);

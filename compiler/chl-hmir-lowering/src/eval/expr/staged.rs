@@ -18,7 +18,7 @@ use crate::{
     eval::{
         EvalResult, coerce, comptime,
         deduce::{self, Incomplete, IncompleteReason},
-        eval,
+        eval, eval_expected,
         flow::{EvalExit, Evaluation},
         types,
     },
@@ -222,7 +222,7 @@ pub(crate) fn argument(
             quote::capture(context, body, params, *root, body.expr(operand).span())?
         }
         _ if !matches!(context.env().resolve_kind(target), HMIRTypeKind::Staged(_)) => {
-            eval(context, body, operand)?
+            eval_expected(context, body, operand, Some(target))?
         }
         _ if piped => quote::capture(context, body, &[], operand, body.expr(operand).span())?,
         _ => comptime::freeze(context, body, operand, Some(target)).map_err(|exit| match exit {

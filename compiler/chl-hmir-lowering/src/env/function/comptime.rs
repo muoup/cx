@@ -76,8 +76,9 @@ impl ComptimeContext {
         &mut self.scopes
     }
 
-    pub(crate) fn yielding(&self) -> bool {
-        self.controls().any(|(_, scope)| scope.yields)
+    pub(crate) fn yield_target(&self) -> Option<Option<HMIRTypeID>> {
+        self.controls()
+            .find_map(|(_, scope)| scope.yields.then_some(scope.yield_type))
     }
 
     pub(crate) fn quoting(&self) -> bool {
@@ -152,6 +153,7 @@ pub(crate) enum Switch {
 pub(crate) struct ComptimeScope {
     quoted: bool,
     yields: bool,
+    yield_type: Option<HMIRTypeID>,
     switch: Option<Switch>,
 }
 
@@ -163,8 +165,9 @@ impl ComptimeScope {
         }
     }
 
-    pub(crate) fn begin_yield(&mut self) {
+    pub(crate) fn begin_yield(&mut self, expected: Option<HMIRTypeID>) {
         self.yields = true;
+        self.yield_type = expected;
     }
 
     pub(crate) fn begin_switch(&mut self, selected: HMIRExprID) {

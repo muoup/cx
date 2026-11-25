@@ -31,11 +31,11 @@ void tcp(std::endpoint address) {
     std::tcp_server::set_blocking(server, false) |> std::result::unwrap();
 
     match (std::tcp_server::accept(server)) {
-        ok(auto connection) => {
+        ok(auto connection) => .{
             std::tcp_connection::drop(move connection);
             std::panic("Accepted an unexpected connection");
-        }
-        err(auto error) => {
+        },
+        err(auto error) => .{
             check(std::socket_error::is_would_block(error));
             u8 output[128];
             check(std::socket_error::format(error, std::span::new(output, sizeof(output))) > 0);

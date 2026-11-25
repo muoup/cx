@@ -1,0 +1,3 @@
+int no_arguments() => 1;
+
+int main() => no_arguments(());

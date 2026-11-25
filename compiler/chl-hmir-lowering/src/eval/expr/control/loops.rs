@@ -100,7 +100,7 @@ pub(crate) fn eval_while(
         .set_exit(exits);
 
     emit::runtime::flow::switch_to(context, body_block);
-    let completion = flow::catch_diverged(eval_scoped(context, body, loop_body, false));
+    let completion = flow::catch_diverged(eval_scoped(context, body, loop_body, false, None));
     storage::close_scope(context, span)?;
     completion?.ready()?;
     emit::runtime::flow::jump(context, continue_block, span);
@@ -131,7 +131,7 @@ fn comptime_while(
         }
         checks = true;
 
-        match eval_scoped(context, body, loop_body, false) {
+        match eval_scoped(context, body, loop_body, false, None) {
             Ok(Evaluation::Ready(_)) => {}
             Ok(Evaluation::Incomplete(incomplete)) => return Err(incomplete.error().into()),
             Err(EvalExit::Stop(StopReason::Comptime(ComptimeStop::Break))) => break,

@@ -20,7 +20,7 @@ use crate::{
     eval::{
         EvalResult,
         call::contract,
-        coerce, deduce, eval, eval_type,
+        coerce, deduce, eval_expected, eval_type,
         flow::{self, ComptimeStop, EvalExit, Evaluation},
         types,
     },
@@ -57,7 +57,7 @@ pub(crate) fn eval_return_operand(
         let ty = types::define_aggregate(context, body, aggregate, Some(reserved))?;
         return deduce::type_result(context, ty, body.expr(value).span());
     }
-    eval(context, body, value)
+    eval_expected(context, body, value, context.return_type())
 }
 
 pub(super) fn eval_yield(
@@ -66,15 +66,17 @@ pub(super) fn eval_yield(
     span: &TokenRange,
     value: Option<HMIRExprID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let available = match context.context() {
-        FnContext::Runtime(runtime) => runtime.yield_target(body.id()).is_some(),
-        FnContext::Comptime(comptime) => comptime.yielding(),
+    let target = match context.context() {
+        FnContext::Runtime(runtime) => runtime
+            .yield_target(body.id())
+            .map(|scope| runtime.scopes().control(scope).yield_type()),
+        FnContext::Comptime(comptime) => comptime.yield_target(),
     };
-    if !available {
+    let Some(expected) = target else {
         return untargeted(context, span, "yield", "a yielding expression");
-    }
+    };
     let value = match value {
-        Some(value) => match eval(context, body, value)? {
+        Some(value) => match eval_expected(context, body, value, expected)? {
             Evaluation::Incomplete(pending) => Evaluation::Incomplete(pending.yielding()),
             value => value,
         },

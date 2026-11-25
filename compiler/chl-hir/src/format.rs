@@ -323,7 +323,9 @@ impl<'a> Display for HIRExprFormatter<'a> {
             } => {
                 writeln!(f, "For")?;
                 HIRExprFormatter::new(init, self.depth + 1).fmt(f)?;
-                HIRExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                if let Some(condition) = condition {
+                    HIRExprFormatter::new(condition, self.depth + 1).fmt(f)?;
+                }
                 HIRExprFormatter::new(increment, self.depth + 1).fmt(f)?;
                 HIRExprFormatter::new(body, self.depth + 1).fmt(f)?;
                 Ok(())
@@ -387,6 +389,14 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 Ok(())
             }
             HIRExprKind::Void => writeln!(f, "Unit"),
+            HIRExprKind::Call { callee, args } => {
+                writeln!(f, "Call")?;
+                HIRExprFormatter::new(callee, self.depth + 1).fmt(f)?;
+                for arg in args {
+                    HIRExprFormatter::new(arg, self.depth + 1).fmt(f)?;
+                }
+                Ok(())
+            }
             HIRExprKind::Match { condition, arms } => {
                 writeln!(f, "Match")?;
                 HIRExprFormatter::new(condition, self.depth + 1).fmt(f)?;
