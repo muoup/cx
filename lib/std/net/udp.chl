@@ -14,26 +14,26 @@ struct udp_socket : @nodrop {
 
 std::result(udp_socket, std::socket_error) udp_socket::open() {
     auto backend = std::posix::socket::open(std::posix::datagram_socket)
-        |> std::socket_result() |> std::result::try()!;
+        |> std::result::try()!;
     return _::ok((udp_socket) { .backend = move backend });
 }
 
 std::result(void, std::socket_error) udp_socket::bind(udp_socket& this, std::endpoint address)
-    => std::socket_result(emit std::posix::socket::bind(this.backend, address));
+    => std::posix::socket::bind(this.backend, address);
 
 std::result(std::endpoint, std::socket_error) udp_socket::local_address(udp_socket& this)
-    => std::socket_result(emit std::posix::socket::local_address(this.backend));
+    => std::posix::socket::local_address(this.backend);
 
 std::result(void, std::socket_error) udp_socket::set_blocking(udp_socket& this, bool blocking)
-    => std::socket_result(emit std::posix::socket::set_blocking(this.backend, blocking));
+    => std::posix::socket::set_blocking(this.backend, blocking);
 
 std::result(usize, std::socket_error) udp_socket::send_to(
     udp_socket& this, std::span(const u8) buffer, std::endpoint remote
-) => std::socket_result(emit std::posix::socket::send_to(this.backend, buffer, remote));
+) => std::posix::socket::send_to(this.backend, buffer, remote);
 
 std::result(datagram, std::socket_error) udp_socket::recv_from(udp_socket& this, std::span(u8) buffer) {
     auto message = std::posix::socket::recv_from(this.backend, buffer)
-        |> std::socket_result() |> std::result::try()!;
+        |> std::result::try()!;
     return _::ok((datagram) { .length = message.length, .source = message.source });
 }
 

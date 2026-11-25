@@ -1,20 +1,9 @@
-import std::collections::span as std;
-
-#include <errno.h>
-#include <stdio.h>
-#include <string.h>
+import std::net::error as std;
 
 public:
 
 typedef @strong int errno_code;
 
-bool errno_code::is_would_block(errno_code error)
-    => (int) error == EAGAIN || (int) error == EWOULDBLOCK;
+errno_code errno_code::current() => (errno_code) errno;
 
-usize errno_code::format(errno_code error, std::span(u8) output) {
-    if (output.length == 0) return 0;
-    const char* message = (int) error == 0 ? "Socket write made no progress" : strerror((int) error);
-    int size = snprintf((char*) output.data, output.length, "%s", message);
-    if (size < 0) return 0;
-    return (usize) size < output.length ? (usize) size : output.length - 1;
-}
+std::socket_error errno_code::into_socket_error(errno_code code) => (std::socket_error) (int) code;

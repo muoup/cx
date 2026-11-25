@@ -1,97 +1,15 @@
+public extern "C":
+
+#include <errno.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
 
-public extern "C":
+public:
 
-// Bindings courtesy of pubs.opengroup.com
-
-// UNISTD bindings
-
-int          access(const char *, int);
-unsigned int alarm(unsigned int);
-int          brk(void *);
-int          chdir(const char *);
-int          chown(const char *, uid_t, gid_t);
-int          close(int);
-size_t       confstr(int, char *, size_t);
-char        *crypt(const char *, const char *);
-char        *ctermid(char *);
-int          dup(int);
-int          dup2(int, int);
-void         encrypt(char[64], int);
-int          execl(const char *, const char *, ...);
-int          execle(const char *, const char *, ...);
-int          execlp(const char *, const char *, ...);
-int          execv(const char *, char *const []);
-int          execve(const char *, char *const [], char *const []);
-int          execvp(const char *, char *const []);
-//void        _exit(int);
-int          fchown(int, uid_t, gid_t);
-int          fchdir(int);
-int          fdatasync(int);
-pid_t        fork(void);
-long int     fpathconf(int, int);
-int          fsync(int);
-int          ftruncate(int, off_t);
-char        *getcwd(char *, size_t);
-gid_t        getegid(void);
-uid_t        geteuid(void);
-gid_t        getgid(void);
-int          getgroups(int, gid_t []);
-long         gethostid(void);
-char        *getlogin(void);
-int          getlogin_r(char *, size_t);
-int          getopt(int, char * const [], const char *);
-pid_t        getpgid(pid_t);
-pid_t        getpgrp(void);
-pid_t        getpid(void);
-pid_t        getppid(void);
-pid_t        getsid(pid_t);
-uid_t        getuid(void);
-char        *getwd(char *);
-int          isatty(int);
-int          lchown(const char *, uid_t, gid_t);
-int          link(const char *, const char *);
-int          lockf(int, int, off_t);
-off_t        lseek(int, off_t, int);
-int          nice(int);
-long int     pathconf(const char *, int);
-int          pause(void);
-int          pipe(int [2]);
-ssize_t      pread(int, void *, size_t, off_t);
-int          pthread_atfork(void (*)(void), void (*)(void), fn*() -> void);
-ssize_t      pwrite(int, const void *, size_t, off_t);
-ssize_t      read(int, void *, size_t);
-//int          readlink(const char *, char *, size_t);
-int          rmdir(const char *);
-void        *sbrk(intptr_t);
-int          setgid(gid_t);
-int          setpgid(pid_t, pid_t);
-pid_t        setpgrp(void);
-int          setregid(gid_t, gid_t);
-int          setreuid(uid_t, uid_t);
-pid_t        setsid(void);
-int          setuid(uid_t);
-unsigned int sleep(unsigned int);
-void         swab(const void *, void *, ssize_t);
-int          symlink(const char *, const char *);
-void         sync(void);
-long int     sysconf(int);
-pid_t        tcgetpgrp(int);
-int          tcsetpgrp(int, pid_t);
-int          truncate(const char *, off_t);
-char        *ttyname(int);
-int          ttyname_r(int, char *, size_t);
-useconds_t   ualarm(useconds_t, useconds_t);
-int          unlink(const char *);
-int          usleep(useconds_t);
-pid_t        vfork(void);
-ssize_t      write(int, const void *, size_t);
-
-// fcntl.h bindings
+comptime errno_code ERRNO_EINTR = (errno_code) EINTR;
 
 comptime int ENUM_O_NONBLOCK = O_NONBLOCK;
 
@@ -103,33 +21,6 @@ comptime int ENUM_F_GETFL = F_GETFL;
 comptime int ENUM_F_SETFL = F_SETFL;
 comptime int ENUM_F_SETLK = F_SETLK;
 comptime int ENUM_F_SETLKW = F_SETLKW;
-//comptime int ENUM_F_ADD_SEALS = F_ADD_SEALS;
-//comptime int ENUM_F_GET_SEALS = F_GET_SEALS;
-//comptime int ENUM_F_GETPIPE_SZ = F_GETPIPE_SZ;
-//comptime int ENUM_F_SETPIPE_SZ = F_SETPIPE_SZ;
-
-int     fcntl(int fd, int cmd, ...);
-
-// sys/socket.h bindings
-
-typedef struct sockaddr sockaddr;
-typedef struct sockaddr_in sockaddr_in;
-typedef socklen_t address_length;
-typedef ssize_t socket_size;
-
-comptime int ENUM_SOL_SOCKET = SOL_SOCKET;
-comptime int ENUM_SO_REUSEADDR = SO_REUSEADDR;
-
-#ifdef MSG_NOSIGNAL
-comptime int ENUM_SEND_FLAGS = MSG_NOSIGNAL;
-#else
-comptime int ENUM_SEND_FLAGS = 0;
-#endif
-
-u16 htons(u16 port);
-u16 ntohs(u16 port);
-u32 htonl(u32 address);
-u32 ntohl(u32 address);
 
 comptime int ENUM_AF_UNSPEC = AF_UNSPEC;
 comptime int ENUM_AF_UNIX = AF_UNIX;
@@ -149,24 +40,10 @@ comptime int ENUM_IPPROTO_UDP = IPPROTO_UDP;
 comptime int ENUM_IPPROTO_IPV6 = IPPROTO_IPV6;
 comptime int ENUM_IPPROTO_RAW = IPPROTO_RAW;
 
-int     accept(int socket, struct sockaddr *address, socklen_t *address_len);
-int     bind(int socket, const struct sockaddr *address, socklen_t address_len);
-int     connect(int socket, const struct sockaddr *address, socklen_t address_len);
-
-int     getpeername(int socket, struct sockaddr *address, socklen_t *address_len);
-int     getsockname(int socket, struct sockaddr *address, socklen_t *address_len);
-int     getsockopt(int socket, int level, int option_name, void *option_value, socklen_t *option_len);
-
-int     listen(int socket, int backlog);
-ssize_t recv(int socket, void *buffer, size_t length, int flags);
-ssize_t recvfrom(int socket, void *buffer, size_t length, int flags, struct sockaddr *address, socklen_t *address_len);
-ssize_t recvmsg(int socket, struct msghdr *message, int flags);
-
-ssize_t send(int socket, const void *message, size_t length, int flags);
-ssize_t sendmsg(int socket, const struct msghdr *message, int flags);
-ssize_t sendto(int socket, const void *message, size_t length, int flags, const struct sockaddr *dest_addr, socklen_t dest_len);
-
-int     setsockopt(int socket, int level, int option_name, const void *option_value, socklen_t option_len);
-int     shutdown(int socket, int how);
-int     socket(int domain, int socket_type, int protocol);
-int     socketpair(int domain, int socket_type, int protocol, int socket_vector[2]);
+#if defined(MSG_NOSIGNAL)
+comptime int send_flags = MSG_NOSIGNAL;
+#elif defined(SO_NOSIGPIPE)
+comptime int send_flags = SO_NOSIGPIPE;
+#else
+comptime int send_flags = 0;
+#end
