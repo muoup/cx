@@ -1,6 +1,6 @@
 /* CHL-STDOUT: allocator checks passed */
 
-import std::{collections::vector, memory::{allocation, box}, optional, panic} as std;
+import std::{collections::{string, vector}, memory::{allocation, box}, optional, panic} as std;
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,6 +69,12 @@ int main() {
     check((usize) &std::box::deref(box) % 64 == 0);
     check(std::box::deref(box) == 42);
     std::box::drop(move box);
+
+    auto strings = std::vector::new(std::string(.A = fallback));
+    std::vector::push(strings, std::string::from_str(.A = fallback, "one"));
+    std::vector::push(strings, std::string::from_str(.A = fallback, "two"));
+    move strings |> std::vector::drop_with(std::string::drop);
+    check(frees == 5);
 
     check(sizeof(std::box(u8)) == sizeof(void*));
     check(sizeof(std::vector(u8)) == sizeof(void*) + 2 * sizeof(usize));

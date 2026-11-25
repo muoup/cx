@@ -1,0 +1,12 @@
+enum union Command : @nodrop {
+    list :: void,
+    number :: int,
+};
+
+void run(Command object) {
+    defer @leak(object);
+    match (move object) {
+        list() => {},
+        number(auto value) => {},
+    }
+}

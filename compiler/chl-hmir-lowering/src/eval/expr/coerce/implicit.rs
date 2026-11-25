@@ -13,6 +13,7 @@ use crate::{
     emit,
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
+        call::dependent,
         coerce::{self, applied},
         comptime, expr, flow, staged,
         types::{self, signatures_alike},
@@ -313,11 +314,35 @@ fn eta(
     let HMIRTypeKind::Staged(result) = *env.resolve_kind(*to.return_type()) else {
         return Ok(Coercion::Unapplied(value));
     };
-    if types::comptime_only(env, *from.return_type())
-        || from.is_variadic()
-        || from.params().len() != to.params().len()
-        || from.params().iter().any(|param| param.comptime())
-    {
+    if from.is_variadic() {
+        return Ok(Coercion::Unapplied(value));
+    }
+    let specialization = if from.params().iter().any(|param| param.comptime()) {
+        let Some(callee) = comptime::known(context, &value) else {
+            return Ok(Coercion::Unapplied(value));
+        };
+        let expected = to
+            .params()
+            .iter()
+            .map(|param| match context.env().resolve_kind(*param.ty()) {
+                HMIRTypeKind::Staged(inner) => *inner,
+                _ => *param.ty(),
+            })
+            .collect::<Vec<_>>();
+        let Some(specialization) =
+            dependent::specialize_callback(context, callee, &expected, span)?
+        else {
+            return Ok(Coercion::Unapplied(value));
+        };
+        Some(specialization)
+    } else {
+        None
+    };
+    let from = specialization
+        .as_ref()
+        .map_or(from, |(signature, _)| signature);
+    let env = context.env();
+    if types::comptime_only(env, *from.return_type()) || from.params().len() != to.params().len() {
         return Ok(Coercion::Unapplied(value));
     }
     let returned = *from.return_type();
@@ -348,13 +373,18 @@ fn eta(
     if discarding {
         discarded(context, returned, value.ty(), target, span)?;
     }
-    let Some(callee) = comptime::known(context, &value) else {
-        return Ok(Coercion::Unapplied(value));
+    let application = match specialization {
+        Some((_, application)) => application,
+        None => {
+            let Some(callee) = comptime::known(context, &value) else {
+                return Ok(Coercion::Unapplied(value));
+            };
+            value::into_application(callee).unwrap_or_else(|callee| HMIRApplication {
+                callee: Box::new(callee),
+                args: vec![None; from.params().len()],
+            })
+        }
     };
-    let application = value::into_application(callee).unwrap_or_else(|callee| HMIRApplication {
-        callee: Box::new(callee),
-        args: vec![None; from.params().len()],
-    });
     let lifted = value::application(target, application);
     Ok(Coercion::Applied(lifted))
 }

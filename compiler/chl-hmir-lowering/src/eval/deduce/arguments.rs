@@ -1,7 +1,7 @@
 mod inference;
 mod matching;
 
-pub(crate) use inference::infer;
+pub(crate) use inference::{infer, infer_from_types};
 
 use std::collections::BTreeMap;
 

@@ -26,9 +26,7 @@ bool result::is_err(comptime type T = _, comptime type Err = _, result(T, Err)& 
 }
 
 void result::drop_with(
-    comptime type T = _,
-    comptime type Err = _,
-    result(T, Err) this,
+    result(_: T, _: Err) this,
     comptime fn drop_ok(^T) -> ^void,
     comptime fn drop_err(^Err) -> ^void,
 ) {
@@ -39,10 +37,8 @@ void result::drop_with(
 }
 
 comptime ^result(U, Err) result::map(
-    comptime type T = _,
-    comptime type Err = _,
     comptime type U = _,
-    ^result(T, Err) this, fn func(^T) -> ^U
+    ^result(_: T, _: Err) this, fn func(^T) -> ^U
 ) => emit match (this) {
         ok(auto value) => _::ok(func(emit move value)),
         err(auto err) => _::err(move err),
@@ -55,26 +51,24 @@ where pre: (!@type.is_nodrop(Err))
 comptime ^T result::unwrap_or(type T = _, type Err = _, ^result(T, Err) self, ^T default_value)
 where
     pre: (!@type.is_nodrop(Err))
-=> emit match (self) {
+    => emit match (self) {
         ok(auto val) => move val,
         err(auto err) => default_value,
     };
 
-comptime ^T result::expect(type T = _, type Err = _, ^result(T, Err) self, ^_str& error)
-where
-    pre: (!@type.is_nodrop(Err))
+comptime ^T result::expect(^result(_: T, _) self, ^_str& error)
     => emit match (self) {
         ok(auto value) => move value,
         err(auto err) => std::panic(error)
     };
 
-comptime ^T result::try(type T = _, type Err = _, ^result(T, Err) self)
+comptime ^T result::try(^result(_: T, _) self)
     => emit match (self) {
         ok(auto value) => move value,
         err(auto err) => return _::err(move err),
     };
 
-comptime ^T result::try_or(type T = _, type Err = _, ^result(T, Err) self, ^void on_err)
+comptime ^T result::try_or(^result(_: T, _) self, ^void on_err)
     => emit match (self) {
         ok(auto value) => move value,
         err(auto err) => {

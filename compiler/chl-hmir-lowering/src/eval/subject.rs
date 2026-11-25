@@ -30,7 +30,7 @@ use crate::{
 use crate::eval::{
     EvalResult, coerce, comptime, eval,
     flow::{EvalExit, Evaluation, RuntimeStop, StopReason},
-    types,
+    storage, types,
 };
 
 // The type of an operand evaluated without emitting it; a diverging operand is typed unreachable
@@ -95,8 +95,24 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
     deferred: bool,
     span: &TokenRange,
 ) -> CHLResult<LocalLoweringContext<'parent, 'global, 'hmir>> {
-    let locals = context.visible_locals();
     let frozen = comptime::inputs(context).into_iter().collect::<Bindings>();
+    let locals = context
+        .visible_locals()
+        .into_iter()
+        .map(|(local, value)| {
+            let owned = match context.env().reference_inner(value.ty()) {
+                Some(ty)
+                    if context.is_runtime()
+                        && context.env().is_nodrop(ty)
+                        && storage::tracked(context, &value, span)?.is_some() =>
+                {
+                    Some(ty)
+                }
+                _ => None,
+            };
+            Ok((local, value, owned))
+        })
+        .collect::<CHLResult<Vec<_>>>()?;
     let void = context
         .env_mut()
         .module_mut()
@@ -112,9 +128,12 @@ pub(crate) fn detached<'parent, 'global, 'hmir>(
     runtime.freeze(frozen.clone());
     let evaluation = context.evaluation();
     let mut child = context.child(None, FnContext::Runtime(runtime), Some(evaluation));
-    for (local, value) in locals {
-        let value = match frozen.get(&local) {
-            Some(known) if value::as_type(known).is_some() || known == &value => {
+    for (local, value, owned) in locals {
+        let value = match (owned, frozen.get(&local)) {
+            (Some(inner), _) => {
+                emit::storage::allocate(&mut child, inner, None, span)?.with_ty(value.ty())
+            }
+            (None, Some(known)) if value::as_type(known).is_some() || known == &value => {
                 shadow(&mut child, known.clone(), span)?
             }
             _ => placeholder(&mut child, value.ty(), span)?,

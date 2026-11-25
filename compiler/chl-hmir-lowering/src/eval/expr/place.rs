@@ -162,6 +162,7 @@ fn eval_leak(
         );
         return Err(hmir_error(span, &typecheck::INVALID_FORM, invalid).into());
     };
+    
     emit::storage::invalidate(context, place, MIRInvalidationKind::Leak, span)?;
     Ok(Evaluation::Ready(value::unit(context.env())))
 }

@@ -14,7 +14,7 @@ use crate::{
         binding::UnboundLocal,
         call::dependent::Frame,
         eval_type,
-        flow::{EvalExit, Evaluation},
+        flow::{self, EvalExit, Evaluation},
         staged, subject,
     },
     log::hmir_error,
@@ -22,6 +22,28 @@ use crate::{
 };
 
 use super::{Deduction, Form, bind, matching::unify};
+
+pub(crate) fn infer_from_types(
+    deduction: &mut Deduction,
+    context: &mut LocalLoweringContext,
+    frame: &mut Frame,
+    types: impl IntoIterator<Item = (usize, HMIRTypeID)>,
+    span: &TokenRange,
+) -> CHLResult<Option<Vec<Option<HMIRValue>>>> {
+    let function = deduction.function;
+    let body = function.body();
+    let params = function.signature().params();
+    for (index, ty) in types {
+        let form = Form::new(body, *params[index].ty());
+        unify(deduction, context, frame, form, ty, span)?;
+    }
+    if deduction.slots.values().any(|slot| slot.evidence.is_none()) {
+        return Ok(None);
+    }
+    let mut values = vec![None; params.len()];
+    flow::boundary(bind(deduction, context, frame, body, &mut values, span))?;
+    Ok(Some(values))
+}
 
 pub(crate) fn infer(
     deduction: &mut Deduction,

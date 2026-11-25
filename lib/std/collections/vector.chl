@@ -28,6 +28,8 @@ vector(T, .A = A) vector::with_capacity(
     return { data, 0, capacity };
 }
 
+usize vector::length(vector(_, .A = _)& this) => this.length;
+
 void vector::drop(vector(_: T, .A = _: A) this)
 where pre: (!@type.is_nodrop(T))
 {

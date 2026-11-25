@@ -31,7 +31,7 @@ use crate::{
     },
     log::hmir_error,
     lower,
-    value::{self, HMIRValue},
+    value::{self, HMIRApplication, HMIRValue},
 };
 
 use super::contract;
@@ -224,6 +224,58 @@ pub(crate) fn applies(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {
 // Whether a call to 'function' executes it here for the code that it produces, which is emitted in its place
 fn is_spliced(context: &LocalLoweringContext, function: &HMIRFunction) -> bool {
     context.is_runtime() && function.signature().stage() == HMIRFunctionStage::Comptime
+}
+
+pub(crate) fn specialize_callback(
+    context: &mut LocalLoweringContext,
+    callee: HMIRValue,
+    expected: &[HMIRTypeID],
+    span: &TokenRange,
+) -> CHLResult<Option<(HMIRFnSignature<HMIRTypeID>, HMIRApplication<HMIRValue>)>> {
+    let Some(def) = value::as_function(&callee) else {
+        return Ok(None);
+    };
+    let function = symbol::function(context.env_mut(), def)?;
+    let params = function.signature().params();
+    let runtime = params
+        .iter()
+        .enumerate()
+        .filter(|(_, param)| !param.comptime());
+    if runtime.clone().count() != expected.len() {
+        return Ok(None);
+    }
+    let prototype = function.prototype();
+    let mut deduction = Deduction::new(&function, def);
+    for (index, _) in params
+        .iter()
+        .enumerate()
+        .filter(|(_, param)| param.comptime())
+    {
+        let default = prototype.params()[index].default();
+        if !default.is_some_and(|expr| {
+            matches!(
+                prototype.defaults().expr(expr).kind(),
+                HMIRExprKind::Hole(_)
+            )
+        }) {
+            return Ok(None);
+        }
+        deduction.defer(index, Pending::Value);
+    }
+    let mut frame = Frame::new(&function, def, ComptimeContext::of(def), true);
+    let param_types = runtime.zip(expected).map(|((index, _), &ty)| (index, ty));
+    let Some(args) =
+        deduce::infer_from_types(&mut deduction, context, &mut frame, param_types, span)?
+    else {
+        return Ok(None);
+    };
+    let signature = frame.signature(context, span)?;
+    let signature = types::residual(&signature, |index| args[index].is_some());
+    let application = HMIRApplication {
+        callee: Box::new(callee),
+        args,
+    };
+    Ok(Some((signature, application)))
 }
 
 // Calls the function 'def' with 'args', each evaluated as the type of its parameter has it, which the arguments

@@ -39,5 +39,8 @@ int main() {
         .data = 5
     };
     printf("%d\n", plain.data);
+
+    Resource deferred = { .data = 11 };
+    defer @leak(deferred);
     return 0;
 }

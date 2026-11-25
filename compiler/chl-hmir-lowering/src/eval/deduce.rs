@@ -5,7 +5,7 @@ pub(crate) mod signature;
 pub(crate) use super::flow::{Incomplete, IncompleteReason};
 pub(crate) use super::subject::{detached, placeholder, shadowed, subject, typed};
 pub(crate) use arguments::{
-    Deduction, Pending, blocking, generated, generates_type, infer, undeduced,
+    Deduction, Pending, blocking, generated, generates_type, infer, infer_from_types, undeduced,
 };
 
 use chl_hmir::{
