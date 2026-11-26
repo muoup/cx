@@ -44,7 +44,7 @@ Inner pick(int flag) {
 Inner yielded(int value) {
     return .{
         int doubled = value * 2;
-        ({ doubled, value });
+        yield { doubled, value };
     };
 }
 
@@ -56,11 +56,11 @@ int tick() {
 }
 
 Inner suspended(int flag) {
-    return flag ? .{ tick(); ({ 1, 2 }); } : .{ tick(); ({ 3, 4 }); };
+    return flag ? .{ tick(); yield { 1, 2 }; } : .{ tick(); yield { 3, 4 }; };
 }
 
 Inner escaping(int flag) {
-    return flag ? .{ return { 5, 6 }; } : .{ Inner local = { 7, 8 }; ({ local.b, local.a }); };
+    return flag ? .{ return { 5, 6 }; } : .{ Inner local = { 7, 8 }; yield { local.b, local.a }; };
 }
 
 int main() {
@@ -93,7 +93,7 @@ int main() {
     Inner arrowed = arrow(5);
     printf("%d %d\n", arrowed.a, arrowed.b);
 
-    Inner sequenced = .{ tick(); .{ tick(); ({ ticks, 10 }); }; };
+    Inner sequenced = .{ tick(); yield .{ tick(); yield { ticks, 10 }; }; };
     printf("%d %d %d\n", sequenced.a, sequenced.b, ticks);
 
     Inner left = suspended(1);

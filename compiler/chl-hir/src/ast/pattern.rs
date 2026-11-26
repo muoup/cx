@@ -19,7 +19,7 @@ pub enum HIRPattern {
         span: TokenRange,
     },
 
-    Integer(i64),
+    Integer(i128),
     Float(FloatWrapper),
     // An existing value the subject is compared against
     Value(HIRExpression),

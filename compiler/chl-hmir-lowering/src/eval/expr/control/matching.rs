@@ -22,7 +22,7 @@ use crate::{
             pattern,
             variant::{self, Variant},
         },
-        coerce, eval, eval_comptime,
+        coerce, eval, eval_comptime, eval_expected,
         flow::{self, Evaluation},
         storage, types,
     },
@@ -35,6 +35,7 @@ struct Match {
     arms: Vec<(HMIRPattern, HMIRExprID)>,
     blocks: Vec<MIRBasicBlockID>,
     exits: Vec<(MIRBasicBlockID, HMIRValue)>,
+    inferred: Option<HMIRTypeID>,
     span: TokenRange,
 }
 
@@ -45,6 +46,7 @@ pub(crate) fn eval_match(
     scrutinee: HMIRExprID,
     local: HMIRLocalID,
     arms: &[(HMIRPattern, HMIRExprID)],
+    expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let subject = eval(context, body, scrutinee)?.ready()?;
     let subject = coerce::collapse(context, subject, span)?;
@@ -117,9 +119,10 @@ pub(crate) fn eval_match(
             arms: arms.to_vec(),
             blocks,
             exits: Vec::new(),
+            inferred: None,
             span: span.clone(),
         };
-        lower_arms(context, body, state, 0, None)
+        lower_arms(context, body, state, 0, expected)
     } else {
         let value = value::as_int(&dispatch).expect("comptime dispatch is constant");
         let selected = cases
@@ -129,7 +132,7 @@ pub(crate) fn eval_match(
             .expect("match coverage was checked");
         let (pattern, arm) = &arms[selected];
         bind_arm(context, body, &subject, pattern, span)?;
-        arm_value(context, body, *arm, span, None)
+        arm_value(context, body, *arm, span, None, expected)
     };
     closing(context, body, result, span)
 }
@@ -162,7 +165,7 @@ fn cases(
             HMIRPattern::Variant { .. } if variants.is_some() => {
                 Some(pattern::variant(context, body, ty, pattern, arm_span)?.index as i128)
             }
-            HMIRPattern::Integer(value) if variants.is_none() => Some(*value as i128),
+            HMIRPattern::Integer(value) if variants.is_none() => Some(*value),
             HMIRPattern::Value(expr) if variants.is_none() => {
                 let value = eval_comptime(context, body, *expr, Some(dispatch_ty))?;
                 match value.kind() {
@@ -253,7 +256,8 @@ fn lower_arms(
             .iter()
             .find(|(_, value)| !env.is_void(value.ty()));
         if let Some((_, found)) = valued
-            && state.exits.iter().any(|(_, value)| env.is_void(value.ty()))
+            && (expected.is_some_and(|ty| env.is_void(ty))
+                || state.exits.iter().any(|(_, value)| env.is_void(value.ty())))
         {
             let mismatch = (
                 "match arms".into(),
@@ -262,7 +266,21 @@ fn lower_arms(
             );
             return Err(hmir_error(&state.span, &typecheck::TYPE_MISMATCH, mismatch).into());
         }
-        return merge(context, state.exits, true, &state.span);
+        let expected = expected.filter(|ty| !env.is_unbounded_array(*ty));
+        let ty = expected.or_else(|| {
+            let first = state.exits.first()?.1.ty();
+            if env.is_reference(first)
+                && state
+                    .exits
+                    .iter()
+                    .all(|(_, value)| env.same_type(first, value.ty()))
+            {
+                Some(first)
+            } else {
+                state.inferred
+            }
+        });
+        return merge(context, state.exits, true, ty, &state.span);
     };
 
     emit::runtime::flow::switch_to(context, state.blocks[index]);
@@ -272,7 +290,11 @@ fn lower_arms(
         .then(|| context.runtime().declared_places());
     emit::open_scope(context);
     bind_arm(context, body, &state.subject, &pattern, &state.span)?;
-    let result = arm_value(context, body, arm, &state.span, declared);
+    let target = expected
+        .filter(|ty| !context.env().is_unbounded_array(*ty))
+        .or(state.inferred)
+        .or(expected);
+    let result = arm_value(context, body, arm, &state.span, declared, target);
     let result = closing(context, body, result, &state.span);
     let source = (!context.env().is_reference(state.subject.ty()))
         .then(|| value::as_place(&state.subject).expect("an owned match subject has a place"));
@@ -283,14 +305,17 @@ fn lower_arms(
         }
         Ok(())
     });
-    let result = flow::catch_diverged(result)?.try_complete(context, body, expected)?;
+    let result = flow::catch_diverged(result)?.try_complete(context, body, target)?;
     result.chain(
         context,
         body,
-        None,
+        expected,
         |_| None,
         move |context, body, value, expected| {
             if let Some(value) = value {
+                if state.inferred.is_none() {
+                    state.inferred = Some(types::qualify::value(context, value.ty(), &state.span));
+                }
                 state.exits.push((emit::runtime::flow::current_block(context), value));
             }
             lower_arms(context, body, state, index + 1, expected)
@@ -306,11 +331,17 @@ fn arm_value(
     arm: HMIRExprID,
     span: &TokenRange,
     declared: Option<usize>,
+    expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = span.clone();
-    eval(context, body, arm)?.map(context, move |context, value| {
+    eval_expected(context, body, arm, expected)?.map(context, move |context, value| {
         let outlives = declared
             .is_some_and(|declared| context.runtime().declared_places() == declared);
+        if let Some(expected) = expected
+            && context.env().is_array(expected)
+        {
+            return coerce::implicit::standard(context, value, expected, &span);
+        }
         if outlives && context.env().is_reference(value.ty()) {
             return Ok(value);
         }

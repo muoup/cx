@@ -17,7 +17,10 @@ use chl_tokens::TokenRange;
 use crate::{
     emit::{self, intrinsics},
     env::{HMIREnvironment, function::LocalLoweringContext},
-    eval::{EvalResult, arithmetic, eval, eval_type, flow::Evaluation, place, storage, types},
+    eval::{
+        EvalResult, arithmetic, eval, eval_expected, eval_type, flow::Evaluation, place, storage,
+        types,
+    },
     log::hmir_error,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
 };
@@ -56,7 +59,8 @@ pub(crate) fn eval_coerce(
         return Ok(Evaluation::Ready(condition(context, value, span)?));
     }
     let target = (eval_type(context, body, target))?.ready()?;
-    let value = eval(context, body, value)?.complete(context, body, Some(target))?;
+    let value =
+        eval_expected(context, body, value, Some(target))?.complete(context, body, Some(target))?;
     Ok(Evaluation::Ready(match mode {
         HMIRCoerceMode::Implicit => implicit::standard(context, value, target, span)?,
         HMIRCoerceMode::CCast => explicit::standard(context, value, target, span)?,

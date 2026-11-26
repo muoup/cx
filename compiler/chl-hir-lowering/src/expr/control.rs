@@ -83,14 +83,17 @@ pub(crate) fn lower_while<'a>(
 pub(crate) fn lower_for<'a>(
     context: &mut BodyLowering<'a>,
     init: &'a HIRExpression,
-    condition: &'a HIRExpression,
+    condition: Option<&'a HIRExpression>,
     increment: &'a HIRExpression,
     body: &'a HIRExpression,
     span: &TokenRange,
 ) -> CHLResult<HMIRExprID> {
     context.scoped(|this| {
         let init = lower_expr(this, init)?;
-        let condition = lower_condition(this, condition)?;
+        let condition = match condition {
+            Some(condition) => lower_condition(this, condition)?,
+            None => this.int_literal(HMIRIntType::new(HMIRIntWidth::I1, false), 1, span),
+        };
         let increment = lower_expr(this, increment)?;
         let body = this.scoped(|this| lower_expr(this, body))?;
 
@@ -177,17 +180,12 @@ pub(crate) fn lower_case<'a>(
     Ok(context.push(HMIRExprKind::Case { value, body }, span))
 }
 
-// An omitted condition, as in 'for (;;)', always holds
 fn lower_condition<'a>(
     context: &mut BodyLowering<'a>,
     condition: &'a HIRExpression,
 ) -> CHLResult<HMIRExprID> {
     let span = &condition.range;
     let bool_ty = HMIRIntType::new(HMIRIntWidth::I1, false);
-    if matches!(condition.kind, HIRExprKind::Void) {
-        return Ok(context.int_literal(bool_ty, 1, span));
-    }
-
     let value = lower_expr(context, condition)?;
     let target = context.type_ref(HMIRExprTypeKind::Int(bool_ty), span);
 

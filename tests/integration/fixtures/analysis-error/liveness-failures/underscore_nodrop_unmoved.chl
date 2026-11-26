@@ -9,7 +9,7 @@ enum union MaybeResource : @nodrop {
 
 void inspect(MaybeResource value) {
     match (move value) {
-        _ => {}
+        _ => ()
     }
 }
 

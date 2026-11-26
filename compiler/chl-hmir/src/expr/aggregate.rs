@@ -31,7 +31,7 @@ pub enum HMIRAggregateOp {
 pub enum HMIRPattern {
     Wildcard,
     Binding(HMIRLocalID),
-    Integer(i64),
+    Integer(i128),
     Float(FloatWrapper),
     // A comptime constant the subject is compared against
     Value(HMIRExprID),

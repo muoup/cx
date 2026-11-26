@@ -3,6 +3,7 @@
 (string_literal) @string
 (char_literal) @string
 (number_literal) @number
+(unit_literal) @constant.builtin
 (builtin_type) @type.builtin
 (keyword) @keyword
 (compiler_identifier) @keyword

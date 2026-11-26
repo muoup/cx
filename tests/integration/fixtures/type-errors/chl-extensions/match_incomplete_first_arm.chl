@@ -1,0 +1,9 @@
+struct Pair { int value; };
+
+int main() {
+    auto pair = match (0) {
+        0 => { 1 },
+        _ => (Pair) { 2 },
+    };
+    return pair.value;
+}

@@ -15,7 +15,7 @@ int pick(MaybeInt maybe, bool first) {
             if (first) yield inner;
 
             yield 2;
-        }
+        },
         none() => 3,
     };
 

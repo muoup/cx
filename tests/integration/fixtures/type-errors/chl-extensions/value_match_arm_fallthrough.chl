@@ -1,6 +1,6 @@
 int select(int value) {
     return match (value) {
-        0 => {}
+        0 => (),
         _ => 1,
     };
 }

@@ -28,7 +28,7 @@ int main() {
 
     with_value() <| 3 <| |auto value| => printf("piped back %d\n", value);
 
-    fn* positive(int) -> int = @reify(fn(int) -> int, |auto x| {
+    fn* positive(int) -> int = @reify(fn(int) -> int, |auto x| => .{
         if (x < 0) {
             return -1;
         }

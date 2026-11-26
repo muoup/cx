@@ -17,11 +17,16 @@ comptime int chosen = choose(2);
 
 comptime Pair contextual(int number) {
     return match (number) {
-        0 => ({1, 2}),
-        _ => ({3, 4}),
+        0 => {1, 2},
+        _ => {3, 4},
     };
 }
 comptime Pair constructed = contextual(0);
+
+i64 contextual_integer(int code) => match (code) {
+    -1 => 9007199254740993LL,
+    _ => 0.0,
+};
 
 int main() {
     Entry value = create_entry();
@@ -33,17 +38,41 @@ int main() {
     Entry empty = Entry::none();
     if (empty is pair(auto copied) && copied.left == 9) return 1;
     Pair copy = match (value) {
-        pair(auto pair) => .{ pair.left = 9; yield pair; }
-        none() => ({0, 0}),
+        pair(auto pair) => .{ pair.left = 9; yield pair; },
+        none() => {0, 0},
     };
     int original = match (value) {
         pair(const auto& pair) => pair.left,
         none() => 0,
     };
     Pair contextual_pair = match (effects) {
-        1 => ({5, 6}),
-        _ => ({7, 8}),
+        1 => {5, 6},
+        _ => {7, 8},
     };
+    if (contextual_integer(-1) != 9007199254740993LL) return 1;
+    auto inferred_pair = match (effects) {
+        -1 => (Pair) {1, 2},
+        _ => {9, 10},
+    };
+    if (inferred_pair.right != 10) return 1;
+    auto inferred_int = match (effects) {
+        -1 => 0,
+        _ => 3.5,
+    };
+    if (sizeof(inferred_int) != sizeof(int) || inferred_int != 3) return 1;
+
+    match (effects) {
+        -1 => .{ printf("unexpected"); },
+        0 => (),
+        _ => .{ effects += 1, effects -= 1; },
+    }
+
+    int numbers[2] = match (effects) {
+        -1 => {1, 2},
+        _ => {3, 4},
+    };
+    if (numbers[1] != 4) return 1;
+
     int scalar = 5;
     Referenced reference = Referenced::slot(scalar);
     int loaded = match (move reference) { slot(auto value) => value, };

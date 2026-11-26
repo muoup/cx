@@ -9,7 +9,7 @@
 
 comptime type source(type T) => fn(fn(^T) -> ^void) -> ^void;
 
-comptime source(int) upto(^int count) => |fn sink(^int) -> ^void| {
+comptime source(int) upto(^int count) => |fn sink(^int) -> ^void| => .{
     for (int i = 0; i < count; i++) {
         sink(emit i * 2);
     }
@@ -18,7 +18,7 @@ comptime source(int) upto(^int count) => |fn sink(^int) -> ^void| {
 comptime source(int) first(^int value) => |fn sink(^int) -> ^void| => sink(value);
 
 comptime ^void each(source(int) this, fn callback(^int) -> ^void)
-    => this(|^int value| { callback(value); });
+    => this(|^int value| => .{ callback(value); });
 
 comptime ^void with_three(fn callback(int) -> ^void) => callback(3);
 

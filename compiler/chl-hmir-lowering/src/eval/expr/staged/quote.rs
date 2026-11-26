@@ -20,7 +20,7 @@ use crate::{
     eval::{
         EvalResult, coerce, comptime, control,
         deduce::{self, Incomplete},
-        eval, eval_type,
+        eval_expected, eval_type,
         flow::{self, Evaluation},
         types,
     },
@@ -35,9 +35,10 @@ pub(crate) fn eval_quote(
     params: &[HMIRLocalID],
     root: HMIRExprID,
     span: &TokenRange,
+    expected: Option<HMIRTypeID>,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     match context.is_runtime() && params.is_empty() {
-        true => eval(context, body, root),
+        true => eval_expected(context, body, root, expected),
         false => capture(context, body, params, root, span),
     }
 }
@@ -235,7 +236,7 @@ pub(super) fn expand<V: Clone + Into<HMIRValue>>(
             emit::storage::bind_local(context, *local, value);
         }
         let span = span.clone();
-        eval(context, body, quote.root())?
+        eval_expected(context, body, quote.root(), expected)?
             .try_complete(context, body, expected)?
             .map(context, move |context, value| match expected {
                 Some(expected) => coerce::implicit::standard(context, value, expected, &span),

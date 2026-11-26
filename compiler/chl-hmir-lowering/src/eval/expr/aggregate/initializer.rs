@@ -15,7 +15,7 @@ use super::variant;
 use crate::{
     emit,
     env::function::LocalLoweringContext,
-    eval::{EvalResult, coerce, eval, eval_type, flow::Evaluation, types},
+    eval::{EvalResult, coerce, eval_expected, eval_type, flow::Evaluation, types},
     log::hmir_error,
     value::HMIRValue,
 };
@@ -117,7 +117,11 @@ fn array(
             return Err(hmir_error(span, &typecheck::UNKNOWN_MEMBER, member).into());
         }
         let value_span = body.expr(*value).span();
-        let value = eval(context, body, *value)?.complete(context, body, Some(element))?;
+        let value = eval_expected(context, body, *value, Some(element))?.complete(
+            context,
+            body,
+            Some(element),
+        )?;
         if fields.len() == 1
             && matches!(context.env().resolve_kind(element), HMIRTypeKind::Int(int) if int.width() == HMIRIntWidth::I8)
             && matches!(context.env().resolve_kind(context.env().referent(value.ty())), HMIRTypeKind::Str(_))
@@ -176,6 +180,6 @@ fn field_value(
     ty: HMIRTypeID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let span = body.expr(value).span();
-    let value = eval(context, body, value)?.complete(context, body, Some(ty))?;
+    let value = eval_expected(context, body, value, Some(ty))?.complete(context, body, Some(ty))?;
     Ok(Evaluation::Ready(coerce::implicit::standard(context, value, ty, span)?))
 }

@@ -41,7 +41,7 @@ comptime ^opt(U) opt::map(comptime type T = _, comptime type U = _, ^opt(T) this
 T opt::unwrap(comptime type T = _, opt(T) this) {
     match (move this) {
         some(auto val) => return move val,
-        none() => {
+        none() => .{
             std::panic("Called `opt::unwrap()` on a `None` value");
         }
     }
@@ -68,7 +68,7 @@ comptime ^T opt::try(type T = _, ^opt(T) self) =>
 comptime ^T opt::try_or(type T = _, ^opt(T) self, ^void on_none) =>
     emit match (self) {
         some(auto value) => move value,
-        none() => {
+        none() => .{
             on_none;
             return _::none();
         }

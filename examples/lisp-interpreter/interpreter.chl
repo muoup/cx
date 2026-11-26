@@ -68,12 +68,12 @@ lisp_node* interpreter::find_function(interpreter& this, const _str& name) {
     for (usize i = 0; i < this.program_length; i++) {
         lisp_node* node = &this.program_body[i];
         match (*node) {
-            FnDef(auto& fn_def) => {
+            FnDef(auto& fn_def) => .{
                 if (std::str::equals(fn_def.name |> std::string::as_str(), name)) {
                     return node;
                 }
-            }
-            _ => {}
+            },
+            _ => ()
         }
     }
 
@@ -89,7 +89,7 @@ f64 interpreter::call_function(interpreter& this, const _str& name, std::span(li
 
     f64 result = 0.0;
     match (*fn_node) {
-        FnDef(auto& fn_def) => {
+        FnDef(auto& fn_def) => .{
             std::vector(binding) call_locals = std::vector::with_capacity(binding, fn_def.params.length);
 
             for (usize i = 0; i < fn_def.params.length; i++) {
@@ -112,8 +112,8 @@ f64 interpreter::call_function(interpreter& this, const _str& name, std::span(li
             }
 
             move call_locals |> std::vector::drop();
-        }
-        _ => {}
+        },
+        _ => ()
     }
 
     return result;
@@ -121,7 +121,7 @@ f64 interpreter::call_function(interpreter& this, const _str& name, std::span(li
 
 f64 interpreter::eval(interpreter& this, lisp_node& node, std::span(binding) locals) {
     match (node) {
-        Program(auto& body) => {
+        Program(auto& body) => .{
             this |> interpreter::register_program_functions(std::vector::span(body).data, body.length);
 
             f64 result = 0.0;
@@ -130,26 +130,26 @@ f64 interpreter::eval(interpreter& this, lisp_node& node, std::span(binding) loc
             }
 
             return result;
-        }
+        },
         Number(auto& num) => return num,
         Symbol(auto& name) => return find_local(locals, name |> std::string::as_str()),
         FnDef(_) => return 0.0,
-        FnCall(auto& fn_call) => {
+        FnCall(auto& fn_call) => .{
             auto args = std::vector::span(fn_call.args);
 
             return this |> interpreter::call_function(fn_call.name |> std::string::as_str(), args, locals);
-        }
+        },
         Plus(auto& plus) => return
             (this |> interpreter::eval(std::box::deref_mut(plus.left), locals)) +
             (this |> interpreter::eval(std::box::deref_mut(plus.right), locals)),
         Minus(auto& minus) => return
             (this |> interpreter::eval(std::box::deref_mut(minus.left), locals)) -
             (this |> interpreter::eval(std::box::deref_mut(minus.right), locals)),
-        PrintNum(auto& value) => {
+        PrintNum(auto& value) => .{
             std::printf("%f\n", this |> interpreter::eval(std::box::deref_mut(value), locals));
             return 0.0;
-        }
-        PrintStr(auto& value) => {
+        },
+        PrintStr(auto& value) => .{
             std::printf("%s\n", value |> std::string::as_str());
             return 0.0;
         }

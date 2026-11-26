@@ -42,14 +42,14 @@ std::opt(int) void_then_value(bool ok) {
 int main() {
     std::opt(resource) some = maybe_resource(std::opt(int)::some(1));
     match (move some) {
-        some(auto res) => { move res |> close(); }
-        none() => { printf("unexpected none\n"); }
+        some(auto res) => .{ move res |> close(); },
+        none() => .{ printf("unexpected none\n"); }
     }
 
     std::opt(resource) none = maybe_resource(std::opt(int)::none());
     match (move none) {
-        some(auto res) => { move res |> close(); }
-        none() => { printf("none\n"); }
+        some(auto res) => .{ move res |> close(); },
+        none() => .{ printf("none\n"); }
     }
 
     match (void_then_value(1)) {

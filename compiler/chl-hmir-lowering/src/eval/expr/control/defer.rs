@@ -123,7 +123,7 @@ fn deferred(
             statements,
             scoped: true,
             ..
-        } => eval_block(context, body, node.span(), statements, true, false),
-        _ => eval_scoped(context, body, expr, false),
+        } => eval_block(context, body, node.span(), statements, true, false, None),
+        _ => eval_scoped(context, body, expr, false, None),
     }
 }

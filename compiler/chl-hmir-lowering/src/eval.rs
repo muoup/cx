@@ -34,6 +34,15 @@ pub(crate) fn eval(
     body: &HMIRBodyContext,
     id: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
+    eval_expected(context, body, id, None)
+}
+
+pub(crate) fn eval_expected(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    id: HMIRExprID,
+    expected: Option<HMIRTypeID>,
+) -> EvalResult<Evaluation<HMIRValue>> {
     let expr = body.expr(id);
     let span = expr.span();
     let selected = match context.context() {
@@ -80,13 +89,21 @@ pub(crate) fn eval(
             statements,
             scoped,
             yields,
-        } => binding::eval_block(context, body, span, statements, *scoped, *yields),
+        } => binding::eval_block(context, body, span, statements, *scoped, *yields, expected),
 
         HMIRExprKind::If {
             condition,
             then_branch,
             else_branch,
-        } => control::eval_if(context, body, span, *condition, *then_branch, *else_branch),
+        } => control::eval_if(
+            context,
+            body,
+            span,
+            *condition,
+            *then_branch,
+            *else_branch,
+            expected,
+        ),
         HMIRExprKind::While {
             condition,
             body: loop_body,
@@ -111,7 +128,7 @@ pub(crate) fn eval(
             scrutinee,
             subject,
             arms,
-        } => control::eval_match(context, body, span, *scrutinee, *subject, arms),
+        } => control::eval_match(context, body, span, *scrutinee, *subject, arms, expected),
         HMIRExprKind::Label {
             name,
             body: statement,
@@ -129,7 +146,9 @@ pub(crate) fn eval(
                 value,
                 target,
             } => coerce::eval_coerce(context, body, span, *mode, *value, *target),
-            HMIROp::Control(control) => control::eval_control(context, body, span, control),
+            HMIROp::Control(control) => {
+                control::eval_control(context, body, span, control, expected)
+            }
             HMIROp::Assign { target, op, value } => {
                 place::eval_assign(context, body, span, *target, *op, *value)
             }
@@ -148,7 +167,7 @@ pub(crate) fn eval(
         HMIRExprKind::ScopeAccess { base, member } => {
             name::eval_scope_access(context, body, span, *base, member)
         }
-        HMIRExprKind::Piped(value) => eval(context, body, *value),
+        HMIRExprKind::Piped(value) => eval_expected(context, body, *value, expected),
         HMIRExprKind::Call {
             callee,
             args,
@@ -160,7 +179,7 @@ pub(crate) fn eval(
             context, body, *inner, None,
         )?)),
         HMIRExprKind::Quote { params, body: root } => {
-            staged::eval_quote(context, body, params, *root, span)
+            staged::eval_quote(context, body, params, *root, span, expected)
         }
         HMIRExprKind::Splice { quote, args } => {
             staged::eval_splice(context, body, span, *quote, args)

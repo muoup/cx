@@ -6,7 +6,7 @@ enum union Command : @nodrop {
 void run(Command object) {
     defer @leak(object);
     match (move object) {
-        list() => {},
-        number(auto value) => {},
+        list() => (),
+        number(auto value) => (),
     }
 }

@@ -20,7 +20,7 @@ usize dependent_size(comptime type T = _, dependent_payload(T)* value) => sizeof
 usize vector_payload_size(comptime type T = _, vector_payload(T)* value) => sizeof(T);
 
 comptime fn(fn(^int) -> ^void) -> ^void one()
-    => |fn sink(^int) -> ^void| { sink(7); };
+    => |fn sink(^int) -> ^void| => .{ sink(7); };
 
 int main() {
     int** p = 0;
@@ -33,7 +33,7 @@ int main() {
     struct : @nodrop { std::vector(long) body; }* vector = 0;
 
     int observed = 0;
-    one() |> std::stream::for_each(|auto value| { observed = value; });
+    one() |> std::stream::for_each(|auto value| => .{ observed = value; });
 
     bool payloads_match =
         payload_size(record) == sizeof(double)

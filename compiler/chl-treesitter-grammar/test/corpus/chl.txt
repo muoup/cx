@@ -621,8 +621,8 @@ enum union Choice {
 
 void inspect(Choice& value) {
     match (value) {
-        Choice::some(auto inner) => {}
-        _ => {}
+        Choice::some(auto inner) => (),
+        _ => ()
     }
 }
 ---
@@ -731,14 +731,16 @@ void inspect(Choice& value) {
                     (builtin_type)
                     (identifier)))))
             (operator)
-            (compound_statement))
+            (expression
+              (primary_expression
+                (unit_literal))))
           (match_arm
             (match_pattern
               (identifier))
             (operator)
             (expression
               (primary_expression
-                (initializer_list)))))))))
+                (unit_literal)))))))))
 
 ==================
 default match arm rejected
@@ -895,13 +897,13 @@ int pick(int value) {
                             (number_literal)))))))))))))))
 
 ==================
-match braced arms without commas
+match block arms and unit literal
 ==================
 void run(int value) {
     match (value) {
-        0 => { value = 1; }
-        1 => { value = 2; },
-        _ => {}
+        -1 => .{ value = 1, value += 2; },
+        1 => .{ value = 2; },
+        _ => ()
     }
 }
 ---
@@ -932,43 +934,60 @@ void run(int value) {
                 (identifier))))
           (match_arm
             (match_pattern
+              (operator)
               (number_literal))
             (operator)
-            (compound_statement
-              (expression_statement
-                (expression
-                  (assignment_expression
-                    (primary_expression
-                      (qualified_name
-                        (identifier)))
-                    (operator)
-                    (expression
-                      (primary_expression
-                        (literal
-                          (number_literal)))))))))
+            (expression
+              (primary_expression
+                (staged_block
+                  (compound_statement
+                    (expression_statement
+                      (expression
+                        (assignment_expression
+                          (primary_expression
+                            (qualified_name
+                              (identifier)))
+                          (operator)
+                          (expression
+                            (primary_expression
+                              (literal
+                                (number_literal))))))
+                      (expression
+                        (assignment_expression
+                          (primary_expression
+                            (qualified_name
+                              (identifier)))
+                          (operator)
+                          (expression
+                            (primary_expression
+                              (literal
+                                (number_literal))))))))))))
           (match_arm
             (match_pattern
               (number_literal))
             (operator)
-            (compound_statement
-              (expression_statement
-                (expression
-                  (assignment_expression
-                    (primary_expression
-                      (qualified_name
-                        (identifier)))
-                    (operator)
-                    (expression
-                      (primary_expression
-                        (literal
-                          (number_literal)))))))))
+            (expression
+              (primary_expression
+                (staged_block
+                  (compound_statement
+                    (expression_statement
+                      (expression
+                        (assignment_expression
+                          (primary_expression
+                            (qualified_name
+                              (identifier)))
+                          (operator)
+                          (expression
+                            (primary_expression
+                              (literal
+                                (number_literal))))))))))))
           (match_arm
             (match_pattern
               (identifier))
             (operator)
             (expression
               (primary_expression
-                (initializer_list)))))))))
+                (unit_literal)))))))))
 
 ==================
 match jump arms
@@ -980,8 +999,8 @@ int scan(int value) {
             1 => return,
             2 => yield value,
             3 => yield,
-            4 => break,
-            _ => continue,
+            4 => .{ break; },
+            _ => .{ continue; },
         }
     }
 }
@@ -1050,25 +1069,34 @@ int scan(int value) {
                 (match_pattern
                   (number_literal))
                 (operator)
-                (break_statement
-                  (keyword)))
+                (expression
+                  (primary_expression
+                    (staged_block
+                      (compound_statement
+                        (break_statement
+                          (keyword)))))))
               (match_arm
                 (match_pattern
                   (identifier))
                 (operator)
-                (continue_statement
-                  (keyword))))))))))
+                (expression
+                  (primary_expression
+                    (staged_block
+                      (compound_statement
+                        (continue_statement
+                          (keyword))))))))))))))
 
 ==================
 match block expression arms
 ==================
 int pick(int value) {
     return match (value) {
-        0 => .{ yield 1; },
-        1 => .{
+        0 => { .first = 1, .second = 2 },
+        1 => .{ yield 1; },
+        2 => .{
             defer cleanup();
             yield 2;
-        }
+        },
         auto other => other,
     };
 }
@@ -1106,34 +1134,59 @@ int pick(int value) {
                   (match_pattern
                     (number_literal))
                   (operator)
-                  (staged_block
-                    (compound_statement
-                      (yield_statement
-                        (keyword)
-                        (expression
-                          (primary_expression
-                            (literal
-                              (number_literal))))))))
+                  (expression
+                    (primary_expression
+                      (initializer_list
+                        (initializer_item
+                          (identifier)
+                          (operator)
+                          (expression
+                            (primary_expression
+                              (literal
+                                (number_literal)))))
+                        (initializer_item
+                          (identifier)
+                          (operator)
+                          (expression
+                            (primary_expression
+                              (literal
+                                (number_literal)))))))))
                 (match_arm
                   (match_pattern
                     (number_literal))
                   (operator)
-                  (staged_block
-                    (compound_statement
-                      (defer_statement
-                        (keyword)
-                        (expression
-                          (postfix_expression
-                            (primary_expression
-                              (qualified_name
-                                (identifier)))
-                            (argument_list))))
-                      (yield_statement
-                        (keyword)
-                        (expression
-                          (primary_expression
-                            (literal
-                              (number_literal))))))))
+                  (expression
+                    (primary_expression
+                      (staged_block
+                        (compound_statement
+                          (yield_statement
+                            (keyword)
+                            (expression
+                              (primary_expression
+                                (literal
+                                  (number_literal))))))))))
+                (match_arm
+                  (match_pattern
+                    (number_literal))
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (staged_block
+                        (compound_statement
+                          (defer_statement
+                            (keyword)
+                            (expression
+                              (postfix_expression
+                                (primary_expression
+                                  (qualified_name
+                                    (identifier)))
+                                (argument_list))))
+                          (yield_statement
+                            (keyword)
+                            (expression
+                              (primary_expression
+                                (literal
+                                  (number_literal))))))))))
                 (match_arm
                   (match_pattern
                     (binding_pattern
@@ -1412,7 +1465,7 @@ closure bodies
 
 void f() {
     invoke(|auto value| => consume(value));
-    invoke(|^int value| { consume(value); });
+    invoke(|^int value| => .{ consume(value); });
     with_trace(source) <| |auto value| then
     consume(value);
     with_trace(left) <| |auto a| => with_trace(right) <| |auto b| then
@@ -1475,18 +1528,22 @@ void f() {
                             (builtin_type_sequence
                               (builtin_type)))))
                       (identifier)
-                      (compound_statement
-                        (expression_statement
-                          (expression
-                            (postfix_expression
-                              (primary_expression
-                                (qualified_name
-                                  (identifier)))
-                              (argument_list
+                      (operator)
+                      (expression
+                        (primary_expression
+                          (staged_block
+                            (compound_statement
+                              (expression_statement
                                 (expression
-                                  (primary_expression
-                                    (qualified_name
-                                      (identifier))))))))))))))))
+                                  (postfix_expression
+                                    (primary_expression
+                                      (qualified_name
+                                        (identifier)))
+                                    (argument_list
+                                      (expression
+                                        (primary_expression
+                                          (qualified_name
+                                            (identifier)))))))))))))))))))
         (staged_continuation_statement
           (staged_continuation_expression
             (expression

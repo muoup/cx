@@ -19,7 +19,7 @@ use crate::{
         EvalResult,
         arithmetic::{self, binary_operands, eval_operand},
         coerce::{self, promotion},
-        eval,
+        eval, eval_expected,
         expr::{binding, require_impure, require_nonsafe},
         flow::{self, EvalExit, Evaluation},
         storage,
@@ -54,7 +54,11 @@ pub(crate) fn eval_assign(
             let operand = (eval_operand(context, body, span, value))?.ready()?;
             binary_operands(context, span, op, current, operand)?
         }
-        None => eval(context, body, value)?.complete(context, body, Some(inner))?,
+        None => eval_expected(context, body, value, Some(inner))?.complete(
+            context,
+            body,
+            Some(inner),
+        )?,
     };
     let value = coerce::implicit::standard(context, value, inner, span)?;
     let nodrop = context.env().is_nodrop(inner);
