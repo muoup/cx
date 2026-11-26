@@ -42,6 +42,18 @@ See the [official LLVM build documentation](https://llvm.org/docs/GettingStarted
    cargo build --release [--features backend-llvm]
    ```
 
+### Editor extensions
+
+Run `./setup-extensions.sh` with the Tree-sitter CLI on your PATH to build
+`chl-lsp` and both editor parsers from your working tree. The Wasm parser build
+uses the Tree-sitter CLI's WASI SDK support.
+
+- In Neovim, load `compiler/chl-extension-nvim` as a plugin and call
+  `require("chl").setup()`. Restart Neovim after rebuilding a loaded parser.
+  Use `:CHLGrammarBuild` for a parser-only rebuild.
+- In Zed, use **Install Dev Extension** and select `target/chl-extension-zed`.
+  After running the script again, use **Rebuild** on the installed extension.
+
 ## Usage
 
 For an overview and documentation on language features, see the

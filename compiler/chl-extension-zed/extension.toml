@@ -7,11 +7,6 @@ description = "Language Support for the Chloro Language"
 repository = "https://github.com/muoup/cx"
 languages = ["languages/chl"]
 
-[grammars.chl]
-repository = "https://github.com/muoup/cx"
-rev = "5c2d580e353985e63d8b07d17fbf3e268cff8cc6"
-path = "compiler/chl-treesitter-grammar"
-
 [language_servers.chl-lsp]
 name = "Chloro Language Server"
 languages = ["Chloro"]

@@ -3,8 +3,8 @@ local paths = require("chl.paths")
 local M = {}
 
 local PARSER = vim.fs.joinpath(paths.plugin, "parser", "chl.so")
-local STAGING = vim.fs.joinpath(paths.plugin, "parser", "chl.build.so")
-local HIGHLIGHTS = vim.fs.joinpath(paths.grammar, "queries", "highlights.scm")
+local HIGHLIGHTS = vim.fs.joinpath(paths.plugin, "parser", "highlights.scm")
+local SETUP = vim.fs.joinpath(paths.checkout, "setup-extensions.sh")
 
 local loaded = false
 local warned = false
@@ -15,13 +15,13 @@ end
 
 local function register()
     if not loaded then
-        if not vim.uv.fs_stat(PARSER) then
+        if not vim.uv.fs_stat(PARSER) or not vim.uv.fs_stat(HIGHLIGHTS) then
             return false
         end
         vim.treesitter.language.add("chl", { path = PARSER })
+        vim.treesitter.query.set("chl", "highlights", table.concat(vim.fn.readfile(HIGHLIGHTS), "\n"))
         loaded = true
     end
-    vim.treesitter.query.set("chl", "highlights", table.concat(vim.fn.readfile(HIGHLIGHTS), "\n"))
     return true
 end
 
@@ -34,20 +34,9 @@ local function start(buf)
     end
 end
 
-local function run(args, next)
-    vim.system(args, { cwd = paths.grammar, text = true }, vim.schedule_wrap(function(result)
-        if result.code ~= 0 then
-            notify(table.concat(args, " ") .. " failed:\n" .. result.stderr, vim.log.levels.ERROR)
-            return
-        end
-        next()
-    end))
-end
-
-local function install()
-    local _, err = vim.uv.fs_rename(STAGING, PARSER)
-    if err then
-        notify("failed to install Chloro parser: " .. err, vim.log.levels.ERROR)
+local function on_build(result)
+    if result.code ~= 0 then
+        notify("failed to build Chloro parser:\n" .. result.stderr .. result.stdout, vim.log.levels.ERROR)
         return
     end
     if loaded then
@@ -63,11 +52,8 @@ local function install()
 end
 
 function M.build()
-    vim.fn.mkdir(vim.fs.dirname(PARSER), "p")
     notify("building Chloro parser...")
-    run({ "tree-sitter", "generate" }, function()
-        run({ "tree-sitter", "build", "-o", STAGING }, install)
-    end)
+    vim.system({ SETUP, "--grammar-only" }, { text = true }, vim.schedule_wrap(on_build))
 end
 
 function M.setup()
