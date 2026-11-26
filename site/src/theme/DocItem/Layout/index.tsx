@@ -5,7 +5,6 @@ import type {WrapperProps} from "@docusaurus/types";
 import {useDoc, useDocsSidebar} from "@docusaurus/plugin-content-docs/client";
 
 import {chapterLabel, sidebarLinks} from "../../../lib/chapters";
-import {DocDescriptionContext} from "../../../lib/doc-description";
 
 type Props = WrapperProps<typeof LayoutType>;
 
@@ -18,23 +17,17 @@ function useChapter() {
 }
 
 export default function LayoutWrapper(props: Props): ReactNode {
-    const {frontMatter} = useDoc();
     const chapter = useChapter();
-    const layout = (
-        <DocDescriptionContext.Provider value={frontMatter.description}>
-            <Layout {...props} />
-        </DocDescriptionContext.Provider>
-    );
 
     if (chapter === undefined) {
-        return layout;
+        return <Layout {...props} />;
     }
 
     const style: CSSProperties = {counterReset: `chl-chapter ${chapter} chl-sec chl-toc`};
 
     return (
         <div className="chl-chapter" style={style}>
-            {layout}
+            <Layout {...props} />
         </div>
     );
 }

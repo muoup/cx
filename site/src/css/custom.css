@@ -17,6 +17,7 @@
   --chl-ground: #d2dfc3;
   --chl-band: #dce7cf;
   --chl-sheet: #f5f8ef;
+  --chl-stdlib-sheet: #f4f6ee;
   --chl-inset: #e9efe0;
   --chl-rule: #b8c8a8;
   --chl-ink: #15201a;
@@ -96,6 +97,7 @@
   --chl-ground: #15281c;
   --chl-band: #1c3224;
   --chl-sheet: #223a2a;
+  --chl-stdlib-sheet: #26382d;
   --chl-inset: #192e21;
   --chl-rule: #34503d;
   --chl-ink: #e8eee2;
@@ -308,6 +310,16 @@ main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col:firs
   margin-inline: auto;
 }
 
+main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col:only-child {
+  --chl-doc-prose-max-width: none;
+  min-width: 100%;
+}
+
+main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col:only-child [class*='docItemContainer'] {
+  max-width: none;
+  margin-inline: 0;
+}
+
 main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
   flex: 1 1 0;
   min-width: 240px;
@@ -324,7 +336,7 @@ main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
 }
 
 .markdown :is(p, ul, ol, blockquote, dl) {
-  max-width: 78ch;
+  max-width: var(--chl-doc-prose-max-width, 78ch);
 }
 
 .markdown h1,
@@ -351,16 +363,9 @@ main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
 }
 
 .chl-doc-header {
-  margin-bottom: 2rem;
-  padding-bottom: 1.25rem;
+  margin-bottom: 1.75rem;
+  padding-bottom: 0.875rem;
   border-bottom: 1px solid var(--chl-rule);
-}
-
-.chl-doc-description {
-  margin: 10px 0 0;
-  color: var(--chl-muted);
-  font-size: 18px;
-  line-height: 1.5;
 }
 
 .chl-chapter .markdown h1::before {
@@ -407,6 +412,10 @@ main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
 /* The theme leaves the right side to the scrollbar gutter, which is empty with overlay scrollbars */
 .theme-doc-sidebar-menu {
   padding: 12px 0.5rem 0 0;
+}
+
+.theme-doc-markdown {
+    font-size: 16px;
 }
 
 .menu {
@@ -703,24 +712,21 @@ main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
   scrollbar-color: var(--chl-rule) transparent;
 }
 
-.theme-code-block pre.prism-code,
-.theme-code-block [class*='codeBlockTitle'] {
-  background: var(--chl-inset) !important;
-  color: var(--chl-ink) !important;
-}
-
 .theme-code-block pre.prism-code {
   margin: 0;
   border: 0;
+  background: var(--chl-inset) !important;
+  color: var(--chl-ink) !important;
   box-shadow: none;
 }
 
 .theme-code-block [class*='codeBlockTitle'],
 .chl-code-block-title {
-  padding: 8px 16px 0;
-  border-bottom: 0;
-  color: var(--chl-muted);
-  font: 500 12.5px var(--ifm-font-family-monospace);
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--chl-rule);
+  background: var(--chl-moss-tint);
+  color: var(--chl-ink);
+  font: 500 14px var(--ifm-font-family-monospace);
 }
 
 .theme-code-block .token.comment,
@@ -791,7 +797,7 @@ main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
   background: var(--chl-inset);
   color: var(--chl-ink);
   font-family: var(--ifm-font-family-monospace);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.65;
   white-space: pre;
 }
@@ -877,8 +883,34 @@ main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
 }
 
 /* Standard library reference: denser than the prose pages */
+main[class*='docMainContainer']:has(.chl-stdlib-page) {
+  background: var(--chl-stdlib-sheet);
+}
+
+.row:has(.chl-stdlib-page) .pagination-nav:empty {
+  display: none;
+}
+
 .chl-stdlib-page h2 {
-  margin: 2rem 0 0.75rem;
+  margin: 2.5rem 0 0.75rem;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.chl-stdlib-modules ul {
+  padding-left: 0;
+  list-style: none;
+  color: var(--chl-muted);
+}
+
+.chl-stdlib-modules li {
+  margin: 0;
+  padding-block: 0.3rem;
+}
+
+.chl-stdlib-modules a code {
+  padding: 0;
+  background: transparent;
 }
 
 .chl-stdlib-page h3 {
@@ -905,12 +937,62 @@ main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
 
 /* The reference sits closer to the sidebar: half the usual gap, including any centring slack */
 @media (min-width: 997px) {
-  main[class*='docMainContainer'] .row > .col:first-child:has(.chl-stdlib-page) {
-    padding-left: clamp(0.625rem, 2vw, 1.75rem);
+  main[class*='docMainContainer']:has(.chl-stdlib-page) {
+    container-type: inline-size;
   }
 
-  [class*='docItemContainer']:has(.chl-stdlib-page) {
-    margin-left: max(0px, (100% - 880px) / 4);
+  main[class*='docMainContainer'] .row:has(.chl-stdlib-outline) {
+    --chl-stdlib-padding-start: clamp(0.625rem, 2vw, 1.75rem);
+    --chl-stdlib-padding-end: clamp(1.25rem, 4vw, 3.5rem);
+    --chl-stdlib-outline-width: max(240px, 25cqw);
+    --chl-stdlib-visible-outline-width: var(--chl-stdlib-outline-width);
+    --chl-stdlib-open-space: calc(100cqw - var(--chl-stdlib-outline-width) - var(--chl-stdlib-padding-start) - var(--chl-stdlib-padding-end));
+    --chl-stdlib-declaration-width: min(880px, var(--chl-stdlib-open-space));
+  }
+
+  main[class*='docMainContainer'] .row:has(.chl-stdlib-outline[data-collapsed='true']) {
+    --chl-stdlib-visible-outline-width: 3rem;
+  }
+
+  main[class*='docMainContainer'] .row:has(.chl-stdlib-outline) > .col:first-child {
+    flex: 1 1 0;
+    min-width: calc(100cqw - var(--chl-stdlib-visible-outline-width));
+    padding-left: var(--chl-stdlib-padding-start);
+  }
+
+  main[class*='docMainContainer'] .row:has(.chl-stdlib-outline) > .col--3 {
+    flex: 0 0 var(--chl-stdlib-visible-outline-width);
+  }
+
+  main[class*='docMainContainer'] .row:has(.chl-stdlib-outline) [class*='docItemContainer'] {
+    margin-left: max(0px, (var(--chl-stdlib-open-space) - 880px) / 4);
+  }
+
+  .row:has(.chl-stdlib-outline) .chl-stdlib-page h3:has(.chl-stdlib-name) {
+    max-width: var(--chl-stdlib-declaration-width);
+  }
+
+  .row:has(.chl-stdlib-outline) .chl-stdlib-declaration {
+    max-width: calc(var(--chl-stdlib-declaration-width) - 2rem);
+  }
+
+  main[class*='docMainContainer'] .row:has(.chl-stdlib-outline[data-collapsed='true']) > .col--3 {
+    min-width: 0;
+    padding-inline: 0.25rem;
+  }
+
+  main[class*='docMainContainer'] .row:has(.chl-stdlib-outline[data-collapsed='true']) [class*='docItemContainer'] {
+    max-width: none;
+  }
+
+  .row:has(.chl-stdlib-outline[data-collapsed='true']) .chl-stdlib-page :is(p, ul, ol, blockquote, dl) {
+    max-width: 90ch;
+  }
+}
+
+@media (max-width: 996px) {
+  main[class*='docMainContainer'] .row > .col--3:has(.chl-stdlib-outline) {
+    display: none;
   }
 }
 
@@ -942,6 +1024,10 @@ main[class*='docMainContainer'] :is(.container, .chl-chapter) > .row > .col--3 {
 .markdown .chl-stdlib-signature a[href] {
   color: inherit;
   text-decoration: none;
+}
+
+.markdown p {
+  font-size: 17px;
 }
 
 .chl-stdlib-ref {

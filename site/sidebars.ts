@@ -32,9 +32,28 @@ const sidebars: SidebarsConfig = {
     ],
     languageReferenceSidebar: [
         {
-            type: "doc",
-            id: "language-reference/starting-from-c",
-            label: "Starting From C"
+            type: "category",
+            label: "Introduction",
+            link: { type: "doc", id: "language-reference/introduction/header" },
+            items: []
+        },
+        {
+            type: "category",
+            // id: "language-reference/starting-from-c",
+            label: "The Basics",
+            link: {type: "doc", id: "language-reference/the-basics/header"},
+            items: [
+                {
+                    type: "doc",
+                    id: "language-reference/the-basics/modules",
+                    label: "1. Modules"
+                },
+                {
+                    type: "doc",
+                    id: "language-reference/the-basics/types",
+                    label: "2. Types"
+                }
+            ]
         }
     ],
     stdlibSidebar: [

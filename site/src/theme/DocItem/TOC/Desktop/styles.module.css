@@ -1,0 +1,51 @@
+.outline {
+  position: sticky;
+  top: calc(var(--ifm-navbar-height) + 1rem);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.5rem var(--ifm-toc-padding-horizontal);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--chl-muted);
+  font: 600 11.5px/1.6 var(--ifm-font-family-monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--chl-band);
+  color: var(--chl-ink);
+}
+
+.chevron {
+  width: 0.45rem;
+  height: 0.45rem;
+  border: solid currentColor;
+  border-width: 1px 1px 0 0;
+  transform: rotate(45deg);
+}
+
+.outline[data-collapsed='true'] .toggle {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.outline[data-collapsed='true'] .chevron {
+  transform: rotate(225deg);
+}
+
+.outline :global(.theme-doc-toc-desktop) {
+  position: static;
+  max-height: calc(100vh - var(--ifm-navbar-height) - 4rem);
+}
+
+.outline :global(.theme-doc-toc-desktop)::before {
+  display: none;
+}

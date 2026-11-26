@@ -287,27 +287,35 @@ function Example() {
 
     return (
         <div className={styles.example}>
-            <div className={styles.frame}>
-                <div className={styles.frameHead}>
-                    <span>server.chl</span>
-                    <div className={styles.pills} role="group" aria-label="Example version">
-                        <button aria-pressed={!fixed} onClick={() => setFixed(false)} type="button">
-                            Leaks
-                        </button>
-                        <button aria-pressed={fixed} onClick={() => setFixed(true)} type="button">
-                            Fixed
-                        </button>
-                    </div>
+            <div className={styles.frameHead}>
+                <span>server.chl</span>
+                <div className={styles.pills} role="group" aria-label="Example version">
+                    <button aria-pressed={!fixed} onClick={() => setFixed(false)} type="button">
+                        Leaks
+                    </button>
+                    <button aria-pressed={fixed} onClick={() => setFixed(true)} type="button">
+                        Fixed
+                    </button>
                 </div>
-                {fixed ? <Code source={fixedServer} /> : <Code source={leakingServer} errorLine={leakLine} />}
             </div>
-            {fixed ? (
-                <div className={clsx(styles.diagnostic, styles.ok)}>
-                    <span className={styles.help}>ok:</span> server.chl compiles; every path consumes `client`
+            <div className={styles.examplePanels}>
+                <div className={styles.examplePanel} inert={fixed}>
+                    <div className={styles.frame}>
+                        <Code source={leakingServer} errorLine={leakLine} />
+                    </div>
+                    <LeakDiagnostic />
                 </div>
-            ) : (
-                <LeakDiagnostic />
-            )}
+                {fixed && (
+                    <div className={clsx(styles.examplePanel, styles.fixedPanel)}>
+                        <div className={styles.frame}>
+                            <Code source={fixedServer} />
+                        </div>
+                        <div className={clsx(styles.diagnostic, styles.ok)}>
+                            <span className={styles.help}>ok:</span> server.chl compiles; every path consumes `client`
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

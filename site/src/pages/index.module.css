@@ -124,10 +124,35 @@
 
 /* Example */
 .example {
+  min-width: 0;
+}
+
+.example > .frameHead {
+  border-radius: var(--ifm-global-radius) var(--ifm-global-radius) 0 0;
+  background: var(--chl-sheet);
+}
+
+.examplePanels {
+  position: relative;
+}
+
+.examplePanel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-width: 0;
+}
+
+.examplePanel[inert] {
+  visibility: hidden;
+}
+
+.fixedPanel {
+  position: absolute;
+  inset: 0 0 auto;
+}
+
+.examplePanel > .frame {
+  border-radius: 0 0 var(--ifm-global-radius) var(--ifm-global-radius);
 }
 
 .frame {
@@ -139,6 +164,14 @@
 
 .frame .code {
   background: transparent;
+}
+
+.example .code {
+  scrollbar-width: none;
+}
+
+.example .code::-webkit-scrollbar {
+  display: none;
 }
 
 .frameHead {
