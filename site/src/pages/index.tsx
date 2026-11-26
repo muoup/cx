@@ -24,6 +24,12 @@ void serve(std::tcp_server& server) {
     }
 }`;
 
+const leakTarget = "continue";
+const leakOffset = leakingServer.lastIndexOf(leakTarget);
+const leakLine = leakingServer.slice(0, leakOffset).split("\n").length;
+const leakExcerpt = leakingServer.split("\n")[leakLine - 1];
+const leakColumn = leakExcerpt.indexOf(leakTarget) + 1;
+
 const fixedServer = `import std::{collections::{span, string}, net::tcp, result} as std;
 
 void serve(std::tcp_server& server) {
@@ -266,11 +272,11 @@ function LeakDiagnostic() {
     return (
         <div className={styles.diagnostic}>
             <span className={styles.error}>error:</span> `client` is marked @nodrop but is leaked without cleanup{"\n"}
-            {"  "}{gutter("-->")} server.chl:12:44{"\n"}
+            {"  "}{gutter("-->")} server.chl:{leakLine}:{leakColumn}{"\n"}
             {"   "}{gutter("|")}{"\n"}
-            {gutter("12 |")}{"             |> std::result::unwrap_or(emit .{ continue; })!;\n"}
-            {"   "}{gutter("|")}{" ".repeat(44)}
-            <span className={styles.error}>^^^^^^^^ `client` leaks here</span>{"\n"}
+            {gutter(`${String(leakLine).padStart(2)} |`)} {leakExcerpt}{"\n"}
+            {"   "}{gutter("|")}{" ".repeat(leakColumn)}
+            <span className={styles.error}>{"^".repeat(leakTarget.length)} `client` leaks here</span>{"\n"}
             {"   "}{gutter("=")} <span className={styles.help}>help:</span> close it first: move client |&gt; std::tcp_connection::drop();
         </div>
     );
@@ -293,7 +299,7 @@ function Example() {
                         </button>
                     </div>
                 </div>
-                {fixed ? <Code source={fixedServer} /> : <Code source={leakingServer} errorLine={12} />}
+                {fixed ? <Code source={fixedServer} /> : <Code source={leakingServer} errorLine={leakLine} />}
             </div>
             {fixed ? (
                 <div className={clsx(styles.diagnostic, styles.ok)}>
@@ -414,7 +420,7 @@ export default function Home(): ReactNode {
                 <Hero />
                 <div className={styles.sheet}>
                     <Principles />
-                    <Standing />
+                    {/*<Standing />*/}
                 </div>
             </main>
         </Layout>

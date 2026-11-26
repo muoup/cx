@@ -1,0 +1,23 @@
+.searchRow {
+  margin-bottom: 0.5rem;
+}
+
+.search {
+  display: block;
+  width: 100%;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--chl-rule);
+  border-radius: 6px;
+  background: var(--chl-inset);
+  color: var(--chl-ink);
+  font: inherit;
+}
+
+.search::placeholder,
+.empty {
+  color: var(--chl-muted);
+}
+
+.empty {
+  padding: var(--ifm-menu-link-padding-vertical) var(--ifm-menu-link-padding-horizontal);
+}

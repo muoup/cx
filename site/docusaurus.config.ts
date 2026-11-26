@@ -90,6 +90,12 @@ const config: Config = {
           label: 'Manual',
         },
         {
+            type: 'docSidebar',
+            sidebarId: 'languageReferenceSidebar',
+            position: 'left',
+            label: 'Language Reference',
+        },
+        {
           type: 'docSidebar',
           sidebarId: 'stdlibSidebar',
           position: 'left',
@@ -106,6 +112,7 @@ const config: Config = {
       style: 'light',
       links: [
         {label: 'Guides', to: '/docs/getting-started'},
+        {label: 'Language Reference', to: '/docs/language-reference'},
         {label: 'Manual', to: '/docs/manual/overview'},
         {label: 'Standard Library', to: '/docs/stdlib'},
         {label: 'GitHub', href: 'https://github.com/muoup/cx'},
