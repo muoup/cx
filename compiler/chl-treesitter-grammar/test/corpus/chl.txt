@@ -1704,3 +1704,79 @@ comptime type pointer(type T) = T*;
           (identifier))
         (pointer_modifier
           (operator))))))
+
+==================
+computed type
+==================
+comptime type payload(Shape shape) => @strong @type(shape.T);
+
+void example() {
+    @type(shape.T)* pointer = &value;
+}
+
+---
+
+(source_file
+  (comptime_function_definition
+    (keyword)
+    (type
+      (keyword))
+    (callable_name
+      (qualified_name
+        (identifier)))
+    (parameter_list
+      (parameter
+        (type
+          (qualified_name
+            (identifier)))
+        (declarator
+          (identifier))))
+    (function_body
+      (operator)
+      (type
+        (strong_type
+          (keyword)
+          (type
+            (computed_type
+              (keyword)
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier)))
+                  (identifier)))))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (declaration
+          (variable_declaration
+            (type
+              (computed_type
+                (keyword)
+                (expression
+                  (postfix_expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))
+                    (identifier)))))
+            (declarator_with_initializer
+              (declarator
+                (pointer_modifier
+                  (operator))
+                (identifier))
+              (operator)
+              (expression
+                (unary_expression
+                  (operator)
+                  (expression
+                    (primary_expression
+                      (qualified_name
+                        (identifier)))))))))))))

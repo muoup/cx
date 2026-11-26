@@ -166,6 +166,7 @@ const typeRule = ($, allowFunction, allowModifiers = true) =>
             ...(allowFunction ? [$.function_type] : []),
             $.staged_type,
             $.strong_type,
+            allowModifiers ? $.computed_type : prec.dynamic(1, $.computed_type),
             $.type_application,
             $.templated_name,
             $.qualified_name,
@@ -333,6 +334,9 @@ module.exports = grammar({
         _function_indirection: ($) => choice($.pointer_modifier, $.reference_modifier),
 
         strong_type: ($) => prec.right(seq(keyword($, "@strong"), $.type)),
+
+        computed_type: ($) =>
+            seq(keyword($, "@type"), "(", choice($.expression, prec.dynamic(-1, $.type)), ")"),
 
         staged_type: ($) => prec.right(seq(op($, "^"), $.type)),
 
@@ -1160,6 +1164,7 @@ module.exports = grammar({
 
         type_literal: ($) => choice(
             $.strong_type,
+            $.computed_type,
             seq(keyword($, "struct"), $.anonymous_struct_body),
             seq(keyword($, "union"), $.anonymous_union_body),
         ),

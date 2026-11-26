@@ -79,6 +79,7 @@ pub enum HIRTypeKind {
     // 'type', the type of types
     Universe,
     Auto,
+    Computed(Box<HIRExpression>),
     // '^T', code producing a 'T'
     Staged(Box<HIRType>),
     Strong(Box<HIRType>),

@@ -24,6 +24,15 @@ pub(crate) fn eval_type_op(
     op: &HMIRTypeOp,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let value = match op {
+        HMIRTypeOp::AsType(operand) => {
+            let described = eval_type(context, body, *operand)?;
+            let universe = types::universe(context.env_mut(), span);
+            let as_value = move |ty| HMIRValue::new(universe, HMIRImmValue::Type(ty));
+            return Ok(match described {
+                Evaluation::Ready(ty) => Evaluation::Ready(as_value(ty)),
+                Evaluation::Incomplete(pending) => Evaluation::Incomplete(pending.project(as_value)),
+            });
+        }
         HMIRTypeOp::SizeOf(_) | HMIRTypeOp::AlignOf(_) | HMIRTypeOp::OffsetOf { .. } => {
             return layout::eval_type_op(context, body, span, op);
         }

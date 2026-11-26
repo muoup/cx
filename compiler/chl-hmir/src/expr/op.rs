@@ -116,6 +116,7 @@ pub enum HMIROwnershipOp {
 
 #[derive(Debug, Clone)]
 pub enum HMIRTypeOp {
+    AsType(HMIRExprID),
     PointerInner(HMIRExprID),
     ReferenceInner(HMIRExprID),
     Member {
@@ -238,6 +239,7 @@ impl HMIROwnershipOp {
 impl HMIRTypeOp {
     pub fn path(&self) -> &'static str {
         match self {
+            Self::AsType(_) => "type",
             Self::PointerInner(_) => "type.pointer_inner",
             Self::ReferenceInner(_) => "type.reference_inner",
             Self::Member { .. } => "type.member",

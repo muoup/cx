@@ -258,7 +258,8 @@ impl Locals<'_> {
                             }
                         }
                     }
-                    HMIRTypeOp::PointerInner(value)
+                    HMIRTypeOp::AsType(value)
+                    | HMIRTypeOp::PointerInner(value)
                     | HMIRTypeOp::ReferenceInner(value)
                     | HMIRTypeOp::Member { ty: value, .. }
                     | HMIRTypeOp::TypeOf(value)

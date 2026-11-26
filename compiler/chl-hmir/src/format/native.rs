@@ -115,7 +115,8 @@ impl BodyPrinter<'_> {
                 vec![Arg::Value(*ty), Arg::Text(name.to_string())]
             }
             HMIRTypeOp::Aggregate { ty, pairs } => fields(*ty, pairs),
-            HMIRTypeOp::PointerInner(ty)
+            HMIRTypeOp::AsType(ty)
+            | HMIRTypeOp::PointerInner(ty)
             | HMIRTypeOp::ReferenceInner(ty)
             | HMIRTypeOp::TypeOf(ty)
             | HMIRTypeOp::Decay(ty)

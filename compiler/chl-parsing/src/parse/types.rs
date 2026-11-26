@@ -1,4 +1,7 @@
-use crate::parse::{expressions::parse_argument, ParserData};
+use crate::parse::{
+    expressions::{parse_argument, parse_expr},
+    ParserData,
+};
 use crate::{assert_token_matches, log::parse_point_error, peek_kind, try_next};
 use chl_hir::ast::expression::HIRExpression;
 use chl_hir::ast::{
@@ -29,7 +32,7 @@ pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLR
         intrinsic!() | specifier!() | keyword!(Struct, Union, Enum, Register) => true,
 
         keyword!(Type, Fn) => true,
-        TokenKind::CompilerIdentifier(name) if name == "strong" => {
+        TokenKind::CompilerIdentifier(name) if matches!(name.as_str(), "strong" | "type") => {
             !data.c_mode && !data.in_include()
         }
         operator!(Caret) => !data.c_mode,
@@ -269,6 +272,19 @@ fn parse_type_base(data: &mut ParserData, scope: TagScope) -> CHLResult<HIRType>
         {
             data.tokens.next();
             Ok(HIRTypeKind::Strong(Box::new(parse_abstract_type(data, scope)?)).to_type())
+        }
+
+        TokenKind::CompilerIdentifier(name)
+            if name == "type" && !data.c_mode && !data.in_include() =>
+        {
+            data.tokens.next();
+            assert_token_matches!(data.tokens, punctuator!(OpenParen), "'(' after '@type'");
+            data.change_comma_mode(false);
+            let expr = parse_expr(data);
+            data.pop_comma_mode();
+            let expr = expr?;
+            assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
+            Ok(HIRTypeKind::Computed(Box::new(expr)).to_type())
         }
 
         // '^' takes the whole abstract type after it, so '^const T&' stages a 'const T&'

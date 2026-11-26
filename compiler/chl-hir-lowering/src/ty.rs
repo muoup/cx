@@ -8,7 +8,7 @@ use chl_hir::ast::{
 };
 use chl_hmir::{
     HMIRContract, HMIRFnSignature, HMIRFunctionStage,
-    expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral},
+    expr::{HMIRExprID, HMIRExprKind, literal::HMIRLiteral, op::HMIRTypeOp},
     ty::{
         HMIRExprTypeKind,
         aggregate::{HMIRDeclaredMove, HMIRFieldDef, HMIRMoveSemantics, HMIRTypeSemantics},
@@ -73,6 +73,10 @@ fn lower_unqualified_type<'a>(context: &mut BodyLowering<'a>, ty: &'a HIRType) -
         }
         HIRTypeKind::Universe => return Ok(context.type_of_types(span)),
         HIRTypeKind::Auto => return Ok(context.hole(span)),
+        HIRTypeKind::Computed(expr) => {
+            let operand = lower_expr(context, expr)?;
+            return Ok(context.type_op(HMIRTypeOp::AsType(operand), span));
+        }
         HIRTypeKind::Strong(inner) => HMIRExprTypeKind::Strong {
             inner: lower_type(context, inner)?,
             binding: None,

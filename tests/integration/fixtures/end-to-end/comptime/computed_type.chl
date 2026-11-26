@@ -1,0 +1,32 @@
+#include <stdio.h>
+
+struct Shape : @comptime {
+    type T;
+    const _str& header;
+};
+
+comptime Shape client = { int, "CLIENT" };
+comptime Shape server = { int, "SERVER" };
+
+comptime type payload(Shape shape) => @strong @type(shape.T);
+
+auto unwrap(comptime Shape shape, payload(shape) value) -> @type(shape.T)
+    => (@type(shape.T)) value;
+
+comptime ^int copy_as(Shape shape, ^int input) => emit .{
+    @type(shape.T) value = input;
+    yield value;
+};
+
+int main() {
+    @type(client.T) value = 42;
+    @type(client.T)* pointer = &value;
+    payload(client) packet = (payload(client)) *pointer;
+    bool ok = unwrap(client, packet) == 42
+        && copy_as(client, emit value) == 42
+        && @type.equal(@type(client.T), int)
+        && @type.equal(@type(const int*), const int*)
+        && !@type.equal(payload(client), payload(server));
+    if (ok) puts("ok");
+    return 0;
+}
