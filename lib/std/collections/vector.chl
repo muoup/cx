@@ -89,7 +89,7 @@ T& vector::at(vector(_: T, .A = _)& this, usize index) {
     return ((T*) this.data)[index];
 }
 
-std::span(T) vector::span(vector(_: T, .A = _)& this)
+std::span(T) vector::as_span(vector(_: T, .A = _)& this)
     => std::span::new((T*) this.data, this.length);
 
 vector(@type.unqualify(T), .A = A) vector::from_span(

@@ -105,7 +105,7 @@ f64 interpreter::call_function(interpreter& this, const _str& name, std::span(li
                 std::vector::push(call_locals, move local);
             }
 
-            std::span(binding) call_local_span = std::vector::span(call_locals);
+            std::span(binding) call_local_span = std::vector::as_span(call_locals);
 
             for (usize i = 0; i < fn_def.body.length; i++) {
                 result = this |> interpreter::eval(std::vector::at(fn_def.body, i), call_local_span);
@@ -122,7 +122,7 @@ f64 interpreter::call_function(interpreter& this, const _str& name, std::span(li
 f64 interpreter::eval(interpreter& this, lisp_node& node, std::span(binding) locals) {
     match (node) {
         Program(auto& body) => .{
-            this |> interpreter::register_program_functions(std::vector::span(body).data, body.length);
+            this |> interpreter::register_program_functions(std::vector::as_span(body).data, body.length);
 
             f64 result = 0.0;
             for (usize i = 0; i < body.length; i++) {
@@ -135,7 +135,7 @@ f64 interpreter::eval(interpreter& this, lisp_node& node, std::span(binding) loc
         Symbol(auto& name) => return find_local(locals, name |> std::string::as_str()),
         FnDef(_) => return 0.0,
         FnCall(auto& fn_call) => .{
-            auto args = std::vector::span(fn_call.args);
+            auto args = std::vector::as_span(fn_call.args);
 
             return this |> interpreter::call_function(fn_call.name |> std::string::as_str(), args, locals);
         },
