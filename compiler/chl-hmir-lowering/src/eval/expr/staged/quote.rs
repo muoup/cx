@@ -101,7 +101,7 @@ pub(crate) fn synthesize(
     types: &[HMIRTypeID],
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRTypeID>> {
-    deduce::typed(context, span, false, |context| {
+    deduce::typed(context, span, true, |context| {
         let mut args = Vec::with_capacity(types.len());
         for &param in types {
             args.push(deduce::placeholder(context, param, span)?);

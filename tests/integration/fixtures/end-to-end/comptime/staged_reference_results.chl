@@ -1,0 +1,49 @@
+/* CHL-STDOUT: 5 7 3 */
+/* CHL-STDOUT-NEXT: alice! */
+
+import std::{stream, collections::{string, vector}} as std;
+
+#include <stdio.h>
+
+int global = 4;
+
+comptime ^void exercise_quotes() {
+    auto quoted = emit global;
+    auto project = |^int& value| => value;
+
+    return emit .{
+        int& global_alias = quoted;
+        global_alias = 5;
+
+        int value = 3;
+        int& alias = project(emit value);
+        int copy = project(emit value);
+        alias = 7;
+        printf("%d %d %d\n", global, value, copy);
+    };
+}
+
+struct entry : @nodrop {
+    std::string name;
+};
+
+void entry::drop(entry value) {
+    @unpack(move value) { name: name };
+    move name |> std::string::drop();
+}
+
+int main() {
+    exercise_quotes();
+
+    auto entries = std::vector::new(entry);
+    defer move entries |> std::vector::drop_with(entry::drop);
+    entries |> std::vector::push((entry) { .name = std::string::from_str("alice") });
+
+    emit entries
+        |> std::vector::as_stream()
+        |> std::stream::map(|^entry& user| => user.name)
+        |> std::stream::for_each(|^std::string& name| => std::string::append_str(name, "!"));
+
+    printf("%s\n", std::string::as_str(std::vector::at(entries, 0).name));
+    return 0;
+}
