@@ -105,6 +105,9 @@ comptime std::stream(T&) vector::as_stream(^vector(_: T)& this)
         }
     };
 
+comptime ^void vector::for_each(^vector(_: T, .A = _)& this, fn callback(^T&) -> ^void)
+    => emit this |> vector::as_stream() |> std::stream::for_each(callback);
+
 vector(@type.unqualify(T), .A = A) vector::from_span(
     comptime std::allocator A = std::heap_allocator, std::span(_: T) this
 )

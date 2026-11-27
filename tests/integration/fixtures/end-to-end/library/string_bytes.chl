@@ -13,7 +13,7 @@ int main() {
     std::string::append_byte(text, 9);
     std::string::append_byte(text, 0);
     std::string::append_byte(text, 7);
-    std::string::append_span(text, std::string::as_const_bytes(text));
+    std::string::append_bytes(text, std::string::as_const_bytes(text));
     auto clone = std::string::clone(text);
     if (!std::string::equals(text, clone)) std::panic("Cloning changed the payload");
     std::string::as_bytes(clone).data[2] = 8;

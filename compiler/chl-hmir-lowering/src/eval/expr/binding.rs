@@ -53,13 +53,17 @@ pub(crate) fn lookup(
     if let Some(value) = context.get_local(&local) {
         return Ok(value.clone());
     }
-    if context.is_runtime() {
-        todo!("local {local} has no binding in the evaluating context")
-    }
     let subject = match body.local(local).name() {
         Some(name) => format!("variable '{name}'"),
         None => "this variable".into(),
     };
+    if context.is_runtime() {
+        return Err(hmir_error(
+            span,
+            &typecheck::CANNOT_INFER,
+            format!("the type of {subject} from its initializer"),
+        ));
+    }
     Err(unbound(context, local, span, subject))
 }
 

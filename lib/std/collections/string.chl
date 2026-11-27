@@ -26,7 +26,7 @@ string(.A = A) string::from_bytes(
     comptime std::allocator A = std::heap_allocator, std::span(const u8) bytes
 ) {
     string(.A = A) text = string::new(.A = A);
-    string::append_span(text, bytes);
+    string::append_bytes(text, bytes);
     return move text;
 }
 
@@ -53,9 +53,9 @@ const _str& string::as_str(const string(.A = _)& this) {
 }
 
 void string::append_str(string(.A = _)& this, const _str& text)
-    => string::append_span(this, str::as_const_bytes(text));
+    => string::append_bytes(this, str::as_const_bytes(text));
 
-void string::append_span(string(.A = _: A)& this, std::span(const u8) bytes) {
+void string::append_bytes(string(.A = _: A)& this, std::span(const u8) bytes) {
     if (bytes.length == 0) return;
     const usize old_size = this.length;
     if (bytes.length > (usize) -1 - old_size) std::panic("String length overflow");
@@ -79,7 +79,7 @@ void string::append_span(string(.A = _: A)& this, std::span(const u8) bytes) {
 }
 
 void string::append_byte(string(.A = _)& this, u8 byte)
-    => string::append_span(this, std::span::new((const u8*) &byte, 1));
+    => string::append_bytes(this, std::span::new((const u8*) &byte, 1));
 
 bool string::equals(const string(.A = _)& this, const string(.A = _)& other)
     => std::span::equals(string::as_const_bytes(this), string::as_const_bytes(other));
