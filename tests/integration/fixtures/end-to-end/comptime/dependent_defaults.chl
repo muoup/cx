@@ -1,0 +1,26 @@
+/* CHL-STDOUT: 2 8 16 24 */
+
+#include <stdio.h>
+
+struct layout { unsigned long alignment; };
+
+comptime layout aligned(unsigned long alignment) => (layout) { alignment };
+
+auto alignment(
+    comptime type T = _,
+    comptime layout a = aligned(@type.align_of(T)),
+    comptime unsigned long requested = a.alignment,
+    T value,
+) -> unsigned long
+    where pre: (a.alignment >= @type.align_of(T)), pre: (requested >= @type.align_of(T))
+    => requested;
+
+int main() {
+    long x = 10;
+    unsigned long a = alignment((short) 1);
+    unsigned long b = alignment(x);
+    unsigned long c = alignment(x, .a = aligned(16));
+    unsigned long d = alignment(x, .requested = 24);
+    printf("%lu %lu %lu %lu\n", a, b, c, d);
+    return 0;
+}

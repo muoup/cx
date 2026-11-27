@@ -2,7 +2,7 @@ use chl_hmir::{
     HMIRBodyContext,
     body::HMIRLocalID,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{HMIRExprTypeKind, HMIRTypeID},
+    ty::{HMIRExprTypeKind, HMIRTypeID, context::HMIRTypeContext},
 };
 use chl_log::{CHLResult, catalogue::mir};
 use chl_tokens::TokenRange;
@@ -13,9 +13,9 @@ use crate::{
         EvalResult,
         binding::UnboundLocal,
         call::dependent::Frame,
-        eval_type,
+        comptime, eval, eval_type,
         flow::{self, EvalExit, Evaluation},
-        staged, subject,
+        staged, subject, types,
     },
     log::hmir_error,
     value::HMIRValue,
@@ -63,9 +63,10 @@ pub(crate) fn infer(
         };
         if let Some(closure) = closure(body, arg) {
             closures.push((index, closure));
-        } else if let Some(actual) = try_actual_type(context, body, arg)? {
+        } else if let Some((actual, eta)) = try_actual_type(context, body, arg)? {
             let form = Form {
                 argument: true,
+                eta,
                 ..Form::new(function.body(), *function.signature().params()[index].ty())
             };
             unify(deduction, context, frame, form, actual, span)?;
@@ -199,16 +200,34 @@ fn try_actual_type(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     mut arg: HMIRExprID,
-) -> EvalResult<Option<HMIRTypeID>> {
+) -> EvalResult<Option<(HMIRTypeID, bool)>> {
+    let mut quoted = false;
     loop {
         match body.expr(arg).kind() {
-            HMIRExprKind::Piped(inner) => arg = *inner,
+            HMIRExprKind::Piped(inner) => {
+                quoted = true;
+                arg = *inner;
+            }
             HMIRExprKind::Quote {
                 params,
                 body: inner,
-            } if params.is_empty() => arg = *inner,
+            } if params.is_empty() => {
+                quoted = true;
+                arg = *inner;
+            }
             HMIRExprKind::Hole(_) | HMIRExprKind::Quote { .. } => return Ok(None),
-            _ => return Ok(subject::subject(context, body, arg)?.standing().copied()),
+            _ => break,
         }
     }
+    let mut eta = false;
+    let span = body.expr(arg).span();
+    let ty = subject::typed(context, span, false, |child| {
+        let evaluation = eval(child, body, arg)?;
+        eta = !quoted && evaluation.standing().is_some_and(|value| {
+            let ty = child.env().referent(value.ty());
+            types::runtime_function(child.env(), ty) && comptime::known(child, value).is_some()
+        });
+        Ok(evaluation)
+    })?;
+    Ok(ty.standing().map(|ty| (*ty, eta)))
 }

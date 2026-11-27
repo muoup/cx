@@ -30,12 +30,12 @@ pub struct HMIRFnPrototype {
 }
 
 // What a declaration says of a parameter beyond its type, which a function type does not carry: only a call that
-// names the function can bind an argument by name or leave a default to stand. A default is an expression of the
-// prototype's own body, which declares no locals
+// names the function can bind an argument by name or leave a default to stand.
 #[derive(Debug, Clone)]
 pub struct HMIRFnParamDecl {
     name: Option<CHLIdent>,
     default: Option<HMIRExprID>,
+    default_local: Option<HMIRLocalID>,
     inferred: bool,
 }
 
@@ -112,6 +112,7 @@ impl HMIRFunction {
             declarations.push(HMIRFnParamDecl {
                 name: None,
                 default: Some(default),
+                default_local: None,
                 inferred: true,
             });
             parameters.push(HMIRFnParam::new(true, binding.ty()));
@@ -218,10 +219,15 @@ impl HMIRFnPrototype {
 }
 
 impl HMIRFnParamDecl {
-    pub fn new(name: Option<CHLIdent>, default: Option<HMIRExprID>) -> Self {
+    pub fn new(
+        name: Option<CHLIdent>,
+        default: Option<HMIRExprID>,
+        default_local: Option<HMIRLocalID>,
+    ) -> Self {
         Self {
             name,
             default,
+            default_local,
             inferred: false,
         }
     }
@@ -233,6 +239,10 @@ impl HMIRFnParamDecl {
     // Only a named argument binds a parameter with a default; left unbound, it takes the default
     pub fn default(&self) -> Option<HMIRExprID> {
         self.default
+    }
+
+    pub fn default_local(&self) -> Option<HMIRLocalID> {
+        self.default_local
     }
 
     pub fn inferred(&self) -> bool {

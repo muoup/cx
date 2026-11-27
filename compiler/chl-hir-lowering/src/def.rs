@@ -13,7 +13,7 @@ use chl_hmir::{
         aggregate::HMIRTypeSemantics,
         intrinsic::{HMIRIntType, HMIRIntWidth},
     },
-    unit::function::HMIRFnPrototype,
+    unit::function::{HMIRFnParamDecl, HMIRFnPrototype},
 };
 use chl_log::{CHLResult, catalogue::typecheck};
 use chl_namespace::module::QualifiedName;
@@ -137,7 +137,7 @@ fn lower_function<'a>(
     prototype: &'a HIRFunctionPrototype,
     body: Option<&'a HIRFunctionBody>,
 ) -> CHLResult<HMIRDefKind> {
-    let (defaults, default_exprs) = lower_defaults(&mut context, prototype)?;
+    let (defaults, decls) = lower_defaults(&mut context, prototype)?;
     let (params, holes, return_type, contract, root) =
         context.with_stage(prototype.comptime, |this| -> CHLResult<_> {
             let mut params = Vec::new();
@@ -186,7 +186,6 @@ fn lower_function<'a>(
         contract,
     );
     let symbol_name = context.unit().link_name(name, prototype.symbol_naming);
-    let decls = context.fn_param_decls(&params, default_exprs);
     let prototype =
         HMIRFnPrototype::new(symbol_name, prototype.linkage, signature, decls, defaults);
     let transparent = matches!(body, Some(HIRFunctionBody::TypeAlias(_)));
@@ -205,20 +204,35 @@ pub(crate) fn declared_params(prototype: &HIRFunctionPrototype) -> &[HIRParamete
     }
 }
 
-// The defaults are lowered into a body of their own, which sees none of the parameters: a default means the
-// same wherever the function is called from
 fn lower_defaults(
     context: &mut BodyLowering<'_>,
     prototype: &HIRFunctionPrototype,
-) -> CHLResult<(HMIRBodyContext, Vec<Option<HMIRExprID>>)> {
+) -> CHLResult<(HMIRBodyContext, Vec<HMIRFnParamDecl>)> {
     let mut defaults = context.detached(true);
+    let params = declared_params(prototype);
+    let last_default = params.iter().rposition(|param| {
+        param
+            .default
+            .as_ref()
+            .is_some_and(|expr| !matches!(expr.kind, HIRExprKind::Hole))
+    });
     let mut lowered = Vec::new();
-    for param in declared_params(prototype) {
-        lowered.push(match &param.default {
+    for (index, param) in params.iter().enumerate() {
+        let default = match &param.default {
             None => None,
             Some(HIRExpression { kind: HIRExprKind::Hole, range }) => Some(defaults.hole(range)),
             Some(default) => Some(lower_expr(&mut defaults, default)?),
-        });
+        };
+        let local = if last_default.is_some_and(|last| index < last)
+            && let Some(name) = &param.name
+        {
+            let placeholder = defaults.hole(&param.ty.range);
+            let comptime = param.comptime || prototype.comptime;
+            Some(defaults.declare(Some(name), placeholder, comptime, &param.range))
+        } else {
+            None
+        };
+        lowered.push(HMIRFnParamDecl::new(param.name.clone(), default, local));
     }
     Ok((defaults.finish(), lowered))
 }

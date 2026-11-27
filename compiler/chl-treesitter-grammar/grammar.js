@@ -229,6 +229,7 @@ module.exports = grammar({
         [$.template_argument, $.literal],
         [$.template_argument, $.type, $.primary_expression],
         [$.staged_continuation_lambda, $.staged_lambda],
+        [$.function_type_declarator, $.staged_type],
         [$.match_statement, $.match_expression],
         [$.compound_statement, $.initializer_list],
         [$.expression_statement, $.initializer_item],
@@ -325,6 +326,7 @@ module.exports = grammar({
 
         function_type_declarator: ($) =>
             seq(
+                repeat(op($, "^")),
                 keyword($, "fn"),
                 repeat($._function_indirection),
                 field("name", $.identifier),
@@ -624,17 +626,17 @@ module.exports = grammar({
                         seq(
                             field("return_type", $._declared_type),
                             field("declarator", $.function_declarator),
-                            optional($.function_contract),
                         ),
                         seq(
                             repeat($.type_qualifier),
                             alias("auto", $.builtin_type),
                             field("declarator", $.function_declarator),
-                            optional($.function_contract),
+                            optional(keyword($, "safe")),
                             op($, "->"),
                             field("return_type", $.type),
                         ),
                     ),
+                    optional($.function_contract),
                     $.function_body,
                 ),
             ),
@@ -644,16 +646,17 @@ module.exports = grammar({
                 repeat($.declaration_specifier),
                 optional(keyword($, "comptime")),
                 choice(
-                    seq($._declared_type, $.function_declarator, optional($.function_contract)),
+                    seq($._declared_type, $.function_declarator),
                     seq(
                         repeat($.type_qualifier),
                         alias("auto", $.builtin_type),
                         $.function_declarator,
-                        optional($.function_contract),
+                        optional(keyword($, "safe")),
                         op($, "->"),
                         $.type,
                     ),
                 ),
+                optional($.function_contract),
                 ";",
             ),
 
@@ -670,18 +673,18 @@ module.exports = grammar({
                             field("return_type", $._declared_type),
                             field("name", $.callable_name),
                             field("parameters", $.parameter_list),
-                            optional($.function_contract),
                         ),
                         seq(
                             repeat($.type_qualifier),
                             alias("auto", $.builtin_type),
                             field("name", $.callable_name),
                             field("parameters", $.parameter_list),
-                            optional($.function_contract),
+                            optional(keyword($, "safe")),
                             op($, "->"),
                             field("return_type", $.type),
                         ),
                     ),
+                    optional($.function_contract),
                     choice($.function_body, $.transparent_type_body),
                 ),
             ),
@@ -707,16 +710,14 @@ module.exports = grammar({
             ),
 
         parameter: ($) =>
-            choice(
-                seq(
-                    optional(keyword($, "comptime")),
-                    choice(
-                        seq($._decl_type, optional(alias($._direct_declarator, $.declarator))),
-                        $._fn_decl_type,
-                    ),
-                    optional($.parameter_default),
+            seq(
+                optional(keyword($, "comptime")),
+                choice(
+                    seq($._decl_type, optional(alias($._direct_declarator, $.declarator))),
+                    $._fn_decl_type,
+                    $.function_type_declarator,
                 ),
-                $.function_type_declarator,
+                optional($.parameter_default),
             ),
 
         parameter_default: ($) => seq(op($, "="), $.expression),

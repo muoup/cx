@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use chl_hmir::{
     HMIRBodyContext, HMIRDefID, HMIRFunction,
+    expr::HMIRExprID,
     ty::{HMIRTypeID, context::HMIRTypeContext},
 };
 use chl_log::{CHLResult, catalogue::typecheck, error::CHLError};
@@ -81,13 +82,24 @@ impl<'a> Deduction<'a> {
     }
 }
 
-pub(crate) fn blocking(deduction: &Deduction, index: usize) -> Option<usize> {
+pub(crate) fn blocking(
+    deduction: &Deduction,
+    index: usize,
+    default: Option<HMIRExprID>,
+) -> Option<usize> {
     let mut open = deduction.open().peekable();
     open.peek()?;
     let function = deduction.function;
     let form = *function.signature().params()[index].ty();
     let references = staged::references(function.body(), form);
-    open.find(|&hole| references.contains(&function.params()[hole]))
+    let prototype = function.prototype();
+    let default = default.map(|expr| staged::references(prototype.defaults(), expr));
+    open.find(|&hole| {
+        references.contains(&function.params()[hole])
+            || prototype.params()[hole]
+                .default_local()
+                .is_some_and(|local| default.as_ref().is_some_and(|refs| refs.contains(&local)))
+    })
 }
 
 fn bind(

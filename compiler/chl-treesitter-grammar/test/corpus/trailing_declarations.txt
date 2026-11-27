@@ -5,12 +5,13 @@ trailing declarations
 extern int printf(const char*, ...);
 
 auto global : int = 4;
-auto identity(comptime type T, T value) -> T;
-auto identity(comptime type T, T value) -> T { return value; }
+auto identity(comptime type T, T value) -> T where pre: (true);
+auto identity(comptime type T, T value) safe -> T where pre: (true), pre: (true) { return value; }
 auto increment(int value) -> int { return value + 1; }
 auto callback() -> fn*(int) -> int { return increment; }
 comptime auto Number : type = int;
-comptime auto Box(comptime type T) where pre: (1 == 1) -> type => struct { T value; };
+comptime auto Box(comptime type T) -> type where pre: (1 == 1) => struct { T value; };
+comptime bool quoted(comptime ^fn callback() -> int) => true;
 
 int main() {
     auto value : int = identity(int, global);
@@ -83,7 +84,15 @@ int main() {
     (operator)
     (type
       (qualified_name
-        (identifier))))
+        (identifier)))
+    (function_contract
+      (keyword)
+      (contract_clause
+        (keyword)
+        (expression
+          (primary_expression
+            (literal
+              (keyword)))))))
   (function_definition
     (builtin_type)
     (function_declarator
@@ -103,10 +112,25 @@ int main() {
               (identifier)))
           (declarator
             (identifier)))))
+    (keyword)
     (operator)
     (type
       (qualified_name
         (identifier)))
+    (function_contract
+      (keyword)
+      (contract_clause
+        (keyword)
+        (expression
+          (primary_expression
+            (literal
+              (keyword)))))
+      (contract_clause
+        (keyword)
+        (expression
+          (primary_expression
+            (literal
+              (keyword))))))
     (function_body
       (compound_statement
         (return_statement
@@ -202,6 +226,9 @@ int main() {
           (keyword))
         (declarator
           (identifier))))
+    (operator)
+    (type
+      (keyword))
     (function_contract
       (keyword)
       (contract_clause
@@ -217,9 +244,6 @@ int main() {
               (primary_expression
                 (literal
                   (number_literal))))))))
-    (operator)
-    (type
-      (keyword))
     (function_body
       (operator)
       (type
@@ -233,6 +257,32 @@ int main() {
               (field_declarator
                 (declarator
                   (identifier)))))))))
+  (comptime_function_definition
+    (keyword)
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (callable_name
+      (qualified_name
+        (identifier)))
+    (parameter_list
+      (parameter
+        (keyword)
+        (function_type_declarator
+          (operator)
+          (keyword)
+          (identifier)
+          (parameter_list)
+          (operator)
+          (type
+            (builtin_type_sequence
+              (builtin_type))))))
+    (function_body
+      (operator)
+      (expression
+        (primary_expression
+          (literal
+            (keyword))))))
   (function_definition
     (type
       (builtin_type_sequence

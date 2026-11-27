@@ -342,10 +342,9 @@ fn eta(
         .as_ref()
         .map_or(from, |(signature, _)| signature);
     let env = context.env();
-    if types::comptime_only(env, *from.return_type()) || from.params().len() != to.params().len() {
+    let Some(returned) = staged::eta_result(env, from, to.params().len()) else {
         return Ok(Coercion::Unapplied(value));
-    }
-    let returned = *from.return_type();
+    };
     let discarding = discards(env, returned, result);
     let mut params = Vec::with_capacity(from.params().len());
     for (param, expected) in from.params().iter().zip(to.params()) {

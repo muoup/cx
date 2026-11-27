@@ -16,14 +16,16 @@ use crate::{
     log::parse_point_error,
     next_kind,
     parse::{
-        expressions::parse_expr, functions::parse_params, try_parse_simple_identifier, ParserData,
+        expressions::parse_expr,
+        functions::{parse_function_contract, parse_params},
+        try_parse_simple_identifier, ParserData,
     },
     peek_kind, try_next,
 };
 
 pub(crate) enum DeclaratorBase {
     Type(HIRType),
-    Fn,
+    Fn { stages: Vec<(usize, HIRTypeQualifiers)> },
 }
 
 #[derive(Clone, Copy)]
@@ -41,7 +43,19 @@ pub(crate) fn parse_declaration_head(
     let mut specifiers = parse_decl_specifiers(&mut data.tokens);
     let start = data.tokens.index;
     let base = if try_next!(data.tokens, keyword!(Fn)) {
-        DeclaratorBase::Fn
+        DeclaratorBase::Fn { stages: Vec::new() }
+    } else if !data.c_mode && try_next!(data.tokens, operator!(Caret)) {
+        let (inner, _) = parse_declaration_head(data, scope)?;
+        match inner {
+            DeclaratorBase::Fn { mut stages } => {
+                stages.push((start, specifiers.qualifiers));
+                DeclaratorBase::Fn { stages }
+            }
+            inner => {
+                let (_, inner) = parse_declarator(data, &inner, scope, DeclaratorKind::Abstract)?;
+                DeclaratorBase::Type(HIRTypeKind::Staged(Box::new(inner)).to_type())
+            }
+        }
     } else {
         DeclaratorBase::Type(parse_type_base(data, scope)?)
     };
@@ -52,7 +66,7 @@ pub(crate) fn parse_declaration_head(
             ty.add_specifier(specifiers.qualifiers | suffix.qualifiers)
                 .with_range(data.token_range(start, data.tokens.index)),
         ),
-        DeclaratorBase::Fn => DeclaratorBase::Fn,
+        function @ DeclaratorBase::Fn { .. } => function,
     };
     Ok((base, specifiers))
 }
@@ -64,10 +78,22 @@ pub(crate) fn parse_declarator(
     kind: DeclaratorKind,
 ) -> CHLResult<(Option<CHLIdent>, HIRType)> {
     let named = matches!(kind, DeclaratorKind::Named | DeclaratorKind::Field);
-    let DeclaratorBase::Type(ty) = base else {
-        return parse_native_fn(data, scope, named);
+    let mut ty = match base {
+        DeclaratorBase::Type(ty) => ty.clone(),
+        DeclaratorBase::Fn { stages } => {
+            let (name, mut ty) = parse_native_fn(data, scope, named, stages.is_empty())?;
+            for &(start, qualifiers) in stages {
+                ty = HIRTypeKind::Staged(Box::new(ty))
+                    .to_type()
+                    .add_specifier(qualifiers)
+                    .with_range(data.token_range(start, data.tokens.index));
+            }
+            if stages.is_empty() || name.is_some() {
+                return Ok((name, ty));
+            }
+            ty
+        }
     };
-    let mut ty = ty.clone();
     while !(matches!(kind, DeclaratorKind::AsTarget) && indirection_is_infix(data)) {
         let Some(indirection) = parse_indirection(data, true)? else {
             break;
@@ -243,6 +269,7 @@ fn parse_native_fn(
     data: &mut ParserData,
     scope: TagScope,
     named: bool,
+    allow_trailing_function: bool,
 ) -> CHLResult<(Option<CHLIdent>, HIRType)> {
     let mut indirections = Vec::new();
     while let Some(indirection) = parse_indirection(data, false)? {
@@ -268,7 +295,7 @@ fn parse_native_fn(
         .into_iter()
         .fold(function, |ty, op| op.apply(ty));
 
-    if named && name.is_none() && bounds.is_empty() {
+    if allow_trailing_function && named && name.is_none() && bounds.is_empty() {
         if let Some(trailing) = try_parse_simple_identifier(&mut data.tokens) {
             if !peek_kind!(data.tokens, punctuator!(OpenParen)) {
                 data.tokens.back();
@@ -284,11 +311,15 @@ fn parse_function_type(
     data: &mut ParserData,
     scope: TagScope,
     return_type: Option<HIRType>,
-    noreturn: bool,
+    mut noreturn: bool,
 ) -> CHLResult<HIRType> {
     let start = data.tokens.index;
-    let args = parse_params(data, scope)?;
     let c_form = return_type.is_some();
+    let (params, var_args, contract) = data.with_name_scope(|data| {
+        let (params, var_args) = parse_params(data, scope)?;
+        let contract = parse_function_contract(data, &mut noreturn, false)?;
+        Ok((params, var_args, contract))
+    })?;
     let return_type = match return_type {
         Some(ty) => ty,
         None => {
@@ -300,10 +331,10 @@ fn parse_function_type(
         kind: HIRFunctionKind::Standard(CHLIdent::new("__internal_fnptr")),
         comptime: false,
         return_type,
-        noreturn: noreturn || args.noreturn,
-        params: args.params,
-        var_args: args.var_args,
-        contract: args.contract,
+        noreturn,
+        params,
+        var_args,
+        contract,
         linkage: LinkageMode::Standard,
         symbol_naming: HIRSymbolNameScheme::Namespaced,
         range: TokenRange::internal(),

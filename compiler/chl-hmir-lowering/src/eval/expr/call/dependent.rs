@@ -305,18 +305,20 @@ pub(crate) fn call(
     let default = |index: usize| prototype.params()[index].default().filter(|_| !partial);
     let mut values = vec![None; params.len()];
     for index in 0..params.len() {
-        if deduce::blocking(&deduction, index).is_some() {
+        let arg = args[index];
+        let provided = applied.get_mut(index).and_then(Option::take);
+        let omitted = default(index).filter(|_| arg.is_none() && provided.is_none());
+        if deduce::blocking(&deduction, index, omitted).is_some() {
             deduce::infer(&mut deduction, context, &mut frame, body, args, &mut values, index, span)?;
-            if let Some(hole) = deduce::blocking(&deduction, index) {
+            if let Some(hole) = deduce::blocking(&deduction, index, omitted) {
                 return Err(deduce::undeduced(&deduction, context, hole, span).into());
             }
         }
-        if let Some(value) = applied.get_mut(index).and_then(Option::take) {
+        if let Some(value) = provided {
             values[index] = Some(frame.argument(context, index, value, span)?);
             continue;
         }
-        let arg = args[index];
-        if arg.is_none() && default(index).is_none() {
+        if arg.is_none() && omitted.is_none() {
             continue;
         }
         if prototype.params()[index].inferred() {
@@ -327,7 +329,7 @@ pub(crate) fn call(
         let ty = frame.parameter(context, index, span)?;
         let given = match arg {
             Some(arg) => body.expr(arg),
-            None => prototype.defaults().expr(default(index).expect("a default is given")),
+            None => prototype.defaults().expr(omitted.expect("a default is given")),
         };
         if matches!(given.kind(), HMIRExprKind::Hole(_))
             && function.signature().is_comptime_param(index)
@@ -344,7 +346,7 @@ pub(crate) fn call(
             Some(arg) => eval_expected(context, body, arg, Some(ty)).and_then(|evaluated| {
                 deduce::complete(context, body, evaluated, Some(ty), arg_span)
             }),
-            None => super::default(context, def, function, index, ty),
+            None => super::default(context, def, function, index, ty, &values[..index]),
         }
         .map_err(|exit| match exit {
             EvalExit::Diagnostic(error) if error.code() == typecheck::INVALID_CONVERSION.code => {

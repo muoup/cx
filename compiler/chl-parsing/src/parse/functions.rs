@@ -3,6 +3,7 @@ use crate::{
     peek_next_kind, try_next,
 };
 use chl_hir::ast::{
+    expression::{HIRBinOp, HIRExprKind, HIRExpression},
     function::{HIRFunctionContract, HIRFunctionKind, HIRFunctionPrototype, HIRParameter},
     modifiers::HIRSymbolNameScheme,
     types::{HIRType, HIRTypeKind},
@@ -62,39 +63,47 @@ pub fn try_function_parse(
         return Ok(None);
     };
 
-    let args = parse_params(data, TagScope::Module)?;
-    let return_type = if !data.c_mode
-        && matches!(return_type.kind, HIRTypeKind::Auto)
-        && try_next!(data.tokens, operator!(Arrow))
-    {
-        parse_abstract_type(data, TagScope::Module)?.add_specifier(return_type.specifiers)
-    } else {
-        return_type
-    };
+    let (params, var_args, return_type, contract, noreturn) = data.with_name_scope(|data| {
+        let (params, var_args) = parse_params(data, TagScope::Module)?;
+        let mut noreturn = specifiers.noreturn;
+        let trailing = !data.c_mode && matches!(return_type.kind, HIRTypeKind::Auto);
+        if trailing {
+            parse_c_decl_modifiers(data, &mut noreturn)?;
+        }
+        let safe = trailing && try_next!(data.tokens, keyword!(Safe));
+        let return_type = if trailing && try_next!(data.tokens, operator!(Arrow)) {
+            parse_abstract_type(data, TagScope::Module)?.add_specifier(return_type.specifiers)
+        } else {
+            return_type
+        };
+        let contract = parse_function_contract(data, &mut noreturn, safe)?;
+        Ok((params, var_args, return_type, contract, noreturn))
+    })?;
 
     Ok(Some(HIRFunctionPrototype {
         return_type,
-        noreturn: specifiers.noreturn || args.noreturn,
+        noreturn,
         kind,
         comptime,
-        contract: args.contract,
+        contract,
         linkage: specifiers.linkage,
         symbol_naming,
 
-        params: args.params,
-        var_args: args.var_args,
+        params,
+        var_args,
 
         range: data.token_range(declaration_start, data.tokens.index),
     }))
 }
 
-fn parse_function_contract(
+pub(crate) fn parse_function_contract(
     data: &mut ParserData,
     noreturn: &mut bool,
+    safe: bool,
 ) -> CHLResult<HIRFunctionContract> {
     parse_c_decl_modifiers(data, noreturn)?;
 
-    let safe = try_next!(data.tokens, keyword!(Safe));
+    let safe = safe || try_next!(data.tokens, keyword!(Safe));
 
     let mut contract = HIRFunctionContract {
         safe,
@@ -109,17 +118,23 @@ fn parse_function_contract(
     while let Ok(next) = peek_next_kind!(data.tokens) {
         match next {
             keyword!(Precondition) => {
-                if contract.precondition.is_some() {
-                    return parse_point_error(&data.tokens, &DUPLICATE_ITEM, ("precondition".into(), "function".into()));
-                }
-
                 data.tokens.next();
                 assert_token_matches!(data.tokens, punctuator!(Colon), "':'");
                 assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
                 let expr = parse_expr(data)?;
                 assert_token_matches!(data.tokens, punctuator!(CloseParen), "')'");
 
-                contract.precondition = Some(expr);
+                contract.precondition = Some(match contract.precondition {
+                    Some(previous) => HIRExpression {
+                        range: previous.range.cover(&expr.range),
+                        kind: HIRExprKind::BinOp {
+                            op: HIRBinOp::LAnd,
+                            lhs: Box::new(previous),
+                            rhs: Box::new(expr),
+                        },
+                    },
+                    None => expr,
+                });
             }
             keyword!(Postcondition) => {
                 if contract.postcondition.is_some() {
@@ -210,19 +225,11 @@ fn skip_optional_parenthesized_tokens(data: &mut ParserData) -> CHLResult<()> {
     parse_point_error(&data.tokens, &UNEXPECTED_END, Some("declaration".into()))
 }
 
-pub(crate) struct ParseParamsResult {
-    pub(crate) params: Vec<HIRParameter>,
-    pub(crate) var_args: bool,
-    pub(crate) contract: HIRFunctionContract,
-    pub(crate) noreturn: bool,
-}
-
-pub(crate) fn parse_params(data: &mut ParserData, scope: TagScope) -> CHLResult<ParseParamsResult> {
+pub(crate) fn parse_params(
+    data: &mut ParserData,
+    scope: TagScope,
+) -> CHLResult<(Vec<HIRParameter>, bool)> {
     assert_token_matches!(data.tokens, punctuator!(OpenParen), "'('");
-    data.with_name_scope(|data| parse_parameter_list(data, scope))
-}
-
-fn parse_parameter_list(data: &mut ParserData, scope: TagScope) -> CHLResult<ParseParamsResult> {
     let mut params = Vec::new();
     let var_args = loop {
         if try_next!(data.tokens, punctuator!(CloseParen)) {
@@ -257,13 +264,5 @@ fn parse_parameter_list(data: &mut ParserData, scope: TagScope) -> CHLResult<Par
         }
     };
 
-    let mut noreturn = false;
-    let contract = parse_function_contract(data, &mut noreturn)?;
-
-    Ok(ParseParamsResult {
-        params,
-        var_args,
-        contract,
-        noreturn,
-    })
+    Ok((params, var_args))
 }

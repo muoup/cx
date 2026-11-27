@@ -95,6 +95,19 @@ pub(crate) fn is_code(context: &LocalLoweringContext, ty: HMIRTypeID) -> bool {
     shape(context.env(), context.env().referent(ty)).is_some()
 }
 
+pub(crate) fn eta_result(
+    env: &HMIREnvironment,
+    source: &HMIRFnSignature<HMIRTypeID>,
+    arity: usize,
+) -> Option<HMIRTypeID> {
+    let result = *source.return_type();
+    (source.stage() == HMIRFunctionStage::Runtime
+        && !source.is_variadic()
+        && source.params().len() == arity
+        && !types::comptime_only(env, result))
+        .then_some(result)
+}
+
 pub(crate) fn adapts(env: &HMIREnvironment, underlying: HMIRTypeID, exposed: HMIRTypeID) -> bool {
     let HMIRTypeKind::Function { signature, .. } = env.resolve_kind(env.referent(underlying))
     else {

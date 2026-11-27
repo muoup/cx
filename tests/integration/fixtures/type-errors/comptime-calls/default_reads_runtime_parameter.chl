@@ -1,0 +1,6 @@
+int read(int runtime_value, int value = runtime_value) => value;
+
+int main() {
+    int x = 3;
+    return read(x);
+}

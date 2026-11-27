@@ -28,6 +28,7 @@ pub(super) struct Form<'a> {
     pub(super) scope: Option<&'a AliasScope<'a>>,
     pub(super) source: Option<HMIRUnitID>,
     pub(super) argument: bool,
+    pub(super) eta: bool,
 }
 
 pub(super) struct AliasScope<'a> {
@@ -45,6 +46,7 @@ impl<'a> Form<'a> {
             scope: None,
             source: None,
             argument: false,
+            eta: false,
         }
     }
 
@@ -52,12 +54,14 @@ impl<'a> Form<'a> {
         Self {
             expr,
             argument: false,
+            eta: false,
             ..self
         }
     }
 
     pub(super) fn substitute(mut self) -> Option<Self> {
         let argument = self.argument;
+        let eta = self.eta;
         while let Some(scope) = self.scope
             && let HMIRExprKind::Local(local) = self.body.expr(self.expr).kind()
             && let Some(index) = scope
@@ -69,6 +73,7 @@ impl<'a> Form<'a> {
             self = scope.arguments[index]?;
         }
         self.argument = argument;
+        self.eta = eta;
         Some(self)
     }
 }

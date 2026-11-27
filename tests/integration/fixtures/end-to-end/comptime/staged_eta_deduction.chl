@@ -1,0 +1,37 @@
+/* CHL-STDOUT: 1 1 1 */
+/* CHL-STDOUT-NEXT: 0 1 1 9 */
+/* CHL-STDOUT-NEXT: 42 */
+
+#include <stdio.h>
+
+int calls = 0;
+int shared = 0;
+
+int next() { return ++calls; }
+long mix(short a, int b, long c) => a + b + c;
+int& reference() => shared;
+
+comptime ^R run(type R = _, fn callback() -> ^R) => callback();
+auto specialize(comptime type R = _, comptime fn callback() -> ^R) -> R => callback;
+
+comptime ^R run_args(
+    type A = _, type B = _, type C = _, type R = _,
+    fn callback(^A, ^B, ^C) -> ^R, ^A a, ^B b, ^C c,
+) => callback(a, b, c);
+
+comptime bool quotes_function(type T = _, ^T) => !@type.equal(T, int);
+comptime bool named_quote(type R = _, ^fn callback() -> R) => @type.equal(R, int);
+comptime bool trailing_quote(^fn() -> int callback) => true;
+
+int main() {
+    printf("%d %d %d\n", quotes_function(emit next), named_quote(emit next), trailing_quote(emit next));
+    ^int first = run(next);
+    ^long second = run_args(mix, (short) 2, 3, 4L);
+    int before = calls;
+    int result = first;
+    printf("%d %d %d %ld\n", before, result, calls, (long) second);
+    int& alias = specialize(reference);
+    alias = 42;
+    printf("%d\n", shared);
+    return 0;
+}

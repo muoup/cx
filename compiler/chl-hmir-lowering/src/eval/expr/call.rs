@@ -295,7 +295,7 @@ fn arguments(
                 Some((def, function))
                     if !partial && function.prototype().params()[index].default().is_some() =>
                 {
-                    Some(default(context, def, function, index, ty)?.ready()?)
+                    Some(default(context, def, function, index, ty, &[])?.ready()?)
                 }
                 _ => None,
             },
@@ -323,24 +323,46 @@ pub(crate) fn curry(
     comptime::converge(context, value, span)
 }
 
-// The default of a parameter means the same at every call: it is evaluated apart from the call, in the unit
-// that declares the function
 fn default(
     context: &mut LocalLoweringContext,
     def: HMIRDefID,
     function: &HMIRFunction,
     index: usize,
     ty: HMIRTypeID,
+    values: &[Option<HMIRValue>],
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let prototype = function.prototype();
-    let default = prototype.params()[index].default();
-    let default = default.expect("a parameter left to its default has one");
+    let default = prototype.params()[index]
+        .default()
+        .expect("a parameter left to its default has one");
+    let body = prototype.defaults();
+    let references = staged::references(body, default);
     let comptime = FnContext::Comptime(ComptimeContext::new());
     let evaluation = context.evaluation();
     let mut child = context
         .child(None, comptime, Some(evaluation))
         .sourced(def.brand());
-    comptime::freeze(&mut child, prototype.defaults(), default, Some(ty))
+    let mut dependent = false;
+    for (index, (parameter, value)) in prototype.params().iter().zip(values).enumerate() {
+        if let Some(local) = parameter.default_local()
+            && references.contains(&local)
+            && function.signature().is_comptime_param(index)
+        {
+            if let Some(value) = value {
+                emit::storage::bind_local(&mut child, local, value.clone());
+            }
+            dependent = true;
+        }
+    }
+    let result = comptime::freeze(&mut child, body, default, Some(ty))?;
+    if dependent {
+        let span = body.expr(default).span().clone();
+        result.map(&mut child, move |context, value| {
+            comptime::independent(context, value, "a default argument", &span).map(Into::into)
+        })
+    } else {
+        Ok(result)
+    }
 }
 
 // Calls 'callee', which is not curried, with a value for each of its parameters

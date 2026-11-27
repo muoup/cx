@@ -1,5 +1,5 @@
 use chl_hmir::{
-    HMIRDefID, HMIRFunction,
+    HMIRDefID, HMIRFunction, HMIRFunctionStage,
     expr::{HMIRExprID, HMIRExprKind},
     ty::{
         HMIRExprType, HMIRExprTypeKind, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
@@ -20,7 +20,7 @@ use crate::{
             self,
             pattern::{AliasScope, Form},
         },
-        eval, symbol, types,
+        eval, staged, symbol, types,
     },
     log::hmir_error,
     value::{self, HMIRValue},
@@ -154,6 +154,7 @@ fn unfold(
         scope: Some(&scope),
         source: Some(def.brand()),
         argument: form.argument,
+        eta: form.eta,
     };
     unify(deduction, context, frame, expanded, actual, span)
 }
@@ -325,6 +326,9 @@ fn structure(
         HMIRExprTypeKind::Staged(inner) => {
             let actual = match env.resolve_kind(actual) {
                 HMIRTypeKind::Staged(inner) => *inner,
+                HMIRTypeKind::Function { signature, .. } if form.eta => {
+                    staged::eta_result(env, signature, 0).unwrap_or(actual)
+                }
                 _ => actual,
             };
             (*inner, Some(actual))
@@ -355,12 +359,21 @@ fn structure(
                     span,
                 )?;
             }
+            let result = if form.eta
+                && signature.stage() == HMIRFunctionStage::Comptime
+                && let Some(result) =
+                    staged::eta_result(context.env(), &actual, signature.params().len())
+            {
+                staged::lift(context.env_mut(), result, span)
+            } else {
+                *actual.return_type()
+            };
             return unify(
                 deduction,
                 context,
                 frame,
                 form.at(*signature.return_type()),
-                *actual.return_type(),
+                result,
                 span,
             );
         }

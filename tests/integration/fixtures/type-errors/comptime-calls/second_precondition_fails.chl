@@ -1,0 +1,7 @@
+comptime auto checked(int divisor) -> int
+    where pre: (divisor != 0), pre: (12 / divisor > 0)
+    => divisor;
+
+int main() {
+    return checked(-1);
+}

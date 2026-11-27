@@ -289,12 +289,6 @@ fn parse_type_base(data: &mut ParserData, scope: TagScope) -> CHLResult<HIRType>
             Ok(HIRTypeKind::Computed(Box::new(expr)).to_type())
         }
 
-        // '^' takes the whole abstract type after it, so '^const T&' stages a 'const T&'
-        operator!(Caret) if !data.c_mode => {
-            data.tokens.next();
-            Ok(HIRTypeKind::Staged(Box::new(parse_abstract_type(data, scope)?)).to_type())
-        }
-
         intrinsic!() => Ok(HIRTypeKind::Identifier {
             name: QualifiedName::new_raw(parse_intrinsic(&mut data.tokens)?),
             lookup: HIRTypeLookup::Standard,

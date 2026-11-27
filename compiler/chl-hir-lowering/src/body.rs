@@ -148,21 +148,6 @@ impl<'a> BodyLowering<'a> {
             .collect()
     }
 
-    // What the locals of a definition declare of its parameters, each with the default lowered for it
-    pub(crate) fn fn_param_decls(
-        &self,
-        locals: &[HMIRLocalID],
-        defaults: Vec<Option<HMIRExprID>>,
-    ) -> Vec<HMIRFnParamDecl> {
-        locals
-            .iter()
-            .zip(defaults)
-            .map(|(local, default)| {
-                HMIRFnParamDecl::new(self.body.local(*local).name().cloned(), default)
-            })
-            .collect()
-    }
-
     pub(crate) fn finish_definition(
         &mut self,
         root: HMIRExprID,
@@ -519,7 +504,10 @@ pub(crate) fn lower_reify(
         prototype.var_args,
         HMIRContract::default(),
     );
-    let decls = anon.fn_param_decls(&params, vec![None; params.len()]);
+    let decls = params
+        .iter()
+        .map(|&local| HMIRFnParamDecl::new(anon.local(local).name().cloned(), None, None))
+        .collect();
     let defaults = HMIRBodyContext::new();
     let prototype =
         HMIRFnPrototype::new(name.clone(), LinkageMode::Static, signature, decls, defaults);
