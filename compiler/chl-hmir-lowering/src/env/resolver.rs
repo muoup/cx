@@ -166,6 +166,17 @@ impl HMIRResolver {
         self.complete_type(id, ty);
     }
 
+    pub fn name_fresh_nominal(&mut self, id: HMIRTypeID, reserved: HMIRTypeID, name: String) {
+        let id = self.underlying(id);
+        let ty = &mut self.types[id].ty;
+        if id.index() > reserved.index()
+            && ty.debug_name().is_none()
+            && matches!(ty.kind(), HMIRTypeKind::Nominal { strong_identifier: Some(_), .. })
+        {
+            ty.set_debug_name(name);
+        }
+    }
+
     pub fn reserve_type(&mut self, ty: HMIRType) -> HMIRTypeID {
         self.types.push(TypeState {
             ty,

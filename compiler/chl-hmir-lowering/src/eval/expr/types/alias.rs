@@ -42,6 +42,7 @@ pub(crate) fn define(
     if !built && reaches(context.env(), defined, reserved, &mut FxHashSet::default()) {
         return Err(hmir_error(span, &mir::DEPENDENCY_CYCLE, format!("{name} -> {name}")));
     }
+    context.env_mut().resolver_mut().name_fresh_nominal(defined, reserved, name);
     type_value(context, defined, span)
 }
 

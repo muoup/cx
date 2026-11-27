@@ -91,6 +91,10 @@ impl<T, L, M> HMIRGenericType<T, L, M> {
         self.debug_name.as_deref()
     }
 
+    pub fn set_debug_name(&mut self, name: String) {
+        self.debug_name = Some(name);
+    }
+
     pub fn kind(&self) -> &HMIRGenericTypeKind<T, L> {
         &self.kind
     }
