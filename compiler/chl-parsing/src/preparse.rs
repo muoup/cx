@@ -35,18 +35,20 @@ pub(crate) struct PreparseIncludeState {
 }
 
 pub(crate) fn iterate_tokens(data: &mut PreparseData) -> CHLResult<()> {
+    let mut depth = 0;
     while data.tokens.has_next() {
-        consume_token(data)?;
+        consume_token(data, &mut depth)?;
     }
 
     Ok(())
 }
 
-fn consume_token(data: &mut PreparseData) -> CHLResult<()> {
+fn consume_token(data: &mut PreparseData, depth: &mut usize) -> CHLResult<()> {
     let Some(next_token) = data.tokens.next() else {
         return Ok(());
     };
     let next_kind = next_token.kind.clone();
+    track_nesting(depth, &next_kind);
 
     match &next_kind {
         TokenKind::IncludeBegin => {
@@ -73,7 +75,7 @@ fn consume_token(data: &mut PreparseData) -> CHLResult<()> {
             data.contents.module_symbols.add_tag(ident, visibility);
         }
 
-        keyword!(Comptime) => {
+        keyword!(Comptime) if *depth == 0 => {
             if let Some((name, kind, rhs)) = scan_comptime_type(&data.tokens) {
                 if let Some(name) = name {
                     let symbols = &mut data.contents.module_symbols;
@@ -86,18 +88,18 @@ fn consume_token(data: &mut PreparseData) -> CHLResult<()> {
                 }
                 if let Some(rhs) = rhs {
                     while data.tokens.index < rhs {
-                        consume_token(data)?;
+                        consume_token(data, depth)?;
                     }
                     let mut end = data.tokens.with_index(rhs);
                     scan_boundary(&mut end, 0, |kind| matches!(kind, punctuator!(Semicolon)));
                     while data.tokens.index < end.index {
-                        let include_marker = matches!(
-                            data.tokens.peek().map(|token| &token.kind),
-                            Some(TokenKind::IncludeBegin | TokenKind::IncludeEnd)
-                        );
-                        if include_marker || !data.include_states.is_empty() {
-                            consume_token(data)?;
+                        let kind = &data.tokens.slice[data.tokens.index].kind;
+                        if matches!(kind, TokenKind::IncludeBegin | TokenKind::IncludeEnd)
+                            || !data.include_states.is_empty()
+                        {
+                            consume_token(data, depth)?;
                         } else {
+                            track_nesting(depth, kind);
                             data.tokens.index += 1;
                         }
                     }
@@ -117,13 +119,8 @@ fn consume_token(data: &mut PreparseData) -> CHLResult<()> {
                     matches!(token.kind, punctuator!(OpenParen)),
                 );
 
+                track_nesting(&mut depth, &token.kind);
                 match &token.kind {
-                    punctuator!(OpenBrace) | punctuator!(OpenParen) | punctuator!(OpenBracket) => {
-                        depth += 1
-                    }
-                    punctuator!(CloseBrace)
-                    | punctuator!(CloseParen)
-                    | punctuator!(CloseBracket) => depth = depth.saturating_sub(1),
                     punctuator!(Semicolon) if depth == 0 => break,
                     operator!(Asterisk) if depth == 1 && starts_group => pointer_declarator = true,
                     identifier!(ident) if depth == 0 => {
@@ -256,17 +253,19 @@ fn scan_boundary<'a>(
         if depth == 0 && stop(&token.kind) {
             return Some(&token.kind);
         }
-        match token.kind {
-            punctuator!(OpenParen) | punctuator!(OpenBrace) | punctuator!(OpenBracket) => {
-                depth += 1
-            }
-            punctuator!(CloseParen) | punctuator!(CloseBrace) | punctuator!(CloseBracket) => {
-                depth = depth.saturating_sub(1);
-            }
-            _ => {}
-        }
+        track_nesting(&mut depth, &token.kind);
     }
     None
+}
+
+fn track_nesting(depth: &mut usize, kind: &TokenKind) {
+    match kind {
+        punctuator!(OpenParen) | punctuator!(OpenBrace) | punctuator!(OpenBracket) => *depth += 1,
+        punctuator!(CloseParen) | punctuator!(CloseBrace) | punctuator!(CloseBracket) => {
+            *depth = depth.saturating_sub(1);
+        }
+        _ => {}
+    }
 }
 
 fn is_extern_c_section_after_access(data: &PreparseData) -> bool {

@@ -1,5 +1,7 @@
 #include <stdio.h>
 
+comptime type T = int;
+
 struct Shape : @comptime {
     type T;
     const _str& header;
@@ -7,6 +9,10 @@ struct Shape : @comptime {
 
 comptime Shape client = { int, "CLIENT" };
 comptime Shape server = { int, "SERVER" };
+
+struct Counter {
+    T T;
+};
 
 comptime type payload(Shape shape) => @strong @type(shape.T);
 
@@ -19,10 +25,16 @@ comptime ^int copy_as(Shape shape, ^int input) => emit .{
 };
 
 int main() {
+    Counter counter = { 0 };
+    Counter* counter_ptr = &counter;
+    counter.T++;
+    counter_ptr->T++;
+
     @type(client.T) value = 42;
     @type(client.T)* pointer = &value;
     payload(client) packet = (payload(client)) *pointer;
-    bool ok = unwrap(client, packet) == 42
+    bool ok = counter.T == 2
+        && unwrap(client, packet) == 42
         && copy_as(client, emit value) == 42
         && @type.equal(@type(client.T), int)
         && @type.equal(@type(const int*), const int*)

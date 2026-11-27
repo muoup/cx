@@ -1,0 +1,14 @@
+#include <stdio.h>
+
+int T = 3;
+
+int increment(int& value) => ++value;
+
+int main() {
+    int value = 0;
+    T * increment(value);
+    printf("%d\n", value);
+    return 0;
+}
+
+int unrelated(comptime type T = _) => 0;

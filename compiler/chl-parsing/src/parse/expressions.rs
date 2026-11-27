@@ -229,17 +229,31 @@ pub(crate) fn parse_expr_op_concat(
         },
     )?;
 
-    // REVIEW: This is a code smell -- this should be better generalizable
-    if matches!(op, HIRBinOp::MethodCall) {
-        let start_index = data.tokens.index;
-        let callee = expr_stack.pop().expect("a call has a callee");
-        let call = parse_call(data, callee)?;
-        expr_stack.push(parse_scope_suffix(data, call, start_index)?);
-        parse_postfix(data, expr_stack, op_stack)?;
-    } else {
-        op_stack.push(PrecOperator::BinOp(op));
-        parse_expr_val(data, expr_stack, op_stack)?;
-    }
+    let start_index = data.tokens.index;
+    let expr = match op {
+        HIRBinOp::MethodCall => {
+            let callee = expr_stack.pop().expect("a call has a callee");
+            parse_call(data, callee)?
+        }
+        HIRBinOp::Access => {
+            let Some(member) = try_parse_simple_identifier(&mut data.tokens) else {
+                return parse_point_error(&data.tokens, &EXPECTED_SYNTAX, ("a member name".into(), None));
+            };
+            let member = HIRExprKind::Identifier {
+                name: QualifiedName::root(member),
+            };
+            expr_stack.push(data.expr_from(start_index, member));
+            op_stack.push(PrecOperator::BinOp(op));
+            compress_one_expr(data, expr_stack, op_stack)?
+        }
+        _ => {
+            op_stack.push(PrecOperator::BinOp(op));
+            parse_expr_val(data, expr_stack, op_stack)?;
+            return Ok(Some(()));
+        }
+    };
+    expr_stack.push(parse_scope_suffix(data, expr, start_index)?);
+    parse_postfix(data, expr_stack, op_stack)?;
     Ok(Some(()))
 }
 
