@@ -30,7 +30,7 @@ vector(T, .A = A) vector::with_capacity(
 ) 
     where pre: (A.alignment >= sizeof(T))
 {
-    auto block = std::allocate(A, allocation_size(T, capacity), .alignment = @type.align_of(T));
+    auto block = std::allocate(A, sizeof(T));
     void* data = block.data;
     @leak(block);
     return { data, 0, capacity };
@@ -57,7 +57,7 @@ where pre: (!@type.is_unsafe_move(T))
 {
     if (capacity <= this.capacity) return;
 
-    std::allocation(A, std::allocation_alignment(A, @type.align_of(T))) block = { this.data, allocation_size(T, this.capacity) };
+    std::allocation(A) block = { this.data, allocation_size(T, this.capacity) };
     std::resize(block, allocation_size(T, capacity));
     this.data = block.data;
     this.capacity = capacity;

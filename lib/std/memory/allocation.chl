@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-import std::{optional, panic, math} as std;
+import std::{optional, panic, math, memory} as std;
 
 extern "C":
 
@@ -19,9 +19,9 @@ comptime type raw_allocation = struct : @nodrop {
     usize size;
 };
 
-comptime type fn_alloc = fn(^usize) -> ^raw_allocation;
+comptime type fn_alloc = fn(^usize) -> ^std::opt(raw_allocation);
+comptime type fn_resize = fn(^raw_allocation, ^usize) -> ^std::opt(raw_allocation);
 comptime type fn_free = fn(^raw_allocation) -> ^void;
-comptime type fn_resize = fn(^raw_allocation, ^usize) -> ^raw_allocation;
 
 comptime type allocator = struct : @comptime {
     fn_alloc allocate;
@@ -36,43 +36,49 @@ comptime allocator allocator::new(
     fn_free deallocate,
     std::opt(fn_resize) realloc = _::none(),
     usize alignment
-)
-    where pre: (@unsafe(valid_alignment(alignment)))
-    => { .allocate = allocate, .deallocate = deallocate, .alignment = alignment, .realloc = realloc };
+) => {
+    .allocate = allocate, 
+    .deallocate = deallocate, 
+    .alignment = alignment, 
+    .realloc = realloc 
+};
 
 comptime type allocation(allocator A)
     => @strong raw_allocation;
 
-comptime bool valid_alignment(usize alignment)
-    => alignment != 0 && (alignment & (alignment - 1)) == 0;
-
 auto try_allocate(comptime allocator A, usize size) -> std::opt(allocation(A)) {
     if (size == 0) return _::some({ NULL, 0 });
 
-    void* data = A.allocate(emit size, emit allocation_alignment(A, alignment));
-    return std::opt::if_then(emit data != NULL, emit { data, size } as allocation(A, allocation_alignment(A, alignment))); 
+    return A.allocate(emit size)
+        |> std::opt::map(|auto val| => (allocation(A)) val);
 }
 
 auto allocate(comptime allocator A, usize size) -> allocation(A)
-    => try_allocate(A, size, .alignment = alignment) |> std::opt::expect("Allocation failed");
+    => try_allocate(A, size) |> std::opt::expect("Allocation failed");
 
 void deallocate(allocation(_: A) block) {
-    if (block.size != 0) A.deallocate(emit block.data, emit block.size, emit alignment);
-    @leak(block);
+    if (block.size != 0) A.deallocate((raw_allocation) move block);
 }
 
 bool try_resize(allocation(_: A)& block, usize size) {
     if (size == block.size) return true;
     
     if (size == 0) {
-        A.deallocate(emit block.data, emit block.size, emit alignment);
-        block.data = NULL;
-        block.size = 0;
+        auto empty = allocate(A, 0);
+        std::swap(block, empty);
+        empty |> deallocate();
         return true;
     }
 
-    match (block.resize) {
-        some(auto& realloc) => realloc(block)
+    match (A.realloc) {
+        some(auto& realloc) => realloc(block),
+        none() => .{
+            auto new_buffer = A.allocate(size);
+            memcpy(new_buffer.data, block.data, size);
+            std::swap(block, new_buffer);
+            new_buffer |> deallocate();
+            return true;
+        },
     }
 }
 
@@ -103,31 +109,36 @@ comptime allocator aligned_heap_allocator(usize alignment) => allocator::new(
 
 private:
 
-auto heap_allocate(usize size) -> raw_allocation 
-    => { .data = malloc(size), .size = size };
+auto heap_allocate(usize size) -> std::opt(raw_allocation) {
+    void* data = malloc(size);
+    return std::opt::if_then(emit data != NULL, emit (raw_allocation) { .data = malloc(size), .size = size });
+}
 
 void heap_free(raw_allocation data) {
     free(data.data);
     @leak(data);
 }
 
-auto heap_realloc(raw_allocation alloc, usize new_size) -> raw_allocation {
+auto heap_realloc(raw_allocation alloc, usize new_size) -> std::opt(raw_allocation) {
     defer @leak(alloc);
-    return { .data = realloc(alloc.data, new_size), .size = new_size };
+    void* data = realloc(alloc.data, new_size);
+    
+    return std::opt::if_then(emit data != NULL, emit (raw_allocation) { .data = realloc(alloc.data, new_size), .size = new_size });
 }
 
-auto aligned_heap_allocate(comptime usize alignment, usize size) -> raw_allocation {
-#ifdef _WIN32
-    return _aligned_malloc(size, alignment);
-#else
+auto aligned_heap_allocate(comptime usize alignment, usize size) -> std::opt(raw_allocation) {
     void* data;
+#ifdef _WIN32
+    data = _aligned_malloc(size, alignment);
+#else
     usize native_alignment = std::max(alignment, sizeof(void*));
     if (posix_memalign(&data, native_alignment, size) != 0) return NULL;
-    return data;
 #endif
+
+    return std::opt::if_then(emit data != NULL, emit (raw_allocation) { data, size });
 }
 
-auto aligned_heap_free(comptime usize alignment, raw_allocation alloc) -> raw_allocation {
+void aligned_heap_free(comptime usize alignment, raw_allocation alloc) {
 #ifdef _WIN32
     _aligned_free(alloc.data);
 #else

@@ -40,9 +40,8 @@ auto thread::spawn_with(
     comptime type return_arg = _, 
     comptime fn callback(^call_arg) -> ^return_arg,
     call_arg arg,
-)
+) -> std::opt(thread(call_arg, return_arg, .A = A))
     where pre: (!@type.is_unsafe_move(return_arg) && !@type.is_unsafe_move(call_arg))
-    -> std::opt(thread(call_arg, return_arg, .A = A))
 {
     void* leaked = std::allocate(A, move arg) |> std::allocation::leak();
     thread self = { 0 };

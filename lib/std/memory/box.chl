@@ -8,9 +8,11 @@ comptime type box(type T, std::allocator A = std::heap_allocator)
     => @strong struct : @nodrop { void* data; };
 
 box(T, .A = A) box::new(comptime type T = _, comptime std::allocator A = std::heap_allocator, T value)
-where pre: (!@type.is_unsafe_move(T) && sizeof(T) != 0)
+    where 
+        pre: (!@type.is_unsafe_move(T)),
+        pre: (A.alignment >= sizeof(T))
 {
-    auto block = std::allocate(A, sizeof(T), .alignment = @type.align_of(T));
+    auto block = std::allocate(A, sizeof(T));
     memcpy(block.data, &value, sizeof(T));
     @leak(value);
 
