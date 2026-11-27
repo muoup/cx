@@ -18,7 +18,7 @@ use crate::{
     emit::{self, intrinsics},
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
-        EvalResult, arithmetic, eval, eval_expected, eval_type, flow::Evaluation, place, storage,
+        EvalResult, arithmetic, eval_expected, eval_type, flow::Evaluation, place, storage,
         types,
     },
     log::hmir_error,
@@ -54,37 +54,13 @@ pub(crate) fn eval_coerce(
     value: HMIRExprID,
     target: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    if matches!(mode, HMIRCoerceMode::Truthy) {
-        let value = (eval(context, body, value))?.ready()?;
-        return Ok(Evaluation::Ready(condition(context, value, span)?));
-    }
     let target = (eval_type(context, body, target))?.ready()?;
     let value =
         eval_expected(context, body, value, Some(target))?.complete(context, body, Some(target))?;
     Ok(Evaluation::Ready(match mode {
-        HMIRCoerceMode::Implicit => implicit::standard(context, value, target, span)?,
-        HMIRCoerceMode::CCast => explicit::standard(context, value, target, span)?,
-        HMIRCoerceMode::EnumMember => {
-            let Some(number) = value::as_int(&value) else {
-                let subject = ("enum member".into(), "a compile-time integer".into(), None);
-                return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, subject).into());
-            };
-            let typed = value::int(context.env(), number, target);
-            if number < 0 && !types::int_type(context.env(), value.ty()).signed() {
-                return Err(
-                    hmir_error(span, &typecheck::ENUM_MEMBER_RANGE, (number as u128).to_string()).into(),
-                );
-            }
-            if value::as_int(&typed) != Some(number) {
-                return Err(
-                    hmir_error(span, &typecheck::ENUM_MEMBER_RANGE, number.to_string()).into(),
-                );
-            }
-            typed
+        HMIRCoerceMode::CCast | HMIRCoerceMode::As => {
+            explicit::standard(context, value, target, span)?
         }
-
-        // REVIEW: This is a temporary solution to allow for the use of explicit casts in the compiler. It should be removed once the compiler is fully implemented.
-        _ => explicit::standard(context, value, target, span)?,
     }))
 }
 

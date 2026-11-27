@@ -146,6 +146,9 @@ pub(crate) fn eval_expected(
                 value,
                 target,
             } => coerce::eval_coerce(context, body, span, *mode, *value, *target),
+            HMIROp::EnumMember { value, target } => {
+                symbol::eval_enum_member(context, body, span, *value, *target)
+            }
             HMIROp::Control(control) => {
                 control::eval_control(context, body, span, control, expected)
             }

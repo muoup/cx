@@ -103,7 +103,7 @@ fn branch(
 ) -> EvalResult<Evaluation<HMIRValue>> {
     match context.context() {
         FnContext::Comptime(_) => {
-            let condition = eval(context, body, condition)?.ready()?;
+            let condition = eval_truthy(context, body, body.expr(condition).span(), condition)?.ready()?;
 
             match (comptime_truth(&condition), else_branch) {
                 (true, Some(_)) => eval_scoped(context, body, then_branch, false, expected),
@@ -284,14 +284,13 @@ fn eval_condition(
     condition: HMIRExprID,
 ) -> EvalResult<Evaluation<MIRValue>> {
     let span = body.expr(condition).span();
-    let value = eval(context, body, condition)?.ready()?;
-    let value = coerce::condition(context, value, span)?;
+    let value = eval_truthy(context, body, span, condition)?.ready()?;
     Ok(Evaluation::Ready(emit::runtime::value(
         context, &value, span,
     )?))
 }
 
-fn logical_operand(
+fn eval_truthy(
     context: &mut LocalLoweringContext,
     body: &HMIRBodyContext,
     span: &TokenRange,
@@ -309,12 +308,12 @@ pub(crate) fn eval_short_circuit(
     lhs: HMIRExprID,
     rhs: HMIRExprID,
 ) -> EvalResult<Evaluation<HMIRValue>> {
-    let left = logical_operand(context, body, span, lhs)?.ready()?;
+    let left = eval_truthy(context, body, span, lhs)?.ready()?;
     let or = op == HMIRBinaryOp::LOr;
     if !context.is_runtime() {
         return match comptime_truth(&left) == or {
             true => Ok(Evaluation::Ready(left)),
-            false => logical_operand(context, body, span, rhs),
+            false => eval_truthy(context, body, span, rhs),
         };
     }
 
@@ -328,7 +327,7 @@ pub(crate) fn eval_short_circuit(
     }
 
     emit::runtime::flow::switch_to(context, rhs_block);
-    let right = flow::catch_diverged(logical_operand(context, body, span, rhs))?.ready()?;
+    let right = flow::catch_diverged(eval_truthy(context, body, span, rhs))?.ready()?;
     let ty = types::int(context.env_mut(), HMIRIntWidth::I1, false, span);
     let result = emit::storage::scratch(context, ty, span)?;
     if let Some(right) = right {

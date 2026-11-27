@@ -22,6 +22,10 @@ pub enum HMIROp {
         value: HMIRExprID,
         target: HMIRExprID,
     },
+    EnumMember {
+        value: HMIRExprID,
+        target: HMIRExprID,
+    },
     Assign {
         target: HMIRExprID,
         op: Option<HMIRBinaryOp>,
@@ -78,11 +82,8 @@ pub enum HMIRUnaryOp {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HMIRCoerceMode {
-    Implicit,
-    Convert,
     CCast,
-    EnumMember,
-    Truthy,
+    As,
 }
 
 #[derive(Debug, Clone)]
@@ -198,11 +199,8 @@ impl HMIRUnaryOp {
 impl HMIRCoerceMode {
     pub fn path(self) -> &'static str {
         match self {
-            Self::Implicit => "op.coerce",
-            Self::Convert => "op.convert",
             Self::CCast => "op.c_cast",
-            Self::EnumMember => "op.enum_member",
-            Self::Truthy => "op.truthy",
+            Self::As => "op.as",
         }
     }
 }

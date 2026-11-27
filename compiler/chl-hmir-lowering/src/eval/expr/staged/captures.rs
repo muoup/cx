@@ -207,7 +207,9 @@ impl Locals<'_> {
                 HMIROp::UnOp { operand, .. }
                 | HMIROp::AddressOf(operand)
                 | HMIROp::Dereference(operand) => children.push(*operand),
-                HMIROp::Coerce { value, target, .. } | HMIROp::Assign { value, target, .. } => {
+                HMIROp::Coerce { value, target, .. }
+                | HMIROp::EnumMember { value, target }
+                | HMIROp::Assign { value, target, .. } => {
                     children.extend([*value, *target])
                 }
                 HMIROp::Control(control) => match control {

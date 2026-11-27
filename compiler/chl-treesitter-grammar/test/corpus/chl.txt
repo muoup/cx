@@ -1780,3 +1780,83 @@ void example() {
                     (primary_expression
                       (qualified_name
                         (identifier)))))))))))))
+
+==================
+as casts
+==================
+int& view(Strong& value) => value as int&;
+int compute(int value) => value as shape.T + 1;
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type))
+      (reference_modifier
+        (operator)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (qualified_name
+              (identifier))
+            (reference_modifier
+              (operator)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (operator)
+      (expression
+        (as_expression
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier))))
+          (keyword)
+          (type
+            (builtin_type_sequence
+              (builtin_type))
+            (reference_modifier
+              (operator)))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (operator)
+      (expression
+        (binary_expression
+          (expression
+            (as_expression
+              (expression
+                (primary_expression
+                  (qualified_name
+                    (identifier))))
+              (keyword)
+              (expression
+                (postfix_expression
+                  (primary_expression
+                    (qualified_name
+                      (identifier)))
+                  (identifier)))))
+          (operator)
+          (expression
+            (primary_expression
+              (literal
+                (number_literal)))))))))

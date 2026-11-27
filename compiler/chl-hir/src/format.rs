@@ -457,6 +457,7 @@ impl Display for HIRBinOp {
             HIRBinOp::Greater => write!(f, ">"),
             HIRBinOp::GreaterEqual => write!(f, ">="),
             HIRBinOp::Access => write!(f, "."),
+            HIRBinOp::As => write!(f, "as"),
             HIRBinOp::MethodCall => write!(f, "()"),
             HIRBinOp::ArrayIndex => write!(f, "[]"),
             HIRBinOp::Comma | HIRBinOp::GroupedComma => write!(f, ","),

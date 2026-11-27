@@ -1,4 +1,8 @@
-import std::{memory::allocation, collections::span, optional, panic} as std;
+import std::{
+    optional, panic, stream,
+    memory::allocation, 
+    collections::span, 
+} as std;
 
 #include <string.h>
 
@@ -91,6 +95,15 @@ T& vector::at(vector(_: T, .A = _)& this, usize index) {
 
 std::span(T) vector::as_span(vector(_: T, .A = _)& this)
     => std::span::new((T*) this.data, this.length);
+
+comptime std::stream(T&) vector::as_stream(^vector(_: T)& this)
+    => |fn sink(^T&) -> ^void| => .{
+        auto spliced = this;
+    
+        for (usize i = 0; i < spliced.length; i++) {
+            sink(emit spliced |> vector::at(i));
+        }
+    };
 
 vector(@type.unqualify(T), .A = A) vector::from_span(
     comptime std::allocator A = std::heap_allocator, std::span(_: T) this

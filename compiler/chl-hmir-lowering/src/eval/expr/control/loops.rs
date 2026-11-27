@@ -2,7 +2,7 @@ use chl_hmir::{HMIRBodyContext, expr::HMIRExprID};
 use chl_mir::MIRInstructionKind;
 use chl_tokens::TokenRange;
 
-use super::{closing, comptime_truth, eval_condition};
+use super::{closing, comptime_truth, eval_condition, eval_truthy};
 use crate::{
     emit,
     env::function::{LocalLoweringContext, runtime::Exit},
@@ -125,8 +125,9 @@ fn comptime_while(
     pre_eval: bool,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let mut checks = pre_eval;
+    let span = body.expr(condition).span();
     loop {
-        if checks && !comptime_truth(&eval(context, body, condition)?.ready()?) {
+        if checks && !comptime_truth(&eval_truthy(context, body, span, condition)?.ready()?) {
             break;
         }
         checks = true;

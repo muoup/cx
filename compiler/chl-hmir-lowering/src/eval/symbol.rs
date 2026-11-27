@@ -2,8 +2,9 @@ use std::{ops::Deref, rc::Rc};
 
 use chl_hir::ast::types::HIRTagKind;
 use chl_hmir::{
-    HMIRComptimeGlobal, HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID, HMIRDefKind,
-    HMIRFnSignature, HMIRFunction, HMIRGlobal,
+    HMIRBodyContext, HMIRComptimeGlobal, HMIRDeclaration, HMIRDeclarationRole, HMIRDef, HMIRDefID,
+    HMIRDefKind, HMIRFnSignature, HMIRFunction, HMIRGlobal,
+    expr::HMIRExprID,
     ty::{
         HMIRExprType, HMIRType, HMIRTypeID, HMIRTypeKind, HMIRUndefined,
         aggregate::HMIRTypeSemantics, context::HMIRTypeContext,
@@ -24,13 +25,15 @@ use crate::{
         resolver::{SymbolState, demand},
         symbols::HMIRUnitHandle,
     },
-    eval::{self, comptime, deduce, eval_type, flow, name::type_value, types},
+    eval::{self, EvalResult, comptime, deduce, eval_expected, eval_type, flow, name::type_value, types},
     log::hmir_error,
     lower::declaration,
     value::{
         HMIRValue,
         address::{Addressable, HMIRAddress},
+        as_int,
         immediate::HMIRImmValue,
+        int,
     },
 };
 
@@ -385,6 +388,32 @@ fn composite(env: &HMIREnvironment, a: HMIRTypeID, b: HMIRTypeID) -> Option<HMIR
         (true, false) if types::alike(env, left, right, true) => Some(a),
         _ => None,
     }
+}
+
+pub(crate) fn eval_enum_member(
+    context: &mut LocalLoweringContext,
+    body: &HMIRBodyContext,
+    span: &TokenRange,
+    value: HMIRExprID,
+    target: HMIRExprID,
+) -> EvalResult<flow::Evaluation<HMIRValue>> {
+    let target = eval_type(context, body, target)?.ready()?;
+    let value = eval_expected(context, body, value, Some(target))?
+        .complete(context, body, Some(target))?;
+    let Some(number) = as_int(&value) else {
+        let subject = ("enum member".into(), "a compile-time integer".into(), None);
+        return Err(hmir_error(span, &typecheck::TYPE_REQUIREMENT, subject).into());
+    };
+    let typed = int(context.env(), number, target);
+    if number < 0 && !types::int_type(context.env(), value.ty()).signed() {
+        return Err(
+            hmir_error(span, &typecheck::ENUM_MEMBER_RANGE, (number as u128).to_string()).into(),
+        );
+    }
+    if as_int(&typed) != Some(number) {
+        return Err(hmir_error(span, &typecheck::ENUM_MEMBER_RANGE, number.to_string()).into());
+    }
+    Ok(flow::Evaluation::Ready(typed))
 }
 
 // The value a storage global starts with: its initializer, or else zero

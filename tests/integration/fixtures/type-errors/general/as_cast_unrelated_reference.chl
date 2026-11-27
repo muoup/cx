@@ -1,0 +1,9 @@
+typedef @strong int First;
+typedef @strong int Second;
+
+Second& rebrand(First& value) => value as Second&;
+
+int main() {
+    First value = (First)0;
+    return (int)rebrand(value);
+}

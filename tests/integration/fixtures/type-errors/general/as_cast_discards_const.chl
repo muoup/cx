@@ -1,0 +1,8 @@
+typedef @strong int Strong;
+
+int& unwrap(const Strong& value) => value as int&;
+
+int main() {
+    const Strong value = (Strong)0;
+    return unwrap(value);
+}

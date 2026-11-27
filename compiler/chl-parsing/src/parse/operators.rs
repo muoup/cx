@@ -5,7 +5,7 @@ use chl_hir::ast::expression::{HIRBinOp, HIRUnOp};
 use chl_log::catalogue::parse::*;
 use chl_log::CHLResult;
 use chl_tokens::token::{OperatorType, PunctuatorType, TokenKind};
-use chl_tokens::{operator, punctuator};
+use chl_tokens::{keyword, operator, punctuator};
 
 use crate::parse::expressions::parse_pattern;
 use crate::parse::types::{parse_abstract_type, starts_type, TypePosition};
@@ -29,6 +29,7 @@ pub(crate) fn binop_prec(op: HIRBinOp) -> u8 {
     match op {
         HIRBinOp::Access | HIRBinOp::MethodCall | HIRBinOp::ArrayIndex => 1,
         HIRBinOp::Pipe(_) | HIRBinOp::BackwardPipe => 2,
+        HIRBinOp::As => 3,
 
         HIRBinOp::Multiply | HIRBinOp::Divide | HIRBinOp::Modulus => 4,
         HIRBinOp::Add | HIRBinOp::Subtract => 5,
@@ -69,7 +70,7 @@ pub(crate) fn unop_prec(op: HIRUnOp) -> u8 {
     }
 }
 
-pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CHLResult<Option<HIRUnOp>> {
+pub(crate) fn parse_prefix_unop(data: &mut ParserData, allow_cast: bool) -> CHLResult<Option<HIRUnOp>> {
     Ok(match &next_kind!(data.tokens)? {
         TokenKind::Operator(op) => match op {
             OperatorType::Ampersand => Some(HIRUnOp::AddressOf),
@@ -88,7 +89,7 @@ pub(crate) fn parse_prefix_unop(data: &mut ParserData) -> CHLResult<Option<HIRUn
         },
 
         // Maybe a type cast
-        punctuator!(OpenParen) => {
+        punctuator!(OpenParen) if allow_cast => {
             let pre_index = data.tokens.index - 1;
 
             if !starts_type(data, TypePosition::Cast)? {
@@ -204,6 +205,7 @@ fn op_to_binop(data: &ParserData, op: OperatorType) -> CHLResult<HIRBinOp> {
 
 pub(crate) fn parse_binop(data: &mut ParserData) -> CHLResult<HIRBinOp> {
     Ok(match next_kind!(data.tokens).cloned() {
+        Ok(keyword!(As)) if !data.c_mode && !data.in_include() => HIRBinOp::As,
         Ok(TokenKind::Operator(OperatorType::Comma)) => {
             if data.get_comma_mode() {
                 op_to_binop(data, OperatorType::Comma)?

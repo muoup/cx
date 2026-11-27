@@ -149,8 +149,9 @@ const PREC = {
     shift: 11,
     additive: 12,
     multiplicative: 13,
-    unary: 14,
-    call: 15,
+    cast: 14,
+    unary: 15,
+    call: 16,
 };
 
 const commaSep1 = (rule) => seq(rule, repeat(seq(",", rule)), optional(","));
@@ -202,8 +203,10 @@ module.exports = grammar({
         [$.compiler_attribute, $.primary_expression],
         [$._top_level_item, $._unlabeled_statement],
         [$.type, $.primary_expression],
+        [$.templated_name, $.type, $.primary_expression],
         [$.type],
         [$.type, $.type_application],
+        [$.type, $.type_application, $.primary_expression],
         [$.decl_type, $.primary_expression],
         [$.decl_type, $.type_literal],
         [$.type, $.type_literal],
@@ -1032,6 +1035,7 @@ module.exports = grammar({
                 $.assignment_expression,
                 $.conditional_expression,
                 $.binary_expression,
+                $.as_expression,
                 $.unary_expression,
                 $.postfix_expression,
                 $.primary_expression,
@@ -1043,6 +1047,7 @@ module.exports = grammar({
                 seq(
                     choice(
                         $.unary_expression,
+                        $.as_expression,
                         $.postfix_expression,
                         $.primary_expression,
                     ),
@@ -1077,6 +1082,7 @@ module.exports = grammar({
         conditional_condition: ($) =>
             choice(
                 $.binary_expression,
+                $.as_expression,
                 $.unary_expression,
                 $.postfix_expression,
                 $.primary_expression,
@@ -1096,6 +1102,13 @@ module.exports = grammar({
                 prec.left(PREC.additive, seq($.expression, choice(op($, "+"), op($, "-")), $.expression)),
                 prec.left(PREC.multiplicative, seq($.expression, choice(op($, "*"), op($, "/"), op($, "%")), $.expression)),
             ),
+
+        as_expression: ($) =>
+            prec.left(PREC.cast, seq(
+                field("value", $.expression),
+                keyword($, "as"),
+                field("target", choice($.expression, prec.dynamic(-1, $.type))),
+            )),
 
         unary_expression: ($) =>
             prec(

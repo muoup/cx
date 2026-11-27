@@ -24,8 +24,8 @@ use crate::parse::operators::{
     binop_prec, parse_binop, parse_postfix_unop, parse_prefix_unop, unop_prec, PrecOperator,
 };
 use crate::parse::types::{
-    application_suffix, parse_abstract_type, parse_args, parse_typed_declarator, starts_type,
-    TypePosition,
+    application_suffix, parse_abstract_type, parse_args, parse_declaration_head, parse_declarator,
+    parse_typed_declarator, starts_type, DeclaratorKind, TypePosition,
 };
 use crate::parse::{
     parse_block, parse_expression_block, parse_intrinsic, try_parse_qualified_name,
@@ -135,7 +135,7 @@ pub(crate) fn parse_expr(data: &mut ParserData) -> CHLResult<HIRExpression> {
     let mut op_stack = Vec::new();
     let mut expr_stack = Vec::new();
 
-    parse_expr_val(data, &mut expr_stack, &mut op_stack)?;
+    parse_expr_val(data, &mut expr_stack, &mut op_stack, TypePosition::Expression)?;
     while let Some(()) = parse_expr_op_concat(data, &mut expr_stack, &mut op_stack)? {}
 
     let ternary = if try_next!(data.tokens, punctuator!(QuestionMark)) {
@@ -247,8 +247,13 @@ pub(crate) fn parse_expr_op_concat(
             compress_one_expr(data, expr_stack, op_stack)?
         }
         _ => {
+            let position = if matches!(op, HIRBinOp::As) {
+                TypePosition::AsTarget
+            } else {
+                TypePosition::Expression
+            };
             op_stack.push(PrecOperator::BinOp(op));
-            parse_expr_val(data, expr_stack, op_stack)?;
+            parse_expr_val(data, expr_stack, op_stack, position)?;
             return Ok(Some(()));
         }
     };
@@ -561,21 +566,28 @@ pub(crate) fn compress_stack(
     Ok(())
 }
 
-pub(crate) fn parse_expr_val(
+fn parse_expr_val(
     data: &mut ParserData,
     expr_stack: &mut Vec<HIRExpression>,
     op_stack: &mut Vec<PrecOperator>,
+    position: TypePosition,
 ) -> CHLResult<()> {
     let start_index = data.tokens.index;
 
-    while let Some(op) = parse_prefix_unop(data)? {
+    let as_target = matches!(position, TypePosition::AsTarget);
+    while let Some(op) = parse_prefix_unop(data, !as_target)? {
         op_stack.push(PrecOperator::UnOp(op));
     }
 
     // A type in value position, 'opt(int)' as a comptime argument or the head of 'T::member'
-    let acc = if !data.c_mode && !data.in_include() && starts_type(data, TypePosition::Expression)? {
+    let acc = if !data.c_mode && !data.in_include() && starts_type(data, position)? {
         let type_start = data.tokens.index;
-        let ty = parse_abstract_type(data, TagScope::Value)?;
+        let ty = if as_target {
+            let (base, _) = parse_declaration_head(data, TagScope::Value)?;
+            parse_declarator(data, &base, TagScope::Value, DeclaratorKind::AsTarget)?.1
+        } else {
+            parse_abstract_type(data, TagScope::Value)?
+        };
         if peek_kind!(data.tokens, identifier!()) {
             return parse_point_error(
                 &data.tokens,

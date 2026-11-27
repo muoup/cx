@@ -292,6 +292,7 @@ pub enum HIRBinOp {
     // The piped value becomes the argument at this index
     Pipe(u32),
     BackwardPipe,
+    As,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

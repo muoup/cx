@@ -1,0 +1,37 @@
+#include <stdio.h>
+
+typedef @strong int Strong;
+typedef @strong int& StrongRef;
+
+struct Shape : @comptime { type T; };
+comptime Shape shape = { int };
+
+comptime type select(bool wide) => wide ? long : int;
+comptime type Wrapped(type T) => @strong T;
+
+int& view(Strong& value) => value as int&;
+const int& read_only(const Strong& value) => (const int&)value;
+volatile int& volatile_view(volatile Strong& value) => value as volatile int&;
+int& unwrap_reference(StrongRef value) => (int&)value;
+T& generic_view(Wrapped(_: T)& value) => value as T&;
+
+int main() {
+    Strong value = 4 as Strong;
+    int& first = view(value);
+    first = 7;
+    const int& second = read_only(value);
+    int projected = 2 * 3.9 as shape.T + 1;
+    int product = 5.9 as int * (1 + 1);
+    int grouped = 5.9 as (int) * 2;
+    int called = 4.9 as select(false);
+    int chained = 6.9 as int as Strong as int;
+    int conditional = 8.9 as (false ? long : int);
+    int* pointer = 0 as int*;
+    Wrapped(int) wrapped = 5 as Wrapped(int);
+    generic_view(wrapped) = 11;
+    bool ok = second == 7 && projected == 7 && product == 10 && grouped == 10 && called == 4
+        && chained == 6 && conditional == 8 && pointer == 0 && (wrapped as int) == 11;
+    volatile_view(value) = 9;
+    if (ok && (int)value == 9) puts("ok");
+    return 0;
+}

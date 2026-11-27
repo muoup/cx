@@ -287,7 +287,7 @@ fn lower_enum_variant<'a>(
         context.type_ref(HMIRExprTypeKind::Int(ENUM_INT), span)
     };
     let initializer = if fixed {
-        context.coerce(HMIRCoerceMode::EnumMember, initializer, ty, span)
+        context.op(HMIROp::EnumMember { value: initializer, target: ty }, span)
     } else {
         initializer
     };

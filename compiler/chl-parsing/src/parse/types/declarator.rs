@@ -30,6 +30,7 @@ pub(crate) enum DeclaratorBase {
 pub(crate) enum DeclaratorKind {
     Named,
     Abstract,
+    AsTarget,
     Field,
 }
 
@@ -62,12 +63,15 @@ pub(crate) fn parse_declarator(
     scope: TagScope,
     kind: DeclaratorKind,
 ) -> CHLResult<(Option<CHLIdent>, HIRType)> {
-    let named = !matches!(kind, DeclaratorKind::Abstract);
+    let named = matches!(kind, DeclaratorKind::Named | DeclaratorKind::Field);
     let DeclaratorBase::Type(ty) = base else {
         return parse_native_fn(data, scope, named);
     };
     let mut ty = ty.clone();
-    while let Some(indirection) = parse_indirection(data, true)? {
+    while !(matches!(kind, DeclaratorKind::AsTarget) && indirection_is_infix(data)) {
+        let Some(indirection) = parse_indirection(data, true)? else {
+            break;
+        };
         ty = indirection.apply(ty);
     }
 
@@ -111,6 +115,26 @@ pub(crate) fn parse_declarator(
         ty = parse_abstract_type(data, scope)?.add_specifier(ty.specifiers);
     }
     Ok((name, ty))
+}
+
+fn indirection_is_infix(data: &ParserData) -> bool {
+    let [operator, operand, tail @ ..] = &data.tokens.slice[data.tokens.index..] else {
+        return false;
+    };
+    if !matches!(operator.kind, operator!(Asterisk) | operator!(Ampersand)) {
+        return false;
+    }
+    match operand.kind {
+        identifier!()
+        | TokenKind::IntLiteral(_)
+        | TokenKind::FloatLiteral(_)
+        | TokenKind::StringLiteral(_)
+        | TokenKind::CompilerIdentifier(_) => true,
+        punctuator!(OpenParen) => {
+            !matches!(tail.first().map(|token| &token.kind), Some(operator!(Asterisk)))
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn parse_abstract_type(data: &mut ParserData, scope: TagScope) -> CHLResult<HIRType> {

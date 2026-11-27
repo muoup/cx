@@ -60,6 +60,11 @@ pub(crate) fn lower_binop<'a>(
             let value = lower_expr(context, rhs)?;
             Ok(context.block(vec![statement, value], false, false, span))
         }
+        HIRBinOp::As => {
+            let value = lower_expr(context, lhs)?;
+            let target = lower_expr(context, rhs)?;
+            Ok(context.coerce(HMIRCoerceMode::As, value, target, span))
+        }
         HIRBinOp::Assign(compound) => {
             let op = match compound.as_deref().map(binary_op) {
                 Some(None) => {

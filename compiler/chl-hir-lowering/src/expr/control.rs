@@ -3,12 +3,8 @@ use chl_hir::ast::{
     pattern::HIRPattern,
 };
 use chl_hmir::{
-    HMIRCoerceMode,
     expr::{HMIRExprID, HMIRExprKind},
-    ty::{
-        HMIRExprTypeKind,
-        intrinsic::{HMIRIntType, HMIRIntWidth},
-    },
+    ty::intrinsic::{HMIRIntType, HMIRIntWidth},
 };
 use chl_log::{CHLResult, catalogue::typecheck};
 use chl_tokens::TokenRange;
@@ -28,7 +24,7 @@ pub(crate) fn lower_if<'a>(
     span: &TokenRange,
 ) -> CHLResult<HMIRExprID> {
     let (condition, then_branch) = context.scoped(|this| -> CHLResult<_> {
-        let condition = lower_condition(this, condition)?;
+        let condition = lower_expr(this, condition)?;
         let then_branch = this.scoped(|this| lower_branch(this, then_branch, statement))?;
 
         Ok((condition, then_branch))
@@ -67,7 +63,7 @@ pub(crate) fn lower_while<'a>(
     span: &TokenRange,
 ) -> CHLResult<HMIRExprID> {
     context.scoped(|context| {
-        let condition = lower_condition(context, condition)?;
+        let condition = lower_expr(context, condition)?;
         let body = context.scoped(|context| lower_expr(context, body))?;
         Ok(context.push(
             HMIRExprKind::While {
@@ -91,7 +87,7 @@ pub(crate) fn lower_for<'a>(
     context.scoped(|this| {
         let init = lower_expr(this, init)?;
         let condition = match condition {
-            Some(condition) => lower_condition(this, condition)?,
+            Some(condition) => lower_expr(this, condition)?,
             None => this.int_literal(HMIRIntType::new(HMIRIntWidth::I1, false), 1, span),
         };
         let increment = lower_expr(this, increment)?;
@@ -178,16 +174,4 @@ pub(crate) fn lower_case<'a>(
     let body = lower_expr(context, statement)?;
 
     Ok(context.push(HMIRExprKind::Case { value, body }, span))
-}
-
-fn lower_condition<'a>(
-    context: &mut BodyLowering<'a>,
-    condition: &'a HIRExpression,
-) -> CHLResult<HMIRExprID> {
-    let span = &condition.range;
-    let bool_ty = HMIRIntType::new(HMIRIntWidth::I1, false);
-    let value = lower_expr(context, condition)?;
-    let target = context.type_ref(HMIRExprTypeKind::Int(bool_ty), span);
-
-    Ok(context.coerce(HMIRCoerceMode::Truthy, value, target, span))
 }

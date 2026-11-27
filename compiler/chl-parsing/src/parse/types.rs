@@ -20,6 +20,7 @@ use crate::parse::{parse_intrinsic, parser::LocalName, try_parse_qualified_name}
 pub(super) enum TypePosition {
     Statement,
     Expression,
+    AsTarget,
     Cast,
 }
 
@@ -81,6 +82,7 @@ pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLR
                                         )
                                     )
                             }
+                            TypePosition::AsTarget => indirect,
                             TypePosition::Cast => {
                                 matches!(next, Some(punctuator!(CloseParen)))
                                     && (indirect
@@ -130,7 +132,7 @@ pub(super) fn starts_type(data: &mut ParserData, position: TypePosition) -> CHLR
                         ),
                         _ => declarator,
                     },
-                    TypePosition::Expression => false,
+                    TypePosition::Expression | TypePosition::AsTarget => false,
                 }
             } else {
                 data.is_module_type(&name)?

@@ -26,14 +26,13 @@ comptime stream(T) stream::filter(
 };
 
 comptime ^void stream::for_each(
-    type T = _, 
-    stream(T) this, 
+    stream(_: T) this, 
     fn callback(^T) -> ^void
 ) => this(|^T value| => callback(value));
 
 comptime stream(U) stream::map(
-    type T = _, type U = _, 
-    stream(T) this, 
+    type U = _, 
+    stream(_: T) this, 
     fn callback(^T) -> ^U
 ) => |fn sink(^U) -> ^void| => .{
     this(|^T value| => .{

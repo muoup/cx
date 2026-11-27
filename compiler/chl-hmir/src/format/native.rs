@@ -64,6 +64,10 @@ impl BodyPrinter<'_> {
                 format!("{}<{}>", mode.path(), self.inline(*target)),
                 values(&[*value]),
             ),
+            HMIROp::EnumMember { value, target } => (
+                format!("op.enum_member<{}>", self.inline(*target)),
+                values(&[*value]),
+            ),
             HMIROp::Assign { target, op, value } => {
                 let head = match op {
                     Some(op) => format!("op.assign<{}>", op.path()),
