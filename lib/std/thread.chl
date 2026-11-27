@@ -1,0 +1,84 @@
+#include <pthread.h>
+#include <stdlib.h>
+
+import std::{
+    memory, optional,
+    memory::allocation,
+} as std;
+
+import std::platform::posix::error as std::posix;
+import std::platform::posix as std::posix::raw;
+
+public:
+
+comptime type thread(
+    comptime std::allocator A = std::heap_allocator,
+    comptime type call_arg,
+    comptime type return_arg,
+) => struct : @nodrop {
+    pthread_t posix_thread;
+};
+
+comptime type thread_return(comptime A, comptime T)
+    => struct : @nodrop { T value; };
+
+auto thread::spawn(
+    comptime std::allocator A = std::heap_allocator,
+    comptime type return_arg = _,
+    comptime fn callback() -> ^return_arg,
+) -> std::opt(thread(void, return_arg, .A = A)) {
+    return thread::spawn_with(
+        .A = A,
+        |^void value| => callback,
+        ()
+    );
+}
+
+auto thread::spawn_with(
+    comptime std::allocator A = std::heap_allocator,
+    comptime type call_arg = _, 
+    comptime type return_arg = _, 
+    comptime fn callback(^call_arg) -> ^return_arg,
+    call_arg arg,
+)
+    where pre: (!@type.is_unsafe_move(return_arg) && !@type.is_unsafe_move(call_arg))
+    -> std::opt(thread(call_arg, return_arg, .A = A))
+{
+    void* leaked = std::allocate(A, move arg) |> std::allocation::leak();
+    thread self = { 0 };
+    
+    std::posix::raw::posix_status thread_fd = 
+        (std::posix::raw::posix_status) pthread_create(&self.posix_thread, NULL, @reify(fn(void*) -> void*, |auto pointer| => .{
+            call_arg var;
+            std::force_initialize(emit var, emit (call_arg*) pointer);
+            
+            auto produced = callback(emit var);
+
+            std::allocation::from_raw(pointer, sizeof(call_arg)) |> std::deallocate();
+            void* return_leaked = std::allocate(A, produced) |> std::allocation::leak();
+
+            return return_leaked;
+        }), leaked);
+
+    if (!std::posix::posix_status::is_ok(thread_fd)) {
+        @leak(self);
+        return _::none();
+    }
+
+    return _::some(self);
+}
+
+std::opt(ret_arg) thread::join(thread(_: call_arg, _: ret_arg, .A = _: A) self) {
+    void* ret_value;
+
+    std::posix::raw::posix_status join_result =
+        (std::posix::raw::posix_status) pthread_join(self.posix_thread, &ret_value);
+
+    if (!std::posix::posix_status::is_ok(join_result)) return _::none();
+
+    ret_arg var;
+    std::force_initialize(emit var, emit (ret_arg*) ret_value);
+    std::allocation::from_raw(A, ret_value, sizeof(ret_arg)) |> std::deallocate();
+
+    return move var;
+}

@@ -15,17 +15,21 @@ comptime bool valid_vector_inner(comptime type T) => !@type.is_reference(T) && !
 comptime type vector(comptime type T, comptime std::allocator A = std::heap_allocator)
 where pre: (@unsafe(valid_vector_inner(T)))
 => @strong struct : @nodrop {
+    // TODO: Change this to an allocation
     void* data;
     usize length;
     usize capacity;
 };
 
-vector(T, .A = A) vector::new(comptime type T, comptime std::allocator A = std::heap_allocator)
+vector(T, .A = A) vector::new(comptime type T, comptime std::allocator A = std::aligned_heap_allocator(sizeof(T)))
+    where pre: (A.alignment >= sizeof(T))
     => vector::with_capacity(T, .A = A, initialization_size);
 
 vector(T, .A = A) vector::with_capacity(
     comptime type T, comptime std::allocator A = std::heap_allocator, usize capacity
-) {
+) 
+    where pre: (A.alignment >= sizeof(T))
+{
     auto block = std::allocate(A, allocation_size(T, capacity), .alignment = @type.align_of(T));
     void* data = block.data;
     @leak(block);
@@ -35,11 +39,8 @@ vector(T, .A = A) vector::with_capacity(
 usize vector::length(vector(_, .A = _)& this) => this.length;
 
 void vector::drop(vector(_: T, .A = _: A) this)
-where pre: (!@type.is_nodrop(T))
-{
-    release(T, A, this.data, this.capacity);
-    @leak(this);
-}
+    where pre: (!@type.is_nodrop(T))
+    => std::allocation::from_raw(A, this.data, this.capacity * sizeof(T)) |> std::deallocate();
 
 void vector::drop_with(vector(_: T, .A = _: A) this, comptime fn destructor(^T) -> ^void) {
     for (usize i = 0; i < this.length; i++) {
@@ -56,7 +57,7 @@ where pre: (!@type.is_unsafe_move(T))
 {
     if (capacity <= this.capacity) return;
 
-    std::allocation(A, .alignment = std::allocation_alignment(A, @type.align_of(T))) block = { this.data, allocation_size(T, this.capacity) };
+    std::allocation(A, std::allocation_alignment(A, @type.align_of(T))) block = { this.data, allocation_size(T, this.capacity) };
     std::resize(block, allocation_size(T, capacity));
     this.data = block.data;
     this.capacity = capacity;
@@ -127,9 +128,4 @@ where pre: (sizeof(T) != 0)
 {
     if (capacity > ((usize) -1) / sizeof(T)) std::panic("Vector capacity overflow");
     return capacity * sizeof(T);
-}
-
-void release(comptime type T, comptime std::allocator A, void* data, usize capacity) {
-    std::allocation(A, .alignment = std::allocation_alignment(A, @type.align_of(T))) block = { data, allocation_size(T, capacity) };
-    std::deallocate(move block);
 }

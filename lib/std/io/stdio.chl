@@ -1,4 +1,4 @@
-import std::collections::span as std;
+import std::collections::{span, string} as std;
 
 #include <stdio.h>
 
@@ -30,4 +30,15 @@ void print_char(i32 c) {
 usize print_span(std::span(const u8) bytes) {
     if (bytes.length == 0) return 0;
     return fwrite(bytes.data, 1, bytes.length, stdout);
+}
+
+std::string stdio::input() {
+    auto result = std::string::new();
+    int ch;
+    
+    while ((ch = fgetc(stdin)) != '\n') {
+        result |> std::string::append_byte(ch);
+    }
+
+    return move result;
 }

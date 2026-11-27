@@ -13,3 +13,9 @@ where
     memcpy(&val1, &val2, sizeof(T));
     memcpy(&val2, &buffer, sizeof(T));
 }
+
+comptime ^void force_initialize(type T = _, ^T& val, ^T* data)
+    => emit .{ 
+        auto dummy = @adopt(*(T*) data);
+        val = move dummy;
+    };
