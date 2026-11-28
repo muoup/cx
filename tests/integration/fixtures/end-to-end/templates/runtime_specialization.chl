@@ -6,7 +6,7 @@ typedef type Type;
 U identity(comptime type U, U input) => input;
 T alias_identity(comptime Type T, T value) => value;
 T forward(comptime type T, T value) => identity(T, value);
-T factorial(comptime type T, T value) {
+constexpr T factorial(comptime type T, T value) {
     if (value <= 1) return 1;
     return value * factorial(T, value - 1);
 }

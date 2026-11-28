@@ -40,6 +40,7 @@ pub struct HIRFunctionContract {
 pub struct HIRFunctionPrototype {
     pub kind: HIRFunctionKind,
     pub comptime: bool,
+    pub constexpr: bool,
 
     pub return_type: HIRType,
     pub noreturn: bool,

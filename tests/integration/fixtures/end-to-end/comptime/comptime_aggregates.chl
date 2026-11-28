@@ -31,7 +31,7 @@ struct StaticPair {
     int second;
 };
 
-int increment(int value) {
+constexpr int increment(int value) {
     return value + 1;
 }
 
@@ -95,7 +95,7 @@ comptime int stored_functions() {
     return callbacks[1](9);
 }
 
-int function_stride() {
+constexpr int function_stride() {
     return (int)((&increment + 2) - &increment);
 }
 

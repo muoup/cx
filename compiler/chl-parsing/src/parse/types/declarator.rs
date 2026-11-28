@@ -330,6 +330,7 @@ fn parse_function_type(
     let prototype = HIRFunctionPrototype {
         kind: HIRFunctionKind::Standard(CHLIdent::new("__internal_fnptr")),
         comptime: false,
+        constexpr: false,
         return_type,
         noreturn,
         params,

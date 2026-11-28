@@ -1,0 +1,19 @@
+/* CHL-STDOUT: runtime branch */
+/* CHL-STDOUT-NEXT: 9 0 */
+
+#include <stdio.h>
+
+constexpr int choose(int n);
+
+constexpr int choose(int n) {
+    if (n > 0) return n * n;
+    puts("runtime branch");
+    return 0;
+}
+
+int main() {
+    int constant = comptime choose(3);
+    int runtime = choose(0);
+    printf("%d %d\n", constant, runtime);
+    return 0;
+}

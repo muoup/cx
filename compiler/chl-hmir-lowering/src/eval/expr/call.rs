@@ -323,7 +323,7 @@ pub(crate) fn curry(
     comptime::converge(context, value, span)
 }
 
-fn default(
+pub fn default(
     context: &mut LocalLoweringContext,
     def: HMIRDefID,
     function: &HMIRFunction,
@@ -397,7 +397,7 @@ pub(crate) fn hmir_call(
                 let unavailable = "this function".into();
                 return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, unavailable).into());
             };
-            return dependent::apply(context, def, args.into_iter().map(Some).collect(), span);
+            return dependent::apply(context, def, args.into_iter().map(Some).collect(), &[], span);
         }
     }
 
@@ -506,7 +506,7 @@ fn context_require(
     Ok(())
 }
 
-fn finish(
+pub fn finish(
     context: &mut LocalLoweringContext,
     callee: &HMIRValue,
     args: &[HMIRValue],

@@ -85,6 +85,7 @@ pub fn try_function_parse(
         noreturn,
         kind,
         comptime,
+        constexpr: false,
         contract,
         linkage: specifiers.linkage,
         symbol_naming,

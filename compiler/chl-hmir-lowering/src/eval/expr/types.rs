@@ -1,6 +1,7 @@
 mod construct;
 mod flexible;
 mod layout;
+mod names;
 mod properties;
 
 pub(crate) mod alias;
@@ -10,6 +11,8 @@ pub(crate) mod query;
 pub(crate) use construct::{
     aggregate, construct_type, define_aggregate, hole_bounded, undefined_array,
 };
+
+pub use names::{conversion_names, generated_name, name};
 
 pub(crate) use properties::{comptime_only, opaque_slot, require_runtime, runtime_function};
 
@@ -395,79 +398,6 @@ pub(crate) fn bitfield(env: &HMIREnvironment, reference: HMIRTypeID) -> Option<H
     match env.resolve_kind(reference) {
         HMIRTypeKind::ReferenceTo { bitfield, .. } => *bitfield,
         _ => None,
-    }
-}
-
-pub(crate) fn name(env: &HMIREnvironment, ty: HMIRTypeID) -> String {
-    let constant = env.semantics(ty).constant;
-    let ty = env.resolve_type_id(env.underlying(ty));
-    let base = match ty.kind() {
-        _ if let Some(name) = ty.debug_name() => name.to_owned(),
-        HMIRTypeKind::Nominal { inner, strong_identifier: Some(id) } => {
-            format!("@strong#{} {}", id.0, name(env, *inner))
-        }
-        HMIRTypeKind::Nominal { .. } | HMIRTypeKind::Strong { .. } => {
-            unreachable!("not an underlying type")
-        }
-        HMIRTypeKind::Void => "void".into(),
-        HMIRTypeKind::Unreachable => "unreachable".into(),
-        HMIRTypeKind::Type => "type".into(),
-        HMIRTypeKind::Str(Some(length)) => format!("str<{length}>"),
-        HMIRTypeKind::Str(None) => "str".into(),
-        HMIRTypeKind::Int(int) => format!(
-            "{}{}",
-            if int.signed() { "i" } else { "u" },
-            int.width().bytes() * 8
-        ),
-        HMIRTypeKind::Float(float) => format!("f{}", float.width().bytes() * 8),
-        HMIRTypeKind::PointerTo(inner) => format!("{}*", name(env, *inner)),
-        HMIRTypeKind::ReferenceTo {
-            inner,
-            bitfield: Some(bitfield),
-        } => {
-            format!(
-                "{}&[{}:{}]",
-                name(env, *inner),
-                bitfield.offset,
-                bitfield.width
-            )
-        }
-        HMIRTypeKind::ReferenceTo {
-            inner,
-            bitfield: None,
-        } => format!("{}&", name(env, *inner)),
-        HMIRTypeKind::Array { element, length } => format!("{}[{length}]", name(env, *element)),
-        HMIRTypeKind::Undefined(HMIRUndefined::Array { element }) => {
-            format!("{}[]", name(env, *element))
-        }
-        HMIRTypeKind::Undefined(HMIRUndefined::Forward(Some(tag))) => tag.prefix().into(),
-        HMIRTypeKind::Undefined(HMIRUndefined::Forward(None)) => "undefined".into(),
-
-        HMIRTypeKind::Staged(ty) => format!("^{}", name(env, *ty)),
-        
-        HMIRTypeKind::Builtin { name, .. } => name.clone(),
-        HMIRTypeKind::Struct { .. } => "struct".into(),
-        HMIRTypeKind::Union { .. } => "union".into(),
-        HMIRTypeKind::TaggedUnion { .. } => "enum union".into(),
-        HMIRTypeKind::Function { signature, .. } => {
-            let mut s = String::new();
-
-            if signature.params().is_empty() {
-                s.push_str("() -> ");
-            }
-            
-            for a in signature.params().iter() {
-                s.push_str(format!("{} -> ", name(env, *a.ty())).as_str());
-            }
-
-            s.push_str(name(env, *signature.return_type()).as_str());
-            s
-        },
-        HMIRTypeKind::Dependent => "_".into(),
-    };
-    match constant {
-        true => format!("const {base}"),
-        false => base,
     }
 }
 

@@ -1,4 +1,5 @@
 pub mod address;
+pub mod format;
 pub mod immediate;
 pub mod place;
 pub mod staged;

@@ -1,0 +1,54 @@
+==================
+constexpr function
+==================
+constexpr int square(int n);
+constexpr int square(int n) => n * n;
+
+---
+
+(source_file
+  (function_declaration
+    (keyword)
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier))))))
+  (function_definition
+    (keyword)
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (operator)
+      (expression
+        (binary_expression
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier))))
+          (operator)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier)))))))))

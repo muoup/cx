@@ -2,7 +2,7 @@
 
 typedef int (*Callback)(int);
 
-int add_one(int value) { return value + 1; }
+constexpr int add_one(int value) { return value + 1; }
 int add_two(int value) { return value + 2; }
 
 comptime int evaluate() {

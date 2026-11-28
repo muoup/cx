@@ -12,8 +12,8 @@ public:
 
 comptime bool valid_vector_inner(comptime type T) => !@type.is_reference(T) && !@type.is_const(T);
 
-comptime type vector(comptime type T, comptime std::allocator A = std::heap_allocator)
-where pre: (@unsafe(valid_vector_inner(T)))
+comptime type vector(comptime type T, comptime std::allocator A = std::aligned_heap_allocator(sizeof(T)))
+    where pre: (@unsafe(valid_vector_inner(T)))
 => @strong struct : @nodrop {
     // TODO: Change this to an allocation
     void* data;
@@ -97,7 +97,7 @@ T& vector::at(vector(_: T, .A = _)& this, usize index) {
 std::span(T) vector::as_span(vector(_: T, .A = _)& this)
     => std::span::new((T*) this.data, this.length);
 
-comptime std::stream(T&) vector::as_stream(^vector(_: T)& this)
+comptime std::stream(T&) vector::as_stream(^vector(_: T, .A = _)& this)
     => |fn sink(^T&) -> ^void| => .{
         auto spliced = this;
     

@@ -24,6 +24,7 @@ pub struct HMIRFnDefinition {
 pub struct HMIRFnPrototype {
     symbol_name: CHLIdent,
     linkage: LinkageMode,
+    constexpr: bool,
     signature: HMIRFnSignature<HMIRExprID>,
     params: Vec<HMIRFnParamDecl>,
     defaults: HMIRBodyContext,
@@ -184,6 +185,7 @@ impl HMIRFnPrototype {
     pub fn new(
         symbol_name: CHLIdent,
         linkage: LinkageMode,
+        constexpr: bool,
         signature: HMIRFnSignature<HMIRExprID>,
         params: Vec<HMIRFnParamDecl>,
         defaults: HMIRBodyContext,
@@ -191,6 +193,7 @@ impl HMIRFnPrototype {
         Self {
             symbol_name,
             linkage,
+            constexpr,
             signature,
             params,
             defaults,
@@ -207,6 +210,10 @@ impl HMIRFnPrototype {
 
     pub fn linkage(&self) -> LinkageMode {
         self.linkage
+    }
+
+    pub fn is_constexpr(&self) -> bool {
+        self.constexpr
     }
 
     pub fn signature(&self) -> &HMIRFnSignature<HMIRExprID> {

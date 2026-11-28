@@ -14,6 +14,7 @@ const KEYWORDS = [
     "class",
     "comptime",
     "const",
+    "constexpr",
     "continue",
     "default",
     "defer",
@@ -621,6 +622,7 @@ module.exports = grammar({
             prec(
                 2,
                 seq(
+                    optional(keyword($, "constexpr")),
                     repeat($.declaration_specifier),
                     choice(
                         seq(
@@ -643,8 +645,10 @@ module.exports = grammar({
 
         function_declaration: ($) =>
             seq(
-                repeat($.declaration_specifier),
-                optional(keyword($, "comptime")),
+                choice(
+                    seq(keyword($, "constexpr"), repeat($.declaration_specifier)),
+                    seq(repeat($.declaration_specifier), optional(keyword($, "comptime"))),
+                ),
                 choice(
                     seq($._declared_type, $.function_declarator),
                     seq(

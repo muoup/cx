@@ -1,0 +1,5 @@
+int increment(int n);
+
+constexpr int increment(int n) => n + 1;
+
+int main() => increment(1);

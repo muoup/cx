@@ -510,7 +510,7 @@ pub(crate) fn lower_reify(
         .collect();
     let defaults = HMIRBodyContext::new();
     let prototype =
-        HMIRFnPrototype::new(name.clone(), LinkageMode::Static, signature, decls, defaults);
+        HMIRFnPrototype::new(name.clone(), LinkageMode::Static, false, signature, decls, defaults);
     let def = anon.finish_definition(root, false);
     let function = HMIRFunction::new(anon.finish(), prototype, params.into(), Some(def));
 

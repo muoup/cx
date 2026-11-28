@@ -90,6 +90,7 @@ fn agreement(def: &HMIRDef) -> CHLResult<()> {
             (Some(HMIRDefKind::Function(a)), Some(HMIRDefKind::Function(b))) => {
                 let (left, right) = (a.signature(), b.signature());
                 left.stage() == right.stage()
+                    && a.prototype().is_constexpr() == b.prototype().is_constexpr()
                     && left.is_variadic() == right.is_variadic()
                     && left.params().len() == right.params().len()
                     && left.params().iter().zip(right.params()).all(|(a, b)| a.comptime() == b.comptime())

@@ -19,7 +19,7 @@ use crate::{
     env::{HMIREnvironment, function::LocalLoweringContext},
     eval::{
         EvalResult, arithmetic, eval_expected, eval_type, flow::Evaluation, place, storage,
-        types,
+        types::{self, conversion_names},
     },
     log::hmir_error,
     value::{self, HMIRValue, HMIRValueKind, immediate::HMIRImmValue},
@@ -329,10 +329,7 @@ fn applied(
     match coercion {
         Coercion::Applied(value) => Ok(value),
         Coercion::Unapplied(_) => {
-            let names = (
-                types::name(context.env(), source),
-                types::name(context.env(), target),
-            );
+            let names = conversion_names(context.env(), source, target);
             Err(hmir_error(span, &typecheck::INVALID_CONVERSION, names))
         }
     }

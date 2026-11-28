@@ -74,6 +74,7 @@ fn write_function(
 
     write_linkage(f, function.prototype().linkage())?;
     let stage = match signature.stage() {
+        HMIRFunctionStage::Runtime if function.prototype().is_constexpr() => "constexpr",
         HMIRFunctionStage::Runtime => "runtime",
         HMIRFunctionStage::Comptime => "comptime",
     };

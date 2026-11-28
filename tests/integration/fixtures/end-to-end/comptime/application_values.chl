@@ -15,7 +15,7 @@
 
 #include <stdio.h>
 
-int add(comptime int amount, int value) {
+constexpr int add(comptime int amount, int value) {
     return amount + value;
 }
 

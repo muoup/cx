@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-int add(comptime int amount, int value)
+constexpr int add(comptime int amount, int value)
 where pre: (value > 0), post(result): (result == value + amount)
 {
     return value + amount;

@@ -70,7 +70,7 @@ bool try_resize(allocation(_: A)& block, usize size) {
         return true;
     }
 
-    match (A.realloc) {
+    comptime match (A.realloc) {
         some(auto& realloc) => realloc(block),
         none() => .{
             auto new_buffer = A.allocate(size);
@@ -101,11 +101,15 @@ comptime allocator heap_allocator = allocator::new(
     1
 );
 
-comptime allocator aligned_heap_allocator(usize alignment) => allocator::new(
-    aligned_heap_allocate(alignment), 
-    aligned_heap_free(alignment),
-    alignment,
-);
+comptime allocator aligned_heap_allocator(usize alignment) {
+    if (alignment == 1) return heap_allocator;
+
+    return allocator::new(
+        aligned_heap_allocate(alignment), 
+        aligned_heap_free(alignment),
+        alignment,
+    );
+}
 
 private:
 

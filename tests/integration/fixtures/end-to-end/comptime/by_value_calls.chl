@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-int increment(int value) {
+constexpr int increment(int value) {
     value += 1;
     return value;
 }
@@ -9,7 +9,7 @@ comptime int nested_comptime(int value) {
     return increment(increment(value));
 }
 
-int overwrite(int value) {
+constexpr int overwrite(int value) {
     value = 99;
     return value;
 }
@@ -20,7 +20,7 @@ comptime int isolation_check() {
     return original * 100 + changed;
 }
 
-int identity(int value) {
+constexpr int identity(int value) {
     return value;
 }
 
@@ -38,7 +38,7 @@ comptime int postconditioned(int value) where post(result): (result > value) {
     return value + 3;
 }
 
-int sum_to(int value) {
+constexpr int sum_to(int value) {
     if (value <= 0) return 0;
     return value + sum_to(value - 1);
 }

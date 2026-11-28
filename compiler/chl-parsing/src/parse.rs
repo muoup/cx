@@ -65,6 +65,10 @@ pub fn parse_global_stmt(data: &mut ParserData) -> CHLResult<()> {
             data.tokens.next();
             parse_global_expr(data, DeclarationPrefix::Comptime)?
         }
+        keyword!(Constexpr) => {
+            data.tokens.next();
+            parse_global_expr(data, DeclarationPrefix::Constexpr)?
+        }
         TokenKind::CompilerIdentifier(attr)
             if attr == "overwrite" && !data.c_mode && !data.in_include() =>
         {
@@ -300,6 +304,7 @@ fn scan_type_binders(data: &ParserData) -> Vec<(CHLIdent, LocalName)> {
 enum DeclarationPrefix {
     None,
     Comptime,
+    Constexpr,
     Overwrite,
 }
 
@@ -315,6 +320,7 @@ fn parse_global_expr(data: &mut ParserData, prefix: DeclarationPrefix) -> CHLRes
 fn parse_global_declaration(data: &mut ParserData, prefix: DeclarationPrefix) -> CHLResult<()> {
     let start = data.tokens.index - usize::from(prefix != DeclarationPrefix::None);
     let comptime = prefix == DeclarationPrefix::Comptime;
+    let constexpr = prefix == DeclarationPrefix::Constexpr;
     let overwrite = prefix == DeclarationPrefix::Overwrite;
     let (base, specifiers) = parse_declaration_head(data, TagScope::Module)?;
     let linkage = specifiers.linkage;
@@ -328,12 +334,16 @@ fn parse_global_declaration(data: &mut ParserData, prefix: DeclarationPrefix) ->
         let (name, ty) = parse_declarator(data, &base, TagScope::Module, DeclaratorKind::Named)?;
         let range = data.token_range(declarator_start, data.tokens.index);
         let Some(name) = name else {
-            if declarator_start == start && !overwrite {
+            if declarator_start == start && !overwrite && !constexpr {
                 assert_token_matches!(data.tokens, punctuator!(Semicolon), "';'");
                 return Ok(());
             }
             let (desired, after) = if declarator_start == start {
-                ("a function or global name", "after '@overwrite'")
+                if constexpr {
+                    ("a function name", "after 'constexpr'")
+                } else {
+                    ("a function or global name", "after '@overwrite'")
+                }
             } else {
                 ("a variable declaration", "after ','")
             };
@@ -345,7 +355,7 @@ fn parse_global_declaration(data: &mut ParserData, prefix: DeclarationPrefix) ->
         };
 
         if declarator_start == start {
-            if let Some(prototype) = try_function_parse(
+            if let Some(mut prototype) = try_function_parse(
                 data,
                 start,
                 ty.clone(),
@@ -354,10 +364,18 @@ fn parse_global_declaration(data: &mut ParserData, prefix: DeclarationPrefix) ->
                 specifiers,
                 symbol_naming,
             )? {
+                prototype.constexpr = constexpr;
                 return parse_fn_merge(data, prototype, inherited_external, overwrite);
             }
         }
 
+        if constexpr {
+            return crate::log::parse_underline_error(
+                &INVALID_CONTEXT,
+                ("'constexpr'".into(), "a variable declaration".into()),
+                &range,
+            );
+        }
         let initializer = parse_variable_initializer(data)?;
         let explicit_extern = linkage == LinkageMode::Extern && !specifiers.thread_local;
         if overwrite && !explicit_extern {

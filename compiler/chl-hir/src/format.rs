@@ -688,9 +688,10 @@ impl Display for HIRFunctionPrototype {
 
         let params_str = params.join(", ");
         let noreturn = if self.noreturn { "noreturn " } else { "" };
+        let constexpr = if self.constexpr { "constexpr " } else { "" };
         write!(
             f,
-            "{noreturn}{} :: {}({params_str})",
+            "{constexpr}{noreturn}{} :: {}({params_str})",
             self.return_type, self.kind
         )
     }

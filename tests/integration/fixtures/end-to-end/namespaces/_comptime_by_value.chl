@@ -1,6 +1,6 @@
 comptime int module_bias = 4;
 
-int private_step(int value) {
+constexpr int private_step(int value) {
     return value + module_bias;
 }
 

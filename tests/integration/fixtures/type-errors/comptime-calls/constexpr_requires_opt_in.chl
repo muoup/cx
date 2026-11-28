@@ -1,0 +1,5 @@
+int increment(int n) => n + 1;
+
+constexpr int wrapper(int n) => increment(n);
+
+int main() => comptime wrapper(1);

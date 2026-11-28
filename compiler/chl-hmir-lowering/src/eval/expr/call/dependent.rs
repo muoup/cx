@@ -24,6 +24,7 @@ use crate::{
     },
     eval::{
         EvalResult, coerce, comptime, control,
+        call::{contract, curry, default as default_argument, finish as finish_call},
         deduce::{self, Deduction, Pending},
         eval, eval_expected, eval_type,
         flow::{self, ComptimeStop, EvalExit, Evaluation, StopReason},
@@ -33,8 +34,6 @@ use crate::{
     lower,
     value::{self, HMIRApplication, HMIRValue},
 };
-
-use super::contract;
 
 // The comptime state of a function as it is called. The arguments of its comptime parameters are bound in it as
 // they arrive, so that the types of the parameters after them can be evaluated
@@ -304,6 +303,7 @@ pub(crate) fn call(
     let prototype = function.prototype();
     let default = |index: usize| prototype.params()[index].default().filter(|_| !partial);
     let mut values = vec![None; params.len()];
+    let mut defaults = Vec::new();
     for index in 0..params.len() {
         let arg = args[index];
         let provided = applied.get_mut(index).and_then(Option::take);
@@ -331,6 +331,9 @@ pub(crate) fn call(
             Some(arg) => body.expr(arg),
             None => prototype.defaults().expr(omitted.expect("a default is given")),
         };
+        if omitted.is_some() && !matches!(given.kind(), HMIRExprKind::Hole(_)) {
+            defaults.push(index);
+        }
         if matches!(given.kind(), HMIRExprKind::Hole(_))
             && function.signature().is_comptime_param(index)
             && !matches!(context.env().resolve_kind(ty), HMIRTypeKind::Type)
@@ -346,7 +349,7 @@ pub(crate) fn call(
             Some(arg) => eval_expected(context, body, arg, Some(ty)).and_then(|evaluated| {
                 deduce::complete(context, body, evaluated, Some(ty), arg_span)
             }),
-            None => super::default(context, def, function, index, ty, &values[..index]),
+            None => default_argument(context, def, function, index, ty, &values[..index]),
         }
         .map_err(|exit| match exit {
             EvalExit::Diagnostic(error) if error.code() == typecheck::INVALID_CONVERSION.code => {
@@ -377,17 +380,20 @@ pub(crate) fn call(
     }
 
     let Some(index) = deduction.first_open() else {
-        return finish(context, frame, values, span);
+        return finish(context, frame, values, &defaults, span);
     };
     let undeduced = deduce::undeduced(&deduction, context, index, span);
     if partial || !deduce::generates_type(function) {
         return Err(undeduced.into());
     }
+    if function.structural_body().is_none() {
+        defaults.retain(|&index| values[index].is_some());
+    }
     let span = span.clone();
     deduce::generated(deduction, context, values, undeduced, &span).and_then(
         context,
         body,
-        move |context, _, values| apply(context, def, values, &span),
+        move |context, _, values| apply(context, def, values, &defaults, &span),
     )
 }
 
@@ -396,6 +402,7 @@ pub(crate) fn apply(
     context: &mut LocalLoweringContext,
     def: HMIRDefID,
     values: Vec<Option<HMIRValue>>,
+    defaults: &[usize],
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let function = symbol::function(context.env_mut(), def)?;
@@ -403,7 +410,7 @@ pub(crate) fn apply(
     let state = ComptimeContext::of(def);
     let mut frame = Frame::new(&function, def, state, runtime);
     let values = frame.instantiate(context, values, span)?;
-    finish(context, frame, values, span)
+    finish(context, frame, values, defaults, span)
 }
 
 // Given a value for every parameter, a call that is emitted calls the function generated for its comptime
@@ -413,6 +420,7 @@ fn finish(
     context: &mut LocalLoweringContext,
     mut frame: Frame,
     values: Vec<Option<HMIRValue>>,
+    defaults: &[usize],
     span: &TokenRange,
 ) -> EvalResult<Evaluation<HMIRValue>> {
     let (function, def) = (frame.function, frame.def);
@@ -447,8 +455,14 @@ fn finish(
         let runtime = runtime.map(|(_, value)| value.clone()).collect::<Vec<_>>();
         let return_type = *signature.return_type();
         return contract::call(context, def, &args, span, |context| {
-            super::finish(context, &callee, &runtime, return_type, span)
+            finish_call(context, &callee, &runtime, return_type, span)
         });
+    }
+    if !staged && !function.prototype().is_constexpr() {
+        let subject = format!("runtime function '{}'", symbol::name(context.env(), def));
+        return Err(hmir_error(span, &mir::COMPTIME_UNAVAILABLE, subject)
+            .with_note("declare the function 'constexpr' to allow comptime calls", None)
+            .into());
     }
     // A type generator yields one type for the same arguments, however often it is called
     let generator =
@@ -464,7 +478,7 @@ fn finish(
     let value = match generator {
         false => run(context, None)?,
         true => {
-            let generated = generated_name(context, def, &args);
+            let generated = types::generated_name(context.env(), def, &args, defaults);
             let provisional = args.clone();
             let track_origin = function.structural_body().is_none();
             let publish = |env: &mut HMIREnvironment, value| {
@@ -502,7 +516,7 @@ fn curried(
     let residual = types::residual(signature, |index| values[index].is_some());
     let ty = types::callable(context.env_mut(), residual, span);
     let callee = symbol::value(context.env_mut(), def)?;
-    super::curry(context, callee, values, ty, span)
+    curry(context, callee, values, ty, span)
 }
 
 // The function generated for 'callee' curried with the arguments of its comptime parameters, where 'ty' is the
@@ -553,16 +567,6 @@ pub(crate) fn signature(
     let mut frame = Frame::new(function, def, ComptimeContext::new(), true);
     frame.instantiate(&mut context, values.collect(), span)?;
     frame.signature(&mut context, span)
-}
-
-// A generated type is named by the call that generated it
-fn generated_name(context: &LocalLoweringContext, def: HMIRDefID, args: &[HMIRValue]) -> String {
-    let source = context.env().symbols().resolve_definition(def);
-    let args = args.iter().map(|arg| match value::as_type(arg) {
-        Some(ty) => types::name(context.env(), ty),
-        None => value::as_int(arg).map_or_else(|| "..".into(), |int| int.to_string()),
-    });
-    format!("{}({})", source.name().name, args.collect::<Vec<_>>().join(", "))
 }
 
 fn execute(

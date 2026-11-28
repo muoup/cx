@@ -186,8 +186,9 @@ fn lower_function<'a>(
         contract,
     );
     let symbol_name = context.unit().link_name(name, prototype.symbol_naming);
-    let prototype =
-        HMIRFnPrototype::new(symbol_name, prototype.linkage, signature, decls, defaults);
+    let prototype = HMIRFnPrototype::new(
+        symbol_name, prototype.linkage, prototype.constexpr, signature, decls, defaults,
+    );
     let transparent = matches!(body, Some(HIRFunctionBody::TypeAlias(_)));
     let def = root.map(|root| context.finish_definition(root, transparent));
 
