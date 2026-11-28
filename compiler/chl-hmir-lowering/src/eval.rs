@@ -178,9 +178,10 @@ pub(crate) fn eval_expected(
         } => call::eval_call(context, body, span, *callee, args, named),
 
         HMIRExprKind::Hole(_) => deduce::eval_hole(context, span),
-        HMIRExprKind::Comptime(inner) => Ok(Evaluation::Ready(eval_comptime(
-            context, body, *inner, None,
-        )?)),
+        HMIRExprKind::Comptime(inner) if context.is_comptime() => {
+            eval_expected(context, body, *inner, expected)
+        }
+        HMIRExprKind::Comptime(inner) => comptime::freeze(context, body, *inner, expected),
         HMIRExprKind::Quote { params, body: root } => {
             staged::eval_quote(context, body, params, *root, span, expected)
         }

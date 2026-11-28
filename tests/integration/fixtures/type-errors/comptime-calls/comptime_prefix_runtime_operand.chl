@@ -1,0 +1,5 @@
+int square(int n) => n * n;
+
+int runtime_operand(int n) => comptime square(2) + n;
+
+int main() => runtime_operand(4);

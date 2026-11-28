@@ -1048,15 +1048,16 @@ pub(crate) fn parse_keyword_expr(
             })
         }
 
-        KeywordType::Comptime => parse_point_error(&data.tokens, &RESERVED_KEYWORD, "comptime".into()),
-        KeywordType::Emit => {
+        KeywordType::Comptime | KeywordType::Emit => {
             // 'f(emit a, b)' passes two arguments
             data.change_comma_mode(false);
             let expr = parse_expr(data);
             data.pop_comma_mode();
 
-            Ok(HIRExprKind::Emit {
-                expr: Box::new(expr?),
+            let expr = Box::new(expr?);
+            Ok(match keyword_type {
+                KeywordType::Comptime => HIRExprKind::Comptime { expr },
+                _ => HIRExprKind::Emit { expr },
             })
         }
         _ => {

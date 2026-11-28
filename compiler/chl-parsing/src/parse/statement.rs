@@ -65,6 +65,10 @@ fn parse_item(data: &mut ParserData, allow_declaration: bool) -> CHLResult<HIREx
         keyword!(If) => return parse_if(data, start),
         keyword!(Switch) => return parse_switch(data, start),
         keyword!(Match) => return parse_keyword_expr(data, KeywordType::Match),
+        keyword!(Comptime) if peek_kind!(data.tokens, keyword!(If) | keyword!(Match)) => {
+            let expr = Box::new(parse_item(data, false)?);
+            return Ok(data.expr_from(start, HIRExprKind::Comptime { expr }));
+        }
         keyword!(While) => return data.with_name_scope(|data| parse_while(data, start)),
         keyword!(Do) => return data.with_name_scope(|data| parse_do_while(data, start)),
         keyword!(For) => return data.with_name_scope(|data| parse_for(data, start)),

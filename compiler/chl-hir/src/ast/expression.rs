@@ -191,6 +191,9 @@ pub enum HIRExprKind {
     Emit {
         expr: Box<HIRExpression>,
     },
+    Comptime {
+        expr: Box<HIRExpression>,
+    },
 
     Unsafe {
         expr: Box<HIRExpression>,

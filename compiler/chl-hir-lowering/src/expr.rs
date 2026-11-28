@@ -197,6 +197,10 @@ pub(crate) fn lower_expr<'a>(
         }
         HIRExprKind::Closure { params, body } => lower_quote(context, params, body, span)?,
         HIRExprKind::Emit { expr: inner } => lower_quote(context, &[], inner, span)?,
+        HIRExprKind::Comptime { expr: inner } => {
+            let inner = context.with_stage(true, |context| lower_expr(context, inner))?;
+            context.push(HMIRExprKind::Comptime(inner), span)
+        }
 
         HIRExprKind::Break => context.control(HMIRControlOp::Break, span),
         HIRExprKind::Continue => context.control(HMIRControlOp::Continue, span),

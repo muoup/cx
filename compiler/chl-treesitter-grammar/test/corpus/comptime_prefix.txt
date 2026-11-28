@@ -1,0 +1,132 @@
+==================
+comptime prefix
+==================
+int square(int n) => n * n;
+int main() {
+    int n = comptime square(2) + square(3);
+    comptime if (true) {}
+    else {}
+    comptime match (1) { _ => () }
+    return comptime .{ yield n; };
+}
+
+---
+
+(source_file
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list
+        (parameter
+          (type
+            (builtin_type_sequence
+              (builtin_type)))
+          (declarator
+            (identifier)))))
+    (function_body
+      (operator)
+      (expression
+        (binary_expression
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier))))
+          (operator)
+          (expression
+            (primary_expression
+              (qualified_name
+                (identifier))))))))
+  (function_definition
+    (type
+      (builtin_type_sequence
+        (builtin_type)))
+    (function_declarator
+      (callable_name
+        (qualified_name
+          (identifier)))
+      (parameter_list))
+    (function_body
+      (compound_statement
+        (declaration
+          (variable_declaration
+            (type
+              (builtin_type_sequence
+                (builtin_type)))
+            (declarator_with_initializer
+              (declarator
+                (identifier))
+              (operator)
+              (expression
+                (primary_expression
+                  (comptime_expression
+                    (keyword)
+                    (expression
+                      (binary_expression
+                        (expression
+                          (postfix_expression
+                            (primary_expression
+                              (qualified_name
+                                (identifier)))
+                            (argument_list
+                              (expression
+                                (primary_expression
+                                  (literal
+                                    (number_literal)))))))
+                        (operator)
+                        (expression
+                          (postfix_expression
+                            (primary_expression
+                              (qualified_name
+                                (identifier)))
+                            (argument_list
+                              (expression
+                                (primary_expression
+                                  (literal
+                                    (number_literal)))))))))))))))
+        (comptime_statement
+          (keyword)
+          (if_statement
+            (keyword)
+            (expression
+              (primary_expression
+                (literal
+                  (keyword))))
+            (compound_statement)
+            (keyword)
+            (compound_statement)))
+        (comptime_statement
+          (keyword)
+          (match_statement
+            (keyword)
+            (expression
+              (primary_expression
+                (literal
+                  (number_literal))))
+            (match_arm
+              (match_pattern
+                (identifier))
+              (operator)
+              (expression
+                (primary_expression
+                  (unit_literal))))))
+        (return_statement
+          (keyword)
+          (expression
+            (primary_expression
+              (comptime_expression
+                (keyword)
+                (expression
+                  (primary_expression
+                    (staged_block
+                      (compound_statement
+                        (yield_statement
+                          (keyword)
+                          (expression
+                            (primary_expression
+                              (qualified_name
+                                (identifier)))))))))))))))))

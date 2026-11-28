@@ -1,0 +1,55 @@
+/* CHL-STDOUT: 13 28 14 12 10 10 */
+
+#include <stdio.h>
+
+struct width { int value; };
+
+int square(int n) => n * n;
+int add(int a, int b) => a + b;
+
+comptime int accumulate(bool enabled) {
+    int n = 1;
+    comptime if (enabled) n += 2;
+    else n += 4;
+
+    comptime match (n) {
+        3 => n += 2,
+        _ => n += 10,
+    }
+
+    comptime .{ n *= 2; };
+    comptime if (enabled) return n;
+    return n - 24;
+}
+
+void exercise(int runtime) {
+    comptime if (true) {
+        @internal.assert(square(2) == 4, "comptime if");
+    } else {
+        @internal.assert(runtime == 0, "unselected arm");
+    }
+
+    comptime match (1) {
+        1 => @internal.assert(square(3) == 9, "comptime match"),
+        _ => @internal.assert(runtime == 0, "unselected arm"),
+    }
+
+    int call = comptime square(3) + square(2);
+    int block = comptime .{
+        int n = square(5);
+        n += 3;
+        yield n;
+    };
+    int matched = comptime match (4) {
+        4 => 14,
+        _ => runtime,
+    };
+    struct width typed = comptime .{ yield { .value = 12 }; };
+    int comma = add(comptime square(2), runtime);
+    printf("%d %d %d %d %d %d\n", call, block, matched, typed.value, accumulate(true), comma);
+}
+
+int main() {
+    exercise(accumulate(false));
+    return 0;
+}

@@ -802,6 +802,7 @@ module.exports = grammar({
                 $.for_statement,
                 $.switch_statement,
                 $.match_statement,
+                $.comptime_statement,
                 $.defer_statement,
                 $.return_statement,
                 $.yield_statement,
@@ -891,6 +892,9 @@ module.exports = grammar({
                 ")",
                 $._match_body,
             ),
+
+        comptime_statement: ($) =>
+            seq(keyword($, "comptime"), choice($.if_statement, $.match_statement)),
 
         _match_body: ($) =>
             seq("{", optional(commaSep1($.match_arm)), "}"),
@@ -1172,6 +1176,7 @@ module.exports = grammar({
                 $.match_expression,
                 $.sizeof_expression,
                 $.emit_expression,
+                $.comptime_expression,
                 $.then_expression,
                 $.label_address_expression,
             ),
@@ -1260,6 +1265,16 @@ module.exports = grammar({
                 keyword($, "emit"),
                 choice(
                     $.staged_block,
+                    $.expression,
+                    alias($._arm_return, $.return_statement),
+                    alias($._arm_yield, $.yield_statement),
+                ),
+            ),
+
+        comptime_expression: ($) =>
+            seq(
+                keyword($, "comptime"),
+                choice(
                     $.expression,
                     alias($._arm_return, $.return_statement),
                     alias($._arm_yield, $.yield_statement),

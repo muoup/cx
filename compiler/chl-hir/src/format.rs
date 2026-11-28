@@ -265,6 +265,10 @@ impl<'a> Display for HIRExprFormatter<'a> {
                 writeln!(f, "Emit")?;
                 HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
             }
+            HIRExprKind::Comptime { expr } => {
+                writeln!(f, "Comptime")?;
+                HIRExprFormatter::new(expr, self.depth + 1).fmt(f)
+            }
             HIRExprKind::BinOp { lhs, rhs, op } => {
                 writeln!(f, "BinOp {:?}", op)?;
                 HIRExprFormatter::new(lhs, self.depth + 1).fmt(f)?;
